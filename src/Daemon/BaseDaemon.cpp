@@ -127,7 +127,10 @@ void BaseDaemon::loadConfiguration()
 }
 
 
-BaseDaemon::BaseDaemon() = default;
+BaseDaemon::BaseDaemon()
+    : original_working_directory(fs::current_path())
+{
+}
 
 
 BaseDaemon::~BaseDaemon()

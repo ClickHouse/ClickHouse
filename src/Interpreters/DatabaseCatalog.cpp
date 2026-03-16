@@ -1,4 +1,5 @@
 #include <Interpreters/DatabaseCatalog.h>
+#include <Common/CurrentThread.h>
 
 #include <Access/ContextAccess.h>
 
@@ -103,7 +104,7 @@ public:
 
     Names getAllRegisteredNames() const override
     {
-        auto context = CurrentThread::getQueryContext();
+        auto context = CurrentThread::tryGetQueryContext();
         if (!context)
             return {};
 

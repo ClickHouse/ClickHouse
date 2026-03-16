@@ -1,4 +1,5 @@
 #include <Disks/DiskType.h>
+#include <Common/CurrentThread.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -3793,6 +3794,14 @@ size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataParts
 size_t MergeTreeData::clearEmptyParts()
 {
     if (!(*getSettings())[MergeTreeSetting::remove_empty_parts])
+        return 0;
+
+    /// Do not remove empty parts while outdated data parts are still loading asynchronously.
+    /// An empty part may be covering outdated parts not yet loaded into memory — in that case
+    /// `getCoveredOutdatedParts` would return an empty list, causing the covering part to be
+    /// wrongly dropped. If the outdated parts have not been cleaned up by then, they will be
+    /// resurrected on the next ATTACH or server restart.
+    if (!outdated_data_parts_loading_finished.load(std::memory_order_relaxed))
         return 0;
 
     std::vector<std::string> parts_names_to_drop;
@@ -10459,7 +10468,7 @@ StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(bool bypass_metadata_ca
     if (bypass_metadata_cache)
         return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
 
-    auto query_context = CurrentThread::get().getQueryContext();
+    auto query_context = CurrentThread::get().tryGetQueryContext();
     if (!query_context || !query_context->hasQueryContext()
         || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
         return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);

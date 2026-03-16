@@ -4,10 +4,10 @@
 
 #if USE_AWS_S3
 #include <IO/S3Settings.h>
-#include <Parsers/IAST_fwd.h>
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Parsers/IAST_fwd.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DB
@@ -98,6 +98,7 @@ public:
     StorageS3Configuration() = default;
 
     ObjectStorageType getType() const override { return type; }
+
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return url.storage_name; }
     std::string getNamespaceType() const override { return namespace_name; }

@@ -434,6 +434,15 @@ public:
     }
 #endif
 
+    /** Compares and returns inequal track. It extends compareAt() to return how many values are not equal.
+      * Returns -N if current N left values are less then the right comparing value.
+      * Returns N if current N right values are less then the left comparing value.
+      * Returns 0 if current left and right values are equal.
+      *
+      * The main reason for the function is compareAt() devirtualization.
+      */
+    [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
+
 #if USE_EMBEDDED_COMPILER
 
     [[nodiscard]] virtual bool isComparatorCompilable() const { return false; }

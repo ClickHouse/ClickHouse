@@ -121,7 +121,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             cache,
             implementation_buffer->getFileName(),
             key,
-            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
+            CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             modified_write_settings,
             cache->getCommonOriginWithSegmentKeyType(object.local_path),
             Context::getGlobalContextInstance()->getFilesystemCacheLog(),

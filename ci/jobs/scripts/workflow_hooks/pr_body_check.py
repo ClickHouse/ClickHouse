@@ -2,10 +2,9 @@ import re
 import sys
 
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import (
-    CATEGORIES_FOLD,
-    LABEL_CATEGORIES,
+    NO_CHANGELOG_REQUIRED_LABELS,
+    find_category,
     get_category,
-    normalize_category,
 )
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
@@ -15,13 +14,10 @@ def check_changelog_entry(category, pr_body: str) -> str:
     lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
     lines = [re.sub(r"\s+", " ", line) for line in lines]
 
-    if category in LABEL_CATEGORIES["pr-not-for-changelog"]:
+    _matched, label = find_category(category)
+    if label in NO_CHANGELOG_REQUIRED_LABELS:
         return ""
-    if category in LABEL_CATEGORIES["pr-ci"]:
-        return ""
-    if category in LABEL_CATEGORIES["pr-documentation"]:
-        return ""
-    if normalize_category(category) not in CATEGORIES_FOLD:
+    if label is None:
         return f"Invalid category: [{category}]"
 
     entry = ""

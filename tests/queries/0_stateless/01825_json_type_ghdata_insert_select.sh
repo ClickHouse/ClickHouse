@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-object-storage, long, no-asan, no-tsan, no-msan
+# Tags: no-fasttest, no-object-storage, long, no-asan, no-tsan, no-msan, no-flaky-check
 # ^ no-object-storage: it is memory-hungry, no-{a,t,m}san: too long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

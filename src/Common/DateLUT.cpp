@@ -158,7 +158,7 @@ const DateLUTImpl & DateLUT::instance()
     std::optional<std::string> timezone_from_context;
     if (DB::CurrentThread::isInitialized())
     {
-        const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+        const DB::ContextPtr query_context = DB::CurrentThread::get().tryGetQueryContext();
         if (query_context)
             timezone_from_context.emplace(query_context->getSettingsRef()[DB::Setting::session_timezone]);
     }
