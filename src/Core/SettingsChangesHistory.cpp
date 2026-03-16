@@ -74,7 +74,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
-            {"force_primary_key_reverse_order", false, true, "New testing setting that forces all ORDER BY columns to DESC for stress-testing reverse key functionality"},
             {"force_primary_key_reverse_order", false, false, "New testing setting that forces all ORDER BY columns to DESC for stress-testing reverse key functionality"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
