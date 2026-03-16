@@ -12,6 +12,8 @@ Multiple aggregate functions (sum, count, max)
 1
 Nullable key
 1
+Nullable key with diverse underlying NULL data
+1
 UInt16 key (key16)
 1
 UInt32 key (key32)

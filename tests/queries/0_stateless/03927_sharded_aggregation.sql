@@ -65,6 +65,12 @@ SELECT
     =
     (SELECT sum(s), count() FROM (SELECT nullable_key, sum(b) AS s FROM test GROUP BY nullable_key SETTINGS optimize_aggregation_by_sharding = 1));
 
+SELECT 'Nullable key with diverse underlying NULL data';
+SELECT
+    (SELECT sum(s), count() FROM (SELECT nullIf(a, a) AS k, sum(b) AS s FROM test GROUP BY k SETTINGS optimize_aggregation_by_sharding = 0))
+    =
+    (SELECT sum(s), count() FROM (SELECT nullIf(a, a) AS k, sum(b) AS s FROM test GROUP BY k SETTINGS optimize_aggregation_by_sharding = 1));
+
 SELECT 'UInt16 key (key16)';
 SELECT
     (SELECT sum(s), count() FROM (SELECT toUInt16(b % 60000) AS k, sum(b) AS s FROM test GROUP BY k SETTINGS optimize_aggregation_by_sharding = 0))

@@ -62,6 +62,12 @@ SELECT count() > 0 FROM (
     SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
+SELECT 'Nullable key with diverse underlying NULL data';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT nullIf(a, a) AS k, sum(b) FROM test GROUP BY k
+    SETTINGS optimize_aggregation_by_sharding = 1
+) WHERE explain LIKE '%ScatterByHashTransform%';
+
 SELECT 'Setting is off: transform is be applied';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test GROUP BY a
