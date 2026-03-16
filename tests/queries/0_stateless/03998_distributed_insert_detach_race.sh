@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-s3-storage
 
 # Stress test for the race between async INSERT into Distributed and DETACH.
 # Before the fix, this could cause "Cannot schedule a file" LOGICAL_ERROR.
@@ -39,9 +39,6 @@ wait
 
 # Reattach in case the table was left detached
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE dist_03998" 2>/dev/null
-
-# Flush any remaining async inserts
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH DISTRIBUTED dist_03998"
 
 $CLICKHOUSE_CLIENT -nmq "
     DROP TABLE dist_03998;

@@ -16,7 +16,6 @@
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
@@ -414,6 +413,23 @@ struct ToDateTimeTransform64Signed
         if (from < 0)
             return 0;
         return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+    }
+};
+
+
+struct ToDateTime64TransformFromTime
+{
+    static constexpr auto name = "toDateTime64";
+
+    const DateTime64::NativeType scale_multiplier;
+
+    ToDateTime64TransformFromTime(UInt32 scale) /// NOLINT
+        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
+    {}
+
+    DateTime64::NativeType execute(Int32 d, const DateLUTImpl & /*time_zone*/) const
+    {
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(d, 0, scale_multiplier);
     }
 };
 
@@ -1639,7 +1655,56 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
     const auto & vec_from = col_from->getData();
     auto & vec_to = col_to->getData();
 
-    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+    /// Batch path for decimal-to-decimal (excludes DateTime64 and Time64 which need special handling)
+    if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>
+        && !std::is_same_v<DataTypeDateTime64, FromDataType> && !std::is_same_v<DataTypeDateTime64, ToDataType>
+        && !std::is_same_v<DataTypeTime64, FromDataType> && !std::is_same_v<DataTypeTime64, ToDataType>)
+    {
+        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+        {
+            ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+            auto & vec_null_map_to = col_null_map_to->getData();
+            convertDecimalsBatch<FromDataType, ToDataType, UInt8>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_from->getScale(), col_to->getScale(),
+                vec_null_map_to.data());
+            return ColumnNullable::create(std::forward<ColTo>(col_to), std::move(col_null_map_to));
+        }
+        else
+        {
+            convertDecimalsBatch<FromDataType, ToDataType, void>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_from->getScale(), col_to->getScale(),
+                nullptr);
+            return std::forward<ColTo>(col_to);
+        }
+    }
+    /// Batch path for number-to-decimal (excludes DateTime64 and Time64 which need special handling)
+    else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>
+        && !std::is_same_v<DataTypeDateTime64, ToDataType>
+        && !std::is_same_v<DataTypeTime64, ToDataType>)
+    {
+        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+        {
+            ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+            auto & vec_null_map_to = col_null_map_to->getData();
+            convertToDecimalBatch<FromDataType, ToDataType, UInt8>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_to->getScale(),
+                vec_null_map_to.data());
+            return ColumnNullable::create(std::forward<ColTo>(col_to), std::move(col_null_map_to));
+        }
+        else
+        {
+            convertToDecimalBatch<FromDataType, ToDataType, void>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_to->getScale(),
+                nullptr);
+            return std::forward<ColTo>(col_to);
+        }
+    }
+    /// Scalar fallback for remaining conversions (decimal-to-number, DateTime64, Time64)
+    else if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
     {
         using ToFieldType = typename ToDataType::FieldType;
         ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
@@ -2002,6 +2067,13 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
+        /// Conversion of Time to DateTime64: treat seconds since midnight as seconds since 1970-01-01
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime>
+            && std::is_same_v<ToDataType, DataTypeDateTime64>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFromTime, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
+        }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeTime>)
                             && std::is_same_v<ToDataType, DataTypeTime64>)
         {
@@ -2084,6 +2156,61 @@ struct ConvertImpl
 
                 // Reassemble the result
                 vec_to[i] = local_seconds * scale_mult + fraction;
+            }
+
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+            else
+                return col_to;
+        }
+        /// Conversion of Time64 to DateTime64: Time64 stores sub-seconds since midnight
+        /// which equals sub-seconds since epoch for 1970-01-01
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
+                        && std::is_same_v<ToDataType, DataTypeDateTime64>)
+        {
+            using ToFieldType = typename ToDataType::FieldType;
+            using ColVecFrom = typename FromDataType::ColumnType;
+            using ColVecTo = typename ToDataType::ColumnType;
+
+            const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
+
+            UInt32 scale;
+            if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
+                        || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                scale = additions.scale;
+            else
+                scale = additions;
+
+            auto col_to = ColVecTo::create(0, scale);
+            const auto & vec_from = col_from->getData();
+            auto & vec_to = col_to->getData();
+            vec_to.resize(input_rows_count);
+
+            ColumnUInt8::MutablePtr col_null_map_to;
+            ColumnUInt8::Container * vec_null_map_to = nullptr;
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+            {
+                col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+                vec_null_map_to = &col_null_map_to->getData();
+            }
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                {
+                    ToFieldType result;
+                    if (tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                        vec_to[i] = result;
+                    else
+                    {
+                        vec_to[i] = static_cast<ToFieldType>(0);
+                        (*vec_null_map_to)[i] = true;
+                    }
+                }
+                else
+                {
+                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
+                }
             }
 
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2563,7 +2690,8 @@ struct ConvertImpl
                                 "Conversion between numeric types and IPv6 is not supported. "
                                 "Probably the passed IPv6 is unquoted");
 
-            /// Decimal conversions
+            /// All decimal conversions (decimal-to-decimal, number-to-decimal, decimal-to-number)
+            /// Batch path for eligible types is handled inside convertDecimal.
             else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 return convertDecimal<Additions, FromDataType, ToDataType>(std::move(col_to), col_from, input_rows_count);
 
@@ -2657,134 +2785,7 @@ struct ConvertImplFromDynamicToColumn
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert)
-    {
-        /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
-        /// and construct the result based on discriminators.
-        const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
-        const auto & variant_column = column_dynamic.getVariantColumn();
-        const auto & variant_info = column_dynamic.getVariantInfo();
-
-        /// First, cast usual variants to result type.
-        const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-        std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
-        std::vector<bool> cast_variant_columns_is_const(variant_types.size(), false);
-        for (size_t i = 0; i != variant_types.size(); ++i)
-        {
-            /// Skip shared variant, it will be processed later.
-            if (i == column_dynamic.getSharedVariantDiscriminator())
-                continue;
-
-            ColumnsWithTypeAndName new_args = arguments;
-            new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
-            cast_variant_columns[i] = nested_convert(new_args, result_type);
-            if (cast_variant_columns[i] && isColumnConst(*cast_variant_columns[i]))
-            {
-                cast_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_variant_columns[i]).getDataColumnPtr();
-                cast_variant_columns_is_const[i] = true;
-            }
-        }
-
-        /// Second, collect all variants stored in shared variant and cast them to result type.
-        std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
-        DataTypes variant_types_from_shared_variant;
-        /// We will need to know what variant to use when we see discriminator of a shared variant.
-        /// To do it, we remember what variant was extracted from each row and what was it's offset.
-        PaddedPODArray<UInt64> shared_variant_indexes;
-        PaddedPODArray<UInt64> shared_variant_offsets;
-        std::unordered_map<String, UInt64> shared_variant_to_index;
-        const auto & shared_variant = column_dynamic.getSharedVariant();
-        const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
-        const auto & local_discriminators = variant_column.getLocalDiscriminators();
-        const auto & offsets = variant_column.getOffsets();
-        if (!shared_variant.empty())
-        {
-            shared_variant_indexes.reserve(input_rows_count);
-            shared_variant_offsets.reserve(input_rows_count);
-            FormatSettings format_settings;
-            const auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_discr);
-            for (size_t i = 0; i != input_rows_count; ++i)
-            {
-                if (local_discriminators[i] == shared_variant_local_discr)
-                {
-                    auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value);
-                    auto type = decodeDataType(buf);
-                    auto type_name = type->getName();
-                    auto it = shared_variant_to_index.find(type_name);
-                    /// Check if we didn't create column for this variant yet.
-                    if (it == shared_variant_to_index.end())
-                    {
-                        it = shared_variant_to_index.emplace(type_name, variant_columns_from_shared_variant.size()).first;
-                        variant_columns_from_shared_variant.push_back(type->createColumn());
-                        variant_types_from_shared_variant.push_back(type);
-                    }
-
-                    shared_variant_indexes.push_back(it->second);
-                    shared_variant_offsets.push_back(variant_columns_from_shared_variant[it->second]->size());
-                    type->getDefaultSerialization()->deserializeBinary(*variant_columns_from_shared_variant[it->second], buf, format_settings);
-                }
-                else
-                {
-                    shared_variant_indexes.emplace_back();
-                    shared_variant_offsets.emplace_back();
-                }
-            }
-        }
-
-        /// Cast all extracted variants into result type.
-        std::vector<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
-        std::vector<bool> cast_shared_variant_columns_is_const(variant_types_from_shared_variant.size(), false);
-        for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
-        {
-            ColumnsWithTypeAndName new_args = arguments;
-            new_args[0] = {variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""};
-            cast_shared_variant_columns[i] = nested_convert(new_args, result_type);
-            if (cast_shared_variant_columns[i] && isColumnConst(*cast_shared_variant_columns[i]))
-            {
-                cast_shared_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_shared_variant_columns[i]).getDataColumnPtr();
-                cast_shared_variant_columns_is_const[i] = true;
-            }
-        }
-
-        /// Construct result column from all cast variants.
-        auto res = result_type->createColumn();
-        res->reserve(input_rows_count);
-        for (size_t i = 0; i != input_rows_count; ++i)
-        {
-            auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
-            if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-            {
-                res->insertDefault();
-            }
-            else if (global_discr == shared_variant_discr)
-            {
-                if (cast_shared_variant_columns[shared_variant_indexes[i]])
-                {
-                    size_t offset = cast_shared_variant_columns_is_const[shared_variant_indexes[i]] ? 0 : shared_variant_offsets[i];
-                    res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], offset);
-                }
-                else
-                {
-                    res->insertDefault();
-                }
-            }
-            else
-            {
-                if (cast_variant_columns[global_discr])
-                {
-                    size_t offset = cast_variant_columns_is_const[global_discr] ? 0 : offsets[i];
-                    res->insertFrom(*cast_variant_columns[global_discr], offset);
-                }
-                else
-                {
-                    res->insertDefault();
-                }
-            }
-        }
-
-        return res;
-    }
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert);
 };
 
 /// Declared early because used below.
@@ -3824,13 +3825,13 @@ struct ToDateMonotonicity
         }
         else if (
             ((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
-             && ((left.isNull() || left.safeGet<UInt64>() < 0xFFFF) && (right.isNull() || right.safeGet<UInt64>() >= 0xFFFF)))
+             && ((left.isNull() || left.safeGet<UInt64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<UInt64>() > DATE_LUT_MAX_DAY_NUM)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Int64>() < 0xFFFF) && (right.isNull() || right.safeGet<Int64>() >= 0xFFFF)))
+                && ((left.isNull() || left.safeGet<Int64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Int64>() > DATE_LUT_MAX_DAY_NUM)))
             || ((
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() < 0xFFFF) && (right.isNull() || right.safeGet<Float64>() >= 0xFFFF))))
+                && ((left.isNull() || left.safeGet<Float64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Float64>() > DATE_LUT_MAX_DAY_NUM))))
             || !isNativeNumber(type))
         {
             return {};
@@ -3889,8 +3890,17 @@ struct ToStringMonotonicity
             type_ptr = low_cardinality_type->getDictionaryType().get();
 
         /// Order on enum values (which is the order on integers) is completely arbitrary in respect to the order on strings.
-        if (WhichDataType(type).isEnum())
+        if (WhichDataType(*type_ptr).isEnum())
             return not_monotonic;
+
+        if (checkDataTypes<DataTypeFixedString>(type_ptr))
+        {
+            /// `toString(FixedString(N))` removes trailing zero bytes. For example, with `N = 4`,
+            /// `['a', 'b', '\0', '\0']` becomes `'ab'`, and `['a', 'b', '\1', '\0']` becomes `'ab\1'`.
+            /// This preserves lexicographic order on `FixedString(N)`, so the transformation is
+            /// strictly monotonic on the whole type range.
+            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+        }
 
         /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
         if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime, DataTypeString>(type_ptr))

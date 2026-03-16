@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import logging
 import os
+import random
 import subprocess
 import sys
 import traceback
 from pathlib import Path
 
+from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika.info import Info
@@ -24,6 +26,8 @@ def get_run_command(
     workspace_path: Path,
     image: DockerImage,
     buzzhouse: bool,
+    targeted_queries_file: Path | None = None,
+    compatibility_setting: str | None = None,
 ) -> str:
     from ci.jobs.ci_utils import is_extended_run
 
@@ -32,6 +36,11 @@ def get_run_command(
         f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
         f"-e FUZZ_TIME_LIMIT='{minutes}m'",
     ]
+    if targeted_queries_file:
+        container_queries_file = f"/workspace/{targeted_queries_file.name}"
+        envs.append(f"-e TARGETED_QUERIES_FILE='{container_queries_file}'")
+    if compatibility_setting:
+        envs.append(f"-e FUZZER_COMPATIBILITY='{compatibility_setting}'")
 
     env_str = " ".join(envs)
 
@@ -50,22 +59,112 @@ def get_run_command(
     )
 
 
+def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[str], Result]:
+    targeter = Targeting(info=info)
+    targeter.job_type = Targeting.STATELESS_JOB_TYPE
+    tests, relevant_tests_result = targeter.get_all_relevant_tests_with_info(f"{cwd}/ci/tmp")
+
+    logging.info("Found %d relevant tests for targeted AST fuzzer:", len(tests))
+    for test in sorted(tests):
+        logging.info("  %s", test)
+
+    stateless_tests_dir = Path(cwd) / "tests/queries/0_stateless"
+    available_queries: dict[str, list[str]] = {}
+
+    for query_file in stateless_tests_dir.rglob("*.sql"):
+        base_name = query_file.stem
+        available_queries.setdefault(base_name, []).append(
+            f"/repo/{query_file.relative_to(cwd)}"
+        )
+
+    logging.debug("Indexed %d unique SQL query base names from %s", len(available_queries), stateless_tests_dir)
+
+    targeted_queries: list[str] = []
+    seen_queries = set()
+    for test in tests:
+        base_name = Path(test).stem.rstrip(".")
+        matches = available_queries.get(base_name, [])
+        if matches:
+            logging.debug("  %s -> %s", test, matches)
+        else:
+            logging.debug("  %s -> no .sql file found (stem: %r)", test, base_name)
+        for query_path in matches:
+            if query_path not in seen_queries:
+                seen_queries.add(query_path)
+                targeted_queries.append(query_path)
+
+    if targeted_queries:
+        targeted_queries_file = workspace_path / "ci-targeted-queries.txt"
+        with open(targeted_queries_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(targeted_queries))
+        logging.info(
+            "Prepared %d targeted queries for AST fuzzer:", len(targeted_queries)
+        )
+        for qf in targeted_queries:
+            logging.info("  %s", qf)
+    else:
+        logging.info("No targeted queries resolved for AST fuzzer")
+
+    return targeted_queries, relevant_tests_result
+
+
 def run_fuzz_job(check_name: str):
     logging.basicConfig(level=logging.INFO)
+    is_targeted = "targeted" in check_name.lower()
     buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
     temp_dir = Path(f"{cwd}/ci/tmp/")
-    assert Path(f"{temp_dir}/clickhouse").exists(), "ClickHouse binary not found"
+    clickhouse_binary = temp_dir / "clickhouse"
+    assert clickhouse_binary.exists(), "ClickHouse binary not found"
+    clickhouse_binary.chmod(clickhouse_binary.stat().st_mode | 0o111)
 
     docker_image = DockerImage.get_docker_image(IMAGE_NAME).pull_image()
 
     workspace_path = temp_dir / "workspace"
     workspace_path.mkdir(parents=True, exist_ok=True)
 
-    run_command = get_run_command(workspace_path, docker_image, buzzhouse)
+    info = Info()
+    extra_results = []
+    targeted_queries_file: Path | None = None
+
+    if is_targeted and not buzzhouse:
+        targeted_queries, relevant_tests_result = _collect_targeted_queries(
+            workspace_path=workspace_path, info=info
+        )
+        extra_results.append(relevant_tests_result)
+        if not targeted_queries:
+            Result.create_from(
+                status=Result.Status.SKIPPED,
+                info="No relevant tests found for targeted AST fuzzer",
+                results=extra_results,
+            ).complete_job()
+        targeted_queries_file = workspace_path / "ci-targeted-queries.txt"
+
+    is_old_compatibility = "old_compatibility" in check_name.lower()
+    compatibility_setting: str | None = None
+    if not buzzhouse:
+        if is_old_compatibility:
+            compatibility_setting = "22.1"
+        elif is_targeted:
+            compatibility_setting = None
+        else:
+            compatibility_setting = (
+                f"{random.randint(22, 27)}.{random.randint(1, 12)}"
+            )
+        if compatibility_setting:
+            logging.info("AST fuzzer compatibility setting: %s", compatibility_setting)
+        else:
+            logging.info("AST fuzzer compatibility setting is not set")
+
+    run_command = get_run_command(
+        workspace_path,
+        docker_image,
+        buzzhouse,
+        targeted_queries_file=targeted_queries_file,
+        compatibility_setting=compatibility_setting,
+    )
     logging.info("Going to run %s", run_command)
 
-    info = Info()
     is_sanitized = "san" in info.job_name
 
     changed_files_path = workspace_path / "ci-changed-files.txt"
@@ -209,7 +308,9 @@ def run_fuzz_job(check_name: str):
             )
 
     result = Result.create_from(
-        results=results, status=status if not results else None, info=info
+        results=extra_results + results,
+        status=status if not results else None,
+        info=info,
     )
 
     if is_failed:

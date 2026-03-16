@@ -1,4 +1,5 @@
 #include <Interpreters/DatabaseCatalog.h>
+#include <Common/CurrentThread.h>
 
 #include <Access/ContextAccess.h>
 
@@ -103,7 +104,7 @@ public:
 
     Names getAllRegisteredNames() const override
     {
-        auto context = CurrentThread::getQueryContext();
+        auto context = CurrentThread::tryGetQueryContext();
         if (!context)
             return {};
 
@@ -1082,7 +1083,7 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 {
     std::optional<Exception> exc;
     auto table = local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }, &exc).second :
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }).second :
         getTableImpl(table_id, local_context, &exc).second;
     if (!table)
         throw Exception(*exc);
@@ -1092,7 +1093,7 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
     return local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }, nullptr).second :
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }).second :
         getTableImpl(table_id, local_context, nullptr).second;
 }
 
@@ -1100,7 +1101,7 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 {
     std::optional<Exception> exc;
     auto res = local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }, &exc) :
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }) :
         getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
@@ -1110,7 +1111,7 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
     return local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }, nullptr) :
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }) :
         getTableImpl(table_id, local_context, nullptr);
 }
 
@@ -1576,17 +1577,20 @@ String DatabaseCatalog::getPathForUUID(const UUID & uuid)
     return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
 }
 
-void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
+void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled)
 {
     if (uuid == UUIDHelpers::Nil)
         return;
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
     UniqueLock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock.getUnderlyingLock(), [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
+
+    while (tables_marked_dropped_ids.contains(uuid) && !is_shutting_down)
     {
-        return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
-    });
+        if (throw_if_cancelled)
+            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
+        wait_table_finally_dropped.wait_for(lock.getUnderlyingLock(), std::chrono::seconds(1));
+    }
 
     const bool has_table = tables_marked_dropped_ids.contains(uuid);
     LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");

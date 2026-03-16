@@ -1,7 +1,8 @@
 #include <cerrno>
-#include <cstdlib>
-#include <Poco/String.h>
 #include <cmath>
+#include <cstdlib>
+#include <limits>
+#include <Poco/String.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -1101,6 +1102,12 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (negative)
                 float_value = -float_value;
+
+            /// Canonicalize NaN to a single representation, because negative NaN has
+            /// a different bit pattern but formats identically to positive NaN ("nan"),
+            /// breaking the AST formatting roundtrip consistency check.
+            if (std::isnan(float_value))
+                float_value = std::numeric_limits<Float64>::quiet_NaN();
 
             res = float_value;
 

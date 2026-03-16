@@ -169,7 +169,7 @@ SETTINGS max_block_size = 10000""",
     query_thread.start()
 
     node1.wait_for_log_line("Get data from database")
-    node1.wait_for_log_line("Generate a chuck")
+    node1.wait_for_log_line("Generate a chunk")
     time.sleep(1)
 
     node1.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
@@ -248,7 +248,7 @@ SETTINGS max_block_size = 10000"""
     query_thread.start()
 
     node1.wait_for_log_line("Get data from database")
-    node1.wait_for_log_line("Generate a chuck")
+    node1.wait_for_log_line("Generate a chunk")
     time.sleep(2)
 
     node1.stop_clickhouse_client()

@@ -7,7 +7,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Poco/Event.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>

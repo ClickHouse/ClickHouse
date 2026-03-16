@@ -45,154 +45,37 @@ namespace
         }
     }
 
-    using EvaluateWithConstArgumentFunc = Float64 (*)(Float64);
-
     struct ImplInfo
     {
         std::string_view ch_function_name;
-        EvaluateWithConstArgumentFunc evaluate_with_const_argument;
     };
 
     const ImplInfo * getImplInfo(std::string_view function_name)
     {
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
-            {"abs",
-             {
-                 "abs",
-                 [](Float64 x) -> Float64 { return fabs(x); },
-             }},
-
-            {"sgn",
-             {
-                 "sign",
-                 [](Float64 x) -> Float64 { return boost::math::sign(x); },
-             }},
-
-            {"floor",
-             {
-                 "floor",
-                 [](Float64 x) -> Float64 { return floor(x); },
-             }},
-
-            {"ceil",
-             {
-                 "ceil",
-                 [](Float64 x) -> Float64 { return ceil(x); },
-             }},
-
-            {"sqrt",
-             {
-                 "sqrt",
-                 [](Float64 x) -> Float64 { return sqrt(x); },
-             }},
-
-            {"exp",
-             {
-                 "exp",
-                 [](Float64 x) -> Float64 { return exp(x); },
-             }},
-
-            {"ln",
-             {
-                 "log",
-                 [](Float64 x) -> Float64 { return log(x); },
-             }},
-
-            {"log2",
-             {
-                 "log2",
-                 [](Float64 x) -> Float64 { return log2(x); },
-             }},
-
-            {"log10",
-             {
-                 "log10",
-                 [](Float64 x) -> Float64 { return log10(x); },
-             }},
-
-            {"rad",
-             {
-                 "radians",
-                 [](Float64 x) -> Float64 { return x * (std::numbers::pi / 180.0); },
-             }},
-
-            {"deg",
-             {
-                 "degrees",
-                 [](Float64 x) -> Float64 { return x * (180.0 / std::numbers::pi); },
-             }},
-
-            {"sin",
-             {
-                 "sin",
-                 [](Float64 x) -> Float64 { return sin(x); },
-             }},
-
-            {"cos",
-             {
-                 "cos",
-                 [](Float64 x) -> Float64 { return cos(x); },
-             }},
-
-            {"tan",
-             {
-                 "tan",
-                 [](Float64 x) -> Float64 { return tan(x); },
-             }},
-
-            {"asin",
-             {
-                 "asin",
-                 [](Float64 x) -> Float64 { return asin(x); },
-             }},
-
-            {"acos",
-             {
-                 "acos",
-                 [](Float64 x) -> Float64 { return acos(x); },
-             }},
-
-            {"atan",
-             {
-                 "atan",
-                 [](Float64 x) -> Float64 { return atan(x); },
-             }},
-
-            {"sinh",
-             {
-                 "sinh",
-                 [](Float64 x) -> Float64 { return sinh(x); },
-             }},
-
-            {"cosh",
-             {
-                 "cosh",
-                 [](Float64 x) -> Float64 { return cosh(x); },
-             }},
-
-            {"tanh",
-             {
-                 "tanh",
-                 [](Float64 x) -> Float64 { return tanh(x); },
-             }},
-
-            {"asinh",
-             {
-                 "asinh",
-                 [](Float64 x) -> Float64 { return asinh(x); },
-             }},
-
-            {"acosh",
-             {
-                 "acosh",
-                 [](Float64 x) -> Float64 { return acosh(x); },
-             }},
-
-            {"atanh",
-             {
-                 "atanh",
-                 [](Float64 x) -> Float64 { return atanh(x); },
-             }},
+            {"abs",   {"abs"}},
+            {"sgn",   {"sign"}},
+            {"floor", {"floor"}},
+            {"ceil",  {"ceil"}},
+            {"sqrt",  {"sqrt"}},
+            {"exp",   {"exp"}},
+            {"ln",    {"log"}},
+            {"log2",  {"log2"}},
+            {"log10", {"log10"}},
+            {"rad",   {"radians"}},
+            {"deg",   {"degrees"}},
+            {"sin",   {"sin"}},
+            {"cos",   {"cos"}},
+            {"tan",   {"tan"}},
+            {"asin",  {"asin"}},
+            {"acos",  {"acos"}},
+            {"atan",  {"atan"}},
+            {"sinh",  {"sinh"}},
+            {"cosh",  {"cosh"}},
+            {"tanh",  {"tanh"}},
+            {"asinh", {"asinh"}},
+            {"acosh", {"acosh"}},
+            {"atanh", {"atanh"}},
         };
 
         auto it = impl_map.find(function_name);
@@ -231,23 +114,34 @@ SQLQueryPiece applyMathSimpleFunction(
         }
 
         case StoreMethod::CONST_SCALAR:
-        {
-            res.scalar_value = (impl_info->evaluate_with_const_argument)(argument.scalar_value);
-            return res;
-        }
-
         case StoreMethod::SINGLE_SCALAR:
         {
+            /// For const scalar:
+            /// SELECT f(<scalar_value>) AS value
+            ///
+            /// For single scalar:
             /// SELECT f(value) AS value FROM <subquery>
             SelectQueryBuilder builder;
 
-            builder.select_list.push_back(makeASTFunction(impl_info->ch_function_name, make_intrusive<ASTIdentifier>(ColumnNames::Value)));
+            ASTPtr current_value = (argument.store_method == StoreMethod::CONST_SCALAR)
+                ? timeSeriesScalarToAST(argument.scalar_value, context.scalar_data_type)
+                : make_intrusive<ASTIdentifier>(ColumnNames::Value);
+
+            ASTPtr new_value = makeASTFunction(impl_info->ch_function_name, std::move(current_value));
+
+            builder.select_list.push_back(new_value);
             builder.select_list.back()->setAlias(ColumnNames::Value);
 
-            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
-            builder.from_table = context.subqueries.back().name;
+            if (argument.select_query)
+            {
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
+                builder.from_table = context.subqueries.back().name;
+            }
 
             res.select_query = builder.getSelectQuery();
+            res.store_method = StoreMethod::SINGLE_SCALAR;
+            res.scalar_value = {};
+
             return res;
         }
 

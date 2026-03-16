@@ -1,0 +1,55 @@
+-- { echoOn }
+-- Test tokensForLikePattern function with different tokenizers
+-- Both tokens() and tokensForLikePattern() receive the SAME input string,
+-- so the reader can directly see how the same string is tokenized differently.
+
+-- splitByNonAlpha tokenizer (default)
+SELECT 'splitByNonAlpha:';
+splitByNonAlpha:
+SELECT tokens('hello_world'), tokensForLikePattern('hello_world');
+['hello','world']	[]
+SELECT tokens('hello\_world'), tokensForLikePattern('hello\_world');
+['hello','world']	['hello','world']
+SELECT tokens('hello\%world'), tokensForLikePattern('hello\%world');
+['hello','world']	['hello','world']
+SELECT tokens('%hello%'), tokensForLikePattern('%hello%');
+['hello']	[]
+SELECT tokens('%hello_world%'), tokensForLikePattern('%hello_world%');
+['hello','world']	[]
+SELECT tokens('%%__test'), tokensForLikePattern('%%__test');
+['test']	[]
+SELECT tokens(''), tokensForLikePattern('');
+[]	[]
+SELECT tokens('%%%'), tokensForLikePattern('%%%');
+[]	[]
+-- ngrams tokenizer
+SELECT 'ngrams:';
+ngrams:
+SELECT tokens('abcd', 'ngrams', 2), tokensForLikePattern('abcd', 'ngrams', 2);
+['ab','bc','cd']	['ab','bc','cd']
+SELECT tokens('%ab%', 'ngrams', 2), tokensForLikePattern('%ab%', 'ngrams', 2);
+['%a','ab','b%']	['ab']
+SELECT tokens('%abc%', 'ngrams', 3), tokensForLikePattern('%abc%', 'ngrams', 3);
+['%ab','abc','bc%']	['abc']
+SELECT tokens('abcd%', 'ngrams', 2), tokensForLikePattern('abcd%', 'ngrams', 2);
+['ab','bc','cd','d%']	['ab','bc','cd']
+SELECT tokens('%ab_cd%', 'ngrams', 2), tokensForLikePattern('%ab_cd%', 'ngrams', 2);
+['%a','ab','b_','_c','cd','d%']	['ab','cd']
+SELECT tokens('%ab\_cd%', 'ngrams', 2), tokensForLikePattern('%ab\_cd%', 'ngrams', 2);
+['%a','ab','b\\','\\_','_c','cd','d%']	['ab','b_','_c','cd']
+-- Unsupported tokenizers should throw error
+SELECT 'unsupported tokenizers:';
+unsupported tokenizers:
+SELECT tokensForLikePattern('%hello world%', 'splitByString', [' ']); -- { serverError BAD_ARGUMENTS }
+SELECT tokensForLikePattern('%hello%', 'array'); -- { serverError BAD_ARGUMENTS }
+-- Edge cases
+SELECT 'edge cases:';
+edge cases:
+SELECT tokens('\\\\%test'), tokensForLikePattern('\\\\%test');
+['test']	[]
+SELECT tokens('abc%d'), tokensForLikePattern('abc%d');
+['abc','d']	[]
+SELECT tokens('%%%%'), tokensForLikePattern('%%%%');
+[]	[]
+SELECT tokens('____'), tokensForLikePattern('____');
+[]	[]

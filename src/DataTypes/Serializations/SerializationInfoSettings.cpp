@@ -12,12 +12,14 @@ SerializationInfoSettings::SerializationInfoSettings(
     bool choose_kind_,
     MergeTreeSerializationInfoVersion version_,
     MergeTreeStringSerializationVersion string_serialization_version_,
-    MergeTreeNullableSerializationVersion nullable_serialization_version_)
+    MergeTreeNullableSerializationVersion nullable_serialization_version_,
+    bool propagate_types_serialization_versions_to_nested_types_)
     : ratio_of_defaults_for_sparse(ratio_of_defaults_for_sparse_)
     , choose_kind(choose_kind_)
     , version(version_)
     , string_serialization_version(string_serialization_version_)
     , nullable_serialization_version(nullable_serialization_version_)
+    , propagate_types_serialization_versions_to_nested_types(propagate_types_serialization_versions_to_nested_types_)
 {
     /// New type specialized serialization version is valid only when using MergeTreeSerializationInfoVersion::WITH_TYPES.
     /// For older versions, it is automatically defaulted to preserve compatibility.
