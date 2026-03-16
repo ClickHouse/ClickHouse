@@ -1,5 +1,6 @@
 #include <cstring>
 #include <memory>
+#include <unordered_set>
 
 #include <Columns/IColumn.h>
 #include <Common/StringUtils.h>
@@ -207,18 +208,12 @@ Block flattenNested(const Block & block)
 
 namespace
 {
+
 using NameToDataType = std::map<String, DataTypePtr>;
 
 NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
 {
-    std::unordered_map<String, DataTypePtr> existing; /// name->type for fast prefix lookup
-    existing.reserve(names_and_types.size());
-    for (const auto & nt : names_and_types)
-        existing.emplace(nt.name, nt.type);
-
     std::unordered_map<String, NamesAndTypesList> nested;
-    nested.reserve(names_and_types.size());
-
     for (const auto & name_type : names_and_types)
     {
         /// Skip subcolumns (e.g. `c0.c2.null` derived from `c0.c2 Array(Nullable(Tuple()))`).
@@ -233,13 +228,7 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
         {
             auto split = splitName(name_type.name);
             if (!split.second.empty())
-            {
-                auto it = existing.find(split.first);
-                if (it != existing.end() && !isNested(it->second))
-                    continue;
-
                 nested[split.first].emplace_back(split.second, type_arr->getNestedType());
-            }
         }
     }
 
@@ -250,6 +239,7 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
 
     return nested_types;
 }
+
 }
 
 
@@ -258,15 +248,44 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
     NamesAndTypesList res;
     auto nested_types = getSubcolumnsOfNested(names_and_types);
 
+    /// Collect names of non-Array columns so we can detect when a synthetic
+    /// Nested column (e.g. `n Nested(a String)`) would collide with an
+    /// existing non-Array column (e.g. `n String`).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/93777
+    std::unordered_set<String> non_array_column_names;
+    for (const auto & name_type : names_and_types)
+        if (!isArray(name_type.type))
+            non_array_column_names.insert(name_type.name);
+
     for (const auto & name_type : names_and_types)
     {
         auto split = splitName(name_type.name);
-        if (!isArray(name_type.type) || split.second.empty() || !nested_types.contains(split.first))
+        bool consumed_by_nested = isArray(name_type.type) && !split.second.empty() && nested_types.contains(split.first);
+
+        if (!consumed_by_nested)
+        {
+            /// Regular column — always keep.
             res.push_back(name_type);
+        }
+        else if (non_array_column_names.contains(split.first))
+        {
+            /// This dotted Array column belongs to a Nested group whose name
+            /// collides with an existing non-Array column (e.g. `n String`
+            /// and `n.a Array(String)`).  Keep the Array column as-is so it
+            /// is not silently lost; the shared offsets stream (`n.size0`) is
+            /// still produced by `getFileNameForStream`.
+            res.push_back(name_type);
+        }
+        /// else: consumed by Nested grouping, replaced below.
     }
 
-    for (const auto & name_type : nested_types)
-        res.emplace_back(name_type.first, name_type.second);
+    for (const auto & [name, type] : nested_types)
+    {
+        /// Only emit the synthetic Nested column when its name doesn't clash
+        /// with an existing non-Array column.
+        if (!non_array_column_names.contains(name))
+            res.emplace_back(name, type);
+    }
 
     return res;
 }
