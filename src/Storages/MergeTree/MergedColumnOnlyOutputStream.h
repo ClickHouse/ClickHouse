@@ -21,18 +21,14 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc,
         CompressionCodecPtr default_codec,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         size_t part_uncompressed_bytes,
         WrittenOffsetSubstreams * written_offset_substreams);
 
     void write(const Block & block) override;
-
     void finalizeIndexGranularity();
-
-    MergeTreeData::DataPart::Checksums
-    fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
+    MergeTreeData::DataPart::Checksums fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeDataPartChecksums & all_checksums);
 
     const Block & getColumnsSample() const { return writer->getColumnsSample(); }
     const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }

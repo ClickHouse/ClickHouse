@@ -931,31 +931,45 @@ std::optional<String> optimizeUseAggregateProjections(
 
     const auto & projection_header = aggregate_projection_node->step->getOutputHeader();
 
-    if (has_parent_parts)
+    QueryPlan::Node * source_node = aggregate_projection_node;
+
+    if (aggregating)
     {
-        if (aggregating)
-        {
+        if (has_parent_parts)
             node.step = aggregating->convertToAggregatingProjection(projection_header);
-        }
         else
-        {
-            node.step->updateInputHeader(projection_header);
-        }
-        node.children.push_back(aggregate_projection_node);
+            aggregating->requestOnlyMergeForAggregateProjection(projection_header);
     }
     else
     {
-        /// All parts are taken from projection
-        if (aggregating)
-        {
-            aggregating->requestOnlyMergeForAggregateProjection(projection_header);
-        }
-        else
+        /// For DISTINCT, handle potential type mismatches between the projection
+        /// output and the expected types. This can happen when removeTrivialWrappers
+        /// strips materialize/identity from the query DAG, causing the query to match
+        /// a projection whose column types differ in LowCardinality wrapping.
+        const auto & expected_header = node.step->getOutputHeader();
+        if (blocksHaveEqualStructure(*projection_header, *expected_header))
         {
             node.step->updateInputHeader(projection_header);
         }
-        node.children.front() = aggregate_projection_node;
+        else
+        {
+            auto converting = ActionsDAG::makeConvertingActions(
+                projection_header->getColumnsWithTypeAndName(),
+                expected_header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                context);
+            auto & converting_node = nodes.emplace_back();
+            converting_node.step = std::make_unique<ExpressionStep>(
+                projection_header, std::move(converting));
+            converting_node.children.push_back(aggregate_projection_node);
+            source_node = &converting_node;
+        }
     }
+
+    if (has_parent_parts)
+        node.children.push_back(source_node);
+    else
+        node.children.front() = source_node;
 
     return selected_projection_name;
 }

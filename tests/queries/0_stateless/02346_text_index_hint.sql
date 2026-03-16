@@ -1,7 +1,6 @@
 -- Tags: no-parallel-replicas
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_text_index_add_hint = 1;
 SET use_statistics = 0;
@@ -25,14 +24,14 @@ SELECT count() FROM tab WHERE s = '5555';
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1
-) WHERE explain ILIKE '%filter column%';
+) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab WHERE s LIKE '%5555%';
 
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1
-) WHERE explain ILIKE '%filter column%';
+) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 DROP TABLE tab;
 
@@ -51,14 +50,14 @@ SELECT count() FROM tab WHERE s = '5555';
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1
-) WHERE explain ILIKE '%filter column%';
+) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab WHERE s LIKE '%5555%';
 
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1
-) WHERE explain ILIKE '%filter column%';
+) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 DROP TABLE tab;
 
@@ -77,13 +76,13 @@ SELECT count() FROM tab WHERE s = '5555';
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1
-) WHERE explain ILIKE '%filter column%';
+) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab WHERE s LIKE '%5555%';
 
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1
-) WHERE explain ILIKE '%filter column%';
+) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 DROP TABLE tab;

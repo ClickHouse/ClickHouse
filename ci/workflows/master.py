@@ -57,15 +57,8 @@ workflow = Workflow.Config(
         #   job error: java.lang.AssertionError: CREATE TABLE IF NOT EXISTS database0NoREC.t1 (c0 String MATERIALIZED (-1457864079) CODEC (NONE)) ENGINE = MergeTree()  ORDER BY tuple()  SETTINGS allow_suspicious_indices=1;
         # *JobConfigs.sqlancer_master_jobs,
         JobConfigs.sqltest_master_job,
-        JobConfigs.llvm_coverage_merge_job,
-        # macOS smoke tests on GitHub-hosted runners (no AWS credentials)
-        # Explicit dependency on darwin builds since artifact-based requires was removed
-        *[
-            job.set_dependency(
-                [j.name for j in JobConfigs.special_build_jobs if "darwin" in j.name]
-            )
-            for job in JobConfigs.macos_smoke_test_jobs
-        ],
+        JobConfigs.sqllogic_test_master_job,
+        JobConfigs.llvm_coverage_job,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -77,7 +70,6 @@ workflow = Workflow.Config(
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.parser_memory_profiler,
         *ArtifactConfigs.llvm_profdata_file,
-        ArtifactConfigs.llvm_coverage_html_report,
         ArtifactConfigs.llvm_coverage_info_file,
     ],
     dockers=DOCKERS,

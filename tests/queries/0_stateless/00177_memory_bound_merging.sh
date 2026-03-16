@@ -15,7 +15,7 @@ check_replicas_read_in_order() {
 
         SELECT COUNT() > 0
         FROM system.text_log
-        WHERE query_id IN (SELECT query_id FROM system.query_log WHERE query_id != '$1' AND initial_query_id = '$1' AND event_date >= yesterday())
+        WHERE query_id IN (SELECT query_id FROM system.query_log WHERE query_id != '$1' AND initial_query_id = '$1' AND event_date >= yesterday() AND event_time >= now() - 600)
             AND event_date >= yesterday() AND message ILIKE '%Reading%ranges in order%'
         SETTINGS max_rows_to_read=0"
 }

@@ -75,6 +75,22 @@ Features:
 - Fast and responsive performance
 - Open-source and MIT licensed
 
+### Dory {#dory}
+
+[Dory](https://github.com/dorylab/dory) AI-native SQL workspace with first-class ClickHouse support, AI built-in.
+
+Features:
+
+- AI Copilot for SQL generation, explanation, and debugging
+- Manage and query multiple ClickHouse clusters from a unified workspace
+- Schema-aware SQL autocomplete and multi-tab query workspace
+- Interactive query result exploration with filtering and visualization
+- AI-powered table summaries for understanding datasets
+- Direct ClickHouse connections with SSH tunnel support
+- Modern developer-friendly interface with light, dark, and theme support
+- Cross-platform desktop app (macOS, Windows, Linux), and Docker support
+- Open-source and MIT licensed
+
 ### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
 
 [ClickHouse Schema Flow Visualizer](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer) is a powerful open-source web application for visualizing ClickHouse table relationships using Mermaid.js diagrams. Browse databases and tables with an intuitive interface, explore table metadata with optional row counts and size information, and export interactive schema diagrams.
@@ -348,6 +364,19 @@ Features:
 - Native RBAC - Your UI permissions are derived directly from your ClickHouse grants
 
 [ClickLens Source Code](https://github.com/ntk148v/clicklens)
+
+### CHouse UI {#chouse-ui}
+
+[CHouse UI](https://chouse-ui.com) is an open-source ClickHouse web interface built specifically for **teams** and **secure data access**. Unlike traditional clients that require direct database credentials, CHouse UI implements a powerful **Role-Based Access Control (RBAC)** layer, allowing administrators to grant granular permissions without exposing underlying secrets.
+
+Key differentiators include:
+
+- **Enterprise-Grade Security** - Server-side credential encryption, detailed audit logging, and access rules.
+- **Team Collaboration** - Define custom roles (e.g., specific table access for Analysts) and share queries securely.
+- **AI-Powered Insights** - Integrated LLM support for query optimization and visual explanation.
+- **complete Toolkit** - Features a robust SQL editor, monitoring dashboard, schema explorer, and seamless data import/export.
+
+[CHouse UI Source Code](https://github.com/daun-gatal/chouse-ui)
 
 ## Commercial {#commercial}
 
