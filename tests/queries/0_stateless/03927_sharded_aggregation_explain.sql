@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-random-settings
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest
 -- EXPLAIN output may differ
 
 SET max_threads = 8;

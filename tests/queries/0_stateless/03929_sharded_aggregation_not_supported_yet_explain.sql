@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-random-settings
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest
 -- EXPLAIN output may differ
 
 -- Tests queries that could/should be supported by sharded aggregation but in the early stages of
