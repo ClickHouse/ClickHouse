@@ -44,12 +44,6 @@ SELECT count() > 0 FROM (
     SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
-SELECT 'UInt8 key path';
-SELECT count() > 0 FROM (
-    EXPLAIN PIPELINE SELECT u8, sum(b) FROM test GROUP BY u8
-    SETTINGS optimize_aggregation_by_sharding = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
-
 SELECT 'Multiple aggregate functions (sum, count, max)';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b), count(), max(b) FROM test GROUP BY a
@@ -95,12 +89,6 @@ SELECT count() > 0 FROM (
 SELECT 'FixedString key';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT toFixedString(a, 10) AS k, sum(b) FROM test GROUP BY k
-    SETTINGS optimize_aggregation_by_sharding = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
-
-SELECT 'Int8 key';
-SELECT count() > 0 FROM (
-    EXPLAIN PIPELINE SELECT toInt8(u8) - 125 AS k, sum(b) FROM test GROUP BY k
     SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 

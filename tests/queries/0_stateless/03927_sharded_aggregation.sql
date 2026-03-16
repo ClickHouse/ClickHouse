@@ -43,12 +43,6 @@ SELECT
     =
     (SELECT sum(cnt), count() FROM (SELECT a, count() AS cnt FROM test GROUP BY a SETTINGS optimize_aggregation_by_sharding = 1));
 
-SELECT 'UInt8 key path';
-SELECT
-    (SELECT sum(s), count() FROM (SELECT u8, sum(b) AS s FROM test GROUP BY u8 SETTINGS optimize_aggregation_by_sharding = 0))
-    =
-    (SELECT sum(s), count() FROM (SELECT u8, sum(b) AS s FROM test GROUP BY u8 SETTINGS optimize_aggregation_by_sharding = 1));
-
 SELECT 'Multiple aggregate functions (sum, count, max)';
 SELECT
     (SELECT sum(s1), sum(s2), sum(s3), count() FROM
@@ -94,12 +88,6 @@ SELECT
     (SELECT sum(s), count() FROM (SELECT toFixedString(a, 10) AS k, sum(b) AS s FROM test GROUP BY k SETTINGS optimize_aggregation_by_sharding = 0))
     =
     (SELECT sum(s), count() FROM (SELECT toFixedString(a, 10) AS k, sum(b) AS s FROM test GROUP BY k SETTINGS optimize_aggregation_by_sharding = 1));
-
-SELECT 'Int8 key';
-SELECT
-    (SELECT sum(s), count() FROM (SELECT toInt8(u8) - 125 AS k, sum(b) AS s FROM test GROUP BY k SETTINGS optimize_aggregation_by_sharding = 0))
-    =
-    (SELECT sum(s), count() FROM (SELECT toInt8(u8) - 125 AS k, sum(b) AS s FROM test GROUP BY k SETTINGS optimize_aggregation_by_sharding = 1));
 
 SELECT 'Int16 key';
 SELECT

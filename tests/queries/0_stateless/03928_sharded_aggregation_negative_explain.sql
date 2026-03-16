@@ -46,6 +46,18 @@ SELECT count() = 0 FROM (
     SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
+SELECT 'UInt8 key (too low cardinality for sharding)';
+SELECT count() = 0 FROM (
+    EXPLAIN PIPELINE SELECT u8, sum(b) FROM test_sharded_agg_neg GROUP BY u8
+    SETTINGS optimize_aggregation_by_sharding = 1
+) WHERE explain LIKE '%ScatterByHashTransform%';
+
+SELECT 'Int8 key (too low cardinality for sharding)';
+SELECT count() = 0 FROM (
+    EXPLAIN PIPELINE SELECT toInt8(u8) AS k, sum(b) FROM test_sharded_agg_neg GROUP BY k
+    SETTINGS optimize_aggregation_by_sharding = 1
+) WHERE explain LIKE '%ScatterByHashTransform%';
+
 SELECT 'LowCardinality key';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT lc_key, sum(b) FROM test_sharded_agg_neg GROUP BY lc_key

@@ -6,8 +6,6 @@ No aggregate functions (aggregates_size == 0)
 1
 count() fast path (is_simple_count)
 1
-UInt8 key path
-1
 Multiple aggregate functions (sum, count, max)
 1
 Nullable key
@@ -21,8 +19,6 @@ UInt32 key (key32)
 UInt64 key (key64)
 1
 FixedString key
-1
-Int8 key
 1
 Int16 key
 1
