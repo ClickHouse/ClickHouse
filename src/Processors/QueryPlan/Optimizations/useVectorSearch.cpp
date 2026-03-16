@@ -18,30 +18,6 @@
 namespace DB::QueryPlanOptimizations
 {
 
-namespace
-{
-    /// Helper function to find and set vector search parameters on ReadFromMergeTree steps
-    /// within a Union or other container
-    void applyVectorSearchParamsToReadSteps(
-        QueryPlan::Node * node,
-        const VectorSearchParameters & params)
-    {
-        if (!node)
-            return;
-
-        /// If this node is ReadFromMergeTree, apply the parameters
-        if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node->step.get()))
-        {
-            read_step->setVectorSearchParameters(std::make_optional(params));
-            return;
-        }
-
-        /// Recursively search children
-        for (auto * child : node->children)
-            applyVectorSearchParamsToReadSteps(child, params);
-    }
-}
-
 /// Vector search queries have this form:
 ///     SELECT [...]
 ///     FROM tab, [...]
@@ -124,62 +100,70 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     ExpressionStep * expression_step = nullptr;
     ReadFromMergeTree * read_from_mergetree_step = nullptr;
 
-    SortingStep * inner_sorting_step = nullptr;
+    /// For the Union (Distributed) path: validated ReadFromMergeTree steps from children that match the pattern
+    std::vector<ReadFromMergeTree *> validated_read_steps;
 
     if (has_union)
     {
-        /// For Distributed tables, extract the ExpressionStep AND SortingStep from one of the children
-        /// Union -> Expression -> Sorting -> Expression -> ReadFromMergeTree
         for (auto * child_node : node->children)
         {
-            /// Skip over intermediate steps to find the Sorting and Expression with distance function
-            while (child_node && !child_node->children.empty())
+            SortingStep * child_sorting_step = nullptr;
+            ExpressionStep * child_expression_step = nullptr;
+            ReadFromMergeTree * child_read_step = nullptr;
+
+            auto * current = child_node;
+            while (current)
             {
-                /// Look for the inner Sorting step (the actual ORDER BY sorting, not the merge sorting)
-                if (!inner_sorting_step)
+                if (!child_sorting_step)
                 {
-                    if (auto * sort = typeid_cast<SortingStep *>(child_node->step.get()))
-                        inner_sorting_step = sort;
-                }
-
-                if (auto * expr = typeid_cast<ExpressionStep *>(child_node->step.get()))
-                {
-                    /// Check if this expression has the distance function
-                    bool has_distance_func = false;
-                    const auto & outputs = expr->getExpression().getOutputs();
-
-                    for (const auto * output : outputs)
+                    if (auto * sort = typeid_cast<SortingStep *>(current->step.get()))
                     {
-                        if (output->type == ActionsDAG::ActionType::FUNCTION)
-                        {
-                            const String & func_name = output->function_base->getName();
-                            if (func_name == "L2Distance" || func_name == "cosineDistance")
-                            {
-                                has_distance_func = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (has_distance_func)
-                    {
-                        expression_step = expr;
-                        break;
+                        if (sort->getType() == SortingStep::Type::Full)
+                            child_sorting_step = sort;
                     }
                 }
-                child_node = child_node->children.front();
+
+                if (auto * expr = typeid_cast<ExpressionStep *>(current->step.get()))
+                    child_expression_step = expr;
+
+                if (auto * read = typeid_cast<ReadFromMergeTree *>(current->step.get()))
+                {
+                    child_read_step = read;
+                    break;
+                }
+
+                if (current->children.size() != 1)
+                    break;
+                current = current->children.front();
             }
-            if (expression_step && inner_sorting_step)
-                break;
+
+            if (!child_sorting_step || !child_expression_step || !child_read_step)
+                continue;
+
+            const auto & sort_desc = child_sorting_step->getSortDescription();
+            if (sort_desc.size() != 1)
+                continue;
+
+            const String & sort_col = sort_desc.front().column_name;
+            const auto * sort_col_node = child_expression_step->getExpression().tryFindInOutputs(sort_col);
+            if (!sort_col_node || sort_col_node->type != ActionsDAG::ActionType::FUNCTION)
+                continue;
+
+            const String & func = sort_col_node->function_base->getName();
+            if (func != "L2Distance" && func != "cosineDistance")
+                continue;
+
+            validated_read_steps.push_back(child_read_step);
+
+            if (!expression_step)
+            {
+                expression_step = child_expression_step;
+                sorting_step = child_sorting_step;
+            }
         }
 
-        if (!expression_step)
-            return no_layers_updated; /// Couldn't find distance function in Union children
-
-        if (!inner_sorting_step)
-            return no_layers_updated; /// Couldn't find inner sorting step in Union children
-
-        /// Override the outer sorting_step with the inner one we found
-        sorting_step = inner_sorting_step;
+        if (validated_read_steps.empty())
+            return no_layers_updated;
     }
     else
     {
@@ -308,43 +292,67 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (search_column.empty() || reference_vector.empty())
         return no_layers_updated;
 
-    auto vector_search_parameters = VectorSearchParameters{search_column, distance_function, n, reference_vector, additional_filters_present, true};
+    /// Check if a vector similarity index exists on top of the search column.
+    /// Multi-column indexes cannot be used.
+    bool has_vector_similarity_index = false;
 
     if (has_union)
     {
-        /// For Distributed tables apply parameters to all ReadFromMergeTree steps in Union children
-        /// NOTE: node points to the Union step, so we use it directly
-        applyVectorSearchParamsToReadSteps(node, vector_search_parameters);
+        /// Check at least one of the validated steps has the index
+        for (auto * validated_step : validated_read_steps)
+        {
+            const auto & indexes = validated_step->getStorageMetadata()->getSecondaryIndices();
+            for (const auto & index : indexes)
+            {
+                if (index.type != "vector_similarity")
+                    continue;
+
+                chassert(index.expression);
+                auto required_columns = index.expression->getRequiredColumns();
+                if (required_columns.size() == 1 && required_columns[0] == search_column)
+                {
+                    has_vector_similarity_index = true;
+                    break;
+                }
+            }
+            if (has_vector_similarity_index)
+                break;
+        }
     }
     else
     {
-        /// For regular tables, apply to the single ReadFromMergeTree step
-        read_from_mergetree_step->setVectorSearchParameters(std::make_optional(vector_search_parameters));
-    }
-    /// Check if a vector similarity index exists on top of the search column.
-    /// Multi-column indexes cannot be used
-    const auto & indexes = read_from_mergetree_step->getStorageMetadata()->getSecondaryIndices();
-    bool has_vector_similarity_index = false;
-    for (const auto & index : indexes)
-    {
-        if (index.type != "vector_similarity")
-            continue;
-
-        chassert(index.expression);
-        auto required_columns = index.expression->getRequiredColumns();
-        if (required_columns.size() == 1 && required_columns[0] == search_column)
+        const auto & indexes = read_from_mergetree_step->getStorageMetadata()->getSecondaryIndices();
+        for (const auto & index : indexes)
         {
-            has_vector_similarity_index = true;
-            break;
+            if (index.type != "vector_similarity")
+                continue;
+
+            chassert(index.expression);
+            auto required_columns = index.expression->getRequiredColumns();
+            if (required_columns.size() == 1 && required_columns[0] == search_column)
+            {
+                has_vector_similarity_index = true;
+                break;
+            }
         }
     }
 
     if (!has_vector_similarity_index)
         return no_layers_updated;
 
-    /// All set for 2nd pass
+    /// All set for 2nd pass - apply vector search parameters
     auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, true);
-    read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
+
+    if (has_union)
+    {
+        /// For Distributed tables, apply parameters only to validated ReadFromMergeTree steps
+        for (auto * validated_step : validated_read_steps)
+            validated_step->setVectorSearchParameters(std::make_optional(vector_search_parameters.value()));
+    }
+    else
+    {
+        read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
+    }
 
     return no_layers_updated;
 }
