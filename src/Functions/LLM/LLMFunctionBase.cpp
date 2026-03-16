@@ -1,0 +1,310 @@
+#include <Functions/LLM/LLMFunctionBase.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Throttler.h>
+#include <Common/ThreadPool.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <IO/ConnectionTimeouts.h>
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
+#include <Common/CurrentMetrics.h>
+
+#include <unordered_map>
+
+namespace ProfileEvents
+{
+    extern const Event LLMInputTokens;
+    extern const Event LLMOutputTokens;
+    extern const Event LLMCacheHits;
+    extern const Event LLMCacheMisses;
+    extern const Event LLMAPICalls;
+    extern const Event LLMRowsProcessed;
+    extern const Event LLMRowsSkipped;
+    extern const Event LLMTotalLatencyMicroseconds;
+    extern const Event LLMThrottlerSleepMicroseconds;
+}
+
+namespace DB
+{
+
+namespace Setting
+{
+    extern const SettingsString default_llm_resource;
+    extern const SettingsUInt64 llm_request_timeout_sec;
+    extern const SettingsUInt64 llm_max_concurrent_requests;
+    extern const SettingsUInt64 llm_max_rps;
+    extern const SettingsUInt64 llm_max_retries;
+    extern const SettingsUInt64 llm_retry_initial_delay_ms;
+    extern const SettingsUInt64 llm_cache_ttl_sec;
+    extern const SettingsString llm_on_error;
+    extern const SettingsUInt64 llm_max_rows_per_query;
+    extern const SettingsUInt64 llm_max_input_tokens_per_query;
+    extern const SettingsUInt64 llm_max_output_tokens_per_query;
+    extern const SettingsUInt64 llm_max_api_calls_per_query;
+    extern const SettingsString llm_on_quota_exceeded;
+}
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+LLMFunctionBase::LLMFunctionBase(ContextPtr context_) : context(std::move(context_))
+{
+}
+
+bool LLMFunctionBase::hasNamedCollectionArg(const ColumnsWithTypeAndName & arguments) const
+{
+    (void)arguments;
+    return false;
+}
+
+size_t LLMFunctionBase::getFirstDataArgIndex(const ColumnsWithTypeAndName & arguments) const
+{
+    return hasNamedCollectionArg(arguments) ? 1 : 0;
+}
+
+LLMFunctionBase::ResolvedConfig LLMFunctionBase::resolveConfig(const ColumnsWithTypeAndName & /*arguments*/) const
+{
+    ResolvedConfig config;
+    const auto & settings = context->getSettingsRef();
+    String collection_name = settings[Setting::default_llm_resource].value;
+
+    if (collection_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "No LLM named collection specified and default_llm_resource is not set");
+
+    const auto & nc = NamedCollectionFactory::instance().get(collection_name);
+
+    config.provider = nc->getOrDefault<String>("provider", "openai");
+    config.endpoint = nc->getOrDefault<String>("endpoint", "");
+    config.model = nc->getOrDefault<String>("model", "");
+    config.api_key = nc->getOrDefault<String>("api_key", "");
+    config.max_tokens = nc->getOrDefault<UInt64>("max_tokens", 1024);
+
+    if (nc->has("temperature"))
+        config.temperature = static_cast<float>(nc->getOrDefault<Float64>("temperature", static_cast<Float64>(defaultTemperature())));
+    else
+        config.temperature = defaultTemperature();
+
+    if (config.endpoint.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM named collection '{}' must have 'endpoint'", collection_name);
+    if (config.model.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM named collection '{}' must have 'model'", collection_name);
+    if (config.api_key.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM named collection '{}' must have 'api_key'", collection_name);
+
+    return config;
+}
+
+float LLMFunctionBase::resolveTemperature(const ColumnsWithTypeAndName & /*arguments*/, const ResolvedConfig & config) const
+{
+    return config.temperature;
+}
+
+ColumnPtr LLMFunctionBase::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+{
+    auto config = resolveConfig(arguments);
+    auto provider = createLLMProvider(config.provider, config.endpoint, config.api_key);
+    float temperature = resolveTemperature(arguments, config);
+
+    const auto & settings = context->getSettingsRef();
+    UInt64 timeout_sec = settings[Setting::llm_request_timeout_sec].value;
+    UInt64 max_concurrent = settings[Setting::llm_max_concurrent_requests].value;
+    UInt64 max_rps = settings[Setting::llm_max_rps].value;
+    UInt64 max_retries = settings[Setting::llm_max_retries].value;
+    UInt64 retry_delay_ms = settings[Setting::llm_retry_initial_delay_ms].value;
+    UInt64 cache_ttl = settings[Setting::llm_cache_ttl_sec].value;
+
+    auto quota = std::make_shared<LLMQuotaTracker>(
+        settings[Setting::llm_max_rows_per_query].value,
+        settings[Setting::llm_max_input_tokens_per_query].value,
+        settings[Setting::llm_max_output_tokens_per_query].value,
+        settings[Setting::llm_max_api_calls_per_query].value,
+        String(settings[Setting::llm_on_quota_exceeded].value),
+        String(settings[Setting::llm_on_error].value));
+
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, context->getServerSettings());
+    timeouts.receive_timeout = Poco::Timespan(static_cast<long>(timeout_sec), 0);
+
+    auto throttler = std::make_shared<Throttler>(max_rps);
+
+    String system_prompt = buildSystemPrompt(arguments);
+    String response_format = buildResponseFormatJSON(arguments);
+
+    auto result_col = ColumnString::create();
+    auto null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+
+    std::unordered_map<UInt128, std::vector<size_t>, UInt128Hash> dedup_map;
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        String user_message = buildUserMessage(arguments, i);
+        std::vector<String> cache_args = {user_message, system_prompt};
+        UInt128 key = LLMResultCache::buildKey(functionName(), config.model, temperature, cache_args);
+        dedup_map[key].push_back(i);
+    }
+
+    std::unordered_map<UInt128, String, UInt128Hash> results;
+    std::mutex results_mutex;
+
+    std::atomic<UInt64> total_api_calls{0};
+    std::atomic<UInt64> total_input_tokens{0};
+    std::atomic<UInt64> total_output_tokens{0};
+    UInt64 cache_hits = 0;
+    UInt64 cache_misses = 0;
+
+    auto & cache = LLMResultCache::instance();
+    std::vector<std::pair<UInt128, size_t>> to_dispatch;
+
+    for (auto & [key, rows] : dedup_map)
+    {
+        auto cached = cache.get(key);
+        if (cached && std::chrono::system_clock::now() <= cached->expires_at)
+        {
+            cached->hit_count.fetch_add(1, std::memory_order_relaxed);
+            std::lock_guard lock(results_mutex);
+            results[key] = cached->result;
+            ++cache_hits;
+            quota->rows_processed.fetch_add(rows.size(), std::memory_order_relaxed);
+        }
+        else
+        {
+            to_dispatch.emplace_back(key, rows[0]);
+            ++cache_misses;
+        }
+    }
+
+    if (!to_dispatch.empty())
+    {
+        auto pool = std::make_unique<ThreadPool>(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), max_concurrent, max_concurrent, max_concurrent);
+
+        for (auto & [dispatch_key, representative_row] : to_dispatch)
+        {
+            UInt64 rows_for_key = dedup_map[dispatch_key].size();
+            if (!quota->checkBeforeDispatch(0, rows_for_key))
+            {
+                std::lock_guard lock(results_mutex);
+                results[dispatch_key] = "";
+                continue;
+            }
+
+            pool->scheduleOrThrowOnError([&, dk = dispatch_key, row = representative_row]
+            {
+                String user_message = buildUserMessage(arguments, row);
+
+                for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
+                {
+                    try
+                    {
+                        if (max_rps > 0)
+                            throttler->throttle(1, 0);
+
+                        LLMRequest req;
+                        req.system_prompt = system_prompt;
+                        req.user_message = user_message;
+                        req.response_format_json = response_format;
+                        req.model = config.model;
+                        req.temperature = temperature;
+                        req.max_tokens = config.max_tokens;
+
+                        auto resp = provider->call(req, timeouts);
+
+                        quota->recordResponse(resp.input_tokens, resp.output_tokens);
+                        total_input_tokens.fetch_add(resp.input_tokens, std::memory_order_relaxed);
+                        total_output_tokens.fetch_add(resp.output_tokens, std::memory_order_relaxed);
+                        total_api_calls.fetch_add(1, std::memory_order_relaxed);
+
+                        String processed = postProcessResponse(resp.result);
+
+                        if (cache_ttl > 0 && resp.finish_reason != "length")
+                        {
+                            auto entry = std::make_shared<LLMCacheEntry>();
+                            entry->result = processed;
+                            entry->function_name = functionName();
+                            entry->model = config.model;
+                            entry->result_size_bytes = processed.size();
+                            entry->created_at = std::chrono::system_clock::now();
+                            entry->expires_at = entry->created_at + std::chrono::seconds(cache_ttl);
+                            cache.set(dk, entry);
+                        }
+
+                        {
+                            std::lock_guard lock(results_mutex);
+                            results[dk] = processed;
+                        }
+                        return;
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                        {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms * (1ULL << attempt)));
+                            continue;
+                        }
+
+                        if (quota->handleRowError())
+                        {
+                            std::lock_guard lock(results_mutex);
+                            results[dk] = "";
+                            return;
+                        }
+                        throw;
+                    }
+                }
+            });
+        }
+
+        pool->wait();
+    }
+
+    ProfileEvents::increment(ProfileEvents::LLMCacheHits, cache_hits);
+    ProfileEvents::increment(ProfileEvents::LLMCacheMisses, cache_misses);
+    ProfileEvents::increment(ProfileEvents::LLMAPICalls, total_api_calls.load());
+    ProfileEvents::increment(ProfileEvents::LLMInputTokens, total_input_tokens.load());
+    ProfileEvents::increment(ProfileEvents::LLMOutputTokens, total_output_tokens.load());
+
+    std::vector<String> ordered_results(input_rows_count);
+    UInt64 rows_processed_count = 0;
+    UInt64 rows_skipped_count = 0;
+
+    for (const auto & [key, rows] : dedup_map)
+    {
+        auto it = results.find(key);
+        String value;
+        if (it != results.end())
+            value = it->second;
+
+        for (size_t row : rows)
+        {
+            if (value.empty() && quota->isQuotaExceeded())
+            {
+                null_map->getData()[row] = 1;
+                ++rows_skipped_count;
+            }
+            else
+            {
+                ordered_results[row] = value;
+                ++rows_processed_count;
+            }
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::LLMRowsProcessed, rows_processed_count);
+    ProfileEvents::increment(ProfileEvents::LLMRowsSkipped, rows_skipped_count);
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+        result_col->insertData(ordered_results[i].data(), ordered_results[i].size());
+
+    return ColumnNullable::create(std::move(result_col), std::move(null_map));
+}
+
+}
