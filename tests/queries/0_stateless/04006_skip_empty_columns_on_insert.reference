@@ -28,3 +28,10 @@ case6_columns_in_part
 key1
 case6_data
 1	0	0
+case7_columns_in_part
+a
+b
+c
+key
+case7_data
+1	5	0

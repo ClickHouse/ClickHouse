@@ -204,3 +204,38 @@ SELECT 'case6_data';
 SELECT * FROM t_skip_empty_key ORDER BY key1;
 
 DROP TABLE t_skip_empty_key;
+
+-- ============================================================================
+-- CASE 7: Columns with DEFAULT expressions must NOT be skipped.
+-- Inserting explicit type-default (0) into a column with DEFAULT expr would
+-- cause the read path to evaluate the expression instead of returning 0.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_default_expr;
+
+CREATE TABLE t_skip_empty_default_expr
+(
+    key UInt64,
+    a UInt64,
+    b UInt64 DEFAULT a + 1,
+    c UInt64 MATERIALIZED a * 10
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- Explicitly insert b=0 (type-default). b must NOT be skipped because it has
+-- a DEFAULT expression — otherwise read would return a+1=6 instead of 0.
+INSERT INTO t_skip_empty_default_expr (key, a, b) VALUES (1, 5, 0);
+
+SELECT 'case7_columns_in_part';
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_default_expr' AND active
+ORDER BY column;
+
+SELECT 'case7_data';
+SELECT key, a, b FROM t_skip_empty_default_expr ORDER BY key;
+
+DROP TABLE t_skip_empty_default_expr;

@@ -822,13 +822,20 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// disk space for sparse-update workloads where most columns in each INSERT
     /// are left at their type's default. Missing columns are filled with defaults
     /// on read — the same mechanism used by ALTER TABLE ADD COLUMN.
+    /// Columns with DEFAULT/MATERIALIZED/ALIAS expressions are never skipped:
+    /// the read path would evaluate the expression instead of returning the
+    /// type-default that was explicitly inserted.
     /// Patch parts are excluded — they require all columns for lightweight UPDATE.
     bool has_empty_columns = false;
     if ((*data_settings)[MergeTreeSetting::skip_empty_columns_on_insert] && !new_data_part->info.isPatch())
     {
+        const auto & columns_description = metadata_snapshot->getColumns();
         NameSet empty_columns;
         for (const auto & col : block)
         {
+            auto col_default = columns_description.getDefault(col.name);
+            if (col_default && col_default->expression)
+                continue;
             if (col.column->hasOnlyDefaults())
                 empty_columns.insert(col.name);
         }
