@@ -56,7 +56,9 @@ namespace
         context_copy->setSetting("export_merge_tree_part_throw_on_pending_mutations", false);
         context_copy->setSetting("export_merge_tree_part_throw_on_pending_patch_parts", false);
 
-        return context_copy;
+        context_copy->setSetting("export_merge_tree_part_filename_pattern", manifest.filename_pattern);
+
+	return context_copy;
     }
 }
 

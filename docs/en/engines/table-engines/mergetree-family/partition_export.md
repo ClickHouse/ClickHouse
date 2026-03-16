@@ -82,6 +82,12 @@ TO TABLE [destination_database.]destination_table
 - **Default**: `true`
 - **Description**: If set to true, throws if pending patch parts exists for a given part. Note that by default mutations are applied to all parts, which means that if a mutation in practice would only affetct part/partition x, all the other parts/partition will throw upon export. The exception is when the `IN PARTITION` clause was used in the mutation command. Note the `IN PARTITION` clause is not properly implemented for plain MergeTree tables.
 
+### export_merge_tree_part_filename_pattern
+
+- **Type**: `String`
+- **Default**: `{part_name}_{checksum}`
+- **Description**: Pattern for the filename of the exported merge tree part. The `part_name` and `checksum` are calculated and replaced on the fly. Additional macros are supported.
+
 ## Examples
 
 ### Basic Export to S3

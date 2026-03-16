@@ -115,6 +115,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             // {"input_format_parquet_use_metadata_cache", true, false, "Obsolete. No-op"}, // https://github.com/Altinity/ClickHouse/pull/586
             // {"object_storage_remote_initiator_cluster", "", "", "New setting."},
             // {"iceberg_metadata_staleness_ms", 0, 0, "New setting allowing using cached metadata version at READ operations to prevent fetching from remote catalog"},
+            {"iceberg_partition_timezone", "", "", "New setting."},
+            // {"object_storage_max_nodes", 0, 0, "Antalya: New setting"},
+            {"s3_propagate_credentials_to_other_storages", false, false, "New setting"},
+            {"export_merge_tree_part_filename_pattern", "", "{part_name}_{checksum}", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

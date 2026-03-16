@@ -7526,6 +7526,9 @@ On the other hand, there is a chance once the task executes that part has alread
 Controls whether the system.replicated_partition_exports will prefer to query ZooKeeper to get the most up to date information or use the local information.
 Querying ZooKeeper is expensive, and only available if the ZooKeeper feature flag MULTI_READ is enabled.
 )", 0) \
+    DECLARE(String, export_merge_tree_part_filename_pattern, "{part_name}_{checksum}", R"(
+Pattern for the filename of the exported merge tree part. The `part_name` and `checksum` are calculated and replaced on the fly. Additional macros are supported.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
