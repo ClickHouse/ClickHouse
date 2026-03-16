@@ -14,6 +14,7 @@
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
@@ -189,6 +190,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createDatabase");
     String database_name = create.getDatabase();
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
@@ -784,13 +786,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         if (create.columns_list->projections)
-            for (auto & projection_ast : create.columns_list->projections->children)
+            for (const auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
-                /// Replace the original AST with the normalized one (e.g., positional GROUP BY arguments
-                /// like `GROUP BY 1, 2` are rewritten to use actual column names). This ensures that
-                /// the stored table metadata uses resolved names and can be loaded on server restart.
-                projection_ast = projection.definition_ast;
                 properties.projections.add(std::move(projection));
             }
 
@@ -892,19 +890,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
-        {
-            // For parameterized views, extract columns if explicitly declared
-            if (create.columns_list && create.columns_list->columns)
-            {
-                properties.columns = getColumnsDescription(
-                    *create.columns_list->columns,
-                    getContext(),
-                    mode,
-                    is_restore_from_backup
-                );
-            }
             return properties;
-        }
 
         if (create.aliases_list)
         {
@@ -1533,6 +1519,7 @@ bool isReplicated(const ASTStorage & storage)
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createTable");
     /// Temporary tables are created out of databases.
     if (create.isTemporary() && create.attach)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "ATTACH of TEMPORARY tables are not supported");
@@ -1824,6 +1811,19 @@ void validateVirtualColumns(IStorage & storage)
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
+                storage_column.name, storage.getName());
+        }
+
+        /// An EPHEMERAL user column has no physical storage and no read-time expression,
+        /// so it cannot properly shadow a virtual column of the same name.
+        /// This leads to a type mismatch: the Block header uses the user column's type
+        /// while the data comes from the virtual column (which may have a different type).
+        if (storage_column.default_desc.kind == ColumnDefaultKind::Ephemeral
+            && virtual_columns->tryGet(storage_column.name, VirtualsKind::Ephemeral))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with ephemeral column '{}' for {} engines "
+                "because it conflicts with a virtual column of the same name",
                 storage_column.name, storage.getName());
         }
     }
@@ -2378,7 +2378,13 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 
         alter->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
         alter->set(alter->command_list, command_list);
-        return InterpreterAlterQuery(query, getContext()).execute();
+
+        /// The result of this internal ALTER is not visible to the user,
+        /// so disable verbose output to avoid creating a pulling pipeline
+        /// that executeTrivialBlockIO cannot handle.
+        auto alter_context = Context::createCopy(getContext());
+        alter_context->setSetting("alter_partition_verbose_result", Field(false));
+        return InterpreterAlterQuery(query, alter_context).execute();
     }
 
     return {};
@@ -2656,6 +2662,19 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     }
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
+
+    /// Ensure the old detached table instance is destroyed before we remove
+    /// transaction metadata files. Otherwise the old table's parts still hold
+    /// in-memory version metadata referencing those files, and the debug
+    /// assertion in removeIfNeeded() → assertHasValidVersionMetadata() will
+    /// fail when the old storage is destroyed later.
+    if (create.uuid != UUIDHelpers::Nil)
+    {
+        if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
+            database->waitDetachedTableNotInUse(create.uuid);
+        else
+            database->checkDetachedTableNotInUse(create.uuid);
+    }
 
     /// When converting to replicated, remove all transaction metadata files
     if (to_replicated && !engine_name.starts_with("Replicated"))

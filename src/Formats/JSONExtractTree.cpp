@@ -1875,7 +1875,7 @@ private:
         if (shouldSkipPath(current_path, insert_settings))
             return true;
 
-        if (element.isObject() && !typed_path_nodes.contains(current_path))
+        if (element.isObject() && (!typed_path_nodes.contains(current_path) || (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object && hasTypedPathWithPrefix(current_path + "."))))
         {
             std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> visited_keys;
             for (auto [key, value] : element.getObject())
@@ -1935,7 +1935,7 @@ private:
             {
                 if (!format_settings.json.type_json_skip_duplicated_paths)
                 {
-                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", current_path);
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert or setting type_json_allow_duplicated_key_with_literal_and_nested_object to allow duplicated path with literal and nested object", current_path);
                     return false;
                 }
             }
@@ -2265,6 +2265,17 @@ private:
     {
         static const FormatSettings settings;
         return settings;
+    }
+
+    bool hasTypedPathWithPrefix(const String & prefix) const
+    {
+        for (const auto & [path, _] : typed_paths_types)
+        {
+            if (path.starts_with(prefix))
+                return true;
+        }
+
+        return false;
     }
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;

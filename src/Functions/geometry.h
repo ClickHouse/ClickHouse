@@ -10,6 +10,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Core/Field.h>
 #include <base/types.h>
@@ -106,6 +108,65 @@ enum class GeometryColumnType
     Null = 255
 };
 
+/// Tries to determine the geometry column type from a DataType.
+/// Works for both custom-named types (like "Polygon") and base types
+/// (like "Array(Array(Tuple(Float64, Float64)))") when the custom name is lost.
+/// Returns std::nullopt if the type is not a recognized geometry type.
+inline std::optional<GeometryColumnType> getGeometryColumnTypeFromDataType(const DataTypePtr & type)
+{
+    const String & type_name = type->getName();
+
+    /// Check custom type names first.
+    if (type_name == "Point") return GeometryColumnType::Point;
+    if (type_name == "Ring") return GeometryColumnType::Ring;
+    if (type_name == "LineString") return GeometryColumnType::Linestring;
+    if (type_name == "Polygon") return GeometryColumnType::Polygon;
+    if (type_name == "MultiLineString") return GeometryColumnType::MultiLinestring;
+    if (type_name == "MultiPolygon") return GeometryColumnType::MultiPolygon;
+
+    /// Check structural types (when custom names are lost during expression analysis).
+    auto is_point_type = [](const DataTypePtr & dt) -> bool
+    {
+        const auto * tuple = typeid_cast<const DataTypeTuple *>(dt.get());
+        if (!tuple)
+            return false;
+        const auto & elems = tuple->getElements();
+        return elems.size() == 2
+            && WhichDataType(elems[0]).isFloat64()
+            && WhichDataType(elems[1]).isFloat64();
+    };
+
+    /// Point: Tuple(Float64, Float64)
+    if (is_point_type(type))
+        return GeometryColumnType::Point;
+
+    /// Ring/LineString: Array(Tuple(Float64, Float64))
+    const auto * array1 = typeid_cast<const DataTypeArray *>(type.get());
+    if (!array1)
+        return std::nullopt;
+
+    if (is_point_type(array1->getNestedType()))
+        return GeometryColumnType::Ring;
+
+    /// Polygon/MultiLineString: Array(Array(Tuple(Float64, Float64)))
+    const auto * array2 = typeid_cast<const DataTypeArray *>(array1->getNestedType().get());
+    if (!array2)
+        return std::nullopt;
+
+    if (is_point_type(array2->getNestedType()))
+        return GeometryColumnType::Polygon;
+
+    /// MultiPolygon: Array(Array(Array(Tuple(Float64, Float64))))
+    const auto * array3 = typeid_cast<const DataTypeArray *>(array2->getNestedType().get());
+    if (!array3)
+        return std::nullopt;
+
+    if (is_point_type(array3->getNestedType()))
+        return GeometryColumnType::MultiPolygon;
+
+    return std::nullopt;
+}
+
 }
 
 /// GeometryColumnType has Null = 255, which is outside the default magic_enum range [-128, 127].
@@ -148,7 +209,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments[0]->getName() != "Geometry")
+        if (arguments[0]->getName() != "Geometry" && !getGeometryColumnTypeFromDataType(arguments[0]))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} should be Geometry, got {}", getName(), arguments[0]->getName());
         }
@@ -173,63 +234,90 @@ public:
         auto & res_data = res_column->getData();
         res_data.reserve(input_rows_count);
 
-        const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
-        Field field;
-        const auto & descriptors = column_variant.getLocalDiscriminators();
-        for (size_t i = 0; i < input_rows_count; ++i)
+        const auto * column_variant = typeid_cast<const ColumnVariant *>(arguments.front().column.get());
+        if (column_variant)
         {
-            column_variant.get(i, field);
-            auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
-            if (!type)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
-            switch (*type)
+            /// Geometry (Variant) type path.
+            Field field;
+            const auto & descriptors = column_variant->getLocalDiscriminators();
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                case GeometryColumnType::Linestring:
-                {
-                    LineString<Point> linestring = getLineStringFromField<Point>(field);
-                    res_data.push_back(FunctionToCalculate()(linestring));
-                    break;
-                }
-                case GeometryColumnType::MultiLinestring:
-                {
-                    MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
-                    res_data.push_back(FunctionToCalculate()(multilinestring));
-                    break;
-                }
-                case GeometryColumnType::MultiPolygon:
-                {
-                    MultiPolygon<Point> multipolygon = getMultiPolygonFromField<Point>(field);
-                    res_data.push_back(FunctionToCalculate()(multipolygon));
-                    break;
-                }
-                case GeometryColumnType::Point:
-                {
-                    Point point = getPointFromField<Point>(field);
-                    res_data.push_back(FunctionToCalculate()(point));
-                    break;
-                }
-                case GeometryColumnType::Polygon:
-                {
-                    Polygon<Point> polygon = getPolygonFromField<Point>(field);
-                    res_data.push_back(FunctionToCalculate()(polygon));
-                    break;
-                }
-                case GeometryColumnType::Ring:
-                {
-                    Ring<Point> ring = getRingFromField<Point>(field);
-                    res_data.push_back(FunctionToCalculate()(ring));
-                    break;
-                }
-                case GeometryColumnType::Null:
-                {
-                    res_data.push_back(0);
-                    break;
-                }
+                column_variant->get(i, field);
+                auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
+                if (!type)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
+                processField(field, *type, res_data);
+            }
+        }
+        else
+        {
+            /// Individual geometry type path (e.g. Polygon from readWKTPolygon).
+            auto geo_type = getGeometryColumnTypeFromDataType(arguments.front().type);
+            if (!geo_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument of function {} should be Geometry, got {}", getName(), arguments.front().type->getName());
+
+            Field field;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                arguments.front().column->get(i, field);
+                processField(field, *geo_type, res_data);
             }
         }
 
         return res_column;
     }
+
+private:
+    void processField(const Field & field, GeometryColumnType type, PaddedPODArray<Float64> & res_data) const
+    {
+        switch (type)
+        {
+            case GeometryColumnType::Linestring:
+            {
+                LineString<Point> linestring = getLineStringFromField<Point>(field);
+                res_data.push_back(FunctionToCalculate()(linestring));
+                break;
+            }
+            case GeometryColumnType::MultiLinestring:
+            {
+                MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
+                res_data.push_back(FunctionToCalculate()(multilinestring));
+                break;
+            }
+            case GeometryColumnType::MultiPolygon:
+            {
+                MultiPolygon<Point> multipolygon = getMultiPolygonFromField<Point>(field);
+                res_data.push_back(FunctionToCalculate()(multipolygon));
+                break;
+            }
+            case GeometryColumnType::Point:
+            {
+                Point point = getPointFromField<Point>(field);
+                res_data.push_back(FunctionToCalculate()(point));
+                break;
+            }
+            case GeometryColumnType::Polygon:
+            {
+                Polygon<Point> polygon = getPolygonFromField<Point>(field);
+                res_data.push_back(FunctionToCalculate()(polygon));
+                break;
+            }
+            case GeometryColumnType::Ring:
+            {
+                Ring<Point> ring = getRingFromField<Point>(field);
+                res_data.push_back(FunctionToCalculate()(ring));
+                break;
+            }
+            case GeometryColumnType::Null:
+            {
+                res_data.push_back(0);
+                break;
+            }
+        }
+    }
+
+public:
 
     bool useDefaultImplementationForConstants() const override
     {

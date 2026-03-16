@@ -404,7 +404,7 @@ void StorageMergeTreeIndex::read(
 
 void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto filtered_parts = storage->getFilteredDataParts(virtual_columns_filter);
+    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(storage->data_parts, virtual_columns_filter);
 
     LOG_DEBUG(log, "Reading index{}{} from {} parts of table {}",
         storage->with_marks ? " with marks" : "",
@@ -419,36 +419,6 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
         std::move(filtered_parts),
         context,
         storage->with_marks)));
-}
-
-MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const ExpressionActionsPtr & virtual_columns_filter) const
-{
-    if (!virtual_columns_filter)
-        return data_parts;
-
-    auto all_part_names = ColumnString::create();
-    for (const auto & part : data_parts)
-        all_part_names->insert(part->name);
-
-    Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), part_name_column.name}};
-    VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, filtered_block);
-
-    if (!filtered_block.rows())
-        return {};
-
-    auto part_names = filtered_block.getByPosition(0).column;
-    const auto & part_names_str = assert_cast<const ColumnString &>(*part_names);
-
-    HashSet<std::string_view> part_names_set;
-    for (size_t i = 0; i < part_names_str.size(); ++i)
-        part_names_set.insert(part_names_str.getDataAt(i));
-
-    MergeTreeData::DataPartsVector filtered_parts;
-    for (const auto & part : data_parts)
-        if (part_names_set.has(part->name))
-            filtered_parts.push_back(part);
-
-    return filtered_parts;
 }
 
 }

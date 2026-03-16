@@ -11,10 +11,17 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 
+#include <Core/Settings.h>
+
 
 namespace DB
 {
 static const UInt64 max_block_size = 8192;
+
+namespace Setting
+{
+    extern const SettingsBool cloud_mode;
+}
 
 namespace ErrorCodes
 {
@@ -84,6 +91,9 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
+        if (global_context->getSettingsRef()[Setting::cloud_mode])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `file` is disabled");
+
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `file` does not support attribute expressions");
 

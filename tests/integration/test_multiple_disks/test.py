@@ -1662,21 +1662,21 @@ def test_kill_while_insert(start_cluster):
         start_time = time.time()
         long_select = threading.Thread(
             target=ignore_exceptions,
-            args=(node1.query, "SELECT sleep(3) FROM {name}".format(name=name)),
+            args=(node1.query, "SELECT sleep(30) FROM {name}".format(name=name)),
         )
         long_select.start()
 
         sleep_start_time = time.time()
-        time.sleep(0.5)
+        time.sleep(5)
         # long SELECT query might have finished if sleep was too long
-        assert time.time() - sleep_start_time < 1.5
+        assert time.time() - sleep_start_time < 15
 
         node1.query(
             "ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'external'".format(
                 name=name
             )
         )
-        assert time.time() - start_time < 2
+        assert time.time() - start_time < 25
         node1.restart_clickhouse(kill=True)
 
         try:

@@ -2,6 +2,7 @@
 #include <csignal>
 
 #include <base/defines.h>
+#include <Common/Logger_fwd.h>
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
 #include <Common/ThreadStatus.h>

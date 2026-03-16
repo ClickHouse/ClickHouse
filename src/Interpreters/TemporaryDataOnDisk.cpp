@@ -137,7 +137,7 @@ public:
     {
         LOG_TRACE(log, "Creating temporary file in distributed cache: {}", file_key);
 
-        auto context = CurrentThread::getQueryContext();
+        auto context = CurrentThread::tryGetQueryContext();
         if (!context)
             context = Context::getGlobalContextInstance();
         read_settings = context->getReadSettings();
@@ -520,8 +520,8 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
         parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
 
     /// check that we don't go negative
-    if ((compressed_delta < 0 && stat.compressed_size < static_cast<size_t>(-compressed_delta)) ||
-        (uncompressed_delta < 0 && stat.uncompressed_size < static_cast<size_t>(-uncompressed_delta)))
+    if ((compressed_delta < 0 && stat.compressed_size < -static_cast<size_t>(compressed_delta)) ||
+        (uncompressed_delta < 0 && stat.uncompressed_size < -static_cast<size_t>(uncompressed_delta)))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
     }

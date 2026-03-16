@@ -156,14 +156,19 @@ def _prepare(token):
                 commits_to_branch_head += 1
                 continue
 
-            commit_sha = commit
-            failed_jobs = GH.get_failed_statuses(token=token, commit_sha=commit_sha)
+            failed_jobs = GH.get_failed_statuses(token=token, commit_sha=commit)
             if not failed_jobs:
+                commit_sha = commit
                 commit_ci_status = SUCCESS
+                break
             else:
-                # add failed jobs from most recent ready commit to the release info description to post it in alert
-                description = f"Failed jobs: {failed_jobs}"
-            break
+                print(
+                    f"CI failed for [{commit}]: {failed_jobs} - check previous commit"
+                )
+                # Save the description from the most recent failed commit
+                if not description:
+                    description = f"Failed jobs: {failed_jobs}"
+                commits_to_branch_head += 1
 
         ready = False
         if commit_ci_status == SUCCESS and commit_sha:
