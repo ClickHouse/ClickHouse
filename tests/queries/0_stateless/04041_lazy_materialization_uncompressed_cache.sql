@@ -3,6 +3,7 @@
 SET enable_analyzer = 1;
 SET log_queries = 1;
 SET optimize_read_in_order = 1;
+SET parallel_replicas_local_plan = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10000;
 
@@ -22,21 +23,27 @@ FROM numbers(50000);
 
 SYSTEM DROP UNCOMPRESSED CACHE;
 
-SELECT trimLeft(explain)
+SELECT count() > 0
 FROM
 (
-    EXPLAIN PLAN actions=1
-    SELECT payload
-    FROM lazy_materialization_uncompressed_cache
-    ORDER BY id
-    LIMIT 5000
-    SETTINGS max_threads = 1
+    SELECT trimLeft(explain) AS explain
+    FROM
+    (
+        EXPLAIN PLAN actions=1
+        SELECT id, payload
+        FROM lazy_materialization_uncompressed_cache
+        WHERE id >= 0
+        ORDER BY id
+        LIMIT 5000
+        SETTINGS max_threads = 1
+    )
 )
 WHERE explain LIKE '%LazilyRead%'
    OR explain LIKE '%Lazily read columns:%';
 
-SELECT payload
+SELECT id, payload
 FROM lazy_materialization_uncompressed_cache
+WHERE id >= 0
 ORDER BY id
 LIMIT 5000
 FORMAT Null
@@ -54,8 +61,9 @@ WHERE event_date >= yesterday()
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
-SELECT payload
+SELECT id, payload
 FROM lazy_materialization_uncompressed_cache
+WHERE id >= 0
 ORDER BY id
 LIMIT 5000
 FORMAT Null
