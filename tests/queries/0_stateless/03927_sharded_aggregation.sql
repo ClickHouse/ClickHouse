@@ -162,6 +162,18 @@ SELECT
     =
     (SELECT sum(s), count() FROM (SELECT a, uniqExact(b) AS s FROM test GROUP BY a SETTINGS optimize_aggregation_by_sharding = 1));
 
+SELECT 'Multi-argument aggregate (argMin)';
+SELECT
+    (SELECT sum(s), count() FROM (SELECT a, argMin(u8, b) AS s FROM test GROUP BY a SETTINGS optimize_aggregation_by_sharding = 0))
+    =
+    (SELECT sum(s), count() FROM (SELECT a, argMin(u8, b) AS s FROM test GROUP BY a SETTINGS optimize_aggregation_by_sharding = 1));
+
+SELECT 'Shared argument across aggregates (sum(b), max(b))';
+SELECT
+    (SELECT sum(s1), sum(s2), count() FROM (SELECT a, sum(b) AS s1, max(b) AS s2 FROM test GROUP BY a SETTINGS optimize_aggregation_by_sharding = 0))
+    =
+    (SELECT sum(s1), sum(s2), count() FROM (SELECT a, sum(b) AS s1, max(b) AS s2 FROM test GROUP BY a SETTINGS optimize_aggregation_by_sharding = 1));
+
 SELECT 'WITH TOTALS';
 SELECT
     (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test GROUP BY a WITH TOTALS SETTINGS optimize_aggregation_by_sharding = 0))

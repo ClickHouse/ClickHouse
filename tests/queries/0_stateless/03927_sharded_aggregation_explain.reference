@@ -46,6 +46,10 @@ uniq
 1
 uniqExact
 1
+Multi-argument aggregate (argMin)
+1
+Shared argument across aggregates (sum(b), max(b))
+1
 WITH TOTALS
 1
 count(non_nullable_column)

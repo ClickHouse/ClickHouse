@@ -164,6 +164,18 @@ SELECT count() > 0 FROM (
     SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
+SELECT 'Multi-argument aggregate (argMin)';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT a, argMin(u8, b) FROM test GROUP BY a
+    SETTINGS optimize_aggregation_by_sharding = 1
+) WHERE explain LIKE '%ScatterByHashTransform%';
+
+SELECT 'Shared argument across aggregates (sum(b), max(b))';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT a, sum(b), max(b) FROM test GROUP BY a
+    SETTINGS optimize_aggregation_by_sharding = 1
+) WHERE explain LIKE '%ScatterByHashTransform%';
+
 SELECT 'WITH TOTALS';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test GROUP BY a WITH TOTALS
