@@ -9,3 +9,11 @@ target_link_libraries(decode_data_type_fuzzer PRIVATE clickhouse_aggregate_funct
 clickhouse_add_executable(serialization_lowcardinality_fuzzer serialization_lowcardinality_fuzzer.cpp ${SRCS})
 
 target_link_libraries(serialization_lowcardinality_fuzzer PRIVATE clickhouse_aggregate_functions dbms)
+
+clickhouse_add_executable(serialization_variant_fuzzer serialization_variant_fuzzer.cpp ${SRCS})
+
+target_link_libraries(serialization_variant_fuzzer PRIVATE clickhouse_aggregate_functions dbms)
+
+clickhouse_add_executable(serialization_dynamic_fuzzer serialization_dynamic_fuzzer.cpp ${SRCS})
+
+target_link_libraries(serialization_dynamic_fuzzer PRIVATE clickhouse_aggregate_functions dbms)
