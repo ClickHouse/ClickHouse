@@ -1847,6 +1847,55 @@ bool Aggregator::executeOnBlock(Columns columns,
 }
 
 
+template <typename Method>
+static void computeHashesForShardingImpl(
+    Method & method,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    const HashMethodContextPtr & aggregation_state_cache,
+    size_t row_count,
+    PaddedPODArray<size_t> & result_hashes)
+{
+    Arena pool;
+
+    /// TODO: Consider using the consecutive keys cache. It helps when consecutive rows have the
+    /// same key (e.g., sorted data). Currently disabled because sharded aggregation targets
+    /// high-cardinality keys where cache hit rate is expected to be low. Also, `emplaceKeyWithHash`
+    /// does not check the cache - that would need to be added first.
+    typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+    result_hashes.resize_exact(row_count);
+    for (size_t i = 0; i < row_count; ++i)
+        result_hashes[i] = state.getHash(method.data, i, pool);
+}
+
+void Aggregator::computeHashesForSharding(
+    AggregatedDataVariants & cached_variants,
+    const ColumnRawPtrs & key_columns,
+    size_t row_count,
+    PaddedPODArray<size_t> & result_hashes) const
+{
+    /// For now, we only support single key GROUP BY for sharded aggregation.
+    chassert(params.keys_size == 1);
+    chassert(method_chosen != AggregatedDataVariants::Type::without_key);
+
+    if (cached_variants.empty())
+    {
+        cached_variants.init(method_chosen);
+        cached_variants.keys_size = params.keys_size;
+        cached_variants.key_sizes = key_sizes;
+    }
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        else if (cached_variants.type == AggregatedDataVariants::Type::NAME) \
+            computeHashesForShardingImpl(*cached_variants.NAME, key_columns, key_sizes, aggregation_state_cache, row_count, result_hashes);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+}
+
+
+
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
     if (!tmp_data)
