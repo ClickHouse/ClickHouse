@@ -2163,7 +2163,7 @@ void NO_INLINE Aggregator::executeImplBatchOnSubsetRows(
         const size_t i = row_indices[j];
         AggregateDataPtr aggregate_data = nullptr;
 
-        /// Is pretching enabled and the method supports it?
+        /// Is prefetching enabled and the method supports it?
         if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
         {
             if (j == PrefetchingHelper::iterationsToMeasure())
