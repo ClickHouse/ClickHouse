@@ -8182,7 +8182,7 @@ returns
 ```
 
 > [!WARNING]
-> If the setting turned on -- it throws on schema mismatch
+> If the setting is turned on, it throws on schema mismatch.
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
