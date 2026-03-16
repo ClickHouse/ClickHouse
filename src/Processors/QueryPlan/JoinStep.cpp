@@ -212,7 +212,7 @@ void JoinStep::describePipeline(FormatSettings & settings) const
 
 void JoinStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
 
     for (const auto & [name, value] : describeJoinActions(join))
         settings.out << prefix << name << ": " << value << '\n';
@@ -275,7 +275,7 @@ void JoinStep::updateOutputHeader()
     if (!use_new_analyzer)
     {
         if (swap_streams)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without new analyzer");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without the analyzer");
         output_header = join_algorithm_header;
         return;
     }
@@ -340,7 +340,7 @@ void FilledJoinStep::updateOutputHeader()
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
 
     for (const auto & [name, value] : describeJoinActions(join))
         settings.out << prefix << name << ": " << value << '\n';

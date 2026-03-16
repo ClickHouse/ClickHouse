@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
@@ -87,7 +88,7 @@ struct ThreadStack
 
     static size_t getSize()
     {
-        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
+        auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, static_cast<size_t>(MINSIGSTKSZ), static_cast<size_t>(getPageSize())});
 
         if constexpr (guardPagesEnabled())
             size += getPageSize();
@@ -97,7 +98,6 @@ struct ThreadStack
     void * getData() const { return data; }
 
 private:
-    /// 16 KiB - not too big but enough to handle error.
     void * data = nullptr;
 };
 
@@ -186,7 +186,7 @@ const String & ThreadStatus::getQueryId() const
     return query_id;
 }
 
-ContextPtr ThreadStatus::getQueryContext() const
+ContextPtr ThreadStatus::tryGetQueryContext() const
 {
     return query_context.lock();
 }

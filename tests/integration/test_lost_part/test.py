@@ -48,7 +48,7 @@ def test_lost_part_same_replica(start_cluster):
                 "merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000"
             )
 
-        node1.query("SYSTEM STOP MERGES mt0")
+        node1.query("SYSTEM STOP REPLICATION QUEUES mt0")
         node2.query("SYSTEM STOP REPLICATION QUEUES")
 
         for i in range(5):
@@ -117,7 +117,7 @@ def test_lost_part_other_replica(start_cluster):
                 "merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000"
             )
 
-        node1.query("SYSTEM STOP MERGES mt1")
+        node1.query("SYSTEM STOP REPLICATION QUEUES mt1")
         node2.query("SYSTEM STOP REPLICATION QUEUES")
 
         for i in range(5):
@@ -144,7 +144,7 @@ def test_lost_part_other_replica(start_cluster):
         node1.query("CHECK TABLE mt1")
 
         node2.query("SYSTEM START REPLICATION QUEUES")
-        # Reduce timeout in sync replica since it might never finish with merge stopped and we don't want to wait 300s
+        # Reduce timeout in sync replica since it might never finish with replication queue stopped and we don't want to wait 300s
         res, err = node1.query_and_get_answer_with_error(
             "SYSTEM SYNC REPLICA mt1", settings={"receive_timeout": 30}
         )
@@ -170,7 +170,7 @@ def test_lost_part_other_replica(start_cluster):
         assert_eq_with_retry(node2, "SELECT COUNT() FROM mt1", "4")
         assert_eq_with_retry(node2, "SELECT COUNT() FROM system.replication_queue", "0")
 
-        node1.query("SYSTEM START MERGES mt1")
+        node1.query("SYSTEM START REPLICATION QUEUES mt1")
 
         assert_eq_with_retry(node1, "SELECT COUNT() FROM mt1", "4")
         assert_eq_with_retry(node1, "SELECT COUNT() FROM system.replication_queue", "0")

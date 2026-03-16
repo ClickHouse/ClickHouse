@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
@@ -30,28 +31,15 @@ struct MergeTreeDataSelectSamplingData
     bool use_sampling = false;
     bool read_nothing = false;
     Float64 used_sample_factor = 1.0;
-    std::shared_ptr<ASTFunction> filter_function;
+    boost::intrusive_ptr<ASTFunction> filter_function;
     std::shared_ptr<const ActionsDAG> filter_expression;
 };
 
 struct UsefulSkipIndexes
 {
-    struct MergedDataSkippingIndexAndCondition
-    {
-        std::vector<MergeTreeIndexPtr> indices;
-        MergeTreeIndexMergedConditionPtr condition;
-
-        void addIndex(const MergeTreeIndexPtr & index)
-        {
-            indices.push_back(index);
-            condition->addIndex(indices.back());
-        }
-    };
-
-    bool empty() const { return useful_indices.empty() && merged_indices.empty() && !skip_index_for_top_k_filtering; }
+    bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
-    std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
     std::vector<std::vector<size_t>> per_part_index_orders;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
@@ -80,6 +68,7 @@ struct TopKFilterInfo
 {
     String column_name;
     DataTypePtr data_type;
+    size_t num_sort_columns;
     size_t limit_n;
     int direction; /// 1 = ASC, -1 = DESC
     bool where_clause;
@@ -281,6 +270,8 @@ public:
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
             , use_skip_indexes_for_disjunctions(false)
+            , use_skip_indexes_if_final_exact_mode(false)
+            , use_skip_indexes_on_data_read(false)
         {}
 
         KeyCondition key_condition;
@@ -292,6 +283,7 @@ public:
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
+        bool use_skip_indexes_if_final_exact_mode;
         bool use_skip_indexes_on_data_read;
         std::optional<std::unordered_set<String>> part_values;
     };
@@ -315,6 +307,7 @@ public:
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
         bool supports_skip_indexes_on_data_read);
+
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
@@ -370,7 +363,7 @@ public:
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
 
     static void buildIndexes(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
@@ -381,17 +374,24 @@ public:
         [[maybe_unused]] std::optional<TopKFilterInfo> top_k_filter_info,
         const ContextPtr & query_context,
         const SelectQueryInfo & query_info_,
-        const StorageMetadataPtr & metadata_snapshot);
+        const StorageMetadataPtr & metadata_snapshot,
+        bool skip_partition_pruning_ = false);
 
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
 
+    bool canRemoveUnusedColumns() const override;
+    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
+
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
+
+    void deferFiltersAfterFinalIfNeeded();
 
 private:
     MergeTreeSettingsPtr data_settings;
@@ -419,6 +419,11 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+
+    /// Row policy / prewhere deferred to after FINAL, if needed
+    FilterDAGInfoPtr deferred_row_level_filter;
+    PrewhereInfoPtr deferred_prewhere_info;
+    bool skip_partition_pruning = false;
 
     LoggerPtr log;
     UInt64 selected_parts = 0;

@@ -148,7 +148,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
         sync = true;
 
-    auto query = std::make_shared<ASTDropQuery>();
+    auto query = make_intrusive<ASTDropQuery>();
     node = query;
 
     query->kind = kind;
@@ -156,7 +156,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->if_empty = if_empty;
     query->has_tables = has_tables;
     query->has_all = has_all;
-    query->temporary = temporary;
+    query->setIsTemporary(temporary);
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
     query->sync = sync;

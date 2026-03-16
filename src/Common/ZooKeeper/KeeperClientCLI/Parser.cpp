@@ -37,7 +37,7 @@ bool parseKeeperPath(IParser::Pos & pos, Expected & expected, String & path)
 
 bool KeeperParser::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = std::make_shared<ASTKeeperQuery>();
+    auto query = make_intrusive<ASTKeeperQuery>();
 
     for (const auto & pair : KeeperClientBase::commands)
         expected.add(pos, pair.first.data());

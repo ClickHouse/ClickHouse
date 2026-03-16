@@ -20,6 +20,15 @@ using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAnd
 
 class KeeperServer
 {
+public:
+    struct RespondingCounts
+    {
+        uint64_t learners = 0;
+        uint64_t followers = 0;
+        uint64_t synced_followers = 0;
+        uint64_t synced_non_voting_followers = 0;
+    };
+
 private:
     const int server_id;
 
@@ -114,11 +123,8 @@ public:
 
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
-    /// @return follower count if node is not leader return 0
-    uint64_t getFollowerCount() const;
-
-    /// @return synced follower count if node is not leader return 0
-    uint64_t getSyncedFollowerCount() const;
+    /// @return responding learners/followers/synced followers; all zero when node is not leader
+    RespondingCounts getRespondingCounts() const;
 
     /// Wait server initialization (see callbackFunc)
     void waitInit();

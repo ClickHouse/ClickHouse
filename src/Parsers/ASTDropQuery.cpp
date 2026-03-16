@@ -28,7 +28,7 @@ String ASTDropQuery::getID(char delim) const
 
 ASTPtr ASTDropQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropQuery>(*this);
+    auto res = make_intrusive<ASTDropQuery>(*this);
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;
@@ -45,7 +45,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
-    if (temporary)
+    if (isTemporary())
         ostr << "TEMPORARY ";
 
     if (has_all)

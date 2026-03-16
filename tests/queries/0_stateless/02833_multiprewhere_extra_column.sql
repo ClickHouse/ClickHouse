@@ -11,13 +11,13 @@ settings min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns=0;
 create row policy policy_02834 on t_multi_prewhere using a > 2000 as permissive to all;
 insert into t_multi_prewhere select number, number, number from numbers(10000);
 
-system drop mark cache;
+system clear mark cache;
 select sum(b) from t_multi_prewhere prewhere a < 5000;
 
 system flush logs query_log;
 
 select ProfileEvents['FileOpen'] from system.query_log
-where
+where event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish'
     and current_database = currentDatabase()
     and query ilike '%select sum(b) from t_multi_prewhere prewhere a < 5000%';

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Shared settings for TPC-DS tests, derived from tests/benchmarks/tpc-ds/settings.json.
+# See tests/benchmarks/tpc-ds/README.md for known issues and workaround details.
+
+TPCDS_SETTINGS_JSON="$CURDIR/../../benchmarks/tpc-ds/settings.json"
+
+# TPC-DS queries scan large tables, exceeding the default 20M row limit in CI.
+# 50M is enough for most queries but q04 under ParallelReplicas (llvm_coverage build) exceeds it.
+SETTINGS=(-m --max_rows_to_read 75000000)
+_tpcds_output=$(jq -e -r '
+    "--format", .format,
+    (.settings | to_entries[] | "--\(.key)", (.value | tostring))
+' "$TPCDS_SETTINGS_JSON")
+readarray -t _tpcds_lines <<< "$_tpcds_output"
+SETTINGS+=("${_tpcds_lines[@]}")

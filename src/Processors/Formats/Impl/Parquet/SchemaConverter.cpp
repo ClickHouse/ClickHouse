@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
@@ -135,7 +136,7 @@ NamesAndTypesList SchemaConverter::inferSchema()
     return res;
 }
 
-std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element) const
+std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const
 {
     if (!column_mapper)
         return element.name;
@@ -150,8 +151,19 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     auto it = map.find(element.field_id);
     if (it == map.end())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
-    auto split = Nested::splitName(std::string_view(it->second), /*reverse=*/ true);
-    return split.second.empty() ? split.first : split.second;
+
+    /// At top level (empty path), return the full mapped name. For nested
+    /// elements, strip the parent path prefix to get the child name.
+    if (current_path.empty())
+        return it->second;
+
+    /// Strip "current_path." prefix to get the child name (preserves dots in child names)
+    std::string_view mapped = it->second;
+    if (mapped.starts_with(current_path) && mapped.size() > current_path.size()
+        && mapped[current_path.size()] == '.')
+        return mapped.substr(current_path.size() + 1);
+
+    return it->second;
 }
 
 void SchemaConverter::processSubtree(TraversalNode & node)
@@ -169,7 +181,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element));
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name));
 
         if (sample_block)
         {
@@ -375,7 +387,10 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     }
 
     /// GeoParquet types like Point or Polygon can't be inside Nullable.
-    if (typeid_cast<const DataTypeArray *>(inferred_type.get()) || typeid_cast<const DataTypeTuple *>(inferred_type.get()))
+    /// Geometry (Variant) is also not Nullable-compatible.
+    if (typeid_cast<const DataTypeArray *>(inferred_type.get())
+        || typeid_cast<const DataTypeTuple *>(inferred_type.get())
+        || typeid_cast<const DataTypeVariant *>(inferred_type.get()))
     {
         output_nullable = false;
         output_nullable_if_not_json = false;
@@ -496,6 +511,7 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         output.input_type = std::make_shared<DataTypeMap>(array.output_type);
         output.output_type = output.input_type;
         output.nested_columns = {array_idx};
+        output.rep = array.rep;
     }
 
     return true;
@@ -616,7 +632,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     std::vector<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx)));
+        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {
@@ -830,7 +846,6 @@ void SchemaConverter::processPrimitiveColumn(
         bool found = true;
         switch (type)
         {
-            case parq::Type::BOOLEAN: size = 1; break;
             case parq::Type::INT32: size = 4; break;
             case parq::Type::INT64: size = 8; break;
             case parq::Type::INT96: size = 12; break;

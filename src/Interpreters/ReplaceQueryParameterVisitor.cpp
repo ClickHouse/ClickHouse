@@ -50,8 +50,12 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             visitChildren(describe_query->table_expression);
         else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
         {
-            ASTPtr names = create_user_query->names;
-            visitChildren(names);
+            if (create_user_query->names)
+            {
+                ASTPtr names = create_user_query->names;
+                visitChildren(names);
+            }
+            visitChildren(ast);
         }
         else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get());
                  create_query && create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
@@ -75,14 +79,13 @@ void ReplaceQueryParameterVisitor::visitChildren(ASTPtr & ast)
 {
     for (auto & child : ast->children)
     {
-        void * old_ptr = child.get();
+        IAST * old_ptr = child.get();
         visit(child);
-        void * new_ptr = child.get();
 
         /// Some AST classes have naked pointers to children elements as members.
         /// We have to replace them if the child was replaced.
-        if (new_ptr != old_ptr)
-            ast->updatePointerToChild(old_ptr, new_ptr);
+        if (child.get() != old_ptr)
+            ast->updatePointerToChild(old_ptr, child);
     }
 }
 
@@ -170,9 +173,9 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     /// to enable substitutions in simple queries that don't support expressions
     /// (such as CREATE USER).
     if (typeid_cast<const DataTypeString *>(data_type.get()))
-        ast = std::make_shared<ASTLiteral>(literal);
+        ast = make_intrusive<ASTLiteral>(literal);
     else
-        ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
+        ast = addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
 
     /// Keep the original alias.
     ast->setAlias(alias);
@@ -192,6 +195,9 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
         {
             const auto & ast_param = ast_identifier->children[j++]->as<ASTQueryParameter &>();
             name_parts[i] = getParamValue(ast_param.name);
+            if (name_parts[i].empty())
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "Empty Identifier part after parameter {} substitution",
+                    backQuote(ast_param.name));
             replaced_parameter = true;
         }
     }
@@ -210,7 +216,7 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
 
 void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
 {
-    auto ast_with_alias = std::dynamic_pointer_cast<ASTWithAlias>(ast);
+    auto ast_with_alias = boost::dynamic_pointer_cast<ASTWithAlias>(ast);
     if (!ast_with_alias)
         return;
 

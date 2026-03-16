@@ -262,15 +262,15 @@ extern "C"
 /// Some of these messages are non-actionable for the users, such as:
 /// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
+extern "C" void (*je_malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
 #elif USE_JEMALLOC
 #include <unordered_set>
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
-extern "C" void (*malloc_message)(void *, const char * s);
+extern "C" void (*je_malloc_message)(void *, const char * s);
 __attribute__((constructor(0))) void init_je_malloc_message()
 {
-    malloc_message = [](void *, const char * str)
+    je_malloc_message = [](void *, const char * str)
     {
         using namespace std::literals;
         static const std::unordered_set<std::string_view> ignore_messages{
@@ -375,6 +375,26 @@ int main(int argc_, char ** argv_)
             || std::filesystem::is_regular_file(std::filesystem::path{argv[1]}, ec)))
     {
         main_func = mainEntryClickHouseLocal;
+    }
+
+    /// If the argument looks like a file path but doesn't exist, provide a helpful error
+    /// instead of the generic "Use one of the following commands" message.
+    /// The check above routes existing files to clickhouse-local, but when the file
+    /// doesn't exist, we fall through to `printHelp` which is confusing:
+    ///     $ clickhouse tests/queries/0_stateless/my_test.sql
+    ///     Use one of the following commands: ...
+    /// We detect file-like arguments by the presence of `/` (path separator)
+    /// or `.` (file extension), which distinguishes them from mistyped subcommand
+    /// names like "clickhouse sever" where the generic help is appropriate.
+    if (main_func == printHelp && argv.size() >= 2)
+    {
+        std::string_view arg(argv[1]);
+        if (arg.contains('/') || arg.contains('.'))
+        {
+            std::cerr << "Error: no such file: " << arg << std::endl;
+            std::cerr << "If you intended to run a script, please check the path." << std::endl;
+            return 1;
+        }
     }
 
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());

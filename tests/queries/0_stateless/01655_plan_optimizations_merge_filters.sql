@@ -1,3 +1,4 @@
+set optimize_syntax_fuse_functions = 0;
 set query_plan_merge_filters=1;
 
 set enable_analyzer=1;

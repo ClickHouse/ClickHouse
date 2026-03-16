@@ -128,5 +128,4 @@ SETTINGS_H_EXCLUDES=(
     --include "$ROOT_PATH/src/Functions/IFunction*"
 )
 find $ROOT_PATH/src -name '*.h' -print0 | xargs -0 grep -P '#include[\s]*(<|")(Core/Settings.h)|(MergeTreeSettings.h)(>|")' "${SETTINGS_H_EXCLUDES[@]}" | \
-    grep . && echo '^ Too broad Settings.h or MergeTreeSettings.h usage'
-
+    grep . && echo '^ Too broad Settings.h or MergeTreeSettings.h usage. Use forward declaration instead.'

@@ -28,7 +28,7 @@ struct StringBytesEntropyImpl
             UInt32 count = counters[byte];
             if (count > 0)
             {
-                Float64 p = static_cast<Float64>(count) / size;
+                Float64 p = static_cast<Float64>(count) / static_cast<Float64>(size);
                 entropy -= p * std::log2(p);
             }
         }

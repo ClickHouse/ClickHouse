@@ -5,11 +5,13 @@ FROM clickhouse/test-base:$FROM_TAG
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 
-RUN sed -i "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
-RUN apt-get update \
-    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
+RUN rm -rf /etc/apt/sources.list.d/*.list \
+    && apt-get update -o Acquire::Check-Valid-Until=false || apt-get update --allow-insecure-repositories \
+    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions || \
+       (apt-get install ca-certificates --yes --no-install-recommends --verbose-versions --allow-unauthenticated)
+
+RUN sed -i "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -26,7 +28,6 @@ RUN apt-get update \
     git \
     iproute2 \
     cgroupfs-mount \
-    python3-pip \
     tzdata \
     libicu-dev \
     bsdutils \
@@ -50,7 +51,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV DOCKER_CHANNEL stable
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
-    && add-apt-repository "deb https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}" \
+    && echo "deb [arch=$(dpkg --print-architecture)] https://download.docker.com/linux/ubuntu $(lsb_release -cs) ${DOCKER_CHANNEL}" > /etc/apt/sources.list.d/docker.list \
     && apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         docker-ce="5:27.0.3*" \
@@ -65,8 +66,7 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 # kazoo 2.10.0 is broken
 # https://s3.amazonaws.com/clickhouse-test-reports/59337/524625a1d2f4cc608a3f1059e3df2c30f353a649/integration_tests__asan__analyzer__[5_6].html
 COPY requirements.txt /
-RUN python3 -m pip install --no-cache-dir -r requirements.txt
-RUN python3 -m pip install git+https://github.com/ClickHouse/kazoo.git
+RUN python3.13 -m pip install --no-cache-dir -r requirements.txt
 
 RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz \
     && tar xzvf spark-3.5.5-bin-hadoop3.tgz -C / \

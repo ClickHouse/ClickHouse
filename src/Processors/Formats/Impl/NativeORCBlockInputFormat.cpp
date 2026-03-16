@@ -952,7 +952,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
         return;
 
     if (format_filter_info)
-        format_filter_info->initOnce([&] { format_filter_info->initKeyCondition(getPort().getHeader()); });
+        format_filter_info->initKeyConditionOnce(getPort().getHeader());
 
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())

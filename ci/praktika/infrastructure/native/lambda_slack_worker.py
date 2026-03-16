@@ -660,7 +660,6 @@ def publish_home_view(
 
     # Add footer with divider
     if github_login:
-        blocks.append({"type": "divider"})
         blocks.append(
             {
                 "type": "section",
@@ -670,6 +669,28 @@ def publish_home_view(
                 },
             }
         )
+
+    # Slack home views are limited to 100 blocks total.
+    # Truncate before the limit, leaving room for a notice block.
+    SLACK_BLOCK_LIMIT = 100
+    if len(blocks) > SLACK_BLOCK_LIMIT:
+        blocks = blocks[: SLACK_BLOCK_LIMIT - 1]
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "_Some events were truncated (view limit reached)._",
+                },
+            }
+        )
+
+    # Slack section text is capped at 3000 characters.
+    for block in blocks:
+        if block.get("type") == "section":
+            txt = block.get("text", {})
+            if isinstance(txt, dict) and len(txt.get("text", "")) > 3000:
+                txt["text"] = txt["text"][:2997] + "…"
 
     view_data = {
         "user_id": user_id,
@@ -709,6 +730,11 @@ def lambda_handler(event, context):
 
     Note: 'github_login' parameter now contains user email addresses for email-based subscriptions.
     """
+    # Clear the per-container cache at the start of every invocation so that
+    # preference changes saved to S3 by a previous invocation (e.g. toggle_pref)
+    # are always reflected in subsequent invocations running in the same container.
+    SUBSCRIPTION_CACHE.clear()
+
     print(f"Worker Lambda invoked with event: {json.dumps(event)}")
 
     action = event.get("action", "")

@@ -153,7 +153,7 @@ public:
             const auto & function_args = function_args_expr->children;
             auto disk_setting_string = function->formatWithSecretsOneLine();
             auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach);
-            ast = std::make_shared<ASTLiteral>(disk_name);
+            ast = make_intrusive<ASTLiteral>(disk_name);
         }
     }
 };

@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/EnumReflection.h>
 
@@ -19,7 +20,7 @@
 namespace DB
 {
 
-[[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
 {
     /// Better form for user: SYSTEM <ACTION> table ON CLUSTER cluster
@@ -36,13 +37,27 @@ namespace DB
     }
 
     bool parsed_table = false;
+    bool children_already_added = false;
     if (allow_string_literal)
     {
         ASTPtr ast;
         if (ParserStringLiteral{}.parse(pos, ast, expected))
         {
-            res->setTable(ast->as<ASTLiteral &>().value.safeGet<String>());
+            String name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            /// The string literal may contain 'database.table', split it
+            /// to match what parseDatabaseAndTableAsAST would produce.
+            auto dot_pos = name.find('.');
+            if (dot_pos != String::npos)
+            {
+                res->setDatabase(name.substr(0, dot_pos));
+                res->setTable(name.substr(dot_pos + 1));
+            }
+            else
+            {
+                res->setTable(name);
+            }
             parsed_table = true;
+            children_already_added = true; /// setDatabase/setTable already push to children
         }
     }
 
@@ -58,10 +73,13 @@ namespace DB
 
     res->cluster = cluster;
 
-    if (res->database)
-        res->children.push_back(res->database);
-    if (res->table)
-        res->children.push_back(res->table);
+    if (!children_already_added)
+    {
+        if (res->database)
+            res->children.push_back(res->database);
+        if (res->table)
+            res->children.push_back(res->table);
+    }
 
     return true;
 }
@@ -73,7 +91,7 @@ enum class SystemQueryTargetType : uint8_t
     Disk,
 };
 
-[[nodiscard]] static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
+[[nodiscard]] static bool parseQueryWithOnClusterAndTarget(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
 {
     /// Better form for user: SYSTEM <ACTION> target_name ON CLUSTER cluster
     /// Query rewritten form + form while executing on cluster: SYSTEM <ACTION> ON CLUSTER cluster target_name
@@ -138,7 +156,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnCluster(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                     Expected & expected)
 {
     String cluster_str;
@@ -152,7 +170,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseDropReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
+[[nodiscard]] static bool parseDropReplica(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
 {
     if (!parseQueryWithOnCluster(res, pos, expected))
         return false;
@@ -192,7 +210,12 @@ enum class SystemQueryTargetType : uint8_t
             String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
             if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
                 zk_path.pop_back();
-            res->replica_zk_path = zk_path;
+            if (!zk_path.empty())
+            {
+                res->full_replica_zk_path = std::move(zk_path);
+                res->zk_name = zkutil::extractZooKeeperName(res->full_replica_zk_path);
+                res->replica_zk_path = zkutil::extractZooKeeperPath(res->full_replica_zk_path, /*check_starts_with_slash*/false);
+            }
         }
         else
             return false;
@@ -206,7 +229,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseDropCatalogReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected)
+[[nodiscard]] static bool parseDropCatalogReplica(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr ast;
     if (!ParserStringLiteral{}.parse(pos, ast, expected))
@@ -222,7 +245,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     using Type = ASTSystemQuery::Type;
 
-    auto res = std::make_shared<ASTSystemQuery>();
+    auto res = make_intrusive<ASTSystemQuery>();
 
     bool found = false;
 
@@ -236,8 +259,52 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
     }
 
+    /// SYSTEM DROP [...] CACHE sounds like the statement disables the cache but it merely clears it.
+    /// SYSTEM CLEAR [...] CACHE is the preferred syntax but we need to retain support for DROP.
+    if (!found)
+    {
+        static const std::vector<std::pair<std::string_view, Type>> system_aliases = {
+            {"DROP DNS CACHE", Type::CLEAR_DNS_CACHE},
+            {"DROP CONNECTIONS CACHE", Type::CLEAR_CONNECTIONS_CACHE},
+            {"DROP MARK CACHE", Type::CLEAR_MARK_CACHE},
+            {"DROP PRIMARY INDEX CACHE", Type::CLEAR_PRIMARY_INDEX_CACHE},
+            {"DROP UNCOMPRESSED CACHE", Type::CLEAR_UNCOMPRESSED_CACHE},
+            {"DROP INDEX MARK CACHE", Type::CLEAR_INDEX_MARK_CACHE},
+            {"DROP INDEX UNCOMPRESSED CACHE", Type::CLEAR_INDEX_UNCOMPRESSED_CACHE},
+            {"DROP VECTOR SIMILARITY INDEX CACHE", Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE},
+            {"DROP TEXT INDEX TOKENS CACHE", Type::CLEAR_TEXT_INDEX_TOKENS_CACHE},
+            {"DROP TEXT INDEX HEADER CACHE", Type::CLEAR_TEXT_INDEX_HEADER_CACHE},
+            {"DROP TEXT INDEX POSTINGS CACHE", Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE},
+            {"DROP TEXT INDEX CACHES", Type::CLEAR_TEXT_INDEX_CACHES},
+            {"DROP MMAP CACHE", Type::CLEAR_MMAP_CACHE},
+            {"DROP QUERY CONDITION CACHE", Type::CLEAR_QUERY_CONDITION_CACHE},
+            {"DROP QUERY CACHE", Type::CLEAR_QUERY_CACHE},
+            {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
+            {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
+            {"DROP PARQUET METADATA CACHE", Type::CLEAR_PARQUET_METADATA_CACHE},
+            {"DROP FILESYSTEM CACHE", Type::CLEAR_FILESYSTEM_CACHE},
+            {"DROP DISTRIBUTED CACHE", Type::CLEAR_DISTRIBUTED_CACHE},
+            {"DROP DISK METADATA CACHE", Type::CLEAR_DISK_METADATA_CACHE},
+            {"DROP PAGE CACHE", Type::CLEAR_PAGE_CACHE},
+            {"DROP SCHEMA CACHE", Type::CLEAR_SCHEMA_CACHE},
+            {"DROP FORMAT SCHEMA CACHE", Type::CLEAR_FORMAT_SCHEMA_CACHE},
+            {"DROP S3 CLIENT CACHE", Type::CLEAR_S3_CLIENT_CACHE},
+        };
+
+        for (const auto & [alias, type] : system_aliases)
+        {
+            if (ParserKeyword::createDeprecatedPtr(alias)->ignore(pos, expected))
+            {
+                res->type = type;
+                found = true;
+                break;
+            }
+        }
+    }
+
     if (!found)
         return false;
+
 
     switch (res->type)
     {
@@ -278,6 +345,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::ALLOCATE_MEMORY:
+        {
+            ASTPtr ast;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+
+            res->untracked_memory_size = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            break;
+        }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
@@ -303,6 +379,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             else if (ParserKeyword(Keyword::RESUME).ignore(pos, expected))
                 res->fail_point_action = ASTSystemQuery::FailPointAction::RESUME;
 
+            break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->delta_kernel_tracing_level = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
             break;
         }
 
@@ -486,6 +571,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::FREE_MEMORY:
             break;
 
         case Type::TEST_VIEW:
@@ -526,7 +612,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->seconds = seconds->as<ASTLiteral>()->value.safeGet<UInt64>();
             break;
         }
-        case Type::DROP_QUERY_CACHE:
+        case Type::CLEAR_QUERY_CACHE:
         {
             ParserLiteral tag_parser;
             ASTPtr ast;
@@ -536,7 +622,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::DROP_FILESYSTEM_CACHE:
+        case Type::CLEAR_FILESYSTEM_CACHE:
         {
             ParserLiteral path_parser;
             ASTPtr ast;
@@ -554,7 +640,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::DROP_DISTRIBUTED_CACHE:
+        case Type::CLEAR_DISTRIBUTED_CACHE:
         {
             ParserLiteral parser;
             ASTPtr ast;
@@ -579,13 +665,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::DROP_DISK_METADATA_CACHE:
+        case Type::CLEAR_DISK_METADATA_CACHE:
         {
             if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
             break;
         }
-        case Type::DROP_SCHEMA_CACHE:
+        case Type::CLEAR_SCHEMA_CACHE:
         {
             if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
             {
@@ -604,7 +690,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             break;
         }
-        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
         {
             if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
             {
@@ -643,7 +729,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             if (ParserKeyword{Keyword::FROM}.ignore(pos, expected) && ParserIdentifierWithOptionalParameters{}.parse(pos, ast, expected))
             {
-                ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+                ast->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
                 res->backup_source = ast;
                 res->children.push_back(res->backup_source);
             }
@@ -877,7 +963,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 #endif
-
+        case Type::RESET_DDL_WORKER: {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            break;
+        }
         default:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))

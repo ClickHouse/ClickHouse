@@ -713,7 +713,7 @@ Pipe StorageGenerateRandom::read(
 
         if (estimated_block_size_bytes > preferred_block_size_bytes)
         {
-            max_block_size = static_cast<size_t>(max_block_size * (static_cast<double>(preferred_block_size_bytes) / estimated_block_size_bytes));
+            max_block_size = static_cast<size_t>(static_cast<double>(max_block_size) * (static_cast<double>(preferred_block_size_bytes) / static_cast<double>(estimated_block_size_bytes)));
             if (max_block_size == 0)
                 max_block_size = 1;
         }

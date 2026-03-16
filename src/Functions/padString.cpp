@@ -141,14 +141,18 @@ namespace
 
     /// If `is_right_pad` - it's the rightPad() function instead of leftPad().
     /// If `is_utf8` - lengths are measured in code points instead of bytes.
-    template <bool is_right_pad, bool is_utf8>
     class FunctionPadString : public IFunction
     {
     public:
-        static constexpr auto name = is_right_pad ? (is_utf8 ? "rightPadUTF8" : "rightPad") : (is_utf8 ? "leftPadUTF8" : "leftPad");
-        static FunctionPtr create(const ContextPtr) { return std::make_shared<FunctionPadString>(); }
+        FunctionPadString(const char * name_, bool is_right_pad_, bool is_utf8_)
+            : function_name(name_), is_right_pad(is_right_pad_), is_utf8(is_utf8_) {}
 
-        String getName() const override { return name; }
+        static FunctionPtr create(const char * name, bool is_right_pad, bool is_utf8)
+        {
+            return std::make_shared<FunctionPadString>(name, is_right_pad, is_utf8);
+        }
+
+        String getName() const override { return function_name; }
 
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
@@ -269,12 +273,12 @@ namespace
             }
         }
 
-        template <bool is_actually_utf8, typename SourceStrings, typename SourceLengths>
-        void executeForSourceAndLength(
+        template <bool is_right_pad_, bool is_actually_utf8, typename SourceStrings, typename SourceLengths>
+        static void executePad(
             SourceStrings && strings,
             SourceLengths && lengths,
             const PaddingChars<is_actually_utf8> & padding_chars,
-            StringSink & res_sink) const
+            StringSink & res_sink)
         {
             bool is_const_new_length = lengths.isConst();
             ssize_t new_length = 0;
@@ -320,16 +324,33 @@ namespace
                 }
                 else if (new_length > current_length)
                 {
-                    if constexpr (!is_right_pad)
+                    if constexpr (!is_right_pad_)
                         padding_chars.appendTo(res_sink, new_length - current_length);
 
                     writeSlice(str, res_sink);
 
-                    if constexpr (is_right_pad)
+                    if constexpr (is_right_pad_)
                         padding_chars.appendTo(res_sink, new_length - current_length);
                 }
             }
         }
+
+        template <bool is_actually_utf8, typename SourceStrings, typename SourceLengths>
+        void executeForSourceAndLength(
+            SourceStrings && strings,
+            SourceLengths && lengths,
+            const PaddingChars<is_actually_utf8> & padding_chars,
+            StringSink & res_sink) const
+        {
+            if (is_right_pad)
+                executePad<true>(std::forward<SourceStrings>(strings), std::forward<SourceLengths>(lengths), padding_chars, res_sink);
+            else
+                executePad<false>(std::forward<SourceStrings>(strings), std::forward<SourceLengths>(lengths), padding_chars, res_sink);
+        }
+
+        const char * const function_name;
+        const bool is_right_pad;
+        const bool is_utf8;
     };
 }
 
@@ -414,10 +435,10 @@ Unlike [`rightPad`](#rightPad) which measures the string length in bytes, the st
     };
     FunctionDocumentation documentation_right_utf8 = {description_right_utf8, syntax_right_utf8, arguments_left, {}, returned_value_right_utf8, examples_right_utf8, introduced_in, category};
 
-    factory.registerFunction<FunctionPadString<false, false>>(documentation_left);
-    factory.registerFunction<FunctionPadString<false, true>>(documentation_left_utf8);
-    factory.registerFunction<FunctionPadString<true, false>>(documentation_right);
-    factory.registerFunction<FunctionPadString<true, true>>(documentation_right_utf8);
+    factory.registerFunction("leftPad", [](ContextPtr){ return FunctionPadString::create("leftPad", false, false); }, documentation_left);
+    factory.registerFunction("leftPadUTF8", [](ContextPtr){ return FunctionPadString::create("leftPadUTF8", false, true); }, documentation_left_utf8);
+    factory.registerFunction("rightPad", [](ContextPtr){ return FunctionPadString::create("rightPad", true, false); }, documentation_right);
+    factory.registerFunction("rightPadUTF8", [](ContextPtr){ return FunctionPadString::create("rightPadUTF8", true, true); }, documentation_right_utf8);
 
     factory.registerAlias("lpad", "leftPad", FunctionFactory::Case::Insensitive);
     factory.registerAlias("rpad", "rightPad", FunctionFactory::Case::Insensitive);

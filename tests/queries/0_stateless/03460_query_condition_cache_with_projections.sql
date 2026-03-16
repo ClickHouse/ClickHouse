@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-release
 -- Tag no-parallel: Messes with internal cache
+-- Tag no-release: Checks fields in system.query_condition_cache which are not available in release builds
 -- add_minmax_index_for_numeric_columns=0: Would use indices instead of the projections that we want to test
 
 -- { echo ON }
@@ -19,7 +20,7 @@ insert into t select 20, number from numbers(10);
 
 insert into t select 1, number + 1 from numbers(10);
 
-system drop query condition cache;
+system clear query condition cache;
 
 select j from t where j > 3 and i = 20 order by j settings max_threads = 1, use_query_condition_cache = 1, query_condition_cache_store_conditions_as_plaintext = 1;
 
