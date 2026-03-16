@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Common/AlignedBuffer.h>
@@ -94,8 +95,8 @@ public:
 
         /// Columns with which numbers should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
-        std::vector<AggregateDescription> columns_to_aggregate;
-        std::vector<SimpleAggregateDescription> columns_to_simple_aggregate;
+        VectorWithMemoryTracking<AggregateDescription> columns_to_aggregate;
+        VectorWithMemoryTracking<SimpleAggregateDescription> columns_to_simple_aggregate;
 
         /// Does SimpleAggregateFunction allocates memory in arena?
         bool allocates_memory_in_arena = false;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
@@ -54,7 +55,7 @@ private:
     Inputs current_inputs;
     SortCursorImpls cursors;
 
-    std::vector<size_t> inputs_origin_merge_tree_part_level;
+    VectorWithMemoryTracking<size_t> inputs_origin_merge_tree_part_level;
 
     /// In merging algorithm, we need to compare current sort key with the last one.
     /// So, sorting columns for last row needed to be stored.

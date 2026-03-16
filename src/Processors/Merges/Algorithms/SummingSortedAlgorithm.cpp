@@ -32,8 +32,8 @@ namespace ErrorCodes
 /// Stores numbers of key-columns and value-columns.
 struct SummingSortedAlgorithm::MapDescription
 {
-    std::vector<size_t> key_col_nums;
-    std::vector<size_t> val_col_nums;
+    VectorWithMemoryTracking<size_t> key_col_nums;
+    VectorWithMemoryTracking<size_t> val_col_nums;
 };
 
 /// Stores aggregation function, state, and columns to be used as function arguments.
@@ -42,7 +42,7 @@ struct SummingSortedAlgorithm::AggregateDescription
     /// An aggregate function 'sumWithOverflow' or 'sumMapWithOverflow' for summing.
     AggregateFunctionPtr function;
     IAggregateFunction::AddFunc add_function = nullptr;
-    std::vector<size_t> column_numbers;
+    VectorWithMemoryTracking<size_t> column_numbers;
     IColumn * merged_column = nullptr;
     AlignedBuffer state;
     bool created = false;
@@ -128,7 +128,7 @@ using Row = std::vector<Field>;
 
 /// Returns true if merge result is not empty
 static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
-                     Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_number)
+                     Row & row, VectorWithMemoryTracking<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_number)
 {
     /// Strongly non-optimal.
     Row & left = row;
@@ -153,7 +153,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
         return matrix[i].safeGet<Array>()[j];
     };
 
-    auto tuple_of_nth_columns_at_jth_row = [&](const Row & matrix, const ColumnNumbers & col_nums, size_t j) -> Array
+    auto tuple_of_nth_columns_at_jth_row = [&](const Row & matrix, const VectorWithMemoryTracking<size_t> & col_nums, size_t j) -> Array
     {
         size_t size = col_nums.size();
         Array res(size);
@@ -251,7 +251,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     def.column_names = header.getNames();
 
     /// name of nested structure -> the column numbers that refer to it.
-    std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
+    std::unordered_map<std::string, VectorWithMemoryTracking<size_t>> discovered_maps;
 
     /** Fill in the column numbers, which must be summed.
         * This can only be numeric columns that are not part of the sort key.
@@ -538,7 +538,7 @@ static void postprocessChunk(
     chunk.setColumns(std::move(res_columns), num_rows);
 }
 
-static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num, const Names & column_names)
+static void setRow(Row & row, VectorWithMemoryTracking<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num, const Names & column_names)
 {
     size_t num_columns = row.size();
     const auto handle_exception = [&](const char * logger_name, const char * reason, const size_t column_index)

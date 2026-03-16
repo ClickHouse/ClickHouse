@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
@@ -59,9 +60,9 @@ public:
         /// Columns with which values should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
         /// Columns which should be aggregated.
-        std::vector<AggregateDescription> columns_to_aggregate;
+        VectorWithMemoryTracking<AggregateDescription> columns_to_aggregate;
         /// Mapping for nested columns.
-        std::vector<MapDescription> maps_to_sum;
+        VectorWithMemoryTracking<MapDescription> maps_to_sum;
 
         /// Names of columns from header.
         Names column_names;
@@ -97,7 +98,7 @@ public:
 
         Row current_row;
         /// Some types like Dynamic/JSON doesn't work well with Fields, for them we save values in IColumn.
-        std::vector<ColumnPtr> current_row_columns;
+        VectorWithMemoryTracking<ColumnPtr> current_row_columns;
         bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);

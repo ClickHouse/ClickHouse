@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
@@ -284,7 +285,7 @@ std::string buildTaggedRegex(std::string regexp_str)
     * nam.*\?(.*&)?tag1=val1&(.*&)?tag2=val2(&.*)?$
     */
 
-    std::vector<std::string> tags;
+    VectorWithMemoryTracking<std::string> tags;
 
     splitInto<';'>(tags, regexp_str);
     /* remove empty elements */
