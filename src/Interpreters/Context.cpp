@@ -348,7 +348,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
-    extern const SettingsParameterizedViewSchemaDefinitionMode use_declared_schema_for_parameterized_views;
+    extern const SettingsBool use_declared_schema_for_parameterized_views;
 }
 
 namespace MergeTreeSetting
@@ -2784,7 +2784,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.select, query);
             auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
 
-            if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views] == ParameterizedViewSchemaDefinitionMode::THROWING)
+            if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
                 validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), table->getInMemoryMetadataPtr()->getColumns());
 
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
@@ -3052,7 +3052,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
 
-    if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views] == ParameterizedViewSchemaDefinitionMode::THROWING)
+    if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
         validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), original_view_metadata->getColumns());
 
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),

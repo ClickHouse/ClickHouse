@@ -8157,7 +8157,7 @@ Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 t
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL) \
-    DECLARE(ParameterizedViewSchemaDefinitionMode, use_declared_schema_for_parameterized_views, ParameterizedViewSchemaDefinitionMode::OFF, R"(
+    DECLARE(Bool, use_declared_schema_for_parameterized_views, false, R"(
 Allow to show schemas declared in parameterized views.
 
 For example:
@@ -8181,10 +8181,8 @@ returns
    └───────┴────────┴──────┴─────┴─────────┴───────┘
 ```
 
-Available values:
- - 'off' - Don't materialize the columns
- - 'insecure' - Materialize the columns, ignore schema mismatches
- - 'throwing' - Throw TYPE_MISMATCH error on schema mismatches after parameters substitution
+> [!WARNING]
+> If the setting turned on -- it throws on schema mismatch
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \

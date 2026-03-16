@@ -183,6 +183,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
             {"allow_statistics", false, true, "Column statistics are now GA"},
             {"allow_experimental_statistics", false, true, "Column statistics are now GA"},
+            {"use_declared_schema_for_parameterized_views", false, false, "New setting."},
             {"allow_experimental_expire_snapshots", false, false, "New setting."},
             {"iceberg_expire_default_min_snapshots_to_keep", 1, 1, "New setting."},
             {"iceberg_expire_default_max_snapshot_age_ms", 432000000, 432000000, "New setting."},
