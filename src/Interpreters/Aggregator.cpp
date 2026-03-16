@@ -1895,6 +1895,53 @@ void Aggregator::computeHashesForSharding(
 }
 
 
+std::pair<Columns, std::shared_ptr<PaddedPODArray<size_t>>>
+Aggregator::prepareColumnsForSharding(const Columns & columns, size_t row_count, AggregatedDataVariants & cached_hash_variants) const
+{
+    chassert(params.keys_size == 1);
+    chassert(method_chosen != AggregatedDataVariants::Type::without_key);
+
+    Columns payload_columns;
+
+    /// To avoid vector reallocation
+    size_t num_payload_columns = params.keys_size;
+    for (const auto & aggregate : params.aggregates)
+        num_payload_columns += aggregate.argument_names.size();
+    payload_columns.reserve(num_payload_columns);
+
+    ColumnRawPtrs key_columns(params.keys_size);
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
+        auto key_column = removeSpecialRepresentations(columns.at(keys_positions[i]))->convertToFullColumnIfConst();
+        key_column = recursiveRemoveLowCardinality(key_column);
+
+        payload_columns.push_back(std::move(key_column));
+        key_columns[i] = payload_columns.back().get();
+    }
+
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        /// TODO: Combinators (-If, -Array, -State) are not supported yet.
+        chassert(aggregate_functions[i]->getNestedFunction() == nullptr);
+
+        for (const auto & argument_name : params.aggregates[i].argument_names)
+        {
+            const auto pos = header.getPositionByName(argument_name);
+            /// TODO: `addBatchForRows` reads columns by original row index and cannot
+            /// handle sparse encoding. Materializing here until we add sparse-aware execution.
+            auto argument_column = removeSpecialRepresentations(columns.at(pos)->convertToFullColumnIfConst());
+            argument_column = recursiveRemoveLowCardinality(argument_column);
+
+            payload_columns.push_back(std::move(argument_column));
+        }
+    }
+
+    auto key_hashes = std::make_shared<PaddedPODArray<size_t>>();
+    computeHashesForSharding(cached_hash_variants, key_columns, row_count, *key_hashes);
+
+    return {std::move(payload_columns), std::move(key_hashes)};
+}
+
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
