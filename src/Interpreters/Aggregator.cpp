@@ -1968,6 +1968,53 @@ Block Aggregator::getShardedPayloadHeader() const
 }
 
 
+void Aggregator::prepareInstructionsForSharding(
+    const Columns & payload_columns, AggregateColumns & aggregate_columns_holder, AggregateFunctionInstructions & instructions) const
+{
+    /// One-time setup: allocate and fill all immutable fields.
+    /// aggregate_columns_holder[i] will hold raw pointers to argument columns for agg func i.
+    if (instructions.empty())
+    {
+        aggregate_columns_holder.resize(params.aggregates_size);
+        instructions.resize(params.aggregates_size + 1);
+        instructions[params.aggregates_size].that = nullptr;
+
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+        {
+            aggregate_columns_holder[i].resize(params.aggregates[i].argument_names.size());
+
+            auto & instruction = instructions[i];
+            instruction.that = aggregate_functions[i];
+            instruction.batch_that = aggregate_functions[i];
+            instruction.state_offset = offsets_of_aggregate_states[i];
+
+            /// TODO: We do not support -Array combinator for sharded aggregation yet
+            instruction.offsets = nullptr;
+
+            /// TODO: We currently materialize sparse argument columns and do not support sparse-aware execution
+            instruction.has_sparse_arguments = false;
+            /// TODO: Not used yet — `executeAggregateInstructionsForRows` doesn't check it
+            /// because the consecutive keys cache is disabled.
+            instruction.can_optimize_equal_keys_ranges = false;
+            /// arguments/batch_arguments are set below per chunk and point into aggregate_columns_holder[i]
+        }
+    }
+
+    /// Per-chunk: update the raw column pointers.
+    size_t offset = params.keys_size;
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        const auto arg_count = params.aggregates[i].argument_names.size();
+        for (size_t j = 0; j < arg_count; ++j)
+            aggregate_columns_holder[i][j] = payload_columns[offset + j].get();
+
+        instructions[i].arguments = aggregate_columns_holder[i].data();
+        instructions[i].batch_arguments = aggregate_columns_holder[i].data();
+        offset += arg_count;
+    }
+}
+
+
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
