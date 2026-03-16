@@ -93,10 +93,10 @@ if (SANITIZE_COVERAGE)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSANITIZE_COVERAGE=1")
 
     # But the actual coverage will be enabled on per-library basis: for ClickHouse code, but not for 3rd-party.
-    set (COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table")
+    set (COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table,trace-cmp")
 
-    set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table")
-    set (WITHOUT_COVERAGE_FLAGS_LIST -fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table)
+    set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table,trace-cmp")
+    set (WITHOUT_COVERAGE_FLAGS_LIST -fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table,trace-cmp)
 else()
     set (WITHOUT_COVERAGE_FLAGS "")
     set (WITHOUT_COVERAGE_FLAGS_LIST "")

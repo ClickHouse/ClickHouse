@@ -1,0 +1,58 @@
+# Compression codec method bytes and common header patterns.
+# Values from CompressionInfo.h CompressionMethodByte enum.
+
+# CompressionMethodByte values
+"\x02"  # NONE
+"\x82"  # LZ4
+"\x90"  # ZSTD
+"\x91"  # Multiple (attacker-controlled codec chain)
+"\x92"  # Delta
+"\x93"  # T64
+"\x94"  # DoubleDelta
+"\x95"  # Gorilla
+"\x97"  # Encrypted
+"\x98"  # FPC
+"\x99"  # DeflateQpl
+"\x9A"  # GCD
+"\x9B"  # ZSTD_QPL
+"\x9C"  # SZ3
+
+# Common data_bytes_size values for Delta/GCD/Gorilla (1, 2, 4, 8)
+"\x01"  # 1-byte elements
+"\x02"  # 2-byte elements
+"\x04"  # 4-byte elements
+"\x08"  # 8-byte elements
+
+# Gorilla/T64 compressed block header patterns
+"\x01\x00"  # data_bytes_size=1, bytes_to_skip=0
+"\x02\x00"  # data_bytes_size=2, bytes_to_skip=0
+"\x04\x00"  # data_bytes_size=4, bytes_to_skip=0
+"\x08\x00"  # data_bytes_size=8, bytes_to_skip=0
+
+# T64 cookie byte: top bit = Variant (0=Byte, 1=Bit), lower 7 bits = TypeIndex
+"\x01"  # Byte variant, Int8
+"\x02"  # Byte variant, Int16
+"\x03"  # Byte variant, Int32
+"\x04"  # Byte variant, Int64
+"\x05"  # Byte variant, UInt8
+"\x06"  # Byte variant, UInt16
+"\x07"  # Byte variant, UInt32
+"\x81"  # Bit variant, Int8
+"\x84"  # Bit variant, Int64
+
+# FPC header (2 bytes): [0]=float_width, [1]=compression_level
+"\x04\x0C"  # float32, level 12 (default)
+"\x08\x0C"  # float64, level 12 (default)
+"\x04\x01"  # float32, level 1
+"\x08\x1C"  # float64, level 28 (max)
+
+# Multiple codec chain patterns: [0]=chain_length, [1..N]=codec bytes
+"\x01\x82"  # 1 codec: LZ4
+"\x01\x92"  # 1 codec: Delta
+"\x02\x92\x82"  # 2 codecs: Delta + LZ4
+"\x02\x93\x82"  # 2 codecs: T64 + LZ4
+"\x02\x95\x82"  # 2 codecs: Gorilla + LZ4
+"\x03\x92\x94\x82"  # 3 codecs: Delta + DoubleDelta + LZ4
+
+# Compressed block header magic (9 bytes: checksum(8) + method(1))
+"\x00\x00\x00\x00\x00\x00\x00\x00"  # zero checksum prefix

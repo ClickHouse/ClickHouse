@@ -1,5 +1,6 @@
 [libfuzzer]
 timeout = 20
+use_value_profile = 1
 
 [fuzzer_arguments]
 --max_execution_time=10

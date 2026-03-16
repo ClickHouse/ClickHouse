@@ -15,3 +15,15 @@ target_link_libraries (encrypted_decompress_fuzzer PRIVATE dbms)
 
 clickhouse_add_executable (gcd_decompress_fuzzer gcd_decompress_fuzzer.cpp)
 target_link_libraries (gcd_decompress_fuzzer PRIVATE dbms)
+
+clickhouse_add_executable (gorilla_decompress_fuzzer gorilla_decompress_fuzzer.cpp)
+target_link_libraries (gorilla_decompress_fuzzer PRIVATE dbms)
+
+clickhouse_add_executable (t64_decompress_fuzzer t64_decompress_fuzzer.cpp)
+target_link_libraries (t64_decompress_fuzzer PRIVATE dbms)
+
+clickhouse_add_executable (fpc_decompress_fuzzer fpc_decompress_fuzzer.cpp)
+target_link_libraries (fpc_decompress_fuzzer PRIVATE dbms)
+
+clickhouse_add_executable (multiple_decompress_fuzzer multiple_decompress_fuzzer.cpp)
+target_link_libraries (multiple_decompress_fuzzer PRIVATE dbms)
