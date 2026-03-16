@@ -1761,6 +1761,33 @@ TEST_F(ALPTest, UnsupportedFloatTypes)
         ASSERT_THROW(makeCodec("ALP", type), Exception) << "ALP codec should reject " << type->getName();
 }
 
+TEST_F(ALPTest, CompressProducesCorrectHeader)
+{
+    const std::vector<std::tuple<std::string, DataTypePtr, UInt8, UInt8>> test_cases = {
+        {"ALP", std::make_shared<DataTypeFloat64>(), 0x01, 0x08},
+        {"ALP", std::make_shared<DataTypeFloat32>(), 0x01, 0x04},
+        {"ALP(STD)", std::make_shared<DataTypeFloat64>(), 0x01, 0x08},
+        {"ALP(STD)", std::make_shared<DataTypeFloat32>(), 0x01, 0x04},
+        {"ALP(RD)", std::make_shared<DataTypeFloat64>(), 0x11, 0x08},
+        {"ALP(RD)", std::make_shared<DataTypeFloat32>(), 0x11, 0x04}
+    };
+
+    for (const auto & [codec_name, data_type, expected_meta_byte, expected_float_width] : test_cases)
+    {
+        auto codec = makeCodec(codec_name, data_type);
+
+        Memory<> compressed_memory;
+        compressed_memory.resize(ICompressionCodec::getHeaderSize() + codec->getCompressedReserveSize(0));
+
+        Memory<> source_memory;
+        source_memory.resize(data_type->getSizeOfValueInMemory());
+        codec->compress(source_memory.data(), static_cast<UInt32>(source_memory.size()), compressed_memory.data());
+
+        ASSERT_EQ(compressed_memory[ICompressionCodec::getHeaderSize()], expected_meta_byte) << "for codec " << codec_name << " and data type " << data_type->getName();
+        ASSERT_EQ(compressed_memory[ICompressionCodec::getHeaderSize() + 1], expected_float_width) << "for codec " << codec_name << " and data type " << data_type->getName();
+    }
+}
+
 TEST_F(ALPTest, DecompressMalformedInputWithTruncatedHeader)
 {
     const std::vector<UInt8> source = {
