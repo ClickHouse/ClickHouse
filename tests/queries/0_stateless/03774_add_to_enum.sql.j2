@@ -47,6 +47,7 @@ DROP TABLE enumoverflow;
 
 CREATE OR REPLACE TABLE enum_relative (x Enum8('Two' = 2)) ENGINE = Memory;
 ALTER TABLE enum_relative MODIFY COLUMN x ADD ENUM VALUES('three', 'hundred' = 100);
+ALTER TABLE enum_relative MODIFY COLUMN x ADD ENUM VALUES('three', 'two' = 2); -- { serverError BAD_ARGUMENTS }
 SHOW CREATE TABLE enum_relative;
 DROP TABLE enum_relative;
 
