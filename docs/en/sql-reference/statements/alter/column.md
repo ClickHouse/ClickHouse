@@ -284,7 +284,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_bloc
 
 ## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
 
-Adds new values to a column of type `Enum`, `Enum8` or `Enum16`.
+Adds new values to a column of type `Enum`, `Enum8`, `Enum16`, `Nullable(Enum)`, `Nullable(Enum8)` or `Nullable(Enum16)`
 
 Syntax:
 
