@@ -125,7 +125,7 @@ bool AggregateFunctionCount::isCompilable() const
 {
     bool is_compilable = true;
     for (const auto & argument_type : argument_types)
-    is_compilable &= canBeNativeType(*argument_type);
+        is_compilable &= canBeNativeType(*argument_type);
 
     return is_compilable;
 }
@@ -319,7 +319,7 @@ SELECT count(DISTINCT num) FROM t
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
 
-    factory.registerFunction("count", {createAggregateFunctionCount, properties, documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("count", {createAggregateFunctionCount, documentation, properties}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

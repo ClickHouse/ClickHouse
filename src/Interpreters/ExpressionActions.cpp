@@ -20,7 +20,6 @@
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Functions/FunctionsMiscellaneous.h>
-#include <Core/SettingsEnums.h>
 
 
 #if defined(MEMORY_SANITIZER)

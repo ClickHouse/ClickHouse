@@ -6,24 +6,26 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <Core/NamesAndTypes.h>
+#include <Core/Types.h>
 #include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
-#include <Common/assert_cast.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
 #include <Columns/ColumnString.h>
@@ -91,7 +93,7 @@ void PaimonMetadata::updateState()
     }
     if (!table_schema.has_value())
     {
-        std::stringstream ss;// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         Poco::JSON::Stringifier::stringify(last_metadata_object, ss);
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse paimon table schema, json object: {}", ss.str());
     }
@@ -102,28 +104,37 @@ void PaimonMetadata::updateState()
     }
     /// init snapshot, now only support latest snapshot
     auto snapshot_meta_info = table_client_ptr->getLastestTableSnapshotInfo();
-    if (snapshot.has_value() && snapshot_meta_info.first == snapshot->id)
+    if (!snapshot_meta_info.has_value() || (snapshot.has_value() && snapshot_meta_info->first == snapshot->id))
     {
         return;
     }
-    snapshot = table_client_ptr->getSnapshot(snapshot_meta_info);
+    snapshot = table_client_ptr->getSnapshot(*snapshot_meta_info);
     /// init manifest by snapshot
     std::vector<PaimonManifestFileMeta> base_manifest_list = table_client_ptr->getManifestMeta(snapshot->base_manifest_list);
     std::vector<PaimonManifestFileMeta> delta_manifest_list = table_client_ptr->getManifestMeta(snapshot->delta_manifest_list);
 
-    auto get_or_default = [](const std::string & key, const std::string & default_value, std::unordered_map<String, String> & options) -> std::string
+    auto get_or_default
+        = [](const std::string & key, const std::string & default_value, std::unordered_map<String, String> & options) -> std::string
     {
         auto inner_it = options.find(key);
         return inner_it != options.end() ? inner_it->second : default_value;
     };
 
+    base_manifest.clear();
     for (const auto & manifest_meta : base_manifest_list)
     {
-        base_manifest.emplace_back(table_client_ptr->getDataManifest(manifest_meta.file_name, *table_schema, get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
+        base_manifest.emplace_back(table_client_ptr->getDataManifest(
+            manifest_meta.file_name,
+            *table_schema,
+            get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
     }
+    delta_manifest.clear();
     for (const auto & manifest_meta : delta_manifest_list)
     {
-        delta_manifest.emplace_back(table_client_ptr->getDataManifest(manifest_meta.file_name, *table_schema, get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
+        delta_manifest.emplace_back(table_client_ptr->getDataManifest(
+            manifest_meta.file_name,
+            *table_schema,
+            get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
     }
 }
 
@@ -171,25 +182,36 @@ ObjectIterator PaimonMetadata::iterate(
 {
     SharedLockGuard shared_lock(mutex);
     Strings data_files;
+    std::unordered_set<String> delete_files;
     std::optional<PartitionPruner> partition_pruner;
     if (filter_dag_ && context_->getSettingsRef()[Setting::use_paimon_partition_pruning])
     {
         auto filter_dag = filter_dag_->clone();
         partition_pruner.emplace(*table_schema, filter_dag, getContext());
     }
+    auto read_files = [&](const PaimonManifestEntry & file_entry)
+    {
+        if (partition_pruner.has_value() && partition_pruner->canBePruned(file_entry))
+        {
+            return;
+        }
+        if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
+        {
+            data_files.emplace_back(std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name);
+            LOG_TEST(log, "manifest data file: {}", data_files.back());
+        }
+        else if (file_entry.kind == PaimonManifestEntry::Kind::DELETE)
+        {
+            auto path = std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name;
+            delete_files.insert(path.string());
+            LOG_TEST(log, "manifest delete file: {}", path);
+        }
+    };
     for (const auto & entry : base_manifest)
     {
         for (const auto & file_entry : entry.entries)
         {
-            if (file_entry.kind == PaimonManifestEntry::Kind::DELETE)
-                continue;
-            if (partition_pruner.has_value() && partition_pruner->canBePruned(file_entry))
-            {
-                LOG_TEST(log, "partition prun manifest file: {}, {}", file_entry.file.file_name, file_entry.file.bucket_path);
-                continue;
-            }
-            data_files.emplace_back(std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name);
-            LOG_TEST(log, "base_manifest data file: {}", data_files.back());
+            read_files(file_entry);
         }
     }
 
@@ -197,15 +219,22 @@ ObjectIterator PaimonMetadata::iterate(
     {
         for (const auto & file_entry : entry.entries)
         {
-            if (file_entry.kind == PaimonManifestEntry::Kind::DELETE)
-                continue;
-            if (partition_pruner.has_value() && partition_pruner->canBePruned(file_entry))
-            {
-                LOG_TEST(log, "partition prun manifest file: {}, {}", file_entry.file.file_name, file_entry.file.bucket_path);
-                continue;
-            }
-            data_files.emplace_back(std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name);
-            LOG_TEST(log, "delta_manifest data file: {}", data_files.back());
+            read_files(file_entry);
+        }
+    }
+
+    /// remove delete files from data_files and apply partition pruning
+    for (auto it = data_files.begin(); it != data_files.end();)
+    {
+        if (delete_files.contains(*it))
+        {
+            const auto file_path = *it;
+            it = data_files.erase(it);
+            LOG_TEST(log, "delete data file: {}", file_path);
+        }
+        else
+        {
+            ++it;
         }
     }
     return createKeysIterator(std::move(data_files), object_storage, callback_);

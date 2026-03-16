@@ -29,7 +29,7 @@ SELECT 1 SETTINGS force_optimize_projection_name='projection_name';
 SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
     AND query LIKE '%SELECT name FROM test%'
     AND Settings['force_optimize_projection_name'] = 'projection_name'
     AND type = 'ExceptionBeforeStart';

@@ -50,7 +50,9 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const override;
+    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const override;
+    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot &, ContextPtr local_context) const override;
+    bool shouldReloadSchemaForConsistency(ContextPtr local_context) const override;
 
     bool operator==(const IDataLakeMetadata & /*other*/) const override { return false; }
 
@@ -82,7 +84,9 @@ public:
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
+    static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
+    static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
     bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
@@ -116,9 +120,18 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands) override;
 
     void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
-    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override;
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
+
+    Pipe executeCommand(
+        const String & command_name,
+        const ASTPtr & args,
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        ContextPtr context,
+        const StorageID & storage_id) override;
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,

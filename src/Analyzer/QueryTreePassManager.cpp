@@ -34,7 +34,7 @@
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
-#include <Analyzer/Passes/L2DistanceTransposedPartialReadsPass.h>
+#include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
 #include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
@@ -279,7 +279,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
-    manager.addPass(std::make_unique<L2DistanceTransposedPartialReadsPass>());
+    manager.addPass(std::make_unique<DistanceTransposedPartialReadsPass>());
 
     /// should before AggregateFunctionsArithmericOperationsPass
     manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
@@ -291,6 +291,19 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     // toString function.
     manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
 
+    /// These passes can rewrite a predicate so that it depends on base columns instead of
+    /// the derived expression that appears in `GROUP BY`. They must run before
+    /// `OptimizeGroupByFunctionKeysPass` and `OptimizeGroupByInjectiveFunctionsPass`,
+    /// because those passes remove grouping keys based on the current expression tree.
+    /// For example, `SELECT toYear(d), toYear(d) = 2024, count() FROM ... GROUP BY ALL`:
+    /// `OptimizeGroupByFunctionKeysPass` can keep only `toYear(d)` as the grouping key,
+    /// and if `OptimizeDateOrDateTimeConverterWithPreimagePass` runs later it rewrites
+    /// `toYear(d) = 2024` to a range on raw `d`. After aggregation only `toYear(d)` and
+    /// `count()` remain, so the final projection would need `d` that is no longer present.
+    manager.addPass(std::make_unique<InverseDictionaryLookupPass>());
+    manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
+    manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
+
     manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
     manager.addPass(std::make_unique<OptimizeGroupByInjectiveFunctionsPass>());
 
@@ -300,8 +313,6 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<IfChainToMultiIfPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
     manager.addPass(std::make_unique<SumIfToCountIfPass>());
-
-    manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
 
     manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
@@ -318,11 +329,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
-    manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
-
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
-
-    manager.addPass(std::make_unique<InverseDictionaryLookupPass>());
 
     manager.addPass(std::make_unique<DisableParallelReplicasPass>());
 }

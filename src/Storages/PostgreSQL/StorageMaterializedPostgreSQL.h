@@ -110,7 +110,7 @@ public:
 
     ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
 
-    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(
+    boost::intrusive_ptr<ASTExpressionList> getColumnsExpressionList(
         const NamesAndTypesList & columns, std::unordered_map<std::string, ASTPtr> defaults = {}) const;
 
     StoragePtr getNested() const;
@@ -133,7 +133,7 @@ public:
     bool supportsFinal() const override { return true; }
 
 private:
-    static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
+    static boost::intrusive_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
             String name, String type, UInt64 default_value);
 
     static VirtualColumnsDescription createVirtuals();

@@ -35,7 +35,7 @@ public:
     std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Tuple"; }
 
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
     bool canBeInsideSparseColumns() const override { return false; }
 
@@ -55,7 +55,7 @@ public:
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
     SerializationPtr getSerialization(const SerializationInfo & info) const override;
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
     SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;

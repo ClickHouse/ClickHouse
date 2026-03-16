@@ -1,4 +1,5 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
 
 #include <Poco/URI.h>
@@ -10,7 +11,6 @@
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 
-#include <thread>
 #include <gtest/gtest.h>
 
 namespace

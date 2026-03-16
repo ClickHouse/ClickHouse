@@ -8,6 +8,7 @@
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -15,6 +16,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -39,6 +41,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IcebergMetadataLog.h>
 
@@ -55,6 +58,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExecuteOptionsParser.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -97,6 +101,7 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
 }
@@ -114,8 +119,9 @@ extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
-extern const SettingsBool allow_experimental_insert_into_iceberg;
+extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
+extern const SettingsBool allow_experimental_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
 }
 
@@ -490,12 +496,12 @@ void IcebergMetadata::mutate(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const std::optional<FormatSettings> & format_settings)
 {
-    if (!context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg].value)
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Iceberg mutations is experimental. "
-            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+            "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
     DB::Iceberg::mutate(
@@ -526,22 +532,104 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::MODIFY_COLUMN)
+            && command.type != AlterCommand::Type::MODIFY_COLUMN && command.type != AlterCommand::Type::RENAME_COLUMN)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage", command.type);
+
+        if (command.type == AlterCommand::Type::MODIFY_COLUMN && command.to_remove != AlterCommand::RemoveProperty::NO_PROPERTY)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Removing column property '{}' from column '{}' is not supported by Iceberg storage", command.to_remove, command.column_name);
     }
 }
 
 void IcebergMetadata::alter(const AlterCommands & params, ContextPtr context)
 {
-    if (!context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg].value)
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Alter iceberg is experimental. "
-            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+            "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
     Iceberg::alter(params, context, object_storage, data_lake_settings, persistent_components, write_format);
+}
+
+static Pipe expireSnapshotsResultToPipe(const Iceberg::ExpireSnapshotsResult & result)
+{
+    Block header{
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "metric_name"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeInt64>(), "metric_value"),
+    };
+
+    MutableColumns columns = header.cloneEmptyColumns();
+
+    auto add = [&](const char * name, Int64 value)
+    {
+        columns[0]->insert(String(name));
+        columns[1]->insert(value);
+    };
+
+    add("deleted_data_files_count", result.deleted_data_files_count);
+    add("deleted_position_delete_files_count", result.deleted_position_delete_files_count);
+    add("deleted_equality_delete_files_count", result.deleted_equality_delete_files_count);
+    add("deleted_manifest_files_count", result.deleted_manifest_files_count);
+    add("deleted_manifest_lists_count", result.deleted_manifest_lists_count);
+    add("deleted_statistics_files_count", result.deleted_statistics_files_count);
+    add("dry_run", result.dry_run ? 1 : 0);
+
+    const size_t rows = columns[0]->size();
+    Chunk chunk(std::move(columns), rows);
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(header)), std::move(chunk)));
+}
+
+Pipe IcebergMetadata::executeCommand(
+    const String & command_name,
+    const ASTPtr & args,
+    ObjectStoragePtr object_storage_,
+    StorageObjectStorageConfigurationPtr configuration_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    ContextPtr context,
+    const StorageID & storage_id)
+{
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Iceberg EXECUTE commands are experimental. "
+            "To allow their usage, enable setting allow_insert_into_iceberg");
+    }
+
+    if (command_name == "expire_snapshots")
+    {
+        if (!context->getSettingsRef()[Setting::allow_experimental_expire_snapshots].value)
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Iceberg expire_snapshots is experimental. "
+                "To allow its usage, enable setting allow_experimental_expire_snapshots");
+        }
+
+        auto options = parseExpireSnapshotsOptions(args, context);
+
+        auto result = Iceberg::expireSnapshots(
+            options,
+            context,
+            object_storage_,
+            data_lake_settings,
+            persistent_components,
+            write_format,
+            catalog_,
+            configuration_->getTypeName(),
+            configuration_->getNamespace(),
+            storage_id.getTableName());
+
+        return expireSnapshotsResultToPipe(result);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown EXECUTE command '{}' for Iceberg table", command_name);
+    }
 }
 
 void IcebergMetadata::createInitial(
@@ -592,7 +680,20 @@ void IcebergMetadata::createInitial(
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
 
-    writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
+    try
+    {
+        writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
+    }
+    catch (const Exception & e)
+    {
+        /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
+        /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
+        /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
+        if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
+            && e.message().find("PreconditionFailed") != String::npos)
+            return;
+        throw;
+    }
 
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
@@ -769,16 +870,10 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
 
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
-        auto manifest_file_ptr = getManifestFile(
-            object_storage,
-            persistent_components,
-            context,
-            log,
-            manifest_list_entry.manifest_file_path,
-            manifest_list_entry.added_sequence_number,
-            manifest_list_entry.added_snapshot_id);
+        auto files_handle = getManifestFileEntriesHandle(
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
 
-        if (!manifest_file_ptr->areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
+        if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
             return false;
     }
     return true;
@@ -806,16 +901,10 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     Int64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
-        auto manifest_file_ptr = getManifestFile(
-            object_storage,
-            persistent_components,
-            local_context,
-            log,
-            manifest_list_entry.manifest_file_path,
-            manifest_list_entry.added_sequence_number,
-            manifest_list_entry.added_snapshot_id);
-        auto data_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        auto position_deletes_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
+        auto manifest_file_ptr = getManifestFileEntriesHandle(
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+        auto data_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        auto position_deletes_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
         if (!data_count.has_value() || !position_deletes_count.has_value())
             return {};
 
@@ -841,15 +930,9 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     Int64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
-        auto manifest_file_ptr = getManifestFile(
-            object_storage,
-            persistent_components,
-            local_context,
-            log,
-            manifest_list_entry.manifest_file_path,
-            manifest_list_entry.added_sequence_number,
-            manifest_list_entry.added_snapshot_id);
-        auto count = manifest_file_ptr->getBytesCountInAllDataFilesExcludingDeleted();
+        auto manifest_file_ptr = getManifestFileEntriesHandle(
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+        auto count = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};
 
@@ -893,16 +976,29 @@ NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) cons
     return *persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
-StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr local_context) const
+std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
+{
+    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
+    return DataLakeTableStateSnapshot{actual_table_state_snapshot};
+}
+
+std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFromState(
+    const DataLakeTableStateSnapshot & state, ContextPtr local_context) const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataUpdateMicroseconds);
-    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-    StorageInMemoryMetadata result;
-    result.setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id)});
-    result.setDataLakeTableState(actual_table_state_snapshot);
-    result.sorting_key = getSortingKey(local_context, actual_table_state_snapshot);
+    chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
+    const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
+    auto result = std::make_unique<StorageInMemoryMetadata>();
+    result->setColumns(
+        ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_state.schema_id)});
+    result->setDataLakeTableState(state);
+    result->sorting_key = getSortingKey(local_context, iceberg_state);
     return result;
+}
+
+bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
+{
+    return true;
 }
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
@@ -917,6 +1013,7 @@ void IcebergMetadata::addDeleteTransformers(
     ObjectInfoPtr object_info,
     QueryPipelineBuilder & builder,
     const std::optional<FormatSettings> & format_settings,
+    FormatParserSharedResourcesPtr parser_shared_resources,
     ContextPtr local_context) const
 {
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
@@ -927,7 +1024,7 @@ void IcebergMetadata::addDeleteTransformers(
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
-            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, local_context); });
+            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, parser_shared_resources, local_context); });
     }
     const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
@@ -971,7 +1068,7 @@ void IcebergMetadata::addDeleteTransformers(
                 local_context,
                 local_context->getSettingsRef()[DB::Setting::max_block_size],
                 format_settings,
-                nullptr,
+                parser_shared_resources,
                 nullptr,
                 true,
                 compression_method);
@@ -1038,7 +1135,7 @@ SinkToStoragePtr IcebergMetadata::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    if (context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
+    if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
     }
@@ -1046,8 +1143,8 @@ SinkToStoragePtr IcebergMetadata::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Insert into iceberg is experimental. "
-            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+            "Insert into iceberg is in beta."
+            "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 }
 

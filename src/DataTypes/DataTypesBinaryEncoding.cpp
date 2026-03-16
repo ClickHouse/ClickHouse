@@ -64,7 +64,7 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 /// large width × depth (e.g. Tuple(Tuple(...) x 999999) x 10000) that does not trigger stack overflow or MAX_ARRAY_SIZE check.
 inline ALWAYS_INLINE size_t getMaxTypeDecodingComplexity()
 {
-    if (auto query_context = CurrentThread::getQueryContext())
+    if (auto query_context = CurrentThread::tryGetQueryContext())
         return query_context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
     return 1000; /// Default value that matches the default input_format_binary_max_type_complexity setting
 }

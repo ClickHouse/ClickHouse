@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <base/types.h>
@@ -67,7 +68,7 @@ private:
     Int64 profiler_step = 0;
 
     /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
-    double fault_probability = 0;
+    std::atomic<double> fault_probability = 0;
 
     /// To randomly sample allocations and deallocations in trace_log.
     double sample_probability = -1;
@@ -172,7 +173,9 @@ public:
 
     void setFaultProbability(double value)
     {
-        fault_probability = value;
+        /// Cap to 0.5 to avoid infinite loops where every allocation fails
+        /// and operations that retry on memory errors can never make progress.
+        fault_probability.store(std::min(value, 0.5), std::memory_order_relaxed);
     }
 
     void injectFault() const;
