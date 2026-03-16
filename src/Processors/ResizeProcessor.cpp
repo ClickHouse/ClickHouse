@@ -457,11 +457,13 @@ void GradualResizeProcessor::maybeActivateMoreOutputs()
         if (!rows_threshold && !bytes_threshold)
             break;
 
-        /// Activate the next output: move any waiting inactive outputs with the newly active index to active queue.
         ++num_active_outputs;
     }
 }
 
+/// This implementation uses strict 1:1 input-output binding (like StrictResizeProcessor)
+/// to preserve thread locality, combined with gradual output activation.
+/// Inputs are disabled by default and only enabled when bound to an active output that needs data.
 IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
     if (!initialized)
@@ -469,12 +471,16 @@ IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_i
         initialized = true;
 
         for (auto & input : inputs)
-            input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
+            input_ports.push_back({.port = &input, .status = InputStatus::NotActive, .waiting_output = -1});
+
+        for (UInt64 i = 0; i < input_ports.size(); ++i)
+            disabled_input_ports.push(i);
 
         for (auto & output : outputs)
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
     }
 
+    /// Process updated outputs: track which ones need data.
     for (const auto & output_number : updated_outputs)
     {
         auto & output = output_ports[output_number];
@@ -502,19 +508,15 @@ IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_i
         }
     }
 
-    if (!is_reading_started && !active_waiting_outputs.empty())
-    {
-        for (auto & input : inputs)
-            input.setNeeded();
-        is_reading_started = true;
-    }
-
     if (num_finished_outputs == outputs.size())
     {
         for (auto & input : inputs)
             input.close();
         return Status::Finished;
     }
+
+    /// Process updated inputs: handle finished inputs and inputs that have data ready.
+    std::queue<UInt64> inputs_with_data;
 
     for (const auto & input_number : updated_inputs)
     {
@@ -525,76 +527,62 @@ IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_i
             {
                 input.status = InputStatus::Finished;
                 ++num_finished_inputs;
+
+                /// The bound output lost its input — put it back to waiting.
+                if (input.waiting_output >= 0)
+                    active_waiting_outputs.push(input.waiting_output);
             }
             continue;
         }
 
         if (input.port->hasData())
         {
-            if (input.status != InputStatus::HasData)
+            if (input.status != InputStatus::NotActive)
             {
-                input.status = InputStatus::HasData;
+                input.status = InputStatus::NotActive;
                 inputs_with_data.push(input_number);
             }
         }
     }
 
-    while (!active_waiting_outputs.empty() && !inputs_with_data.empty())
+    /// Push data from inputs to their bound outputs (strict 1:1 routing).
+    while (!inputs_with_data.empty())
     {
-        auto & waiting_output = output_ports[active_waiting_outputs.front()];
-        active_waiting_outputs.pop();
-
-        /// The output may have been marked as finished after it was enqueued.
-        if (waiting_output.status == OutputStatus::Finished)
-            continue;
-
-        auto & input_with_data = input_ports[inputs_with_data.front()];
+        auto input_number = inputs_with_data.front();
+        auto & input_with_data = input_ports[input_number];
         inputs_with_data.pop();
 
-        auto data = input_with_data.port->pullData();
-        total_rows_pushed += data.chunk.getNumRows();
-        total_bytes_pushed += data.chunk.bytes();
+        if (input_with_data.waiting_output == -1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No associated output for input with data in GradualResize");
 
-        waiting_output.port->pushData(std::move(data));
-        input_with_data.status = InputStatus::NotActive;
-        waiting_output.status = OutputStatus::NotActive;
+        auto & waiting_output = output_ports[input_with_data.waiting_output];
+
+        if (waiting_output.status != OutputStatus::Finished)
+        {
+            auto data = input_with_data.port->pullData(/* set_not_needed = */ true);
+            total_rows_pushed += data.chunk.getNumRows();
+            total_bytes_pushed += data.chunk.bytes();
+            waiting_output.port->pushData(std::move(data));
+            waiting_output.status = OutputStatus::NotActive;
+        }
+        else
+        {
+            auto data = input_with_data.port->pullData(/* set_not_needed = */ true);
+            total_rows_pushed += data.chunk.getNumRows();
+            total_bytes_pushed += data.chunk.bytes();
+            abandoned_chunks.emplace_back(std::move(data));
+        }
+
+        input_with_data.waiting_output = -1;
 
         if (input_with_data.port->isFinished())
         {
             input_with_data.status = InputStatus::Finished;
             ++num_finished_inputs;
         }
-
-        /// Check if we should activate more outputs after this push.
-        size_t prev_active = num_active_outputs;
-        maybeActivateMoreOutputs();
-
-        /// Move newly activated outputs from inactive to active queue.
-        if (num_active_outputs > prev_active)
+        else
         {
-            std::queue<UInt64> remaining;
-            while (!inactive_waiting_outputs.empty())
-            {
-                auto idx = inactive_waiting_outputs.front();
-                inactive_waiting_outputs.pop();
-
-                if (output_ports[idx].status == OutputStatus::Finished)
-                    continue;
-
-                if (idx < num_active_outputs)
-                    active_waiting_outputs.push(idx);
-                else
-                    remaining.push(idx);
-            }
-            inactive_waiting_outputs = std::move(remaining);
-
-            /// Start reading if we just activated our first outputs.
-            if (!is_reading_started && !active_waiting_outputs.empty())
-            {
-                for (auto & input : inputs)
-                    input.setNeeded();
-                is_reading_started = true;
-            }
+            disabled_input_ports.push(input_number);
         }
     }
 
@@ -605,7 +593,78 @@ IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_i
         return Status::Finished;
     }
 
-    if (!active_waiting_outputs.empty())
+    /// Check if we should activate more outputs after processing data.
+    size_t prev_active = num_active_outputs;
+    maybeActivateMoreOutputs();
+
+    /// Move newly activated outputs from inactive to active queue.
+    if (num_active_outputs > prev_active)
+    {
+        std::queue<UInt64> remaining;
+        while (!inactive_waiting_outputs.empty())
+        {
+            auto idx = inactive_waiting_outputs.front();
+            inactive_waiting_outputs.pop();
+
+            if (output_ports[idx].status == OutputStatus::Finished)
+                continue;
+
+            if (idx < num_active_outputs)
+                active_waiting_outputs.push(idx);
+            else
+                remaining.push(idx);
+        }
+        inactive_waiting_outputs = std::move(remaining);
+    }
+
+    /// Deliver abandoned chunks to active waiting outputs.
+    while (!abandoned_chunks.empty() && !active_waiting_outputs.empty())
+    {
+        auto & waiting_output = output_ports[active_waiting_outputs.front()];
+        active_waiting_outputs.pop();
+
+        if (waiting_output.status == OutputStatus::Finished)
+            continue;
+
+        waiting_output.port->pushData(std::move(abandoned_chunks.back()));
+        abandoned_chunks.pop_back();
+        waiting_output.status = OutputStatus::NotActive;
+    }
+
+    /// Bind active waiting outputs to disabled inputs (strict 1:1 routing).
+    while (!disabled_input_ports.empty() && !active_waiting_outputs.empty())
+    {
+        auto & input = input_ports[disabled_input_ports.front()];
+        disabled_input_ports.pop();
+
+        input.port->setNeeded();
+        input.status = InputStatus::NeedData;
+        input.waiting_output = active_waiting_outputs.front();
+
+        active_waiting_outputs.pop();
+    }
+
+    /// Close excess active waiting outputs that have no input to serve them.
+    while (!active_waiting_outputs.empty())
+    {
+        auto & output = output_ports[active_waiting_outputs.front()];
+        active_waiting_outputs.pop();
+
+        if (output.status != OutputStatus::Finished)
+            ++num_finished_outputs;
+
+        output.status = OutputStatus::Finished;
+        output.port->finish();
+    }
+
+    if (num_finished_outputs == outputs.size())
+    {
+        for (auto & input : inputs)
+            input.close();
+        return Status::Finished;
+    }
+
+    if (disabled_input_ports.empty())
         return Status::NeedData;
 
     return Status::PortFull;

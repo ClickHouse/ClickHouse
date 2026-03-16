@@ -141,8 +141,9 @@ private:
     std::vector<Port::Data> abandoned_chunks;
 };
 
-/** Like ResizeProcessor, but gradually activates output ports as data volume grows.
-  * Starts by pushing data to only 1 output port, and activates more as total_rows or total_bytes
+/** Like StrictResizeProcessor, but gradually activates output ports as data volume grows.
+  * Uses strict 1:1 input-output binding (like StrictResizeProcessor) to preserve thread locality,
+  * but starts by allowing only 1 output port and activates more as total_rows or total_bytes
   * exceed thresholds (min_rows_per_output * num_active_outputs, min_bytes_per_output * num_active_outputs).
   * For small datasets, only a few aggregating threads receive data; for large datasets, all are used.
   */
@@ -159,7 +160,6 @@ private:
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
     bool initialized = false;
-    bool is_reading_started = false;
 
     size_t num_active_outputs = 1;
     size_t total_rows_pushed = 0;
@@ -167,9 +167,9 @@ private:
     size_t min_rows_per_output;
     size_t min_bytes_per_output;
 
+    std::queue<UInt64> disabled_input_ports;
     std::queue<UInt64> active_waiting_outputs;
     std::queue<UInt64> inactive_waiting_outputs;
-    std::queue<UInt64> inputs_with_data;
 
     enum class OutputStatus : uint8_t
     {
@@ -181,7 +181,7 @@ private:
     enum class InputStatus : uint8_t
     {
         NotActive,
-        HasData,
+        NeedData,
         Finished,
     };
 
@@ -189,6 +189,7 @@ private:
     {
         InputPort * port;
         InputStatus status;
+        ssize_t waiting_output;
     };
 
     struct OutputPortWithStatus
@@ -199,6 +200,8 @@ private:
 
     std::vector<InputPortWithStatus> input_ports;
     std::vector<OutputPortWithStatus> output_ports;
+    /// Chunks read for an output that became finished while reading was in progress.
+    std::vector<Port::Data> abandoned_chunks;
 
     void maybeActivateMoreOutputs();
 };
