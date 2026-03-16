@@ -19,6 +19,7 @@
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
+#include <Common/FailPoint.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/BackupLog.h>
@@ -68,6 +69,12 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
+}
+
+namespace FailPoints
+{
+    extern const char backup_pause_on_start[];
+    extern const char restore_pause_on_start[];
 }
 
 namespace ErrorCodes
@@ -165,8 +172,8 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
-        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         read_settings.read_through_distributed_cache = false;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         return read_settings;
     }
 
@@ -384,10 +391,7 @@ struct BackupsWorker::BackupStarter
         , backup_context(Context::createCopy(query_context))
     {
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
-
         backup_context->makeQueryContext();
-        backup_context->checkSettingsConstraints(backup_settings.core_settings, SettingSource::QUERY);
-        backup_context->applySettingsChanges(backup_settings.core_settings);
 
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
@@ -463,6 +467,8 @@ struct BackupsWorker::BackupStarter
 
     void doBackup()
     {
+        FailPointInjection::pauseFailPoint(FailPoints::backup_pause_on_start);
+
         chassert(!backup_coordination);
         if (on_cluster && !is_internal_backup)
         {
@@ -861,10 +867,7 @@ struct BackupsWorker::RestoreStarter
         , restore_context(Context::createCopy(query_context))
     {
         restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
-
         restore_context->makeQueryContext();
-        restore_context->checkSettingsConstraints(restore_settings.core_settings, SettingSource::QUERY);
-        restore_context->applySettingsChanges(restore_settings.core_settings);
 
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
@@ -920,6 +923,8 @@ struct BackupsWorker::RestoreStarter
 
     void doRestore()
     {
+        FailPointInjection::pauseFailPoint(FailPoints::restore_pause_on_start);
+
         chassert(!restore_coordination);
         if (on_cluster && !is_internal_restore)
         {

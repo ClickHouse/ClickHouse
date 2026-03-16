@@ -151,9 +151,8 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
 
 /// Fallback defaults for snapshot retention policy when table properties are absent.
 /// These values follow the Java reference implementation; the Iceberg spec does not
-/// mandate specific defaults.
-/// TODO: consider exposing these as ClickHouse server-level settings so users can
-/// change the global defaults without patching every table's properties.
+/// mandate specific defaults. They are used as defaults for corresponding ClickHouse
+/// settings `iceberg_expire_default_*`.
 constexpr Int32 default_min_snapshots_to_keep = 1;
 constexpr Int64 default_max_snapshot_age_ms = 432000000; // 5 days
 constexpr Int64 default_max_ref_age_ms = std::numeric_limits<Int64>::max(); // forever, main branch never expires

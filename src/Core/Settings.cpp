@@ -4016,6 +4016,7 @@ Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
     DECLARE(GeoToH3ArgumentOrder, geotoh3_argument_order, GeoToH3ArgumentOrder::LAT_LON, R"(
 Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set to 'lat_lon'.
 )", BETA) \
+    DECLARE(Bool, functions_h3_default_if_invalid, false, "If false, h3 functions, e.g. h3CellAreaM2, throw an exception if input is invalid. If true, they return 0 or default value.", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limits the maximum number of partitions in a single inserted block
 and an exception is thrown if the block contains too many partitions.
@@ -5210,6 +5211,15 @@ Possible values:
     \
     DECLARE(Bool, iceberg_delete_data_on_drop, false, R"(
 Whether to delete all iceberg files on drop or not.
+)", 0) \
+    DECLARE(Int64, iceberg_expire_default_min_snapshots_to_keep, 1, R"(
+Default value for Iceberg table property `history.expire.min-snapshots-to-keep` used by `expire_snapshots` when that property is absent.
+)", 0) \
+    DECLARE(Int64, iceberg_expire_default_max_snapshot_age_ms, 432000000, R"(
+Default value for Iceberg table property `history.expire.max-snapshot-age-ms` used by `expire_snapshots` when that property is absent.
+)", 0) \
+    DECLARE(Int64, iceberg_expire_default_max_ref_age_ms, std::numeric_limits<Int64>::max(), R"(
+Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
 )", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
@@ -7604,6 +7614,9 @@ Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
+Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
 )", EXPERIMENTAL) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files.
