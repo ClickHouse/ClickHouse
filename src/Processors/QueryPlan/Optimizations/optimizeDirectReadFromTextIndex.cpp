@@ -596,6 +596,11 @@ private:
         /// It can happen when the original function returns Nullable or LowCardinality type and replacement doesn't.
         if (!function_node.result_type->equals(*replacement.node->result_type))
             replacement.node = &actions_dag.addCast(*replacement.node, function_node.result_type, "", context);
+
+        /// Preserve the original column name so that downstream steps (e.g. ExpressionStep for SELECT)
+        /// that reference the predicate by its original name can still find it in the block.
+        if (replacement.node->result_name != function_node.result_name)
+            replacement.node = &actions_dag.addAlias(*replacement.node, function_node.result_name);
     }
 };
 

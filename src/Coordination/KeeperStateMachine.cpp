@@ -141,6 +141,17 @@ void KeeperStateMachine<Storage>::init()
             latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
             chassert(latest_snapshot_info);
 
+            try
+            {
+                latest_snapshot_size.store(
+                    latest_snapshot_info->disk->getFileSize(latest_snapshot_info->path),
+                    std::memory_order_relaxed);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to get snapshot size during init");
+            }
+
             if (isLocalDisk(*latest_snapshot_info->disk))
                 latest_snapshot_buf = nullptr;
 
@@ -872,6 +883,17 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                             "Created persistent snapshot {} with path {}",
                             latest_snapshot_meta->get_last_log_idx(),
                             latest_snapshot_info->path);
+
+                        try
+                        {
+                            latest_snapshot_size.store(
+                                latest_snapshot_info->disk->getFileSize(latest_snapshot_info->path),
+                                std::memory_order_relaxed);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log, "Failed to get snapshot size after creation");
+                        }
                     }
                 }
 
@@ -946,6 +968,17 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
         LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), latest_snapshot_info->path);
         obj_id++;
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshot);
+
+        try
+        {
+            latest_snapshot_size.store(
+                latest_snapshot_info->disk->getFileSize(latest_snapshot_info->path),
+                std::memory_order_relaxed);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to get snapshot size after save");
+        }
     }
     catch (...)
     {
@@ -1004,7 +1037,7 @@ int IKeeperStateMachine::read_logical_snp_obj(
         return -1;
     }
 
-    const auto & [path, disk, size] = *latest_snapshot_info;
+    const auto & [path, disk] = *latest_snapshot_info;
     if (isLocalDisk(*disk))
     {
         auto full_path = fs::path(disk->getPath()) / path;
@@ -1169,25 +1202,7 @@ uint64_t KeeperStateMachine<Storage>::getKeyArenaSize() const
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getLatestSnapshotSize() const
 {
-    auto snapshot_info = [&]
-    {
-        std::lock_guard lock(snapshots_lock);
-        return latest_snapshot_info;
-    }();
-
-    if (snapshot_info == nullptr || snapshot_info->disk == nullptr)
-        return 0;
-
-    /// there is a possibility multiple threads can try to get size
-    /// this can happen in rare cases while it's not a heavy operation
-    size_t size = snapshot_info->size.load(std::memory_order_relaxed);
-    if (size == 0)
-    {
-        size = snapshot_info->disk->getFileSize(snapshot_info->path);
-        snapshot_info->size.store(size, std::memory_order_relaxed);
-    }
-
-    return size;
+    return latest_snapshot_size.load(std::memory_order_relaxed);
 }
 
 ClusterConfigPtr IKeeperStateMachine::getClusterConfig() const
