@@ -188,6 +188,15 @@ public:
 
     const Params & getParams() const { return params; }
 
+    /// Used by Sharded Aggregation
+    /// Compute per-row hashes using the aggregation method's hash function.
+    /// Used for shard routing and hash is reused during `emplaceKeyWithHash`.
+    void computeHashesForSharding(
+        AggregatedDataVariants & cached_variants,
+        const ColumnRawPtrs & key_columns,
+        size_t row_count,
+        PaddedPODArray<size_t> & result_hashes) const;
+
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block,
         AggregatedDataVariants & result,
@@ -218,6 +227,39 @@ public:
         bool has_sparse_arguments = false;
         bool can_optimize_equal_keys_ranges = true;
     };
+
+    using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
+
+    /// Internal payload header for the sharded aggregation pipeline.
+    /// Matches the payload columns returned by `prepareColumnsForSharding`.
+    Block getShardedPayloadHeader() const;
+
+    /// Used by Sharded Aggregation
+    /// Prepare key and argument columns for sharded aggregation and compute per-row hashes.
+    /// Returns payload columns [keys..., aggregate arguments...] and shared hashes.
+    std::pair<Columns, std::shared_ptr<PaddedPODArray<size_t>>>
+        prepareColumnsForSharding(
+            const Columns & columns,
+            size_t row_count,
+            AggregatedDataVariants & cached_hash_variants) const;
+
+    /// Used by Sharded Aggregation
+    /// Build aggregate function instructions for pre-materialized sharded payload columns.
+    /// On first call (when instructions is empty): allocates and fills all immutable fields.
+    /// On subsequent calls: updates only the column raw pointers.
+    void prepareInstructionsForSharding(
+        const Columns & payload_columns,
+        AggregateColumns & aggregate_columns_holder,
+        AggregateFunctionInstructions & instructions) const;
+
+    /// Used by Sharded Aggregation
+    /// Aggregate a subset of rows (identified by row_indices) using precomputed hashes.
+    void executeOnSubsetRows(
+        AggregatedDataVariants & result,
+        const IColumn::Selector & row_indices,
+        const size_t * key_hashes,
+        const ColumnRawPtrs & key_columns,
+        const AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// Used for optimize_aggregation_in_order:
     /// - No two-level aggregation
@@ -316,9 +358,6 @@ private:
     HashMethodContextPtr aggregation_state_cache;
 
     AggregateFunctionsPlainPtrs aggregate_functions;
-
-    using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
-    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
@@ -422,6 +461,39 @@ private:
         bool all_keys_are_const,
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
+
+    /// Row-indices variants for sharded aggregation (processes only specified rows).
+    void executeImplOnSubsetRows(
+        AggregatedDataVariants & result,
+        const IColumn::Selector & row_indices,
+        const size_t * key_hashes,
+        const ColumnRawPtrs & key_columns,
+        const AggregateFunctionInstruction * aggregate_instructions) const;
+
+    template <typename Method>
+    void executeImplOnSubsetRows(
+        Method & method,
+        Arena * aggregates_pool,
+        const IColumn::Selector & row_indices,
+        const size_t * key_hashes,
+        const ColumnRawPtrs & key_columns,
+        const AggregateFunctionInstruction * aggregate_instructions) const;
+
+    template <bool prefetch, typename Method, typename State>
+    void executeImplBatchOnSubsetRows(
+        Method & method,
+        State & state,
+        Arena * aggregates_pool,
+        const IColumn::Selector & row_indices,
+        const size_t * key_hashes,
+        const AggregateFunctionInstruction * aggregate_instructions) const;
+
+    void executeAggregateInstructionsOnSubsetRows(
+        Arena * aggregates_pool,
+        const UInt64 * row_indices,
+        size_t num_rows,
+        const AggregateFunctionInstruction * aggregate_instructions,
+        AggregateDataPtr * places) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,
@@ -663,6 +735,8 @@ private:
     /// Check if data variants use fixed-size hash tables (key8/key16) suitable for parallel merge
     /// at single level.
     bool isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const;
+
+    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
     void prepareAggregateInstructions(
         Columns columns,

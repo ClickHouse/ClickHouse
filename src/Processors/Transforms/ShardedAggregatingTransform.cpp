@@ -99,7 +99,7 @@ void ShardedAggregatingTransform::consume(Chunk chunk)
         key_columns[i] = payload_columns[i].get();
 
     /// Insert this shard's rows into the hash table using precomputed hashes.
-    aggregator.executeOnRows(shard_info->row_indices, shard_info->key_hashes->data(), variants, key_columns, aggregate_instructions.data());
+    aggregator.executeOnSubsetRows(variants, shard_info->row_indices, shard_info->key_hashes->data(), key_columns, aggregate_instructions.data());
 }
 
 /// Convert the hash table into output chunks. Called once after all input is consumed.

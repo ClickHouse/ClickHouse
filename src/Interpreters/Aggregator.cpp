@@ -1993,7 +1993,8 @@ void Aggregator::prepareInstructionsForSharding(
 
             /// TODO: We currently materialize sparse argument columns and do not support sparse-aware execution
             instruction.has_sparse_arguments = false;
-            /// TODO: Not used yet — `executeAggregateInstructionsForRows` doesn't check it
+
+            /// TODO: Not used yet - `executeAggregateInstructionsOnSubsetRows` doesn't check it
             /// because the consecutive keys cache is disabled.
             instruction.can_optimize_equal_keys_ranges = false;
             /// arguments/batch_arguments are set below per chunk and point into aggregate_columns_holder[i]
@@ -2014,6 +2015,209 @@ void Aggregator::prepareInstructionsForSharding(
     }
 }
 
+void Aggregator::executeOnSubsetRows(
+    AggregatedDataVariants & result,
+    const IColumn::Selector & row_indices,
+    const size_t * key_hashes,
+    const ColumnRawPtrs & key_columns,
+    const AggregateFunctionInstruction * aggregate_instructions) const
+{
+    chassert(!row_indices.empty());
+    chassert(key_hashes);
+
+    result.aggregator = this;
+
+    if (result.empty())
+    {
+        result.init(method_chosen);
+        result.keys_size = params.keys_size;
+        result.key_sizes = key_sizes;
+        LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
+    }
+
+    executeImplOnSubsetRows(result, row_indices, key_hashes, key_columns, aggregate_instructions);
+}
+
+
+void Aggregator::executeImplOnSubsetRows(
+    AggregatedDataVariants & result,
+    const IColumn::Selector & row_indices,
+    const size_t * key_hashes,
+    const ColumnRawPtrs & key_columns,
+    const AggregateFunctionInstruction * aggregate_instructions) const
+{
+    #define M(NAME, IS_TWO_LEVEL) \
+        else if (result.type == AggregatedDataVariants::Type::NAME) \
+            executeImplOnSubsetRows(*result.NAME, result.aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+}
+
+template <typename Method>
+void NO_INLINE Aggregator::executeImplOnSubsetRows(
+    Method & method,
+    Arena * aggregates_pool,
+    const IColumn::Selector & row_indices,
+    const size_t * key_hashes,
+    const ColumnRawPtrs & key_columns,
+    const AggregateFunctionInstruction * aggregate_instructions) const
+{
+    /// TODO: Consider using the consecutive keys cache. It helps when consecutive rows have the
+    /// same key (e.g., sorted data). Currently disabled because sharded aggregation targets
+    /// high-cardinality keys where cache hit rate is expected to be low. Also, `emplaceKeyWithHash`
+    /// does not check the cache - that would need to be added first.
+    typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+
+    const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+        && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+
+    if (prefetch)
+        executeImplBatchOnSubsetRows<true>(method, state, aggregates_pool, row_indices, key_hashes, aggregate_instructions);
+    else
+        executeImplBatchOnSubsetRows<false>(method, state, aggregates_pool, row_indices, key_hashes, aggregate_instructions);
+}
+
+
+template <bool prefetch, typename Method, typename State>
+void NO_INLINE Aggregator::executeImplBatchOnSubsetRows(
+    Method & method,
+    State & state,
+    Arena * aggregates_pool,
+    const IColumn::Selector & row_indices,
+    const size_t * key_hashes,
+    const AggregateFunctionInstruction * aggregate_instructions) const
+{
+    using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
+
+    const size_t num_indices = row_indices.size();
+    chassert(num_indices > 0);
+    chassert(key_hashes);
+
+    /// No aggregate functions - just insert keys.
+    if (params.aggregates_size == 0)
+    {
+        /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
+        AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
+        for (size_t j = 0; j < num_indices; ++j)
+        {
+            const size_t i = row_indices[j];
+            auto emplace_result = state.emplaceKeyWithHash(method.data, i, *aggregates_pool, key_hashes[i]);
+            emplace_result.setMapped(place);
+        }
+        return;
+    }
+
+    /// Simple count - inline counter, no aggregate state allocation.
+    if (is_simple_count)
+    {
+        for (size_t j = 0; j < num_indices; ++j)
+        {
+            const size_t i = row_indices[j];
+            auto emplace_result = state.emplaceKeyWithHash(method.data, i, *aggregates_pool, key_hashes[i]);
+            if (emplace_result.isInserted())
+                getInlineCountState(emplace_result.getMapped()) = 1;
+            else
+                ++getInlineCountState(emplace_result.getMapped());
+        }
+        return;
+    }
+
+    /// Dense places array: places[j] corresponds to row_indices[j].
+    AllocatorWithMemoryTracking<AggregateDataPtr> allocator;
+    auto places_deleter = [&allocator, &num_indices](auto * ptr)
+    {
+        if (ptr) [[likely]]
+            allocator.deallocate(ptr, num_indices);
+    };
+    std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(num_indices), places_deleter);
+
+    /// UInt8 key - use direct 256-entry addressing table (DAT).
+    if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
+    {
+        const auto * key_data = state.getKeyData();
+        AggregateDataPtr * map = reinterpret_cast<AggregateDataPtr *>(method.data.data());
+
+        for (size_t j = 0; j < num_indices; ++j)
+        {
+            UInt8 key = key_data[row_indices[j]];
+            AggregateDataPtr & place = map[key];
+            if (unlikely(!place)) /// First time seeing the key
+            {
+                place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                createAggregateStates(place);
+            }
+            places[j] = place;
+        }
+
+        executeAggregateInstructionsOnSubsetRows(aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get());
+        return;
+    }
+
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+
+    for (size_t j = 0; j < num_indices; ++j)
+    {
+        const size_t i = row_indices[j];
+        AggregateDataPtr aggregate_data = nullptr;
+
+        /// Is pretching enabled and the method supports it?
+        if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+        {
+            if (j == PrefetchingHelper::iterationsToMeasure())
+                prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+            if (j + prefetch_look_ahead < num_indices)
+            {
+                {
+                    auto && key_holder = state.getKeyHolder(row_indices[j + prefetch_look_ahead], *aggregates_pool);
+                    method.data.prefetch(std::move(key_holder));
+                }
+            }
+        }
+
+        {
+            auto emplace_result = state.emplaceKeyWithHash(method.data, i, *aggregates_pool, key_hashes[i]);
+
+            if (emplace_result.isInserted())
+            {
+                emplace_result.setMapped(nullptr);
+
+                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                createAggregateStates(aggregate_data);
+                emplace_result.setMapped(aggregate_data);
+            }
+            else
+                aggregate_data = emplace_result.getMapped();
+        }
+
+        chassert(aggregate_data != nullptr);
+        places[j] = aggregate_data;
+    }
+
+    /// TODO: With `StateNoCache`, `hasOnlyOneValueSinceLastReset` always returns false,
+    /// so the equal-keys optimization in `executeAggregateInstructionsOnSubsetRows` never fires.
+    /// Enabling the consecutive keys cache (switching to `State`) would allow this optimization
+    /// for sorted data where all rows in a shard's batch share the same key.
+    executeAggregateInstructionsOnSubsetRows(aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get());
+}
+
+void Aggregator::executeAggregateInstructionsOnSubsetRows(
+    Arena * aggregates_pool,
+    const UInt64 * row_indices,
+    size_t num_rows,
+    const AggregateFunctionInstruction * aggregate_instructions,
+    AggregateDataPtr * places) const
+{
+    for (size_t i = 0; i < aggregate_functions.size(); ++i)
+    {
+        const AggregateFunctionInstruction * instruction = aggregate_instructions + i;
+        instruction->batch_that->addBatchForRows(
+            row_indices, num_rows, places, instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+    }
+}
 
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
