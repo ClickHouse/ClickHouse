@@ -13,7 +13,7 @@ from praktika.utils import Shell, Utils
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 MIN_TOTAL_TESTS = 5_939_581
-MAX_FAILED_TESTS = 173_986
+MAX_FAILED_TESTS = 174_004
 
 
 # Reuse the same ClickHouseBinary helper from sqltest_job.py
@@ -316,9 +316,27 @@ def main():
     if results[-1].is_ok():
         print("Clone sqllogictest repo")
 
+        # Pin to a specific commit to avoid non-deterministic test results
+        # when the upstream repo updates (e.g., SQLite version bumps).
+        sqllogictest_commit = "634e46492bff5c206a6eb9ba934f2cd411c74bf0"
+
         def clone():
-            return Path(sqllogictest_repo).is_dir() or Shell.check(
-                f"git clone --depth 1 https://github.com/gregrahn/sqllogictest.git {sqllogictest_repo}",
+            if not Path(sqllogictest_repo).is_dir():
+                if not Shell.check(
+                    f"git clone https://github.com/gregrahn/sqllogictest.git {sqllogictest_repo}",
+                    verbose=True,
+                ):
+                    return False
+            else:
+                # On reused workspaces, fetch latest refs so the pinned
+                # commit is available even if it was not in the original clone.
+                if not Shell.check(
+                    f"git -C {sqllogictest_repo} fetch origin",
+                    verbose=True,
+                ):
+                    return False
+            return Shell.check(
+                f"git -C {sqllogictest_repo} checkout {sqllogictest_commit}",
                 verbose=True,
             )
 

@@ -439,7 +439,6 @@ public:
             partitions = rhs.partitions;
             projections = rhs.projections;
             views = rhs.views;
-            skip_indices = rhs.skip_indices;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -460,7 +459,6 @@ public:
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
-            std::swap(skip_indices, rhs.skip_indices);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -471,7 +469,6 @@ public:
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
-        std::set<std::string> skip_indices TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -1000,8 +997,6 @@ public:
     };
 
     void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
-
-    void addSkipIndexAccessInfo(const String & full_table_name, const String & skip_index_name);
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories : uint8_t

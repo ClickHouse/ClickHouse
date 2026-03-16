@@ -232,6 +232,37 @@ void IColumn::updateAt(const IColumn &, size_t, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());
 }
 
+Int64 IColumn::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+{
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    #define compareAt doCompareAt
+#endif
+    Int64 res = compareAt(n, m, rhs, nan_direction_hint);
+
+    if (res < 0)
+    {
+        ++n;
+        while (n < size() && (compareAt(n, m, rhs, nan_direction_hint) < 0))
+        {
+            --res;
+            ++n;
+        }
+    }
+    else if (res > 0)
+    {
+        ++m;
+        while (m < rhs.size() && (compareAt(n, m, rhs, nan_direction_hint) > 0))
+        {
+            ++res;
+            ++m;
+        }
+    }
+    return res;
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    #undef compareAt
+#endif
+}
+
 #if USE_EMBEDDED_COMPILER
 llvm::Value * IColumn::compileComparator(
     llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
