@@ -69,20 +69,38 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     bool additional_filters_present = false; /// WHERE or PREWHERE
 
-    /// Expect this query plan:
-    /// LimitStep
-    ///    ^
-    ///    |
-    /// SortingStep
-    ///    ^
-    ///    |
-    /// ExpressionStep
-    ///    ^
-    ///    |
-    /// (optional: FilterStep)
-    ///    ^
-    ///    |
-    /// ReadFromMergeTree
+    /// Expect one of these query plans:
+    ///
+    /// Regular MergeTree tables:
+    ///   LimitStep
+    ///      ^
+    ///      |
+    ///   SortingStep
+    ///      ^
+    ///      |
+    ///   ExpressionStep
+    ///      ^
+    ///      |
+    ///   (optional: FilterStep)
+    ///      ^
+    ///      |
+    ///   ReadFromMergeTree
+    ///
+    /// Distributed tables or `remote` queries:
+    ///   LimitStep
+    ///      ^
+    ///      |
+    ///   SortingStep (MergingSorted)
+    ///      ^
+    ///      |
+    ///   UnionStep
+    ///      ^
+    ///      |
+    ///   +--> Child 1: SortingStep (Full) -> ExpressionStep -> (optional: FilterStep) -> ReadFromMergeTree
+    ///   |
+    ///   +--> Child 2: ReadFromRemote
+    ///   |
+    ///   +--> ... (more children)
 
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
     if (!limit_step)
