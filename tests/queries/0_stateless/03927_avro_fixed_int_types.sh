@@ -11,6 +11,7 @@ ${CLICKHOUSE_LOCAL} <<EOF
   CREATE TABLE test (
     uint8 UInt8,
     int8 Int8,
+    int8_negative Int8,
     uint16 UInt16,
     int16 Int16,
     uint32 UInt32,
