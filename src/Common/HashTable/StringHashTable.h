@@ -470,7 +470,7 @@ private:
         const auto & x = keyHolderGetKey(key_holder);
         const size_t sz = x.size();
 
-        auto key_hash = [&](const auto & key) ALWAYS_INLINE
+        auto key_hash = [&]([[maybe_unused]] const auto & key) ALWAYS_INLINE
         {
             if constexpr (std::is_same_v<HashTag, PrecomputedHashTag>)
                 return precomputed_hash;
