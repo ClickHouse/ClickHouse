@@ -1924,6 +1924,8 @@ Aggregator::prepareColumnsForSharding(const Columns & columns, size_t row_count,
         /// TODO: Combinators (-If, -Array, -State) are not supported yet.
         chassert(aggregate_functions[i]->getNestedFunction() == nullptr);
 
+        /// TODO: If multiple aggregates share the same argument column, we materialize it
+        /// multiple times. Could deduplicate by caching materialized columns by position.
         for (const auto & argument_name : params.aggregates[i].argument_names)
         {
             const auto pos = header.getPositionByName(argument_name);
@@ -1941,6 +1943,30 @@ Aggregator::prepareColumnsForSharding(const Columns & columns, size_t row_count,
 
     return {std::move(payload_columns), std::move(key_hashes)};
 }
+
+
+Block Aggregator::getShardedPayloadHeader() const
+{
+    Block payload_header;
+
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
+        payload_header.insert(
+            {recursiveRemoveLowCardinality(header.getByPosition(keys_positions[i]).type), "__sharded_key_" + toString(i)});
+    }
+
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        for (size_t j = 0; j < params.aggregates[i].argument_names.size(); ++j)
+        {
+            const auto & argument = header.getByName(params.aggregates[i].argument_names[j]);
+            payload_header.insert({recursiveRemoveLowCardinality(argument.type), "__sharded_agg_" + toString(i) + "_arg_" + toString(j)});
+        }
+    }
+
+    return payload_header;
+}
+
 
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
