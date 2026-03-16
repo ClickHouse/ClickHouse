@@ -690,7 +690,7 @@ def test_shared_database_reload():
 
 
 # ============================================================
-# Test 38: Removing namespace clears prefixing (context rebind)
+# Test 37: Removing namespace clears prefixing (context rebind)
 # ============================================================
 def test_namespace_removal_clears_prefixing():
     """
@@ -734,7 +734,7 @@ def test_namespace_removal_clears_prefixing():
     q("DROP USER rebind_user")
 
 # ============================================================
-# Test 37: Tenant cannot shadow a shared database
+# Test 38: Tenant cannot shadow a shared database
 # ============================================================
 def test_shared_database_no_shadow():
     # Clean up from previous flaky re-runs

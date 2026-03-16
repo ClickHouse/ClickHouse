@@ -1325,10 +1325,16 @@ const RefreshSet & Context::getRefreshSet() const { return shared->refresh_set; 
 
 String Context::resolveDatabase(const String & database_name) const
 {
-    String res = database_name.empty() ? getCurrentDatabase() : database_name;
-    if (res.empty())
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
-    return applyDatabaseNamespace(res);
+    if (database_name.empty())
+    {
+        /// `getCurrentDatabase()` already returns the physical (namespace-prefixed) name,
+        /// so applying the namespace again would double-prefix it.
+        String res = getCurrentDatabase();
+        if (res.empty())
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
+        return res;
+    }
+    return applyDatabaseNamespace(database_name);
 }
 
 String Context::getPath() const
@@ -1909,8 +1915,9 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     setExternalRolesWithLock(external_roles_, lock);
 
     /// Set the database namespace (must be before setCurrentDatabaseWithLock).
-    /// Assign unconditionally so that switching to a user without a namespace
+    /// Always overwrite so that switching to a user without a namespace
     /// clears any previously set value from the context.
+    /// Only mark access dirty when the value actually changes.
     if (database_namespace != db_namespace)
     {
         database_namespace = db_namespace;
@@ -3340,6 +3347,10 @@ String Context::stripDatabaseNamespace(const String & physical_database_name) co
     return stripDatabaseNamespaceImpl(physical_database_name, ns, separator);
 }
 
+/// Strip the namespace prefix from a physical database name for user-facing display.
+/// No exclusion check is needed here: excluded databases (system, default, shared)
+/// are never prefixed by `applyDatabaseNamespaceImpl`, so they never match
+/// `starts_with(prefix)` and are returned unchanged.
 String Context::stripDatabaseNamespaceImpl(
     const String & physical_database_name,
     const String & ns,
@@ -3414,18 +3425,10 @@ void Context::validateDatabaseNameNoSeparator(const String & database_name) cons
     if (pos == String::npos)
         return;
 
-    /// Reject if separator is at the start (empty prefix) or at the end (empty suffix).
-    if (pos == 0 || pos + separator.size() >= database_name.size())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Invalid database name '{}': the namespace separator '{}' cannot appear at the start or end of the name",
-            database_name, separator);
-
-    /// Separator found in the middle — not allowed when namespace feature is active.
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Cannot create database '{}': database names cannot contain the namespace separator '{}' "
-        "when the database namespace feature is enabled (server setting database_namespace_separator)",
+        "when the database namespace feature is enabled (server setting `database_namespace_separator`)",
         database_name, separator);
 }
 

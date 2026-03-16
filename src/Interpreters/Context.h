@@ -1077,8 +1077,9 @@ public:
 private:
     /// Pure functions that transform database names using the given namespace and separator.
     /// Static because they access no instance state — all inputs are passed as parameters.
-    /// Callers that hold the context mutex (e.g. `setUser`, `setCurrentDatabase`) read
-    /// namespace/separator/shared-databases before acquiring the lock, then call these.
+    /// `setCurrentDatabase` reads namespace/separator/shared before acquiring the lock;
+    /// `setUser` reads them from the User object while already holding the lock.
+    /// Both patterns are safe because these methods never access instance state.
     static String applyDatabaseNamespaceImpl(
         const String & database_name,
         const String & ns,

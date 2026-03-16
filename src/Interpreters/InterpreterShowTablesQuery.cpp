@@ -68,6 +68,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
                 << "), name) AS _db_name FROM system.databases"
                 << " WHERE startsWith(name, " << DB::quote << prefix << ")"
                 << " OR name IN ('default', 'system', 'INFORMATION_SCHEMA', 'information_schema')";
+                /// NOTE: The list above must match `Context::isExcludedFromNamespacing`.
 
             /// Include shared databases visible to all tenants.
             auto shared = getContext()->getSharedDatabasesAcrossNamespaces();

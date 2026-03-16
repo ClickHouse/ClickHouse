@@ -56,7 +56,7 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
     }
     else
     {
-        /// Apply database namespace prefix for multi-tenant isolation.
+        /// Apply database namespace for multi-tenant isolation.
         table_id.database_name = context->applyDatabaseNamespace(table_id.database_name);
         query.setDatabase(table_id.database_name);
     }
