@@ -124,7 +124,7 @@ void logProcessorProfile(ContextPtr context, const std::vector<IProcessor::Proce
             for (const auto & info : profile_infos)
             {
                 processor_elem.id = info.id;
-                processor_elem.parent_ids.assign(info.parent_ids.begin(), info.parent_ids.end());
+                processor_elem.parent_ids = info.parent_ids;
 
                 processor_elem.plan_step = info.plan_step;
                 processor_elem.plan_step_name = info.plan_step_name;
