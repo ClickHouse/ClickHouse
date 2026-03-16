@@ -23,6 +23,7 @@ public:
         size_t max_block_size_,
         size_t max_threads_,
         size_t min_marks_for_concurrent_read_,
+        bool use_uncompressed_cache_,
         ExpressionActionsSettings actions_settings_,
         MergeTreeReaderSettings reader_settings_,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
@@ -41,6 +42,7 @@ private:
     size_t max_block_size;
     size_t max_threads;
     size_t min_marks_for_concurrent_read;
+    bool use_uncompressed_cache;
 
     ExpressionActionsSettings actions_settings;
     MergeTreeReaderSettings reader_settings;

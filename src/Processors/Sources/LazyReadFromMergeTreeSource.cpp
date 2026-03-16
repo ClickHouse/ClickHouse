@@ -34,6 +34,7 @@ LazyReadFromMergeTreeSource::LazyReadFromMergeTreeSource(
     size_t max_block_size_,
     size_t max_threads_,
     size_t min_marks_for_concurrent_read_,
+    bool use_uncompressed_cache_,
     ExpressionActionsSettings actions_settings_,
     MergeTreeReaderSettings reader_settings_,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
@@ -46,6 +47,7 @@ LazyReadFromMergeTreeSource::LazyReadFromMergeTreeSource(
     , max_block_size(max_block_size_)
     , max_threads(max_threads_)
     , min_marks_for_concurrent_read(min_marks_for_concurrent_read_)
+    , use_uncompressed_cache(use_uncompressed_cache_)
     , actions_settings(actions_settings_)
     , reader_settings(reader_settings_)
     , mutations_snapshot(std::move(mutations_snapshot_))
@@ -228,7 +230,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         .sum_marks = sum_marks,
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
         .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
-        .use_uncompressed_cache = ctx_settings[Setting::use_uncompressed_cache],
+        .use_uncompressed_cache = use_uncompressed_cache,
         .use_const_size_tasks_for_remote_reading = ctx_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
         .total_query_nodes = 1,
     };

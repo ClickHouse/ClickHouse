@@ -2,6 +2,7 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
@@ -27,6 +28,7 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/UncompressedCacheUtils.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
@@ -220,6 +222,11 @@ namespace Setting
     extern const SettingsBool apply_prewhere_after_final;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 uncompressed_cache_size;
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
@@ -238,14 +245,32 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
 }
 
-static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
+struct PartsRemoteFSInfo
 {
+    bool all_parts_on_remote_disk = true;
+    bool any_parts_on_remote_disk = false;
+};
+
+static PartsRemoteFSInfo analyzePartsOnRemoteFS(const RangesInDataParts & parts)
+{
+    PartsRemoteFSInfo result;
+
     for (const auto & part : parts)
     {
-        if (!part.data_part->isStoredOnRemoteDisk())
-            return false;
+        const bool part_on_remote_disk = part.data_part->isStoredOnRemoteDisk();
+        result.any_parts_on_remote_disk |= part_on_remote_disk;
+        result.all_parts_on_remote_disk &= part_on_remote_disk;
+
+        if (result.any_parts_on_remote_disk && !result.all_parts_on_remote_disk)
+            break;
     }
-    return true;
+
+    return result;
+}
+
+static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
+{
+    return analyzePartsOnRemoteFS(parts).all_parts_on_remote_disk;
 }
 
 /// build sort description for output stream
@@ -857,6 +882,7 @@ struct PartRangesReadInfo
 
     PartRangesReadInfo(
         const RangesInDataParts & parts,
+        bool has_uncompressed_cache,
         const Settings & settings,
         const MergeTreeSettings & data_settings)
     {
@@ -882,7 +908,9 @@ struct PartRangesReadInfo
             data_settings[MergeTreeSetting::index_granularity],
             index_granularity_bytes);
 
-        auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
+        const auto remote_fs_info = analyzePartsOnRemoteFS(parts);
+        const bool all_parts_on_remote_disk = remote_fs_info.all_parts_on_remote_disk;
+        const bool any_parts_on_remote_disk = remote_fs_info.any_parts_on_remote_disk;
 
         size_t min_rows_for_concurrent_read;
         size_t min_bytes_for_concurrent_read;
@@ -901,9 +929,16 @@ struct PartRangesReadInfo
             min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
             data_settings[MergeTreeSetting::index_granularity], index_granularity_bytes, settings[Setting::merge_tree_min_read_task_size], sum_marks);
 
-        use_uncompressed_cache = settings[Setting::use_uncompressed_cache];
-        if (sum_marks > max_marks_to_use_cache)
-            use_uncompressed_cache = false;
+        const bool auto_enable_supported = canAutoEnableUncompressedCacheForMergeTreeRead(any_parts_on_remote_disk, has_uncompressed_cache);
+
+        /// The uncompressed cache setting is applied to the whole read pool. When the user did not
+        /// explicitly override it, keep any query touching remote/object-storage parts opt-in by
+        /// default because those parts already have other cache layers.
+        use_uncompressed_cache = shouldUseUncompressedCacheForMergeTreeRead(
+            settings[Setting::use_uncompressed_cache].changed,
+            settings[Setting::use_uncompressed_cache],
+            sum_marks <= max_marks_to_use_cache,
+            auto_enable_supported);
     }
 };
 
@@ -917,10 +952,11 @@ Pipe ReadFromMergeTree::readByLayers(
     const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
+    const bool has_uncompressed_cache = context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0;
 
     LOG_TRACE(log, "Spreading mark ranges among streams (reading by layers)");
 
-    PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
+    PartRangesReadInfo info(parts_with_ranges, has_uncompressed_cache, settings, *data_settings);
     if (0 == info.sum_marks)
         return {};
 
@@ -1037,10 +1073,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     const Names & column_names)
 {
     const auto & settings = context->getSettingsRef();
+    const bool has_uncompressed_cache = context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0;
 
     LOG_TRACE(log, "Spreading mark ranges among streams (default reading)");
 
-    PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
+    PartRangesReadInfo info(parts_with_ranges, has_uncompressed_cache, settings, *data_settings);
     Names tmp_column_names(column_names.begin(), column_names.end());
 
     if (0 == info.sum_marks)
@@ -1185,10 +1222,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
+    const bool has_uncompressed_cache = context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0;
 
     LOG_TRACE(log, "Spreading ranges among streams with order");
 
-    PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
+    PartRangesReadInfo info(parts_with_ranges, has_uncompressed_cache, settings, *data_settings);
 
     Pipes res;
 
@@ -1630,7 +1668,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         return {};
 
     const auto & settings = context->getSettingsRef();
-    PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
+    const bool has_uncompressed_cache = context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0;
+    PartRangesReadInfo info(parts_with_ranges, has_uncompressed_cache, settings, *data_settings);
 
     assert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
@@ -3129,12 +3168,17 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
             nullptr) //query_info.prewhere_info)
     );
 
-    PartRangesReadInfo info(getParts(), context->getSettingsRef(), *data.getSettings());
+    PartRangesReadInfo info(
+        getParts(),
+        context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0,
+        context->getSettingsRef(),
+        *data.getSettings());
 
     auto new_reading = std::make_unique<LazilyReadFromMergeTree>(
         std::move(lazy_reading_header),
         block_size.max_block_size_rows,
         info.min_marks_for_concurrent_read,
+        info.use_uncompressed_cache,
         reader_settings,
         mutations_snapshot,
         storage_snapshot,
@@ -3405,7 +3449,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         auto empty_mutations_snapshot = mutations_snapshot->cloneEmpty();
         const auto & query_settings = context->getSettingsRef();
-        PartRangesReadInfo info(result.parts_with_ranges, query_settings, *data_settings);
+        const bool has_uncompressed_cache = context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0;
+        PartRangesReadInfo info(result.parts_with_ranges, has_uncompressed_cache, query_settings, *data_settings);
         PoolSettings pool_settings{
             .threads = 1,
             .sum_marks = info.sum_marks,

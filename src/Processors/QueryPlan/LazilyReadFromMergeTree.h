@@ -19,6 +19,7 @@ public:
         SharedHeader header,
         size_t max_block_size,
         size_t min_marks_for_concurrent_read_,
+        bool use_uncompressed_cache_,
         MergeTreeReaderSettings reader_settings_,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
         StorageSnapshotPtr storage_snapshot,
@@ -39,6 +40,7 @@ public:
 private:
     size_t max_block_size;
     size_t min_marks_for_concurrent_read;
+    bool use_uncompressed_cache;
     MergeTreeReaderSettings reader_settings;
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
     StorageSnapshotPtr storage_snapshot;
