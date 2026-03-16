@@ -7772,6 +7772,46 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
+    /* LLM function settings */ \
+    DECLARE(String, default_llm_resource, "", R"(
+Default named collection for LLM functions (LLMClassify, LLMExtract, LLMGenerateSQL, LLMTranslate). Used when no collection is passed as the first argument.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, llm_request_timeout_sec, 60, R"(
+Timeout in seconds for individual LLM HTTP requests. Analogous to http_receive_timeout.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, llm_max_concurrent_requests, 16, R"(
+Maximum concurrent HTTP requests per block dispatch for LLM functions. Analogous to s3_max_connections.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, llm_max_rps, 50, R"(
+Maximum requests per second to the LLM provider. Enforced via a token-bucket rate limiter. Analogous to s3_max_get_rps.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, llm_max_retries, 3, R"(
+Maximum retry attempts for transient LLM errors (HTTP 5xx, 429, network errors) per request. Analogous to s3_retry_attempts.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, llm_retry_initial_delay_ms, 1000, R"(
+Initial backoff delay in milliseconds for LLM request retries. Doubled on each subsequent attempt (exponential backoff).
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, llm_cache_ttl_sec, 86400, R"(
+TTL in seconds for cached LLM results. Default: 24 hours. Set to 0 to disable caching.
+)", EXPERIMENTAL) \
+    DECLARE(String, llm_on_error, "throw", R"(
+Behavior when an individual row's LLM call fails permanently after retries. 'throw' fails the query. 'partial' returns NULL for that row and continues.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, llm_max_rows_per_query, 100000, R"(
+Maximum number of input rows LLM functions may process per query. Enforced at planning time.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, llm_max_input_tokens_per_query, 1000000, R"(
+Maximum total prompt tokens across all LLM calls in the query.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, llm_max_output_tokens_per_query, 500000, R"(
+Maximum total completion tokens across all LLM calls in the query.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, llm_max_api_calls_per_query, 1000, R"(
+Maximum HTTP requests dispatched per query for LLM functions (after cache and deduplication).
+)", EXPERIMENTAL) \
+    DECLARE(String, llm_on_quota_exceeded, "throw", R"(
+Behavior when an LLM quota limit is hit. 'throw' fails the query. 'partial' stops calling the LLM and returns NULL for remaining rows.
+)", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
 
