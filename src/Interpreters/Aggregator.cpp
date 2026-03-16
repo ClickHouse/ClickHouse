@@ -2133,28 +2133,6 @@ void NO_INLINE Aggregator::executeImplBatchOnSubsetRows(
     };
     std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(num_indices), places_deleter);
 
-    /// UInt8 key - use direct 256-entry addressing table (DAT).
-    if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
-    {
-        const auto * key_data = state.getKeyData();
-        AggregateDataPtr * map = reinterpret_cast<AggregateDataPtr *>(method.data.data());
-
-        for (size_t j = 0; j < num_indices; ++j)
-        {
-            UInt8 key = key_data[row_indices[j]];
-            AggregateDataPtr & place = map[key];
-            if (unlikely(!place)) /// First time seeing the key
-            {
-                place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                createAggregateStates(place);
-            }
-            places[j] = place;
-        }
-
-        executeAggregateInstructionsOnSubsetRows(aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get());
-        return;
-    }
-
     PrefetchingHelper prefetching;
     size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 

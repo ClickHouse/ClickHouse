@@ -304,7 +304,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// We do not want to take over cases covered by InOrder Aggregation as those are faster.
         && sort_description_for_merging.empty()
         && grouping_sets_params.empty()
-        /// Sharding is useful for high cardinality keys so skip LowCardinality.
+        /// Sharding is useful for high cardinality keys. Skip 1-byte types
+        /// (UInt8/Int8 have at most 256 distinct values) and LowCardinality.
+        && !WhichDataType(removeNullable(pipeline.getHeader().getByName(params.keys[0]).type)).isUInt8()
+        && !WhichDataType(removeNullable(pipeline.getHeader().getByName(params.keys[0]).type)).isInt8()
         && !pipeline.getHeader().getByName(params.keys[0]).type->lowCardinality()
         /// TODO: Aggregate function combinators (-If, -Array, -State, etc.) not supported yet.
         && std::none_of(params.aggregates.begin(),
