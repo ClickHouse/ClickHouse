@@ -10,11 +10,11 @@ namespace DB
 SaveSubqueryResultToBufferTransform::SaveSubqueryResultToBufferTransform(
     SharedHeader header_,
     ChunkBufferPtr chunk_buffer_,
-    const std::vector<size_t> & columns_to_save_indices_
+    const VectorWithMemoryTracking<size_t> & columns_to_save_indices_
 )
     : ISimpleTransform(header_, header_, false)
     , chunk_buffer(std::move(chunk_buffer_))
-    , columns_to_save_indices(columns_to_save_indices_.begin(), columns_to_save_indices_.end())
+    , columns_to_save_indices(columns_to_save_indices_)
 {}
 
 void SaveSubqueryResultToBufferTransform::transform(Chunk & chunk)

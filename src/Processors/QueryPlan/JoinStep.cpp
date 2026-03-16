@@ -43,13 +43,13 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
     return description;
 }
 
-std::vector<size_t> getPermutationForBlock(
+VectorWithMemoryTracking<size_t> getPermutationForBlock(
     const Block & block,
     const Block & lhs_block,
     const Block & rhs_block,
     const NameSet & name_filter)
 {
-    std::vector<size_t> permutation;
+    VectorWithMemoryTracking<size_t> permutation;
     permutation.reserve(block.columns());
     BlockNameMap name_map = getNamesToIndexesMap(block);
 

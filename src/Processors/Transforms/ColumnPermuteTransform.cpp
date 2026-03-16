@@ -26,16 +26,16 @@ void permuteChunk(Chunk & chunk, const VectorWithMemoryTracking<size_t> & permut
 
 }
 
-Block ColumnPermuteTransform::permute(const Block & block, const std::vector<size_t> & permutation)
+Block ColumnPermuteTransform::permute(const Block & block, const VectorWithMemoryTracking<size_t> & permutation)
 {
     auto columns = block.getColumnsWithTypeAndName();
     applyPermutation(columns, permutation);
     return Block(columns);
 }
 
-ColumnPermuteTransform::ColumnPermuteTransform(SharedHeader header_, const std::vector<size_t> & permutation_)
+ColumnPermuteTransform::ColumnPermuteTransform(SharedHeader header_, const VectorWithMemoryTracking<size_t> & permutation_)
     : ISimpleTransform(header_, std::make_shared<const Block>(permute(*header_, permutation_)), false)
-    , permutation(permutation_.begin(), permutation_.end())
+    , permutation(permutation_)
 {
 }
 

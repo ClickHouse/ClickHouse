@@ -85,7 +85,7 @@ Chunk convertToChunk(const Block & block)
     auto info = std::make_shared<AggregatedChunkInfo>();
     info->bucket_num = block.info.bucket_num;
     info->is_overflows = block.info.is_overflows;
-    info->out_of_order_buckets.assign(block.info.out_of_order_buckets.begin(), block.info.out_of_order_buckets.end());
+    info->out_of_order_buckets = block.info.out_of_order_buckets;
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
@@ -611,7 +611,7 @@ private:
             const auto has_rows = chunk.hasRows();
             if (has_rows)
             {
-                chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets.assign(out_of_order_buckets.begin(), out_of_order_buckets.end());
+                chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
                 output.push(std::move(chunk));
                 return Status::PortFull;
             }
@@ -626,7 +626,7 @@ private:
         {
             if (chunk.hasRows())
             {
-                chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets.assign(out_of_order_buckets.begin(), out_of_order_buckets.end());
+                chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
                 output.push(std::move(chunk));
                 return Status::PortFull;
             }
@@ -665,7 +665,7 @@ private:
     /// It works because we don't actually require any specific order of buckets anywhere, we only need to make sure that
     /// `GroupingAggregatedTransform` will output all buckets (from all the nodes) with the same id together.
     static constexpr UInt32 NUM_OOO_BUCKETS = 4;
-    std::vector<Int32> out_of_order_buckets;
+    VectorWithMemoryTracking<Int32> out_of_order_buckets;
 
     Processors processors;
 

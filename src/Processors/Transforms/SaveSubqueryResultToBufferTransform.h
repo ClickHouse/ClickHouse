@@ -4,8 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <vector>
-
 namespace DB
 {
 
@@ -24,7 +22,7 @@ public:
     SaveSubqueryResultToBufferTransform(
         SharedHeader header_,
         ChunkBufferPtr chunk_buffer_,
-        const std::vector<size_t> & columns_to_save_indices_
+        const VectorWithMemoryTracking<size_t> & columns_to_save_indices_
     );
 
     String getName() const override { return "SaveSubqueryResultToBuffer"; }
