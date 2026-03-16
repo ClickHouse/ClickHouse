@@ -3845,7 +3845,7 @@ Possible values:
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
     DECLARE(Bool, optimize_aggregation_by_sharding, true, R"(
-Enables sharded `GROUP BY` optimization that partitions data by the grouping key before aggregation, allowing each thread to aggregate independently without a merge phase.
+Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
 
 Beneficial for queries with high-cardinality grouping keys over large datasets. Maybe slower for low-cardinality keys or small tables where the sharding overhead exceeds the merge savings.
 
