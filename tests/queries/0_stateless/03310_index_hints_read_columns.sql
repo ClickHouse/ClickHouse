@@ -1,5 +1,4 @@
 -- Tags: no-parallel, no-random-settings, no-object-storage
--- add_minmax_index_for_numeric_columns=0: More opened files
 
 -- Does additional index analysis round that the test doesn't expect
 set automatic_parallel_replicas_mode=0;
@@ -9,17 +8,17 @@ DROP TABLE IF EXISTS t_index_hint;
 
 CREATE TABLE t_index_hint (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_version = 'basic', add_minmax_index_for_numeric_columns=0;
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
 
 INSERT INTO t_index_hint SELECT number, number FROM numbers(1000);
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT sum(b) FROM t_index_hint WHERE b >= 100 AND b < 200 SETTINGS max_threads = 1;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT sum(b) FROM t_index_hint WHERE a >= 100 AND a < 200 AND b >= 100 AND b < 200 SETTINGS max_threads = 1, force_primary_key = 1;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT sum(b) FROM t_index_hint WHERE indexHint(a >= 100 AND a < 200) AND b >= 100 AND b < 200 SETTINGS max_threads = 1, force_primary_key = 1;
 
 SYSTEM FLUSH LOGS query_log;
@@ -29,7 +28,7 @@ SELECT
     read_rows,
     arraySort(arrayMap(x -> splitByChar('.', x)[-1], columns))
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+WHERE type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query LIKE '%SELECT sum(b) FROM t_index_hint%'
 ORDER BY event_time_microseconds;
@@ -48,16 +47,16 @@ SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_
 
 INSERT INTO t_index_hint (a, s) VALUES (1, 'Text with my_token') (2, 'Another text');
 
-SYSTEM CLEAR MARK CACHE;
-SYSTEM CLEAR INDEX MARK CACHE;
+SYSTEM DROP MARK CACHE;
+SYSTEM DROP INDEX MARK CACHE;
 SELECT count() FROM t_index_hint WHERE s LIKE '%my_token%' SETTINGS max_threads = 1;
 
-SYSTEM CLEAR MARK CACHE;
-SYSTEM CLEAR INDEX MARK CACHE;
+SYSTEM DROP MARK CACHE;
+SYSTEM DROP INDEX MARK CACHE;
 SELECT count() FROM t_index_hint WHERE has(s_tokens, 'my_token') AND s LIKE '%my_token%' SETTINGS max_threads = 1, force_data_skipping_indices = 'idx_tokens';
 
-SYSTEM CLEAR MARK CACHE;
-SYSTEM CLEAR INDEX MARK CACHE;
+SYSTEM DROP MARK CACHE;
+SYSTEM DROP INDEX MARK CACHE;
 SELECT count() FROM t_index_hint WHERE indexHint(has(s_tokens, 'my_token')) AND s LIKE '%my_token%' SETTINGS max_threads = 1, force_data_skipping_indices = 'idx_tokens';
 
 SYSTEM FLUSH LOGS query_log;
@@ -67,7 +66,7 @@ SELECT
     read_rows,
     arraySort(arrayMap(x -> splitByChar('.', x)[-1], columns))
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+WHERE type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query LIKE '%SELECT count() FROM t_index_hint%'
 ORDER BY event_time_microseconds;

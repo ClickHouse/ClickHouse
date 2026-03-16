@@ -1,6 +1,5 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
 #include <Processors/Chunk.h>
@@ -17,13 +16,6 @@
 #include <algorithm>
 #include <atomic>
 
-namespace CurrentMetrics
-{
-    extern const Metric DestroyAggregatesThreads;
-    extern const Metric DestroyAggregatesThreadsActive;
-    extern const Metric DestroyAggregatesThreadsScheduled;
-}
-
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
@@ -35,47 +27,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
     extern const int LOGICAL_ERROR;
-}
-
-ManyAggregatedData::~ManyAggregatedData()
-{
-    try
-    {
-        if (variants.size() <= 1)
-            return;
-
-        // Aggregation states destruction may be very time-consuming.
-        // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
-        // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-        const auto pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::DestroyAggregatesThreads,
-            CurrentMetrics::DestroyAggregatesThreadsActive,
-            CurrentMetrics::DestroyAggregatesThreadsScheduled,
-            variants.size());
-
-        for (auto && variant : variants)
-        {
-            if (variant->size() < 100'000) // some seemingly reasonable constant
-                continue;
-
-            // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
-            if (variant->aggregator)
-            {
-                pool->scheduleOrThrowOnError(
-                    [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
-                    {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::AGGREGATOR_DESTRUCTION);
-                        my_variant.reset();
-                    });
-            }
-        }
-
-        pool->wait();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 }
 
 /// Convert block to chunk.
@@ -781,18 +732,16 @@ private:
     }
 };
 
-AggregatingTransform::AggregatingTransform(
-    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+AggregatingTransform::AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_)
     : AggregatingTransform(
-          std::move(header),
-          std::move(params_),
-          std::make_unique<ManyAggregatedData>(1),
-          0,
-          1,
-          1,
-          true /* should_produce_results_in_order_of_bucket_number */,
-          false /* skip_merging */,
-          updater_)
+        std::move(header),
+        std::move(params_),
+        std::make_unique<ManyAggregatedData>(1),
+        0,
+        1,
+        1,
+        true /* should_produce_results_in_order_of_bucket_number */,
+        false /* skip_merging */)
 {
 }
 
@@ -977,8 +926,8 @@ void AggregatingTransform::initGenerate()
 
     LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({:.3f} rows/sec., {}/sec.)",
         src_rows, rows, ReadableSize(src_bytes),
-        elapsed_seconds, static_cast<double>(src_rows) / elapsed_seconds,
-        ReadableSize(static_cast<double>(src_bytes) / elapsed_seconds));
+        elapsed_seconds, src_rows / elapsed_seconds,
+        ReadableSize(src_bytes / elapsed_seconds));
 
     if (params->aggregator.hasTemporaryData())
     {
@@ -1019,9 +968,6 @@ void AggregatingTransform::initGenerate()
         }
         else
         {
-            if (updater)
-                updater->markUnsupportedCase();
-
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             Pipes pipes;
             for (auto & variant : prepared_data)
@@ -1064,9 +1010,6 @@ void AggregatingTransform::initGenerate()
     }
     else
     {
-        if (updater)
-            updater->markUnsupportedCase();
-
         /// If there are temporary files with partially-aggregated data on the disk,
         /// then read and merge them, spending the minimum amount of memory.
 

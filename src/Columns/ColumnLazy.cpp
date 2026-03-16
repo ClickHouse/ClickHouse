@@ -72,9 +72,9 @@ void ColumnLazy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get is not supported for {}", getName());
 }
 
-void ColumnLazy::getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const
+DataTypePtr ColumnLazy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getValueName is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getValueNameAndType is not supported for {}", getName());
 }
 
 bool ColumnLazy::isDefaultAt(size_t) const
@@ -373,7 +373,7 @@ void ColumnLazy::protect()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method protect is not supported for {}", getName());
 }
 
-void ColumnLazy::getExtremes(Field &, Field &, size_t, size_t) const
+void ColumnLazy::getExtremes(Field &, Field &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getExtremes is not supported for {}", getName());
 }

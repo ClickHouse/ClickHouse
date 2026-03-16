@@ -91,20 +91,13 @@ CONV_FN(Function, func)
 
 void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
-    if (cl.has_cluster())
+    if (clause)
     {
-        if (clause)
-        {
-            ret += " ON CLUSTER ";
-        }
-        ret += "'";
-        ret += cl.cluster();
-        ret += "'";
-        if (!clause)
-        {
-            ret += ", ";
-        }
+        ret += " ON CLUSTER ";
     }
+    ret += "'";
+    ret += cl.cluster();
+    ret += "'";
 }
 
 CONV_FN(Window, win)
@@ -1188,10 +1181,6 @@ CONV_FN_QUOTE(TopTypeName, ttn)
         case TopTypeNameType::kTuple: {
             const TupleTypeDef & tt = ttn.tuple();
 
-            if (tt.is_nullable())
-            {
-                ret += "Nullable(";
-            }
             ret += "Tuple";
             if (tt.has_with_names())
             {
@@ -1204,10 +1193,6 @@ CONV_FN_QUOTE(TopTypeName, ttn)
             else
             {
                 ret += "()";
-            }
-            if (tt.is_nullable())
-            {
-                ret += ")";
             }
         }
         break;
@@ -1399,7 +1384,7 @@ CONV_FN(ExprCase, ecase)
 
 CONV_FN(LambdaExpr, lambda)
 {
-    ret += lambda.paren() ? "(" : "";
+    ret += "(";
     for (int i = 0; i < lambda.args_size(); i++)
     {
         if (i != 0)
@@ -1410,8 +1395,7 @@ CONV_FN(LambdaExpr, lambda)
         ColumnToString(ret, 1, lambda.args(i));
         ret += "`";
     }
-    ret += lambda.paren() ? ")" : "";
-    ret += " -> ";
+    ret += ") -> ";
     ExprToString(ret, lambda.expr());
 }
 
@@ -1822,9 +1806,9 @@ CONV_FN(Expr, expr)
     {
         ret += "1";
     }
-    for (int i = 0; i < expr.fields_size(); i++)
+    if (expr.has_field())
     {
-        FieldAccessToString(ret, expr.fields(i));
+        FieldAccessToString(ret, expr.field());
     }
 }
 
@@ -1859,11 +1843,13 @@ CONV_FN(JoinConstraint, jc)
         const UsingExpr & uexpr = jc.using_expr();
 
         ret += " USING (";
-        ExprColumnToString(ret, uexpr.column());
-        for (int i = 0; i < uexpr.other_columns_size(); i++)
+        for (int i = 0; i < uexpr.columns_size(); i++)
         {
-            ret += ", ";
-            ExprColumnToString(ret, uexpr.other_columns(i));
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ExprColumnToString(ret, uexpr.columns(i));
         }
         ret += ")";
     }
@@ -1973,6 +1959,7 @@ CONV_FN(FileFunc, ff)
     if (ff.has_cluster() && ff.fname() == FileFunc_FName_fileCluster)
     {
         ClusterToString(ret, false, ff.cluster());
+        ret += ", ";
     }
     ret += "'";
     ret += ff.path();
@@ -2023,9 +2010,9 @@ CONV_FN(FormatFunc, ff)
     ret += "$$)";
 }
 
-CONV_FN(NumbersFunc, gsf)
+CONV_FN(GenerateSeriesFunc, gsf)
 {
-    ret += NumbersFunc_NumbersName_Name(gsf.fname());
+    ret += GenerateSeriesFunc_GSName_Name(gsf.fname());
     ret += "(";
     ExprToString(ret, gsf.expr1());
     if (gsf.has_expr2())
@@ -2214,28 +2201,66 @@ CONV_FN(MongoDBFunc, mfunc)
     ret += ")";
 }
 
-CONV_FN(ObjectStoreFunc, ofunc)
+CONV_FN(S3Func, sfunc)
 {
-    ret += ObjectStoreFunc_FName_Name(ofunc.fname());
-    if (ofunc.cluster_func())
-    {
-        ret += "Cluster";
-    }
+    ret += S3Func_FName_Name(sfunc.fname());
     ret += "(";
-    if (ofunc.cluster_func() && ofunc.has_cluster())
+    if (sfunc.has_cluster() && sfunc.fname() > S3Func_FName_icebergS3)
     {
-        ClusterToString(ret, false, ofunc.cluster());
+        ClusterToString(ret, false, sfunc.cluster());
+        ret += ", ";
     }
-    ret += ofunc.credential();
-    for (int i = 0; i < ofunc.params_size(); i++)
+    ret += sfunc.credential();
+    for (int i = 0; i < sfunc.params_size(); i++)
     {
         ret += ", ";
-        KeyValuePairToString(ret, ofunc.params(i));
+        KeyValuePairToString(ret, sfunc.params(i));
     }
-    if (ofunc.has_setting_values())
+    if (sfunc.has_setting_values())
     {
         ret += ", SETTINGS ";
-        SettingValuesToString(ret, ofunc.setting_values());
+        SettingValuesToString(ret, sfunc.setting_values());
+    }
+    ret += ")";
+}
+
+CONV_FN(AzureBlobStorageFunc, azure)
+{
+    ret += AzureBlobStorageFunc_FName_Name(azure.fname());
+    ret += "(";
+    if (azure.has_cluster() && azure.fname() > AzureBlobStorageFunc_FName_icebergAzure)
+    {
+        ClusterToString(ret, false, azure.cluster());
+        ret += ", ";
+    }
+    ret += azure.credential();
+    for (int i = 0; i < azure.params_size(); i++)
+    {
+        ret += ", ";
+        KeyValuePairToString(ret, azure.params(i));
+    }
+    if (azure.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, azure.setting_values());
+    }
+    ret += ")";
+}
+
+CONV_FN(LocalFunc, local)
+{
+    ret += LocalFunc_FName_Name(local.fname());
+    ret += "(";
+    ret += local.credential();
+    for (int i = 0; i < local.params_size(); i++)
+    {
+        ret += ", ";
+        KeyValuePairToString(ret, local.params(i));
+    }
+    if (local.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, local.setting_values());
     }
     ret += ")";
 }
@@ -2247,6 +2272,7 @@ CONV_FN(URLFunc, url)
     if (url.has_cluster() && url.fname() == URLFunc_FName_urlCluster)
     {
         ClusterToString(ret, false, url.cluster());
+        ret += ", ";
     }
     ret += "'";
     ret += url.uurl();
@@ -2330,6 +2356,7 @@ CONV_FN(ClusterFunc, cluster)
     }
     ret += "(";
     ClusterToString(ret, false, cluster.cluster());
+    ret += ", ";
     TableOrFunctionToString(ret, true, tof);
     if (cluster.has_sharding_key())
     {
@@ -2363,42 +2390,6 @@ CONV_FN(MergeTreeProjectionFunc, mfunc)
     ret += ", '";
     ProjectionToString(ret, mfunc.proj());
     ret += "')";
-}
-
-CONV_FN(MergeTreeTextIndexFunc, mttxtidx)
-{
-    ret += "mergeTreeTextIndex(";
-    FlatExprSchemaTableToString(ret, mttxtidx.est(), "', '");
-    ret += ", '";
-    IndexToString(ret, mttxtidx.idx());
-    ret += "')";
-}
-
-CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
-{
-    ret += "mergeTreeAnalyzeIndexes(";
-    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
-    if (mfunc.has_pred())
-    {
-        ret += ", ";
-        ExprToString(ret, mfunc.pred());
-    }
-    if (mfunc.has_plist())
-    {
-        ret += ", [";
-        for (int i = 0; i < mfunc.plist().parts_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            ret += "'";
-            ret += mfunc.plist().parts(i);
-            ret += "'";
-        }
-        ret += "]";
-    }
-    ret += ")";
 }
 
 CONV_FN(GenerateRandomFunc, grfunc)
@@ -2459,8 +2450,8 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kFormat:
             FormatFuncToString(ret, tf.format());
             break;
-        case TableFunctionType::kNumbers:
-            NumbersFuncToString(ret, tf.numbers());
+        case TableFunctionType::kGseries:
+            GenerateSeriesFuncToString(ret, tf.gseries());
             break;
         case TableFunctionType::kRemote:
             RemoteFuncToString(ret, tf.remote());
@@ -2474,14 +2465,17 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kSqite:
             SQLiteFuncToString(ret, tf.sqite());
             break;
-        case TableFunctionType::kObjectFunc:
-            ObjectStoreFuncToString(ret, tf.object_func());
+        case TableFunctionType::kS3:
+            S3FuncToString(ret, tf.s3());
             break;
         case TableFunctionType::kMerge:
             MergeFuncToString(ret, tf.merge());
             break;
         case TableFunctionType::kCluster:
             ClusterFuncToString(ret, tf.cluster());
+            break;
+        case TableFunctionType::kMtindex:
+            MergeTreeIndexFuncToString(ret, tf.mtindex());
             break;
         case TableFunctionType::kLoop:
             ret += "loop(";
@@ -2499,6 +2493,12 @@ CONV_FN(TableFunction, tf)
             FlatExprSchemaTableToString(ret, tf.dictionary(), ".");
             ret += ")";
             break;
+        case TableFunctionType::kAzure:
+            AzureBlobStorageFuncToString(ret, tf.azure());
+            break;
+        case TableFunctionType::kLocal:
+            LocalFuncToString(ret, tf.local());
+            break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
             break;
@@ -2508,6 +2508,9 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kMongodb:
             MongoDBFuncToString(ret, tf.mongodb());
             break;
+        case TableFunctionType::kMtproj:
+            MergeTreeProjectionFuncToString(ret, tf.mtproj());
+            break;
         case TableFunctionType::kNullf:
             ret += "`null`(";
             ExprToString(ret, tf.nullf());
@@ -2515,18 +2518,6 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kFlight:
             ArrowFlightFuncToString(ret, tf.flight());
-            break;
-        case TableFunctionType::kMtindex:
-            MergeTreeIndexFuncToString(ret, tf.mtindex());
-            break;
-        case TableFunctionType::kMtproj:
-            MergeTreeProjectionFuncToString(ret, tf.mtproj());
-            break;
-        case TableFunctionType::kMttxtidx:
-            MergeTreeTextIndexFuncToString(ret, tf.mttxtidx());
-            break;
-        case TableFunctionType::kMtanindex:
-            MergeTreeAnalyzeIndexesFuncToString(ret, tf.mtanindex());
             break;
         case TableFunctionType::kFunc:
             SQLTableFuncCallToString(ret, tf.func());
@@ -2995,39 +2986,19 @@ CONV_FN(IndexParam, ip)
     }
 }
 
-CONV_FN(BackupParam, bp)
+CONV_FN(CodecParam, cp)
 {
-    using BackupParamType = BackupParam::BackupParamOneofCase;
-    switch (bp.backup_param_oneof_case())
-    {
-        case BackupParamType::kSvalue:
-            ret += "'";
-            ret += bp.svalue();
-            ret += "'";
-            break;
-        case BackupParamType::kRvalue:
-            ret += bp.rvalue();
-            break;
-        default:
-            ret += "backup.data";
-    }
-}
-
-CONV_FN(BackupOut, bout)
-{
-    const BackupOut_BackupOutput & output = bout.out();
-
-    ret += BackupOut_BackupOutput_Name(output);
-    if (output != BackupOut_BackupOutput_Null)
+    ret += CompressionCodec_Name(cp.codec()).substr(5);
+    if (cp.params_size())
     {
         ret += "(";
-        for (int i = 0; i < bout.out_params_size(); i++)
+        for (int i = 0; i < cp.params_size(); i++)
         {
             if (i != 0)
             {
                 ret += ", ";
             }
-            BackupParamToString(ret, bout.out_params(i));
+            IndexParamToString(ret, cp.params(i));
         }
         ret += ")";
     }
@@ -3043,11 +3014,20 @@ CONV_FN(DatabaseEngineParam, dep)
             ret += dep.svalue();
             ret += "'";
             break;
+        case DatabaseEngineParamType::kDatabase:
+            ret += "'";
+            DatabaseToString(ret, dep.database());
+            ret += "'";
+            break;
+        case DatabaseEngineParamType::kDisk:
+            ret += "Disk('";
+            ret += dep.disk().disk();
+            ret += "', '";
+            DatabaseToString(ret, dep.disk().database());
+            ret += "')";
+            break;
         case DatabaseEngineParamType::kExpr:
             ExprToString(ret, dep.expr());
-            break;
-        case DatabaseEngineParamType::kBackupOut:
-            BackupOutToString(ret, dep.backup_out());
             break;
         default:
             ret += "d0";
@@ -3069,11 +3049,6 @@ CONV_FN(DatabaseEngine, deng)
             DatabaseEngineParamToString(ret, deng.params(i));
         }
         ret += ")";
-    }
-    if (deng.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, deng.setting_values());
     }
 }
 
@@ -3097,6 +3072,11 @@ CONV_FN(CreateDatabase, create_database)
     }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
+    if (create_database.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, create_database.setting_values());
+    }
     if (create_database.has_comment())
     {
         ret += " COMMENT ";
@@ -3143,6 +3123,18 @@ CONV_FN(DefaultModifier, def_mod)
     }
 }
 
+CONV_FN(CodecList, cl)
+{
+    ret += "CODEC(";
+    CodecParamToString(ret, cl.codec());
+    for (int i = 0; i < cl.other_codecs_size(); i++)
+    {
+        ret += ", ";
+        CodecParamToString(ret, cl.other_codecs(i));
+    }
+    ret += ")";
+}
+
 CONV_FN(ColumnDef, cdf)
 {
     ColumnPathToString(ret, 0, cdf.col());
@@ -3165,9 +3157,8 @@ CONV_FN(ColumnDef, cdf)
     }
     if (cdf.has_codecs())
     {
-        ret += " CODEC(";
-        ret += cdf.codecs();
-        ret += ")";
+        ret += " ";
+        CodecListToString(ret, cdf.codecs());
     }
     if (cdf.has_stats())
     {
@@ -3195,11 +3186,8 @@ CONV_FN(ColumnDef, cdf)
 CONV_FN(IndexDef, idef)
 {
     ret += "INDEX ";
-    if (idef.has_idx())
-    {
-        IndexToString(ret, idef.idx());
-        ret += " ";
-    }
+    IndexToString(ret, idef.idx());
+    ret += " ";
     ExprToString(ret, idef.expr());
     ret += " TYPE ";
     ret += IndexType_Name(idef.type()).substr(4);
@@ -3223,36 +3211,13 @@ CONV_FN(IndexDef, idef)
     }
 }
 
-CONV_FN(ProjectionSelectDef, psdef)
-{
-    ret += "(";
-    SelectToString(ret, psdef.select());
-    ret += ")";
-    if (psdef.has_setting_values())
-    {
-        ret += " WITH SETTINGS (";
-        SettingValuesToString(ret, psdef.setting_values());
-        ret += ")";
-    }
-}
-
 CONV_FN(ProjectionDef, proj_def)
 {
     ret += "PROJECTION ";
     ProjectionToString(ret, proj_def.proj());
-    ret += " ";
-    using ProjectionDefType = ProjectionDef::ProjectionOneofCase;
-    switch (proj_def.projection_oneof_case())
-    {
-        case ProjectionDefType::kSelDef:
-            ProjectionSelectDefToString(ret, proj_def.sel_def());
-            break;
-        case ProjectionDefType::kIdxDef:
-            IndexDefToString(ret, proj_def.idx_def());
-            break;
-        default:
-            ret += "(SELECT c0 ORDER BY c0)";
-    }
+    ret += " (";
+    SelectToString(ret, proj_def.select());
+    ret += ")";
 }
 
 CONV_FN(ConstraintDef, const_def)
@@ -3419,9 +3384,8 @@ CONV_FN(TTLUpdate, upt)
             TTLDeleteToString(ret, upt.del());
             break;
         case TTLUpdateType::kCodecs:
-            ret += "RECOMPRESS CODEC(";
-            ret += upt.codecs();
-            ret += ")";
+            ret += "RECOMPRESS ";
+            CodecListToString(ret, upt.codecs());
             break;
         case TTLUpdateType::kStorage:
             ret += "TO ";
@@ -3486,8 +3450,8 @@ CONV_FN(TableEngine, te)
 
         ret += " ENGINE = ";
         if (te.has_toption()
-            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree) || teng == TableEngineValues::Set
-                || teng == TableEngineValues::Join))
+            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+                || teng == TableEngineValues::Set || teng == TableEngineValues::Join))
         {
             ret += TableEngineOption_Name(te.toption()).substr(1);
         }
@@ -3903,11 +3867,6 @@ CONV_FN(CheckTable, ct)
         ret += " SETTINGS ";
         SettingValuesToString(ret, ct.setting_values());
     }
-    if (ct.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(ct.format()).substr(4);
-    }
 }
 
 CONV_FN(DescribeStatement, ds)
@@ -3920,9 +3879,9 @@ CONV_FN(DescribeStatement, ds)
             TableOrFunctionToString(ret, false, ds.tof());
             break;
         case DescType::kSel:
-            ret += ds.paren() ? "(" : "";
+            ret += "(";
             ExplainQueryToString(ret, ds.sel());
-            ret += ds.paren() ? ")" : "";
+            ret += ")";
             break;
         case DescType::kStf:
             SQLTableFuncCallToString(ret, ds.stf());
@@ -3934,11 +3893,6 @@ CONV_FN(DescribeStatement, ds)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ds.setting_values());
-    }
-    if (ds.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(ds.format()).substr(4);
     }
 }
 
@@ -3974,18 +3928,6 @@ CONV_FN(OptimizeTable, ot)
         ret += " ";
         SinglePartitionExprToString(ret, ot.single_partition());
     }
-    if (ot.dry_run_parts_size() > 0)
-    {
-        ret += " DRY RUN PARTS ";
-        for (int i = 0; i < ot.dry_run_parts_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            PartitionExprToString(ret, ot.dry_run_parts(i));
-        }
-    }
     if (ot.final())
     {
         ret += " ";
@@ -4008,11 +3950,6 @@ CONV_FN(OptimizeTable, ot)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ot.setting_values());
-    }
-    if (ot.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(ot.format()).substr(4);
     }
 }
 
@@ -4070,11 +4007,8 @@ CONV_FN(RefreshableView, rv)
         ret += " OFFSET ";
         RefreshIntervalToString(ret, rv.offset());
     }
-    if (rv.has_randomize())
-    {
-        ret += " RANDOMIZE FOR ";
-        RefreshIntervalToString(ret, rv.randomize());
-    }
+    ret += " RANDOMIZE FOR ";
+    RefreshIntervalToString(ret, rv.randomize());
     if (rv.has_depends())
     {
         ret += " DEPENDS ON ";
@@ -4325,7 +4259,7 @@ CONV_FN(DictionaryRange, dr)
 {
     ret += " RANGE(MIN ";
     ExprToString(ret, dr.min());
-    ret += " MAX ";
+    ret += "MAX ";
     ExprToString(ret, dr.max());
     ret += ")";
 }
@@ -4356,15 +4290,15 @@ CONV_FN(CreateDictionary, create_dictionary)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_dictionary.est());
+    if (create_dictionary.has_cluster())
+    {
+        ClusterToString(ret, true, create_dictionary.cluster());
+    }
     if (create_dictionary.has_uuid())
     {
         ret += " UUID '";
         ret += create_dictionary.uuid();
         ret += "'";
-    }
-    if (create_dictionary.has_cluster())
-    {
-        ClusterToString(ret, true, create_dictionary.cluster());
     }
     ret += " (";
     DictionaryColumnToString(ret, create_dictionary.col());
@@ -4452,13 +4386,13 @@ CONV_FN(ModifyColumnSetting, mcp)
     SettingValuesToString(ret, mcp.setting_values());
 }
 
-CONV_FN(SettingList, sl)
+CONV_FN(SettingList, pl)
 {
-    ret += sl.setting();
-    for (int i = 0; i < sl.other_settings_size(); i++)
+    ret += pl.setting();
+    for (int i = 0; i < pl.other_settings_size(); i++)
     {
         ret += ", ";
-        ret += sl.other_settings(i);
+        ret += pl.other_settings(i);
     }
 }
 
@@ -4741,14 +4675,6 @@ CONV_FN(AlterItem, alter)
                 SinglePartitionExprToString(ret, alter.rewrite_parts().single_partition());
             }
             break;
-        case AlterType::kApplyPatches:
-            ret += "APPLY PATCHES";
-            if (alter.apply_patches().has_single_partition())
-            {
-                ret += " IN ";
-                SinglePartitionExprToString(ret, alter.apply_patches().single_partition());
-            }
-            break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
             SelectParenToString(ret, alter.modify_query());
@@ -5013,39 +4939,11 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kStartPullingReplicationLog:
             SystemCommandOnCluster(ret, "START PULLING REPLICATION LOG", cmd, cmd.start_pulling_replication_log());
             break;
-        case CmdType::kSyncReplica: {
-            const auto & sr = cmd.sync_replica();
-
-            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, sr.est());
+        case CmdType::kSyncReplica:
+            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, cmd.sync_replica().est());
             ret += " ";
-            using SyncType = SyncReplica::SyncOneofCase;
-            switch (sr.sync_oneof_case())
-            {
-                case SyncType::kStrict:
-                    ret += "STRICT";
-                    break;
-                case SyncType::kLightweight:
-                    ret += "LIGHTWEIGHT";
-                    if (sr.lightweight().replicas_size() > 0)
-                    {
-                        ret += " FROM ";
-                        for (int i = 0; i < sr.lightweight().replicas_size(); i++)
-                        {
-                            if (i != 0)
-                            {
-                                ret += ", ";
-                            }
-                            ret += "'";
-                            ret += sr.lightweight().replicas(i);
-                            ret += "'";
-                        }
-                    }
-                    break;
-                default:
-                    ret += "PULL";
-            }
-        }
-        break;
+            ret += SyncReplica_SyncPolicy_Name(cmd.sync_replica().policy());
+            break;
         case CmdType::kSyncReplicatedDatabase:
             ret += "SYNC DATABASE REPLICA";
             if (cmd.has_cluster())
@@ -5180,11 +5078,11 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kEnableFailpoint:
             ret += "ENABLE FAILPOINT ";
-            ret += cmd.enable_failpoint();
+            ret += FailPoint_Name(cmd.enable_failpoint());
             break;
         case CmdType::kDisableFailpoint:
             ret += "DISABLE FAILPOINT ";
-            ret += cmd.disable_failpoint();
+            ret += FailPoint_Name(cmd.disable_failpoint());
             break;
         case CmdType::kIcebergMetadataCache:
             ret += "DROP ICEBERG METADATA CACHE";
@@ -5194,8 +5092,8 @@ CONV_FN(SystemCommand, cmd)
             ret += "RECONNECT ZOOKEEPER";
             can_set_cluster = true;
             break;
-        case CmdType::kDropTextIndexTokensCache:
-            ret += "DROP TEXT INDEX TOKENS CACHE";
+        case CmdType::kDropTextIndexDictionaryCache:
+            ret += "DROP TEXT INDEX DICTIONARY CACHE";
             can_set_cluster = true;
             break;
         case CmdType::kDropTextIndexHeaderCache:
@@ -5209,157 +5107,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDropTextIndexCaches:
             ret += "DROP TEXT INDEX CACHES";
             can_set_cluster = true;
-            break;
-        case CmdType::kResetDdlWorker:
-            ret += "RESET DDL WORKER";
-            can_set_cluster = true;
-            break;
-        case CmdType::kWaitFailpoint:
-            ret += "WAIT FAILPOINT ";
-            ret += cmd.wait_failpoint();
-            break;
-        case CmdType::kNotifyFailpoint:
-            ret += "NOTIFY FAILPOINT ";
-            ret += cmd.notify_failpoint();
-            break;
-        case CmdType::kReloadDeltaKernelTracing:
-            ret += "RELOAD DELTA KERNEL TRACING ";
-            ret += DeltaKernelTraceLevel_Name(cmd.reload_delta_kernel_tracing());
-            break;
-        case CmdType::kRestoreDatabaseReplica:
-            ret += "RESTORE DATABASE REPLICA";
-            if (cmd.has_cluster())
-            {
-                ClusterToString(ret, true, cmd.cluster());
-            }
-            ret += " ";
-            DatabaseToString(ret, cmd.restore_database_replica());
-            break;
-        case CmdType::kStopReplicatedView:
-            ret += "STOP REPLICATED VIEW ";
-            ExprSchemaTableToString(ret, cmd.stop_replicated_view());
-            break;
-        case CmdType::kStartReplicatedView:
-            ret += "START REPLICATED VIEW ";
-            ExprSchemaTableToString(ret, cmd.start_replicated_view());
-            break;
-        case CmdType::kUnfreeze:
-            ret += "UNFREEZE WITH NAME 'f";
-            ret += std::to_string(cmd.unfreeze());
-            ret += "'";
-            break;
-        case CmdType::kDropReplica:
-            ret += "DROP REPLICA '";
-            ret += cmd.drop_replica().replica();
-            ret += "'";
-            if (cmd.drop_replica().has_est())
-            {
-                ret += " FROM TABLE ";
-                ExprSchemaTableToString(ret, cmd.drop_replica().est());
-            }
-            else if (cmd.drop_replica().has_database())
-            {
-                ret += " FROM DATABASE ";
-                DatabaseToString(ret, cmd.drop_replica().database());
-            }
-            break;
-        case CmdType::kDropDatabaseReplica:
-            ret += "DROP DATABASE REPLICA '";
-            ret += cmd.drop_database_replica().replica();
-            ret += "'";
-            if (cmd.drop_database_replica().has_shard())
-            {
-                ret += " FROM SHARD '";
-                ret += cmd.drop_database_replica().shard();
-                ret += "'";
-            }
-            if (cmd.drop_database_replica().has_database())
-            {
-                ret += " FROM DATABASE ";
-                DatabaseToString(ret, cmd.drop_database_replica().database());
-            }
-            break;
-        case CmdType::kStopCleanup:
-            SystemCommandOnCluster(ret, "STOP CLEANUP", cmd, cmd.stop_cleanup());
-            break;
-        case CmdType::kStartCleanup:
-            SystemCommandOnCluster(ret, "START CLEANUP", cmd, cmd.start_cleanup());
-            break;
-        case CmdType::kStopVirtualPartsUpdate:
-            SystemCommandOnCluster(ret, "STOP VIRTUAL PARTS UPDATE", cmd, cmd.stop_virtual_parts_update());
-            break;
-        case CmdType::kStartVirtualPartsUpdate:
-            SystemCommandOnCluster(ret, "START VIRTUAL PARTS UPDATE", cmd, cmd.start_virtual_parts_update());
-            break;
-        case CmdType::kStopReduceBlockingParts:
-            SystemCommandOnCluster(ret, "STOP REDUCE BLOCKING PARTS", cmd, cmd.stop_reduce_blocking_parts());
-            break;
-        case CmdType::kStartReduceBlockingParts:
-            SystemCommandOnCluster(ret, "START REDUCE BLOCKING PARTS", cmd, cmd.start_reduce_blocking_parts());
-            break;
-        case CmdType::kStopReplicatedDdlQueries:
-            ret += "STOP REPLICATED DDL QUERIES";
-            can_set_cluster = true;
-            break;
-        case CmdType::kStartReplicatedDdlQueries:
-            ret += "START REPLICATED DDL QUERIES";
-            can_set_cluster = true;
-            break;
-        case CmdType::kJemallocPurge:
-            ret += "JEMALLOC PURGE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kJemallocEnableProfile:
-            ret += "JEMALLOC ENABLE PROFILE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kJemallocDisableProfile:
-            ret += "JEMALLOC DISABLE PROFILE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kJemallocFlushProfile:
-            ret += "JEMALLOC FLUSH PROFILE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kSyncTransactionLog:
-            ret += "SYNC TRANSACTION LOG";
-            can_set_cluster = true;
-            break;
-        case CmdType::kStartThreadFuzzer:
-            ret += "START THREAD FUZZER";
-            can_set_cluster = true;
-            break;
-        case CmdType::kStopThreadFuzzer:
-            ret += "STOP THREAD FUZZER";
-            can_set_cluster = true;
-            break;
-        case CmdType::kDropParquetMetadataCache:
-            ret += "DROP PARQUET METADATA CACHE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kDropDistributedCache:
-            ret += "DROP DISTRIBUTED CACHE";
-            break;
-        case CmdType::kRestartDisk:
-            ret += "RESTART DISK '";
-            ret += cmd.restart_disk();
-            ret += "'";
-            can_set_cluster = true;
-            break;
-        case CmdType::kClearDiskMetadataCache:
-            ret += "DROP DISK METADATA CACHE";
-            if (!cmd.clear_disk_metadata_cache().empty())
-            {
-                ret += " '";
-                ret += cmd.clear_disk_metadata_cache();
-                ret += "'";
-            }
-            can_set_cluster = true;
-            break;
-        case CmdType::kUnlockSnapshot:
-            ret += "UNLOCK SNAPSHOT '";
-            ret += cmd.unlock_snapshot();
-            ret += "'";
             break;
         default:
             ret += "FLUSH LOGS";
@@ -5428,9 +5175,42 @@ CONV_FN(BackupRestoreElement, backup)
     }
 }
 
+CONV_FN(BackupParam, bp)
+{
+    using BackupParamType = BackupParam::BackupParamOneofCase;
+    switch (bp.backup_param_oneof_case())
+    {
+        case BackupParamType::kSvalue:
+            ret += "'";
+            ret += bp.svalue();
+            ret += "'";
+            break;
+        case BackupParamType::kRvalue:
+            ret += bp.rvalue();
+            break;
+        default:
+            ret += "backup.data";
+    }
+}
+
+CONV_FN(BackupParams, bparams)
+{
+    ret += "(";
+    for (int i = 0; i < bparams.out_params_size(); i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        BackupParamToString(ret, bparams.out_params(i));
+    }
+    ret += ")";
+}
+
 CONV_FN(BackupRestore, backup)
 {
     const BackupRestore_BackupCommand & command = backup.command();
+    const BackupRestore_BackupOutput & output = backup.out();
 
     ret += BackupRestore_BackupCommand_Name(command);
     ret += " ";
@@ -5447,7 +5227,11 @@ CONV_FN(BackupRestore, backup)
     ret += " ";
     ret += command == BackupRestore_BackupCommand_BACKUP ? "TO" : "FROM";
     ret += " ";
-    BackupOutToString(ret, backup.out());
+    ret += BackupRestore_BackupOutput_Name(output);
+    if (output != BackupRestore_BackupOutput_Null)
+    {
+        BackupParamsToString(ret, backup.params());
+    }
     if (backup.has_setting_values())
     {
         ret += " SETTINGS ";
@@ -5642,7 +5426,7 @@ CONV_FN(ShowStatement, sh)
             ret += "PROFILES";
             break;
         case ShowType::kPolicies:
-            ret += "ROW POLICIES ON ";
+            ret += "POLICIES ON ";
             ExprSchemaTableToString(ret, sh.policies());
             break;
         case ShowType::kQuotas:
@@ -5657,12 +5441,7 @@ CONV_FN(ShowStatement, sh)
             break;
         case ShowType::kCluster:
             ret += "CLUSTER ";
-            if (sh.cluster().has_cluster())
-            {
-                ret += "'";
-                ret += sh.cluster().cluster();
-                ret += "'";
-            }
+            ClusterToString(ret, false, sh.cluster());
             break;
         case ShowType::kClusters:
             ret += "CLUSTERS";

@@ -880,7 +880,8 @@ def test_where(started_cluster):
     assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11') AND id IN ('12')") == "12\n"
     assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11'] AND id IN ('12')") == "12\n"
 
-    assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11', 100] ORDER BY keyFloat") == "12\n21\n22\n"
+    with pytest.raises(QueryRuntimeException):
+        assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11', 100] ORDER BY keyFloat") == "12\n21\n22\n"
 
     assert node.query("SELECT id FROM where_table WHERE keyDateTime > now()") == ""
     assert (

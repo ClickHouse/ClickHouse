@@ -1,6 +1,5 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/Exception.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
@@ -48,7 +47,6 @@
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -90,11 +88,63 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
+}
+
+namespace
+{
+    class StorageWithComment : public IAST
+    {
+    public:
+        ASTPtr storage;
+        ASTPtr comment;
+
+        String getID(char) const override { return "Storage with comment definition"; }
+
+        ASTPtr clone() const override
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
+        }
+
+    protected:
+        void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
+        }
+    };
+
+    class ParserStorageWithComment : public IParserBase
+    {
+    protected:
+        const char * getName() const override { return "storage definition with comment"; }
+        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+        {
+            ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
+            ASTPtr storage;
+
+            if (!storage_p.parse(pos, storage, expected))
+                return false;
+
+            ParserKeyword s_comment(Keyword::COMMENT);
+            ParserStringLiteral string_literal_parser;
+            ASTPtr comment;
+
+            if (s_comment.ignore(pos, expected))
+                string_literal_parser.parse(pos, comment, expected);
+
+            auto storage_with_comment = std::make_shared<StorageWithComment>();
+            storage_with_comment->storage = std::move(storage);
+            storage_with_comment->comment = std::move(comment);
+
+            node = storage_with_comment;
+            return true;
+        }
+    };
 }
 
 namespace
@@ -128,7 +178,11 @@ std::shared_ptr<TSystemLog> createSystemLog(
     SystemLogSettings log_settings;
 
     log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
-    log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
+
+    if (default_table_name != TransposedMetricLog::TABLE_NAME_WITH_VIEW)
+        log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
+    else
+        log_settings.queue_settings.table = default_table_name;
 
     if (log_settings.queue_settings.database != default_database_name)
     {
@@ -260,13 +314,18 @@ std::shared_ptr<TSystemLog> createSystemLog(
     else if (std::is_same_v<TSystemLog, TransposedMetricLog>)
     {
         auto schema = config.getString(config_prefix + ".schema_type", "wide");
-        if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
+        if (schema == "transposed_with_wide_view")
+        {
+            log_settings.view_name_for_transposed_metric_log = config.getString(config_prefix + ".table", "metric_log");
+            return std::make_shared<TSystemLog>(context, log_settings);
+        }
+        else if (schema == "transposed")
         {
             return std::make_shared<TSystemLog>(context, log_settings);
         }
         else if (schema != "wide")
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide' and 'transposed'", schema);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'transposed_with_wide_view' are allowed", schema);
         }
     }
     return std::make_shared<TSystemLog>(context, log_settings);
@@ -303,12 +362,17 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    if (metric_log == nullptr && config.has("metric_log")
-        && (config.getString("metric_log.schema_type", "wide") == "transposed" || config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view"))
+    if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed")
     {
         transposed_metric_log = createSystemLog<TransposedMetricLog>(
             global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
     }
+    else if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view")
+    {
+        transposed_metric_log = createSystemLog<TransposedMetricLog>(
+            global_context, "system", TransposedMetricLog::TABLE_NAME_WITH_VIEW, config, "metric_log", TransposedMetricLog::DESCRIPTION);
+    }
+
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
     try
@@ -364,12 +428,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 30);
         background_schedule_pool_log->setDurationMillisecondsThreshold(duration_threshold_milliseconds);
-    }
-
-    if (zookeeper_log)
-    {
-        size_t duration_threshold_microseconds = config.getUInt64("zookeeper_log.duration_threshold_microseconds", 0);
-        zookeeper_log->setDurationMicrosecondsThreshold(duration_threshold_microseconds);
     }
 }
 
@@ -584,6 +642,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     Stopwatch stopwatch;
     UInt64 prepare_table_time = 0;
+    UInt64 prepare_reserve_block = 0;
     UInt64 prepare_insert_data_to_block = 0;
     UInt64 execute_insert_time = 0;
     UInt64 confirm_time = 0;
@@ -620,6 +679,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         for (auto & column : columns)
             column->reserve(to_flush.size());
 
+        prepare_reserve_block = stopwatch.elapsedMilliseconds();
+        stopwatch.restart();
+
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
 
@@ -630,9 +692,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
 
-        auto insert = make_intrusive<ASTInsertQuery>();
+        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
         insert->table_id = table_id;
-        ASTPtr query_ptr = std::move(insert);
+        ASTPtr query_ptr(insert.release());
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
@@ -666,19 +728,17 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     queue->confirm(to_flush_end);
     confirm_time = stopwatch.elapsedMilliseconds();
 
-    UInt64 total_time = prepare_table_time + prepare_insert_data_to_block + execute_insert_time + confirm_time;
-    if (total_time > 100)
-        LOG_TRACE(
-            log,
-            "Flushed system log up to offset {}. Entries {}. Timings: Prepare={}ms, Block={}ms, Insert={}ms, Confirm={}ms",
-            to_flush_end,
-            flush_size,
-            prepare_table_time,
-            prepare_insert_data_to_block,
-            execute_insert_time,
-            confirm_time);
-    else
-        LOG_TRACE(log, "Flushed system log up to offset {}. Entries {}. ({} ms)", to_flush_end, flush_size, total_time);
+    LOG_TRACE(
+        log,
+        "Flushed system log up to offset {}. Entries {}. Timings: prepare_table={}ms, reserve_block={}ms, insert_to_block={}ms, "
+        "execute_insert={}ms, confirm={}ms",
+        to_flush_end,
+        flush_size,
+        prepare_table_time,
+        prepare_reserve_block,
+        prepare_insert_data_to_block,
+        execute_insert_time,
+        confirm_time);
 }
 
 template <typename LogElement>
@@ -690,7 +750,6 @@ StoragePtr SystemLog<LogElement>::getStorage() const
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
-    auto component_guard = Coordination::setCurrentComponent("SystemLog::prepareTable");
     String description = table_id.getNameForLogs();
 
     auto table = getStorage();
@@ -717,13 +776,13 @@ void SystemLog<LogElement>::prepareTable()
             {
                 ASTRenameQuery::Table
                 {
-                    table_id.database_name.empty() ? nullptr : make_intrusive<ASTIdentifier>(table_id.database_name),
-                    make_intrusive<ASTIdentifier>(table_id.table_name)
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name)
                 },
                 ASTRenameQuery::Table
                 {
-                    table_id.database_name.empty() ? nullptr : make_intrusive<ASTIdentifier>(table_id.database_name),
-                    make_intrusive<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
                 }
             };
 
@@ -735,7 +794,7 @@ void SystemLog<LogElement>::prepareTable()
                 old_create_query,
                 create_query);
 
-            auto rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+            auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
 
             ActionLock merges_lock;
             if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)
@@ -795,17 +854,19 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
 template <typename LogElement>
 ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 {
-    auto create = make_intrusive<ASTCreateQuery>();
+    auto create = std::make_shared<ASTCreateQuery>();
 
     create->setDatabase(table_id.database_name);
     create->setTable(table_id.table_name);
 
-    auto new_columns_list = make_intrusive<ASTColumns>();
+    auto new_columns_list = std::make_shared<ASTColumns>();
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
     ordinary_columns.setAliases(alias_columns);
 
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
+
+    create->set(create->columns_list, new_columns_list);
 
     ParserStorageWithComment storage_parser;
 
@@ -815,43 +876,21 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
 
+    if constexpr (std::is_same_v<LogElement, TransposedMetricLogElement>)
+    {
+        if (table_id.table_name == TransposedMetricLog::TABLE_NAME_WITH_VIEW)
+        {
+            auto * storage = storage_with_comment.storage->as<ASTStorage>();
+            storage->set(storage->order_by, TransposedMetricLog::getDefaultOrderByAST());
+        }
+    }
+
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);
 
-    const auto & engine = create->storage->engine->as<ASTFunction &>();
-
-    /// Add secondary indexes (minmax on time columns) for MergeTree engines only,
-    /// since other engines (e.g. Null) do not support skipping indices.
-    if (endsWith(engine.name, "MergeTree"))
-    {
-        auto indices = make_intrusive<ASTExpressionList>();
-
-        auto add_index = [&](const char * definition)
-        {
-            ParserIndexDeclaration parser;
-            ASTPtr ast = parseQuery(parser, definition, definition + strlen(definition),
-                "index declaration for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            indices->children.push_back(ast);
-        };
-
-        if (ordinary_columns.has("event_time"))
-            add_index("event_time_index event_time TYPE minmax GRANULARITY 1");
-        if (ordinary_columns.has("event_time_microseconds"))
-            add_index("event_time_microseconds_index event_time_microseconds TYPE minmax GRANULARITY 1");
-
-        if (ordinary_columns.has("query_id"))
-            add_index("query_id_index query_id TYPE bloom_filter(0.001) GRANULARITY 1");
-        if (ordinary_columns.has("initial_query_id"))
-            add_index("initial_query_id_index initial_query_id TYPE bloom_filter(0.001) GRANULARITY 1");
-
-        if (!indices->children.empty())
-            new_columns_list->set(new_columns_list->indices, indices);
-    }
-
-    create->set(create->columns_list, new_columns_list);
-
     /// Write additional (default) settings for MergeTree engine to make it make it possible to compare ASTs
     /// and recreate tables on settings changes.
+    const auto & engine = create->storage->engine->as<ASTFunction &>();
     if (endsWith(engine.name, "MergeTree"))
     {
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());

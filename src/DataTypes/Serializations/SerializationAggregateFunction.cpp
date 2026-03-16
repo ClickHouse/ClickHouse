@@ -122,16 +122,6 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     {
         ReadBufferFromString istr(s);
         function->deserialize(place, istr, version, &arena);
-
-        const size_t trailing_bytes = istr.available();
-        if (trailing_bytes != 0)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "AggregateFunction state for `{}` has {} trailing byte(s) after deserialization",
-                function->getName(),
-                trailing_bytes);
-        }
     }
     catch (...)
     {

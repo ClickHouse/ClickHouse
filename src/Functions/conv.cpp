@@ -11,8 +11,6 @@
 #include <Interpreters/castColumn.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <Core/ColumnsWithTypeAndName.h>
 
 #include <algorithm>
 #include <cctype>
@@ -22,16 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-namespace
-{
-
-bool isStringOrFixedStringOrNativeNumber(const IDataType & arg)
-{
-    return isStringOrFixedString(arg) || isNativeNumber(arg);
-}
-
 }
 
 class FunctionConv : public IFunction
@@ -45,15 +33,27 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"number", &isStringOrFixedStringOrNativeNumber, nullptr, "String, FixedString or Number"},
-            {"from_base", &isNativeInteger, nullptr, "Integer"},
-            {"to_base", &isNativeInteger, nullptr, "Integer"}
-        };
+        if (!isStringOrFixedString(arguments[0]) && !isNativeNumber(arguments[0]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}. Must be String, FixedString or Number",
+                arguments[0]->getName(),
+                getName());
+        if (!isNativeInteger(arguments[1]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}. Must be Integer",
+                arguments[1]->getName(),
+                getName());
+        if (!isNativeInteger(arguments[2]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of third argument of function {}. Must be Integer",
+                arguments[2]->getName(),
+                getName());
 
-        validateFunctionArguments(*this, arguments, mandatory_args);
         return std::make_shared<DataTypeString>();
     }
 
@@ -205,9 +205,9 @@ private:
     static char digitToChar(int digit)
     {
         if (digit >= 0 && digit <= 9)
-            return static_cast<char>('0' + digit);
+            return '0' + digit;
         if (digit >= 10 && digit <= 35)
-            return static_cast<char>('A' + digit - 10);
+            return 'A' + digit - 10;
         return '0'; // Should never happen
     }
 };

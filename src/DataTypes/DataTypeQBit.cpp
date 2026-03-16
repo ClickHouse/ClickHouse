@@ -5,9 +5,12 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Serializations/SerializationFixedString.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
+
+#include <base/range.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -36,7 +39,7 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
     /// ensures that ReplaceQueryParameterVisitor::visitQueryParameter uses the original
     /// string value for query parameters like `SET param_q=[1,2,3,4]; SELECT {q:QBit(Float32,4)};`
     /// instead of extracting this Tuple as a Field that fails to cast back to QBit.
-    custom_serialization = getDefaultSerialization();
+    custom_serialization = doGetDefaultSerialization();
 }
 
 std::string DataTypeQBit::doGetName() const
@@ -79,7 +82,7 @@ DataTypePtr DataTypeQBit::getNestedTupleElementType() const
     return std::make_shared<DataTypeFixedString>(bitsToBytes(dimension));
 }
 
-SerializationPtr DataTypeQBit::doGetSerialization(const SerializationInfoSettings &) const
+SerializationPtr DataTypeQBit::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationQBit>(getNestedType()->getDefaultSerialization(), getElementSize(), dimension);
 }

@@ -1,6 +1,17 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractAllGroups.h>
 
+namespace
+{
+
+struct HorizontalImpl
+{
+    static constexpr auto Kind = DB::ExtractAllGroupsResultKind::HORIZONTAL;
+    static constexpr auto Name = "extractAllGroupsHorizontal";
+};
+
+}
+
 namespace DB
 {
 
@@ -35,7 +46,7 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("extractAllGroupsHorizontal", [](ContextPtr ctx){ return FunctionExtractAllGroups::create(ctx, "extractAllGroupsHorizontal", ExtractAllGroupsResultKind::HORIZONTAL); }, documentation);
+    factory.registerFunction<FunctionExtractAllGroups<HorizontalImpl>>(documentation);
 }
 
 }

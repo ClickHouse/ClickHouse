@@ -1,3 +1,5 @@
+SET allow_experimental_full_text_index = 1;
+
 -- Tests text index with the 'SummingMergeTree' engine
 
 DROP TABLE IF EXISTS tab;

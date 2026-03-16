@@ -60,19 +60,14 @@ private:
     IDisk & disk;
 
     std::optional<std::string> prev_data;
-
-    // True once execute() has confirmed the file exists on disk.
-    // Used by undo() to distinguish "file was created by this operation"
-    // (safe to delete on undo) from "file already existed, execute() failed
-    // before overwriting it" (must NOT delete — the file is unchanged).
-    bool file_existed = false;
 };
 
 struct UnlinkFileOperation final : public IMetadataOperation
 {
-    UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_);
+    UnlinkFileOperation(std::string path_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void tryUnlinkMetadataFile();
+    UnlinkMetadataFileOperationOutcomePtr getOutcome();
 
     void execute() override;
     void undo() override;
@@ -80,15 +75,13 @@ struct UnlinkFileOperation final : public IMetadataOperation
 
 private:
     const std::string path;
-    const bool if_exists;
-    const bool should_remove_objects;
     const std::string & compatible_key_prefix;
     IDisk & disk;
-    StoredObjects & objects_to_remove;
+
+    UnlinkMetadataFileOperationOutcomePtr outcome;
 
     std::optional<std::string> tmp_file_path;
     std::unique_ptr<WriteFileOperation> write_operation;
-    StoredObjects removed_objects;
 };
 
 struct CreateDirectoryOperation final : public IMetadataOperation
@@ -133,7 +126,7 @@ private:
 
 struct RemoveRecursiveOperation final : public IMetadataOperation
 {
-    RemoveRecursiveOperation(std::string path_, IMetadataTransaction::ShouldRemoveObjectsPredicate should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_);
+    RemoveRecursiveOperation(std::string path_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void traverseFile(const std::string & leaf);
     void traverseDirectory(const std::string & mid_path);
@@ -144,16 +137,13 @@ struct RemoveRecursiveOperation final : public IMetadataOperation
 
 private:
     const std::string path;
-    const IMetadataTransaction::ShouldRemoveObjectsPredicate should_remove_objects;
     const std::string & compatible_key_prefix;
     IDisk & disk;
-    StoredObjects & objects_to_remove;
 
     std::optional<std::string> temp_file_path;
     std::optional<std::string> temp_directory_path;
     std::unordered_set<int64_t> visited_inodes;
     std::vector<std::unique_ptr<WriteFileOperation>> write_operations;
-    StoredObjects removed_objects;
 };
 
 struct CreateHardlinkOperation final : public IMetadataOperation
@@ -200,7 +190,7 @@ private:
 
 struct ReplaceFileOperation final : public IMetadataOperation
 {
-    ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix, IDisk & disk_, StoredObjects & objects_to_remove_);
+    ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void execute() override;
     void undo() override;
@@ -211,7 +201,6 @@ private:
     const std::string path_to;
     const std::string & compatible_key_prefix;
     IDisk & disk;
-    StoredObjects & objects_to_remove;
 
     std::unique_ptr<UnlinkFileOperation> unlink_operation;
     bool moved = false;
@@ -235,21 +224,18 @@ private:
 
 struct RewriteFileOperation final : public IMetadataOperation
 {
-    RewriteFileOperation(std::string path_, StoredObjects objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_);
+    RewriteFileOperation(std::string path_, StoredObjects objects_, const std::string & compatible_key_prefix, IDisk & disk_);
 
     void execute() override;
     void undo() override;
-    void finalize() override;
 
 private:
     const std::string path;
     const StoredObjects objects;
     const std::string & compatible_key_prefix;
     IDisk & disk;
-    StoredObjects & objects_to_remove;
 
     std::unique_ptr<WriteFileOperation> write_operation;
-    StoredObjects removed_objects;
 };
 
 struct AddBlobOperation final : public IMetadataOperation
@@ -285,21 +271,23 @@ private:
 
 struct TruncateMetadataFileOperation final : public IMetadataOperation
 {
-    TruncateMetadataFileOperation(std::string path_, size_t target_size_, const std::string & compatible_key_prefix, IDisk & disk_, StoredObjects & objects_to_remove_);
+    TruncateMetadataFileOperation(std::string path_, size_t target_size_, const std::string & compatible_key_prefix, IDisk & disk_);
+    ~TruncateMetadataFileOperation() override = default;
+
+    TruncateFileOperationOutcomePtr getOutcome();
 
     void execute() override;
     void undo() override;
-    void finalize() override;
 
 private:
     const std::string path;
     const size_t target_size;
     const std::string & compatible_key_prefix;
     IDisk & disk;
-    StoredObjects & objects_to_remove;
+
+    TruncateFileOperationOutcomePtr outcome;
 
     std::unique_ptr<WriteFileOperation> write_operation;
-    StoredObjects removed_objects;
 };
 
 }

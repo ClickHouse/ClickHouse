@@ -1,7 +1,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
-#include <QueryPipeline/UnavailableShardTracker.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
@@ -98,9 +97,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_,
-    ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
-    std::shared_ptr<const QueryPlan> query_plan_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, query_plan_, extension_)
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
 {
     create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
@@ -989,18 +987,9 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     profile_info_callback = std::move(callback);
 }
 
-bool RemoteQueryExecutor::needToSkipUnavailableShard()
+bool RemoteQueryExecutor::needToSkipUnavailableShard() const
 {
-    if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
-    {
-        if (!shard_skip_reported && unavailable_shard_tracker)
-        {
-            shard_skip_reported = true;
-            unavailable_shard_tracker->onShardSkipped();
-        }
-        return true;
-    }
-    return false;
+    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()

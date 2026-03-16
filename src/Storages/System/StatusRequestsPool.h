@@ -1,7 +1,6 @@
 #pragma once
 
 #include <concepts>
-#include <Common/ThreadGroupSwitcher.h>
 #include <deque>
 #include <future>
 #include <memory>
@@ -173,7 +172,7 @@ public:
                 requests_to_schedule.pop_front();
             }
 
-            auto get_status_task = [this, req, thread_group = getCurrentThreadGroup()]() mutable
+            auto get_status_task = [this, req, thread_group = CurrentThread::getGroup()]() mutable
             {
                 ThreadGroupSwitcher switcher(thread_group, get_thread_name());
 

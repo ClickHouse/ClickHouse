@@ -1,7 +1,6 @@
 #pragma once
 
 #include <type_traits>
-#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -36,7 +35,7 @@ public:
         return std::make_shared<PromotedType>();
     }
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
+    SerializationPtr doGetDefaultSerialization() const override
     {
         return std::make_shared<SerializationNumber<T>>();
     }

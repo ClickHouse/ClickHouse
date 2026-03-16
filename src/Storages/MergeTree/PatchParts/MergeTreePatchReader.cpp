@@ -159,7 +159,7 @@ static MinMaxStat getResultBlockStat(const Block & result_block, const String & 
     Field min_value;
     Field max_value;
 
-    column->getExtremes(min_value, max_value, 0, column->size());
+    column->getExtremes(min_value, max_value);
     return {min_value.safeGet<UInt64>(), max_value.safeGet<UInt64>()};
 }
 

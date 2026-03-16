@@ -45,8 +45,6 @@ SingleStatisticsDescription & SingleStatisticsDescription::operator=(SingleStati
 
 StatisticsType stringToStatisticsType(String type)
 {
-    type = Poco::toLower(type);
-
     if (type == "tdigest")
         return StatisticsType::TDigest;
     if (type == "uniq")
@@ -59,7 +57,7 @@ StatisticsType stringToStatisticsType(String type)
     throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
 }
 
-String statisticsTypeToString(StatisticsType type)
+String SingleStatisticsDescription::getTypeName() const
 {
     switch (type)
     {
@@ -76,11 +74,6 @@ String statisticsTypeToString(StatisticsType type)
     }
 }
 
-String SingleStatisticsDescription::getTypeName() const
-{
-    return statisticsTypeToString(type);
-}
-
 SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_)
     : type(type_), ast(ast_), is_implicit(is_implicit_)
 {}
@@ -92,13 +85,7 @@ bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription &
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
 {
-    if (!data_type)
-        return !other.data_type;
-
-    if (!other.data_type)
-        return false;
-
-    return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type);
+    return types_to_desc == other.types_to_desc;
 }
 
 bool ColumnStatisticsDescription::empty() const
@@ -208,10 +195,10 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescripti
 
 ASTPtr ColumnStatisticsDescription::getAST() const
 {
-    auto function_node = make_intrusive<ASTFunction>();
+    auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "STATISTICS";
-    function_node->setKind(ASTFunction::Kind::STATISTICS);
-    function_node->arguments = make_intrusive<ASTExpressionList>();
+    function_node->kind = ASTFunction::Kind::STATISTICS;
+    function_node->arguments = std::make_shared<ASTExpressionList>();
 
     for (const auto & [type, desc] : types_to_desc)
     {

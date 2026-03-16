@@ -1,4 +1,3 @@
--- add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 SET parallel_replicas_local_plan = 1; -- this setting may skip index analysis when false
 SET use_skip_indexes_on_data_read = 0;
 SET mutations_sync = 2; -- disable asynchronous mutations
@@ -10,7 +9,7 @@ CREATE TABLE tab
     INDEX idx_a a TYPE minmax,
     INDEX `id,x_b` b TYPE set(3)
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns=0;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 
 INSERT INTO tab SELECT number, number / 50 FROM numbers(100)
 SETTINGS exclude_materialize_skip_indexes_on_insert='!@#$^#$&#$$%$,,.,3.45,45.';  -- { serverError CANNOT_PARSE_TEXT }
@@ -76,7 +75,7 @@ SELECT '';
 SELECT 'Count query log entries containing index updates on INSERT';
 SELECT count()
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+WHERE current_database = currentDatabase()
     AND query LIKE 'INSERT INTO tab SELECT%'
     AND type = 'QueryFinish';
 
@@ -123,7 +122,7 @@ SELECT '';
 SELECT 'Count query log entries containing index updates on INSERT';
 SELECT count()
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+WHERE current_database = currentDatabase()
     AND query LIKE 'INSERT INTO tab SELECT%'
     AND type = 'QueryFinish';
 

@@ -79,85 +79,45 @@ namespace HistogramMetrics
         {10, 100, 250, 500}
     );
 
-    MetricFamily & KeeperReceiveRequestTimeMetricFamily = Factory::instance().registerMetric(
-        "keeper_receive_request_time_milliseconds",
-        "Time to receive and parse request from client in TCP handler",
-        {10, 100, 250, 500},
-        {}
+    MetricFamily & KeeperClientRoundtripDuration = Factory::instance().registerMetric(
+        "keeper_client_roundtrip_duration_milliseconds",
+        "Time from sending requests to receiving response from the Keeper (network + Keeper processing)",
+        {10, 100, 150, 225, 337, 500, 750},
+        {"operation_type"}
     );
-    Metric & KeeperReceiveRequestTime = KeeperReceiveRequestTimeMetricFamily.withLabels({});
 
-    MetricFamily & KeeperDispatcherRequestsQueueTimeMetricFamily = Factory::instance().registerMetric(
-        "keeper_dispatcher_requests_queue_time_milliseconds",
-        "Time request spends in dispatcher requests queue",
-        {10, 100, 250, 500},
-        {}
-    );
-    Metric & KeeperDispatcherRequestsQueueTime = KeeperDispatcherRequestsQueueTimeMetricFamily.withLabels({});
 
-    MetricFamily & KeeperWritePreCommitTimeMetricFamily = Factory::instance().registerMetric(
-        "keeper_write_pre_commit_time_milliseconds",
-        "Time to preprocess write request before Raft commit",
+    MetricFamily & KeeperServerPreprocessRequestDurationMetricFamily = Factory::instance().registerMetric(
+        "keeper_server_preprocess_request_duration_milliseconds",
+        "Time to preprocess request on the Keeper server",
         {10, 100, 150, 225, 337, 500, 750},
         {}
     );
-    Metric & KeeperWritePreCommitTime = KeeperWritePreCommitTimeMetricFamily.withLabels({});
+    Metric & KeeperServerPreprocessRequestDuration = KeeperServerPreprocessRequestDurationMetricFamily.withLabels({});
 
-    MetricFamily & KeeperWriteCommitTimeMetricFamily = Factory::instance().registerMetric(
-        "keeper_write_commit_time_milliseconds",
-        "Time to process write request after Raft commit",
+    MetricFamily & KeeperServerProcessRequestDuration = Factory::instance().registerMetric(
+        "keeper_server_process_request_duration_milliseconds",
+        "Time to process request on the Keeper server",
         {10, 100, 150, 225, 337, 500, 750},
-        {}
+        {"operation_type"}
     );
-    Metric & KeeperWriteCommitTime = KeeperWriteCommitTimeMetricFamily.withLabels({});
 
-    MetricFamily & KeeperDispatcherResponsesQueueTimeMetricFamily = Factory::instance().registerMetric(
-        "keeper_dispatcher_responses_queue_time_milliseconds",
-        "Time response spends in dispatcher responses queue",
+    MetricFamily & KeeperServerQueueDurationMetricFamily = Factory::instance().registerMetric(
+        "keeper_server_queue_duration_milliseconds",
+        "Time responses spend waiting to be enqueued and waiting in the queue before being processed",
         {10, 100, 250, 500},
         {}
     );
-    Metric & KeeperDispatcherResponsesQueueTime = KeeperDispatcherResponsesQueueTimeMetricFamily.withLabels({});
+    Metric & KeeperServerQueueDuration = KeeperServerQueueDurationMetricFamily.withLabels({});
 
-    MetricFamily & KeeperSendResponseTimeMetricFamily = Factory::instance().registerMetric(
-        "keeper_send_response_time_milliseconds",
-        "Time to send response to client in TCP handler (includes queueing and writing to socket)",
+    MetricFamily & KeeperServerSendDurationMetricFamily = Factory::instance().registerMetric(
+        "keeper_server_send_duration_milliseconds",
+        "Time to send responses on the Keeper server after dequeuing",
         {10, 100, 250, 500},
         {}
     );
-    Metric & KeeperSendResponseTime = KeeperSendResponseTimeMetricFamily.withLabels({});
+    Metric & KeeperServerSendDuration = KeeperServerSendDurationMetricFamily.withLabels({});
 
-    MetricFamily & KeeperReadWaitForWriteTimeMetricFamily = Factory::instance().registerMetric(
-        "keeper_read_wait_for_write_time_milliseconds",
-        "Time read request waits for the write request it depends on to complete",
-        {10, 100, 250, 500},
-        {}
-    );
-    Metric & KeeperReadWaitForWriteTime = KeeperReadWaitForWriteTimeMetricFamily.withLabels({});
-
-    MetricFamily & KeeperReadProcessTimeMetricFamily = Factory::instance().registerMetric(
-        "keeper_read_process_time_milliseconds",
-        "Time to process read request",
-        {10, 100, 250, 500},
-        {}
-    );
-    Metric & KeeperReadProcessTime = KeeperReadProcessTimeMetricFamily.withLabels({});
-
-    MetricFamily & KeeperBatchSizeElementsMetricFamily = Factory::instance().registerMetric(
-        "keeper_batch_size_elements",
-        "Size of batch sent to Raft in elements.",
-        {4, 8, 16, 32, 64, 128, 256, 299},
-        {}
-    );
-    Metric & KeeperCurrentBatchSizeElements = KeeperBatchSizeElementsMetricFamily.withLabels({});
-
-    MetricFamily & KeeperBatchSizeBytesMetricFamily = Factory::instance().registerMetric(
-        "keeper_batch_size_bytes",
-        "Size of batch sent to Raft in bytes.",
-        {1 << 12, 1 << 13, 1 << 14, 1 << 15, 1 << 16, 1 << 17, 1 << 18, 307199},
-        {}
-    );
-    Metric & KeeperCurrentBatchSizeBytes = KeeperBatchSizeBytesMetricFamily.withLabels({});
 
     Metric::Metric(const Buckets & buckets_)
         : buckets(buckets_)

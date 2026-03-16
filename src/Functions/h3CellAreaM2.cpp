@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -7,6 +7,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
+#include <base/range.h>
+
+#include <constants.h>
+#include <h3api.h>
+
 
 namespace DB
 {
@@ -25,11 +31,7 @@ class FunctionH3CellAreaM2 final : public IFunction
 public:
     static constexpr auto name = "h3CellAreaM2";
 
-    H3Validator validator;
-
-    explicit FunctionH3CellAreaM2(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3CellAreaM2>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3CellAreaM2>(); }
 
     std::string getName() const override { return name; }
 
@@ -78,18 +80,13 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
-            Float64 res = 0;
 
-            if (validator.validateCell(index))
-            {
-                CellBoundary boundary{};
-                auto err = cellToBoundary(index, &boundary);
-                if (err)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
+            CellBoundary boundary{};
+            auto err = cellToBoundary(index, &boundary);
+            if (err)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
 
-                res = cellAreaM2(index);
-            }
-
+            Float64 res = cellAreaM2(index);
             dst_data[row] = res;
         }
 

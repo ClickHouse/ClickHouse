@@ -10,7 +10,6 @@
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
-#include <Common/Logger.h>
 #include <Common/ThreadPool.h>
 #include <Common/filesystemHelpers.h>
 
@@ -180,7 +179,7 @@ public:
         AggregateColumnsConstData makeAggregateColumnsData(const Block & block) const;
 
         /// Returns keys and aggregated for EXPLAIN query
-        void explain(WriteBuffer & out, const std::string & prefix) const;
+        void explain(WriteBuffer & out, size_t indent) const;
         void explain(JSONBuilder::JSONMap & map) const;
     };
 

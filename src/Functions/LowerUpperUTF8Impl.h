@@ -64,20 +64,10 @@ struct LowerUpperUTF8Impl
             int32_t dst_size;
             if constexpr (upper)
                 dst_size = ucasemap_utf8ToUpper(
-                    case_map,
-                    reinterpret_cast<char *>(&res_data[curr_offset]),
-                    static_cast<int32_t>(res_data.size() - curr_offset),
-                    src,
-                    static_cast<int32_t>(src_size),
-                    &error_code);
+                    case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
             else
                 dst_size = ucasemap_utf8ToLower(
-                    case_map,
-                    reinterpret_cast<char *>(&res_data[curr_offset]),
-                    static_cast<int32_t>(res_data.size() - curr_offset),
-                    src,
-                    static_cast<int32_t>(src_size),
-                    &error_code);
+                    case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
 
             if (error_code == U_BUFFER_OVERFLOW_ERROR)
             {
@@ -87,20 +77,10 @@ struct LowerUpperUTF8Impl
                 error_code = U_ZERO_ERROR;
                 if constexpr (upper)
                     dst_size = ucasemap_utf8ToUpper(
-                        case_map,
-                        reinterpret_cast<char *>(&res_data[curr_offset]),
-                        static_cast<int32_t>(res_data.size() - curr_offset),
-                        src,
-                        static_cast<int32_t>(src_size),
-                        &error_code);
+                        case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
                 else
                     dst_size = ucasemap_utf8ToLower(
-                        case_map,
-                        reinterpret_cast<char *>(&res_data[curr_offset]),
-                        static_cast<int32_t>(res_data.size() - curr_offset),
-                        src,
-                        static_cast<int32_t>(src_size),
-                        &error_code);
+                        case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
             }
 
             if (error_code != U_ZERO_ERROR && error_code != U_STRING_NOT_TERMINATED_WARNING)

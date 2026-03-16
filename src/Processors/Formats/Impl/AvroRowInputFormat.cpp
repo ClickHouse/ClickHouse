@@ -31,9 +31,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/Serializations/SerializationTuple.h>
-#include <DataTypes/Serializations/SerializationMap.h>
-#include <DataTypes/Serializations/SerializationArray.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -369,21 +366,16 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     ColumnArray & column_array = assert_cast<ColumnArray &>(column);
                     ColumnArray::Offsets & offsets = column_array.getOffsets();
                     IColumn & nested_column = column_array.getData();
-                    auto read_array = [&]()
+                    size_t total = 0;
+                    for (size_t n = decoder.arrayStart(); n != 0; n = decoder.arrayNext())
                     {
-                        size_t total = 0;
-                        for (size_t n = decoder.arrayStart(); n != 0; n = decoder.arrayNext())
+                        total += n;
+                        for (size_t i = 0; i < n; ++i)
                         {
-                            total += n;
-                            for (size_t i = 0; i < n; ++i)
-                            {
-                                nested_deserialize(nested_column, decoder);
-                            }
+                            nested_deserialize(nested_column, decoder);
                         }
-                        offsets.push_back(offsets.back() + total);
-                    };
-
-                    SerializationArray::readArraySafe(column, read_array);
+                    }
+                    offsets.push_back(offsets.back() + total);
                     return true;
                 };
             }
@@ -415,7 +407,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         if (union_index == non_null_union_index)
                         {
                             nested_deserialize(col.getNestedColumn(), decoder);
-                            col.getNullMapData().push_back(false);
+                            col.getNullMapData().push_back(0);
                         }
                         else
                         {
@@ -649,12 +641,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 {
                     ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(column);
                     auto nested_columns = column_tuple.getColumns();
-                    auto read_tuple=[&]()
-                    {
-                        for (const auto & [nested_deserializer, pos] : nested_deserializers)
-                            nested_deserializer(*nested_columns[pos], decoder);
-                    };
-                    SerializationTuple::readElementsSafe(column, read_tuple);
+                    for (const auto & [nested_deserializer, pos] : nested_deserializers)
+                        nested_deserializer(*nested_columns[pos], decoder);
                     return true;
                 };
             }
@@ -686,22 +674,17 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     ColumnTuple & nested_columns = column_map.getNestedData();
                     IColumn & keys_column = nested_columns.getColumn(0);
                     IColumn & values_column = nested_columns.getColumn(1);
-                    auto read_map = [&]()
+                    size_t total = 0;
+                    for (size_t n = decoder.mapStart(); n != 0; n = decoder.mapNext())
                     {
-                        size_t total = 0;
-                        for (size_t n = decoder.mapStart(); n != 0; n = decoder.mapNext())
+                        total += n;
+                        for (size_t i = 0; i < n; ++i)
                         {
-                            total += n;
-                            for (size_t i = 0; i < n; ++i)
-                            {
-                                keys_deserializer(keys_column, decoder);
-                                values_deserializer(values_column, decoder);
-                            }
+                            keys_deserializer(keys_column, decoder);
+                            values_deserializer(values_column, decoder);
                         }
-                        offsets.push_back(offsets.back() + total);
-                    };
-
-                    SerializationMap::readMapSafe(column, read_map);
+                    }
+                    offsets.push_back(offsets.back() + total);
                     return true;
                 };
             }
@@ -718,7 +701,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
         {
             ColumnNullable & col = assert_cast<ColumnNullable &>(column);
             nested_deserialize(col.getNestedColumn(), decoder);
-            col.getNullMapData().push_back(false);
+            col.getNullMapData().push_back(0);
             return true;
         };
     }

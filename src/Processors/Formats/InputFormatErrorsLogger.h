@@ -5,8 +5,6 @@
 
 #include <Core/Block.h>
 
-#include <mutex>
-
 
 namespace DB
 {

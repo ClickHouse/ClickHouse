@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB

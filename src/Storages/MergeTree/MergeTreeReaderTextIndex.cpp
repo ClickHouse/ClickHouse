@@ -49,7 +49,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->settings)
     , index(std::move(index_))
     , can_skip_mark(can_skip_mark_)
-    , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index.index).getPostingListCodec())
 {
     for (const auto & column : columns_)
     {
@@ -167,7 +166,7 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
             size_t num_rows_in_part = data_part_info_for_read->getRowCount();
             double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_part);
 
-            if (cardinality <= static_cast<double>(num_rows_in_part) * selectivity_threshold)
+            if (cardinality <= num_rows_in_part * selectivity_threshold)
             {
                 useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
                 ProfileEvents::increment(ProfileEvents::TextIndexUseHint);
@@ -230,9 +229,10 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
     bool may_be_true = index.condition->mayBeTrueOnGranule(granule, nullptr);
 
     if (may_be_true)
-        may_be_true_granules.add(static_cast<UInt32>(mark));
+        may_be_true_granules.add(mark);
 
-    analyzed_granules.add(static_cast<UInt32>(mark));
+    analyzed_granules.add(mark);
+    granule_text.resetAfterAnalysis();
     return can_skip_mark && !may_be_true;
 }
 
@@ -284,12 +284,12 @@ size_t MergeTreeReaderTextIndex::readRows(
 
         /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
         /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
-        if (!analyzed_granules.contains(static_cast<UInt32>(from_mark)))
+        if (!analyzed_granules.contains(from_mark))
         {
             canSkipMark(from_mark, current_task_last_mark);
         }
 
-        if (!may_be_true_granules.contains(static_cast<UInt32>(from_mark)))
+        if (!may_be_true_granules.contains(from_mark))
         {
             for (const auto & column : res_columns)
             {
@@ -340,7 +340,7 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
     }
 }
 
-double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
+double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const MergeTreeIndexGranuleText::TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
 {
     chassert(!query.tokens.empty());
 
@@ -368,7 +368,7 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
                 if (it == remaining_tokens.end())
                     return 0;
 
-                cardinality *= it->second->cardinality;
+                cardinality *= it->second.cardinality;
             }
 
             cardinality /= std::pow(total_rows, query.tokens.size() - 1);
@@ -389,11 +389,11 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
             for (const auto & token : query.tokens)
             {
                 auto it = remaining_tokens.find(token);
-                double token_cardinality = it == remaining_tokens.end() ? 0 : it->second->cardinality;
-                cardinality *= (1.0 - (token_cardinality / static_cast<double>(total_rows)));
+                double token_cardinality = it == remaining_tokens.end() ? 0 : it->second.cardinality;
+                cardinality *= (1.0 - (token_cardinality / total_rows));
             }
 
-            cardinality = static_cast<double>(total_rows) * (1.0 - cardinality);
+            cardinality = total_rows * (1.0 - cardinality);
             return cardinality;
         }
     }
@@ -428,7 +428,7 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
             continue;
         }
 
-        auto token_postings = readPostingsBlocksForToken(token, *token_info, *rows_range);
+        auto token_postings = readPostingsBlocksForToken(token, token_info, *rows_range);
 
         if (token_postings.size() == 1)
         {
@@ -467,7 +467,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
         if (inserted)
         {
             auto * postings_stream = large_postings_streams.at(token).get();
-            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx, postings_serialization, granule_text.getIndexIdForCaches());
+            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx);
         }
 
         token_postings.push_back(it->second);
@@ -487,9 +487,9 @@ void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
         if (it == postings_blocks.end())
             continue;
 
-        for (size_t i = 0; i < token_info->ranges.size(); ++i)
+        for (size_t i = 0; i < token_info.ranges.size(); ++i)
         {
-            if (!token_info->ranges[i].intersects(range))
+            if (!token_info.ranges[i].intersects(range))
                 it->second.erase(i);
         }
     }

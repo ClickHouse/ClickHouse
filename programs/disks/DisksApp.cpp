@@ -2,9 +2,7 @@
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Macros.h>
@@ -138,7 +136,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         {
             command = getCommandByName(arguments[0]);
         }
-        catch (const std::exception &)
+        catch (...)
         {
             return {arguments.back()};
         }
@@ -156,7 +154,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     {
         command = getCommandByName(arguments[0]);
     }
-    catch (const std::exception &)
+    catch (...)
     {
         return {last_token};
     }
@@ -245,7 +243,7 @@ bool DisksApp::processQueryText(const String & text)
         {
             error_string = err.what();
         }
-        catch (...) // Ok: report unknown exception
+        catch (...)
         {
             error_string = "Unknown exception";
         }
@@ -273,7 +271,6 @@ void DisksApp::runInteractiveReplxx()
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
         .highlighter = {},
-        .on_complete_modify_callback = ReplxxLineReader::OnCompleteModifyCallback(),
     };
     ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
@@ -471,7 +468,6 @@ String DisksApp::getDefaultConfigFileName()
 
 int DisksApp::main(const std::vector<String> & /*args*/)
 {
-    auto component_guard = Coordination::setCurrentComponent("DisksApp");
     std::vector<std::string> keys;
     config().keys(keys);
     if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))

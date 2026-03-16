@@ -26,8 +26,6 @@ class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
 class ASTDropQuery;
-class ASTIndexDeclaration;
-class ASTProjectionDeclaration;
 class ASTSetQuery;
 struct ASTTableExpression;
 struct ASTWindowDefinition;
@@ -60,9 +58,6 @@ public:
     static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 
     UInt64 getSeed() const { return seed; }
-
-    /// Returns the total number of accumulated AST fragments (column-like + table-like).
-    size_t getAccumulatedStateSize() const { return column_like.size() + table_like.size(); }
 
     void setSeed(const UInt64 new_seed)
     {
@@ -213,15 +208,13 @@ private:
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast, size_t nproj);
     void fuzzColumnLikeExpressionList(IAST * ast);
-    NullsAction fuzzNullsAction(NullsAction action);
+    void fuzzNullsAction(NullsAction & action);
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
-    void fuzzIndexDeclaration(ASTIndexDeclaration & index);
-    void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
@@ -232,7 +225,6 @@ private:
     ASTPtr addArrayJoinClause();
     ASTPtr generatePredicate();
     void addOrReplacePredicate(ASTSelectQuery * sel, ASTSelectQuery::Expression expr);
-    void fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);

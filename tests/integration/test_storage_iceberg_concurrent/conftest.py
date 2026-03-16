@@ -13,7 +13,6 @@ from helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
-from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 def check_spark(spark):
     p = subprocess.run(["echo", "hello world!"], capture_output=True, text=True)
@@ -21,15 +20,9 @@ def check_spark(spark):
 
 
     spark.sql(
-        """
-        DROP DATABASE IF EXISTS spark_catalog.db CASCADE
-        """
-    )
-
-    spark.sql(
-        """
-        CREATE DATABASE spark_catalog.db
-        """
+    """
+        CREATE DATABASE IF NOT EXISTS spark_catalog.db
+    """
     )
 
     spark.sql(
@@ -56,7 +49,7 @@ def get_spark(cluster : ClickHouseCluster):
         pyspark.sql.SparkSession.builder \
             .appName("IcebergS3Example") \
             .config("spark.jars.repositories", "https://repo1.maven.org/maven2") \
-            .config("spark.jars.packages",
+            .config("spark.jars.packages", 
             f'org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:{iceberg_version},'
             f'org.apache.spark:spark-avro_2.12:{spark_version},'
             f'org.apache.hadoop:hadoop-aws:{hadoop_aws_version},'
@@ -72,14 +65,7 @@ def get_spark(cluster : ClickHouseCluster):
             .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
                 .master("local")
             )
-
-    props_path = write_spark_log_config(cluster.instances_dir)
-    builder = builder.config(
-        "spark.driver.extraJavaOptions",
-        f"-Dlog4j2.configurationFile=file:{props_path}",
-    )
-
-    return builder.getOrCreate()
+    return builder.master("local").getOrCreate()
 
 @pytest.fixture(scope="package")
 def started_cluster_iceberg():
@@ -95,8 +81,6 @@ def started_cluster_iceberg():
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
             stay_alive=True,
-            mem_limit='15g',
-            cpu_limit=False,
         )
 
         logging.info("Starting cluster...")
@@ -104,7 +88,7 @@ def started_cluster_iceberg():
 
         prepare_s3_bucket(cluster)
 
-        cluster.spark_session = ResilientSparkSession(lambda: get_spark(cluster))
+        cluster.spark_session = get_spark(cluster)
 
         # check_spark(cluster.spark_session)
 

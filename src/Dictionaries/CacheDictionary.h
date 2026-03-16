@@ -2,16 +2,18 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <mutex>
 #include <utility>
+#include <vector>
 
 #include <pcg_random.hpp>
 
 
-#include <Common/CurrentMetrics.h>
-#include <Common/SharedMutex.h>
-#include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
+#include <Common/SharedMutex.h>
+#include <Common/CurrentMetrics.h>
 
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
@@ -83,7 +85,7 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override
@@ -91,7 +93,7 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(hit_count.load()) / static_cast<double>(queries);
+        return static_cast<double>(hit_count.load()) / queries;
     }
 
     bool supportUpdates() const override { return false; }
