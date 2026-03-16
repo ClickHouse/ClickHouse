@@ -3,6 +3,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -29,7 +30,7 @@ private:
     using MapHashed = HashMap<UInt128, UInt64, UInt128TrivialHash>;
 
     MapHashed keys_counts;
-    std::vector<size_t> key_positions;
+    VectorWithMemoryTracking<size_t> key_positions;
     const UInt64 group_length;
     const UInt64 group_offset;
     const bool in_order;

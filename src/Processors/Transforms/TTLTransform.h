@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -41,7 +42,7 @@ protected:
     void finalize();
 
 private:
-    std::vector<TTLAlgorithmPtr> algorithms;
+    VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
 

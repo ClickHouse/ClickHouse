@@ -14,6 +14,7 @@
 #include <boost/core/noncopyable.hpp>
 
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
@@ -46,7 +47,7 @@ struct JoinKeyRow
 
     void reset();
 
-    std::vector<ColumnPtr> row;
+    VectorWithMemoryTracking<ColumnPtr> row;
 };
 
 /// Remembers previous key if it was joined in previous block
@@ -153,8 +154,8 @@ private:
         }
         return true;
     }
-    std::vector<Range> left;
-    std::vector<Range> right;
+    VectorWithMemoryTracking<Range> left;
+    VectorWithMemoryTracking<Range> right;
 
     size_t lidx = 0;
     size_t ridx = 0;
@@ -188,7 +189,7 @@ public:
     constexpr static bool has_null_maps = true;
 
     FullMergeJoinCursor() = default;
-    explicit FullMergeJoinCursor(std::vector<size_t> key_indices_, bool is_asof_);
+    explicit FullMergeJoinCursor(VectorWithMemoryTracking<size_t> key_indices_, bool is_asof_);
 
     FullMergeJoinCursor(FullMergeJoinCursor &&) = default;
     FullMergeJoinCursor & operator=(FullMergeJoinCursor &&) noexcept = default;
@@ -219,7 +220,7 @@ private:
     Chunk current_chunk;
     bool received_all_blocks = false;
 
-    std::vector<size_t> key_indices;
+    VectorWithMemoryTracking<size_t> key_indices;
     bool is_asof = false;
 };
 

@@ -5,6 +5,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Port.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -190,8 +191,8 @@ private:
     Block header;
     size_t num_inputs;
 
-    std::vector<ChunkId> last_chunk_id;
-    std::vector<bool> is_input_finished;
+    VectorWithMemoryTracking<ChunkId> last_chunk_id;
+    VectorWithMemoryTracking<bool> is_input_finished;
     std::map<ChunkId, Chunk> chunks;
     Chunk overflow_chunk;
 };

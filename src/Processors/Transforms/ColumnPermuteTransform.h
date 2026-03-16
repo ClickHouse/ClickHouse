@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Processors/ISimpleTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <vector>
 
@@ -21,7 +22,7 @@ public:
 
 private:
     Names column_names;
-    std::vector<size_t> permutation;
+    VectorWithMemoryTracking<size_t> permutation;
 };
 
 

@@ -6,8 +6,8 @@ namespace DB
 namespace
 {
 
-template <typename T>
-void applyPermutation(std::vector<T> & data, const std::vector<size_t> & permutation)
+template <typename T, typename Perm>
+void applyPermutation(std::vector<T> & data, const Perm & permutation)
 {
     std::vector<T> res;
     res.reserve(permutation.size());
@@ -16,7 +16,7 @@ void applyPermutation(std::vector<T> & data, const std::vector<size_t> & permuta
     data = std::move(res);
 }
 
-void permuteChunk(Chunk & chunk, const std::vector<size_t> & permutation)
+void permuteChunk(Chunk & chunk, const VectorWithMemoryTracking<size_t> & permutation)
 {
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
@@ -35,7 +35,7 @@ Block ColumnPermuteTransform::permute(const Block & block, const std::vector<siz
 
 ColumnPermuteTransform::ColumnPermuteTransform(SharedHeader header_, const std::vector<size_t> & permutation_)
     : ISimpleTransform(header_, std::make_shared<const Block>(permute(*header_, permutation_)), false)
-    , permutation(permutation_)
+    , permutation(permutation_.begin(), permutation_.end())
 {
 }
 

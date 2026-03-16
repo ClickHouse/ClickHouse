@@ -4,6 +4,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/FillingRow.h>
 #include <Processors/ISimpleTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -94,7 +95,7 @@ private:
     Positions interpolate_column_positions;
     Positions other_column_positions;
     Positions sort_prefix_positions;
-    std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
+    VectorWithMemoryTracking<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
     ExpressionActionsPtr interpolate_actions;
     Columns last_row;
     Columns last_range_sort_prefix;

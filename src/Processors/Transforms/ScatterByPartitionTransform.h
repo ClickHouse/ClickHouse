@@ -3,6 +3,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/WeakHash.h>
 
 namespace DB
@@ -26,7 +27,7 @@ private:
 
     bool has_data = false;
     bool all_outputs_processed = true;
-    std::vector<char> was_output_processed;
+    VectorWithMemoryTracking<char> was_output_processed;
     Chunk chunk;
 
     WeakHash32 hash;

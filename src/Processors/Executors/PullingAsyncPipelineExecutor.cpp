@@ -145,7 +145,7 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
     {
          block.info.bucket_num = agg_info->bucket_num;
          block.info.is_overflows = agg_info->is_overflows;
-         block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
+         block.info.out_of_order_buckets.assign(agg_info->out_of_order_buckets.begin(), agg_info->out_of_order_buckets.end());
     }
 
     return true;

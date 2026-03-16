@@ -85,7 +85,7 @@ Chunk convertToChunk(const Block & block)
     auto info = std::make_shared<AggregatedChunkInfo>();
     info->bucket_num = block.info.bucket_num;
     info->is_overflows = block.info.is_overflows;
-    info->out_of_order_buckets = block.info.out_of_order_buckets;
+    info->out_of_order_buckets.assign(block.info.out_of_order_buckets.begin(), block.info.out_of_order_buckets.end());
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
@@ -611,7 +611,7 @@ private:
             const auto has_rows = chunk.hasRows();
             if (has_rows)
             {
-                chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
+                chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets.assign(out_of_order_buckets.begin(), out_of_order_buckets.end());
                 output.push(std::move(chunk));
                 return Status::PortFull;
             }
@@ -626,7 +626,7 @@ private:
         {
             if (chunk.hasRows())
             {
-                chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
+                chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets.assign(out_of_order_buckets.begin(), out_of_order_buckets.end());
                 output.push(std::move(chunk));
                 return Status::PortFull;
             }

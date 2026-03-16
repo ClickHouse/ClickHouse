@@ -14,7 +14,7 @@ SaveSubqueryResultToBufferTransform::SaveSubqueryResultToBufferTransform(
 )
     : ISimpleTransform(header_, header_, false)
     , chunk_buffer(std::move(chunk_buffer_))
-    , columns_to_save_indices(columns_to_save_indices_)
+    , columns_to_save_indices(columns_to_save_indices_.begin(), columns_to_save_indices_.end())
 {}
 
 void SaveSubqueryResultToBufferTransform::transform(Chunk & chunk)

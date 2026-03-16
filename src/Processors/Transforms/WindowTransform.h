@@ -5,6 +5,7 @@
 #include <Interpreters/WindowDescription.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <deque>
 
@@ -223,12 +224,12 @@ public:
     WindowDescription window_description;
 
     // Indices of the PARTITION BY columns in block.
-    std::vector<size_t> partition_by_indices;
+    VectorWithMemoryTracking<size_t> partition_by_indices;
     // Indices of the ORDER BY columns in block;
-    std::vector<size_t> order_by_indices;
+    VectorWithMemoryTracking<size_t> order_by_indices;
 
     // Per-window-function scratch spaces.
-    std::vector<WindowFunctionWorkspace> workspaces;
+    VectorWithMemoryTracking<WindowFunctionWorkspace> workspaces;
 
     // FIXME Reset it when the partition changes. We only save the temporary
     // states in it (probably?).

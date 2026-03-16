@@ -8,6 +8,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <unordered_set>
 
@@ -76,10 +77,10 @@ private:
     size_t num_inputs;
     AggregatingTransformParamsPtr params;
 
-    std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
+    VectorWithMemoryTracking<Int32> last_bucket_number; /// Last bucket read from each input.
 
     /// See `ConvertingAggregatedToChunksTransform` to learn about sending buckets out of order.
-    std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
+    VectorWithMemoryTracking<VectorWithMemoryTracking<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
     std::unordered_map<Int32, size_t> out_of_order_buckets; /// Mapping bucket_id -> number of inputs delayed that bucket.
 
     std::map<Int32, Chunks> chunks_map; /// bucket -> chunks
@@ -91,7 +92,7 @@ private:
 
     bool all_inputs_finished = false;
     bool initialized_index_to_input = false;
-    std::vector<InputPorts::iterator> index_to_input;
+    VectorWithMemoryTracking<InputPorts::iterator> index_to_input;
     HashSet<uint64_t> wait_input_ports_numbers;
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
@@ -135,8 +136,8 @@ public:
 private:
     size_t num_inputs;
     AggregatingTransformParamsPtr params;
-    std::vector<Int32> last_bucket_number;
-    std::vector<bool> is_input_finished;
+    VectorWithMemoryTracking<Int32> last_bucket_number;
+    VectorWithMemoryTracking<bool> is_input_finished;
     std::map<Int32, Chunk> chunks;
     Chunk overflow_chunk;
 
