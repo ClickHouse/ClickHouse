@@ -2,6 +2,7 @@
 
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
 #include <Common/ProfileEvents.h>
@@ -70,7 +71,7 @@ private:
         bool is_initialized = false;
     };
 
-    std::vector<InputState> input_states;
+    VectorWithMemoryTracking<InputState> input_states;
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
     UInt64 limit_hint = 0;

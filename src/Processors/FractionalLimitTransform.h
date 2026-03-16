@@ -1,7 +1,7 @@
 #pragma once
 
 #include <deque>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
@@ -45,7 +45,7 @@ private:
     const SortDescription limit_with_ties_sort_description;
 
     Chunk ties_last_row; /// for WITH TIES, contains only sort columns
-    std::vector<size_t> sort_key_positions;
+    VectorWithMemoryTracking<size_t> sort_key_positions;
 
     /// Total number of rows already accounted for from the cache
     /// (dropped due to offset / evicted / pushed to output).
@@ -63,7 +63,7 @@ private:
         bool is_input_finished = false;
     };
 
-    std::vector<PortsData> ports_data;
+    VectorWithMemoryTracking<PortsData> ports_data;
     UInt64 num_finished_input_ports = 0;
 
     /// Total number of input rows.

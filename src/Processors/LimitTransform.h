@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
@@ -32,7 +33,7 @@ private:
     const SortDescription description;
 
     Chunk previous_row_chunk;  /// for WITH TIES, contains only sort columns
-    std::vector<size_t> sort_column_positions;
+    VectorWithMemoryTracking<size_t> sort_column_positions;
 
     UInt64 rows_read = 0; /// including the last read block
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
@@ -53,7 +54,7 @@ private:
         bool input_port_has_counter = false;
     };
 
-    std::vector<PortsData> ports_data;
+    VectorWithMemoryTracking<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;

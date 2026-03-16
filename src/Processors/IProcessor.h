@@ -2,10 +2,10 @@
 
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <list>
 #include <memory>
-#include <vector>
 #include <fmt/format.h>
 
 class EventCounter;
@@ -181,7 +181,7 @@ public:
       */
     virtual Status prepare();
 
-    using PortNumbers = std::vector<UInt64>;
+    using PortNumbers = VectorWithMemoryTracking<UInt64>;
 
     /// Optimization for prepare in case we know ports were updated.
     virtual Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) { return prepare(); }
@@ -306,7 +306,7 @@ public:
     struct ProcessorsProfileLogInfo
     {
         UInt64 id = 0;
-        std::vector<UInt64> parent_ids;
+        VectorWithMemoryTracking<UInt64> parent_ids;
         UInt64 plan_step = 0;
         String plan_step_name;
         String plan_step_description;

@@ -2,8 +2,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
-
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -32,13 +31,13 @@ private:
         bool is_finished = false;
     };
 
-    std::vector<PortsPair> port_pairs;
+    VectorWithMemoryTracking<PortsPair> port_pairs;
     const size_t num_delayed_ports;
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
     size_t num_finished_main_inputs = 0;
 
-    std::vector<size_t> output_to_pair;
+    VectorWithMemoryTracking<size_t> output_to_pair;
     bool are_inputs_initialized = false;
 
     bool processPair(PortsPair & pair);

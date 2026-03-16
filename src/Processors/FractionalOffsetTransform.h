@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
@@ -48,7 +49,7 @@ private:
         bool is_input_port_finished = false;
     };
 
-    std::vector<PortsData> ports_data;
+    VectorWithMemoryTracking<PortsData> ports_data;
     size_t num_finished_input_ports = 0;
 
     UInt64 rows_cnt = 0;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <queue>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
@@ -43,7 +44,7 @@ private:
 
     UInt64 num_input_ports_finished = 0;
 
-    std::vector<PortsData> ports_data;
+    VectorWithMemoryTracking<PortsData> ports_data;
 
     /// `Pull` stage: it ends when all input ports are closed.
     /// `Push` stage: it starts immediately after the `Pull` stage and it ends

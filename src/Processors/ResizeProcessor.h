@@ -3,6 +3,7 @@
 #include <queue>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -68,8 +69,8 @@ private:
         OutputStatus status;
     };
 
-    std::vector<InputPortWithStatus> input_ports;
-    std::vector<OutputPortWithStatus> output_ports;
+    VectorWithMemoryTracking<InputPortWithStatus> input_ports;
+    VectorWithMemoryTracking<OutputPortWithStatus> output_ports;
 };
 
 /// This is an analog of ResizeProcessor, but it tries to bind one specific input to one specific output.
@@ -134,11 +135,11 @@ private:
         OutputStatus status;
     };
 
-    std::vector<InputPortWithStatus> input_ports;
-    std::vector<OutputPortWithStatus> output_ports;
+    VectorWithMemoryTracking<InputPortWithStatus> input_ports;
+    VectorWithMemoryTracking<OutputPortWithStatus> output_ports;
     /// This field contained chunks which were read for output which had became finished while reading was happening.
     /// They will be pushed to any next waiting output.
-    std::vector<Port::Data> abandoned_chunks;
+    VectorWithMemoryTracking<Port::Data> abandoned_chunks;
 };
 
 }
