@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>

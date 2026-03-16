@@ -216,13 +216,12 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
 
 void SettingsConstraints::check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
-    /// When `compatibility` is present, keep all settings (even if they match current values). This ensures they're applied
-    /// and marked as `changed`, preventing `compatibility` from overriding explicit user values with its own defaults.
-    if (changes.tryGet("compatibility") == nullptr)
-        std::erase_if(changes, [&](SettingChange & change) { return !checkImpl(current_settings, change, THROW_ON_VIOLATION, source); });
-    else
-        for (auto & change : changes)
-            checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
+    std::erase_if(
+        changes,
+        [&](SettingChange & change) -> bool
+        {
+            return !checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
+        });
 }
 
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const

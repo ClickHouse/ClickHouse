@@ -1,4 +1,5 @@
 #include <Core/UUID.h>
+#include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <atomic>
@@ -49,6 +50,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Common/AsyncLoader.h>
+#include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -1589,9 +1591,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("cloud_mode", false);
         query_context->setCurrentQueryId({});
         {
-            CurrentThread::QueryScope query_scope;
+            QueryScope query_scope;
             if (!CurrentThread::getGroup())
-                query_scope = CurrentThread::QueryScope::create(query_context);
+                query_scope = QueryScope::create(query_context);
 
             executeQuery(query, query_context, QueryFlags{.internal = true});
         }
@@ -1605,9 +1607,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("cloud_mode", false);
         query_context->setCurrentQueryId({});
         {
-            CurrentThread::QueryScope query_scope;
+            QueryScope query_scope;
             if (!CurrentThread::getGroup())
-                query_scope = CurrentThread::QueryScope::create(query_context);
+                query_scope = QueryScope::create(query_context);
 
             executeQuery(query, query_context, QueryFlags{.internal = true});
         }

@@ -1,4 +1,5 @@
 #include <optional>
+#include <Common/CurrentThread.h>
 #include <unordered_set>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 

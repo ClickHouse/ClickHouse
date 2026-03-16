@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/CurrentThread.h>
 #include <unordered_map>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnBLOB.h>

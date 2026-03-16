@@ -2349,17 +2349,22 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         auto & union_members = with_union->list_of_selects->children;
         if (union_members.size() > 1 && fuzz_rand() % 100 == 0)
         {
-            /// Drop a random member from the UNION; remove a mode to keep sizes in sync
+            /// Drop a random member from the UNION; rebuild modes to keep sizes in sync.
+            /// After normalization, list_of_modes may be stale (wrong size), so we
+            /// rebuild it entirely from union_mode rather than trying to erase one entry.
             union_members.erase(union_members.begin() + fuzz_rand() % union_members.size());
-            if (!with_union->list_of_modes.empty())
-                with_union->list_of_modes.pop_back();
+            with_union->list_of_modes.assign(
+                union_members.empty() ? 0 : union_members.size() - 1,
+                with_union->union_mode);
             with_union->is_normalized = false;
         }
         else if (!union_members.empty() && fuzz_rand() % 100 == 0)
         {
-            /// Duplicate a random member; push a matching mode to keep sizes in sync
+            /// Duplicate a random member; rebuild modes to keep sizes in sync.
             union_members.push_back(union_members[fuzz_rand() % union_members.size()]->clone());
-            with_union->list_of_modes.push_back(with_union->union_mode);
+            with_union->list_of_modes.assign(
+                union_members.size() - 1,
+                with_union->union_mode);
         }
 
         fuzz(with_union->list_of_selects);

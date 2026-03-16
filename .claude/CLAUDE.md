@@ -149,7 +149,7 @@ When running tests, always redirect output to a log file in the build directory 
 
 If I provided a URL with the CI report, logs, or examples, include it in the commit message.
 
-When creating a pull request, append Changelog category and Changelog entry according to this template: `.github/PULL_REQUEST_TEMPLATE.md`. The "Bug Fix" category should be used only for real bug fixes, while for fixing CI reports you can use the "CI Fix or improvement" category. Include the URL to CI report I provided if any. If the PR is about a CI failure, search for the corresponding open issues and provide a link in the PR description.
+When creating or updating a pull request, use `.github/PULL_REQUEST_TEMPLATE.md` as the PR body template. The body should contain: a short description of the change and motivation, then the Changelog category (leave one from the list), then the Changelog entry, then the Documentation entry checkbox. Do not invent a custom "## Summary" or "## Test plan" structure — follow the template exactly. The "Bug Fix" category should be used only for real bug fixes, while for fixing CI reports you can use the "CI Fix or improvement" category. Include the URL to CI report I provided if any. If the PR is about a CI failure, search for the corresponding open issues and provide a link in the PR description.
 
 ARM machines in CI are not slow. They are similar to x86 in performance.
 

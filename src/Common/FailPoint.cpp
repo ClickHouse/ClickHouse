@@ -68,6 +68,7 @@ static struct InitFiu
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
+    REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \
     REGULAR(object_storage_queue_fail_startup) \
@@ -154,8 +155,8 @@ static struct InitFiu
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
-    ONCE(parallel_replicas_check_read_mode_always) \
     REGULAR(lightweight_show_tables) \
+    PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail)

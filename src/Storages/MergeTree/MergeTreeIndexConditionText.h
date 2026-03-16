@@ -134,6 +134,10 @@ private:
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
 
+    /// Returns true if the node represents `arrayElement(map_col, 'key')`
+    /// and there is a text index built on `mapValues(map_col)`.
+    bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
+
     std::vector<String> stringToTokens(const Field & field) const;
     std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     std::vector<String> stringLikeToTokens(const Field & field) const;

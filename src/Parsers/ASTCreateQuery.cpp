@@ -601,7 +601,25 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         ostr << settings.nl_or_ws;
         ostr << "AS ";
-        select->format(ostr, settings, state, frame);
+
+        /// When the CREATE query has SETTINGS (inherited from ASTQueryWithOutput),
+        /// we must wrap the AS-select in parentheses. Otherwise the trailing
+        /// SETTINGS clause would be consumed by ParserSelectQuery as part of the
+        /// last SELECT in the UNION/INTERSECT chain during re-parsing, instead of
+        /// remaining on the ASTCreateQuery — breaking the formatting roundtrip.
+        /// The outer parentheses already protect against SETTINGS consumption, so
+        /// clear the flag to prevent inner nodes from adding redundant parentheses.
+        if (settings_ast)
+        {
+            ostr << "(";
+            frame.parent_has_trailing_settings = false;
+            select->format(ostr, settings, state, frame);
+            ostr << ")";
+        }
+        else
+        {
+            select->format(ostr, settings, state, frame);
+        }
     }
 }
 

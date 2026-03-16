@@ -1567,6 +1567,34 @@ struct ToDayOfMonthImpl
     using FactorTransform = ToStartOfMonthImpl;
 };
 
+struct ToDaysInMonthImpl
+{
+    static constexpr auto name = "toDaysInMonth";
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.daysInMonth(t);
+    }
+    static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.daysInMonth(t);
+    }
+    static UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.daysInMonth(t);
+    }
+    static UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.daysInMonth(ExtendedDayNum(d));
+    }
+    static UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.daysInMonth(DayNum(d));
+    }
+
+    static constexpr bool hasPreimage() { return false; }
+    using FactorTransform = ToStartOfMonthImpl;
+};
+
 struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";

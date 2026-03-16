@@ -1226,6 +1226,20 @@ Possible values:
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
     \
+    DECLARE(UInt64, max_skip_unavailable_shards_num, 0, R"(
+When `skip_unavailable_shards` is enabled, limits the maximum number of shards that can be silently skipped.
+If the number of unavailable shards exceeds this value, an exception is thrown instead of silently skipping.
+
+A value of 0 means no limit (default behavior — all unavailable shards can be skipped).
+)", 0) \
+    \
+    DECLARE(Float, max_skip_unavailable_shards_ratio, 0, R"(
+When `skip_unavailable_shards` is enabled, limits the maximum ratio (0 to 1) of shards that can be silently skipped.
+If the ratio of unavailable shards to total shards exceeds this value, an exception is thrown instead of silently skipping.
+
+A value of 0 means no limit (default behavior — all unavailable shards can be skipped).
+)", 0) \
+    \
     DECLARE(UInt64, parallel_distributed_insert_select, 2, R"(
 Enables parallel distributed `INSERT ... SELECT` query.
 
@@ -5212,6 +5226,15 @@ Possible values:
     DECLARE(Bool, iceberg_delete_data_on_drop, false, R"(
 Whether to delete all iceberg files on drop or not.
 )", 0) \
+    DECLARE(Int64, iceberg_expire_default_min_snapshots_to_keep, 1, R"(
+Default value for Iceberg table property `history.expire.min-snapshots-to-keep` used by `expire_snapshots` when that property is absent.
+)", 0) \
+    DECLARE(Int64, iceberg_expire_default_max_snapshot_age_ms, 432000000, R"(
+Default value for Iceberg table property `history.expire.max-snapshot-age-ms` used by `expire_snapshots` when that property is absent.
+)", 0) \
+    DECLARE(Int64, iceberg_expire_default_max_ref_age_ms, std::numeric_limits<Int64>::max(), R"(
+Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
+)", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 
@@ -7605,6 +7628,9 @@ Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
+Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
 )", EXPERIMENTAL) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files.

@@ -1,6 +1,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
+#include <QueryPipeline/UnavailableShardTracker.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
@@ -988,9 +989,18 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     profile_info_callback = std::move(callback);
 }
 
-bool RemoteQueryExecutor::needToSkipUnavailableShard() const
+bool RemoteQueryExecutor::needToSkipUnavailableShard()
 {
-    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
+    if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
+    {
+        if (!shard_skip_reported && unavailable_shard_tracker)
+        {
+            shard_skip_reported = true;
+            unavailable_shard_tracker->onShardSkipped();
+        }
+        return true;
+    }
+    return false;
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
