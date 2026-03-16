@@ -482,7 +482,7 @@ namespace
     DECLARE(UInt64, uncompressed_cache_size, DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
     Maximum size (in bytes) for uncompressed data used by table engines from the MergeTree family.
 
-    There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option `use_uncompressed_cache` is enabled.
+    There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option `use_uncompressed_cache` is enabled, and may also be used automatically for eligible local reads from tables in the `MergeTree` family when `use_uncompressed_cache` was not explicitly overridden.
 
     The uncompressed cache is advantageous for very short queries in individual cases.
 
