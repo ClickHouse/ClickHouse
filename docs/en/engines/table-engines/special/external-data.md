@@ -54,6 +54,11 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 
 When using the HTTP interface, external data is passed in the multipart/form-data format. Each table is transmitted as a separate file. The table name is taken from the file name. The `query_string` is passed the parameters `name_format`, `name_types`, and `name_structure`, where `name` is the name of the table that these parameters correspond to. The meaning of the parameters is the same as when using the command-line client.
 
+Additionally, the following optional parameters are supported for native compression:
+
+- `name_decompress` — If set, the data is decompressed using the ClickHouse native compression format before parsing. This is useful when sending data that was compressed with `compress=1` on the server side (i.e., in ClickHouse native compression format).
+- `name_disable_checksum` — If set (along with `name_decompress`), disables checksum verification during decompression.
+
 Example:
 
 ```bash
@@ -65,6 +70,15 @@ $ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+coun
 /bin/bash       4
 /usr/sbin/nologin       1
 /bin/sync       1
+```
+
+Example with native compression — first export data with compression, then use it as an external table:
+
+```bash
+$ curl -sS 'http://localhost:8123/?query=SELECT+number+AS+id+FROM+numbers(100)+FORMAT+Native&compress=1' > data.native.compressed
+
+$ curl -F 'ext=@data.native.compressed' 'http://localhost:8123/?query=SELECT+count()+FROM+ext&ext_structure=id+UInt64&ext_format=Native&ext_decompress=1'
+100
 ```
 
 For distributed query processing, the temporary tables are sent to all the remote servers.
