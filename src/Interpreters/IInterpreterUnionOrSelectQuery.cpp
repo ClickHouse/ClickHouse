@@ -129,7 +129,11 @@ StorageLimits IInterpreterUnionOrSelectQuery::getStorageLimits(const Context & c
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
+
+        /// Leaf limits should only apply to leaf nodes in distributed queries,
+        /// not to local queries. A leaf node has to_stage != Complete.
+        if (options.to_stage != QueryProcessingStage::Complete)
+            leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
     return {limits, leaf_limits};
