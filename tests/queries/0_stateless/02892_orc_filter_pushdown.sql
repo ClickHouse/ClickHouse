@@ -5,6 +5,7 @@ set output_format_orc_row_index_stride = 100;
 set input_format_orc_row_batch_size = 100;
 set input_format_orc_filter_push_down = 1;
 set input_format_null_as_default = 1;
+set allow_suspicious_low_cardinality_types =1;
 
 set engine_file_truncate_on_insert = 1;
 set optimize_or_like_chain = 0;

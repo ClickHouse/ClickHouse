@@ -1,6 +1,7 @@
 -- Tags: no-fasttest, no-parallel
 
 set output_format_parquet_row_group_size = 100;
+set allow_suspicious_low_cardinality_types = 1;
 
 set input_format_null_as_default = 1;
 set engine_file_truncate_on_insert = 1;
