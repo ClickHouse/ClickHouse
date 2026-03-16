@@ -8,7 +8,7 @@ ORDER BY tuple();
 
 INSERT INTO warden_a
 VALUES
-    ('1,  2 , 3')
+    ('1,  2 , 3'),
     ('wrong'),
     (NULL);
 
