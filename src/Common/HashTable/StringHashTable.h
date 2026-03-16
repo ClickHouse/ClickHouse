@@ -255,6 +255,10 @@ protected:
     T3 m3;
     Ts ms;
 
+    /// Tags for compile-time dispatch of hash source in dispatchImpl.
+    struct ComputeHashTag {};
+    struct PrecomputedHashTag {};
+
 public:
     using Key = std::string_view;
     using key_type = Key;
@@ -274,6 +278,14 @@ public:
         , ms{reserve_for_num_elements / 4}
     {
     }
+
+    /// Compute the sub-table-specific hash for a key.
+    size_t hash(std::string_view x) const
+    {
+        return const_cast<Self &>(*this).dispatch(
+            *this, x, [](const auto &, const auto &, size_t h) { return h; });
+    }
+
 
     StringHashTable(StringHashTable && rhs) noexcept { *this = std::move(rhs); }
 
@@ -301,89 +313,18 @@ public:
     // NOTE: It requires padded to 8 bytes keys (IOW you cannot pass
     // std::string here, but you can pass i.e. ColumnString::getDataAt()),
     // since it copies 8 bytes at a time.
-    template <typename Self, typename KeyHolder, typename Func>
-    static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
+    template <typename SelfType, typename KeyHolder, typename Func>
+    static auto ALWAYS_INLINE dispatch(SelfType & self, KeyHolder && key_holder, Func && func)
     {
-        StringHashTableHash hash;
-        const auto & x = keyHolderGetKey(key_holder);
-        const size_t sz = x.size();
-        if (sz == 0)
-        {
-            keyHolderDiscardKey(key_holder);
-            return func(self.m0, VoidKey{}, 0);
-        }
+        return dispatchImpl<ComputeHashTag>(self, std::forward<KeyHolder>(key_holder), std::forward<Func>(func));
+    }
 
-        if (x[sz - 1] == 0)
-        {
-            // Strings with trailing zeros are not representable as fixed-size
-            // string keys. Put them to the generic table.
-            return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
-        }
-
-        const char * p = x.data();
-        // pending bits that needs to be shifted out
-        const char s = (-sz & 7) * 8;
-        union
-        {
-            StringKey8 k8;
-            StringKey16 k16;
-            StringKey24 k24;
-            UInt64 n[3];
-        };
-        switch ((sz - 1) >> 3)
-        {
-            case 0: // 1..8 bytes
-            {
-                // first half page
-                if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
-                {
-                    memcpy(&n[0], p, 8);
-                    if constexpr (std::endian::native == std::endian::little)
-                        n[0] &= -1ULL >> s;
-                    else
-                        n[0] &= -1ULL << s;
-                }
-                else
-                {
-                    const char * lp = x.data() + x.size() - 8;
-                    memcpy(&n[0], lp, 8);
-                    if constexpr (std::endian::native == std::endian::little)
-                        n[0] >>= s;
-                    else
-                        n[0] <<= s;
-                }
-                keyHolderDiscardKey(key_holder);
-                return func(self.m1, k8, hash(k8));
-            }
-            case 1: // 9..16 bytes
-            {
-                memcpy(&n[0], p, 8);
-                const char * lp = x.data() + x.size() - 8;
-                memcpy(&n[1], lp, 8);
-                if constexpr (std::endian::native == std::endian::little)
-                    n[1] >>= s;
-                else
-                    n[1] <<= s;
-                keyHolderDiscardKey(key_holder);
-                return func(self.m2, k16, hash(k16));
-            }
-            case 2: // 17..24 bytes
-            {
-                memcpy(&n[0], p, 16);
-                const char * lp = x.data() + x.size() - 8;
-                memcpy(&n[2], lp, 8);
-                if constexpr (std::endian::native == std::endian::little)
-                    n[2] >>= s;
-                else
-                    n[2] <<= s;
-                keyHolderDiscardKey(key_holder);
-                return func(self.m3, k24, hash(k24));
-            }
-            default: // >= 25 bytes
-            {
-                return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
-            }
-        }
+    /// Like dispatch, but uses a pre-computed hash instead of recomputing.
+    /// The hash must have been computed by StringHashTable::hash for the same key.
+    template <typename SelfType, typename KeyHolder, typename Func>
+    static auto ALWAYS_INLINE dispatchWithHash(SelfType & self, KeyHolder && key_holder, Func && func, size_t precomputed_hash)
+    {
+        return dispatchImpl<PrecomputedHashTag>(self, std::forward<KeyHolder>(key_holder), std::forward<Func>(func), precomputed_hash);
     }
 
     struct EmplaceCallable
@@ -407,6 +348,12 @@ public:
     void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
         this->dispatch(*this, key_holder, EmplaceCallable(it, inserted));
+    }
+
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t hash_value)
+    {
+        this->dispatchWithHash(*this, key_holder, EmplaceCallable(it, inserted), hash_value);
     }
 
     struct FindCallable
@@ -509,5 +456,104 @@ public:
         m2.clearAndShrink();
         m3.clearAndShrink();
         ms.clearAndShrink();
+    }
+
+private:
+    /// HashTag controls the hash source
+    /// ComputeHashTag: compute the hash from the key using StringHashTableHash
+    /// PrecomputedHashTag: use the precomputed hash passed as an argument
+    template <typename HashTag, typename SelfType, typename KeyHolder, typename Func>
+    static auto ALWAYS_INLINE dispatchImpl(SelfType & self, KeyHolder && key_holder, Func && func,
+                                           [[maybe_unused]] size_t precomputed_hash = 0)
+    {
+        StringHashTableHash hasher;
+        const auto & x = keyHolderGetKey(key_holder);
+        const size_t sz = x.size();
+
+        auto key_hash = [&](const auto & key) ALWAYS_INLINE
+        {
+            if constexpr (std::is_same_v<HashTag, PrecomputedHashTag>)
+                return precomputed_hash;
+            else
+                return hasher(key);
+        };
+
+        if (sz == 0)
+        {
+            keyHolderDiscardKey(key_holder);
+            return func(self.m0, VoidKey{}, 0);
+        }
+
+        if (x[sz - 1] == 0)
+        {
+            // Strings with trailing zeros are not representable as fixed-size
+            // string keys. Put them to the generic table.
+            return func(self.ms, std::forward<KeyHolder>(key_holder), key_hash(x));
+        }
+
+        const char * p = x.data();
+        // pending bits that needs to be shifted out
+        const char s = (-sz & 7) * 8;
+        union
+        {
+            StringKey8 k8;
+            StringKey16 k16;
+            StringKey24 k24;
+            UInt64 n[3];
+        };
+        switch ((sz - 1) >> 3)
+        {
+            case 0: // 1..8 bytes
+            {
+                // first half page
+                if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
+                {
+                    memcpy(&n[0], p, 8);
+                    if constexpr (std::endian::native == std::endian::little)
+                        n[0] &= -1ULL >> s;
+                    else
+                        n[0] &= -1ULL << s;
+                }
+                else
+                {
+                    const char * lp = x.data() + x.size() - 8;
+                    memcpy(&n[0], lp, 8);
+                    if constexpr (std::endian::native == std::endian::little)
+                        n[0] >>= s;
+                    else
+                        n[0] <<= s;
+                }
+                keyHolderDiscardKey(key_holder);
+                return func(self.m1, k8, key_hash(k8));
+            }
+            case 1: // 9..16 bytes
+            {
+                memcpy(&n[0], p, 8);
+                const char * lp = x.data() + x.size() - 8;
+                memcpy(&n[1], lp, 8);
+                if constexpr (std::endian::native == std::endian::little)
+                    n[1] >>= s;
+                else
+                    n[1] <<= s;
+                keyHolderDiscardKey(key_holder);
+                return func(self.m2, k16, key_hash(k16));
+            }
+            case 2: // 17..24 bytes
+            {
+                memcpy(&n[0], p, 16);
+                const char * lp = x.data() + x.size() - 8;
+                memcpy(&n[2], lp, 8);
+                if constexpr (std::endian::native == std::endian::little)
+                    n[2] >>= s;
+                else
+                    n[2] <<= s;
+                keyHolderDiscardKey(key_holder);
+                return func(self.m3, k24, key_hash(k24));
+            }
+            default: // >= 25 bytes
+            {
+                return func(self.ms, std::forward<KeyHolder>(key_holder), key_hash(x));
+            }
+        }
     }
 };
