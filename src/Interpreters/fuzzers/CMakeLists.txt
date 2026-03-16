@@ -6,3 +6,6 @@ target_link_libraries(execute_query_fuzzer PRIVATE
     clickhouse_functions
     clickhouse_dictionaries
     clickhouse_dictionaries_embedded)
+
+clickhouse_add_executable(wasm_fuzzer wasm_fuzzer.cpp)
+target_link_libraries(wasm_fuzzer PRIVATE dbms)

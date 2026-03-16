@@ -1,2 +1,5 @@
 clickhouse_add_executable(format_fuzzer format_fuzzer.cpp ${SRCS})
 target_link_libraries(format_fuzzer PRIVATE clickhouse_aggregate_functions dbms)
+
+clickhouse_add_executable(native_reader_fuzzer native_reader_fuzzer.cpp ${SRCS})
+target_link_libraries(native_reader_fuzzer PRIVATE clickhouse_aggregate_functions dbms)
