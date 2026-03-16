@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-parallel, no-random-settings
 
 SET enable_analyzer = 1;
 SET log_queries = 1;
