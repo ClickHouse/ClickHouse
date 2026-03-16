@@ -1065,16 +1065,29 @@ public:
     /// database names are transparently prefixed with "{namespace}{separator}".
     String getDatabaseNamespace() const;
     void setDatabaseNamespace(const String & ns);
-    /// Prepend namespace prefix to a database name (skip system/default/shared databases and already-prefixed names).
+    /// Prepend namespace prefix to a database name (skip system/default/shared databases).
     String applyDatabaseNamespace(const String & database_name) const;
     /// Strip namespace prefix from a physical database name for user-facing display.
     String stripDatabaseNamespace(const String & physical_database_name) const;
 
+    /// Returns true for databases that are never namespace-prefixed:
+    /// predefined databases (system, INFORMATION_SCHEMA, etc.) and `default`.
+    static bool isExcludedFromNamespacing(std::string_view database_name);
+
 private:
-    /// Lock-free implementations that accept the namespace as a parameter.
-    /// Use these when the caller already holds the context mutex.
-    String applyDatabaseNamespaceImpl(const String & database_name, const String & ns) const;
-    String stripDatabaseNamespaceImpl(const String & physical_database_name, const String & ns) const;
+    /// Pure functions that transform database names using the given namespace and separator.
+    /// Static because they access no instance state — all inputs are passed as parameters.
+    /// Callers that hold the context mutex (e.g. `setUser`, `setCurrentDatabase`) read
+    /// namespace/separator/shared-databases before acquiring the lock, then call these.
+    static String applyDatabaseNamespaceImpl(
+        const String & database_name,
+        const String & ns,
+        const String & separator,
+        const std::unordered_set<String> & shared_databases);
+    static String stripDatabaseNamespaceImpl(
+        const String & physical_database_name,
+        const String & ns,
+        const String & separator);
 
 public:
     /// Returns the database_namespace_separator server setting value.

@@ -1919,7 +1919,11 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
-        setCurrentDatabaseWithLock(applyDatabaseNamespaceImpl(database, db_namespace), lock);
+    {
+        String separator = getDatabaseNamespaceSeparator();
+        auto shared = getSharedDatabasesAcrossNamespaces();
+        setCurrentDatabaseWithLock(applyDatabaseNamespaceImpl(database, db_namespace, separator, shared), lock);
+    }
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -3249,11 +3253,13 @@ void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_gu
 
 void Context::setCurrentDatabase(const String & name)
 {
-    /// Read namespace before acquiring the exclusive lock to avoid deadlock:
-    /// applyDatabaseNamespaceImpl does not acquire the context mutex.
+    /// Read namespace/separator/shared before acquiring the exclusive lock —
+    /// `applyDatabaseNamespaceImpl` is static, so no instance state is accessed inside it.
     String ns = getDatabaseNamespace();
+    String separator = getDatabaseNamespaceSeparator();
+    auto shared = getSharedDatabasesAcrossNamespaces();
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(applyDatabaseNamespaceImpl(name, ns), lock);
+    setCurrentDatabaseWithLock(applyDatabaseNamespaceImpl(name, ns, separator, shared), lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
@@ -3284,64 +3290,63 @@ void Context::setDatabaseNamespace(const String & ns)
 /// namespace is "tenant1" and the separator is "__", logical "mydb" becomes
 /// physical "tenant1__mydb".
 ///
-/// Exempt from prefixing:
+/// Exempt from prefixing (see `isExcludedFromNamespacing`):
 ///   - predefined databases (system, INFORMATION_SCHEMA, information_schema,
-///     _temporary_and_external_tables)
-///   - the "default" database (shared across all namespaces)
-///   - databases listed in shared_databases_across_namespaces
-///   - names that already carry the user's prefix (prevents double-prefixing)
+///     _temporary_and_external_tables) and `default`
+///   - databases listed in `shared_databases_across_namespaces`
 ///
 /// Note on pre-existing databases: databases whose names contain the separator that
-/// were created before the feature was enabled are loaded normally at startup (loadMetadata
+/// were created before the feature was enabled are loaded normally at startup (`loadMetadata`
 /// does not validate the separator).  Admin users (no namespace) can still read, write,
 /// and DROP these databases.  However, no new databases with names containing the separator
-/// can be created — validateDatabaseNameNoSeparator() in InterpreterCreateQuery rejects them.
+/// can be created — `validateDatabaseNameNoSeparator` in `InterpreterCreateQuery` rejects them.
 /// If a pre-existing database name happens to match "{namespace}{separator}{name}", a tenant
 /// user with that namespace will see it as a valid database — this is expected and should be
 /// considered during migration.
+bool Context::isExcludedFromNamespacing(std::string_view database_name)
+{
+    return DatabaseCatalog::isPredefinedDatabase(database_name) || database_name == "default";
+}
+
 String Context::applyDatabaseNamespace(const String & database_name) const
 {
     String ns = getDatabaseNamespace();
-    return applyDatabaseNamespaceImpl(database_name, ns);
+    String separator = getDatabaseNamespaceSeparator();
+    auto shared = getSharedDatabasesAcrossNamespaces();
+    return applyDatabaseNamespaceImpl(database_name, ns, separator, shared);
 }
 
-/// Lock-free implementation: caller passes the namespace value directly.
-/// Use this when the caller already holds the context mutex (to avoid deadlock).
-String Context::applyDatabaseNamespaceImpl(const String & database_name, const String & ns) const
+String Context::applyDatabaseNamespaceImpl(
+    const String & database_name,
+    const String & ns,
+    const String & separator,
+    const std::unordered_set<String> & shared_databases)
 {
     if (ns.empty())
         return database_name;
-    String separator = getDatabaseNamespaceSeparator();
     if (separator.empty())
         return database_name;
-    if (DatabaseCatalog::isPredefinedDatabase(database_name))
+    if (isExcludedFromNamespacing(database_name))
         return database_name;
-    /// The "default" database is shared across all namespaces.
-    if (database_name == "default")
+    if (shared_databases.contains(database_name))
         return database_name;
-    /// Databases listed in shared_databases_across_namespaces are visible to all tenants.
-    auto shared = getSharedDatabasesAcrossNamespaces();
-    if (shared.contains(database_name))
-        return database_name;
-    /// Already prefixed — don't double-prefix.
-    String prefix = ns + separator;
-    if (database_name.starts_with(prefix))
-        return database_name;
-    return prefix + database_name;
+    return ns + separator + database_name;
 }
 
 String Context::stripDatabaseNamespace(const String & physical_database_name) const
 {
     String ns = getDatabaseNamespace();
-    return stripDatabaseNamespaceImpl(physical_database_name, ns);
+    String separator = getDatabaseNamespaceSeparator();
+    return stripDatabaseNamespaceImpl(physical_database_name, ns, separator);
 }
 
-/// Lock-free implementation: caller passes the namespace value directly.
-String Context::stripDatabaseNamespaceImpl(const String & physical_database_name, const String & ns) const
+String Context::stripDatabaseNamespaceImpl(
+    const String & physical_database_name,
+    const String & ns,
+    const String & separator)
 {
     if (ns.empty())
         return physical_database_name;
-    String separator = getDatabaseNamespaceSeparator();
     if (separator.empty())
         return physical_database_name;
     String prefix = ns + separator;
