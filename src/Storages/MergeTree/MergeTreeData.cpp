@@ -8983,13 +8983,26 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
                 /// `Nested::collect` normally merges them into a single Nested column,
                 /// but when a non-Array column with the prefix name exists, they remain
                 /// as separate columns yet still share the offsets file.
-                /// See https://github.com/ClickHouse/ClickHouse/issues/93777
+                /// Only skip the collision when the stream is actually an Array offset
+                /// (matches `<prefix>.size<digits>`) — anything else is a real error.
                 if (other_full_name == full_stream_name)
                 {
                     auto prefix_a = Nested::extractTableName(column.name);
                     auto prefix_b = Nested::extractTableName(other_column_name);
                     if (!prefix_a.empty() && prefix_a == prefix_b)
-                        continue;
+                    {
+                        /// Verify the stream name is `<prefix>.size<digits>`.
+                        auto expected_prefix = escapeForFileName(prefix_a) + ".size";
+                        if (full_stream_name.starts_with(expected_prefix)
+                            && full_stream_name.size() > expected_prefix.size()
+                            && std::all_of(
+                                full_stream_name.begin() + expected_prefix.size(),
+                                full_stream_name.end(),
+                                [](char c) { return c >= '0' && c <= '9'; }))
+                        {
+                            continue;
+                        }
+                    }
                 }
 
                 auto other_type = columns.getPhysical(other_column_name).type;

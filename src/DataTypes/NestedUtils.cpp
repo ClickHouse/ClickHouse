@@ -251,7 +251,6 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
     /// Collect names of non-Array columns so we can detect when a synthetic
     /// Nested column (e.g. `n Nested(a String)`) would collide with an
     /// existing non-Array column (e.g. `n String`).
-    /// See https://github.com/ClickHouse/ClickHouse/issues/93777
     std::unordered_set<String> non_array_column_names;
     for (const auto & name_type : names_and_types)
         if (!isArray(name_type.type))
