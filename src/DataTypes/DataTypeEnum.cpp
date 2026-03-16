@@ -69,11 +69,11 @@ std::string DataTypeEnum<Type>::generateName(const Values & values)
 }
 
 template <typename Type>
-DataTypeEnum<Type>::DataTypeEnum(const Values & values_, bool is_add_, bool is_relative_)
+DataTypeEnum<Type>::DataTypeEnum(const Values & values_, bool is_add_, Int64 relative_max_)
     : EnumValues<Type>(values_)
     , type_name(generateName(this->getValues()))
     , is_add(is_add_)
-    , is_relative(is_relative_ && is_add_)
+    , relative_max(is_add_ ? relative_max_ : 0)
 {
 }
 
@@ -221,41 +221,75 @@ static void checkASTStructure(const ASTPtr & child)
                         "'name' = number, where name is string literal and number is an integer");
 }
 
-static bool autoAssignNumberForEnum(const ASTPtr & arguments)
+struct EnumElementLiterals
+{
+    const ASTLiteral * name_literal = nullptr;
+    const ASTLiteral * value_literal = nullptr;
+};
+
+static EnumElementLiterals getEnumElementLiterals(const ASTPtr & child)
+{
+    checkASTStructure(child);
+
+    const auto * func = child->as<ASTFunction>();
+    const auto * name_literal = func->arguments->children[0]->as<ASTLiteral>();
+    const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
+
+    if (!name_literal || !value_literal || name_literal->value.getType() != Field::Types::String
+        || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
+    {
+        throw Exception(
+            ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+            "Elements of Enum data type must be of form: "
+            "'name' = number or 'name', where name is string literal and number is an integer");
+    }
+
+    return {name_literal, value_literal};
+}
+
+static Int64 autoAssignNumberForEnum(const ASTPtr & arguments)
 {
     Int64 literal_child_assign_num = 1;
     ASTs assign_number_child;
     assign_number_child.reserve(arguments->children.size());
     bool is_first_child = true;
     size_t assign_count= 0;
-    bool can_be_relative = true;
+    bool leading_implicit = true;
+    Int64 relative_max = 0;
 
     for (const ASTPtr & child : arguments->children)
     {
         if (child->as<ASTLiteral>())
         {
             assign_count += !is_first_child;
-            ASTPtr func = makeASTOperator("equals", child, make_intrusive<ASTLiteral>(literal_child_assign_num + assign_count));
+            const Int64 assigned_value = literal_child_assign_num + assign_count;
+            ASTPtr func = makeASTOperator("equals", child, make_intrusive<ASTLiteral>(assigned_value));
             assign_number_child.emplace_back(func);
+            if (leading_implicit)
+                relative_max = assigned_value;
         }
         else if (child->as<ASTFunction>())
         {
             if (is_first_child)
             {
-                checkASTStructure(child);
-                const auto * func = child->as<ASTFunction>();
-                const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
-
-                if (!value_literal
-                    || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
-                    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                                    "Elements of Enum data type must be of form: "
-                                    "'name' = number or 'name', where name is string literal and number is an integer");
-
+                const auto literals = getEnumElementLiterals(child);
+                const auto * value_literal = literals.value_literal;
                 literal_child_assign_num = value_literal->value.safeGet<Int64>();
             }
+            else if (leading_implicit)
+            {
+                const auto literals = getEnumElementLiterals(child);
+                const auto * value_literal = literals.value_literal;
+                const Int64 explicit_value = value_literal->value.safeGet<Int64>();
+                if (explicit_value <= relative_max)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Explicit Enum value {} must be greater than the implicit prefix end {}",
+                        explicit_value,
+                        relative_max);
+            }
             assign_number_child.emplace_back(child);
-            can_be_relative = false;
+            leading_implicit = false;
         }
         else
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
@@ -271,11 +305,11 @@ static bool autoAssignNumberForEnum(const ASTPtr & arguments)
                         "'name' = number or 'name', where name is string literal and number is an integer");
 
     arguments->children = assign_number_child;
-    return can_be_relative;
+    return relative_max;
 }
 
 template <typename DataTypeEnum>
-static DataTypePtr createExact(const ASTPtr & arguments, bool is_add = false, bool auto_assign = true, bool is_relative = false)
+static DataTypePtr createExact(const ASTPtr & arguments, bool is_add = false, bool auto_assign = true, Int64 relative_max = 0)
 {
     if (!arguments || arguments->children.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Enum data type cannot be empty");
@@ -285,31 +319,15 @@ static DataTypePtr createExact(const ASTPtr & arguments, bool is_add = false, bo
 
     using FieldType = typename DataTypeEnum::FieldType;
 
-    bool is_relative_flag = is_relative;
-
     if (auto_assign)
-        is_relative_flag = autoAssignNumberForEnum(arguments);
+        relative_max = autoAssignNumberForEnum(arguments);
 
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
-        checkASTStructure(child);
-
-        const auto * func = child->as<ASTFunction>();
-        const auto * name_literal = func->arguments->children[0]->as<ASTLiteral>();
-        const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
-
-        if (!name_literal || !value_literal || name_literal->value.getType() != Field::Types::String
-            || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
-        {
-            throw Exception(
-                ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                "Elements of Enum data type must be of form: "
-                "'name' = number or 'name', where name is string literal and number is an integer");
-        }
-
-        const String & field_name = name_literal->value.safeGet<String>();
-        const auto value = value_literal->value.safeGet<FieldType>();
+        const auto literals = getEnumElementLiterals(child);
+        const String & field_name = literals.name_literal->value.safeGet<String>();
+        const auto value = literals.value_literal->value.safeGet<FieldType>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
@@ -318,7 +336,7 @@ static DataTypePtr createExact(const ASTPtr & arguments, bool is_add = false, bo
         values.emplace_back(field_name, value);
     }
 
-    return std::make_shared<DataTypeEnum>(values, is_add, is_relative_flag);
+    return std::make_shared<DataTypeEnum>(values, is_add, relative_max);
 }
 
 static DataTypePtr create(const ASTPtr & arguments, bool is_add = false)
@@ -326,7 +344,7 @@ static DataTypePtr create(const ASTPtr & arguments, bool is_add = false)
     if (!arguments || arguments->children.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Enum data type cannot be empty");
 
-    bool is_relative = autoAssignNumberForEnum(arguments);
+    const Int64 relative_max = autoAssignNumberForEnum(arguments);
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
@@ -344,10 +362,10 @@ static DataTypePtr create(const ASTPtr & arguments, bool is_add = false)
         Int64 value = value_literal->value.safeGet<Int64>();
 
         if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
-            return createExact<DataTypeEnum16>(arguments, is_add, false /*auto_assign*/, is_relative);
+            return createExact<DataTypeEnum16>(arguments, is_add, false /*auto_assign*/, relative_max);
     }
 
-    return createExact<DataTypeEnum8>(arguments, is_add, false /*auto_assign*/, is_relative);
+    return createExact<DataTypeEnum8>(arguments, is_add, false /*auto_assign*/, relative_max);
 }
 
 // Used by ADD ENUM VALUES
@@ -373,7 +391,8 @@ DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEn
     {
         const Int64 max_base64 = static_cast<Int64>(max_base);
         const Int64 val64 = static_cast<Int64>(val);
-        const Int64 candidate64 = add.isRelative() ? max_base64 + val64 : val64;
+        const Int64 relative_max = add.getRelativeMax();
+        const Int64 candidate64 = (relative_max > 0 && val64 <= relative_max) ? max_base64 + val64 : val64;
         if (candidate64 < std::numeric_limits<TypeBase>::min() || candidate64 > std::numeric_limits<TypeBase>::max())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
                 candidate64, name, EnumName<TypeBase>::value);

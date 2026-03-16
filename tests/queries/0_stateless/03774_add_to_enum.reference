@@ -66,3 +66,4 @@ Three
 Four
 Hundred
 Hundred
+CREATE TABLE default.enum_relative\n(\n    `x` Enum8(\'Two\' = 2, \'three\' = 3, \'hundred\' = 100)\n)\nENGINE = Memory

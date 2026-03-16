@@ -36,15 +36,20 @@ DROP TABLE enum;
 {% endfor -%}
 
 
-CREATE TABLE nonenum (x Int8) ENGINE = Memory;
+CREATE OR REPLACE TABLE nonenum (x Int8) ENGINE = Memory;
 ALTER TABLE nonenum MODIFY COLUMN x ADD ENUM VALUES('A' = 1); -- { serverError ILLEGAL_COLUMN }
 DROP TABLE nonenum;
 
-CREATE TABLE enumoverflow (x Enum8('a' = 127)) ENGINE = Memory;
+CREATE OR REPLACE TABLE enumoverflow (x Enum8('a' = 127)) ENGINE = Memory;
 ALTER TABLE enumoverflow MODIFY COLUMN x ADD ENUM VALUES('b'); -- { serverError ARGUMENT_OUT_OF_BOUND }
 DROP TABLE enumoverflow;
 
-CREATE TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
+CREATE OR REPLACE TABLE enum_relative (x Enum8('Two' = 2)) ENGINE = Memory;
+ALTER TABLE enum_relative MODIFY COLUMN x ADD ENUM VALUES('three', 'hundred' = 100);
+SHOW CREATE TABLE enum_relative;
+DROP TABLE enum_relative;
+
+CREATE OR REPLACE TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors ADD COLUMN z ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100), ADD COLUMN z ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }

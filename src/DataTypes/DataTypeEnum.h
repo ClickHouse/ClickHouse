@@ -46,10 +46,10 @@ private:
     std::string type_name;
     static std::string generateName(const Values & values);
     bool is_add; // created by ALTER ... ADD ENUM VALUES
-    bool is_relative; // ADD ENUM VALUES is able to renumber
+    Int64 relative_max = 0; // ADD ENUM VALUES is able to renumber up to
 
 public:
-    explicit DataTypeEnum(const Values & values_, bool is_add_ = false, bool is_relative_ = false);
+    explicit DataTypeEnum(const Values & values_, bool is_add_ = false, Int64 relative_max_ = 0);
 
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
@@ -82,7 +82,8 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
     bool isAdd() const override  { return is_add; }
-    bool isRelative() const override  { return is_relative; }
+    bool isRelative() const override  { return relative_max > 0; }
+    Int64 getRelativeMax() const { return relative_max; }
 };
 
 template <typename TypeBase>
