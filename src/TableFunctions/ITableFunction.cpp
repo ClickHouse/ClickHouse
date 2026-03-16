@@ -34,7 +34,7 @@ std::optional<AccessTypeObjects::Source> ITableFunction::getSourceAccessObject()
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
-                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query) const
+                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query, bool force_lazy_init) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
@@ -52,12 +52,13 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
-
-    if (cached_columns.empty())
-        return executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
-
-    if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
-        return executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns), is_insert_query);
+    if (!force_lazy_init)
+    {
+        if (cached_columns.empty())
+            return executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
+        if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
+            return executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns), is_insert_query);
+    }
 
     auto this_table_function = shared_from_this();
     auto get_storage = [=]() -> StoragePtr
