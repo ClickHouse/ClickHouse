@@ -261,6 +261,7 @@ static PartsRemoteFSInfo analyzePartsOnRemoteFS(const RangesInDataParts & parts)
         result.any_parts_on_remote_disk |= part_on_remote_disk;
         result.all_parts_on_remote_disk &= part_on_remote_disk;
 
+        // Once both flags diverge, the result cannot change anymore.
         if (result.any_parts_on_remote_disk && !result.all_parts_on_remote_disk)
             break;
     }

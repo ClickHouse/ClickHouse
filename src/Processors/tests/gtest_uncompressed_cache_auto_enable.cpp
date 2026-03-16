@@ -20,6 +20,13 @@ TEST(UncompressedCacheAutoEnable, RequiresAllPartsToBeLocal)
         /*has_uncompressed_cache=*/true));
 }
 
+TEST(UncompressedCacheAutoEnable, CanAutoEnableForLocalPartsWithCache)
+{
+    EXPECT_TRUE(canAutoEnableUncompressedCacheForMergeTreeRead(
+        /*any_parts_on_remote_disk=*/false,
+        /*has_uncompressed_cache=*/true));
+}
+
 TEST(UncompressedCacheAutoEnable, AutoEnablesForEligibleReads)
 {
     EXPECT_TRUE(shouldUseUncompressedCacheForMergeTreeRead(
