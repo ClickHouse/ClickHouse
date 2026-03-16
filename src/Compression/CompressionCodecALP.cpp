@@ -1018,7 +1018,8 @@ private:
         for (auto & [f, s] : left_part_freq)
             params.left_part_freq.emplace_back(s, f);
         std::sort(params.left_part_freq.begin(), params.left_part_freq.end(),
-                  [](const auto & a, const auto & b) {
+                  [](const auto & a, const auto & b)
+                  {
                       // Sort by frequency desc, left part value asc
                       return a.first != b.first ? a.first > b.first : a.second < b.second;
                   });
