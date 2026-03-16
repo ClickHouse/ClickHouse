@@ -238,15 +238,27 @@ ExpressionCost CostEstimator::estimateReadCost(
 {
     auto bytes_per_row = this_step_statistics.estimated_bytes_per_row;
 
-    /// FIXME: hack to simulate that parallel read is faster
     if (dynamic_cast<const ParallelReadStrategy *>(strategy) != nullptr)
     {
+        /// Parallel read: each of N nodes reads 1/N of the data.
         return ExpressionCost{
             .cost = Cost{.io = this_step_statistics.estimated_row_count * bytes_per_row / distribution_node_count},
             .subtree_cost = {},
         };
     }
 
+    if (dynamic_cast<const ReplicatedReadStrategy *>(strategy) != nullptr)
+    {
+        /// Replicated read on shared storage: every node reads the full table from
+        /// object storage.  IO cost is NOT divided by N — each node does a full scan.
+        /// No network cost — data is accessed directly from S3, not transferred between nodes.
+        return ExpressionCost{
+            .cost = Cost{.io = this_step_statistics.estimated_row_count * bytes_per_row},
+            .subtree_cost = {},
+        };
+    }
+
+    /// Default: single-node local read.
     return ExpressionCost{
         .cost = Cost{.io = this_step_statistics.estimated_row_count * bytes_per_row},
         .subtree_cost = {},
