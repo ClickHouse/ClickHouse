@@ -117,6 +117,17 @@ FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_
 SELECT *
 FROM 03271_parametrized_v_expl(upper_bound = 3);
 
+SET enable_analyzer = 0;
+SET use_declared_schema_for_parameterized_views = 'throwing';
+
+-- Legacy path: mismatched schema should also throw TYPE_MISMATCH
+SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
+
+-- Legacy path: matching schema should succeed
+SELECT *
+FROM 03271_parametrized_v_expl(upper_bound = 3);
+
 -- { echoOff }
 
 DROP VIEW 03271_parametrized_v;

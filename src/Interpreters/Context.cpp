@@ -80,6 +80,7 @@
 #include <Interpreters/WasmModuleManager.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/validateParameterizedViewSchema.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -2783,6 +2784,10 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             ASTCreateQuery create;
             create.set(create.select, query);
             auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
+
+            if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views] == ParameterizedViewSchemaDefinitionMode::THROWING)
+                validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), table->getInMemoryMetadataPtr()->getColumns());
+
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
@@ -3049,28 +3054,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
 
     if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views] == ParameterizedViewSchemaDefinitionMode::THROWING)
-    {
-        auto actual_names_and_types = sample_block->getNamesAndTypesList();
-        const auto original_defined_columns = original_view_metadata->getColumns();
-        if (!original_defined_columns.empty())
-        {
-            auto throw_schema_mismatch = [table_name]()
-            {
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "After parameters substitution of parameterized view {} the actual schema does not match the defined one",
-                    backQuoteIfNeed(table_name));
-            };
-            if (original_defined_columns.size() != actual_names_and_types.size())
-                throw_schema_mismatch();
-
-            for (const auto [defined_column, actual_column] : std::views::zip(original_defined_columns.getAll(), actual_names_and_types))
-            {
-                if (defined_column.name != actual_column.name || defined_column.type->getName() != actual_column.type->getName())
-                    throw_schema_mismatch();
-            }
-        }
-    }
+        validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), original_view_metadata->getColumns());
 
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
