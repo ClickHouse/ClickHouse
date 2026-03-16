@@ -66,7 +66,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     const ColumnsDescription & columns_in_table_or_function_definition,
     const ConstraintsDescription & constraints_,
     const ASTPtr & partition_by,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool is_table_function)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
@@ -76,10 +77,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
-    configuration->update(
-        object_storage,
-        context_,
-        /* if_not_updated_before */ false);
+    configuration->update(object_storage, context_);
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
@@ -103,6 +101,22 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
+    if (is_table_function && configuration->isDataLakeConfiguration())
+    {
+        /// For datalake table functions, always pin the current snapshot version so that
+        /// query execution uses the same snapshot as query analysis (logical-race fix).
+        /// Additionally reload columns from the snapshot when the per-format setting is enabled.
+        if (auto state = configuration->getTableStateSnapshot(context_))
+        {
+            metadata.setDataLakeTableState(*state);
+            if (configuration->shouldReloadSchemaForConsistency(context_))
+            {
+                if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, context_))
+                    metadata = *metadata_snapshot;
+            }
+        }
+    }
+
     metadata.setConstraints(constraints_);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
@@ -113,14 +127,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         sample_path));
 
     setInMemoryMetadata(metadata);
-
-    /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
-
-    if (configuration->needsUpdateForSchemaConsistency())
-    {
-        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context_);
-        setInMemoryMetadata(metadata_snapshot);
-    }
 }
 
 std::string StorageObjectStorageCluster::getName() const
@@ -130,19 +136,17 @@ std::string StorageObjectStorageCluster::getName() const
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
-    configuration->update(
+    configuration->lazyInitializeIfNeeded(
         object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
+        query_context);
     return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(
+    configuration->lazyInitializeIfNeeded(
         object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
+        query_context);
     return configuration->totalBytes(query_context);
 }
 
@@ -174,7 +178,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     ASTPtr settings_temporary_storage = nullptr;
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -202,15 +206,30 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
 void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
+    if (!configuration->isDataLakeConfiguration())
+        return;
+
+    /// Always force an update to pick up the latest snapshot version.
+    /// Using if_not_updated_before=true would leave latest_snapshot_version
+    /// stale from the first query and silently omit new files.
     configuration->update(
         object_storage,
-        query_context,
-        /* if_not_updated_before */ true);
-    if (configuration->needsUpdateForSchemaConsistency())
+        query_context);
+
+    auto state = configuration->getTableStateSnapshot(query_context);
+    if (!state)
+        return;
+
+    auto new_metadata = *getInMemoryMetadataPtr();
+    new_metadata.setDataLakeTableState(*state);
+
+    if (configuration->shouldReloadSchemaForConsistency(query_context))
     {
-        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
-        setInMemoryMetadata(metadata_snapshot);
+        if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
+            new_metadata = *metadata_snapshot;
     }
+
+    setInMemoryMetadata(new_metadata);
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
@@ -277,3 +296,4 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 }
 
 }
+

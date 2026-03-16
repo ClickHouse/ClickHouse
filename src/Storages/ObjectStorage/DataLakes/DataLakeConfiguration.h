@@ -1,5 +1,12 @@
 #pragma once
+
 #include "config.h"
+
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -19,6 +26,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
+#include <type_traits>
 
 #include <Common/ErrorCodes.h>
 #include <Common/filesystemHelpers.h>
@@ -52,6 +60,8 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_aws_access_key_id;
     extern DataLakeStorageSettingsString storage_aws_secret_access_key;
     extern DataLakeStorageSettingsString storage_region;
+    extern DataLakeStorageSettingsString storage_aws_role_arn;
+    extern DataLakeStorageSettingsString storage_aws_role_session_name;
     extern DataLakeStorageSettingsString storage_catalog_url;
     extern DataLakeStorageSettingsString storage_warehouse;
     extern DataLakeStorageSettingsString storage_catalog_credential;
@@ -83,19 +93,24 @@ public:
         return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
     }
 
-    /// Returns true, if metadata is of the latest version, false if unknown.
-    void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before) override
+    void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
-        const bool updated_before = current_metadata != nullptr;
-        if (updated_before && if_not_updated_before)
-            return;
-
-        BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
+        BaseStorageConfiguration::update(object_storage, local_context);
+        assertLocalPathCorrect(object_storage, local_context);
         if (current_metadata && current_metadata->supportsUpdate())
         {
             current_metadata->update(local_context);
             return;
         }
+        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+    }
+
+    void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context) override
+    {
+        if (current_metadata != nullptr)
+            return;
+        BaseStorageConfiguration::update(object_storage, local_context);
+        assertLocalPathCorrect(object_storage, local_context);
         current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
@@ -109,15 +124,9 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_) override
     {
-        if (object_storage->getType() == ObjectStorageType::Local)
-        {
-            auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
-                throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
-        }
-        BaseStorageConfiguration::update(object_storage, local_context, true);
+        BaseStorageConfiguration::update(object_storage, local_context);
 
+        assertLocalPathCorrect(object_storage, local_context);
         DataLakeMetadata::createInitial(
             object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
     }
@@ -164,11 +173,11 @@ public:
 
     }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
     {
         if (ready_object_storage)
             return ready_object_storage;
-        return BaseStorageConfiguration::createObjectStorage(context, is_readonly);
+        return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
@@ -179,10 +188,20 @@ public:
         return std::nullopt;
     }
 
+    bool supportsTotalRows(ContextPtr context, ObjectStorageType storage_type) const override
+    {
+        return DataLakeMetadata::supportsTotalRows(context, storage_type);
+    }
+
     std::optional<size_t> totalRows(ContextPtr local_context) override
     {
         assertInitialized();
         return current_metadata->totalRows(local_context);
+    }
+
+    bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override
+    {
+        return DataLakeMetadata::supportsTotalBytes(context, storage_type);
     }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
@@ -209,19 +228,27 @@ public:
         return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context) const override
+    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr context) const override
     {
         assertInitialized();
-        return current_metadata->getStorageSnapshotMetadata(context);
+        return current_metadata->getTableStateSnapshot(context);
     }
 
-    /// This method should work even if metadata is not initialized
-    bool needsUpdateForSchemaConsistency() const override
+    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
+        const DataLakeTableStateSnapshot & state, ContextPtr context) const override
     {
-#if USE_AVRO
-        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
-#endif
-        return false;
+        assertInitialized();
+        auto metadata = current_metadata->buildStorageMetadataFromState(state, context);
+        if (metadata)
+            LOG_TEST(log, "Built storage metadata from state with columns: {}",
+                metadata->getColumns().toString(/* include_comments */false));
+        return metadata;
+    }
+
+    bool shouldReloadSchemaForConsistency(ContextPtr context) const override
+    {
+        assertInitialized();
+        return current_metadata->shouldReloadSchemaForConsistency(context);
     }
 
     IDataLakeMetadata * getExternalMetadata() override
@@ -296,7 +323,7 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
-        update(object_storage, context, /* if_not_updated_before */ true);
+        lazyInitializeIfNeeded(object_storage, context);
         return current_metadata->write(
             sample_block,
             table_id,
@@ -317,6 +344,8 @@ public:
                 .aws_access_key_id = (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].value,
                 .aws_secret_access_key = (*settings)[DataLakeStorageSetting::storage_aws_secret_access_key].value,
                 .region = (*settings)[DataLakeStorageSetting::storage_region].value,
+                .aws_role_arn = (*settings)[DataLakeStorageSetting::storage_aws_role_arn].value,
+                .aws_role_session_name = (*settings)[DataLakeStorageSetting::storage_aws_role_session_name].value
             };
 
             return std::make_shared<DataLake::GlueCatalog>(
@@ -351,9 +380,9 @@ public:
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
-    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
     {
-        current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
+        current_metadata->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);
     }
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
@@ -366,11 +395,31 @@ public:
         ready_object_storage = disk->getObjectStorage();
     }
 
+    bool supportsPrewhere() const override
+    {
+#if USE_AVRO
+        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+#else
+        return false;
+#endif
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
     const DataLakeStorageSettingsPtr settings;
     ObjectStoragePtr ready_object_storage;
+
+    void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
+    {
+        if (object_storage->getType() == ObjectStorageType::Local)
+        {
+            auto user_files_path = local_context->getUserFilesPath();
+            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+                throw Exception(
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+        }
+    }
 
     void assertInitialized() const
     {
@@ -387,6 +436,7 @@ private:
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams &) override
     {
+        assertLocalPathCorrect(object_storage, local_context);
         if (!current_metadata)
         {
             current_metadata = DataLakeMetadata::create(

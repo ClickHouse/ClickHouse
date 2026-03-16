@@ -1,5 +1,3 @@
-SET allow_suspicious_variant_types = 1;
-
 DROP TABLE IF EXISTS geo_dst;
 DROP TABLE IF EXISTS geo;
 DROP TABLE IF EXISTS variant_table;

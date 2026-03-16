@@ -2,7 +2,6 @@
 #include <type_traits>
 #include <AggregateFunctions/AggregateFunctionAvg.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
 
@@ -53,6 +52,88 @@ public:
         this->data(place).denominator += static_cast<Denominator>(weights.getData()[row_num]);
     }
 
+    void NO_SANITIZE_UNDEFINED addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos) const override
+    {
+        const auto * values = static_cast<const ColumnVector<Value> &>(*columns[0]).getData().data();
+        const auto * weights = static_cast<const ColumnVector<Weight> &>(*columns[1]).getData().data();
+
+        Numerator local_numerator{};
+        Denominator local_denominator{};
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (flags[i])
+                {
+                    local_numerator += static_cast<Numerator>(values[i]) * static_cast<Numerator>(weights[i]);
+                    local_denominator += static_cast<Denominator>(weights[i]);
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                local_numerator += static_cast<Numerator>(values[i]) * static_cast<Numerator>(weights[i]);
+                local_denominator += static_cast<Denominator>(weights[i]);
+            }
+        }
+
+        this->data(place).numerator += local_numerator;
+        this->data(place).denominator += local_denominator;
+    }
+
+    void NO_SANITIZE_UNDEFINED addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena *,
+        ssize_t if_argument_pos) const override
+    {
+        const auto * values = static_cast<const ColumnVector<Value> &>(*columns[0]).getData().data();
+        const auto * weights = static_cast<const ColumnVector<Weight> &>(*columns[1]).getData().data();
+
+        Numerator local_numerator{};
+        Denominator local_denominator{};
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (!null_map[i] && flags[i])
+                {
+                    local_numerator += static_cast<Numerator>(values[i]) * static_cast<Numerator>(weights[i]);
+                    local_denominator += static_cast<Denominator>(weights[i]);
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (!null_map[i])
+                {
+                    local_numerator += static_cast<Numerator>(values[i]) * static_cast<Numerator>(weights[i]);
+                    local_denominator += static_cast<Denominator>(weights[i]);
+                }
+            }
+        }
+
+        this->data(place).numerator += local_numerator;
+        this->data(place).denominator += local_denominator;
+    }
+
     String getName() const override { return "avgWeighted"; }
 
 #if USE_EMBEDDED_COMPILER
@@ -72,6 +153,7 @@ public:
         auto * numerator_type = toNativeType<Numerator>(b);
         auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
+        numerator_value->setAlignment(llvm::Align(alignof(Numerator)));
 
         auto numerator_data_type = toNativeDataType<Numerator>();
         auto * argument = nativeCast(b, arguments[0], numerator_data_type);
@@ -79,7 +161,7 @@ public:
 
         llvm::Value * value_weight_multiplication = argument->getType()->isIntegerTy() ? b.CreateMul(argument, weight) : b.CreateFMul(argument, weight);
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_weight_multiplication) : b.CreateFAdd(numerator_value, value_weight_multiplication);
-        b.CreateStore(numerator_result_value, numerator_ptr);
+        b.CreateStore(numerator_result_value, numerator_ptr)->setAlignment(llvm::Align(alignof(Numerator)));
 
         auto * denominator_type = toNativeType<Denominator>(b);
 
@@ -89,9 +171,10 @@ public:
         auto * weight_cast_to_denominator = nativeCast(b, arguments[1], toNativeDataType<Denominator>());
 
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
+        denominator_value->setAlignment(llvm::Align(alignof(Denominator)));
         auto * denominator_value_updated = denominator_type->isIntegerTy() ? b.CreateAdd(denominator_value, weight_cast_to_denominator) : b.CreateFAdd(denominator_value, weight_cast_to_denominator);
 
-        b.CreateStore(denominator_value_updated, denominator_ptr);
+        b.CreateStore(denominator_value_updated, denominator_ptr)->setAlignment(llvm::Align(alignof(Denominator)));
     }
 
     void
@@ -247,7 +330,7 @@ SELECT avgWeighted(t, t) FROM test
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("avgWeighted", {createAggregateFunctionAvgWeighted, AggregateFunctionProperties{}, documentation });
+    factory.registerFunction("avgWeighted", {createAggregateFunctionAvgWeighted, documentation });
 }
 
 }

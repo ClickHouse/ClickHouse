@@ -5,8 +5,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/OpenTelemetryTracingContext.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
@@ -14,6 +18,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Coordination/KeeperCommon.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
+#include <Interpreters/Context.h>
 #include <Common/thread_local_rng.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperReconfiguration.h>
@@ -25,6 +32,7 @@
 #include <future>
 #include <chrono>
 #include <limits>
+#include <string>
 
 #include <fmt/ranges.h>
 
@@ -44,6 +52,12 @@ namespace ProfileEvents
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
+}
+
+namespace HistogramMetrics
+{
+    extern Metric & KeeperCurrentBatchSizeElements;
+    extern Metric & KeeperCurrentBatchSizeBytes;
 }
 
 using namespace std::chrono_literals;
@@ -106,7 +120,8 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
                     memory_delta += set_req.bytesSize();
                     break;
                 }
-                case Coordination::OpNum::Remove: {
+                case Coordination::OpNum::Remove:
+                case Coordination::OpNum::TryRemove: {
                     Coordination::ZooKeeperRemoveRequest & remove_req
                         = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
                     memory_delta -= remove_req.bytesSize();
@@ -150,6 +165,21 @@ void KeeperDispatcher::requestThread()
 
     while (!shutdown_called)
     {
+        const auto handle_opentelemetery_spans = [this](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+        {
+            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                request->spans.dispatcher_requests_queue,
+                [&]
+                {
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                        {"keeper.session_id", session_id},
+                        {"keeper.xid", request->xid},
+                        {"keeper.dispatcher.requests_queue.size", requests_queue->size()},
+                    };
+                });
+        };
+
         KeeperRequestForSession request;
 
         const auto & coordination_settings = configuration_and_settings->coordination_settings;
@@ -171,6 +201,8 @@ void KeeperDispatcher::requestThread()
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
                 if (shutdown_called)
                     break;
+
+                handle_opentelemetery_spans(request.request, request.session_id);
 
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
@@ -209,10 +241,14 @@ void KeeperDispatcher::requestThread()
                         if (requests_queue->tryPop(request))
                         {
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
+
+                            handle_opentelemetery_spans(request.request, request.session_id);
+
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
                             {
                                 const auto & last_request = current_batch.back();
+                                ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
                                 std::lock_guard lock(read_request_queue_mutex);
                                 read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
                             }
@@ -276,6 +312,9 @@ void KeeperDispatcher::requestThread()
                         ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
 
                     LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
+
+                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, current_batch.size());
+                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, current_batch_bytes_size);
 
                     auto result = server->putRequestBatch(current_batch);
 
@@ -356,13 +395,34 @@ void KeeperDispatcher::responseThread()
             if (shutdown_called)
                 break;
 
+            const UInt64 dequeue_time_us = ZooKeeperOpentelemetrySpans::now();
+
+            bool response_was_sent = false;
             try
             {
-                setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
+                response_was_sent = setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
             }
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+
+            if (response_was_sent && response_for_session.request)
+            {
+                ZooKeeperOpentelemetrySpans::maybeFinalize(
+                    response_for_session.request->spans.dispatcher_responses_queue,
+                    [&]
+                    {
+                        return std::vector<OpenTelemetry::SpanAttribute>{
+                            {"keeper.operation", Coordination::opNumToString(response_for_session.request->getOpNum())},
+                            {"keeper.session_id", response_for_session.session_id},
+                            {"keeper.xid", response_for_session.request->xid},
+                            {"keeper.dispatcher.responses_queue.size", responses_queue.size()},
+                        };
+                    },
+                    OpenTelemetry::SpanStatus::OK,
+                    "",
+                    dequeue_time_us);
             }
         }
     }
@@ -394,7 +454,7 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
-void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
+bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
 
@@ -405,11 +465,12 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
 
         /// Nobody waits for this session id
         if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.contains(session_id_resp.internal_id))
-            return;
+            return false;
 
         auto callback = new_session_id_response_callback[session_id_resp.internal_id];
         callback(response, request);
         new_session_id_response_callback.erase(session_id_resp.internal_id);
+        return true;
     }
     else /// Normal response, just write to client
     {
@@ -417,7 +478,7 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
 
         /// Session was disconnected, just skip this response
         if (session_response_callback == session_to_response_callback.end())
-            return;
+            return false;
 
         session_response_callback->second(response, request);
 
@@ -427,6 +488,8 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
             session_to_response_callback.erase(session_response_callback);
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
+
+        return true;
     }
 }
 
@@ -449,6 +512,8 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (keeper_context->isShutdownCalled())
         return false;
 
+    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
     {
@@ -459,6 +524,29 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
     }
+    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+    return true;
+}
+
+bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+{
+    {
+        /// If session was already disconnected than we will ignore requests
+        std::lock_guard lock(session_to_response_callback_mutex);
+        if (!session_to_response_callback.contains(session_id))
+            return false;
+    }
+
+    KeeperRequestForSession request_info;
+    request_info.request = request;
+    using namespace std::chrono;
+    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    request_info.session_id = session_id;
+
+    if (keeper_context->isShutdownCalled())
+        return false;
+
+    server->putLocalReadRequest(request_info);
     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
     return true;
 }
@@ -500,10 +588,24 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                     {
                         for (const auto & read_request : request_queue_it->second)
                         {
-                            if (server->isLeaderAlive())
-                                server->putLocalReadRequest(read_request);
-                            else
+                            if (!server->isLeaderAlive())
+                            {
                                 addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+                                continue;
+                            }
+
+                            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                                read_request.request->spans.read_wait_for_write,
+                                [&]
+                                {
+                                    return std::vector<OpenTelemetry::SpanAttribute>{
+                                        {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
+                                        {"keeper.session_id", read_request.session_id},
+                                        {"keeper.xid", read_request.request->xid},
+                                    };
+                                });
+
+                            server->putLocalReadRequest(read_request);
                         }
 
                         xid_to_request_queue.erase(request_queue_it);
@@ -700,6 +802,9 @@ void KeeperDispatcher::sessionCleanerTask()
                     /// Close session == send close request to raft server
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
+
+                    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+
                     using namespace std::chrono;
                     KeeperRequestForSession request_info
                     {
@@ -734,15 +839,27 @@ void KeeperDispatcher::finishSession(int64_t session_id)
     if (keeper_context->isShutdownCalled())
         return;
 
+    ZooKeeperResponseCallback callback;
     {
         std::lock_guard lock(session_to_response_callback_mutex);
         auto session_it = session_to_response_callback.find(session_id);
         if (session_it != session_to_response_callback.end())
         {
+            callback = std::move(session_it->second);
             session_to_response_callback.erase(session_it);
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
     }
+
+    /// Notify the callback that session is being closed before removing it
+    /// This allows clients to mark themselves as expired
+    if (callback)
+    {
+        auto close_response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
+        close_response->error = Coordination::Error::ZSESSIONEXPIRED;
+        callback(close_response, nullptr);
+    }
+
     {
         std::lock_guard lock(read_request_queue_mutex);
         read_request_queue.erase(session_id);
@@ -845,6 +962,8 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         };
     }
 
+    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+
     /// Push new session request to queue
     if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push session id request to queue within session timeout");
@@ -932,7 +1051,7 @@ void KeeperDispatcher::clusterUpdateThread()
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
 
             std::this_thread::sleep_for(last_command_was_leader_change
-                ? configuration_and_settings->coordination_settings[CoordinationSetting::sleep_before_leader_change_ms]
+                ? std::chrono::milliseconds(configuration_and_settings->coordination_settings[CoordinationSetting::sleep_before_leader_change_ms].totalMilliseconds())
                 : 50ms);
         }
     }
@@ -986,9 +1105,9 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     keeper_context->updateKeeperMemorySoftLimit(config);
 }
 
-void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
+void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests)
 {
-    keeper_stats.updateLatency(process_time_ms);
+    keeper_stats.updateLatency(process_time_ms, subrequests);
 }
 
 static uint64_t getTotalSize(const DiskPtr & disk, const std::string & path = "")
@@ -1077,7 +1196,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
         {
             std::unordered_set<int32_t> nodes;
             auto members = preconditions->getArray("members");
-            for (size_t i = 0; i < members->size(); ++i)
+            for (unsigned int i = 0; i < members->size(); ++i)
                 nodes.insert(members->getElement<int32_t>(i));
 
             auto servers_in_config = latest_config->get_servers();
@@ -1100,7 +1219,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
         {
             std::unordered_set<int32_t> leaders;
             auto leaders_array = preconditions->getArray("leaders");
-            for (size_t i = 0; i < leaders_array->size(); ++i)
+            for (unsigned int i = 0; i < leaders_array->size(); ++i)
                 leaders.insert(leaders_array->getElement<int32_t>(i));
 
             if (!server->isLeaderAlive())
@@ -1108,7 +1227,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
                     "Precondition failed: expected leader id {} but there is no leader currently",
                     fmt::join(leaders, ", "));
 
-            if (!leaders.contains(server->getLeaderID()))
+            if (!leaders.contains(static_cast<int32_t>(server->getLeaderID())))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Precondition failed: expected leader id {} does not match actual leader id {}",
                     fmt::join(leaders, ", "),

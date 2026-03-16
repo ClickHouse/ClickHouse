@@ -1,5 +1,3 @@
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVariant.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -52,7 +50,7 @@ void ColumnVariant::initIdentityGlobalToLocalDiscriminatorsMapping()
 {
     local_to_global_discriminators.reserve(variants.size());
     global_to_local_discriminators.reserve(variants.size());
-    for (size_t i = 0; i != variants.size(); ++i)
+    for (Discriminator i = 0; i != variants.size(); ++i)
     {
         local_to_global_discriminators.push_back(i);
         global_to_local_discriminators.push_back(i);
@@ -207,7 +205,7 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
         local_to_global_discriminators = local_to_global_discriminators_;
         global_to_local_discriminators.resize(local_to_global_discriminators.size());
         /// Create mapping global discriminator -> local discriminator
-        for (size_t i = 0; i != local_to_global_discriminators.size(); ++i)
+        for (Discriminator i = 0; i != local_to_global_discriminators.size(); ++i)
         {
             if (local_to_global_discriminators[i] > variants.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid global discriminator {}. The number of variants: {}", UInt64(local_to_global_discriminators[i]), variants_.size());
@@ -215,6 +213,8 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
             global_to_local_discriminators[local_to_global_discriminators[i]] = i;
         }
     }
+
+    validateState();
 }
 
 namespace
@@ -418,17 +418,17 @@ void ColumnVariant::get(size_t n, Field & res) const
         variants[discr]->get(offsetAt(n), res);
 }
 
-DataTypePtr ColumnVariant::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnVariant::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     Discriminator discr = localDiscriminatorAt(n);
     if (discr == NULL_DISCRIMINATOR)
     {
         if (options.notFull(name_buf))
             name_buf << "NULL";
-        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+        return;
     }
 
-    return variants[discr]->getValueNameAndTypeImpl(name_buf, offsetAt(n), options);
+    variants[discr]->getValueNameImpl(name_buf, offsetAt(n), options);
 }
 
 bool ColumnVariant::isDefaultAt(size_t n) const
@@ -465,7 +465,7 @@ bool ColumnVariant::tryInsert(const DB::Field & x)
         return true;
     }
 
-    for (size_t i = 0; i != variants.size(); ++i)
+    for (Discriminator i = 0; i != variants.size(); ++i)
     {
         if (variants[i]->tryInsert(x))
         {
@@ -580,7 +580,7 @@ void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, 
         }
     }
 
-    for (size_t src_local_discr = 0; src_local_discr != nested_ranges.size(); ++src_local_discr)
+    for (Discriminator src_local_discr = 0; src_local_discr != nested_ranges.size(); ++src_local_discr)
     {
         auto [nested_start, nested_length] = nested_ranges[src_local_discr];
         Discriminator src_global_discr = src.globalDiscriminatorByLocal(src_local_discr);
@@ -729,6 +729,9 @@ void ColumnVariant::insertManyDefaults(size_t length)
 
 void ColumnVariant::popBack(size_t n)
 {
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
     /// If we have only NULLs, just pop back from local_discriminators and offsets.
     if (hasOnlyNulls())
     {
@@ -939,8 +942,16 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     /// In this case we can just filter this variant and resize discriminators/offsets.
     if (auto non_empty_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
     {
-        Columns new_variants(variants.begin(), variants.end());
-        new_variants[*non_empty_discr] = variants[*non_empty_discr]->filter(filt, result_size_hint);
+        const size_t num_variants = variants.size();
+        Columns new_variants;
+        new_variants.reserve(num_variants);
+        for (size_t i = 0; i != num_variants; ++i)
+        {
+            if (i == *non_empty_discr)
+                new_variants.emplace_back(variants[i]->filter(filt, result_size_hint));
+            else
+                new_variants.emplace_back(variants[i]->cloneEmpty());
+        }
         size_t new_size = new_variants[*non_empty_discr]->size();
         ColumnPtr new_discriminators = local_discriminators->cloneResized(new_size);
         ColumnPtr new_offsets = offsets->cloneResized(new_size);
@@ -1082,7 +1093,7 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
             if (i == *non_empty_local_discr)
                 new_variants.emplace_back(variants[*non_empty_local_discr]->permute(perm, limit)->assumeMutable());
             else
-                new_variants.emplace_back(variants[i]->assumeMutable());
+                new_variants.emplace_back(variants[i]->cloneEmpty());
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();
@@ -1112,7 +1123,7 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
             if (i == *non_empty_local_discr)
                 new_variants.emplace_back(variants[*non_empty_local_discr]->index(indexes, limit)->assumeMutable());
             else
-                new_variants.emplace_back(variants[i]->assumeMutable());
+                new_variants.emplace_back(variants[i]->cloneEmpty());
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();
@@ -1178,7 +1189,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     if (size() != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", replicate_offsets.size(), size());
 
-    if (empty())
+    if (empty() || replicate_offsets.back() == 0)
         return cloneEmpty();
 
     /// If we have only NULLs, just resize column to the new size.
@@ -1489,7 +1500,7 @@ void ColumnVariant::protect()
         variant->protect();
 }
 
-void ColumnVariant::getExtremes(Field & min, Field & max) const
+void ColumnVariant::getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const
 {
     min = Null();
     max = Null();
@@ -1549,7 +1560,7 @@ bool ColumnVariant::structureEquals(const IColumn & rhs) const
     if (num_variants != rhs_variant->variants.size())
         return false;
 
-    for (size_t i = 0; i < num_variants; ++i)
+    for (Discriminator i = 0; i < static_cast<Discriminator>(num_variants); ++i)
         if (!variants[i]->structureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
             return false;
 
@@ -1566,7 +1577,7 @@ bool ColumnVariant::dynamicStructureEquals(const IColumn & rhs) const
     if (num_variants != rhs_variant->variants.size())
         return false;
 
-    for (size_t i = 0; i < num_variants; ++i)
+    for (Discriminator i = 0; i < static_cast<Discriminator>(num_variants); ++i)
         if (!variants[i]->dynamicStructureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
             return false;
 
@@ -1601,7 +1612,7 @@ ColumnPtr ColumnVariant::compress(bool force_compression) const
 double ColumnVariant::getRatioOfDefaultRows(double) const
 {
     UInt64 num_defaults = getNumberOfDefaultRows();
-    return static_cast<double>(num_defaults) / local_discriminators->size();
+    return static_cast<double>(num_defaults) / static_cast<double>(local_discriminators->size());
 }
 
 UInt64 ColumnVariant::getNumberOfDefaultRows() const
@@ -1659,7 +1670,7 @@ std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminato
 std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminatorOfOneNoneEmptyVariant() const
 {
     std::optional<ColumnVariant::Discriminator> discr;
-    for (size_t i = 0; i != variants.size(); ++i)
+    for (Discriminator i = 0; i != variants.size(); ++i)
     {
         if (!variants[i]->empty())
         {
@@ -1723,12 +1734,12 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
             {
                 if (null_map[i])
                 {
-                    filter.push_back(0);
+                    filter.push_back(static_cast<UInt8>(0));
                     local_discriminators_data[i] = NULL_DISCRIMINATOR;
                 }
                 else
                 {
-                   filter.push_back(1);
+                   filter.push_back(static_cast<UInt8>(1));
                    offsets_data[i] = size_hint++;
                 }
             }
@@ -1838,6 +1849,36 @@ void ColumnVariant::fixDynamicStructure()
 {
     for (auto & variant : variants)
         variant->fixDynamicStructure();
+}
+
+void ColumnVariant::validateState() const
+{
+    const auto & local_discriminators_data = getLocalDiscriminators();
+    const auto & offsets_data = getOffsets();
+    if (local_discriminators_data.size() != offsets_data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of discriminators and offsets should be equal, but {} and {} were given", local_discriminators_data.size(), offsets_data.size());
+
+    std::vector<size_t> actual_variant_sizes(variants.size());
+    for (size_t i = 0; i != variants.size(); ++i)
+        actual_variant_sizes[i] = variants[i]->size();
+
+    std::vector<size_t> expected_variant_sizes(variants.size(), 0);
+    for (size_t i = 0; i != local_discriminators_data.size(); ++i)
+    {
+        auto local_discr = local_discriminators_data[i];
+        if (local_discr != NULL_DISCRIMINATOR)
+        {
+            ++expected_variant_sizes[local_discr];
+            if (offsets_data[i] >= actual_variant_sizes[local_discr])
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset at position {} is {}, but variant {} ({}) has size {}", i, offsets_data[i], static_cast<UInt32>(local_discr), variants[local_discr]->getName(), variants[local_discr]->size());
+        }
+    }
+
+    for (size_t i = 0; i != variants.size(); ++i)
+    {
+        if (variants[i]->size() != expected_variant_sizes[i])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} ({}) has size {}, but expected {}", i, variants[i]->getName(), variants[i]->size(), expected_variant_sizes[i]);
+    }
 }
 
 
