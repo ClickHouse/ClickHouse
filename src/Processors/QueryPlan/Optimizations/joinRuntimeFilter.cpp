@@ -205,19 +205,19 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
  * m = Total size of the Bloom filter in bits (join_runtime_bloom_filter_bytes * 8).
  * k = Number of hash functions (join_runtime_bloom_filter_hash_functions).
  *
- * Alignment with Runtime:
- * This static check aligns with the dynamic runtime check controlled by
- * `join_runtime_bloom_filter_max_ratio_of_set_bits`. Both checks measure bit saturation.
- * We use saturation here (instead of the theoretical FPR) to ensure that if the planner
- * decides to build a filter, the runtime won't immediately discard it for being "too full".
+ * Runtime vs Planning-Time Thresholds:
+ * This static planning-time check is controlled by
+ * `join_runtime_bloom_filter_max_estimated_ratio_of_set_bits`.
+ * Runtime dynamic disabling is controlled by
+ * `join_runtime_bloom_filter_max_ratio_of_set_bits`.
  */
 static bool shouldDisableRuntimeFilter(
     const std::optional<JoinKeyStats> & build_stats,
     const QueryPlanOptimizationSettings & optimization_settings,
     size_t build_side_row_count = 0) /// Fallback row count from the plan step if stats are missing.
 {
-    // If the threshold is 1.0 (or higher), the user has explicitly disabled this optimization.
-    if (optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits >= 1.0)
+    // If the threshold is 1.0 (or higher), the user has explicitly disabled planning-time disabling.
+    if (optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits >= 1.0)
         return false;
 
     // Determine 'n' (NDV).
@@ -245,9 +245,9 @@ static bool shouldDisableRuntimeFilter(
 
     LOG_DEBUG(getLogger("joinRuntimeFilter"),
         "Saturation Check: n={}, m={}, k={}, p={:.4f}, threshold={:.2f}",
-        n, m, k, p, optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits);
+        n, m, k, p, optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits);
 
-    return p >= optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits;
+    return p >= optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits;
 }
 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -395,22 +395,6 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             const auto build_key_name = join_key_build_side.name;
 
             auto build_stats = getJoinKeyStats(build_filter_node, build_key_name);
-
-            // If stats exist, perform the check
-            if (build_stats)
-            {
-                const auto effective_n = (build_stats->distinct_values > 0)
-                    ? build_stats->distinct_values
-                    : build_side_row_count;
-
-                if (shouldDisableRuntimeFilter(build_stats, optimization_settings, effective_n))
-                {
-                    LOG_DEBUG(getLogger("JoinRuntimeFilter"),
-                        "Saturation Check: Disabling filter for '{}' (n={})",
-                        build_key_name, effective_n);
-                    continue;
-                }
-            }
 
             // Determine effective n
             // Priority 1: NDV from column stats (if > 0)

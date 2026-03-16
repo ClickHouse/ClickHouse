@@ -29,7 +29,7 @@ SELECT uniqExact(id) FROM t_build FORMAT Null;
 
 -- Test Case 1: PK/FK Saturation (Expect DISABLED)
 -- 100k rows in 128 bytes results in p=1.0. Filter should be disabled.
-SET join_runtime_bloom_filter_max_ratio_of_set_bits = 0.9;
+SET join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 0.9;
 SELECT '--- PK/FK Saturation (Disabled) ---';
 SELECT max(explain LIKE '%RuntimeFilter%' OR explain LIKE '%DynamicFilter%')
 FROM (
@@ -64,7 +64,7 @@ FROM (
 
 -- Test Case 4: Threshold Boundary (Expect ENABLED)
 -- Setting threshold to 1.0 bypasses the saturation check.
-SET join_runtime_bloom_filter_max_ratio_of_set_bits = 1.0;
+SET join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0;
 SELECT '--- Threshold Boundary (Enabled) ---';
 SELECT max(explain LIKE '%RuntimeFilter%' OR explain LIKE '%DynamicFilter%')
 FROM (
