@@ -15,11 +15,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace DB::Setting
-{
-    extern const SettingsTimezone iceberg_partition_timezone;
-}
-
 namespace DB::Iceberg
 {
 
