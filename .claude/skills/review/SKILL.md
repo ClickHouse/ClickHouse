@@ -151,25 +151,25 @@ When reading diffs, scan for these classes of bugs:
 - Unnecessary template instantiations: template code that unconditionally instantiates specializations for cases that are statically known to be unreachable. Use `if constexpr` to prune template variants that do not apply (e.g., instantiating a `division_by_nullable=true` variant for non-division operations). Each unnecessary instantiation multiplies compile time and binary size.
 - Large `constexpr` evaluation in headers: complex `constexpr` loops or recursive `constexpr` functions in headers that the compiler must evaluate in every translation unit. Extract them into `.cpp` files or break them into smaller units.
 
-CLICKHOUSE-SPECIFIC RULES (MANDATORY)
+CLICKHOUSE RULES (MANDATORY)
 - **Deletion logging**
   All data deletion events (files, parts, metadata, ZooKeeper/Keeper entries, etc.) must be logged at an appropriate level.
 - **Serialization versioning**
   Any format (columns, aggregates, protocol, settings serialization, replication metadata) must be versioned. Check upgrade/downgrade resilience and the impact on existing clusters.
-- **Core areas**
+- **Core-area scrutiny**
   Apply stricter scrutiny to query execution, storage engines, replication, Keeper/coordination, system tables, and MergeTree internals.
-- **Tests policy**
+- **No test removal**
   Do **not** delete or relax existing tests. New behavior requires **new tests**.
   Tests replace random database names with `default` in output normalization. Do **not** flag hardcoded `default.` or `default_` prefixes in expected test output as incorrect or suggest using `${CLICKHOUSE_DATABASE}` – this is by design.
-- **Feature rollout**
+- **Experimental gate**
   New features/behaviors must be gated behind an **experimental** setting (e.g. `allow_experimental_simd_acceleration`) until proven safe. The gate can later be made ineffective at GA.
-- **Configurability**
+- **No magic constants**
   Avoid magic constants; represent important thresholds or alternative behaviors as settings with sensible defaults.
 - **Backward compatibility**
   New versions must be configurable to behave like older versions via `compatibility` settings. Ensure `SettingsHistory.cpp` is updated when settings change.
-- **Cloud/OSS alignment**
+- **Safe rollout**
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
-- **Header hygiene & compilation time**
+- **Compilation time**
   ClickHouse has ~10k translation units; compilation time is a key developer productivity concern. Non-trivial function bodies, template definitions, and `constexpr` logic should live in `.cpp` files, not in headers. Do not add heavy `#include` directives to foundational headers (e.g. `Exception.h`, `IColumn.h`, `IDataType.h`, `typeid_cast.h`, `assert_cast.h`, `Context_fwd.h`); prefer forward declarations or `_fwd.h` headers. Use `if constexpr` to avoid instantiating template specializations that are statically unreachable.
 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
@@ -178,7 +178,7 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 - Incorrectness, data loss, or corruption.
 - Memory/resource leaks or UB (use-after-free, double free, invalid pointer arithmetic, invalid fd use).
 - New races, deadlocks, or serious concurrency issues.
-- Missing serialization versioning/compat for format changes.
+- Breaking compatibility (serialization formats, protocols, behavior, settings) without a versioned migration path or a setting to restore previous behavior.
 - Deletion events not logged.
 - New feature without an experimental gate.
 - Significant performance regression in a hot path.
@@ -198,52 +198,57 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 
 REQUESTED OUTPUT FORMAT
 Respond with the following sections. Be terse but specific. Include code suggestions as minimal diffs/patches where helpful.
+Focus on problems — do not describe what was checked and found to be fine. Use emojis (❌ ⚠️ ✅ 💡) to make findings scannable.
+**Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary, ClickHouse Compliance, and Final Verdict.
 
-1) Summary
+**Summary**
 - One paragraph explaining what the PR does and your high-level verdict.
 
-2) Missing context (if any)
-- Bullet list of critical info you lacked (e.g., no CI logs, no benchmarks).
+**Missing context** (omit if none)
+- Bullet list of critical info you lacked. Prefix each item with ⚠️ (e.g., ⚠️ No CI logs available, ⚠️ No benchmarks provided).
 
-3) Findings (by severity)
-- **Blockers**
+**Findings** (omit if no findings)
+- **❌ Blockers**
   - `[File:Line(s)]` Clear description of issue and impact.
   - Suggested fix (code snippet or steps).
-- **Majors**
+- **⚠️ Majors**
   - `[File:Line(s)]` Issue + rationale.
   - Suggested fix.
-- **Nits** (only if they reduce bug risk or user confusion)
+- **💡 Nits** (only if they reduce bug risk or user confusion)
   - `[File:Line(s)]` Issue + quick fix.
 
 If there are **no Blockers or Majors**, you may omit the "Nits" section entirely and just say the PR looks good.
 
-4) Tests & Evidence
-- Coverage assessment (positives/negatives/edge cases).
-- Are negative/error-handling tests present?
-- Guidance: which additional tests to add and why (exact cases, sizes, concurrency).
+**Tests** (omit if adequate)
+- Only include this section if tests are **missing or insufficient**. Prefix each missing test with ⚠️. Specify which additional tests to add and why.
 
-5) ClickHouse Compliance Checklist (Yes/No + short note)
-- Data deletions logged?
-- Serialization formats versioned?
-- Experimental setting gate present?
-- Settings exposed for constants/thresholds?
-- Backward compatibility preserved?
-- `SettingsHistory.cpp` updated for new/changed settings?
-- Existing tests untouched (only additions)?
-- Docs/user-facing notes updated?
-- Core-area change got extra scrutiny?
+**ClickHouse Rules**
+Render as a Markdown table. Use ✅ (ok), ❌ (problem), ⚠️ (concern), or ➖ (not applicable) — never write "N/A" as text.
+For any ❌ or ⚠️ item, add a brief explanation in the Notes column. Leave Notes empty for ✅ and ➖.
 
-6) Performance & Safety Notes
-- Hot-path implications; memory peaks; concurrency; failure modes.
-- Any benchmarks provided/missing. If missing, propose a minimal, reproducible benchmark.
+Example:
+| Item | Status | Notes |
+|---|---|---|
+| Deletion logging | ✅ | |
+| Serialization versioning | ➖ | |
+| Core-area scrutiny | ✅ | |
+| No test removal | ✅ | |
+| Experimental gate | ❌ | New feature `X` has no gate |
+| No magic constants | ✅ | |
+| Backward compatibility | ⚠️ | Default changed without `SettingsHistory.cpp` update |
+| `SettingsHistory.cpp` | ❌ | Not updated |
+| Safe rollout | ➖ | |
+| Compilation time | ✅ | |
 
-7) User-Lens Review
-- Is the feature intuitive, robust, and performant? Any surprising behavior?
-- Are errors/logs actionable for users and operators?
+**Performance & Safety** (omit if no concerns)
+- Only include this section if there are actual concerns about hot-path regressions, memory, concurrency, or failure modes.
 
-8) Final Verdict
-- Status: **Approve** / **Request changes** / **Block**
-- If "Request changes" or "Block", list the **minimum** required actions to get approval.
+**User-Lens** (omit if no issues)
+- Only include if there are surprising behaviors, unclear errors, or UX issues.
+
+**Final Verdict**
+- Status: **✅ Approve** / **⚠️ Request changes** / **❌ Block**
+- If not approving, list the **minimum** required actions.
 
 STYLE & CONDUCT
 - Be precise, evidence-based, and neutral.

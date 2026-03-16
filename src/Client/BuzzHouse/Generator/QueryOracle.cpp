@@ -176,7 +176,7 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
     for (const auto & rel : gen.levels[gen.current_level].rels)
         for (const auto & c : rel.cols)
             all_cols.push_back(&c);
-    if (all_cols.empty())
+    if (!all_cols.empty())
     {
         const SQLRelationCol & rel_col = *rg.pickRandomly(all_cols);
 

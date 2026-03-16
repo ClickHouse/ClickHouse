@@ -138,7 +138,7 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
     {
         case SchemaFormat::JSON:
 #if USE_SIMDJSON
-            auto context = CurrentThread::getQueryContext();
+            auto context = CurrentThread::tryGetQueryContext();
             if (!context)
                 context = Context::getGlobalContextInstance();
             if (context->getSettingsRef()[Setting::allow_simdjson])

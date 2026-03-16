@@ -644,6 +644,12 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
             }
+            else if (Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED == status_code)
+            {
+                /// PreconditionFailed (412) is an expected response for conditional writes
+                /// (e.g. If-None-Match: *), not a genuine error.
+                LOG_INFO(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            }
             else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())
             {
                 /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.

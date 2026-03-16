@@ -1,5 +1,12 @@
 #pragma once
+
 #include "config.h"
+
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>

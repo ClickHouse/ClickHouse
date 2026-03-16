@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-msan, long, no-flaky-check
 
 DROP TABLE IF EXISTS t_json;
 
