@@ -252,7 +252,7 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 static SortDescription getSortDescriptionForOutputHeader(
     const SharedHeader & output_header,
     const Names & sorting_key_columns,
-    const std::vector<bool> & reverse_flags,
+    const VectorWithMemoryTracking<bool> & reverse_flags,
     const int sort_direction,
     InputOrderInfoPtr input_order_info,
     const FilterDAGInfoPtr & row_level_filter,
@@ -944,7 +944,7 @@ Pipe ReadFromMergeTree::readByLayers(
         }
         auto sorting_expr = storage_snapshot->metadata->getSortingKey().expression;
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
-        std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+        VectorWithMemoryTracking<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
 
         sort_description.compile_sort_description = settings[Setting::compile_sort_description];
         sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
@@ -1392,7 +1392,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
         auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
-        std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+        VectorWithMemoryTracking<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
 
         SortDescription sort_description;
         sort_description.compile_sort_description = settings[Setting::compile_sort_description];
@@ -1785,7 +1785,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             continue;
 
         Names sort_columns = storage_snapshot->metadata->getSortingKeyColumns();
-        std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+        VectorWithMemoryTracking<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
         SortDescription sort_description;
         sort_description.compile_sort_description = settings[Setting::compile_sort_description];
         sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
@@ -2282,7 +2282,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 using PartsRangesMap = std::unordered_map<std::string, const RangesInDataPart *>;
 /// Same as filterPartsByPrimaryKeyAndSkipIndexes(), but accept part names and parts map to transform parts names to parts
 /// Used for distributed index analysis
-static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(MergeTreeDataSelectExecutor::IndexAnalysisContext & filter_context, PartsRangesMap & parts_ranges_map, const std::vector<std::string_view> & parts_to_analyze)
+static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(MergeTreeDataSelectExecutor::IndexAnalysisContext & filter_context, PartsRangesMap & parts_ranges_map, const VectorWithMemoryTracking<std::string_view> & parts_to_analyze)
 {
     /// Resolve part names to RangesInDataParts
     RangesInDataParts parts_ranges_to_analyze;
@@ -2514,7 +2514,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & part_ranges : res_parts)
                 parts_ranges_map[part_ranges.data_part->name] = &part_ranges;
 
-            LocalIndexAnalysisCallback local_index_analysis_callback = [&filter_context, &parts_ranges_map](const std::vector<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
+            LocalIndexAnalysisCallback local_index_analysis_callback = [&filter_context, &parts_ranges_map](const VectorWithMemoryTracking<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
             {
                 return filterPartsNamesByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_map, parts_to_analyze);
             };

@@ -160,7 +160,7 @@ public:
     struct Description
     {
         /// Which columns from PK were used, in PK order.
-        std::vector<std::string> used_keys;
+        VectorWithMemoryTracking<std::string> used_keys;
         /// Condition which was applied, mostly human-readable.
         std::string condition;
     };

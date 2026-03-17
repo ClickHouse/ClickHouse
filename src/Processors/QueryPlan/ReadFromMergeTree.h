@@ -110,7 +110,7 @@ public:
         std::string part_name = {};
         std::string description = {};
         std::string condition = {};
-        std::vector<std::string> used_keys = {};
+        VectorWithMemoryTracking<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
         MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};

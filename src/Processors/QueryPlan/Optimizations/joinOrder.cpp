@@ -363,7 +363,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(
                         join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
-                        std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
+                        std::ranges::to<VectorWithMemoryTracking<JoinActionRef>>(edge | std::views::transform([](const auto * e) { return *e; })));
                     applied_edge = std::move(edge);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
                     best_i = i;
@@ -532,7 +532,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                         JoinOperator join_operator(
                             join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
-                            std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
+                            std::ranges::to<VectorWithMemoryTracking<JoinActionRef>>(edge | std::views::transform([](const auto * e) { return *e; })));
                         auto new_best_plan = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
 
                         LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",

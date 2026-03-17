@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <unordered_map>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -20,7 +21,7 @@ using IndexAnalysisPartsRanges = std::unordered_map<std::string, MarkRanges>;
 /// <replica index, <replica address, parts ranges>>
 using DistributedIndexAnalysisPartsRanges = std::vector<std::pair<std::string, IndexAnalysisPartsRanges>>;
 
-using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const std::vector<std::string_view> & parts)>;
+using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const VectorWithMemoryTracking<std::string_view> & parts)>;
 
 /// Do index analysis on replicas from the cluster_for_parallel_replicas
 /// by sending mergeTreeAnalyzeIndexesUUID() to each replica with list of assigned parts,

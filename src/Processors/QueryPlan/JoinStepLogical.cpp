@@ -227,7 +227,7 @@ void JoinStepLogical::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
+String formatJoinCondition(const VectorWithMemoryTracking<JoinActionRef> & predicates)
 {
     return fmt::format("{}", fmt::join(predicates | std::views::transform([](const auto & x) { return x.getColumnName(); }), " AND "));
 }
@@ -671,11 +671,11 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
     }
 }
 
-bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
-    std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
+bool addJoinPredicatesToTableJoin(VectorWithMemoryTracking<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
+    VectorWithMemoryTracking<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
 {
     bool has_join_predicates = false;
-    std::vector<JoinActionRef> new_predicates;
+    VectorWithMemoryTracking<JoinActionRef> new_predicates;
 
     for (auto & pred : predicates)
     {
@@ -739,7 +739,7 @@ using QueryPlanNode = QueryPlan::Node;
 using QueryPlanNodePtr = QueryPlanNode *;
 
 JoinActionRef concatConditions(
-    std::vector<JoinActionRef> & conditions,
+    VectorWithMemoryTracking<JoinActionRef> & conditions,
     std::optional<JoinTableSide> side = {},
     const bool can_extract_everything = true
 )
@@ -757,7 +757,7 @@ JoinActionRef concatConditions(
 
     JoinActionRef result(nullptr);
 
-    std::vector<JoinActionRef> matching(conditions.begin(), matching_point.begin());
+    VectorWithMemoryTracking<JoinActionRef> matching(conditions.begin(), matching_point.begin());
     if (matching.empty())
         return result;
 
@@ -775,9 +775,9 @@ JoinActionRef concatConditions(
 }
 
 bool tryAddDisjunctiveConditions(
-    std::vector<JoinActionRef> & join_expressions,
+    VectorWithMemoryTracking<JoinActionRef> & join_expressions,
     TableJoin::Clauses & table_join_clauses,
-    std::vector<JoinActionRef> & used_expressions,
+    VectorWithMemoryTracking<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
     bool throw_on_error)
@@ -790,11 +790,11 @@ bool tryAddDisjunctiveConditions(
         return false;
 
     size_t initial_clauses_num = table_join_clauses.size();
-    std::vector<JoinActionRef> disjunctive_conditions = join_expression.getArguments();
+    VectorWithMemoryTracking<JoinActionRef> disjunctive_conditions = join_expression.getArguments();
     bool has_residual_condition = false;
     for (const auto & expr : disjunctive_conditions)
     {
-        std::vector<JoinActionRef> join_condition = {expr};
+        VectorWithMemoryTracking<JoinActionRef> join_condition = {expr};
         if (expr.isFunction(JoinConditionOperator::And))
             join_condition = expr.getArguments();
 
@@ -1050,7 +1050,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         table_join->setIsJoinWithConstant(true);
     }
 
-    std::vector<JoinActionRef> used_expressions;
+    VectorWithMemoryTracking<JoinActionRef> used_expressions;
 
     JoinPlanningContext planning_context;
     planning_context.is_storage_join = bool(prepared_join_storage);
