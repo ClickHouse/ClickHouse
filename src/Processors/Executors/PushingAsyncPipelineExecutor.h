@@ -1,6 +1,6 @@
 #pragma once
 #include <memory>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -15,7 +15,7 @@ using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = VectorWithMemoryTracking<ProcessorPtr>;
 
 /// Pushing executor for Chain of processors using several background threads.
 /// Typical usage is:

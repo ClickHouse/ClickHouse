@@ -106,7 +106,7 @@ public:
     /// Unite several pipelines together. Result pipeline would have common_header structure.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static QueryPipelineBuilder unitePipelines(
-            std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+            VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 

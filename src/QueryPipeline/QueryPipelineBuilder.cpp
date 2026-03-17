@@ -244,7 +244,7 @@ void QueryPipelineBuilder::addExtremesTransform()
 }
 
 QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
-    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines,
     size_t max_threads_limit,
     Processors * collected_processors)
 {

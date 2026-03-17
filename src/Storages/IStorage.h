@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
@@ -42,7 +43,7 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = VectorWithMemoryTracking<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;

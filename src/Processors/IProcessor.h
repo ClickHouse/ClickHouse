@@ -29,7 +29,7 @@ using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = VectorWithMemoryTracking<ProcessorPtr>;
 
 /** Processor is an element (low level building block) of a query execution pipeline.
   * It has zero or more input ports and zero or more output ports.
