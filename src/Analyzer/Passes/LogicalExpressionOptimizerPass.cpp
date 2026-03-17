@@ -493,28 +493,34 @@ static AddComparisonFilterResult addComparisonFilter(
     return AddComparisonFilterResult::ADDED;
 }
 
-/// Convert surviving notEquals chains to NOT IN when the chain is long enough
+using IndexedNode = std::pair<size_t, QueryTreeNodePtr>;
+using IndexedNodes = std::vector<IndexedNode>;
+
+/// Convert surviving notEquals chains to NOT IN when the chain is long enough.
+/// Output is appended to `output` with original indices for deterministic sorting.
 static void convertNotEqualsChainToNotIn(
-    QueryTreeNodePtrWithHashMap<QueryTreeNodes> & node_to_not_equals_functions,
-    QueryTreeNodes & and_operands,
+    QueryTreeNodePtrWithHashMap<IndexedNodes> & node_to_not_equals_functions,
+    IndexedNodes & output,
     const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     auto not_in_function_resolver = FunctionFactory::instance().get("notIn", context);
 
-    for (auto & [expression, not_equals_functions] : node_to_not_equals_functions)
+    for (auto & [expression, not_equals_entries] : node_to_not_equals_functions)
     {
-        if (not_equals_functions.size() < settings[Setting::optimize_min_inequality_conjunction_chain_length]
+        if (not_equals_entries.size() < settings[Setting::optimize_min_inequality_conjunction_chain_length]
             && !expression.node->getResultType()->lowCardinality())
         {
-            std::move(not_equals_functions.begin(), not_equals_functions.end(), std::back_inserter(and_operands));
+            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
             continue;
         }
 
+        size_t min_index = not_equals_entries.front().first;
         Tuple args;
-        args.reserve(not_equals_functions.size());
-        for (const auto & not_equals : not_equals_functions)
+        args.reserve(not_equals_entries.size());
+        for (auto & [idx, not_equals] : not_equals_entries)
         {
+            min_index = std::min(min_index, idx);
             const auto * not_equals_function = not_equals->as<FunctionNode>();
             assert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
 
@@ -542,7 +548,7 @@ static void convertNotEqualsChainToNotIn(
         not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
         not_in_function->resolveAsFunction(not_in_function_resolver);
 
-        and_operands.push_back(std::move(not_in_function));
+        output.emplace_back(min_index, std::move(not_in_function));
     }
 }
 
@@ -1225,11 +1231,11 @@ private:
             return;
 
         ComparisonFilterMap filter_map;
-        QueryTreeNodes and_operands;
 
         QueryTreeNodePtrWithHashMap<QueryTreeNodeConstRawPtrWithHashSet> not_equals_node_to_constants;
-        QueryTreeNodePtrWithHashMap<QueryTreeNodes> node_to_not_equals_functions;
+        QueryTreeNodePtrWithHashMap<IndexedNodes> node_to_not_equals_functions;
 
+        IndexedNodes all_operands;
         size_t argument_index = 0;
         for (const auto & argument : function_node.getArguments())
         {
@@ -1240,7 +1246,7 @@ private:
 
             if (!comparison_func)
             {
-                and_operands.push_back(argument);
+                all_operands.emplace_back(argument_index, argument);
                 ++argument_index;
                 continue;
             }
@@ -1269,7 +1275,7 @@ private:
 
             if (!constant)
             {
-                and_operands.push_back(argument);
+                all_operands.emplace_back(argument_index, argument);
                 ++argument_index;
                 continue;
             }
@@ -1288,10 +1294,7 @@ private:
             ++argument_index;
         }
 
-        /// Reconstruct non-notEquals comparison filters from the filter map,
-        /// sorted by original position to preserve deterministic AND operand order.
-        std::vector<std::pair<size_t, QueryTreeNodePtr>> surviving_filters;
-        surviving_filters.reserve(filter_map.size());
+        /// Collect surviving filters from the filter map, separating notEquals for NOT IN conversion.
         for (auto & [expression, filters] : filter_map)
         {
             for (auto & filter : filters)
@@ -1302,21 +1305,25 @@ private:
                     if (!constant_set.contains(filter.constant_node))
                     {
                         constant_set.insert(filter.constant_node);
-                        node_to_not_equals_functions[expression].push_back(std::move(filter.original_node));
+                        node_to_not_equals_functions[expression].emplace_back(filter.original_index, std::move(filter.original_node));
                     }
                 }
                 else
                 {
-                    surviving_filters.emplace_back(filter.original_index, std::move(filter.original_node));
+                    all_operands.emplace_back(filter.original_index, std::move(filter.original_node));
                 }
             }
         }
-        std::sort(surviving_filters.begin(), surviving_filters.end(),
-            [](const auto & a, const auto & b) { return a.first < b.first; });
-        for (auto & [_, node_ptr] : surviving_filters)
-            and_operands.push_back(std::move(node_ptr));
 
-        convertNotEqualsChainToNotIn(node_to_not_equals_functions, and_operands, getContext());
+        convertNotEqualsChainToNotIn(node_to_not_equals_functions, all_operands, getContext());
+
+        std::sort(all_operands.begin(), all_operands.end(),
+            [](const auto & a, const auto & b) { return a.first < b.first; });
+
+        QueryTreeNodes and_operands;
+        and_operands.reserve(all_operands.size());
+        for (auto & [_, node_ptr] : all_operands)
+            and_operands.push_back(std::move(node_ptr));
 
         if (and_operands.size() == function_node.getArguments().getNodes().size())
             return;
