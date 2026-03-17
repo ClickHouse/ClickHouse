@@ -42,8 +42,8 @@ UInt64 getNextPhysicalColumnId(const NamesAndTypesList & columns)
     {
         const auto & name = column.name;
         UInt64 value = 0;
-        auto * begin = name.data();
-        auto * end = begin + name.size();
+        const auto * begin = name.data();
+        const auto * end = begin + name.size();
         auto [ptr, ec] = std::from_chars(begin, end, value);
         if (ec == std::errc() && ptr == end)
             max_numeric_physical_name = std::max(max_numeric_physical_name, value);
@@ -59,8 +59,8 @@ UInt64 getNextPhysicalColumnId(const std::unordered_map<String, String> & logica
     for (const auto & [_, physical_name] : logical_to_physical)
     {
         UInt64 value = 0;
-        auto * begin = physical_name.data();
-        auto * end = begin + physical_name.size();
+        const auto * begin = physical_name.data();
+        const auto * end = begin + physical_name.size();
         auto [ptr, ec] = std::from_chars(begin, end, value);
         if (ec == std::errc() && ptr == end)
             max_numeric_physical_name = std::max(max_numeric_physical_name, value);

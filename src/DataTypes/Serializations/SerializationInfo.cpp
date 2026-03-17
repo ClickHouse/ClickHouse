@@ -416,10 +416,7 @@ static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & o
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
-    writeJSONImpl(*this, out, [](const String & name) -> const String &
-    {
-        return name;
-    });
+    writeJSONImpl(*this, out, [](const String & name) { return name; });
 }
 
 void SerializationInfoByName::writeJSONWithPhysicalNames(WriteBuffer & out, const PhysicalNameMapping & physical_name_mapping) const
@@ -534,7 +531,7 @@ ParsedJSON parseJSONEnvelope(const std::string & json_str)
         nullable_serialization_version,
         propagate_types_serialization_versions_to_nested_types);
 
-    return {std::move(columns_array), std::move(settings)};
+    return {std::move(columns_array), settings};
 }
 
 } /// anonymous namespace
