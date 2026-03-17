@@ -941,7 +941,7 @@ private:
         std::fill(block.encoded_left + float_count, block.encoded_left + ALP_BLOCK_MAX_FLOAT_COUNT, 0);
         std::fill(block.encoded_right + float_count, block.encoded_right + ALP_BLOCK_MAX_FLOAT_COUNT, 0);
 
-        auto dict_bits = ALPUtils<T>::calculateBitWidth(block.dict_values.size());
+        auto dict_bits = calcDictBits(block.dict_values.size());
         block.bitpacked_left_bytes = Compression::FFOR::calculateBitpackedBytes(dict_bits);
         Compression::FFOR::bitPack(block.encoded_left, block.bitpacked_left, dict_bits, 0);
 
@@ -1046,7 +1046,7 @@ private:
     {
         return ALP_RD_BLOCK_HEADER_SIZE +
             dict_size * sizeof(UInt16) + // Dictionary values
-                Compression::FFOR::calculateBitpackedBytes(ALPUtils<T>::calculateBitWidth(dict_size)) + // Left part bit-packed indices
+                Compression::FFOR::calculateBitpackedBytes(calcDictBits(dict_size)) + // Left part bit-packed indices
                     Compression::FFOR::calculateBitpackedBytes(calcRightBits(left_bits)) + // Right part bit-packed values
                         exceptions_count * (sizeof(UInt16) + sizeof(T)); // Exceptions
     }
@@ -1054,6 +1054,12 @@ private:
     static UInt8 calcRightBits(const UInt8 left_bits)
     {
         return static_cast<UInt8>(sizeof(Unsigned) * 8 - left_bits);
+    }
+
+    static UInt8 calcDictBits(const size_t dict_size)
+    {
+        // Dictionary indices are from 0 to dict_size - 1, so the bit-width is calculated based on dict_size - 1.
+        return ALPUtils<T>::calculateBitWidth(dict_size - 1);
     }
 };
 
@@ -1137,7 +1143,7 @@ private:
         source += sizeof(UInt16);
 
         // Calculate additional parameters based on header values
-        UInt8 dict_bits = ALPUtils<T>::calculateBitWidth(dict_size);
+        UInt8 dict_bits = ALPUtils<T>::calculateBitWidth(dict_size - 1); // Dictionary indices are from 0 to dict_size - 1
         UInt8 right_bits = static_cast<UInt8>(sizeof(Unsigned) * 8 - left_bits);
 
         UInt16 bitpacked_left_bytes = Compression::FFOR::calculateBitpackedBytes<ALP_BLOCK_MAX_FLOAT_COUNT>(dict_bits);

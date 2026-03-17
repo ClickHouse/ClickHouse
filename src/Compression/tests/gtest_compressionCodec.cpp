@@ -1526,7 +1526,7 @@ INSTANTIATE_TEST_SUITE_P(ALPSequentialF32,
 INSTANTIATE_TEST_SUITE_P(ALPRDSequentialF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP(RD)", 0.83)),
+        ::testing::Values(Codec("ALP(RD)", 0.82)),
         ::testing::Values(
             generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 1024),
             generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 2048),

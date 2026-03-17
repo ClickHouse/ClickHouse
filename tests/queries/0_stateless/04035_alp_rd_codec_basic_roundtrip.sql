@@ -16,7 +16,7 @@ CREATE TABLE alp64 (i UInt32 CODEC(NONE), f Float64 CODEC(ALP(RD))) Engine = Mer
 SELECT '# Positive Numbers Test';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, number * 0.1 + cos(number) FROM numbers(3000);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
-TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;;
+TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;
 TRUNCATE TABLE alp32; INSERT INTO alp32 SELECT i, f FROM base32;
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
@@ -25,7 +25,7 @@ SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a
 SELECT '# Positive and Negative Numbers Test';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, number * 0.1 + cos(number) * if(number % 5 == 0, -1.0, 1.0) FROM numbers(3000);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
-TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;;
+TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;
 TRUNCATE TABLE alp32; INSERT INTO alp32 SELECT i, f FROM base32;
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
@@ -34,7 +34,7 @@ SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a
 SELECT '# Negative Numbers Test';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, -(number * 0.1 + cos(number)) FROM numbers(3000);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
-TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;;
+TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;
 TRUNCATE TABLE alp32; INSERT INTO alp32 SELECT i, f FROM base32;
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
