@@ -10,6 +10,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -203,6 +204,7 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 
 void IDisk::startup(bool skip_access_check)
 {
+    auto component_guard = Coordination::setCurrentComponent("IDisk::startup");
     if (!skip_access_check)
     {
         if (isReadOnly())
