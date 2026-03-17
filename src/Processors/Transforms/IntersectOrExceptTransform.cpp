@@ -1,5 +1,6 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -210,19 +211,13 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
             auto key = hashRow(column_ptrs, i);
             auto * it = counts.find(key);
 
-            if (it != nullptr && it->getMapped() > 0)
-            {
+            /// Check if this row has remaining occurrences in the right side.
+            bool matched = (it != nullptr && it->getMapped() > 0);
+            if (matched)
                 --it->getMapped();
-                /// EXCEPT ALL: found in right side, exclude this row.
-                /// INTERSECT ALL: found in right side, include this row.
-                row_filter[i] = is_except ? 0 : 1;
-            }
-            else
-            {
-                /// EXCEPT ALL: not in right side, include this row.
-                /// INTERSECT ALL: not in right side, exclude this row.
-                row_filter[i] = is_except ? 1 : 0;
-            }
+
+            /// EXCEPT ALL keeps unmatched rows; INTERSECT ALL keeps matched rows.
+            row_filter[i] = matched != is_except;
 
             if (row_filter[i])
                 ++new_rows_num;

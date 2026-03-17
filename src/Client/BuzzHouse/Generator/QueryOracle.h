@@ -22,7 +22,8 @@ struct MatchHandler
     /// predicate: returns true if this message should be handled
     std::function<bool(const google::protobuf::Message &)> predicate;
     /// handler: mutates or processes the message
-    std::function<void(google::protobuf::Message &)> handler;
+    /// returns true if the message was consumed and recursion into its children should stop
+    std::function<bool(google::protobuf::Message &)> handler;
 };
 
 class QueryOracle
@@ -85,10 +86,17 @@ public:
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /// Roundtrip oracle: verifies that encoding/encryption functions compose correctly.
-    /// Query 1: SELECT count() FROM t  (baseline total)
-    /// Query 2: SELECT count() FROM t WHERE roundtrip(col) = col
+    /// Query 1: SELECT count() FROM <from_clause> WHERE col IS NOT NULL  (baseline)
+    /// Query 2: SELECT count() FROM <from_clause> WHERE roundtrip(col) = col
     /// Both queries must return the same value, catching any roundtrip failures.
-    void generateRoundtripOracleQueries(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1, SQLQuery & sq2);
+    void generateRoundtripOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
+
+    /// COUNT(DISTINCT expr) consistency oracle
+    /// Query 1: SELECT COUNT(DISTINCT expr) FROM <from_clause>
+    /// Query 2: SELECT COUNT(*) FROM (SELECT DISTINCT expr FROM <from_clause>) AS sub
+    /// Both forms must return the same integer (different code paths: uniqExact vs DISTINCT + COUNT).
+    void generateCountDistinctFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
+    void generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
     void dumpTableContent(

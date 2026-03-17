@@ -9,13 +9,14 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <absl/strings/str_split.h>
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <boost/algorithm/string_regex.hpp>
+#include <base/types.h>
 
 namespace DB
 {
@@ -108,7 +109,7 @@ String ISerialization::kindStackToString(const KindStack & kind_stack)
     return result;
 }
 
-static ISerialization::Kind stringToKind(const String & str)
+static ISerialization::Kind stringToKind(std::string_view str)
 {
     if (str == "Default")
         return ISerialization::Kind::DEFAULT;
@@ -123,8 +124,7 @@ static ISerialization::Kind stringToKind(const String & str)
 
 ISerialization::KindStack ISerialization::stringToKindStack(const String & str)
 {
-    std::vector<String> kind_strings;
-    boost::algorithm::split_regex(kind_strings, str, boost::regex("Over"));
+    std::vector<std::string_view> kind_strings = absl::StrSplit(str, absl::ByString("Over"));
     KindStack kind_stack;
     for (size_t i = 0; i != kind_strings.size(); ++i)
     {

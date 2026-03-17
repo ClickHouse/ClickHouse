@@ -599,7 +599,7 @@ try
     /// List changed settings.
     if (!query_id.empty())
     {
-        ContextPtr query_context = thread_ptr->getQueryContext();
+        ContextPtr query_context = thread_ptr->tryGetQueryContext();
         if (query_context)
         {
             String changed_settings = query_context->getSettingsRef().toString();

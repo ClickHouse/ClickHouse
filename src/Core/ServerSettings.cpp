@@ -1273,6 +1273,11 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     Possible values: -20 to 19.
     )", 0) \
+    DECLARE(UInt64, max_zookeeper_pooled_connections, 0, R"(
+    Maximum number of lazily initialized ZooKeeper sessions per ZooKeeper cluster in the shared pool.
+
+    A value of `0` disables pooled connections and keeps using a single session.
+    )", 0) \
     DECLARE(Int32, os_threads_nice_value_distributed_cache_tcp_handler, 0, R"(
     Linux nice value for the threads of distributed cache TCP handler. Lower values mean higher CPU priority.
 

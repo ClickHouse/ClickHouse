@@ -160,6 +160,20 @@ class JobConfigs:
         allow_merge_on_failure=True,
         enable_gh_auth=True,
     )
+    code_review = Job.Config(
+        name=JobNames.CODE_REVIEW,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        command="python3 ./ci/jobs/copilot_review_job.py --pre",
+        allow_merge_on_failure=True,
+        enable_gh_auth=True,
+    )
+    ci_results_review = Job.Config(
+        name=JobNames.CI_RESULTS_REVIEW,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        command="python3 ./ci/jobs/copilot_review_job.py --post",
+        allow_merge_on_failure=True,
+        enable_gh_auth=True,
+    )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.AMD_LARGE,

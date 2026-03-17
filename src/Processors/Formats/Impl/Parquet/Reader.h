@@ -475,6 +475,11 @@ struct Reader
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
     std::vector<Step> steps;
 
+    /// Per-column KeyConditions for page-level filter push-down (column index).
+    /// Stored here to keep the shared_ptrs alive, since raw pointers from them
+    /// are referenced by PrimitiveColumnInfo::column_index_condition.
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
+
     std::optional<KeyCondition> bloom_filter_condition;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
