@@ -16,21 +16,24 @@ trap cleanup EXIT
 
 ${CLICKHOUSE_CLIENT} -q "DROP ROLE IF EXISTS ${P}_role"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${P}_u"
-${CLICKHOUSE_CLIENT} -q "CREATE ROLE ${P}_role SETTINGS PROFILE 'readonly'"
+# Create role WITHOUT a config-defined profile so the user can establish a session.
+${CLICKHOUSE_CLIENT} -q "CREATE ROLE ${P}_role"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${P}_u IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} -q "GRANT ${P}_role TO ${P}_u"
 ${CLICKHOUSE_CLIENT} -q "ALTER USER ${P}_u DEFAULT ROLE ${P}_role"
 
 # Keep an active session alive so ContextAccess holds a subscription for role changes.
-${CLICKHOUSE_CLIENT} --user "${P}_u" -q "SELECT sleep(5)" &
+# Redirect stderr: when the role later gains a config-defined profile, the session may
+# receive ACCESS_DENIED — that is expected and must not fail the test.
+${CLICKHOUSE_CLIENT} --user "${P}_u" -q "SELECT sleep(5)" 2>/dev/null &
 BG_PID=$!
 sleep 0.5
 
-# Modifying the role triggers RoleCache::roleChanged, which fires ContextAccess::setRolesInfo
-# via the scope_guard `notifications` destructor. That destructor is noexcept; if
-# mergeSettingsAndConstraintsFor throws ACCESS_DENIED (unprotected in getEnabledSettings),
-# the server crashes via std::terminate.
-${CLICKHOUSE_CLIENT} -q "ALTER ROLE ${P}_role SETTINGS max_threads = 2"
+# Add the config-defined profile. This fires RoleCache::roleChanged → scope_guard
+# notifications destructor (noexcept) → ContextAccess::setRolesInfo → getEnabledSettings
+# → mergeSettingsAndConstraintsFor throws ACCESS_DENIED inside the noexcept destructor
+# → std::terminate if the bug is present.
+${CLICKHOUSE_CLIENT} -q "ALTER ROLE ${P}_role SETTINGS PROFILE 'readonly'"
 
 wait "${BG_PID}" || true
 sleep 0.3
