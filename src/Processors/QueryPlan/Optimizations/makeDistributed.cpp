@@ -841,11 +841,30 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 }
                 else
                 {
-                    /// Check that child plan has the same list of shards
-                    if (frame.list_of_shards.size() != current_list_of_shards.size())
+                    /// Reconcile shard counts: when one child has 1 shard and the
+                    /// other has N, replicate the single-shard task to all N shards.
+                    /// This handles ReplicatedRead (data available on every node) and
+                    /// single-node subplans feeding into multi-node broadcast joins.
+                    if (frame.list_of_shards.size() == 1 && current_list_of_shards.size() > 1)
+                    {
+                        auto single_task = std::move(frame.list_of_shards.begin()->second);
+                        frame.list_of_shards.clear();
+                        for (const auto & [shard_id, _] : current_list_of_shards)
+                            frame.list_of_shards[shard_id] = single_task;
+                    }
+                    else if (current_list_of_shards.size() == 1 && frame.list_of_shards.size() > 1)
+                    {
+                        auto single_task = std::move(current_list_of_shards.begin()->second);
+                        current_list_of_shards.clear();
+                        for (const auto & [shard_id, _] : frame.list_of_shards)
+                            current_list_of_shards[shard_id] = single_task;
+                    }
+                    else if (frame.list_of_shards.size() != current_list_of_shards.size())
+                    {
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Different list of shards in child plans {} and {}, last child plan: \n{}",
                             frame.list_of_shards.size(), current_list_of_shards.size(),
                             dumpQueryPlanShort(*frame.child_plans.back()));
+                    }
 
                     /// Add parameters and temporary files from the child plan
                     for (auto & [shard, task] : current_list_of_shards)
