@@ -15,6 +15,16 @@
 namespace DB
 {
 
+namespace
+{
+    std::string stripLeadingSlashes(std::string path)
+    {
+        while (path.starts_with('/'))
+            path.erase(0, 1);
+        return path;
+    }
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -49,11 +59,9 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
 {
     MetadataStorageFromIndexPages metadata_storage(*this);
 
-    std::string normalized_path = path;
+    std::string normalized_path = stripLeadingSlashes(path);
     if (normalized_path == "/")
         normalized_path.clear();
-    if (normalized_path.starts_with('/'))
-        normalized_path.erase(0, 1);
     if (!normalized_path.empty() && !normalized_path.ends_with('/'))
         normalized_path += '/';
 
@@ -166,6 +174,7 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::
 
     auto response_buf = BuilderRWBufferFromHTTP(Poco::URI(buildURL(path), false))
                             .withConnectionGroup(HTTPConnectionGroupType::DISK)
+                            .withMethod(Poco::Net::HTTPRequest::HTTP_HEAD)
                             .withSettings(getContext()->getReadSettings())
                             .withTimeouts(timeouts)
                             .withHostFilter(&getContext()->getRemoteHostFilter())
@@ -194,10 +203,7 @@ std::string WebObjectStorage::buildURL(const std::string & path) const
     std::string result = url;
     if (!result.ends_with('/'))
         result += '/';
-    if (path.starts_with('/'))
-        result += path.substr(1);
-    else
-        result += path;
+    result += stripLeadingSlashes(path);
     return result + query_fragment;
 }
 

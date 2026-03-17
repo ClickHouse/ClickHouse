@@ -1,4 +1,5 @@
 import sys
+import json
 from urllib.parse import urlparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -20,12 +21,44 @@ DATA_PARTS = {
 
 
 class RequestHandler(BaseHTTPRequestHandler):
+    request_counts = {}
+
     def log_message(self, format, *args):
         pass
 
+    @classmethod
+    def _record_request(cls, method, path):
+        key = f"{method} {path}"
+        cls.request_counts[key] = cls.request_counts.get(key, 0) + 1
+
+    def _handle_control(self):
+        if self.path == "/__stats__":
+            body = json.dumps(self.request_counts, sort_keys=True)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body.encode("utf-8"))))
+            self.end_headers()
+            self.wfile.write(body.encode("utf-8"))
+            return True
+
+        if self.path == "/__reset__":
+            self.request_counts.clear()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"OK")
+            return True
+
+        return False
+
     def do_HEAD(self):
+        if self._handle_control():
+            return
+
         parsed = urlparse(self.path)
         path = parsed.path
+        self._record_request("HEAD", path)
         if path in DATA_PARTS:
             data = DATA_PARTS[path].encode("utf-8")
             self.send_response(200)
@@ -54,11 +87,16 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        if self._handle_control():
+            return
+
         parsed = urlparse(self.path)
         path = parsed.path
+        self._record_request("GET", path)
         if self.path == "/":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", "2")
             self.end_headers()
             self.wfile.write(b"OK")
             return
@@ -128,10 +166,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_response(403)
                 self.end_headers()
                 return
+            data = DATA_PARTS[path].encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(DATA_PARTS[path].encode("utf-8"))
+            self.wfile.write(data)
             return
 
         self.send_response(404)

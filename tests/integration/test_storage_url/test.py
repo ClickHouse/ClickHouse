@@ -2,6 +2,7 @@ import pytest
 import time
 import uuid
 import os
+import json
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -27,6 +28,24 @@ def setup_node():
         yield
     finally:
         cluster.shutdown()
+
+
+def reset_index_page_server_stats():
+    resolver_id = cluster.get_container_id("resolver")
+    cluster.exec_in_container(
+        resolver_id,
+        ["curl", "-s", "http://localhost:8087/__reset__"],
+    )
+
+
+def get_index_page_server_stats():
+    resolver_id = cluster.get_container_id("resolver")
+    return json.loads(
+        cluster.exec_in_container(
+            resolver_id,
+            ["curl", "-s", "http://localhost:8087/__stats__"],
+        )
+    )
 
 
 def test_partition_by():
@@ -187,6 +206,28 @@ def test_url_wildcard_listing_order():
         "SETTINGS glob_expansion_max_elements=1"
     )
     assert result.strip() == "10"
+
+
+def test_url_wildcard_normalizes_leading_slashes():
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8087///data/**/part*.tsv', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "12"
+
+
+def test_url_wildcard_uses_head_for_metadata_probe():
+    reset_index_page_server_stats()
+
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8087/data/2025/part*.tsv', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "12"
+
+    stats = get_index_page_server_stats()
+    assert stats["HEAD /data/2025/part1.tsv"] == 1
+    assert stats["HEAD /data/2025/part2.tsv"] == 1
+    assert stats["GET /data/2025/part1.tsv"] == 1
+    assert stats["GET /data/2025/part2.tsv"] == 1
 
 
 def test_table_function_url_access_rights():

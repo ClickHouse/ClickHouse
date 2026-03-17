@@ -211,8 +211,14 @@ void StorageWebConfiguration::setNamespaceFromURL()
 
     base_url = uri.getScheme() + "://" + uri.getAuthority() + "/";
     path.path = uri.getPath();
-    if (path.path.starts_with('/'))
-        path.path.erase(0, 1);
+    if (!path.path.empty())
+    {
+        const auto first_non_slash = path.path.find_first_not_of('/');
+        if (first_non_slash == String::npos)
+            path.path.clear();
+        else if (first_non_slash > 0)
+            path.path.erase(0, first_non_slash);
+    }
 
     query_fragment.clear();
     if (!uri.getRawQuery().empty())

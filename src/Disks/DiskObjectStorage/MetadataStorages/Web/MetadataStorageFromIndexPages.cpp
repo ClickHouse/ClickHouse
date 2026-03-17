@@ -39,7 +39,7 @@ namespace
 
     std::string stripLeadingSlash(std::string path)
     {
-        if (path.starts_with("/"))
+        while (path.starts_with("/"))
             path.erase(0, 1);
         return path;
     }
@@ -147,9 +147,9 @@ std::optional<StoredObjects> MetadataStorageFromIndexPages::getStorageObjectsIfE
 
 std::string MetadataStorageFromIndexPages::makeListingURL(const std::string & path) const
 {
-    auto normalized_path = ensureTrailingSlash(path);
+    auto normalized_path = ensureTrailingSlash(stripLeadingSlash(path));
     auto listing_uri = base_uri;
-    listing_uri.setPath(ensureTrailingSlash(base_uri.getPath()) + stripLeadingSlash(normalized_path));
+    listing_uri.setPath(ensureTrailingSlash(base_uri.getPath()) + normalized_path);
     listing_uri.setQuery({});
     listing_uri.setFragment({});
     return listing_uri.toString();
@@ -296,11 +296,12 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
 
 bool MetadataStorageFromIndexPages::tryListDirectory(const std::string & path, std::vector<std::string> & result) const
 {
-    const auto listing_url = makeListingURL(path);
+    const auto normalized_path = ensureTrailingSlash(stripLeadingSlash(path));
+    const auto listing_url = makeListingURL(normalized_path);
     try
     {
         auto body = readIndexPage(listing_url);
-        result = extractURLs(body, listing_url, ensureTrailingSlash(path));
+        result = extractURLs(body, listing_url, normalized_path);
         return true;
     }
     catch (const HTTPException & e)
