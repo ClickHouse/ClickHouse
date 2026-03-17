@@ -56,7 +56,15 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
+            {"allow_statistics", false, true, "Column statistics are now GA"},
+            {"allow_experimental_statistics", false, true, "Column statistics are now GA"},
+            {"allow_experimental_expire_snapshots", false, false, "New setting."},
+            {"iceberg_expire_default_min_snapshots_to_keep", 1, 1, "New setting."},
+            {"iceberg_expire_default_max_snapshot_age_ms", 432000000, 432000000, "New setting."},
+            {"iceberg_expire_default_max_ref_age_ms", 9223372036854775807, 9223372036854775807, "New setting."},
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
+            {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
+            {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {

@@ -58,6 +58,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExecuteOptionsParser.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -120,6 +121,7 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
+extern const SettingsBool allow_experimental_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
 }
 
@@ -574,8 +576,10 @@ static Pipe expireSnapshotsResultToPipe(const Iceberg::ExpireSnapshotsResult & r
     add("deleted_manifest_files_count", result.deleted_manifest_files_count);
     add("deleted_manifest_lists_count", result.deleted_manifest_lists_count);
     add("deleted_statistics_files_count", result.deleted_statistics_files_count);
+    add("dry_run", result.dry_run ? 1 : 0);
 
-    Chunk chunk(std::move(columns), 6);
+    const size_t rows = columns[0]->size();
+    Chunk chunk(std::move(columns), rows);
     return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(header)), std::move(chunk)));
 }
 
@@ -598,25 +602,18 @@ Pipe IcebergMetadata::executeCommand(
 
     if (command_name == "expire_snapshots")
     {
-        if (args && args->children.size() > 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots expects zero or one argument (timestamp), got {}", args->children.size());
-
-        std::optional<Int64> expire_before_ms;
-        if (args && args->children.size() == 1)
+        if (!context->getSettingsRef()[Setting::allow_experimental_expire_snapshots].value)
         {
-            const auto * literal = args->children[0]->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::String)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots expects a string timestamp argument like '2024-06-01 00:00:00'");
-
-            const String & timestamp_str = literal->value.safeGet<String>();
-            ReadBufferFromString buf(timestamp_str);
-            time_t expire_time;
-            readDateTimeText(expire_time, buf);
-            expire_before_ms = static_cast<Int64>(expire_time) * 1000;
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Iceberg expire_snapshots is experimental. "
+                "To allow its usage, enable setting allow_experimental_expire_snapshots");
         }
 
+        auto options = parseExpireSnapshotsOptions(args, context);
+
         auto result = Iceberg::expireSnapshots(
-            expire_before_ms,
+            options,
             context,
             object_storage_,
             data_lake_settings,

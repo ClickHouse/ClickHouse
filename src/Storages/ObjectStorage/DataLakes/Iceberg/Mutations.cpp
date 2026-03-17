@@ -1,6 +1,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DataLake/Common.h>
@@ -29,6 +30,8 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <limits>
+#include <unordered_set>
 
 namespace DB::ErrorCodes
 {
@@ -40,6 +43,13 @@ extern const int LIMIT_EXCEEDED;
 namespace DB::DataLakeStorageSetting
 {
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
+}
+
+namespace DB::Setting
+{
+extern const SettingsInt64 iceberg_expire_default_min_snapshots_to_keep;
+extern const SettingsInt64 iceberg_expire_default_max_snapshot_age_ms;
+extern const SettingsInt64 iceberg_expire_default_max_ref_age_ms;
 }
 
 namespace DB::FailPoints
@@ -753,19 +763,52 @@ struct RetentionPolicy
     Int64 max_ref_age_ms = Iceberg::default_max_ref_age_ms;
 };
 
-static RetentionPolicy readRetentionPolicy(const Poco::JSON::Object::Ptr & metadata)
+static RetentionPolicy readRetentionPolicy(const Poco::JSON::Object::Ptr & metadata, ContextPtr context, const ExpireSnapshotsOptions & options)
 {
     RetentionPolicy policy;
-    if (!metadata->has(Iceberg::f_properties))
-        return policy;
+    const auto & settings = context->getSettingsRef();
+    Int64 min_keep_from_settings = settings[Setting::iceberg_expire_default_min_snapshots_to_keep].value;
+    Int64 max_snapshot_age_from_settings = settings[Setting::iceberg_expire_default_max_snapshot_age_ms].value;
+    Int64 max_ref_age_from_settings = settings[Setting::iceberg_expire_default_max_ref_age_ms].value;
 
-    auto props = metadata->getObject(Iceberg::f_properties);
-    if (props->has(Iceberg::f_min_snapshots_to_keep))
-        policy.min_snapshots_to_keep = std::stoi(props->getValue<String>(Iceberg::f_min_snapshots_to_keep));
-    if (props->has(Iceberg::f_max_snapshot_age_ms))
-        policy.max_snapshot_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_snapshot_age_ms));
-    if (props->has(Iceberg::f_max_ref_age_ms))
-        policy.max_ref_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_ref_age_ms));
+    if (min_keep_from_settings <= 0 || min_keep_from_settings > std::numeric_limits<Int32>::max())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "iceberg_expire_default_min_snapshots_to_keep must be in range [1, {}], got {}",
+            std::numeric_limits<Int32>::max(),
+            min_keep_from_settings);
+    if (max_snapshot_age_from_settings < 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "iceberg_expire_default_max_snapshot_age_ms must be non-negative, got {}",
+            max_snapshot_age_from_settings);
+    if (max_ref_age_from_settings < 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "iceberg_expire_default_max_ref_age_ms must be non-negative, got {}",
+            max_ref_age_from_settings);
+
+    policy.min_snapshots_to_keep = static_cast<Int32>(min_keep_from_settings);
+    policy.max_snapshot_age_ms = max_snapshot_age_from_settings;
+    policy.max_ref_age_ms = max_ref_age_from_settings;
+
+    if (metadata->has(Iceberg::f_properties))
+    {
+        auto props = metadata->getObject(Iceberg::f_properties);
+        if (props->has(Iceberg::f_min_snapshots_to_keep))
+            policy.min_snapshots_to_keep = std::stoi(props->getValue<String>(Iceberg::f_min_snapshots_to_keep));
+        if (props->has(Iceberg::f_max_snapshot_age_ms))
+            policy.max_snapshot_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_snapshot_age_ms));
+        if (props->has(Iceberg::f_max_ref_age_ms))
+            policy.max_ref_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_ref_age_ms));
+    }
+
+    /// Per-invocation overrides (only affect table-level defaults, not per-ref overrides).
+    if (options.retain_last.has_value())
+        policy.min_snapshots_to_keep = *options.retain_last;
+    if (options.retention_period_ms.has_value())
+        policy.max_snapshot_age_ms = *options.retention_period_ms;
+
     return policy;
 }
 
@@ -976,9 +1019,14 @@ static ExpiredFiles collectExpiredFiles(
     Int32 current_schema_id)
 {
     ExpiredFiles result;
+    std::set<String> seen_expired_manifest_list_paths;
+    std::set<String> seen_expired_manifest_paths;
     for (const auto & ml_path : expired_manifest_list_paths)
     {
         if (retained_manifest_list_paths.contains(ml_path))
+            continue;
+
+        if (seen_expired_manifest_list_paths.contains(ml_path))
             continue;
 
         String storage_ml_path = getProperFilePathFromMetadataInfo(
@@ -999,6 +1047,9 @@ static ExpiredFiles collectExpiredFiles(
         for (const auto & mf_key : manifest_keys)
         {
             if (retained_manifest_paths.contains(mf_key.manifest_file_path))
+                continue;
+
+            if (seen_expired_manifest_paths.contains(mf_key.manifest_file_path))
                 continue;
 
             try
@@ -1032,10 +1083,12 @@ static ExpiredFiles collectExpiredFiles(
                 continue;
             }
 
+            seen_expired_manifest_paths.insert(mf_key.manifest_file_path);
             result.all_paths.push_back(mf_key.manifest_file_path);
             ++result.manifest_files;
         }
 
+        seen_expired_manifest_list_paths.insert(ml_path);
         result.all_paths.push_back(storage_ml_path);
         ++result.manifest_lists;
     }
@@ -1105,6 +1158,68 @@ static SnapshotPartition partitionSnapshots(
     return result;
 }
 
+static SnapshotPartition partitionSnapshotsByIds(
+    const Poco::JSON::Object::Ptr & metadata,
+    const Poco::JSON::Array::Ptr & snapshots,
+    const std::vector<Int64> & snapshot_ids,
+    Int64 current_snapshot_id,
+    std::optional<Int64> expire_before_ms)
+{
+    std::unordered_set<Int64> requested_ids(snapshot_ids.begin(), snapshot_ids.end());
+    std::unordered_set<Int64> existing_ids;
+    std::unordered_set<Int64> ref_protected_ids;
+    SnapshotPartition result;
+
+    if (metadata->has(Iceberg::f_refs))
+    {
+        auto refs = metadata->getObject(Iceberg::f_refs);
+        for (const auto & ref_name : refs->getNames())
+        {
+            auto ref = refs->getObject(ref_name);
+            if (ref->has(Iceberg::f_metadata_snapshot_id))
+                ref_protected_ids.insert(ref->getValue<Int64>(Iceberg::f_metadata_snapshot_id));
+        }
+    }
+
+    ref_protected_ids.insert(current_snapshot_id);
+
+    for (UInt32 i = 0; i < snapshots->size(); ++i)
+    {
+        auto snapshot = snapshots->getObject(i);
+        Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        Int64 snap_ts = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
+
+        existing_ids.insert(snap_id);
+        bool requested = requested_ids.contains(snap_id);
+        bool is_protected_by_fuse = expire_before_ms.has_value() && (snap_ts >= *expire_before_ms);
+
+        if (requested && ref_protected_ids.contains(snap_id))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "expire_snapshots cannot expire snapshot {} because it is referenced by current snapshot, branch, or tag",
+                snap_id);
+
+        if (requested && !is_protected_by_fuse)
+        {
+            result.expired_snapshot_ids.insert(snap_id);
+            if (snapshot->has(Iceberg::f_manifest_list))
+                result.expired_manifest_list_paths.push_back(snapshot->getValue<String>(Iceberg::f_manifest_list));
+        }
+        else
+        {
+            result.retained_snapshots->add(snapshot);
+        }
+    }
+
+    for (Int64 requested_id : requested_ids)
+    {
+        if (!existing_ids.contains(requested_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots snapshot id {} does not exist", requested_id);
+    }
+
+    return result;
+}
+
 /// Mutate metadata: remove expired refs, update snapshots, trim log, bump timestamp.
 static void updateMetadataForExpiration(
     Poco::JSON::Object::Ptr metadata,
@@ -1154,7 +1269,7 @@ static void deleteExpiredFiles(
 ///   4. Collect files exclusively owned by expired snapshots and delete them.
 ///   5. Write updated metadata with optimistic concurrency (retry on conflict).
 ExpireSnapshotsResult expireSnapshots(
-    std::optional<Int64> expire_before_ms,
+    const ExpireSnapshotsOptions & options,
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
@@ -1195,28 +1310,38 @@ ExpireSnapshotsResult expireSnapshots(
         if (!metadata->has(Iceberg::f_current_snapshot_id))
         {
             LOG_INFO(log, "No snapshots to expire (table has no current snapshot)");
-            return {};
+            return {.dry_run = options.dry_run};
         }
 
         Int64 current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
         if (current_snapshot_id < 0)
         {
             LOG_INFO(log, "No snapshots to expire (table has no current snapshot)");
-            return {};
+            return {.dry_run = options.dry_run};
         }
 
         auto snapshots = metadata->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
         auto now_ms = duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-        auto policy = readRetentionPolicy(metadata);
-        SnapshotGraph graph(snapshots);
-        auto [retention_retained_ids, expired_ref_names] = applyRetentionPolicy(metadata, current_snapshot_id, graph, policy, now_ms);
-        auto partition = partitionSnapshots(snapshots, retention_retained_ids, expire_before_ms);
+        Strings expired_ref_names;
+        SnapshotPartition partition;
+        if (options.snapshot_ids.has_value())
+        {
+            partition = partitionSnapshotsByIds(metadata, snapshots, *options.snapshot_ids, current_snapshot_id, options.expire_before_ms);
+        }
+        else
+        {
+            auto policy = readRetentionPolicy(metadata, context, options);
+            SnapshotGraph graph(snapshots);
+            auto [retention_retained_ids, retention_expired_ref_names] = applyRetentionPolicy(metadata, current_snapshot_id, graph, policy, now_ms);
+            expired_ref_names = std::move(retention_expired_ref_names);
+            partition = partitionSnapshots(snapshots, retention_retained_ids, options.expire_before_ms);
+        }
 
         if (partition.expired_snapshot_ids.empty())
         {
             LOG_INFO(log, "No snapshots to expire");
-            return {};
+            return {.dry_run = options.dry_run};
         }
         LOG_INFO(log, "Expiring {} snapshots", partition.expired_snapshot_ids.size());
 
@@ -1231,6 +1356,19 @@ ExpireSnapshotsResult expireSnapshots(
         auto expired_files = collectExpiredFiles(
             partition.expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
             object_storage, persistent_table_components, context, log, current_schema_id);
+
+        if (options.dry_run)
+        {
+            LOG_INFO(log, "Dry-run mode: skip metadata commit and file deletion");
+            return ExpireSnapshotsResult{
+                .deleted_data_files_count = expired_files.data_files,
+                .deleted_position_delete_files_count = expired_files.position_delete_files,
+                .deleted_equality_delete_files_count = expired_files.equality_delete_files,
+                .deleted_manifest_files_count = expired_files.manifest_files,
+                .deleted_manifest_lists_count = expired_files.manifest_lists,
+                .dry_run = true,
+            };
+        }
 
         updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
 
@@ -1279,6 +1417,7 @@ ExpireSnapshotsResult expireSnapshots(
             .deleted_equality_delete_files_count = expired_files.equality_delete_files,
             .deleted_manifest_files_count = expired_files.manifest_files,
             .deleted_manifest_lists_count = expired_files.manifest_lists,
+            .dry_run = false,
         };
     }
 

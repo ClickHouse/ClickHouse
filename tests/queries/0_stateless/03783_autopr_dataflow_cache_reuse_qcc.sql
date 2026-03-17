@@ -20,6 +20,9 @@ SET max_threads=4, max_block_size=128;
 SET use_query_condition_cache=1;
 SET automatic_parallel_replicas_min_bytes_per_replica='1Mi';
 
+-- May disable the usage of parallel replicas
+SET merge_tree_min_bytes_per_task_for_remote_reading=0;
+
 -- External aggregation is not supported at the moment, i.e., no statistics will be reported
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
