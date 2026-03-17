@@ -630,7 +630,7 @@ def test_mysql_boolean_format(started_cluster):
     )
     node.query(
         "INSERT INTO mysql_boolean_format_test VALUES (false, true, false), (true, false, true);",
-        settings={"password": "123"},
+        settings={"password": "123", "allow_suspicious_low_cardinality_types": 1},
     )
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """

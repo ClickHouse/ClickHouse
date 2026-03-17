@@ -65,7 +65,10 @@ def test_default_compression_codec_in_mergetree_settings(start_cluster):
         },
     )
 
-    node.query("INSERT INTO compression_table VALUES (1, 1, [[77]], 32)")
+    node.query(
+        "INSERT INTO compression_table VALUES (1, 1, [[77]], 32)",
+        settings={"allow_suspicious_low_cardinality_types": "1"},
+    )
 
     assert (
         get_compression_codec_byte(node, "compression_table", "1_0_0_0", "column_ok")
@@ -117,7 +120,10 @@ def test_default_compression_codec_in_mergetree_settings(start_cluster):
     node.query(
         "ALTER TABLE compression_table MODIFY SETTING default_compression_codec = 'AES_128_GCM_SIV'"
     )
-    node.query("INSERT INTO compression_table VALUES (2, 1, [[77]], 32)")
+    node.query(
+        "INSERT INTO compression_table VALUES (2, 1, [[77]], 32)",
+        settings={"allow_suspicious_low_cardinality_types": "1"},
+    )
 
     assert (
         get_compression_codec_byte(node, "compression_table", "1_0_0_0", "key")

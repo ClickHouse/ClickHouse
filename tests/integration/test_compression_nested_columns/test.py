@@ -61,7 +61,10 @@ def test_nested_compression_codec(start_cluster):
             },
         )
 
-    node1.query("INSERT INTO compression_table VALUES (1, 1, [[77]], 32)")
+    node1.query(
+        "INSERT INTO compression_table VALUES (1, 1, [[77]], 32)",
+        settings={"allow_suspicious_low_cardinality_types": "1"},
+    )
 
     node2.query("SYSTEM SYNC REPLICA compression_table", timeout=5)
 
