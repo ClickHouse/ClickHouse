@@ -1095,6 +1095,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
             {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
+            {"serialization_info_version", "with_types", "with_types", "Add `with_physical_names` option for persistent physical column names"},
+            {"activate_physical_names_for_existing_tables", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
@@ -1113,8 +1115,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"merge_max_dynamic_subcolumns_in_compact_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Compact part after merge regardless the parameters specified in the data type"},
             {"materialize_statistics_on_merge", true, true, "New setting"},
             {"escape_index_filenames", false, true, "Escape non-ascii characters in filenames created for indices"},
-            {"serialization_info_version", "with_types", "with_types", "Add `with_physical_names` option for persistent physical column names"},
-            {"activate_physical_names_for_existing_tables", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {

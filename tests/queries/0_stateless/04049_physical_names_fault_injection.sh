@@ -72,7 +72,7 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT physical_names_throw_before_mapping_persist"
 
 # This ALTER should fail because of the injected exception
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_fp_crash RENAME COLUMN b TO d" 2>&1 | grep -o 'FAULT_INJECTED'
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_fp_crash RENAME COLUMN b TO d" 2>&1 | grep -o -m1 'FAULT_INJECTED'
 
 # Table MUST still have original column name — the exception fires before
 # both the mapping persist and the metadata commit, so nothing changed.
