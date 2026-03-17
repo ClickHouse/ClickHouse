@@ -58,6 +58,15 @@ TEST(UncompressedCacheAutoEnable, KeepsReadsOptInByDefaultWhenCacheIsDisabled)
             /*has_uncompressed_cache=*/false)));
 }
 
+TEST(UncompressedCacheAutoEnable, KeepsReadsOptInByDefaultWhenAutomaticUseIsDisabled)
+{
+    EXPECT_FALSE(shouldUseUncompressedCacheForMergeTreeRead(
+        /*setting_changed=*/false,
+        /*setting_value=*/false,
+        /*query_fits_cache_thresholds=*/true,
+        /*auto_enable_supported=*/false));
+}
+
 TEST(UncompressedCacheAutoEnable, RespectsExplicitDisable)
 {
     EXPECT_FALSE(shouldUseUncompressedCacheForMergeTreeRead(

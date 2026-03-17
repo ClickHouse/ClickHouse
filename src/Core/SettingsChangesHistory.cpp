@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
             {"use_text_index_tokens_cache", false, false, "New setting"},
             {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
+            {"enable_automatic_use_uncompressed_cache", false, true, "Enable automatic use of uncompressed cache for eligible local MergeTree reads by default."},
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, true, "Allow duplicated paths in JSON type with literal and nested object by default"},

@@ -166,6 +166,7 @@ namespace Setting
     extern const SettingsBool compile_sort_description;
     extern const SettingsBool do_not_merge_across_partitions_select_final;
     extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
+    extern const SettingsBool enable_automatic_use_uncompressed_cache;
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
     extern const SettingsBool force_primary_key;
@@ -930,7 +931,9 @@ struct PartRangesReadInfo
             min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
             data_settings[MergeTreeSetting::index_granularity], index_granularity_bytes, settings[Setting::merge_tree_min_read_task_size], sum_marks);
 
-        const bool auto_enable_supported = canAutoEnableUncompressedCacheForMergeTreeRead(any_parts_on_remote_disk, has_uncompressed_cache);
+        const bool auto_enable_supported =
+            settings[Setting::enable_automatic_use_uncompressed_cache]
+            && canAutoEnableUncompressedCacheForMergeTreeRead(any_parts_on_remote_disk, has_uncompressed_cache);
 
         /// The uncompressed cache setting is applied to the whole read pool. When the user did not
         /// explicitly override it, keep any query touching remote/object-storage parts opt-in by

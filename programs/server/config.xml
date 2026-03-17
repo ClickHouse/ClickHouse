@@ -493,8 +493,9 @@
          In bytes. Cache is single for server. Memory is allocated only on demand.
          Cache is used when the `use_uncompressed_cache` user setting is enabled explicitly.
          For eligible local reads from `MergeTree` family tables, ClickHouse may
-         also enable it automatically when `use_uncompressed_cache` is not overridden
-         and `uncompressed_cache_size` is greater than `0`.
+         also enable it automatically when `use_uncompressed_cache` is not overridden,
+         the query setting `enable_automatic_use_uncompressed_cache` is enabled, and
+         `uncompressed_cache_size` is greater than `0`.
          Uncompressed cache is advantageous only for very short queries and in rare cases.
 
          Note: uncompressed cache can be pointless for lz4, because memory bandwidth

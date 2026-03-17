@@ -1,5 +1,6 @@
 -- Tags: no-parallel, no-random-settings
 
+SET enable_automatic_use_uncompressed_cache = 1;
 SET enable_analyzer = 1;
 SET log_queries = 1;
 SET optimize_read_in_order = 1;

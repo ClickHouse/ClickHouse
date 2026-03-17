@@ -1,5 +1,7 @@
 -- Tags: no-parallel, no-random-settings
 
+SET enable_automatic_use_uncompressed_cache = 1;
+
 DROP TABLE IF EXISTS auto_uncompressed_cache;
 DROP TABLE IF EXISTS auto_uncompressed_cache_events;
 
