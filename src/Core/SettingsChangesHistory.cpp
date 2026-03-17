@@ -1098,6 +1098,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
+            {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
             {"clone_replica_zookeeper_create_get_part_batch_size", 1, 100, "New setting"},
             {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
             {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
