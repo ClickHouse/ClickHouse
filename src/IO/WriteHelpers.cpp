@@ -190,12 +190,6 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
         return;
     }
 
-    static constexpr UInt64 max_float_precision = 60;
-    if (settings.float_precision > max_float_precision)
-        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-            "output_format_float_precision value {} exceeds the maximum allowed value {}",
-            settings.float_precision, max_float_precision);
-
     DoubleConverter<false>::BufferType buffer;
     double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
     const auto result = DoubleConverter<false>::instance()

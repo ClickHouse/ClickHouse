@@ -1234,10 +1234,9 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 
 Disabled by default.
 )", 0) \
-    DECLARE(UInt64, output_format_float_precision, 0, R"(
+    DECLARE(Int64, output_format_float_precision, 0, R"(
 Number of decimal digits after the decimal point for floating-point output (`Float32`, `Float64`, `BFloat16`).
 If set to 0 (the default), uses the shortest round-trip representation.
-Valid range: 0–60.
 )", 0) \
     \
     DECLARE(UInt64, input_format_allow_errors_num, 0, R"(
