@@ -178,4 +178,28 @@ size_t writeFloatTextFastPath(T x, char * buffer)
 template size_t writeFloatTextFastPath(Float64 x, char * buffer);
 template size_t writeFloatTextFastPath(Float32 x, char * buffer);
 template size_t writeFloatTextFastPath(BFloat16 x, char * buffer);
+
+template <typename T>
+requires is_floating_point<T>
+void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
+{
+    if (settings.float_precision == 0)
+    {
+        writeFloatText(x, buf);
+        return;
+    }
+
+    DoubleConverter<false>::BufferType buffer;
+    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
+    const auto result = DoubleConverter<false>::instance()
+        .ToFixed(static_cast<double>(x), static_cast<int>(settings.float_precision), &builder);
+    if (!result)
+        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+            "Cannot print floating point number");
+    buf.write(buffer, builder.position());
+}
+
+template void writeFloatText(Float64 x, WriteBuffer & buf, const FormatSettings & settings);
+template void writeFloatText(Float32 x, WriteBuffer & buf, const FormatSettings & settings);
+template void writeFloatText(BFloat16 x, WriteBuffer & buf, const FormatSettings & settings);
 }
