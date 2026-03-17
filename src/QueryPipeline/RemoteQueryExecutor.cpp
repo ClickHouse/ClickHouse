@@ -45,7 +45,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_estimated_execution_time;
     extern const SettingsBool skip_unavailable_shards;
@@ -440,8 +439,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     established = false;
     sent_query = true;
 
-    if (settings[Setting::enable_scalar_subquery_optimization])
-        sendScalars();
+    sendScalars();
 
     if (query_plan)
         connections->sendQueryPlan(*query_plan);
