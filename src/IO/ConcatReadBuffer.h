@@ -1,7 +1,6 @@
 #pragma once
 
-#include <vector>
-
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 
 
@@ -12,7 +11,7 @@ namespace DB
 class ConcatReadBuffer : public ReadBuffer
 {
 public:
-    using Buffers = std::vector<std::unique_ptr<ReadBuffer>>;
+    using Buffers = VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>>;
 
     ConcatReadBuffer() : ReadBuffer(nullptr, 0), current(buffers.end())
     {
