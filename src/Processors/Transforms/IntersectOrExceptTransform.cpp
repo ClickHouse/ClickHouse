@@ -1,5 +1,6 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -9,15 +10,11 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Ope
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
 {
-    const Names & columns = header_->getNames();
-    size_t num_columns = columns.empty() ? header_->columns() : columns.size();
+    size_t num_columns = header_->columns();
 
-    key_columns_pos.reserve(columns.size());
+    key_columns_pos.reserve(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-    {
-        auto pos = columns.empty() ? i : header_->getPositionByName(columns[i]);
-        key_columns_pos.emplace_back(pos);
-    }
+        key_columns_pos.emplace_back(i);
 }
 
 
@@ -210,19 +207,13 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
             auto key = hashRow(column_ptrs, i);
             auto * it = counts.find(key);
 
-            if (it != nullptr && it->getMapped() > 0)
-            {
+            /// Check if this row has remaining occurrences in the right side.
+            bool matched = (it != nullptr && it->getMapped() > 0);
+            if (matched)
                 --it->getMapped();
-                /// EXCEPT ALL: found in right side, exclude this row.
-                /// INTERSECT ALL: found in right side, include this row.
-                row_filter[i] = is_except ? 0 : 1;
-            }
-            else
-            {
-                /// EXCEPT ALL: not in right side, include this row.
-                /// INTERSECT ALL: not in right side, exclude this row.
-                row_filter[i] = is_except ? 1 : 0;
-            }
+
+            /// EXCEPT ALL keeps unmatched rows; INTERSECT ALL keeps matched rows.
+            row_filter[i] = matched != is_except;
 
             if (row_filter[i])
                 ++new_rows_num;

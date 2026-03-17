@@ -3,6 +3,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -279,25 +280,19 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         },
         {
             "empty",
-            [] (RPNElement & out, const Field & value)
+            [] (RPNElement & out, const Field &)
             {
-                if (value.getType() != Field::Types::String)
-                    return false;
-
                 out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.range = Range("");
+                out.range = Range(String{});
                 return true;
             }
         },
         {
             "notEmpty",
-            [] (RPNElement & out, const Field & value)
+            [] (RPNElement & out, const Field &)
             {
-                if (value.getType() != Field::Types::String)
-                    return false;
-
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                out.range = Range("");
+                out.range = Range(String{});
                 return true;
             }
         },
@@ -1091,50 +1086,72 @@ bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
         auto func_result_type = func->getResultType();
 
-        /// DateTime64/Date32 are signed, but Date and DateTime are unsigned, so converting
-        /// values outside the unsigned range wraps around via static_cast, this can produce wrong pruning
+        /// DateTime64/Date32 are signed, but Date, DateTime, and UInt32 are unsigned, so converting
+        /// values outside the unsigned range wraps around or throws DECIMAL_OVERFLOW.
         ///
         /// we check the constant BEFORE execution to catch obvious out-of-range inputs,
         /// and AFTER execution to catch boundary values where the next value would wrap
         /// (toDate returns day 65535 — the next day overflows to 0)
         auto result_type_inner = removeLowCardinality(removeNullable(func_result_type));
-        if (isDate(result_type_inner) || isDateTime(result_type_inner))
+        auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
+        if (isDateTime64(arg_type_inner) || isTime64(arg_type_inner))
         {
-            auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
+            Int64 value;
             if (isDateTime64(arg_type_inner))
-            {
-                Int64 value = (*result_column)[0].safeGet<DateTime64>().getValue();
+                value = (*result_column)[0].safeGet<DateTime64>().getValue();
+            else
+                value = (*result_column)[0].safeGet<Time64>().getValue();
 
-                /// negative timestamps after cast -> large unsigned values
-                if (value < 0)
-                    return false;
+            /// negative timestamps after cast -> large unsigned values
+            if (value < 0)
+                return false;
 
-                UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale();
-                Int64 seconds = value / intExp10OfSize<Int64>(scale);
+            UInt32 scale = isDateTime64(arg_type_inner)
+                ? assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale()
+                : assert_cast<const DataTypeTime64 &>(*arg_type_inner).getScale();
+            Int64 seconds = value / intExp10OfSize<Int64>(scale);
 
-                /// timestamps beyond the target range -> small values
-                if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
-                    return false;
-                if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
-                    return false;
-            }
-            else if (isDate32(arg_type_inner))
-            {
-                /// day numbers as Int32 -> Date only fits [0, 65535],
-                /// DateTime only fits seconds up to DATE_LUT_MAX
-                auto value = (*result_column)[0].safeGet<Int32>();
-                if (value < 0)
-                    return false;
-                if (isDate(result_type_inner) && value > DATE_LUT_MAX_DAY_NUM)
-                    return false;
-                if (isDateTime(result_type_inner) && value * 86400LL >= DATE_LUT_MAX)
-                    return false;
-            }
+            /// timestamps beyond the target range -> small values
+            if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
+                return false;
+            if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
+                return false;
+            if (isUInt32(result_type_inner) && seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                return false;
+        }
+        else if (isDate32(arg_type_inner) && (isDate(result_type_inner) || isDateTime(result_type_inner) || isUInt32(result_type_inner)))
+        {
+            /// day numbers as Int32 -> Date only fits [0, 65535],
+            /// DateTime only fits seconds up to DATE_LUT_MAX
+            auto value = (*result_column)[0].safeGet<Int32>();
+            if (value < 0)
+                return false;
+            if (isDate(result_type_inner) && value > DATE_LUT_MAX_DAY_NUM)
+                return false;
+            if (isDateTime(result_type_inner) && value * 86400LL >= DATE_LUT_MAX)
+                return false;
+            if (isUInt32(result_type_inner) && value * 86400LL > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                return false;
         }
 
         result_column = func->execute({{result_column, argument_type, ""}}, func_result_type, result_column->size(), /* dry_run = */ false);
         result_column = result_column->convertToFullColumnIfLowCardinality();
         result_type = removeLowCardinality(func_result_type);
+
+        // Transforming nullable columns to the nested ones, in case no nulls found.
+        // This must be done before calling getUInt/get64 below.
+        if (result_column->isNullable())
+        {
+            const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
+            const auto & null_map_data = result_column_nullable.getNullMapData();
+            for (char8_t i : null_map_data)
+            {
+                if (i != 0)
+                    return false;
+            }
+            result_column = result_column_nullable.getNestedColumnPtr();
+            result_type = removeNullable(result_type);
+        }
 
         /// the result itself sits at the type's max — next value wraps so any >= / <= condition on
         /// it would give wrong partition ranges -> this catches timezone edge cases that pre-execution check might miss
@@ -1147,20 +1164,6 @@ bool applyFunctionChainToColumn(
         {
             if (result_column->get64(0) >= DATE_LUT_MAX)
                 return false;
-        }
-
-        // Transforming nullable columns to the nested ones, in case no nulls found
-        if (result_column->isNullable())
-        {
-            const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
-            const auto & null_map_data = result_column_nullable.getNullMapData();
-            for (char8_t i : null_map_data)
-            {
-                if (i != 0)
-                    return false;
-            }
-            result_column = result_column_nullable.getNestedColumnPtr();
-            result_type = removeNullable(result_type);
         }
     }
     out_column = result_column;
@@ -2908,6 +2911,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
+
+            /// empty/notEmpty produce a meaningful range only for String key columns.
+            if ((func_name == "empty" || func_name == "notEmpty") && !isString(*key_expr_type))
+                return false;
         }
         else if (num_args == 2)
         {
@@ -3080,10 +3087,32 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 if (const_value.getType() == Field::Types::String)
                 {
-                    const_value = convertFieldToType(const_value, *key_expr_type_not_null);
-                    if (const_value.isNull())
-                        return false;
-                    /// No need to set condition_is_relaxed because we're doing exact conversion
+                    /// These functions use the constant as a string pattern or prefix.
+                    /// For example, if column is `FixedString` type, then in `startsWith(column, 'ab')`
+                    /// and `column LIKE 'ab%'`, `'ab'` is used to build the prefix range `['ab', 'ac')`.
+                    //  The literal must not be converted to the column type which is `FixedString`. If we
+                    /// first convert it to `FixedString(N)`, it becomes `'ab\0...'`, and the range is built from
+                    /// the padded value instead of from `'ab'`. This can lead to the upper bound being set to the
+                    /// next padded value, for example `['ab\0...', 'ab\0...\1')`, instead of to the next prefix
+                    /// range `['ab', 'ac')`. The padded range is too small and can miss values such as `'abc...'` that still
+                    /// satisfy `startsWith(column, 'ab')` and `column LIKE 'ab%'`.
+                    /// New functions should be added to this list only if their constant argument is used as a
+                    /// pattern or prefix in the same way.
+                    const bool should_keep_original_string_constant
+                        = isStringOrFixedString(key_expr_type_not_null)
+                        && (func_name == "like"
+                        || func_name == "notLike"
+                        || func_name == "startsWith"
+                        || func_name == "startsWithUTF8"
+                        || func_name == "match");
+
+                    if (!should_keep_original_string_constant)
+                    {
+                        const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                        if (const_value.isNull())
+                            return false;
+                        /// No need to set condition_is_relaxed because we're doing exact conversion
+                    }
                 }
                 else
                 {
@@ -4161,10 +4190,22 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = element.range.intersectsRange(key_range);
             bool contains = element.range.containsRange(key_range);
 
-            /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
-            /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
-            if (unlikely(key_range.left.isNaN() || key_range.right.isNaN()))
+            /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
+            /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
+            /// analysis may incorrectly include NaN values.
+            /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
+            ///   so no comparison condition can be true.
+            /// - If only right bound is NaN: the range extends into NaN territory,
+            ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+            if (unlikely(key_range.left.isNaN()))
+            {
+                intersects = false;
                 contains = false;
+            }
+            else if (unlikely(key_range.right.isNaN()))
+            {
+                contains = false;
+            }
 
             rpn_stack.emplace_back(intersects, !contains);
 

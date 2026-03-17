@@ -12,6 +12,11 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/TableNode.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -286,22 +291,53 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
     StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
 
-    auto mut_context = Context::createCopy(query_context);
     bool positional_arguments_for_projections = query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections];
-    /// Disable positional arguments. Positional references are unsafe/unsupported in this context (e.g., within
-    /// internal queries like those used for Projection definitions), as they rely on a fixed column order and alias
-    /// resolution that is neither guaranteed nor sensible here.
-    ///
-    /// Setting `enable_positional_arguments_for_projections` may enable positional arguments for projections.
-    /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
+
+    /// Force INITIAL_QUERY so that the Analyzer's replaceNodesWithPositionalArguments
+    /// works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
+    auto mut_context = Context::createCopy(query_context);
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+    mut_context->setQueryKindInitial();
+
+    bool is_aggregate;
+    {
+        /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
+        /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
+        /// (which may fail when session settings like allow_nonconst_timezone_arguments are unavailable,
+        /// e.g. during ATTACH TABLE), while still allowing the projection query to reference any column
+        /// including table-level ALIAS columns by name.
+        StoragePtr analyzer_storage = std::make_shared<StorageProjectionSource>(ColumnsDescription(columns.getAll()));
+
+        auto query_tree = buildQueryTree(result.query_ast, mut_context);
+        auto & query_node = query_tree->as<QueryNode &>();
+        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
+
+        QueryTreePassManager query_tree_pass_manager(mut_context);
+        addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
+        query_tree_pass_manager.runOnlyResolve(query_tree);
+
+        is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
+
+        /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
+        /// cloneToASTSelect() appends the ORDER BY expression as the last SELECT child,
+        /// so the last resolved projection column has aliases fully expanded.
+        if (projection_order_by)
+        {
+            auto & projection_nodes = query_node.getProjection().getNodes();
+            ConvertToASTOptions ast_options;
+            ast_options.fully_qualified_identifiers = false;
+            projection_order_by = projection_nodes.back()->toAST(ast_options);
+            projection_order_by->setAlias({});
+        }
+    }
+
     InterpreterSelectQuery select(
         result.query_ast,
         mut_context,
         storage,
         {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+        SelectQueryOptions{is_aggregate ? QueryProcessingStage::WithMergeableState : QueryProcessingStage::FetchColumns}
             .modify()
             .ignoreAlias()
             .ignoreASTOptimizations()
@@ -314,7 +350,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     metadata.partition_key = KeyDescription::buildEmptyKey();
 
     const auto & query_select = result.query_ast->as<const ASTSelectQuery &>();
-    if (select.hasAggregation())
+    if (is_aggregate)
     {
         /// Aggregate projections cannot hold parent part offset.
         can_hold_parent_part_offset = false;
@@ -374,11 +410,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         std::erase_if(result.required_columns, [](const String & s) { return s.contains("_part_offset"); });
     }
 
-    auto block = result.sample_block;
-    for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
-        block.insertUnique({nullptr, type, name});
     NamesAndTypesList metadata_columns;
-    for (const auto & column_with_type_name : block)
+    for (const auto & column_with_type_name : result.sample_block)
     {
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
@@ -387,7 +420,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         if (columns.hasSubcolumn(GetColumnsOptions::All, column_with_type_name.name))
         {
             auto subcolumn = columns.getColumnOrSubcolumn(GetColumnsOptions::All, column_with_type_name.name);
-            if (!block.has(subcolumn.getNameInStorage()))
+            if (!result.sample_block.has(subcolumn.getNameInStorage()))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain individual subcolumns: {}", column_with_type_name.name);
             /// Also remove this subcolumn from the required columns as we have the original column.
             std::erase_if(result.required_columns, [&](const String & column_name){ return column_name == column_with_type_name.name; });
@@ -543,6 +576,12 @@ Block ProjectionDescription::calculateByQuery(
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
     ASTPtr query_ast_copy = nullptr;
+
+    /// Only keep required columns
+    Block source_block;
+    for (const auto & column : required_columns)
+        source_block.insert(block.getByName(column));
+
     /// Respect the _row_exists column.
     if (block.has(RowExistsColumn::name))
     {
@@ -554,12 +593,9 @@ Block ProjectionDescription::calculateByQuery(
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
             makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1)));
-    }
 
-    /// Only keep required columns
-    Block source_block = block;
-    for (const auto & column : required_columns)
-        source_block.insert(block.getByName(column));
+        source_block.insert(block.getByName(RowExistsColumn::name));
+    }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
     if (with_parent_part_offset)

@@ -234,7 +234,7 @@ This function is compatible with MySQL's CONV() function.
            {"Convert hexadecimal to decimal", "SELECT conv('FF', 16, 10)", "255"},
            {"Convert with negative number", "SELECT conv('-1', 10, 16)", "FFFFFFFFFFFFFFFF"},
            {"Convert binary to octal", "SELECT conv('1010', 2, 8)", "12"}},
-        .introduced_in = {1, 1},
+        .introduced_in = {25, 10},
         .category = FunctionDocumentation::Category::String});
 }
 

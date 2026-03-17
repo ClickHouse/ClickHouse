@@ -416,6 +416,23 @@ struct ToDateTimeTransform64Signed
     }
 };
 
+
+struct ToDateTime64TransformFromTime
+{
+    static constexpr auto name = "toDateTime64";
+
+    const DateTime64::NativeType scale_multiplier;
+
+    ToDateTime64TransformFromTime(UInt32 scale) /// NOLINT
+        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
+    {}
+
+    DateTime64::NativeType execute(Int32 d, const DateLUTImpl & /*time_zone*/) const
+    {
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(d, 0, scale_multiplier);
+    }
+};
+
 /** Conversion of numeric to Time
   */
 
@@ -1638,7 +1655,56 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
     const auto & vec_from = col_from->getData();
     auto & vec_to = col_to->getData();
 
-    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+    /// Batch path for decimal-to-decimal (excludes DateTime64 and Time64 which need special handling)
+    if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>
+        && !std::is_same_v<DataTypeDateTime64, FromDataType> && !std::is_same_v<DataTypeDateTime64, ToDataType>
+        && !std::is_same_v<DataTypeTime64, FromDataType> && !std::is_same_v<DataTypeTime64, ToDataType>)
+    {
+        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+        {
+            ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+            auto & vec_null_map_to = col_null_map_to->getData();
+            convertDecimalsBatch<FromDataType, ToDataType, UInt8>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_from->getScale(), col_to->getScale(),
+                vec_null_map_to.data());
+            return ColumnNullable::create(std::forward<ColTo>(col_to), std::move(col_null_map_to));
+        }
+        else
+        {
+            convertDecimalsBatch<FromDataType, ToDataType, void>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_from->getScale(), col_to->getScale(),
+                nullptr);
+            return std::forward<ColTo>(col_to);
+        }
+    }
+    /// Batch path for number-to-decimal (excludes DateTime64 and Time64 which need special handling)
+    else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>
+        && !std::is_same_v<DataTypeDateTime64, ToDataType>
+        && !std::is_same_v<DataTypeTime64, ToDataType>)
+    {
+        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+        {
+            ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+            auto & vec_null_map_to = col_null_map_to->getData();
+            convertToDecimalBatch<FromDataType, ToDataType, UInt8>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_to->getScale(),
+                vec_null_map_to.data());
+            return ColumnNullable::create(std::forward<ColTo>(col_to), std::move(col_null_map_to));
+        }
+        else
+        {
+            convertToDecimalBatch<FromDataType, ToDataType, void>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_to->getScale(),
+                nullptr);
+            return std::forward<ColTo>(col_to);
+        }
+    }
+    /// Scalar fallback for remaining conversions (decimal-to-number, DateTime64, Time64)
+    else if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
     {
         using ToFieldType = typename ToDataType::FieldType;
         ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
@@ -2001,6 +2067,13 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
+        /// Conversion of Time to DateTime64: treat seconds since midnight as seconds since 1970-01-01
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime>
+            && std::is_same_v<ToDataType, DataTypeDateTime64>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFromTime, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
+        }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeTime>)
                             && std::is_same_v<ToDataType, DataTypeTime64>)
         {
@@ -2083,6 +2156,61 @@ struct ConvertImpl
 
                 // Reassemble the result
                 vec_to[i] = local_seconds * scale_mult + fraction;
+            }
+
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+            else
+                return col_to;
+        }
+        /// Conversion of Time64 to DateTime64: Time64 stores sub-seconds since midnight
+        /// which equals sub-seconds since epoch for 1970-01-01
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
+                        && std::is_same_v<ToDataType, DataTypeDateTime64>)
+        {
+            using ToFieldType = typename ToDataType::FieldType;
+            using ColVecFrom = typename FromDataType::ColumnType;
+            using ColVecTo = typename ToDataType::ColumnType;
+
+            const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
+
+            UInt32 scale;
+            if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
+                        || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                scale = additions.scale;
+            else
+                scale = additions;
+
+            auto col_to = ColVecTo::create(0, scale);
+            const auto & vec_from = col_from->getData();
+            auto & vec_to = col_to->getData();
+            vec_to.resize(input_rows_count);
+
+            ColumnUInt8::MutablePtr col_null_map_to;
+            ColumnUInt8::Container * vec_null_map_to = nullptr;
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+            {
+                col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+                vec_null_map_to = &col_null_map_to->getData();
+            }
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                {
+                    ToFieldType result;
+                    if (tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                        vec_to[i] = result;
+                    else
+                    {
+                        vec_to[i] = static_cast<ToFieldType>(0);
+                        (*vec_null_map_to)[i] = true;
+                    }
+                }
+                else
+                {
+                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
+                }
             }
 
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2562,7 +2690,8 @@ struct ConvertImpl
                                 "Conversion between numeric types and IPv6 is not supported. "
                                 "Probably the passed IPv6 is unquoted");
 
-            /// Decimal conversions
+            /// All decimal conversions (decimal-to-decimal, number-to-decimal, decimal-to-number)
+            /// Batch path for eligible types is handled inside convertDecimal.
             else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 return convertDecimal<Additions, FromDataType, ToDataType>(std::move(col_to), col_from, input_rows_count);
 
@@ -3761,8 +3890,17 @@ struct ToStringMonotonicity
             type_ptr = low_cardinality_type->getDictionaryType().get();
 
         /// Order on enum values (which is the order on integers) is completely arbitrary in respect to the order on strings.
-        if (WhichDataType(type).isEnum())
+        if (WhichDataType(*type_ptr).isEnum())
             return not_monotonic;
+
+        if (checkDataTypes<DataTypeFixedString>(type_ptr))
+        {
+            /// `toString(FixedString(N))` removes trailing zero bytes. For example, with `N = 4`,
+            /// `['a', 'b', '\0', '\0']` becomes `'ab'`, and `['a', 'b', '\1', '\0']` becomes `'ab\1'`.
+            /// This preserves lexicographic order on `FixedString(N)`, so the transformation is
+            /// strictly monotonic on the whole type range.
+            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+        }
 
         /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
         if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime, DataTypeString>(type_ptr))

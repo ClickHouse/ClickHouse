@@ -1553,6 +1553,8 @@ const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetad
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::createFileIterator");
+
     const auto & table_metadata = getTableMetadata();
     bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);

@@ -160,6 +160,20 @@ class JobConfigs:
         allow_merge_on_failure=True,
         enable_gh_auth=True,
     )
+    code_review = Job.Config(
+        name=JobNames.CODE_REVIEW,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        command="python3 ./ci/jobs/copilot_review_job.py --pre",
+        allow_merge_on_failure=True,
+        enable_gh_auth=True,
+    )
+    ci_results_review = Job.Config(
+        name=JobNames.CI_RESULTS_REVIEW,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        command="python3 ./ci/jobs/copilot_review_job.py --post",
+        allow_merge_on_failure=True,
+        enable_gh_auth=True,
+    )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.AMD_LARGE,
@@ -528,34 +542,40 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
         Job.ParamSet(
-            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
+            parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_BINARY],
+            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel"],
         ),
         Job.ParamSet(
-            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
+            parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_BINARY],
+            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential"],
         ),
         Job.ParamSet(
-            parameter="amd_binary, ParallelReplicas, s3 storage, parallel",
+            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_BINARY],
+            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel"],
         ),
         Job.ParamSet(
-            parameter="amd_binary, ParallelReplicas, s3 storage, sequential",
+            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_BINARY],
+            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential"],
         ),
         Job.ParamSet(
-            parameter="amd_debug, AsyncInsert, s3 storage, parallel",
+            parameter="amd_llvm_coverage, AsyncInsert, s3 storage, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_DEBUG],
+            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel"],
         ),
         Job.ParamSet(
-            parameter="amd_debug, AsyncInsert, s3 storage, sequential",
+            parameter="amd_llvm_coverage, AsyncInsert, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_DEBUG],
+            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential"],
         ),
         Job.ParamSet(
             parameter="amd_debug, parallel",
@@ -971,6 +991,35 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
     )
+    ast_fuzzer_targeted_pr_jobs = Job.Config(
+        name=JobNames.ASTFUZZER,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/ast_fuzzer_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/docker/fuzzer",
+                "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/find_symbols.py",
+                "./ci/jobs/scripts/find_tests.py",
+                "./ci/jobs/scripts/log_parser.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/jobs/scripts/fuzzer/",
+                "./ci/docker/fuzzer",
+            ],
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd_debug, targeted",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+        Job.ParamSet(
+            parameter="amd_debug, targeted, old_compatibility",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+
+    )
     buzz_fuzzer_jobs = Job.Config(
         name=JobNames.BUZZHOUSE,
         runs_on=[],  # from parametrize()
@@ -1257,7 +1306,7 @@ class JobConfigs:
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
-        runs_on=RunnerLabels.AMD_MEDIUM,
+        runs_on=RunnerLabels.AMD_SMALL,
         run_in_docker="clickhouse/test-base",
         requires=[
             ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
@@ -1265,12 +1314,13 @@ class JobConfigs:
             *LLVM_ARTIFACTS_LIST,
         ],
         provides=[
-            ArtifactNames.LLVM_COVERAGE_HTML_REPORT,
             ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         ],
-        command="python3 ./ci/jobs/merge_llvm_coverage_job.py",
+        command="python3 ./ci/jobs/llvm_coverage_job.py",
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py"],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/merge_llvm_coverage_job.py"],
+            include_paths=["./ci/jobs/llvm_coverage_job.py"],
         ),
         timeout=3600,
+        enable_gh_auth=True,
     )

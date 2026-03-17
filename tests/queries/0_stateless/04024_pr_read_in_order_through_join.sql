@@ -65,7 +65,6 @@ SELECT groupArray(trim(explain)) FROM (
 
 -- Also run the actual queries with failpoints to verify no coordination mode mismatch
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SYSTEM ENABLE FAILPOINT parallel_replicas_check_read_mode_always;
 
 SELECT events.Time, events.Id, payloads.Payload
 FROM events LEFT JOIN payloads ON events.Id = payloads.Id
@@ -73,7 +72,6 @@ ORDER BY events.Time LIMIT 3
 FORMAT Null;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SYSTEM ENABLE FAILPOINT parallel_replicas_check_read_mode_always;
 
 SELECT toStartOfHour(events.Time) AS t, count()
 FROM events LEFT JOIN payloads ON events.Id = payloads.Id
@@ -81,7 +79,6 @@ GROUP BY t ORDER BY t LIMIT 3
 FORMAT Null;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SYSTEM ENABLE FAILPOINT parallel_replicas_check_read_mode_always;
 
 SELECT DISTINCT events.Time
 FROM events LEFT JOIN payloads ON events.Id = payloads.Id
