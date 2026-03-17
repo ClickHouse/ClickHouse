@@ -26,8 +26,9 @@ function wait_for_mutation_done_or_killed()
         fi
     done
 
-    echo "Timed out while waiting for mutation to execute!"
-    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND mutation_id='$mutation_id' AND is_done=0"
+    echo "Timed out while waiting for mutation to execute!" >&2
+    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND mutation_id='$mutation_id' AND is_done=0" >&2 || true
+    return 1
 }
 
 $CLICKHOUSE_CLIENT -q "
