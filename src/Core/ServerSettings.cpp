@@ -980,6 +980,17 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_min_allocation_size, 0, R"(Collect random allocations of size greater or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_max_allocation_size, 0, R"(Collect random allocations of size less or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
+    DECLARE(Bool, collect_connection_metrics, false, R"(Enables the `system.connections` table, which exposes currently active client connections (TCP and HTTP).
+
+When enabled, every accepted TCP and HTTP connection is registered in a global in-memory registry and exposed through `system.connections`. This adds a small amount of synchronization overhead per connection and per query, so it defaults to `false`.
+
+Example configuration:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+See also: `system.connections`, `system.processes`.)", 0) \
     DECLARE(Bool, validate_tcp_client_information, false, R"(Determines whether validation of client information is enabled when a query packet is received.
 
     By default, it is `false`:
