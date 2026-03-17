@@ -45,11 +45,11 @@ static Block addWindowFunctionResultColumns(const Block & block,
 WindowStep::WindowStep(
     const SharedHeader & input_header_,
     const WindowDescription & window_description_,
-    const std::vector<WindowFunctionDescription> & window_functions_,
+    const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions_,
     bool streams_fan_out_)
-    : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, {window_functions_.begin(), window_functions_.end()})), getTraits(!streams_fan_out_))
+    : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
     , window_description(window_description_)
-    , window_functions(window_functions_.begin(), window_functions_.end())
+    , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
