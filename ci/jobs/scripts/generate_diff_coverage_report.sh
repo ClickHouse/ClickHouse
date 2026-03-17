@@ -61,14 +61,16 @@ fi
 
 patterns=()
 while IFS= read -r f; do
-  # Only include C/C++ source files that can appear in lcov coverage data
-  if [[ "$f" =~ \.(cpp|cc|cxx|c|h|hpp|hxx|hh)$ ]]; then
+  # Only include C/C++ source files that can appear in lcov coverage data.
+  # Skip contrib/ files — coverage is disabled for third-party code, so they
+  # produce no records in the tracefile and cause lcov to fail with "(empty)".
+  if [[ "$f" =~ \.(cpp|cc|cxx|c|h|hpp|hxx|hh)$ ]] && [[ ! "$f" =~ ^contrib/ ]]; then
     patterns+=("*$f")
   fi
 done < <(echo "$changed_files")
 
 if [ ${#patterns[@]} -eq 0 ]; then
-  echo "No C/C++ source files changed, skipping differential coverage report"
+  echo "No coverable C/C++ source files changed (contrib/ is excluded from coverage), skipping differential coverage report"
   exit 0
 fi
 

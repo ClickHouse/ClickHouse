@@ -212,12 +212,13 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, no integration tests updates"
 
-    # skip ARM perf tests for non-performance update
+    # skip AMD perf tests for non-performance update (ARM runs by default)
     if (
-        "- Performance Improvement" not in _info_cache.pr_body
+        " Performance Improvement" not in _info_cache.pr_body
         and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
+        and Labels.PR_PERFORMANCE not in _info_cache.pr_labels
         and JobNames.PERFORMANCE in job_name
-        and "arm" in job_name
+        and "amd" in job_name
         and _info_cache.pr_number  # run all performance jobs on master
     ):
         return True, "Skipped, not labeled with 'pr-performance'"

@@ -670,6 +670,23 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 #endif
     }
 
+    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
+    {
+#if USE_AWS_S3
+        auto s3_configuration = std::dynamic_pointer_cast<StorageS3Configuration>(configuration);
+        if (!s3_configuration)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not S3 type for BigLake catalog");
+        auto biglake_catalog = std::static_pointer_cast<DataLake::BigLakeCatalog>(catalog);
+        s3_configuration->setInitializationAsBigLake(
+            biglake_catalog->getGoogleADCClientId(),
+            biglake_catalog->getGoogleADCClientSecret(),
+            biglake_catalog->getGoogleADCRefreshToken()
+        );
+#else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type S3 for Iceberg BigLake catalog");
+#endif
+    }
+
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);

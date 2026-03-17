@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3590
+personal_ws-1.1 en 3591
 AArch
 ABIs
 ACLs
@@ -735,6 +735,7 @@ NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
 NFKC
+NFKCCasefold
 NFKD
 NOAA
 NULLIF

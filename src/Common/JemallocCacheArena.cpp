@@ -38,7 +38,7 @@ unsigned createArena()
 {
     unsigned arena_index = 0;
     size_t arena_index_size = sizeof(arena_index);
-    int err = mallctl("arenas.create", &arena_index, &arena_index_size, nullptr, 0);
+    int err = je_mallctl("arenas.create", &arena_index, &arena_index_size, nullptr, 0);
     if (err)
         throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "JemallocCacheArena: Failed to create jemalloc arena, error: {}", err);
     return arena_index;

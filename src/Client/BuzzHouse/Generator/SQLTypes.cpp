@@ -1907,6 +1907,53 @@ SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint
     return new DecimalType(short_notation, precision, scale);
 }
 
+SQLType * StatementGenerator::randomAggregateType(RandomGenerator & rg, const bool simple, BottomTypeName * tp)
+{
+    uint32_t col_counter2 = 0;
+    std::vector<SQLType *> subtypes;
+    AggregateFunction * af = tp ? tp->mutable_aggr() : nullptr;
+    static const std::vector<SQLFunc> available_aggrs
+        = {SQLFunc::FUNCany,
+           SQLFunc::FUNCanyLast,
+           SQLFunc::FUNCavg,
+           SQLFunc::FUNCcount,
+           SQLFunc::FUNCgroupArrayArray,
+           SQLFunc::FUNCgroupBitAnd,
+           SQLFunc::FUNCgroupBitOr,
+           SQLFunc::FUNCgroupBitXor,
+           SQLFunc::FUNCgroupUniqArrayArray,
+           SQLFunc::FUNCgroupUniqArrayArrayMap,
+           SQLFunc::FUNCmax,
+           SQLFunc::FUNCmaxMap,
+           SQLFunc::FUNCmaxMappedArrays,
+           SQLFunc::FUNCmin,
+           SQLFunc::FUNCminMap,
+           SQLFunc::FUNCminMappedArrays,
+           SQLFunc::FUNCsum,
+           SQLFunc::FUNCsumMap,
+           SQLFunc::FUNCsumMappedArrays,
+           SQLFunc::FUNCsumWithOverflow};
+    SQLFunc aggr = rg.pickRandomly(available_aggrs);
+
+    if (aggr == SQLFunc::FUNCcount && (simple || this->depth >= this->fc.max_depth))
+    {
+        aggr = SQLFunc::FUNCany;
+    }
+    if (aggr != SQLFunc::FUNCcount)
+    {
+        this->depth++;
+        subtypes.emplace_back(
+            this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter2, tp ? af->add_types() : nullptr));
+        this->depth--;
+    }
+    if (tp)
+    {
+        af->set_simple(simple);
+        af->set_aggr(aggr);
+    }
+    return new AggregateFunctionType(simple, aggr, subtypes);
+}
+
 SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_types, const bool low_card, BottomTypeName * tp)
 {
     SQLType * res = nullptr;
@@ -1931,52 +1978,6 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     const uint32_t aggr_type = 10 * static_cast<uint32_t>(!low_card && (allowed_types & allow_aggregate) != 0);
     const uint32_t simple_aggr_type
         = 10 * static_cast<uint32_t>((allowed_types & allow_simple_aggregate) != 0 && this->depth < this->fc.max_depth);
-    auto make_aggr_type = [&](const bool simple)
-    {
-        uint32_t col_counter2 = 0;
-        std::vector<SQLType *> subtypes;
-        AggregateFunction * af = tp ? tp->mutable_aggr() : nullptr;
-        static const std::vector<SQLFunc> available_aggrs
-            = {SQLFunc::FUNCany,
-               SQLFunc::FUNCanyLast,
-               SQLFunc::FUNCavg,
-               SQLFunc::FUNCcount,
-               SQLFunc::FUNCgroupArrayArray,
-               SQLFunc::FUNCgroupBitAnd,
-               SQLFunc::FUNCgroupBitOr,
-               SQLFunc::FUNCgroupBitXor,
-               SQLFunc::FUNCgroupUniqArrayArray,
-               SQLFunc::FUNCgroupUniqArrayArrayMap,
-               SQLFunc::FUNCmax,
-               SQLFunc::FUNCmaxMap,
-               SQLFunc::FUNCmaxMappedArrays,
-               SQLFunc::FUNCmin,
-               SQLFunc::FUNCminMap,
-               SQLFunc::FUNCminMappedArrays,
-               SQLFunc::FUNCsum,
-               SQLFunc::FUNCsumMap,
-               SQLFunc::FUNCsumMappedArrays,
-               SQLFunc::FUNCsumWithOverflow};
-        SQLFunc aggr = rg.pickRandomly(available_aggrs);
-
-        if (aggr == SQLFunc::FUNCcount && (simple || this->depth >= this->fc.max_depth))
-        {
-            aggr = SQLFunc::FUNCany;
-        }
-        if (aggr != SQLFunc::FUNCcount)
-        {
-            this->depth++;
-            subtypes.emplace_back(
-                this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter2, tp ? af->add_types() : nullptr));
-            this->depth--;
-        }
-        if (tp)
-        {
-            af->set_simple(simple);
-            af->set_aggr(aggr);
-        }
-        res = new AggregateFunctionType(simple, aggr, subtypes);
-    };
 
     rg.pickWeighted(
         {{int_type,
@@ -2259,8 +2260,8 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
               }
               res = new GeoType(gt);
           }},
-         {aggr_type, [&] { make_aggr_type(false); }},
-         {simple_aggr_type, [&] { make_aggr_type(true); }}});
+         {aggr_type, [&] { res = randomAggregateType(rg, false, tp); }},
+         {simple_aggr_type, [&] { res = randomAggregateType(rg, true, tp); }}});
 
     return res;
 }

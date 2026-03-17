@@ -7894,7 +7894,10 @@ void StorageReplicatedMergeTree::fetchPartition(
 
     if (fetch_part)
     {
-        String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+        const auto * literal = partition->as<ASTLiteral>();
+        if (!literal)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a string literal for part name, got: {}", partition->formatForErrorMessage());
+        String part_name = literal->value.safeGet<String>();
         auto part_path = findReplicaHavingPart(part_name, from, zookeeper);
 
         if (part_path.empty())
@@ -9446,7 +9449,10 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
     auto zookeeper = getZooKeeperAndAssertNotReadonly();
 
-    String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+    const auto * literal = partition->as<ASTLiteral>();
+    if (!literal)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a string literal for part name, got: {}", partition->formatForErrorMessage());
+    String part_name = literal->value.safeGet<String>();
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
     auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});

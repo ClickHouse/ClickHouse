@@ -311,28 +311,55 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     if lines:
         i = 0
         while i < len(lines):
-            if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
-                i += 1
-                if i >= len(lines):
-                    break
-                # Can have one empty line between header and the category itself.
-                # Filter it out.
-                if not lines[i]:
+            m_cat = re.match(
+                r"(?i)^[#>*_ ]*change\s*log\s*category(?:[^:]*:\s*(.*))?$",
+                lines[i],
+            )
+            m_entry = re.match(
+                r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)(?:[^:]*:\s*(.*))?$",
+                lines[i],
+            )
+            if m_cat:
+                # Check if the category is on the same line
+                inline = (m_cat.group(1) or "").strip()
+                inline = re.sub(r"^[-*_\s]*", "", inline)
+                inline = re.sub(r"[-*_\s]*$", "", inline)
+                if inline:
+                    new_category = inline
+                    i += 1
+                else:
                     i += 1
                     if i >= len(lines):
                         break
-                category = re.sub(r"^[-*\s]*", "", lines[i])
-                i += 1
-            elif re.match(
-                r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
-            ):
-                i += 1
-                # Can have one empty line between header and the entry itself.
-                # Filter it out.
-                if i < len(lines) and not lines[i]:
+                    # Can have one empty line between header and the category itself.
+                    # Filter it out.
+                    if not lines[i]:
+                        i += 1
+                        if i >= len(lines):
+                            break
+                    new_category = re.sub(r"^[-*\s]*", "", lines[i])
                     i += 1
+                # If we already found a category, this is a duplicate — skip
+                # silently (changelog.py doesn't report errors, just picks the first).
+                if not category:
+                    category = new_category
+            elif m_entry:
+                # Check if the entry is on the same line
+                inline = (m_entry.group(2) or "").strip()
+                # Strip markdown formatting markers (e.g. "**Changelog entry:**" yields "**")
+                inline = re.sub(r"^[-*_\s]*", "", inline)
+                inline = re.sub(r"[-*_\s]*$", "", inline)
+                if inline:
+                    entry_lines = [inline]
+                    i += 1
+                else:
+                    i += 1
+                    # Can have one empty line between header and the entry itself.
+                    # Filter it out.
+                    if i < len(lines) and not lines[i]:
+                        i += 1
+                    entry_lines = []
                 # All following lines until empty one are the changelog entry.
-                entry_lines = []
                 while i < len(lines) and lines[i]:
                     entry_lines.append(lines[i])
                     i += 1
