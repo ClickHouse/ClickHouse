@@ -586,13 +586,13 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage query_result_cache_usage, bool pulling_pipeline)
+QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
 {
-    if (query_result_cache_usage == QueryResultCacheUsage::Write || query_result_cache_usage == QueryResultCacheUsage::Read)
-        /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
-        /// prevent partial/garbage results in case of exceptions during query execution.
-        /// Should call this even if QueryResultCacheUsage::Read, because QueryResultCache may be used for write in subqueries.
-        query_pipeline.finalizeWriteInQueryResultCache();
+    /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
+    /// prevent partial/garbage results in case of exceptions during query execution.
+    /// Always called (it's a no-op if no cache writers exist in the pipeline), because subqueries may have
+    /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
+    query_pipeline.finalizeWriteInQueryResultCache();
 
     std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
@@ -1807,7 +1807,6 @@ static BlockIO executeQueryImpl(
                             /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
                             if (settings[Setting::enable_reads_from_query_cache])
                                 result_details.query_cache_entry_expires_at = expires_at;
-                        }
                     }
                 }
             }

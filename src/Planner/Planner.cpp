@@ -1844,11 +1844,22 @@ void Planner::buildPlanForQueryNode()
     bool can_use_query_result_cache = query_context->getCanUseQueryResultCache();
     ASTPtr ast = select_query_info.query;
 
-    /// Determine if this subquery should use the query cache:
+    /// Determine if this subquery should use the query cache.
+    /// Only applies when this is actually a subquery (the outer query's caching is handled by `executeQuery`).
+    /// Rules:
     /// 1. Explicit SETTINGS `use_query_cache` on this node wins
     /// 2. `query_cache_for_subqueries` propagates from outer query
     /// 3. By default, no propagation
-    bool should_cache = shouldUseQueryCacheForSubquery(query_node, can_use_query_result_cache, settings);
+    bool should_cache = select_query_options.is_subquery
+        && shouldUseQueryCacheForSubquery(query_node, can_use_query_result_cache, settings);
+
+    /// For explicit per-subquery opt-in (SETTINGS use_query_cache = true on the subquery),
+    /// ensure the context flag is set so that `checkCanWriteQueryResultCache` works.
+    if (should_cache && !can_use_query_result_cache)
+    {
+        planner_context->getMutableQueryContext()->setCanUseQueryResultCache(true);
+        can_use_query_result_cache = true;
+    }
 
     /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
     /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
@@ -2354,11 +2365,14 @@ void Planner::buildPlanForQueryNode()
     /// then add a step which stores the result in the query cache.
     if (should_cache && checkCanWriteQueryResultCache(ast, query_context))
     {
+        auto created_at = std::chrono::system_clock::now();
+        auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+
         QueryResultCache::Key key(
             ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
             query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
             settings[Setting::query_cache_share_between_users],
-            std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
+            created_at, expires_at,
             settings[Setting::query_cache_compress_entries],
             /* is_subquery = */ true);
 

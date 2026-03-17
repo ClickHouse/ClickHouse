@@ -22,7 +22,7 @@ static ITransformingStep::Traits getTraits()
 }
 
 StreamInQueryResultCacheStep::StreamInQueryResultCacheStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , query_result_cache_writer(query_result_cache_writer_)
@@ -32,7 +32,7 @@ StreamInQueryResultCacheStep::StreamInQueryResultCacheStep(
 void StreamInQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform(
-        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             using ChunkType = QueryResultCacheWriter::ChunkType;
             using StreamType = QueryPipelineBuilder::StreamType;
@@ -58,7 +58,7 @@ void StreamInQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipe
                 }
             }
 
-            return std::make_shared<StreamInQueryResultCacheTransform>(header, query_result_cache_writer, chunk_type);
+            return std::make_shared<StreamInQueryResultCacheTransform>(*header, query_result_cache_writer, chunk_type);
         });
 }
 
