@@ -121,7 +121,6 @@
 #include <Storages/System/StorageSystemWasmModules.h>
 
 #include <Interpreters/Context.h>
-#include <Core/ServerSettings.h>
 #include <Server/ConnectionRegistry.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
@@ -227,7 +226,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attachNoDescription<StorageSystemProjectionPartsColumns>(context, system_database, "projection_parts_columns", "Contains a list of columns of all currently existing projection parts of all MergeTree tables. Each column is represented by a single row.");
     attachNoDescription<StorageSystemDisks>(context, system_database, "disks", "Contains information about disks defined in the server configuration.");
     attachNoDescription<StorageSystemStoragePolicies>(context, system_database, "storage_policies", "Contains information about storage policies and volumes defined in the server configuration.");
-    if (context->getServerSettings()[ServerSetting::collect_connection_metrics])
+    if (context->getConfigRef().getBool("collect_connection_metrics", false))
     {
         ConnectionRegistry::instance().enable();
         attach<StorageSystemConnections>(context, system_database, "connections", "Contains a list of currently active client connections to the server (TCP and HTTP). Requires the collect_connection_metrics server setting to be enabled.");
