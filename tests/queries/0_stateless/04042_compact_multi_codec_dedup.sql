@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Regression test for PR #97522: non-deterministic `uncompressed_hash` in
 -- compact `MergeTree` parts with multiple distinct compression codecs.
 --
