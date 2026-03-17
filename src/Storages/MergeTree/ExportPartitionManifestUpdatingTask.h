@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_set>
 #include <Storages/System/StorageSystemReplicatedPartitionExports.h>
+#include <Storages/ExportReplicatedMergeTreePartitionTaskEntry.h>
 namespace DB
 {
 
@@ -31,6 +32,7 @@ private:
 
     void addTask(
         const ExportReplicatedMergeTreePartitionManifest & metadata,
+        ExportReplicatedMergeTreePartitionTaskEntry::Status status,
         const std::string & key,
         auto & entries_by_key
     );
