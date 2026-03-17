@@ -1122,10 +1122,10 @@ private:
             ALPUtils<T>::decompressUnencodedBlock(source, source_end, dest, dest_end, float_count);
             return;
         }
-        if (unlikely(left_bits > ALP_RD_CUTTING_LIMIT))
+        if (unlikely(left_bits == 0 || left_bits > ALP_RD_CUTTING_LIMIT))
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                "Cannot decompress ALP(RD)-encoded data, invalid left bit-width: {}, max allowed: {}",
-                static_cast<UInt32>(left_bits), static_cast<UInt32>(ALP_RD_CUTTING_LIMIT));
+                "Cannot decompress ALP(RD)-encoded data, invalid left bit-width: {}, allowed: {}-{}",
+                static_cast<UInt32>(left_bits), 1, static_cast<UInt32>(ALP_RD_CUTTING_LIMIT));
 
         if (unlikely(source + (ALP_RD_BLOCK_HEADER_SIZE - ALP_RD_UNENCODED_BLOCK_HEADER_SIZE) > source_end))
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
@@ -1205,7 +1205,7 @@ private:
 
             if (unlikely(exception_index >= float_count))
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                    "Cannot decompress ALP-encoded data, invalid exception index, index: {}, float count: {}",
+                    "Cannot decompress ALP(RD)-encoded data, invalid exception index, index: {}, float count: {}",
                     exception_index, float_count);
 
             const UInt32 dest_offset = exception_index * sizeof(T);

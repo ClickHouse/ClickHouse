@@ -1795,7 +1795,7 @@ TEST_F(ALPTest, CompressProducesCorrectHeader)
 TEST_F(ALPTest, DecompressMalformedInputWithTruncatedHeader)
 {
     const std::vector<UInt8> source = {
-        0x01, // meta byte
+        0x01, // meta byte (version=1, variant=STD)
         0x08  // float width
     };
     verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, data has wrong header");
@@ -1804,7 +1804,7 @@ TEST_F(ALPTest, DecompressMalformedInputWithTruncatedHeader)
 TEST_F(ALPTest, DecompressMalformedInputWithInvalidFloatWidth)
 {
     const std::vector<UInt8> source = {
-        0x01,       // meta byte
+        0x01,       // meta byte (version=1, variant=STD)
         0x01,       // float width (invalid, should be 4 or 8)
         0x00, 0x04  // block float count
     };
@@ -1814,7 +1814,7 @@ TEST_F(ALPTest, DecompressMalformedInputWithInvalidFloatWidth)
 TEST_F(ALPTest, DecompressMalformedInputWithInvalidBlockFloatCount)
 {
     const std::vector<UInt8> source = {
-        0x01,       // meta byte
+        0x01,       // meta byte (version=1, variant=STD)
         0x08,       // float width
         0x00, 0x08  // block float count equal to 2048 (invalid, should be 1024)
     };
@@ -1824,7 +1824,7 @@ TEST_F(ALPTest, DecompressMalformedInputWithInvalidBlockFloatCount)
 TEST_F(ALPTest, DecompressMalformedInputWithTruncatedBlockHeader)
 {
     const std::vector<UInt8> source = {
-        0x01,       // meta byte
+        0x01,       // meta byte (version=1, variant=STD)
         0x08,       // float width
         0x00, 0x04, // block float count
         0x02,       // exponent
@@ -1835,7 +1835,7 @@ TEST_F(ALPTest, DecompressMalformedInputWithTruncatedBlockHeader)
 TEST_F(ALPTest, DecompressMalformedInputWithInvalidExponent)
 {
     const std::vector<UInt8> source = {
-        0x01,       // meta byte
+        0x01,       // meta byte (version=1, variant=STD)
         0x08,       // float width
         0x00, 0x04, // block float count
         0x7F,       // exponent
@@ -1851,7 +1851,7 @@ TEST_F(ALPTest, DecompressMalformedInputWithInvalidExponent)
 TEST_F(ALPTest, DecompressMalformedInputWithInvalidFraction)
 {
     const std::vector<UInt8> source = {
-        0x01,       // meta byte
+        0x01,       // meta byte (version=1, variant=STD)
         0x08,       // float width
         0x00, 0x04, // block float count
         0x00,       // exponent
@@ -1867,7 +1867,7 @@ TEST_F(ALPTest, DecompressMalformedInputWithInvalidFraction)
 TEST_F(ALPTest, DecompressMalformedInputWithTruncatedBlockData)
 {
     const std::vector<UInt8> source = {
-        0x01,       // meta byte
+        0x01,       // meta byte (version=1, variant=STD)
         0x08,       // float width
         0x00, 0x04, // block float count
         0x02,       // exponent
@@ -1885,7 +1885,7 @@ TEST_F(ALPTest, DecompressMalformedInputWithTruncatedBlockData)
 TEST_F(ALPTest, DecompressMalformedInputWithInvalidExceptionsCount)
 {
     const std::vector<UInt8> source = {
-        0x01,       // meta byte
+        0x01,       // meta byte (version=1, variant=STD)
         0x08,       // float width
         0x00, 0x04, // block float count
         0x02,       // exponent
@@ -1911,7 +1911,7 @@ TEST_F(ALPTest, DecompressMalformedInputWithInvalidExceptionsCount)
 TEST_F(ALPTest, DecompressMalformedInputWithInvalidExceptionIndex)
 {
     const std::vector<UInt8> source = {
-        0x01,       // meta byte
+        0x01,       // meta byte (version=1, variant=STD)
         0x08,       // float width
         0x00, 0x04, // block float count
         0x02,       // exponent
@@ -1934,6 +1934,143 @@ TEST_F(ALPTest, DecompressMalformedInputWithInvalidExceptionIndex)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // exception value
     };
     verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid exception index, index: 1024, float count: 1024");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputRDWithTruncatedBlock)
+{
+    const std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04  // block float count = 1024
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, stream size mismatch");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidLeftBitWidthZero)
+{
+    const std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04, // block float count = 1024
+        0x00        // left_bits = 0 (invalid, must be 1–16)
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid left bit-width: 0, allowed: 1-16");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidLeftBitWidthTooLarge)
+{
+    const std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04, // block float count = 1024
+        0x11        // left_bits = 17 (invalid, max 16)
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid left bit-width: 17, allowed: 1-16");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputRDWithTruncatedBlockHeaderEncoded)
+{
+    const std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04, // block float count = 1024
+        0x01        // left_bits = 1 (valid), but remaining header is missing
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, incomplete block header (encoded)");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionarySize)
+{
+    const std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04, // block float count = 1024
+        0x01,       // left_bits = 1
+        0x09,       // dict_size = 9 (invalid, max 8)
+        0x00, 0x00  // exception count = 0
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid dictionary size: 9, max allowed: 8");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputRDWithTruncatedBlockData)
+{
+    const std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04, // block float count = 1024
+        0x01,       // left_bits = 1
+        0x01,       // dict_size = 1
+        0x00, 0x00, // exception count = 0
+        // Dictionary entry (2 bytes) but missing bitpacked right data
+        0x00, 0x00,
+        // Only 4 bytes of right data (need 8064)
+        0xFF, 0xFF, 0xFF, 0xFF
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, incomplete block payload, available size: 6, left bit-width: 1, dictionary size: 1, exceptions: 0");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidExceptionsCount)
+{
+    std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04, // block float count = 1024
+        0x01,       // left_bits = 1
+        0x01,       // dict_size = 1
+        0x01, 0x00, // exception count = 1
+        // Dictionary entry (2 bytes)
+        0x00, 0x00
+    };
+    // Append 8064 zero bytes for bitpacked right data (bitpacked left is 0 bytes)
+    source.resize(source.size() + 8064, 0x00);
+
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, incomplete block payload, available size: 8066, left bit-width: 1, dictionary size: 1, exceptions: 1");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionaryIndex)
+{
+    std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04, // block float count = 1024
+        0x01,       // left_bits = 1
+        0x03,       // dict_size = 3
+        0x00, 0x00, // exception count = 0
+        // Dictionary entries: 3 × 2 bytes = 6 bytes
+        0x00, 0x00,
+        0x01, 0x00,
+        0x02, 0x00
+    };
+    // Append 256 bytes of 0xFF for bitpacked left (all indices decode to 3, invalid)
+    source.resize(source.size() + 256, 0xFF);
+    // Append 8064 zero bytes for bitpacked right
+    source.resize(source.size() + 8064, 0x00);
+
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid dictionary index: 3, dict size: 3");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidExceptionIndex)
+{
+    std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04, // block float count = 1024
+        0x01,       // left_bits = 1
+        0x01,       // dict_size = 1
+        0x01, 0x00, // exception count = 1
+        // Dictionary entry (2 bytes)
+        0x00, 0x00
+    };
+    // Append 8064 zero bytes for bitpacked right (bitpacked left is 0 bytes)
+    source.resize(source.size() + 8064, 0x00);
+    // Exception: index=1024 (0x0400 LE) + 8 bytes value
+    const std::vector<UInt8> exception_data = {
+        0x00, 0x04,                                     // exception index 1024 (invalid, >= float_count)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // exception value
+    };
+    source.insert(source.end(), exception_data.begin(), exception_data.end());
+
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid exception index, index: 1024, float count: 1024");
 }
 
 }
