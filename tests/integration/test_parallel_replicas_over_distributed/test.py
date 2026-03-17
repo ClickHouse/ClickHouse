@@ -156,3 +156,44 @@ def test_parallel_replicas_over_distributed(
         )
         == expected_result
     )
+
+
+@pytest.mark.parametrize(
+    "cluster,expected_sum",
+    [
+        # 1 shard, 4 replicas: one copy of rows 0..9
+        pytest.param("test_single_shard_multiple_replicas", 45),
+        # 2 shards, 3 replicas each: each shard has the same rows 0..9
+        pytest.param("test_multiple_shards_multiple_replicas", 90),
+    ],
+)
+def test_parallel_replicas_remote_with_cluster(start_cluster, cluster, expected_sum):
+    # Test that remote() with parallel_replicas_for_non_replicated_merge_tree produces
+    # correct results.  In stateless tests this is untestable for multi-shard clusters
+    # because the second shard uses addresses that cannot be identified as local,
+    # causing INCONSISTENT_CLUSTER_DEFINITION.
+    table_name = "tt_remote"
+
+    # All nodes get the same data so that parallel replicas can read non-overlapping
+    # ranges across replicas within each shard and still sum to 0+1+...+9 = 45 per shard.
+    for node in nodes:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+        node.query(
+            f"CREATE TABLE {table_name} (n UInt64) ENGINE=MergeTree() ORDER BY tuple()"
+        )
+        node.query(f"INSERT INTO {table_name} SELECT * FROM numbers(10)")
+
+    result = nodes[0].query(
+        f"SELECT sum(n) FROM remote('{cluster}', currentDatabase(), {table_name})",
+        settings={
+            "enable_parallel_replicas": 1,
+            "max_parallel_replicas": 3,
+            "parallel_replicas_for_non_replicated_merge_tree": 1,
+            "serialize_query_plan": 0,
+            "automatic_parallel_replicas_mode": 0,
+        },
+    )
+    assert result == f"{expected_sum}\n"
+
+    for node in nodes:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
