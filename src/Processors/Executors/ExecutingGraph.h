@@ -23,7 +23,7 @@ public:
     {
         Edge(uint64_t to_, bool backward_,
              uint64_t input_port_number_, uint64_t output_port_number_,
-             std::vector<void *> * update_list)
+             VectorWithMemoryTracking<void *> * update_list)
             : to(to_), backward(backward_)
             , input_port_number(input_port_number_), output_port_number(output_port_number_)
         {

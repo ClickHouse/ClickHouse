@@ -3,8 +3,8 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <vector>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/Defines.h>
@@ -31,7 +31,7 @@ class Port
 public:
     struct UpdateInfo
     {
-        using UpdateList = std::vector<void *>;
+        using UpdateList = VectorWithMemoryTracking<void *>;
 
         UpdateList * update_list = nullptr;
         void * id = nullptr;
