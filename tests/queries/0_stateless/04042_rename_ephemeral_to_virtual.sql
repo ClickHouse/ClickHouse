@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- PR #99549 added validation that `EPHEMERAL` columns cannot be named the same
 -- as virtual columns. The PR's own test (`04040`) covers `CREATE TABLE` and
 -- `ADD COLUMN`/`MODIFY COLUMN`; the `RENAME COLUMN` path at
