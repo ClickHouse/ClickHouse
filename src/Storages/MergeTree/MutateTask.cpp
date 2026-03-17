@@ -91,6 +91,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
+    extern const char mt_mutate_task_pause_in_execute[];
 }
 
 namespace ErrorCodes
@@ -2471,6 +2472,7 @@ bool MutateTask::execute()
         }
         case State::NEED_EXECUTE:
         {
+            FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_in_execute);
             ctx->checkOperationIsNotCanceled();
 
             if (task->executeStep())
