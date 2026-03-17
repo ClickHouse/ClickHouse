@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, long
+# Tags: no-parallel
 # Tag no-parallel: Fails due to failpoint intersection
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -20,8 +20,8 @@ function wait_for_mutation_done_or_killed()
     for _ in {1..300}
     do
         sleep 0.3
-        res=$(${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'")
-        if [[ $res -eq 1 || $res -eq "" ]]; then
+        res=$(${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id' SETTINGS empty_result_for_aggregation_by_empty_set = 1")
+        if [[ -z "$res" || "$res" -eq 1 ]]; then
             return
         fi
     done
