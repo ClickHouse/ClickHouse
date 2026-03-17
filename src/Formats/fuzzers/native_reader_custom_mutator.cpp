@@ -13,8 +13,9 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <random>
 #include <string_view>
+
+#include <pcg_random.hpp>
 
 /// Provided by libFuzzer — invokes the built-in mutation engine.
 extern "C" size_t LLVMFuzzerMutate(uint8_t * Data, size_t Size, size_t MaxSize);
@@ -89,7 +90,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t * Data, size_t Size, size_t Ma
     if (MaxSize < 2)
         return 0;
 
-    std::mt19937 rng(Seed);
+    pcg64_fast rng(Seed);
 
     /// Preserve the mode byte across all mutation strategies.
     uint8_t mode_byte = (Size >= 1) ? Data[0] : static_cast<uint8_t>(rng() & 1u);
@@ -162,7 +163,7 @@ extern "C" size_t LLVMFuzzerCustomCrossOver(
     if (MaxOutSize < 2 || Size1 < 1 || Size2 < 1)
         return 0;
 
-    std::mt19937 rng(Seed);
+    pcg64_fast rng(Seed);
 
     /// Pick mode byte from one of the two parents.
     Out[0] = (rng() & 1u) ? Data1[0] : Data2[0];
