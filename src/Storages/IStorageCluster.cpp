@@ -148,7 +148,7 @@ void IStorageCluster::read(
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query_tree, context, SelectQueryOptions(processed_stage));
     }
     else
     {
