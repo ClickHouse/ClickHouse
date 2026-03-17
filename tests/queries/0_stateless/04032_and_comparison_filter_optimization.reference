@@ -1,0 +1,2276 @@
+eq_eq_same
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+eq_eq_diff
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+eq_eq_flip
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+eq_eq_cross_same
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+eq_eq_cross_diff
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+eq_eq_float_same
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+eq_eq_float_lossy
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: Float64_3.5, constant_value_type: Float64
+eq_lt_prune
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+eq_lt_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+eq_gt_prune
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+eq_gt_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+eq_le_prune
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+eq_ge_prune
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+eq_le_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+eq_ge_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+eq_lt_cross_prune
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: Float64_3.5, constant_value_type: Float64
+eq_lt_cross_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: Float64_2.5, constant_value_type: Float64
+eq_ne_prune
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+eq_ne_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+ne_lt_prune
+1	10	1.5	a	x	2024-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: less, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+ne_gt_prune
+5	50	5.5	e	z	2025-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+ne_le_keep
+1	10	1.5	a	x	2024-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: notEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
+ne_ge_keep
+5	50	5.5	e	z	2025-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: notEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
+ne_ne_same
+1	10	1.5	a	x	2024-01-01 00:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: notEquals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+ne_ne_diff
+1	10	1.5	a	x	2024-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: notEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: notEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_5, constant_value_type: UInt8
+lt_lt_tighter
+1	10	1.5	a	x	2024-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: less, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+le_le_tighter
+1	10	1.5	a	x	2024-01-01 00:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+lt_le_same_val
+1	10	1.5	a	x	2024-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: less, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+le_lt_same_val
+1	10	1.5	a	x	2024-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: less, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+gt_gt_tighter
+5	50	5.5	e	z	2025-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+ge_ge_tighter
+3	30	3	c	y	2024-06-15 12:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+gt_ge_same_val
+5	50	5.5	e	z	2025-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+lt_gt_valid
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+lt_gt_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+le_ge_point
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
+lt_ge_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+le_gt_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+lt_gt_conflict_same
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+lt_gt_cross
+3	30	3	c	y	2024-06-15 12:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: Float64_5.5, constant_value_type: Float64
+flip_less
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                CONSTANT id: 13, constant_value: UInt64_5, constant_value_type: UInt8
+                COLUMN id: 14, column_name: i, result_type: Int32, source_id: 3
+          FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+flip_equals_and_range
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          CONSTANT id: 11, constant_value: UInt64_3, constant_value_type: UInt8
+          COLUMN id: 12, column_name: i, result_type: Int32, source_id: 3
+flip_both_sides
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                CONSTANT id: 13, constant_value: UInt64_5, constant_value_type: UInt8
+                COLUMN id: 14, column_name: i, result_type: Int32, source_id: 3
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                CONSTANT id: 17, constant_value: UInt64_1, constant_value_type: UInt8
+                COLUMN id: 18, column_name: i, result_type: Int32, source_id: 3
+multi_expr
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 4
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 20, nodes: 2
+                COLUMN id: 21, column_name: f, result_type: Float64, source_id: 3
+                CONSTANT id: 22, constant_value: Float64_2, constant_value_type: Float64
+          FUNCTION id: 23, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 24, nodes: 2
+                COLUMN id: 25, column_name: f, result_type: Float64, source_id: 3
+                CONSTANT id: 26, constant_value: Float64_6, constant_value_type: Float64
+multi_expr_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+eq_range_prune
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+range_tighten
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
+three_way_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+lc_eq_eq
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: _CAST, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: LowCardinality(UInt8)
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: lc, result_type: LowCardinality(String), source_id: 3
+                CONSTANT id: 14, constant_value: \'y\', constant_value_type: String
+          CONSTANT id: 15, constant_value: \'UInt8\', constant_value_type: String
+lc_eq_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+str_eq_eq
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: s, result_type: String, source_id: 3
+          CONSTANT id: 12, constant_value: \'c\', constant_value_type: String
+str_eq_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+transitive_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+transitive_no_redundant
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 3
+          FUNCTION id: 11, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: u, result_type: UInt8, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 19, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 20, nodes: 2
+                COLUMN id: 21, column_name: u, result_type: UInt8, source_id: 3
+                CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt8
+transitive_infer
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 3
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                COLUMN id: 14, column_name: u, result_type: UInt8, source_id: 3
+          FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: u, result_type: UInt8, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_2, constant_value_type: UInt8
+          FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 20, nodes: 2
+                COLUMN id: 21, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 22, constant_value: UInt64_2, constant_value_type: UInt8
+transitive_eq_chain
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 3
+          FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                COLUMN id: 14, column_name: u, result_type: UInt8, source_id: 3
+          FUNCTION id: 15, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: u, result_type: UInt8, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 19, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 20, nodes: 2
+                COLUMN id: 21, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 22, constant_value: UInt64_3, constant_value_type: UInt8
+mixed_operands
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 3
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 19, function_name: notEmpty, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 20, nodes: 1
+                COLUMN id: 21, column_name: s, result_type: String, source_id: 3
+ne_chain_not_in
+5	50	5.5	e	z	2025-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: notIn, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: Tuple_(UInt64_1, UInt64_3, UInt64_7), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+ne_chain_dedup
+5	50	5.5	e	z	2025-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: notIn, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: Tuple_(UInt64_1, UInt64_3), constant_value_type: Tuple(UInt8, UInt8)
+single
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+non_const
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                COLUMN id: 14, column_name: u, result_type: UInt8, source_id: 3
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                COLUMN id: 18, column_name: u, result_type: UInt8, source_id: 3
+null_safe
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: Nullable(UInt8)
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
+          CONSTANT id: 15, constant_value: NULL, constant_value_type: Nullable(Nothing)
+            EXPRESSION
+              FUNCTION id: 16, function_name: greater, function_type: ordinary, result_type: Nullable(Nothing)
+                ARGUMENTS
+                  LIST id: 17, nodes: 2
+                    COLUMN id: 18, column_name: i, result_type: Int32, source_id: 3
+                    CONSTANT id: 19, constant_value: NULL, constant_value_type: Nullable(Nothing)
+int_str_eq_same
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: i, result_type: Int32, source_id: 3
+          CONSTANT id: 12, constant_value: \'3\', constant_value_type: String
+int_str_eq_diff
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+int_str_range
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: \'1\', constant_value_type: String
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: \'5\', constant_value_type: String
+float_int_eq_same
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: f, result_type: Float64, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+float_int_eq_diff
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+float_int_range
+1	10	1.5	a	x	2024-01-01 00:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: f, result_type: Float64, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: f, result_type: Float64, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_5, constant_value_type: UInt8
+float_int_eq_float_lt
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: f, result_type: Float64, source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+float_str_eq_same
+1	10	1.5	a	x	2024-01-01 00:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: f, result_type: Float64, source_id: 3
+          CONSTANT id: 12, constant_value: \'1.5\', constant_value_type: String
+float_str_and_int
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: f, result_type: Float64, source_id: 3
+          CONSTANT id: 12, constant_value: \'3.0\', constant_value_type: String
+float_str_eq_diff
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+float_str_range
+1	10	1.5	a	x	2024-01-01 00:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: f, result_type: Float64, source_id: 3
+                CONSTANT id: 14, constant_value: \'1\', constant_value_type: String
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: f, result_type: Float64, source_id: 3
+                CONSTANT id: 18, constant_value: \'5\', constant_value_type: String
+dt_str_eq_same
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+          CONSTANT id: 12, constant_value: \'2024-06-15 12:00:00\', constant_value_type: String
+dt_str_eq_diff
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+dt_str_range
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+                CONSTANT id: 14, constant_value: \'2024-01-01 00:00:00\', constant_value_type: String
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+                CONSTANT id: 18, constant_value: \'2025-01-01 00:00:00\', constant_value_type: String
+dt_str_eq_gt_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+dt_str_eq_lt_prune
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+          CONSTANT id: 12, constant_value: \'2024-06-15 12:00:00\', constant_value_type: String
+dt_int_eq_prune
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+          CONSTANT id: 12, constant_value: UInt64_1718452800, constant_value_type: UInt32
+dt_int_eq_conflict
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+dt_int_range
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_1704067200, constant_value_type: UInt32
+          FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_1735689600, constant_value_type: UInt32
+int_mixed_three
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: i, result_type: Int32, source_id: 3
+                CONSTANT id: 18, constant_value: Float64_1.5, constant_value_type: Float64
+float_mixed_three
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: f, result_type: Float64, source_id: 3
+          CONSTANT id: 12, constant_value: \'3.0\', constant_value_type: String
+dt_mixed
+3	30	3	c	y	2024-06-15 12:00:00
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int32
+    u UInt8
+    f Float64
+    s String
+    lc LowCardinality(String)
+    dt DateTime(\'UTC\')
+  PROJECTION
+    LIST id: 1, nodes: 6
+      COLUMN id: 2, column_name: i, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: u, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: f, result_type: Float64, source_id: 3
+      COLUMN id: 6, column_name: s, result_type: String, source_id: 3
+      COLUMN id: 7, column_name: lc, result_type: LowCardinality(String), source_id: 3
+      COLUMN id: 8, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.04032_t
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          COLUMN id: 11, column_name: dt, result_type: DateTime(\'UTC\'), source_id: 3
+          CONSTANT id: 12, constant_value: \'2024-06-15 12:00:00\', constant_value_type: String
