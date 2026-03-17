@@ -31,7 +31,11 @@ class FunctionH3HexRing : public IFunction
 public:
     static constexpr auto name = "h3HexRing";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3HexRing>(); }
+    H3Validator validator;
+
+    explicit FunctionH3HexRing(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3HexRing>(context); }
 
     std::string getName() const override { return name; }
 
@@ -98,6 +102,7 @@ public:
         UInt64 current_offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            const H3Index origin_hindex = data_hindex[row];
             const int k = data_k[row];
 
             /// The result size is 6*k. We should not allow to generate too large arrays nevertheless.
@@ -107,6 +112,12 @@ public:
             /// Check is already made while fetching the argument for k (to determine if it's an unsigned integer). Nevertheless, it's checked again here.
             if (k < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
+
+            if (!validator.validateCell(origin_hindex))
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
 
             const auto vec_size = (k == 0 ? 1 : 6 * k);  /// Required size according to comments in gridRingUnsafe() source code
 
@@ -124,15 +135,14 @@ public:
         {
             const H3Index origin_hindex = data_hindex[row];
             const int k = data_k[row];
-
-            validateH3Cell(origin_hindex);
+            const auto size = dst_offsets[row] - current_offset;
+            if (size == 0)
+                continue;
 
             H3Error err = gridRingUnsafe(origin_hindex, k, ptr + current_offset);
 
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect arguments h3Index: {}, k: {}, error: {}", origin_hindex, k, err);
-
-            const auto size = dst_offsets[row] - current_offset;
             current_offset += size;
         }
 

@@ -311,6 +311,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
 
     setThrowOnInvalidReplicatedAccessEntities(config_.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", false));
+    setConfigDefinedProfilesForSQLUsersDisallowed(config_.getBool("access_control_improvements.disallow_config_defined_profiles_for_sql_defined_users", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 

@@ -2,6 +2,7 @@
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Access/UsersConfigAccessStorage.h>
 #include <Common/quoteString.h>
 
 
@@ -9,6 +10,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int THERE_IS_NO_PROFILE;
 }
 
@@ -110,7 +112,22 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
             i = enabled_settings.erase(i);
         else
         {
-            mergeSettingsAndConstraintsFor(*enabled);
+            try
+            {
+                mergeSettingsAndConstraintsFor(*enabled);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::ACCESS_DENIED)
+                {
+                    /// A config-defined profile is now blocked for this SQL user
+                    /// (disallow_config_defined_profiles_for_sql_defined_users was enabled).
+                    /// Keep the existing settings for this session and continue with other entries.
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+                else
+                    throw;
+            }
             ++i;
         }
     }
@@ -137,6 +154,56 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
 
     merged_settings.merge(enabled.params.settings_from_enabled_roles, /* normalize= */ false);
     merged_settings.merge(enabled.params.settings_from_user, /* normalize= */ false);
+
+    if (access_control.isConfigDefinedProfilesForSQLUsersDisallowed())
+    {
+        auto user_storage = access_control.findStorage(enabled.params.user_id);
+        bool is_sql_defined_user = user_storage
+            && strcmp(user_storage->getStorageType(), UsersConfigAccessStorage::STORAGE_TYPE) != 0;
+
+        if (is_sql_defined_user)
+        {
+            /// Recursively check profiles from user and role settings, including
+            /// indirect inheritance (e.g. SQL profile -> config profile).
+            /// Default profile and TO-clause profiles are exempt (admin-configured).
+            boost::container::flat_set<UUID> visited;
+            std::vector<UUID> stack;
+
+            auto collect_profile_ids = [](const SettingsProfileElements & elements, std::vector<UUID> & out)
+            {
+                for (const auto & elem : elements)
+                    if (elem.parent_profile)
+                        out.push_back(*elem.parent_profile);
+            };
+            collect_profile_ids(enabled.params.settings_from_user, stack);
+            collect_profile_ids(enabled.params.settings_from_enabled_roles, stack);
+
+            while (!stack.empty())
+            {
+                auto profile_id = stack.back();
+                stack.pop_back();
+                if (!visited.insert(profile_id).second)
+                    continue;
+                /// The server's default profile is always allowed.
+                if (default_profile_id && profile_id == *default_profile_id)
+                    continue;
+                auto profile_storage = access_control.findStorage(profile_id);
+                if (profile_storage
+                    && strcmp(profile_storage->getStorageType(), UsersConfigAccessStorage::STORAGE_TYPE) == 0)
+                {
+                    auto profile_name = access_control.tryReadName(profile_id);
+                    throw Exception(ErrorCodes::ACCESS_DENIED,
+                        "Cannot apply config-defined profile '{}' to SQL-defined user. "
+                        "Server setting `disallow_config_defined_profiles_for_sql_defined_users` is enabled",
+                        profile_name.value_or("unknown"));
+                }
+                /// Walk into child profiles.
+                auto it = all_profiles.find(profile_id);
+                if (it != all_profiles.end())
+                    collect_profile_ids(it->second->elements, stack);
+            }
+        }
+    }
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
 

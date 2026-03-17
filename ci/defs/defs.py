@@ -327,6 +327,8 @@ class JobNames:
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
     PR_BODY = "PR formatter"
+    CODE_REVIEW = "Code Review"
+    CI_RESULTS_REVIEW = "CI Results Review"
     FAST_TEST = "Fast test"
     SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
@@ -375,9 +377,6 @@ class ArtifactNames:
         "CH_AMD_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
     )
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
-    LLVM_COVERAGE_HTML_REPORT = (
-        "LLVM_COVERAGE_HTML_REPORT"  # .tar.gz file with html report
-    )
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
     CH_AMD_ASAN = "CH_AMD_ASAN"
@@ -436,18 +435,29 @@ class ArtifactNames:
 LLVM_FT_NUM_BATCHES = 3
 LLVM_IT_NUM_BATCHES = 5
 LLVM_FT_ARTIFACTS_LIST = [
-    # default.profraw files for 3 batches from Stateless(Functional) tests
+    # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
     for total_batches in (LLVM_FT_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
 ]
 
+LLVM_FT_ARTIFACTS_LIST += [
+    # default.profdata files for 6 jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential",
+]
+
 LLVM_IT_ARTIFACTS_LIST = [
-    # default.profraw files for 5 batches from Integration tests
+    # default.profdata files for 5 batches from Integration tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
     for total_batches in (LLVM_IT_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
 ]
+
 LLVM_ARTIFACTS_LIST = (
     LLVM_FT_ARTIFACTS_LIST + LLVM_IT_ARTIFACTS_LIST + [ArtifactNames.LLVM_COVERAGE_FILE]
 )
@@ -507,11 +517,6 @@ class ArtifactConfigs:
         ],
     ).parametrize(names=LLVM_ARTIFACTS_LIST)
 
-    llvm_coverage_html_report = Artifact.Config(
-        name=ArtifactNames.LLVM_COVERAGE_HTML_REPORT,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
-    )
     llvm_coverage_info_file = Artifact.Config(
         name=ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         type=Artifact.Type.S3,
