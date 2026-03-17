@@ -339,7 +339,7 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
 
         return convertFieldToTypeStrict(constant_node->getValue(), *from_type, *target_type);
     }
-    catch (...)
+    catch (...) /// Ok: conversion failure means we can't optimize, not an error
     {
         return std::nullopt;
     }
@@ -451,7 +451,7 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
         chassert(isGreaterThanCompare(lf) && isLessThanCompare(rf));
         return invertComparisonResult(compareComparisonFilters(right, left));
     }
-    catch (...)
+    catch (...) /// Ok: comparison failure means we can't optimize, not an error
     {
         return ValueComparisonResult::NONE;
     }
@@ -472,20 +472,20 @@ static AddComparisonFilterResult addComparisonFilter(
     }
 
     auto & info_list = it->second;
-    for (size_t i = 0; i < info_list.size(); )
+    for (size_t i = 0; i < info_list.size(); ++i)
     {
         auto result = compareComparisonFilters(info_list[i], new_filter);
         switch (result)
         {
         case ValueComparisonResult::PRUNE_LEFT:
             info_list.erase(info_list.begin() + static_cast<std::ptrdiff_t>(i));
+            --i;
             break;
         case ValueComparisonResult::PRUNE_RIGHT:
             return AddComparisonFilterResult::REDUNDANT;
         case ValueComparisonResult::CONFLICT:
             return AddComparisonFilterResult::CONFLICT;
         case ValueComparisonResult::NONE:
-            ++i;
             break;
         }
     }
