@@ -1,0 +1,7 @@
+['你','好','，','世','界']
+default	test_04050_eq	1	2	1
+default	test_04050_eq	0	0	0
+default	test_04050_ht	1	2	1
+default	test_04050_ht	0	0	0
+default	test_04050_sw	1	1	1
+default	test_04050_sw	0	0	0
