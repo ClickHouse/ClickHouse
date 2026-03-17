@@ -2,6 +2,7 @@
 
 #include <IO/AsyncReadCounters.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -12,6 +13,7 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/assert_cast.h>
 #include <Common/setThreadName.h>
+#include <Common/typeid_cast.h>
 #include "config.h"
 
 #include <future>
@@ -85,7 +87,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     {
         ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
         /// `seek` have to be done before checking `isContentCached`, and `set` have to be done prior to `seek`
-        reader.set(request.buf, request.size);
+        if (!typeid_cast<CachedInMemoryReadBufferFromFile *>(&reader))
+            reader.set(request.buf, request.size);
         reader.seek(request.offset, SEEK_SET);
     }
 
@@ -124,14 +127,16 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::RemoteRead};
 
-    if (!request.buf)
+    auto * fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
+    auto & reader = fd->getReader();
+    auto * page_cache_reader = typeid_cast<CachedInMemoryReadBufferFromFile *>(&reader);
+
+    /// Page cache readers use their own buffers (PageCacheCell), so request.buf is expected to be null.
+    if (!page_cache_reader && !request.buf)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Request buffer is invalid");
 
     if (!request.size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Request buffer size cannot be zero");
-
-    auto * fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
-    auto & reader = fd->getReader();
 
     auto read_counters = fd->getReadCounters();
     std::optional<AsyncReadIncrement> increment = read_counters ? std::optional<AsyncReadIncrement>(read_counters) : std::nullopt;
@@ -140,7 +145,8 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
         ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
         if (!seek_performed)
         {
-            reader.set(request.buf, request.size);
+            if (!page_cache_reader)
+                reader.set(request.buf, request.size);
             reader.seek(request.offset, SEEK_SET);
         }
 
@@ -161,12 +167,27 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
     ProfileEvents::increment(ProfileEvents::ThreadpoolReaderTaskMicroseconds, watch->elapsedMicroseconds());
 
     IAsynchronousReader::Result read_result;
+    /// Even if no data was read (EOF), file_offset_of_buffer_end must reflect the current position.
+    /// Otherwise AsynchronousBoundedReadBuffer::file_offset_of_buffer_end would be reset to 0
+    /// and subsequent reads would re-read from the beginning of the file.
+    read_result.file_offset_of_buffer_end = request.offset + request.ignore;
     if (result)
     {
-        chassert(reader.buffer().begin() == request.buf);
-        chassert(reader.buffer().end() <= request.buf + request.size);
+        if (page_cache_reader)
+        {
+            read_result.page_cache_cell = page_cache_reader->getPageCacheCell();
+            chassert(read_result.page_cache_cell);
+            chassert(read_result.page_cache_cell->data() == reader.buffer().begin());
+        }
+        else
+        {
+            chassert(reader.buffer().begin() == request.buf);
+            chassert(reader.buffer().end() <= request.buf + request.size);
+        }
+        read_result.buf = reader.buffer().begin();
         read_result.size = reader.buffer().size();
         read_result.offset = reader.offset();
+        read_result.file_offset_of_buffer_end = request.offset + request.ignore + (read_result.size - read_result.offset);
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, read_result.size);
     }
 

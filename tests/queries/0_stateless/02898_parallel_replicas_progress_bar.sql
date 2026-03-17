@@ -27,7 +27,7 @@ SELECT count(), min(k), max(k), avg(k) FROM t1 SETTINGS log_comment='02898_defau
 SYSTEM FLUSH LOGS text_log, query_log;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 SELECT count() > 0 FROM system.text_log
-WHERE query_id in (select query_id from system.query_log where current_database = currentDatabase() AND log_comment='02898_default_190aed82-2423-413b-ad4c-24dcca50f65b' and event_date >= yesterday())
+WHERE query_id in (select query_id from system.query_log where current_database = currentDatabase() AND log_comment='02898_default_190aed82-2423-413b-ad4c-24dcca50f65b' and event_date >= yesterday() AND event_time >= now() - 600)
     AND message LIKE '%Total rows to read: 3000%' AND event_date >= yesterday();
 
 -- reading in order coordinator
@@ -36,7 +36,7 @@ SELECT k, sipHash64(v) FROM t1 order by k limit 5 offset 998 SETTINGS optimize_r
 
 SYSTEM FLUSH LOGS text_log, query_log;
 SELECT count() > 0 FROM system.text_log
-WHERE query_id in (select query_id from system.query_log where current_database = currentDatabase() AND log_comment='02898_inorder_190aed82-2423-413b-ad4c-24dcca50f65b' and event_date >= yesterday())
+WHERE query_id in (select query_id from system.query_log where current_database = currentDatabase() AND log_comment='02898_inorder_190aed82-2423-413b-ad4c-24dcca50f65b' and event_date >= yesterday() AND event_time >= now() - 600)
     AND message LIKE '%Updated total rows to read: added % rows, total 3000 rows%' AND event_date >= yesterday();
 
 DROP TABLE t1 SYNC;

@@ -8,6 +8,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
+#include <Parsers/IAST_fwd.h>
 #include <base/UUID.h>
 
 #include <optional>
@@ -15,8 +16,6 @@
 namespace DB
 {
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 struct Settings;
 
 /// Does AST contain non-deterministic functions like rand() and now()?

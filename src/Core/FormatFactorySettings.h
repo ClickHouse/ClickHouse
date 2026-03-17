@@ -562,7 +562,7 @@ Possible values:
     DECLARE(Bool, type_json_skip_duplicated_paths, false, R"(
 When enabled, during parsing JSON object into JSON type duplicated paths will be ignored and only the first one will be inserted instead of an exception
 )", 0) \
-    DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, false, R"(
+    DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, true, R"(
 When enabled, JSONs like `{"a" : 42, "a" : {"b" : 42}}` where some key is duplicated but one of them is a nested object are allowed to be parsed.
 )", 0) \
     DECLARE(Bool, type_json_use_partial_match_to_skip_paths_by_regexp, true, R"(
@@ -591,6 +591,10 @@ Possible values:
 
 + 0 — Disable (throw error on type mismatch).
 + 1 — Enable (skip field on type mismatch).
+)", 0) \
+    DECLARE(UInt64Auto, max_dynamic_subcolumns_in_json_type_parsing, "auto", R"(
+The maximum number of dynamic subcolumns that can be created in every column during parsing of JSON column.
+It allows to control the number of dynamic subcolumns during parsing regardless of dynamic parameters specified in the data type.
 )", 0) \
     DECLARE(Bool, input_format_try_infer_integers, true, R"(
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
@@ -755,10 +759,23 @@ Deserialization of IPV6 will use default values instead of throwing exception on
 
 Disabled by default.
 )", 0) \
-    DECLARE(Bool, check_conversion_from_numbers_to_enum, false, R"(
+    DECLARE(Bool, check_conversion_from_numbers_to_enum, true, R"(
 Throw an exception during Numbers to Enum conversion if the value does not exist in Enum.
 
-Disabled by default.
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+**Example**
+
+```text
+CREATE TABLE tab (
+  val Enum('first' = 1, 'second' = 2, 'third' = 3)
+) ENGINE = Memory;
+
+INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -- returns an error
+```
 )", 0) \
     DECLARE(String, bool_true_representation, "true", R"(
 Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
@@ -1385,6 +1402,9 @@ Use Arrow FIXED_SIZE_BINARY type instead of Binary for FixedString columns.
     DECLARE(ArrowCompression, output_format_arrow_compression_method, "lz4_frame", R"(
 Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, none (uncompressed)
 )", 0) \
+    DECLARE(Bool, output_format_arrow_date_as_uint16, false, R"(
+Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
+)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
@@ -1497,6 +1517,39 @@ Set the quoting style for identifiers in SHOW CREATE query
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
+)", 0) \
+    DECLARE(UInt64, input_format_max_block_wait_ms, 0, R"(
+Limits the maximum time in milliseconds to wait before emitting a block during parsing in row-based input formats. 0 means no limit.
+
+:::note
+This option only works if `input_format_connection_handling` is enabled. Setting a value also disables parallel parsing and makes deduplication impossible.
+:::
+
+:::note
+For streaming inserts, you must also set `min_insert_block_size_rows=0` and `min_insert_block_size_bytes=0`. Otherwise, parsed blocks may still be accumulated in memory by the block squashing stage until those thresholds are reached, preventing timely inserts.
+:::
+
+**Example: streaming Wikipedia recent changes into ClickHouse**
+
+```bash
+clickhouse-client --query 'CREATE TABLE wikipedia_edits (data JSON)'
+
+curl -sS --globoff -H 'Accept: application/json' --no-buffer \
+  'https://stream.wikimedia.org/v2/stream/recentchange' \
+  | clickhouse-client \
+      --query 'INSERT INTO wikipedia_edits FORMAT JSONAsObject' \
+      --input_format_max_block_wait_ms 1000 \
+      --input_format_connection_handling 1 \
+      --min_insert_block_size_rows 0 \
+      --min_insert_block_size_bytes 0
+```
+)", 0) \
+    DECLARE(Bool, input_format_connection_handling, false, R"(
+    When this option is enabled, if the connection closes unexpectedly, any remaining data in the buffer will be parsed and processed instead of being treated as an error
+
+:::note
+Enabling this option disables parallel parsing and makes deduplication impossible
+:::
 )", 0) \
     DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column

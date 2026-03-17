@@ -33,6 +33,10 @@ def has_new_unit_tests(changed_files):
     return False
 
 
+def has_ci_report_link(pr_body):
+    return "s3.amazonaws.com/clickhouse-test-reports" in pr_body
+
+
 def check():
     # read actual PR body from GH API - fallback to workflow context if failed
     title, body, labels = GH.get_pr_title_body_labels()
@@ -52,6 +56,11 @@ def check():
         and not has_new_functional_tests(changed_files)
         and not has_new_integration_tests(changed_files)
     ):
+        if has_ci_report_link(pr_body):
+            print(
+                "No new tests have been added, but the PR description has a link to a CI report - pass"
+            )
+            return True
         print(f"No new tests have been added")
         return False
     return True

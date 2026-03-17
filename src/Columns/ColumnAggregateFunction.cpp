@@ -1,6 +1,5 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -529,7 +528,7 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnAggregateFunction::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (options.notFull(name_buf))
     {
@@ -537,8 +536,6 @@ DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnS
         func->serialize(data[n], buffer, version);
         writeQuoted(buffer.str(), name_buf);
     }
-
-    return DataTypeFactory::instance().get(type_string);
 }
 
 std::string_view ColumnAggregateFunction::getDataAt(size_t n) const
@@ -682,6 +679,9 @@ void ColumnAggregateFunction::skipSerializedInArena(ReadBuffer &) const
 
 void ColumnAggregateFunction::popBack(size_t n)
 {
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
     size_t size = data.size();
     size_t new_size = size - n;
 
@@ -698,7 +698,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     if (size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    if (size == 0)
+    if (size == 0 || offsets.back() == 0)
         return cloneEmpty();
 
     auto res = createView();
@@ -727,12 +727,11 @@ MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColum
 
     size_t num_rows = size();
 
+    const auto counts = countColumnsSizeInSelector(num_columns, selector);
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) / num_columns * 1.1); /// 1.1 is just a guess. Better to use n-sigma rule.
-
-        if (reserve_size > 1)
-            for (auto & column : columns)
-                column->reserve(reserve_size);
+        if (counts[i] > 1)
+            columns[i]->reserve(counts[i]);
     }
 
     for (size_t i = 0; i < num_rows; ++i)
@@ -752,7 +751,7 @@ void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*directio
 void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,
                                             size_t, int, Permutation &, EqualRanges&) const {}
 
-void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
+void ColumnAggregateFunction::getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const
 {
     /// Place serialized default values into min/max.
 

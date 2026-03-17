@@ -1,5 +1,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 
+#include <unordered_set>
+
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 
@@ -308,8 +310,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
-    if (enable_order_by_all)
-        current_query_tree->setIsOrderByAll(select_query_typed.order_by_all);
+    bool order_by_all_enabled = select_query_typed.order_by_all && enable_order_by_all;
+    if (order_by_all_enabled)
+        current_query_tree->setIsOrderByAll(true);
     current_query_tree->setOriginalAST(select_query);
 
     auto current_context = current_query_tree->getContext();
@@ -398,7 +401,46 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     auto select_order_by_list = select_query_typed.orderBy();
     if (select_order_by_list)
-        current_query_tree->getOrderByNode() = buildSortList(select_order_by_list, current_context);
+    {
+        if (order_by_all_enabled)
+        {
+            /// ORDER BY ALL is enabled. Create a placeholder SortNode with the correct direction.
+            /// The actual expansion to all SELECT columns will happen in QueryAnalyzer::expandOrderByAll.
+            auto * all_elem = select_order_by_list->children[0]->as<ASTOrderByElement>();
+
+            auto sort_direction = all_elem->direction == 1 ? SortDirection::ASCENDING : SortDirection::DESCENDING;
+            std::optional<SortDirection> nulls_sort_direction;
+            if (all_elem->nulls_direction_was_explicitly_specified)
+                nulls_sort_direction = all_elem->nulls_direction == 1 ? SortDirection::ASCENDING : SortDirection::DESCENDING;
+
+            auto placeholder_expr = std::make_shared<ConstantNode>(Field{"__order_by_all_placeholder__"});
+            auto sort_node = std::make_shared<SortNode>(std::move(placeholder_expr), sort_direction, nulls_sort_direction);
+
+            auto list_node = std::make_shared<ListNode>();
+            list_node->getNodes().push_back(std::move(sort_node));
+            current_query_tree->getOrderByNode() = std::move(list_node);
+        }
+        else if (select_query_typed.order_by_all)
+        {
+            /// ORDER BY ALL was parsed but `enable_order_by_all` is disabled.
+            /// Build an ORDER BY list with `all` as a column reference.
+            auto * all_elem = select_order_by_list->children[0]->as<ASTOrderByElement>();
+
+            auto order_by_list = make_intrusive<ASTExpressionList>();
+            auto elem = make_intrusive<ASTOrderByElement>();
+            elem->direction = all_elem->direction;
+            elem->nulls_direction = all_elem->nulls_direction;
+            elem->nulls_direction_was_explicitly_specified = all_elem->nulls_direction_was_explicitly_specified;
+            elem->children.push_back(make_intrusive<ASTIdentifier>("all"));
+            order_by_list->children.push_back(std::move(elem));
+
+            current_query_tree->getOrderByNode() = buildSortList(order_by_list, current_context);
+        }
+        else
+        {
+            current_query_tree->getOrderByNode() = buildSortList(select_order_by_list, current_context);
+        }
+    }
 
     auto interpolate_list = select_query_typed.interpolate();
     if (interpolate_list)
@@ -619,16 +661,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
-        if (ast_literal->custom_type)
-            result = std::make_shared<ConstantNode>(ast_literal->value, ast_literal->custom_type);
-        else if (context->getSettingsRef()[Setting::use_variant_as_common_type])
-            result = std::make_shared<ConstantNode>(ast_literal->value, ast_literal->custom_type ? ast_literal->custom_type : applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
+        if (context->getSettingsRef()[Setting::use_variant_as_common_type])
+            result = std::make_shared<ConstantNode>(ast_literal->value, applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
         else
             result = std::make_shared<ConstantNode>(ast_literal->value);
     }
     else if (const auto * function = expression->as<ASTFunction>())
     {
-        if (function->is_lambda_function || isASTLambdaFunction(*function))
+        if (function->isLambdaFunction() || isASTLambdaFunction(*function))
         {
             const auto & lambda_arguments_and_expression = function->arguments->as<ASTExpressionList &>().children;
             auto & lambda_arguments_tuple = lambda_arguments_and_expression.at(0)->as<ASTFunction &>();
@@ -670,7 +710,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             const auto & lambda_expression = lambda_arguments_and_expression.at(1);
             auto lambda_expression_node = buildExpression(lambda_expression, context);
 
-            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->is_operator);
+            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->isOperator());
         }
         else
         {
@@ -685,8 +725,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             else
             {
                 auto function_node = std::make_shared<FunctionNode>(function->name);
-                function_node->setNullsAction(function->nulls_action);
-                function_node->markAsOperator(function->is_operator);
+                function_node->setNullsAction(function->getNullsAction());
+                function_node->markAsOperator(function->isOperator());
 
                 if (function->parameters)
                 {
@@ -702,7 +742,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                         function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
                 }
 
-                if (function->is_window_function)
+                if (function->isWindowFunction())
                 {
                     if (function->window_definition)
                         function_node->getWindowNode() = buildWindow(function->window_definition, context);
@@ -932,6 +972,53 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, select_query.aliases(), context);
                 node->setAlias(subquery_expression.tryGetAlias());
                 node->setOriginalAST(select_with_union_query);
+
+                /// Apply column aliases from AS alias(col1, col2, ...) syntax
+                if (table_expression.column_aliases)
+                {
+                    const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
+                    Names column_alias_names;
+                    column_alias_names.reserve(column_aliases_list.children.size());
+
+                    std::unordered_set<std::string> seen_aliases;
+                    for (const auto & column_alias : column_aliases_list.children)
+                    {
+                        const auto & alias_name = column_alias->as<ASTIdentifier &>().name();
+                        if (!seen_aliases.insert(alias_name).second)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Duplicate column alias '{}' in table expression column list", alias_name);
+                        column_alias_names.push_back(alias_name);
+                    }
+
+                    if (auto * query_node = node->as<QueryNode>())
+                    {
+                        query_node->setProjectionAliasesToOverride(std::move(column_alias_names));
+                    }
+                    else if (auto * union_node = node->as<UnionNode>())
+                    {
+                        /// for UNIONs, apply aliases to the first query in the union, projection column names come from the first query (see UnionNode::computeProjectionColumns)
+                        /// we find the first QueryNode in case of nested UNIONs
+                        const auto & queries = union_node->getQueries().getNodes();
+                        QueryTreeNodePtr current = queries.empty() ? nullptr : queries[0];
+                        while (current)
+                        {
+                            if (auto * inner_query = current->as<QueryNode>())
+                            {
+                                inner_query->setProjectionAliasesToOverride(std::move(column_alias_names));
+                                break;
+                            }
+                            else if (auto * inner_union = current->as<UnionNode>())
+                            {
+                                const auto & inner_queries = inner_union->getQueries().getNodes();
+                                current = inner_queries.empty() ? nullptr : inner_queries[0];
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
 
                 if (table_expression_modifiers)
                 {
@@ -1187,12 +1274,12 @@ QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunctio
     ASTPtr first_arg = function->arguments->children[0]->clone();
 
     auto function_node = std::make_shared<FunctionNode>(function->name);
-    function_node->setNullsAction(function->nulls_action);
+    function_node->setNullsAction(function->getNullsAction());
 
     function_node->getParameters().getNodes().push_back(buildExpression(function->arguments->children[1], context)); // Separator
     function_node->getArguments().getNodes().push_back(buildExpression(first_arg, context)); // Column to concatenate
 
-    if (function->is_window_function)
+    if (function->isWindowFunction())
     {
         if (function->window_definition)
             function_node->getWindowNode() = buildWindow(function->window_definition, context);

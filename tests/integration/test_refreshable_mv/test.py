@@ -240,6 +240,7 @@ def test_refreshable_mv_in_system_db(started_cluster, cleanup):
 
     node1.restart_clickhouse()
     node1.query("system refresh view system.a")
+    node1.query("system wait view system.a")
     assert node1.query("select count(), sum(x) from system.a") == "2\t3\n"
 
 
@@ -506,10 +507,32 @@ def do_test_backup(to_table):
         node1.query(f"SYSTEM WAIT VIEW re.{target}")
         node2.query(f"SYSTEM WAIT VIEW re.{target}")
     else:
-        node1.query(f"SYSTEM SYNC REPLICA re.{target}")
-        node2.query(f"SYSTEM SYNC REPLICA re.{target}")
+        # After restore, the refresh task resumes immediately (REFRESH EVERY 1 second).
+        # A refresh may EXCHANGE the target table via the DDL log. The EXCHANGE propagates
+        # asynchronously; SYNC REPLICA may run against the pre-EXCHANGE table, then the
+        # EXCHANGE swaps in the new table whose data hasn't replicated yet → empty SELECT.
+        # Fix: stop the view, wait for any in-flight refresh to fully complete (including
+        # the EXCHANGE DDL), sync DDL, sync data.
+        for node in nodes:
+            node.query("SYSTEM STOP VIEW re.rmv")
+        # WAIT VIEW ensures any in-flight refresh finishes, including the EXCHANGE DDL.
+        # For coordinated views it also waits for the EXCHANGE to be visible locally.
+        # If the refresh was cancelled by STOP VIEW, WAIT VIEW throws — that's expected.
+        for node in nodes:
+            try:
+                node.query("SYSTEM WAIT VIEW re.rmv")
+            except Exception:
+                pass
+        for node in nodes:
+            node.query("SYSTEM SYNC DATABASE REPLICA re")
+        node1.query_with_retry(f"SYSTEM SYNC REPLICA re.{target}")
+        node2.query_with_retry(f"SYSTEM SYNC REPLICA re.{target}")
     assert node1.query(f"SELECT * FROM re.{target}") == "1\n"
     assert node2.query(f"SELECT * FROM re.{target}") == "1\n"
+
+    if to_table:
+        for node in nodes:
+            node.query("SYSTEM START VIEW re.rmv")
 
     node1.query("insert into re.src values (2)")
     assert_eq_with_retry(
