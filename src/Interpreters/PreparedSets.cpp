@@ -33,6 +33,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsBool query_cache_for_subqueries;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool transform_null_in;
@@ -314,7 +315,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     executor.execute();
 
     /// Finalize write in query cache to save subquery result
-    if (context->getCanUseQueryResultCache())
+    if (context->getCanUseQueryResultCache() && context->getSettingsRef()[Setting::query_cache_for_subqueries])
         pipeline.finalizeWriteInQueryResultCache();
 }
 
@@ -366,7 +367,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     logProcessorProfile(context, pipeline.getProcessors());
 
     /// Finalize write in query cache to save subquery result
-    if (context->getCanUseQueryResultCache())
+    if (context->getCanUseQueryResultCache() && context->getSettingsRef()[Setting::query_cache_for_subqueries])
         pipeline.finalizeWriteInQueryResultCache();
 
     return set_and_key->set;

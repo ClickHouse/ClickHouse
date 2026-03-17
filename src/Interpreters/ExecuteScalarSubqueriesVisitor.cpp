@@ -14,6 +14,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
@@ -35,8 +36,40 @@ namespace Setting
     extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool query_cache_for_subqueries;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsString implicit_table_at_top_level;
+}
+
+/// Returns true if caching should be used for this scalar subquery.
+/// Checks explicit SETTINGS `use_query_cache` on the subquery AST, then `query_cache_for_subqueries` propagation.
+static bool shouldCacheScalarSubquery(const ASTSubquery & subquery, const ContextPtr & context)
+{
+    /// Check if the subquery's SELECT has explicit SETTINGS `use_query_cache`
+    if (!subquery.children.empty())
+    {
+        if (const auto * select = subquery.children[0]->as<ASTSelectQuery>())
+        {
+            if (auto settings_ast = select->settings())
+            {
+                if (const auto * set_query = settings_ast->as<ASTSetQuery>())
+                {
+                    for (const auto & change : set_query->changes)
+                    {
+                        if (change.name == "use_query_cache")
+                            return change.value.safeGet<bool>();
+                    }
+                }
+            }
+        }
+    }
+
+    /// `query_cache_for_subqueries` enables automatic propagation from outer query
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::query_cache_for_subqueries] && context->getCanUseQueryResultCache())
+        return true;
+
+    return false;
 }
 
 namespace ErrorCodes
@@ -262,7 +295,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             logProcessorProfile(data.getContext(), io.pipeline.getProcessors());
 
             /// Finalize write in query cache to save scalar subquery result
-            if (data.getContext()->getCanUseQueryResultCache())
+            if (shouldCacheScalarSubquery(subquery, data.getContext()))
                 io.pipeline.finalizeWriteInQueryResultCache();
         }
 
