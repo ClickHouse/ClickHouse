@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
@@ -11,7 +12,7 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
+using ConstraintsExpressions = VectorWithMemoryTracking<ExpressionActionsPtr>;
 
 /** Check for constraints violation. If anything is found - throw an exception with detailed error message.
   * Otherwise just pass block to output unchanged.

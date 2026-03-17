@@ -38,7 +38,7 @@ private:
         AggregatingTransformParamsPtr params;
     };
 
-    using GroupingSets = std::vector<GroupingSet>;
+    using GroupingSets = VectorWithMemoryTracking<GroupingSet>;
     GroupingSets grouping_sets;
 
     UInt64 total_input_rows = 0;

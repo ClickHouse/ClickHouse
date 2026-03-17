@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/ExpressionActions.h>
@@ -165,7 +166,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     auto res = header.cloneWithColumns(chunk.detachColumns());
 
     /// Identify columns that need defaults computed
-    std::vector<std::pair<String, size_t>> columns_needing_defaults;
+    VectorWithMemoryTracking<std::pair<String, size_t>> columns_needing_defaults;
     for (const auto & [col_name, col_default] : column_defaults)
     {
         if (!res.has(col_name))
@@ -217,7 +218,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     while (processed.size() < columns_needing_defaults.size())
     {
         /// Find columns ready to process (all dependencies satisfied)
-        std::vector<std::pair<String, size_t>> ready;
+        VectorWithMemoryTracking<std::pair<String, size_t>> ready;
         for (const auto & [col_name, col_idx] : columns_needing_defaults)
         {
             if (processed.contains(col_name))

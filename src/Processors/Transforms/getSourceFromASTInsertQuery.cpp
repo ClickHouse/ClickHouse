@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>

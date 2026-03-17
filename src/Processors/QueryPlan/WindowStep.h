@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 #include <Interpreters/WindowDescription.h>
@@ -29,7 +30,7 @@ private:
     void updateOutputHeader() override;
 
     WindowDescription window_description;
-    std::vector<WindowFunctionDescription> window_functions;
+    VectorWithMemoryTracking<WindowFunctionDescription> window_functions;
     bool streams_fan_out;
 };
 

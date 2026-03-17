@@ -37,7 +37,7 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    using MutableColumnRawPtrs = std::vector<IColumn *>;
+    using MutableColumnRawPtrs = VectorWithMemoryTracking<IColumn *>;
     void transformRange(
         const Columns & input_fill_columns,
         const Columns & input_interpolate_columns,
@@ -90,7 +90,7 @@ private:
     FillingRow next_row; /// Row to which we need to generate filling rows.
     bool filling_row_inserted = false;
 
-    using Positions = std::vector<size_t>;
+    using Positions = VectorWithMemoryTracking<size_t>;
     Positions fill_column_positions;
     Positions interpolate_column_positions;
     Positions other_column_positions;

@@ -64,7 +64,7 @@ public:
             SharedHeader input_header_,
             SharedHeader output_header_,
             const WindowDescription & window_description_,
-            const std::vector<WindowFunctionDescription> &
+            const VectorWithMemoryTracking<WindowFunctionDescription> &
                 functions);
 
     ~WindowTransform() override;

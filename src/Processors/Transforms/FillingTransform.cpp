@@ -248,7 +248,7 @@ FillingTransform::FillingTransform(
                     description.alias);
     }
 
-    std::vector<bool> is_fill_column(header_->columns());
+    VectorWithMemoryTracking<bool> is_fill_column(header_->columns());
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
         size_t block_position = header_->getPositionByName(fill_description[i].column_name);
@@ -402,7 +402,7 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
     }
 }
 
-using MutableColumnRawPtrs = std::vector<IColumn*>;
+using MutableColumnRawPtrs = VectorWithMemoryTracking<IColumn*>;
 
 void FillingTransform::insertFromFillingRow(
     const MutableColumnRawPtrs & filling_columns,
@@ -451,7 +451,7 @@ static void initColumnsByPositions(
     Columns & input_columns_by_positions,
     const MutableColumns & output_columns,
     MutableColumnRawPtrs & output_columns_by_position,
-    const std::vector<size_t> & positions)
+    const VectorWithMemoryTracking<size_t> & positions)
 {
     for (const size_t pos : positions)
     {

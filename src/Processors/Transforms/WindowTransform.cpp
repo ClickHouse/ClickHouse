@@ -273,7 +273,7 @@ else \
 WindowTransform::WindowTransform(SharedHeader input_header_,
         SharedHeader output_header_,
         const WindowDescription & window_description_,
-        const std::vector<WindowFunctionDescription> & functions)
+        const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
     : IProcessor({input_header_}, {output_header_})
     , input(inputs.front())
     , output(outputs.front())
