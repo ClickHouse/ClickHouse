@@ -531,7 +531,7 @@ ParsedJSON parseJSONEnvelope(const std::string & json_str)
         nullable_serialization_version,
         propagate_types_serialization_versions_to_nested_types);
 
-    return {std::move(columns_array), settings};
+    return {columns_array, settings};
 }
 
 } /// anonymous namespace
