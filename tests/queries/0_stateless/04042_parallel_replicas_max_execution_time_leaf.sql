@@ -16,10 +16,10 @@ INSERT INTO test_max_execution_time_leaf SELECT number, toString(number) FROM nu
 SET allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 SET use_query_cache = false;
 
-SELECT key, SUM(length(value)) FROM test_max_execution_time_leaf GROUP BY key FORMAT Null SETTINGS max_execution_time=1; -- { serverError TIMEOUT_EXCEEDED }
-SELECT key, SUM(length(value)) FROM test_max_execution_time_leaf GROUP BY key FORMAT Null SETTINGS max_execution_time_leaf=1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT count() FROM test_max_execution_time_leaf WHERE NOT ignore(sipHash64(value)) FORMAT Null SETTINGS max_execution_time=1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT count() FROM test_max_execution_time_leaf WHERE NOT ignore(sipHash64(value)) FORMAT Null SETTINGS max_execution_time_leaf=1; -- { serverError TIMEOUT_EXCEEDED }
 -- Can return partial result
-SELECT key, SUM(length(value)) FROM test_max_execution_time_leaf GROUP BY key FORMAT Null SETTINGS max_execution_time=1, timeout_overflow_mode='break';
-SELECT key, SUM(length(value)) FROM test_max_execution_time_leaf GROUP BY key FORMAT Null SETTINGS max_execution_time_leaf=1, timeout_overflow_mode_leaf='break';
+SELECT count() FROM test_max_execution_time_leaf WHERE NOT ignore(sipHash64(value)) FORMAT Null SETTINGS max_execution_time=1, timeout_overflow_mode='break';
+SELECT count() FROM test_max_execution_time_leaf WHERE NOT ignore(sipHash64(value)) FORMAT Null SETTINGS max_execution_time_leaf=1, timeout_overflow_mode_leaf='break';
 
 DROP TABLE test_max_execution_time_leaf SYNC;
