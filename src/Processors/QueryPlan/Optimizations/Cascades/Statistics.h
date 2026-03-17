@@ -17,7 +17,7 @@ class WriteBuffer;
 struct ExpressionStatistics
 {
     /// Number of row that we estimated using probabilities, histograms, heuristics, etc.
-    Float64 estimated_row_count;
+    Float64 estimated_row_count = 0;
     /// Proven minimum number of rows
     Float64 min_row_count = 0;
     /// Proven maximum number of rows. E.g. after LIMIT step

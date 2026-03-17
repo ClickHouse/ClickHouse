@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Storages/SelectQueryInfo.h>
@@ -89,6 +90,11 @@ public:
     String getName() const override { return "ReadFromDummy"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
+
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ReadFromDummy>(column_names, query_info, storage_snapshot, context, storage);
+    }
 
 private:
     const StorageDummy & storage;
