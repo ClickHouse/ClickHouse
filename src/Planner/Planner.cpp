@@ -1499,6 +1499,29 @@ void Planner::buildPlanForUnionNode()
     }
 }
 
+/// Returns true if query caching should be used for this subquery node.
+/// For subqueries: explicit SETTINGS use_query_cache wins, then query_cache_for_subqueries propagation,
+/// otherwise no caching.
+static bool shouldUseQueryCacheForSubquery(const QueryNode & query_node, bool outer_can_use_cache, const Settings & settings)
+{
+    /// Check if use_query_cache was explicitly set in this node's SETTINGS clause
+    if (query_node.hasSettingsChanges())
+    {
+        for (const auto & change : query_node.getSettingsChanges())
+        {
+            if (change.name == "use_query_cache")
+                return change.value.safeGet<bool>();
+        }
+    }
+
+    /// query_cache_for_subqueries enables automatic propagation from outer query
+    if (settings[Setting::query_cache_for_subqueries] && outer_can_use_cache)
+        return true;
+
+    /// By default, use_query_cache does NOT propagate to subqueries
+    return false;
+}
+
 void Planner::buildPlanForQueryNode()
 {
     ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
@@ -1521,17 +1544,23 @@ void Planner::buildPlanForQueryNode()
     bool can_use_query_result_cache = query_context->getCanUseQueryResultCache();
     ASTPtr ast = select_query_info.query;
 
+    /// Determine if this subquery should use the query cache:
+    /// 1. Explicit SETTINGS use_query_cache on this node wins
+    /// 2. query_cache_for_subqueries propagates from outer query
+    /// 3. By default, no propagation
+    bool should_cache = shouldUseQueryCacheForSubquery(query_node, can_use_query_result_cache, settings);
+
     /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
     /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
     /// hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places internally
     /// modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes no longer
     /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
     std::optional<Settings> settings_copy;
-    if (can_use_query_result_cache)
+    if (can_use_query_result_cache || should_cache)
         settings_copy = settings;
 
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
-    if (can_use_query_result_cache && settings[Setting::query_cache_for_subqueries] && settings[Setting::enable_reads_from_query_cache])
+    if (should_cache && settings[Setting::enable_reads_from_query_cache])
     {
         QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
         auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key));
@@ -2006,7 +2035,7 @@ void Planner::buildPlanForQueryNode()
 
     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled,
     /// then add a step which stores the result in the query cache.
-    if (settings[Setting::query_cache_for_subqueries] && checkCanWriteQueryResultCache(ast, query_context))
+    if (should_cache && checkCanWriteQueryResultCache(ast, query_context))
     {
         QueryResultCache::Key key(
             ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
