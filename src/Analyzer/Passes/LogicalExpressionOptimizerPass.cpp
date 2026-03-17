@@ -235,6 +235,264 @@ std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode &
     return flattened;
 }
 
+/// Comparison filter deduplication and conflict detection for AND chains.
+/// Maintains a map from expression → list of (constant, comparison_type).
+/// For each new condition, compares against existing conditions for the same expression.
+
+enum class ComparisonFunction : uint8_t
+{
+    EQUALS,
+    NOT_EQUALS,
+    LESS,
+    LESS_OR_EQUALS,
+    GREATER,
+    GREATER_OR_EQUALS
+};
+
+static std::optional<ComparisonFunction> toComparisonFunction(const String & name)
+{
+    if (name == "equals") return ComparisonFunction::EQUALS;
+    if (name == "notEquals") return ComparisonFunction::NOT_EQUALS;
+    if (name == "less") return ComparisonFunction::LESS;
+    if (name == "lessOrEquals") return ComparisonFunction::LESS_OR_EQUALS;
+    if (name == "greater") return ComparisonFunction::GREATER;
+    if (name == "greaterOrEquals") return ComparisonFunction::GREATER_OR_EQUALS;
+    return std::nullopt;
+}
+
+static bool isLessThanCompare(ComparisonFunction f)
+{
+    return f == ComparisonFunction::LESS || f == ComparisonFunction::LESS_OR_EQUALS;
+}
+
+static bool isGreaterThanCompare(ComparisonFunction f)
+{
+    return f == ComparisonFunction::GREATER || f == ComparisonFunction::GREATER_OR_EQUALS;
+}
+
+static ComparisonFunction flipComparisonFunction(ComparisonFunction f)
+{
+    switch (f)
+    {
+    case ComparisonFunction::LESS:
+        return ComparisonFunction::GREATER;
+    case ComparisonFunction::GREATER:
+        return ComparisonFunction::LESS;
+    case ComparisonFunction::LESS_OR_EQUALS:
+        return ComparisonFunction::GREATER_OR_EQUALS;
+    case ComparisonFunction::GREATER_OR_EQUALS:
+        return ComparisonFunction::LESS_OR_EQUALS;
+    case ComparisonFunction::EQUALS:
+        return ComparisonFunction::EQUALS;
+    case ComparisonFunction::NOT_EQUALS:
+        return ComparisonFunction::NOT_EQUALS;
+    }
+    UNREACHABLE();
+}
+
+enum class ValueComparisonResult
+{
+    PRUNE_LEFT,
+    PRUNE_RIGHT,
+    CONFLICT,
+    NONE
+};
+
+enum class AddComparisonFilterResult
+{
+    CONFLICT,
+    REDUNDANT,
+    ADDED
+};
+
+struct ComparisonFilterInfo
+{
+    const ConstantNode * constant_node;
+    ComparisonFunction function;
+    QueryTreeNodePtr original_node;
+    std::optional<Field> converted_value;
+    size_t original_index = 0;
+};
+
+using ComparisonFilterMap = QueryTreeNodePtrWithHashMap<std::vector<ComparisonFilterInfo>>;
+
+static ValueComparisonResult invertComparisonResult(ValueComparisonResult result)
+{
+    if (result == ValueComparisonResult::PRUNE_LEFT)
+        return ValueComparisonResult::PRUNE_RIGHT;
+    if (result == ValueComparisonResult::PRUNE_RIGHT)
+        return ValueComparisonResult::PRUNE_LEFT;
+    return result;
+}
+
+/// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
+/// Returns the converted Field if successful, or std::nullopt if the conversion is lossy or fails.
+static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant_node, const DataTypePtr & expr_type)
+{
+    try
+    {
+        auto target_type = removeNullable(removeLowCardinality(expr_type));
+        const auto & from_type = constant_node->getResultType();
+
+        if (from_type->equals(*target_type))
+            return constant_node->getValue();
+
+        return convertFieldToTypeStrict(constant_node->getValue(), *from_type, *target_type);
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
+static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo & left, const ComparisonFilterInfo & right)
+{
+    if (!left.converted_value || !right.converted_value)
+        return ValueComparisonResult::NONE;
+
+    const auto & lc = *left.converted_value;
+    const auto & rc = *right.converted_value;
+    const auto lf = left.function;
+    const auto rf = right.function;
+
+    try
+    {
+        if (lf == ComparisonFunction::EQUALS)
+        {
+            bool prune_right = false;
+            switch (rf)
+            {
+            case ComparisonFunction::LESS:
+                prune_right = accurateLess(lc, rc);
+                break;
+            case ComparisonFunction::LESS_OR_EQUALS:
+                prune_right = accurateLessOrEqual(lc, rc);
+                break;
+            case ComparisonFunction::GREATER:
+                prune_right = accurateLess(rc, lc);
+                break;
+            case ComparisonFunction::GREATER_OR_EQUALS:
+                prune_right = accurateLessOrEqual(rc, lc);
+                break;
+            case ComparisonFunction::NOT_EQUALS:
+                prune_right = !accurateEquals(lc, rc);
+                break;
+            case ComparisonFunction::EQUALS:
+                prune_right = accurateEquals(lc, rc);
+                break;
+            }
+            return prune_right ? ValueComparisonResult::PRUNE_RIGHT : ValueComparisonResult::CONFLICT;
+        }
+
+        if (rf == ComparisonFunction::EQUALS)
+            return invertComparisonResult(compareComparisonFilters(right, left));
+
+        if (lf == ComparisonFunction::NOT_EQUALS)
+        {
+            bool prune_left = false;
+            switch (rf)
+            {
+            case ComparisonFunction::LESS:
+                prune_left = !accurateLess(lc, rc);
+                break;
+            case ComparisonFunction::LESS_OR_EQUALS:
+                prune_left = accurateLess(rc, lc);
+                break;
+            case ComparisonFunction::GREATER:
+                prune_left = !accurateLess(rc, lc);
+                break;
+            case ComparisonFunction::GREATER_OR_EQUALS:
+                prune_left = accurateLess(lc, rc);
+                break;
+            case ComparisonFunction::NOT_EQUALS:
+                prune_left = accurateEquals(lc, rc);
+                break;
+            case ComparisonFunction::EQUALS:
+                chassert(false);
+                break;
+            }
+            return prune_left ? ValueComparisonResult::PRUNE_LEFT : ValueComparisonResult::NONE;
+        }
+
+        if (rf == ComparisonFunction::NOT_EQUALS)
+            return invertComparisonResult(compareComparisonFilters(right, left));
+
+        if (isGreaterThanCompare(lf) && isGreaterThanCompare(rf))
+        {
+            if (accurateLess(rc, lc))
+                return ValueComparisonResult::PRUNE_RIGHT;
+            if (accurateLess(lc, rc))
+                return ValueComparisonResult::PRUNE_LEFT;
+            if (lf == ComparisonFunction::GREATER_OR_EQUALS)
+                return ValueComparisonResult::PRUNE_LEFT;
+            return ValueComparisonResult::PRUNE_RIGHT;
+        }
+
+        if (isLessThanCompare(lf) && isLessThanCompare(rf))
+        {
+            if (accurateLess(lc, rc))
+                return ValueComparisonResult::PRUNE_RIGHT;
+            if (accurateLess(rc, lc))
+                return ValueComparisonResult::PRUNE_LEFT;
+            if (lf == ComparisonFunction::LESS_OR_EQUALS)
+                return ValueComparisonResult::PRUNE_LEFT;
+            return ValueComparisonResult::PRUNE_RIGHT;
+        }
+
+        if (isLessThanCompare(lf))
+        {
+            chassert(isGreaterThanCompare(rf));
+            bool both_inclusive = (lf == ComparisonFunction::LESS_OR_EQUALS && rf == ComparisonFunction::GREATER_OR_EQUALS);
+            if (both_inclusive)
+                return accurateLessOrEqual(rc, lc) ? ValueComparisonResult::NONE : ValueComparisonResult::CONFLICT;
+            return accurateLess(rc, lc) ? ValueComparisonResult::NONE : ValueComparisonResult::CONFLICT;
+        }
+
+        chassert(isGreaterThanCompare(lf) && isLessThanCompare(rf));
+        return invertComparisonResult(compareComparisonFilters(right, left));
+    }
+    catch (...)
+    {
+        return ValueComparisonResult::NONE;
+    }
+}
+
+static AddComparisonFilterResult addComparisonFilter(
+    ComparisonFilterMap & filter_map,
+    const QueryTreeNodePtr & expression,
+    ComparisonFilterInfo new_filter)
+{
+    new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expression->getResultType());
+
+    auto it = filter_map.find(expression);
+    if (it == filter_map.end())
+    {
+        filter_map[expression].push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
+    auto & info_list = it->second;
+    for (size_t i = 0; i < info_list.size(); )
+    {
+        auto result = compareComparisonFilters(info_list[i], new_filter);
+        switch (result)
+        {
+        case ValueComparisonResult::PRUNE_LEFT:
+            info_list.erase(info_list.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        case ValueComparisonResult::PRUNE_RIGHT:
+            return AddComparisonFilterResult::REDUNDANT;
+        case ValueComparisonResult::CONFLICT:
+            return AddComparisonFilterResult::CONFLICT;
+        case ValueComparisonResult::NONE:
+            ++i;
+            break;
+        }
+    }
+    info_list.push_back(std::move(new_filter));
+    return AddComparisonFilterResult::ADDED;
+}
+
 struct CommonExpressionExtractionResult
 {
     // new_node: if the new node is not empty, then it contains the new node, otherwise nullptr
@@ -865,7 +1123,7 @@ public:
             /// then the equals-chain pass detects `x = 3` vs `x = 5` and collapses to FALSE.
             if (getSettings()[Setting::optimize_and_compare_chain])
                 tryOptimizeAndCompareChain(node);
-            tryOptimizeAndEqualsNotEqualsChain(node);
+            tryOptimizeAndCompareNotEqualsChain(node);
             return;
         }
 
@@ -905,7 +1163,7 @@ public:
     }
 
 private:
-    void tryOptimizeAndEqualsNotEqualsChain(QueryTreeNodePtr & node)
+    void tryOptimizeAndCompareNotEqualsChain(QueryTreeNodePtr & node)
     {
         auto & function_node = node->as<FunctionNode &>();
         assert(function_node.getFunctionName() == "and");
@@ -913,107 +1171,96 @@ private:
         if (function_node.getResultType()->isNullable())
             return;
 
+        ComparisonFilterMap filter_map;
         QueryTreeNodes and_operands;
 
-        QueryTreeNodePtrWithHashMap<const ConstantNode *> equals_node_to_constants;
         QueryTreeNodePtrWithHashMap<QueryTreeNodeConstRawPtrWithHashSet> not_equals_node_to_constants;
         QueryTreeNodePtrWithHashMap<QueryTreeNodes> node_to_not_equals_functions;
 
+        size_t argument_index = 0;
         for (const auto & argument : function_node.getArguments())
         {
             auto * argument_function = argument->as<FunctionNode>();
-            const auto valid_functions = std::unordered_set<std::string>{"equals", "notEquals"};
-            if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()))
+            auto comparison_func = argument_function
+                ? toComparisonFunction(argument_function->getFunctionName())
+                : std::nullopt;
+
+            if (!comparison_func)
             {
                 and_operands.push_back(argument);
+                ++argument_index;
                 continue;
             }
 
-            const auto function_name = argument_function->getFunctionName();
             const auto & function_arguments = argument_function->getArguments().getNodes();
             const auto & lhs = function_arguments[0];
             const auto & rhs = function_arguments[1];
 
-            if (function_name == "equals")
+            const ConstantNode * constant = nullptr;
+            QueryTreeNodePtr expression;
+            bool constant_on_left = false;
+
+            if (const auto * lhs_literal = lhs->as<ConstantNode>())
             {
-                /*
-                 * This function checks a pattern of `col = X and col = Y` such that if there are two different constant values are assigned for the same expression.
-                 * That pattern always yields to `FALSE`, except implicit conversion from a string to an integer / a boolean
-                 * which the pattern could be `col = X and col = 'X'`. In such cases, constant values are same.
-                 */
-                const auto has_and_with_different_constant = [&](const QueryTreeNodePtr & expression, const ConstantNode * constant)
+                chassert(!lhs_literal->getValue().isNull());
+                constant = lhs_literal;
+                expression = rhs;
+                constant_on_left = true;
+            }
+            else if (const auto * rhs_literal = rhs->as<ConstantNode>())
+            {
+                chassert(!rhs_literal->getValue().isNull());
+                constant = rhs_literal;
+                expression = lhs;
+            }
+
+            if (!constant)
+            {
+                and_operands.push_back(argument);
+                ++argument_index;
+                continue;
+            }
+
+            auto normalized = constant_on_left ? flipComparisonFunction(*comparison_func) : *comparison_func;
+            ComparisonFilterInfo new_filter{constant, normalized, argument, {}, argument_index};
+            auto result = addComparisonFilter(filter_map, expression, std::move(new_filter));
+
+            if (result == AddComparisonFilterResult::CONFLICT)
+            {
+                auto false_node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
+                node = std::move(false_node);
+                return;
+            }
+
+            /// For notEquals that survived conflict/redundancy checks, also collect using original dedup for NOT IN conversion
+            if (*comparison_func == ComparisonFunction::NOT_EQUALS && result == AddComparisonFilterResult::ADDED)
+            {
+                auto & constant_set = not_equals_node_to_constants[expression];
+                if (!constant_set.contains(constant))
                 {
-                    /// This is an implicit conversion from a string to the type of an constant node (`expected`).
-                    const auto convert_and_check_equals = [](const ConstantNode * string_value, const ConstantNode * expected)
-                    {
-                        Field converted = tryConvertFieldToType(string_value->getValue(), *expected->getResultType());
-                        if (!converted.isNull())
-                            return accurateEquals(converted, expected->getValue());
-                        return false;
-                    };
-
-                    if (auto it = equals_node_to_constants.find(expression); it != equals_node_to_constants.end())
-                    {
-                        if (!it->second->isEqual(*constant))
-                        {
-                            if (it->second->getResultType()->equals(DataTypeString()) && convert_and_check_equals(it->second, constant))
-                                return false;
-                            else if (constant->getResultType()->equals(DataTypeString()) && convert_and_check_equals(constant, it->second))
-                                return false;
-                            return true;
-                        }
-                    }
-                    else
-                    {
-                        equals_node_to_constants.emplace(expression, constant);
-                        and_operands.push_back(argument);
-                    }
-
-                    return false;
-                };
-
-                bool collapse_to_false = false;
-
-                if (const auto * lhs_literal = lhs->as<ConstantNode>())
-                    collapse_to_false = has_and_with_different_constant(rhs, lhs_literal);
-                else if (const auto * rhs_literal = rhs->as<ConstantNode>())
-                    collapse_to_false = has_and_with_different_constant(lhs, rhs_literal);
-                else
-                    and_operands.push_back(argument);
-
-                if (collapse_to_false)
-                {
-                    auto false_node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
-                    node = std::move(false_node);
-                    return;
+                    constant_set.insert(constant);
+                    node_to_not_equals_functions[expression].push_back(argument);
                 }
             }
-            else if (function_name == "notEquals")
-            {
-                 /// collect all inequality checks (x <> value)
-
-                const auto add_not_equals_function_if_not_present = [&](const auto & expression_node, const ConstantNode * constant)
-                {
-                    auto & constant_set = not_equals_node_to_constants[expression_node];
-                    if (!constant_set.contains(constant))
-                    {
-                        constant_set.insert(constant);
-                        node_to_not_equals_functions[expression_node].push_back(argument);
-                    }
-                };
-
-                if (const auto * lhs_literal = lhs->as<ConstantNode>();
-                    lhs_literal && !lhs_literal->getValue().isNull())
-                    add_not_equals_function_if_not_present(rhs, lhs_literal);
-                else if (const auto * rhs_literal = rhs->as<ConstantNode>();
-                        rhs_literal && !rhs_literal->getValue().isNull())
-                    add_not_equals_function_if_not_present(lhs, rhs_literal);
-                else
-                    and_operands.push_back(argument);
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function name: '{}'", function_name);
+            ++argument_index;
         }
+
+        /// Reconstruct non-notEquals comparison filters from the filter map,
+        /// sorted by original position to preserve deterministic AND operand order.
+        std::vector<std::pair<size_t, QueryTreeNodePtr>> surviving_filters;
+        surviving_filters.reserve(filter_map.size());
+        for (auto & [expression, filters] : filter_map)
+        {
+            for (auto & filter : filters)
+            {
+                if (filter.function != ComparisonFunction::NOT_EQUALS)
+                    surviving_filters.emplace_back(filter.original_index, std::move(filter.original_node));
+            }
+        }
+        std::sort(surviving_filters.begin(), surviving_filters.end(),
+            [](const auto & a, const auto & b) { return a.first < b.first; });
+        for (auto & [_, node_ptr] : surviving_filters)
+            and_operands.push_back(std::move(node_ptr));
 
         auto not_in_function_resolver = FunctionFactory::instance().get("notIn", getContext());
 
