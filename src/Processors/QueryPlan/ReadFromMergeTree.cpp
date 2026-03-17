@@ -28,6 +28,7 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/PartsRemoteFSUtils.h>
 #include <Processors/QueryPlan/UncompressedCacheUtils.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
@@ -244,30 +245,6 @@ namespace ErrorCodes
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTITIONS;
-}
-
-struct PartsRemoteFSInfo
-{
-    bool all_parts_on_remote_disk = true;
-    bool any_parts_on_remote_disk = false;
-};
-
-static PartsRemoteFSInfo analyzePartsOnRemoteFS(const RangesInDataParts & parts)
-{
-    PartsRemoteFSInfo result;
-
-    for (const auto & part : parts)
-    {
-        const bool part_on_remote_disk = part.data_part->isStoredOnRemoteDisk();
-        result.any_parts_on_remote_disk |= part_on_remote_disk;
-        result.all_parts_on_remote_disk &= part_on_remote_disk;
-
-        // Once both flags diverge, the result cannot change anymore.
-        if (result.any_parts_on_remote_disk && !result.all_parts_on_remote_disk)
-            break;
-    }
-
-    return result;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)

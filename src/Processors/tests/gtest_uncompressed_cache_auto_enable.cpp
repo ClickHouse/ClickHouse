@@ -1,3 +1,4 @@
+#include <Processors/QueryPlan/PartsRemoteFSUtils.h>
 #include <Processors/QueryPlan/UncompressedCacheUtils.h>
 
 #include <gtest/gtest.h>
@@ -5,6 +6,14 @@
 
 namespace DB
 {
+
+TEST(PartsRemoteFSInfo, EmptyPartsAreLocalAndNonRemote)
+{
+    const auto result = analyzePartsOnRemoteFS(RangesInDataParts{});
+
+    EXPECT_FALSE(result.all_parts_on_remote_disk);
+    EXPECT_FALSE(result.any_parts_on_remote_disk);
+}
 
 TEST(UncompressedCacheAutoEnable, RequiresAnAvailableCache)
 {
