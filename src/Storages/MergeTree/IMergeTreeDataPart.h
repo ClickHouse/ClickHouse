@@ -43,6 +43,8 @@ class Block;
 struct ColumnSize;
 class DeserializationPrefixesCache;
 class MergeTreeData;
+class PhysicalNameMapping;
+using PhysicalNameMappingPtr = std::shared_ptr<const PhysicalNameMapping>;
 struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
@@ -371,7 +373,7 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
+        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings, PhysicalNameMappingPtr physical_name_mapping = nullptr) const;
         [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
 
         void update(const Block & block, const Names & column_names);
@@ -506,6 +508,9 @@ public:
         bool & has_broken_projection,
         bool if_not_loaded = false,
         bool only_metadata = false);
+
+    /// If checksums.txt exists, reads file's checksums (and sizes) from it without fallback recovery.
+    void tryPreloadChecksums();
 
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);

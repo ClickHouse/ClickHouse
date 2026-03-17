@@ -1,0 +1,20 @@
+0
+1	one
+2	two
+1	one
+2	two
+3	three
+1	one
+2	two
+3	three
+1	one
+2	two
+3	three
+0
+1	one
+1	new_default
+2	new_value
+0
+1	one	0
+2	two	22
+10	UInt64

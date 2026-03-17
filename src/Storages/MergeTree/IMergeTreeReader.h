@@ -156,6 +156,8 @@ private:
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
     /// Returns actual serialization in part, which can differ from table metadata.
     SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
+    /// Returns serialization for a column resolved by its physical name.
+    SerializationPtr getSerializationForPhysicalColumn(const NameAndTypePair & column) const;
 
     /// Columns that are requested to read.
     NamesAndTypesList original_requested_columns;

@@ -56,6 +56,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"path",                                       std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
 
         {"column",                                     std::make_shared<DataTypeString>(), "Name of the column."},
+        {"physical_name",                              std::make_shared<DataTypeString>(), "Physical name of the column on disk, differs from column name when physical name mapping is active."},
         {"type",                                       std::make_shared<DataTypeString>(), "Column type."},
         {"column_position",                            std::make_shared<DataTypeUInt64>(), "Ordinal position of a column in a table starting with 1."},
         {"default_kind",                               std::make_shared<DataTypeString>(), "Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined."},
@@ -222,6 +223,8 @@ void StorageSystemPartsColumns::processNextStorage(
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.name);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column.getPhysicalNameInStorage());
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.type->getName());
             if (columns_mask[src_index++])

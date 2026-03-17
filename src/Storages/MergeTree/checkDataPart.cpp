@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/PhysicalNameMapping.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -173,9 +174,15 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         assertEOF(*buf);
     }
 
-    if (columns_txt != columns_list)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
-            data_part_storage.getFullPath(), columns_list.toString(), columns_txt.toString());
+    auto pn_mapping = data_part->storage.getPhysicalNameMapping();
+    bool physical_names_active = pn_mapping && pn_mapping->isActive();
+
+    if (!physical_names_active)
+    {
+        if (columns_txt != columns_list)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
+                data_part_storage.getFullPath(), columns_list.toString(), columns_txt.toString());
+    }
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
     IMergeTreeDataPart::Checksums checksums_data;
@@ -202,7 +209,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         try
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
-            serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
+            if (physical_names_active)
+                serialization_infos = SerializationInfoByName::readJSONWithPhysicalNames(columns_txt, *pn_mapping, *serialization_file);
+            else
+                serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
         {

@@ -77,9 +77,15 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         if (!serialization)
             continue;
 
+        auto column_in_part = columns.tryGetByName(column_name);
+
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->storage.getSettings());
+            std::optional<String> stream_name;
+            if (column_in_part)
+                stream_name = IMergeTreeDataPart::getStreamNameForColumn(*column_in_part, substream_path, ".bin", checksums, data_part->storage.getSettings());
+            else
+                stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->storage.getSettings());
 
             /// Delete files if they are no longer shared with another column.
             if (stream_name && --stream_counts[*stream_name] == 0)

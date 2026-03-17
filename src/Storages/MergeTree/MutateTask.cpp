@@ -854,13 +854,45 @@ static std::unordered_map<String, size_t> getStreamCounts(
 {
     std::unordered_map<String, size_t> stream_counts;
 
+    const auto & part_columns = data_part->getColumns();
     for (const auto & column_name : column_names)
     {
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
+            auto part_column = part_columns.tryGetByName(column_name);
+
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
+                std::optional<String> stream_name;
+                if (part_column && !part_column->physical_name.empty())
+                    stream_name = IMergeTreeDataPart::getStreamNameForColumn(*part_column, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
+                else
+                    stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
+                if (stream_name)
+                    ++stream_counts[*stream_name];
+            };
+
+            serialization->enumerateStreams(callback);
+        }
+    }
+
+    return stream_counts;
+}
+
+static std::unordered_map<String, size_t> getStreamCounts(
+    const MergeTreeDataPartPtr & data_part,
+    const MergeTreeDataPartChecksums & source_part_checksums,
+    const NamesAndTypesList & columns)
+{
+    std::unordered_map<String, size_t> stream_counts;
+
+    for (const auto & column : columns)
+    {
+        if (auto serialization = data_part->tryGetSerialization(column.name))
+        {
+            auto callback = [&](const ISerialization::SubstreamPath & substream_path)
+            {
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
                 if (stream_name)
                     ++stream_counts[*stream_name];
             };
@@ -960,8 +992,13 @@ static NameToNameVector collectFilesForRenames(
     const NameSet & updated_columns_in_patches,
     const String & mrk_extension)
 {
+    auto pn_mapping_ptr = source_part->storage.getPhysicalNameMapping();
+    bool has_physical_names = pn_mapping_ptr && pn_mapping_ptr->isActive();
+
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
-    auto stream_counts = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
+    auto stream_counts = has_physical_names
+        ? getStreamCounts(source_part, source_part->checksums, source_part->getColumns())
+        : getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
 
     NameToNameVector rename_vector;
     NameSet collected_names;
@@ -1010,9 +1047,15 @@ static NameToNameVector collectFilesForRenames(
         {
             if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
+                auto column_in_part = source_part->getColumns().tryGetByName(command.column_name);
+
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+                    std::optional<String> stream_name;
+                    if (column_in_part)
+                        stream_name = IMergeTreeDataPart::getStreamNameForColumn(*column_in_part, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+                    else
+                        stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
 
                     /// Delete files if they are no longer shared with another column.
                     if (stream_name && --stream_counts[*stream_name] == 0)
@@ -1027,6 +1070,9 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
+                if (has_physical_names)
+                    continue;
+
                 /// Columns updated in patches should be rewritten by mutation.
                 if (updated_columns_in_patches.contains(command.rename_to))
                     continue;
@@ -1204,7 +1250,11 @@ void finalizeMutatedPart(
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        serialization_infos.writeJSON(out_hashing);
+        auto mutation_pn_mapping = new_data_part->storage.getPhysicalNameMapping();
+        if (mutation_pn_mapping && mutation_pn_mapping->isActive())
+            serialization_infos.writeJSONWithPhysicalNames(out_hashing, *mutation_pn_mapping);
+        else
+            serialization_infos.writeJSON(out_hashing);
         out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
@@ -2250,11 +2300,15 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            auto mutation_columns = ctx->updated_header.getNamesAndTypesList();
+            if (auto pn_m = ctx->data->getPhysicalNameMapping(); pn_m && pn_m->isActive())
+                populatePhysicalNames(mutation_columns, *pn_m);
+
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->data->getSettings(),
                 ctx->metadata_snapshot,
-                ctx->updated_header.getNamesAndTypesList(),
+                mutation_columns,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
@@ -2448,6 +2502,8 @@ MutateTask::MutateTask(
     ctx->storage_snapshot = ctx->data->getStorageSnapshotWithoutData(ctx->metadata_snapshot, context_);
     ctx->space_reservation = space_reservation_;
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
+    if (auto pn_m = ctx->data->getPhysicalNameMapping(); pn_m && pn_m->isActive())
+        populatePhysicalNames(ctx->storage_columns, *pn_m);
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
     ctx->need_prefix = need_prefix_;
@@ -2884,6 +2940,9 @@ bool MutateTask::prepare()
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns,
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
+
+    if (auto pn_m = ctx->data->getPhysicalNameMapping(); pn_m && pn_m->isActive())
+        populatePhysicalNames(new_columns, *pn_m);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     if (!new_columns_substreams.empty())
