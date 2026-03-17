@@ -3,12 +3,11 @@
 #include <TableFunctions/ITableFunction.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
-#include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -107,9 +106,10 @@ public:
                                                          query_info, context, processed_stage);
 
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                    from_header.getColumnsWithTypeAndName(),
-                    to_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Name);
+                    from_header->getColumnsWithTypeAndName(),
+                    to_header->getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Name,
+                    context);
 
             auto step = std::make_unique<ExpressionStep>(
                 query_plan.getCurrentHeader(),

@@ -4,6 +4,7 @@ description: 'System table which contains stack traces of all server threads. Al
 keywords: ['system table', 'stack_trace']
 slug: /operations/system-tables/stack_trace
 title: 'system.stack_trace'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -101,5 +102,5 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 
 - [Introspection Functions](../../sql-reference/functions/introspection.md) — Which introspection functions are available and how to use them.
 - [system.trace_log](../system-tables/trace_log.md) — Contains stack traces collected by the sampling query profiler.
-- [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) — Description and usage example of the `arrayMap` function.
-- [arrayFilter](/sql-reference/functions/array-functions#arrayfilterfunc-arr1-) — Description and usage example of the `arrayFilter` function.
+- [arrayMap](/sql-reference/functions/array-functions#arrayMap)) — Description and usage example of the `arrayMap` function.
+- [arrayFilter](/sql-reference/functions/array-functions#arrayFilter) — Description and usage example of the `arrayFilter` function.

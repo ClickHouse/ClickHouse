@@ -8,7 +8,14 @@
                 <max_memory_usage>
                     <min>5000000000</min>
                     <max>20000000000</max>
+                    <disallowed>6000000000</disallowed>
+                    <disallowed>6000000001</disallowed>
                 </max_memory_usage>
+                <merge_tree_max_parts_in_total>
+                    <min>1000</min>
+                    <max>200000</max>
+                    <disallowed>5000</disallowed>
+                </merge_tree_max_parts_in_total>
                <force_index_by_date>
                    <readonly/>
                </force_index_by_date>

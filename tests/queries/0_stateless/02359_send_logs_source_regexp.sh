@@ -7,5 +7,4 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=trace
 
 [ ! -z "$CLICKHOUSE_CLIENT_REDEFINED" ] && CLICKHOUSE_CLIENT=$CLICKHOUSE_CLIENT_REDEFINED
 
-regexp="executeQuery|InterpreterSelectQuery"
-$CLICKHOUSE_CLIENT --send_logs_source_regexp "$regexp" -q "SELECT 1;" 2> >(grep -v -E "$regexp" 1>&2)
+$CLICKHOUSE_CLIENT --allow_experimental_analyzer=1 --send_logs_source_regexp "executeQuery|Interpreter|Planner" -q "SELECT 1 FORMAT Null" |& grep -o -E 'executeQuery|Interpreter|Planner' | LC_ALL=c sort -u

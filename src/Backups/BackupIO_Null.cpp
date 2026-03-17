@@ -35,7 +35,13 @@ void BackupWriterNull::copyDataToFile(const String & /* path_in_backup */, const
     /// no op
 }
 
-void BackupWriterNull::copyFileFromDisk(const String & /* path_in_backup */, DiskPtr /* src_disk */, const String & /* src_path */, bool /* copy_encrypted */, UInt64 /* start_pos */, UInt64 /* length */)
+void BackupWriterNull::copyFileFromDisk(
+    const String & /* path_in_backup */,
+    DiskPtr /* src_disk */,
+    const String & /* src_path */,
+    bool /* copy_encrypted */,
+    UInt64 /* start_pos */,
+    UInt64 /* length */)
 {
     /// no op
 }
@@ -76,7 +82,7 @@ std::unique_ptr<ReadBuffer> BackupWriterNull::readFile(const String & file_name,
     throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup entry {} not found (Null backup is always empty)", file_name);
 }
 
-bool BackupWriterNull::fileContentsEqual(const String & file_name, const String & /* expected_file_contents */)
+bool BackupWriterNull::fileContentsEqual(const String & file_name, const String & /* expected_file_contents */, String & /* actual_file_contents */)
 {
     if (fs::path{file_name}.filename() == ".lock")
         return true; /// To pass the check for the ".lock" file in BackupImpl::checkLockFile().

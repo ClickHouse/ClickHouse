@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/QueryProcessingStage.h>
+#include <Core/Block_fwd.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
 namespace DB
@@ -41,7 +41,7 @@ public:
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
-    static Block getSampleBlock(
+    static SharedHeader getSampleBlock(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         bool is_subquery = false,
@@ -56,9 +56,9 @@ public:
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
 
-    static Block getCommonHeaderForUnion(const Blocks & headers);
+    static Block getCommonHeaderForUnion(const SharedHeaders & headers);
 
-    Block getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names);
+    SharedHeader getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names);
 
     std::unique_ptr<IInterpreterUnionOrSelectQuery>
     buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names);

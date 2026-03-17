@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 
+#include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -180,6 +181,19 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
     return true;
 }
 
+void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
+{
+    hash.update(getFunctionName());
+    hash.update(parameters.size());
+    for (const auto & param : parameters)
+        hash.update(param.getType());
+    hash.update(argument_types.size());
+    for (const auto & arg_type : argument_types)
+        arg_type->updateHash(hash);
+    if (version)
+        hash.update(*version);
+}
+
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))
@@ -192,7 +206,7 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 }
 
 
-SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
+SerializationPtr DataTypeAggregateFunction::doGetSerialization(const SerializationInfoSettings &) const
 {
     return std::make_shared<SerializationAggregateFunction>(function, getName(), getVersion());
 }
@@ -234,7 +248,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected level of parameters to aggregate function");
 
         function_name = parametric->name;
-        action = parametric->nulls_action;
+        action = parametric->getNullsAction();
 
         if (parametric->arguments)
         {
@@ -302,6 +316,19 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
 void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 {
     factory.registerDataType("AggregateFunction", create);
+}
+
+bool hasAggregateFunctionType(const DataTypePtr & type)
+{
+    auto result = false;
+    auto check = [&](const IDataType & t)
+    {
+        result |= WhichDataType(t).isAggregateFunction();
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
 }
 
 }

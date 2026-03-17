@@ -1,0 +1,14 @@
+<clickhouse>
+    <!-- Setup all caches to 128MB to consume less memory and test eviction -->
+    <uncompressed_cache_size>134217728</uncompressed_cache_size>
+    <mark_cache_size>134217728</mark_cache_size>
+    <primary_index_cache_size>134217728</primary_index_cache_size>
+    <iceberg_metadata_files_cache_size>134217728</iceberg_metadata_files_cache_size>
+    <vector_similarity_index_cache_size>134217728</vector_similarity_index_cache_size>
+    <index_uncompressed_cache_size>134217728</index_uncompressed_cache_size>
+    <index_mark_cache_size>134217728</index_mark_cache_size>
+    <query_cache>
+      <max_size_in_bytes>134217728</max_size_in_bytes>
+    </query_cache>
+    <compiled_expression_cache_size>134217728</compiled_expression_cache_size>
+</clickhouse>

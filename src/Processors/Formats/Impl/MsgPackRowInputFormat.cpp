@@ -48,11 +48,11 @@ namespace ErrorCodes
     extern const int UNEXPECTED_END_OF_FILE;
 }
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
+MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
     : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, settings) {}
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
-    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_.getDataTypes())  {}
+MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
+    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_->getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {
@@ -131,13 +131,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
     {
         case TypeIndex::UInt8:
         {
-            assert_cast<ColumnUInt8 &>(column).insertValue(value);
+            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
             break;
         }
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            assert_cast<ColumnUInt16 &>(column).insertValue(value);
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
             break;
         }
         case TypeIndex::DateTime: [[fallthrough]];
@@ -154,13 +154,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
-            assert_cast<ColumnInt8 &>(column).insertValue(value);
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
             break;
         }
         case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
-            assert_cast<ColumnInt16 &>(column).insertValue(value);
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
             break;
         }
         case TypeIndex::Date32: [[fallthrough]];
@@ -407,8 +407,13 @@ bool MsgPackVisitor::start_array(size_t size) // NOLINT
 
         ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(info_stack.top().column);
         /// Push nested columns into stack in reverse order.
-        for (ssize_t i = nested_types.size() - 1; i >= 0; --i)
+        for (ssize_t i = static_cast<ssize_t>(nested_types.size()) - 1; i >= 0; --i)
             info_stack.push(Info{column_tuple.getColumn(i), nested_types[i], true, std::nullopt, nullptr});
+
+        /// There are no nested columns to grow, so we must explicitly increment the column size.
+        /// Otherwise, `column.size()` will return 0 for empty tuples columns.
+        if (nested_types.empty())
+            column_tuple.addSize(1);
     }
     else
     {
@@ -684,7 +689,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             const RowInputFormatParams & params,
             const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowInputFormat>(sample, buf, params, settings);
+        return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
     factory.registerFileExtension("messagepack", "MsgPack");
 }

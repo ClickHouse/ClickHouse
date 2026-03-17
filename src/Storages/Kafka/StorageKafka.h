@@ -22,7 +22,6 @@ namespace DB
 
 struct KafkaSettings;
 class ReadFromStorageKafka;
-class StorageSystemKafkaConsumers;
 class ThreadStatus;
 
 template <typename TStorageKafka>
@@ -52,10 +51,14 @@ public:
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViews() const override { return true; }
+    bool isMessageQueue() const override { return true; }
+
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
+
+    void renameInMemory(const StorageID & new_table_id) override;
 
     void read(
         QueryPlan & query_plan,
@@ -77,7 +80,6 @@ public:
     bool prefersLargeBlocks() const override { return false; }
 
     void pushConsumer(KafkaConsumerPtr consumer);
-    KafkaConsumerPtr popConsumer();
     KafkaConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const auto & getFormatName() const { return format_name; }
@@ -161,9 +163,11 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    size_t getSchemaRegistrySkipBytes() const;
 
     bool streamToViews();
 
+    void cleanConsumersByTTL();
     void cleanConsumers();
 };
 

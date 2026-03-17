@@ -30,15 +30,16 @@ namespace DB
 struct Settings;
 struct TimeoutSetter;
 
+class JWTProvider;
 class Connection;
 struct ConnectionParameters;
+struct ClusterFunctionReadTaskResponse;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
 
 class NativeReader;
 class NativeWriter;
-
 
 /** Connection with database server, to use by client.
   * How to use - see Core/Protocol.h
@@ -64,7 +65,12 @@ public:
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
-        const String & bind_host_);
+        const String & tls_sni_override_,
+        const String & bind_host_
+#if USE_JWT_CPP && USE_SSL
+        , std::shared_ptr<JWTProvider> jwt_provider_ = nullptr
+#endif
+    );
 
     ~Connection() override;
 
@@ -138,9 +144,9 @@ public:
 
     void forceConnected(const ConnectionTimeouts & timeouts) override;
 
-    bool isConnected() const override { return connected; }
+    bool isConnected() const override { return connected && in && out && !in->isCanceled() && !out->isCanceled(); }
 
-    bool checkConnected(const ConnectionTimeouts & timeouts) override { return connected && ping(timeouts); }
+    bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
 
     void disconnect() override;
 
@@ -148,7 +154,7 @@ public:
     /// You could pass size of serialized/compressed block.
     void sendPreparedData(ReadBuffer & input, size_t size, const String & name = "");
 
-    void sendReadTaskResponse(const String &);
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
     /// Send all scalars.
     void sendScalarsData(Scalars & data);
     /// Send parts' uuids to excluded them from query processing
@@ -174,6 +180,8 @@ public:
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
 
+    void setAddressConnectTimeoutExpired() { address_connect_timeout_expired = true; }
+
     void setFormatSettings(const FormatSettings & settings) override
     {
         format_settings = settings;
@@ -195,6 +203,7 @@ private:
     String quota_key;
 #if USE_JWT_CPP && USE_SSL
     String jwt;
+    std::shared_ptr<JWTProvider> jwt_provider;
 #endif
 
     /// For inter-server authorization
@@ -227,6 +236,7 @@ private:
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     UInt64 server_parallel_replicas_protocol_version = 0;
+    UInt64 worker_cluster_function_protocol_version = 0;
     UInt64 server_query_plan_serialization_version = 0;
     String server_timezone;
     String server_display_name;
@@ -240,6 +250,7 @@ private:
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
     Protocol::Secure secure;             /// Enable data encryption for communication.
+    String tls_sni_override;             /// Override for TLS SNI field.
     String bind_host;
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
@@ -262,7 +273,10 @@ private:
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
 
+    /// True if there are more resolved addresses to try when connecting (hostname may resolve to multiple IPs).
     bool have_more_addresses_to_connect = false;
+    /// Set by async callback when the per-address connect timeout expires, used to abort the current attempt.
+    bool address_connect_timeout_expired = false;
 
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper
@@ -295,17 +309,17 @@ private:
     std::optional<FormatSettings> format_settings;
 
     void connect(const ConnectionTimeouts & timeouts);
-    void sendHello(const Poco::Timespan & handshake_timeout);
+    void sendHello();
 
     void cancel() noexcept;
     void reset() noexcept;
 
 #if USE_SSH
-    void performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout);
+    void performHandshakeForSSHAuth();
 #endif
 
     void sendAddendum();
-    void receiveHello(const Poco::Timespan & handshake_timeout);
+    void receiveHello();
 
 #if USE_SSL
     void sendClusterNameAndSalt();
@@ -317,7 +331,7 @@ private:
     Block receiveDataImpl(NativeReader & reader);
     Block receiveProfileEvents();
 
-    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
+    String receiveTableColumns();
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
@@ -325,11 +339,12 @@ private:
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
+    void initMaybeCompressedInput();
     void initBlockInput();
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
 
-    [[noreturn]] void throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected);
+    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected, TimeoutSetter * timeout_setter = nullptr);
 };
 
 template <typename Conn>

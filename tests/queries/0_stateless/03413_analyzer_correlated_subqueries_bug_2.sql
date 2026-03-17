@@ -1,8 +1,6 @@
 set enable_analyzer = 1;
 set allow_experimental_correlated_subqueries = 1;
 
-SET enable_parallel_replicas = 0;
-
 CREATE TABLE orders  (
     o_orderkey       Int32,
     o_custkey        Int32,

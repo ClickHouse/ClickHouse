@@ -4,7 +4,6 @@
 
 #if USE_MONGODB
 #include <Common/JSONBuilder.h>
-#include <Interpreters/Context.h>
 #include <Processors/ISource.h>
 #include <Storages/StorageMongoDB.h>
 
@@ -25,7 +24,7 @@ public:
         const std::string & collection_name,
         const bsoncxx::document::view_or_value & query,
         const mongocxx::options::find & options,
-        const Block & sample_block_,
+        SharedHeader sample_block_,
         const UInt64 & max_block_size_);
 
     ~MongoDBSource() override;
@@ -48,9 +47,10 @@ private:
     Block sample_block;
     std::unordered_map<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
     const UInt64 max_block_size;
-
-    JSONBuilder::FormatSettings json_format_settings = {{}, 0, true, true};
     bool all_read = false;
+
+    const DB::FormatSettings db_json_format_settings;
+    const JSONBuilder::FormatSettings json_format_settings;
 };
 
 }

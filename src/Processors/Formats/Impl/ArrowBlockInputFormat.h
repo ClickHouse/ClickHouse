@@ -3,6 +3,7 @@
 
 #if USE_ARROW
 
+#include <Core/BlockMissingValues.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -19,7 +20,7 @@ class ArrowColumnToCHColumn;
 class ArrowBlockInputFormat : public IInputFormat
 {
 public:
-    ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_);
+    ArrowBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_);
 
     void resetParser() override;
 

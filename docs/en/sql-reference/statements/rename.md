@@ -4,6 +4,7 @@ sidebar_label: 'RENAME'
 sidebar_position: 48
 slug: /sql-reference/statements/rename
 title: 'RENAME Statement'
+doc_type: 'reference'
 ---
 
 # RENAME Statement
@@ -63,4 +64,4 @@ RENAME DICTIONARY [db0.]dict_A TO [db1.]dict_B [,...] [ON CLUSTER cluster]
 
 **See Also**
 
-- [Dictionaries](../../sql-reference/dictionaries/index.md)
+- [Dictionaries](./create/dictionary/overview.md)

@@ -35,6 +35,10 @@ public:
     /// Return entries between [start, end)
     nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override;
 
+    /// Return entries between [start, end) with total size limited by batch_size_hint_in_bytes
+    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
+    log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes) override;
+
     /// Return entry at index
     nuraft::ptr<nuraft::log_entry> entry_at(uint64_t index) override;
 

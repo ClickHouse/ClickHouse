@@ -1,7 +1,7 @@
 #include <utility>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Interpreters/Squashing.h>
-#include "Processors/Chunk.h"
+#include <Processors/Chunk.h>
 
 namespace DB
 {
@@ -12,7 +12,7 @@ namespace ErrorCodes
 }
 
 SquashingTransform::SquashingTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
     , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
@@ -20,7 +20,9 @@ SquashingTransform::SquashingTransform(
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    cur_chunk = Squashing::squash(squashing.add(std::move(chunk)));
+    cur_chunk = Squashing::squash(
+        squashing.add(std::move(chunk)),
+        getInputPort().getSharedHeader());
 }
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
@@ -33,7 +35,7 @@ SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 
 void SquashingTransform::onFinish()
 {
-    finish_chunk = Squashing::squash(squashing.flush());
+    finish_chunk = Squashing::squash(squashing.flush(), getInputPort().getSharedHeader());
 }
 
 void SquashingTransform::work()
@@ -55,7 +57,7 @@ void SquashingTransform::work()
 }
 
 SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : IInflatingTransform(header, header)
     , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
@@ -63,7 +65,7 @@ SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
 
 void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
-    squashed_chunk = Squashing::squash(squashing.add(std::move(chunk)));
+    squashed_chunk = Squashing::squash(squashing.add(std::move(chunk)), getOutputPort().getSharedHeader());
 }
 
 Chunk SimpleSquashingChunksTransform::generate()
@@ -83,7 +85,7 @@ bool SimpleSquashingChunksTransform::canGenerate()
 
 Chunk SimpleSquashingChunksTransform::getRemaining()
 {
-    return Squashing::squash(squashing.flush());
+    return Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
 }
 
 }

@@ -1,12 +1,13 @@
 ---
-description: 'Overview of Data Replication in ClickHouse'
-sidebar_label: 'Data Replication'
+description: 'Overview of data replication with the Replicated* family of table engines in ClickHouse'
+sidebar_label: 'Replicated*'
 sidebar_position: 20
 slug: /engines/table-engines/mergetree-family/replication
-title: 'Data Replication'
+title: 'Replicated* table engines'
+doc_type: 'reference'
 ---
 
-# Data Replication
+# Replicated* table engines
 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
@@ -14,8 +15,7 @@ In ClickHouse Cloud replication is managed for you. Please create your tables wi
 ```sql
 ENGINE = ReplicatedMergeTree(
     '/clickhouse/tables/{shard}/table_name',
-    '{replica}',
-    ver
+    '{replica}'
 )
 ```
 
@@ -137,38 +137,24 @@ You can have any number of replicas of the same data. Based on our experiences, 
 
 The system monitors data synchronicity on replicas and is able to recover after a failure. Failover is automatic (for small differences in data) or semi-automatic (when data differs too much, which may indicate a configuration error).
 
-## Creating Replicated Tables {#creating-replicated-tables}
+## Creating replicated tables {#creating-replicated-tables}
 
 :::note
-In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
-```sql
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
-```
-with:
-```sql
-ENGINE = ReplicatedMergeTree
-```
-:::
+In ClickHouse Cloud, replication is handled automatically.
 
-The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
+Create tables using [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) without replication arguments. The system internally rewrites [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) to [`SharedMergeTree`](/cloud/reference/shared-merge-tree) for replication and data distribution.
 
-:::tip
-Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.
+Avoid using `ReplicatedMergeTree` or specifying replication parameters, as replication is managed by the platform.
+
 :::
 
 ### Replicated\*MergeTree parameters {#replicatedmergetree-parameters}
 
-#### zoo_path {#zoo_path}
-
-`zoo_path` — The path to the table in ClickHouse Keeper.
-
-#### replica_name {#replica_name}
-
-`replica_name` — The replica name in ClickHouse Keeper.
-
-#### other_parameters {#other_parameters}
-
-`other_parameters` — Parameters of an engine which is used for creating the replicated version, for example, version in `ReplacingMergeTree`.
+| Parameter       | Description                                                                  |
+|-----------------|------------------------------------------------------------------------------|
+| `zoo_path`      | The path to the table in ClickHouse Keeper.                                  |
+| `replica_name`  | The replica name in ClickHouse Keeper.                                       |
+| `other_parameters` | Parameters of an engine used for creating the replicated version, for example, version in `ReplacingMergeTree`. |
 
 Example:
 
@@ -179,6 +165,7 @@ CREATE TABLE table_name
     CounterID UInt32,
     UserID UInt32,
     ver UInt16
+)
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', ver)
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
@@ -261,7 +248,7 @@ If you add a new replica after the table already contains some data on other rep
 
 To delete a replica, run `DROP TABLE`. However, only one replica is deleted – the one that resides on the server where you run the query.
 
-## Recovery After Failures {#recovery-after-failures}
+## Recovery after failures {#recovery-after-failures}
 
 If ClickHouse Keeper is unavailable when a server starts, replicated tables switch to read-only mode. The system periodically attempts to connect to ClickHouse Keeper.
 
@@ -285,7 +272,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Then restart the server. On start, the server deletes these flags and starts recovery.
 
-## Recovery After Complete Data Loss {#recovery-after-complete-data-loss}
+## Recovery after complete data loss {#recovery-after-complete-data-loss}
 
 If all data and metadata disappeared from one of the servers, follow these steps for recovery:
 
@@ -345,7 +332,7 @@ If you want to get rid of a `ReplicatedMergeTree` table without launching the se
 
 After this, you can launch the server, create a `MergeTree` table, move the data to its directory, and then restart the server.
 
-## Recovery When Metadata in the ClickHouse Keeper Cluster Is Lost or Damaged {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
+## Recovery when metadata in the ClickHouse Keeper cluster is lost or damaged {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
 
 If the data in ClickHouse Keeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
 

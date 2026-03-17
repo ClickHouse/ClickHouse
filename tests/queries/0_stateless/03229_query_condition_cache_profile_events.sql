@@ -1,7 +1,11 @@
 -- Tags: no-parallel, no-parallel-replicas
 -- Tag no-parallel: Messes with internal cache
+-- add_minmax_index_for_numeric_columns=0: Would use the index instead (used before the QueryConditionCache)
 
- -- w/o local plan for parallel replicas the test will fail in ParallelReplicas CI run since filter steps will be executed as part of remote queries
+-- Does additional QCC lookups that the test doesn't expect
+set automatic_parallel_replicas_mode=0;
+
+-- w/o local plan for parallel replicas the test will fail in ParallelReplicas CI run since filter steps will be executed as part of remote queries
 set parallel_replicas_local_plan=1;
 
 SET allow_experimental_analyzer = 1;
@@ -10,11 +14,11 @@ SET allow_experimental_analyzer = 1;
 
 SELECT '--- with move to PREWHERE';
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab (a Int64, b Int64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE tab (a Int64, b Int64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns=0;
 INSERT INTO tab SELECT number, number FROM numbers(1_000_000); -- 1 mio rows sounds like a lot but the QCC doesn't cache anything for less data
 
 SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;
@@ -25,7 +29,7 @@ SELECT
     ProfileEvents['QueryConditionCacheMisses'],
     toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query = 'SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;'
@@ -40,7 +44,7 @@ SELECT
     ProfileEvents['QueryConditionCacheMisses'],
     toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query = 'SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;'
@@ -49,7 +53,7 @@ ORDER BY
 
 SELECT '--- without move to PREWHERE';
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
 
@@ -59,7 +63,7 @@ SELECT
     ProfileEvents['QueryConditionCacheMisses'],
     toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query = 'SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'
@@ -74,7 +78,7 @@ SELECT
     ProfileEvents['QueryConditionCacheMisses'],
     toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query = 'SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'

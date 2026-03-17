@@ -4,10 +4,15 @@ description: 'A data set that is always in RAM. It is intended for use on the ri
 sidebar_label: 'Set'
 sidebar_position: 60
 slug: /engines/table-engines/special/set
-title: 'Set Table Engine'
+title: 'Set table engine'
+doc_type: 'reference'
 ---
 
-# Set Table Engine
+# Set table engine
+
+:::note
+In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
+:::
 
 A data set that is always in RAM. It is intended for use on the right side of the `IN` operator (see the section "IN operators").
 
@@ -18,11 +23,11 @@ Data is always located in RAM. For `INSERT`, the blocks of inserted data are als
 
 For a rough server restart, the block of data on the disk might be lost or damaged. In the latter case, you may need to manually delete the file with damaged data.
 
-### Limitations and Settings {#join-limitations-and-settings}
+### Limitations and settings {#join-limitations-and-settings}
 
 When creating a table, the following settings are applied:
 
-#### persistent {#persistent}
+#### Persistent {#persistent}
 
 Disables persistency for the Set and [Join](/engines/table-engines/special/join) table engines.
 

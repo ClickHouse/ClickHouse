@@ -30,6 +30,7 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    void updateHashImpl(SipHash &) const override {}
 
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -47,7 +48,7 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
 
-    SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationIP<IPv4>>(); }
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return std::make_shared<SerializationIP<IPv4>>(); }
 };
 
 class DataTypeIPv6 : public IDataType
@@ -71,6 +72,7 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    void updateHashImpl(SipHash &) const override {}
 
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -85,7 +87,7 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
 
-    SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationIP<IPv6>>(); }
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return std::make_shared<SerializationIP<IPv6>>(); }
 };
 
 

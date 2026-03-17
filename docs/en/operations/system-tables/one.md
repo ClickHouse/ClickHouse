@@ -4,6 +4,7 @@ description: 'System table containing a single row with a single `dummy` UInt8 c
 keywords: ['system table', 'one']
 slug: /operations/system-tables/one
 title: 'system.one'
+doc_type: 'reference'
 ---
 
 # system.one

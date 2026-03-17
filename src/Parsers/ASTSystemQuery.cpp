@@ -2,10 +2,11 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Poco/String.h>
 #include <Common/quoteString.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-
 
 namespace DB
 {
@@ -70,7 +71,7 @@ void ASTSystemQuery::setDatabase(const String & name)
 
     if (!name.empty())
     {
-        database = std::make_shared<ASTIdentifier>(name);
+        database = make_intrusive<ASTIdentifier>(name);
         children.push_back(database);
     }
 }
@@ -85,7 +86,7 @@ void ASTSystemQuery::setTable(const String & name)
 
     if (!name.empty())
     {
-        table = std::make_shared<ASTIdentifier>(name);
+        table = make_intrusive<ASTIdentifier>(name);
         children.push_back(table);
     }
 }
@@ -94,14 +95,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
-        ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
-                      << (settings.hilite ? hilite_none : "");
+        ostr << backQuoteIfNeed(identifier)
+                     ;
         return ostr;
     };
 
     auto print_keyword = [&](const auto & keyword) -> WriteBuffer &
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
+        ostr << keyword;
         return ostr;
     };
 
@@ -115,6 +116,20 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         chassert(table);
         table->format(ostr, settings, state, frame);
+
+        if (if_exists)
+            print_keyword(" IF EXISTS");
+
+        return ostr;
+    };
+
+    auto print_restore_database_replica = [&]() -> WriteBuffer &
+    {
+        chassert(database);
+
+        ostr << " ";
+        print_identifier(getDatabase());
+
         return ostr;
     };
 
@@ -129,9 +144,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_keyword(" FROM TABLE ");
             print_database_table();
         }
-        else if (!replica_zk_path.empty())
+        else if (!full_replica_zk_path.empty())
         {
-            print_keyword(" FROM ZKPATH ") << quoteString(replica_zk_path);
+            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
         }
         else if (database)
         {
@@ -149,7 +164,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     print_keyword("SYSTEM") << " ";
     print_keyword(typeToString(type));
-    if (!cluster.empty())
+
+    std::unordered_set<Type> queries_with_on_cluster_at_end = {
+        Type::CLEAR_FILESYSTEM_CACHE,
+        Type::SYNC_FILESYSTEM_CACHE,
+        Type::CLEAR_QUERY_CACHE,
+    };
+
+    if (!queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
         formatOnCluster(ostr, settings);
 
     switch (type)
@@ -229,7 +251,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
             if (query_settings)
             {
-                ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+                ostr << settings.nl_or_ws << "SETTINGS ";
                 query_settings->format(ostr, settings, state, frame);
             }
 
@@ -239,7 +261,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
-        case Type::DROP_DISK_METADATA_CACHE:
+        case Type::CLEAR_DISK_METADATA_CACHE:
         {
             if (table)
             {
@@ -267,7 +289,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::SYNC_DATABASE_REPLICA:
         {
             ostr << ' ';
-            print_identifier(database->as<ASTIdentifier>()->name());
+            database->format(ostr, settings, state, frame);
+            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            {
+                ostr << ' ';
+                print_keyword(magic_enum::enum_name(sync_replica_mode));
+            }
             break;
         }
         case Type::DROP_REPLICA:
@@ -277,13 +304,21 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_drop_replica();
             break;
         }
+        case Type::RESTORE_DATABASE_REPLICA:
+        {
+            if (database)
+            {
+                print_restore_database_replica();
+            }
+            break;
+        }
         case Type::SUSPEND:
         {
             print_keyword(" FOR ") << seconds;
             print_keyword(" SECOND");
             break;
         }
-        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
         {
             if (!schema_cache_format.empty())
             {
@@ -292,7 +327,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::DROP_FILESYSTEM_CACHE:
+        case Type::CLEAR_FILESYSTEM_CACHE:
         {
             if (!filesystem_cache_name.empty())
             {
@@ -310,7 +345,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::DROP_SCHEMA_CACHE:
+        case Type::CLEAR_SCHEMA_CACHE:
         {
             if (!schema_cache_storage.empty())
             {
@@ -319,16 +354,21 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
-        {
-            break;
-        }
-        case Type::DROP_DISTRIBUTED_CACHE:
+        case Type::CLEAR_DISTRIBUTED_CACHE:
         {
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
-            else if (!distributed_cache_servive_id.empty())
-                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
+            else if (!distributed_cache_server_id.empty())
+                ostr << " " << distributed_cache_server_id;
+            break;
+        }
+        case Type::CLEAR_QUERY_CACHE:
+        {
+            if (query_result_cache_tag.has_value())
+            {
+                print_keyword(" TAG ");
+                ostr << quoteString(*query_result_cache_tag);
+            }
             break;
         }
         case Type::UNFREEZE:
@@ -340,8 +380,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::UNLOCK_SNAPSHOT:
         {
             ostr << quoteString(backup_name);
-            print_keyword(" FROM ");
-            backup_source->format(ostr, settings);
+            if (backup_source)
+            {
+                print_keyword(" FROM ");
+                backup_source->format(ostr, settings);
+            }
             break;
         }
         case Type::START_LISTEN:
@@ -392,10 +435,26 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
+        {
+            ostr << ' ';
+            print_identifier(fail_point_name);
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             ostr << ' ';
             print_identifier(fail_point_name);
+            if (fail_point_action == FailPointAction::PAUSE)
+            {
+                ostr << ' ';
+                print_keyword("PAUSE");
+            }
+            else if (fail_point_action == FailPointAction::RESUME)
+            {
+                ostr << ' ';
+                print_keyword("RESUME");
+            }
             break;
         }
         case Type::REFRESH_VIEW:
@@ -428,42 +487,123 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            ostr << ' ';
+            print_identifier(delta_kernel_tracing_level);
+            break;
+        }
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
         {
             bool comma = false;
-            for (const auto & cur_log : logs)
+            for (const auto & cur_log : tables)
             {
                 if (comma)
                     ostr << ',';
                 else
                     comma = true;
                 ostr << ' ';
-                print_identifier(cur_log);
+
+                if (!cur_log.first.empty())
+                    print_identifier(cur_log.first) << ".";
+                print_identifier(cur_log.second);
             }
             break;
         }
+
+        case Type::ALLOCATE_MEMORY:
+        {
+            ostr << ' ' << untracked_memory_size;
+            break;
+        }
+
+#if USE_XRAY
+        case Type::INSTRUMENT_ADD:
+        {
+            if (!instrumentation_function_name.empty())
+                ostr << ' ' << quoteString(instrumentation_function_name);
+
+            if (!instrumentation_handler_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(Poco::toUpper(instrumentation_handler_name));
+            }
+
+            switch (instrumentation_entry_type)
+            {
+                case Instrumentation::EntryType::ENTRY:
+                    ostr << " ENTRY"; break;
+                case Instrumentation::EntryType::EXIT:
+                    ostr << " EXIT"; break;
+                case Instrumentation::EntryType::ENTRY_AND_EXIT:
+                    break;
+            }
+
+            bool whitespace = false;
+            for (const auto & param : instrumentation_parameters)
+            {
+                if (!whitespace)
+                    ostr << ' ';
+                else
+                    whitespace = true;
+                std::visit([&](const auto & value)
+                {
+                    using T = std::decay_t<decltype(value)>;
+                    if constexpr (std::is_same_v<T, String>)
+                        ostr << ' ' << quoteString(value);
+                    else
+                        ostr << ' ' << value;
+                }, param);
+            }
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            if (!instrumentation_subquery.empty())
+                ostr << " (" << instrumentation_subquery << ')';
+            else if (instrumentation_point)
+            {
+                if (std::holds_alternative<Instrumentation::All>(instrumentation_point.value()))
+                    ostr << " ALL";
+                else if (std::holds_alternative<String>(instrumentation_point.value()))
+                    ostr << ' ' << quoteString(std::get<String>(instrumentation_point.value()));
+                else
+                    ostr << ' ' << std::get<UInt64>(instrumentation_point.value());
+            }
+            break;
+        }
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+#endif
+
         case Type::KILL:
         case Type::SHUTDOWN:
-        case Type::DROP_DNS_CACHE:
-        case Type::DROP_CONNECTIONS_CACHE:
-        case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_CONDITION_CACHE:
-        case Type::DROP_QUERY_CACHE:
-        case Type::DROP_MARK_CACHE:
-        case Type::DROP_PRIMARY_INDEX_CACHE:
-        case Type::DROP_INDEX_MARK_CACHE:
-        case Type::DROP_UNCOMPRESSED_CACHE:
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::DROP_COMPILED_EXPRESSION_CACHE:
-        case Type::DROP_S3_CLIENT_CACHE:
-        case Type::DROP_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_DNS_CACHE:
+        case Type::CLEAR_CONNECTIONS_CACHE:
+        case Type::CLEAR_MMAP_CACHE:
+        case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_MARK_CACHE:
+        case Type::CLEAR_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_INDEX_MARK_CACHE:
+        case Type::CLEAR_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
+        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_CACHES:
+        case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
+        case Type::CLEAR_S3_CLIENT_CACHE:
+        case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::JEMALLOC_ENABLE_PROFILE:
         case Type::JEMALLOC_DISABLE_PROFILE:
-        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::SYNC_TRANSACTION_LOG:
         case Type::SYNC_FILE_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
@@ -476,19 +616,24 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
-        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::START_THREAD_FUZZER:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
-        case Type::DROP_PAGE_CACHE:
+        case Type::CLEAR_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
+        case Type::RECONNECT_ZOOKEEPER:
+        case Type::FREE_MEMORY:
+        case Type::RESET_DDL_WORKER:
             break;
         case Type::UNKNOWN:
         case Type::END:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SYSTEM command");
     }
+
+    if (queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
+        formatOnCluster(ostr, settings);
 }
 
 

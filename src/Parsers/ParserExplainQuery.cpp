@@ -50,11 +50,11 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     else
         return false;
 
-    auto explain_query = std::make_shared<ASTExplainQuery>(kind);
+    auto explain_query = make_intrusive<ASTExplainQuery>(kind);
 
     {
         ASTPtr settings;
-        ParserSetQuery parser_settings(true);
+        ParserSetQuery parser_settings(true, false);
 
         auto begin = pos;
         if (parser_settings.parse(pos, settings, expected))

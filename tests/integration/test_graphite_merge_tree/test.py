@@ -254,6 +254,8 @@ SELECT * FROM test.graphite;
 
 
 def test_system_graphite_retentions(graphite_table):
+    # Avoid flakiness caused by concurrent test runs
+    q("DROP TABLE IF EXISTS test.graphite2")
     expected = """
 graphite_rollup	all	\\\\.count$	sum	0	0	1	0	['test']	['graphite']
 graphite_rollup	all	\\\\.max$	max	0	0	2	0	['test']	['graphite']
@@ -512,3 +514,24 @@ CREATE TABLE test.graphite_not_created
     assert "Age and precision should only grow up: " in str(exc.value)
     assert "36000:600" in str(exc.value)
     assert "72000:300" in str(exc.value)
+
+
+def test_ttl_version(graphite_table):
+    q(
+        """
+DROP TABLE IF EXISTS test.graphite;
+CREATE TABLE test.graphite
+    (
+        metric String, value Float64, timestamp UInt32, date Date,
+        updated UInt32 TTL date + INTERVAL 1 DAY)
+    ENGINE = GraphiteMergeTree('graphite_rollup')
+    PARTITION BY toYYYYMM(date)
+    ORDER BY (metric, timestamp)
+    SETTINGS index_granularity=8192;
+"""
+    )
+
+    to_insert = "one_min.x1	100	1000000000	2001-09-09	1"
+    q("INSERT INTO test.graphite FORMAT TSV", to_insert)
+    q("OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL")
+    q("OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL")

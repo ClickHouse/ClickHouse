@@ -84,8 +84,7 @@ public:
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
-    static void processSQLSecurityOption(
-        ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
+    static void processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
 
 private:
     struct TableProperties
@@ -101,7 +100,7 @@ private:
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
-    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode) const;
+    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
     void setEngine(ASTCreateQuery & create) const;
@@ -110,6 +109,7 @@ private:
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
+    BlockIO doCreateOrReplaceTemporaryTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 
@@ -122,6 +122,10 @@ private:
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
+
+    /// Remove transaction metadata files (txn_version.txt) from all parts for a table.
+    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
+
     void throwIfTooManyEntities(ASTCreateQuery & create) const;
 
     ASTPtr query_ptr;
@@ -135,7 +139,7 @@ private:
     bool need_ddl_guard = true;
     bool is_restore_from_backup = false;
 
-    mutable String as_database_saved;
-    mutable String as_table_saved;
+    String as_database_saved;
+    String as_table_saved;
 };
 }

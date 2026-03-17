@@ -1,3 +1,5 @@
+SET use_legacy_to_time = 0;
+
 -- Within the acceptable range
 SELECT toTime('999:59:59');
 SELECT toTime64('999:59:59.999999999', 9);

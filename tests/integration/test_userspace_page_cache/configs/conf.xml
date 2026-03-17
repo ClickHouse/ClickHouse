@@ -6,7 +6,6 @@
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-                <send_metadata>true</send_metadata>
             </s3>
         </disks>
         <policies>

@@ -1,11 +1,12 @@
 #pragma once
 
-#include <string>
+#include <Core/Block_fwd.h>
 #include <IO/Progress.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/Stopwatch.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -27,7 +28,7 @@ class IOutputFormat : public IProcessor
 public:
     enum PortKind { Main = 0, Totals = 1, Extremes = 2 };
 
-    IOutputFormat(const Block & header_, WriteBuffer & out_);
+    IOutputFormat(SharedHeader header_, WriteBuffer & out_);
 
     Status prepare() override;
     void work() override;
@@ -54,10 +55,7 @@ public:
     /// Set initial progress values on initialization of the format, before it starts writing the data.
     void setProgress(Progress progress);
 
-    /// Content-Type to set when sending HTTP response.
-    virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
-
-    InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
+    InputPort & getPort(PortKind kind);
 
     /// Compatibility with old interface.
     /// TODO: separate formats and processors.
@@ -67,6 +65,7 @@ public:
     void finalize();
 
     virtual bool expectMaterializedColumns() const { return true; }
+    virtual bool supportsSpecialSerializationKinds() const { return false; }
 
     void setTotals(const Block & totals);
     void setExtremes(const Block & extremes);
@@ -109,6 +108,11 @@ public:
     {
         progress_write_frequency_us = value;
     }
+
+    /// Derived classes can use some wrappers around out WriteBuffer
+    /// and can override this method to return wrapper
+    /// that should be used in its derived classes.
+    virtual WriteBuffer * getWriteBufferPtr() { return &out; }
 
 protected:
     friend class ParallelFormattingOutputFormat;
@@ -184,11 +188,6 @@ protected:
     /// Return true if format saves totals and extremes in consumeTotals/consumeExtremes and
     /// outputs them in finalize() method.
     virtual bool areTotalsAndExtremesUsedInFinalize() const { return false; }
-
-    /// Derived classes can use some wrappers around out WriteBuffer
-    /// and can override this method to return wrapper
-    /// that should be used in its derived classes.
-    virtual WriteBuffer * getWriteBufferPtr() { return &out; }
 
     WriteBuffer & out;
 

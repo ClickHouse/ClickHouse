@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/AsynchronousMetrics.h>
 
 namespace DB

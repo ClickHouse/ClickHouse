@@ -35,13 +35,13 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
  */
 static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 {
-    const Databases databases = DatabaseCatalog::instance().getDatabases();
+    const Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     StorageSystemGraphite::Configs graphite_configs;
 
     for (const auto & db : databases)
     {
         /// Check if database can contain MergeTree tables
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())

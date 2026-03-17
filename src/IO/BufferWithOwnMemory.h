@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -76,11 +77,18 @@ struct Memory : boost::noncopyable, Allocator
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 
-    void resize(size_t new_size)
+    void resize(size_t new_size, bool deallocate_if_empty = false)
     {
         if (!m_data)
         {
             alloc(new_size);
+            return;
+        }
+
+        if (new_size == 0 && deallocate_if_empty)
+        {
+            dealloc();
+            m_size = m_capacity = 0;
             return;
         }
 
@@ -148,13 +156,32 @@ class BufferWithOwnMemory : public Base
 {
 protected:
     Memory<> memory;
+    const bool use_existing_memory;
+
 public:
-    /// If non-nullptr 'existing_memory' is passed, then buffer will not create its own memory and will use existing_memory without ownership.
-    explicit BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
+    /// If non-nullptr 'existing_memory' is passed,
+    /// then buffer will not create its own memory and will use existing_memory without ownership.
+    explicit BufferWithOwnMemory(
+        size_t size = DBMS_DEFAULT_BUFFER_SIZE,
+        char * existing_memory = nullptr,
+        size_t alignment = 0)
         : Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
+        , use_existing_memory(existing_memory != nullptr)
     {
         Base::set(existing_memory ? existing_memory : memory.data(), size);
         Base::padded = !existing_memory;
+    }
+
+    void resize(size_t size, bool deallocate_if_empty = false)
+    {
+        if (use_existing_memory)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Existing memory was used for the buffer, resize is not allowed");
+        }
+        memory.resize(size, deallocate_if_empty);
+        Base::set(memory.data(), size);
     }
 };
 

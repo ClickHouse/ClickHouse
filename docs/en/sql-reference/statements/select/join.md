@@ -3,6 +3,8 @@ description: 'Documentation for JOIN Clause'
 sidebar_label: 'JOIN'
 slug: /sql-reference/statements/select/join
 title: 'JOIN Clause'
+keywords: ['INNER JOIN', 'LEFT JOIN', 'LEFT OUTER JOIN', 'RIGHT JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LEFT SEMI JOIN', 'RIGHT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN', 'LEFT ANY JOIN', 'RIGHT ANY JOIN', 'INNER ANY JOIN', 'ASOF JOIN', 'LEFT ASOF JOIN', 'PASTE JOIN']
+doc_type: 'reference'
 ---
 
 # JOIN clause
@@ -210,7 +212,7 @@ Table `t2`
 ```
 
 ```sql
-SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
 ```
 
 ```response
@@ -225,7 +227,6 @@ key1    e    5    5    5            0    0    \N
 key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
-
 
 ## NULL values in JOIN keys {#null-values-in-join-keys}
 
@@ -317,14 +318,16 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 For example, consider the following tables:
 
+```text
          table_1                           table_2
       event   | ev_time | user_id       event   | ev_time | user_id
-    ----------|---------|---------- ----------|---------|----------
+    ----------|---------|----------   ----------|---------|----------
                   ...                               ...
     event_1_1 |  12:00  |  42         event_2_1 |  11:59  |   42
                   ...                 event_2_2 |  12:30  |   42
     event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
                   ...                               ...
+```
 
 `ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can't be joined.
 
@@ -469,7 +472,7 @@ Each time a query is run with the same `JOIN`, the subquery is run again because
 
 In some cases, it is more efficient to use [IN](../../../sql-reference/operators/in.md) instead of `JOIN`.
 
-If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a "dictionaries" feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
+If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a "dictionaries" feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](/sql-reference/statements/create/dictionary/overview.md) section.
 
 ### Memory limitations {#memory-limitations}
 
@@ -480,7 +483,7 @@ If you need to restrict `JOIN` operation memory consumption use the following se
 - [max_rows_in_join](/operations/settings/settings#max_rows_in_join) — Limits number of rows in the hash table.
 - [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join) — Limits size of the hash table.
 
-When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) 
+When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode)
 setting instructs.
 
 ## Examples {#examples}

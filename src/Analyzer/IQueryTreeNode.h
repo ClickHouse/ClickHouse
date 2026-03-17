@@ -1,10 +1,11 @@
 #pragma once
 
 #include <memory>
-#include <string>
 #include <vector>
 #include <deque>
 
+#include <Parsers/IAST_fwd.h>
+#include <Common/Exception.h>
 #include <Common/TypePromotion.h>
 
 #include <city.h>
@@ -18,9 +19,6 @@ namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
 }
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -71,6 +69,21 @@ using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
 using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
 using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 
+struct ConvertToASTOptions
+{
+    /// Add _CAST if constant literal type is different from column type
+    bool add_cast_for_constants = true;
+
+    /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
+    bool fully_qualified_identifiers = true;
+
+    /// Identifiers are qualified but database name is not added (`table.column`) if set to false.
+    bool qualify_indentifiers_with_database = true;
+
+    /// Set CTE name in ASTSubquery field.
+    bool set_subquery_cte_name = true;
+};
+
 class IQueryTreeNode : public TypePromotion<IQueryTreeNode>
 {
 public:
@@ -103,6 +116,9 @@ public:
     {
         bool compare_aliases = true;
         bool compare_types = true;
+        /// Do not compare the cte name or check the is_cte flag for the query node.
+        /// Calculate a hash as if is_cte is false and cte_name is empty.
+        bool ignore_cte = false;
     };
 
     /** Is tree equal to other tree with node root.
@@ -110,7 +126,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .compare_types = true }) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .compare_types = true, .ignore_cte = false }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -120,7 +136,7 @@ public:
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
       */
-    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .compare_types = true }) const;
+    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .compare_types = true, .ignore_cte = false }) const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
@@ -194,20 +210,8 @@ public:
       */
     String formatOriginalASTForErrorMessage() const;
 
-    struct ConvertToASTOptions
-    {
-        /// Add _CAST if constant literal type is different from column type
-        bool add_cast_for_constants = true;
-
-        /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
-        bool fully_qualified_identifiers = true;
-
-        /// Identifiers are qualified but database name is not added (`table.column`) if set to false.
-        bool qualify_indentifiers_with_database = true;
-    };
-
     /// Convert query tree to AST
-    ASTPtr toAST(const ConvertToASTOptions & options = { .add_cast_for_constants = true, .fully_qualified_identifiers = true, .qualify_indentifiers_with_database = true }) const;
+    ASTPtr toAST(const ConvertToASTOptions & options = {}) const;
 
     /// Convert query tree to AST and then format it for error message.
     String formatConvertedASTForErrorMessage() const;

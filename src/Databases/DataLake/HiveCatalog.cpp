@@ -1,11 +1,11 @@
-#include "Databases/DataLake/HiveCatalog.h"
+#include <Databases/DataLake/HiveCatalog.h>
 #include <algorithm>
 #include <cctype>
 #if USE_AVRO && USE_HIVE
 #include <optional>
-#include "Common/Exception.h"
-#include "Core/Names.h"
-#include "Databases/DataLake/ICatalog.h"
+#include <Common/Exception.h>
+#include <Core/Names.h>
+#include <Databases/DataLake/ICatalog.h>
 
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
@@ -27,16 +27,41 @@ namespace
 
 std::pair<String, Int32> parseHostPort(const String & url)
 {
-    size_t last_slash = 0;
-    size_t last_points = 0;
-    for (size_t i = 0; i < url.size(); ++i)
+    auto protocol_sep = url.find("://");
+    if (protocol_sep == String::npos)
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid URL format: missing protocol separator '://'");
+
+    size_t start = protocol_sep + 3;
+
+    auto colon_pos = url.find(':', start);
+    if (colon_pos == String::npos)
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid URL format: missing port number");
+
+    auto slash_pos = url.find('/', start);
+
+    String host = url.substr(start, colon_pos - start);
+
+    size_t port_end = (slash_pos != String::npos) ? slash_pos : url.size();
+    String port_str = url.substr(colon_pos + 1, port_end - colon_pos - 1);
+
+    if (port_str.empty() || !std::all_of(port_str.begin(), port_str.end(), ::isdigit))
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid port number: '{}'", port_str);
+
+    try
     {
-        if (url[i] == ':')
-            last_points = i;
-        if (url[i] == '/')
-            last_slash = i;
+        Int32 port = std::stoi(port_str);
+        if (port <= 0 || port > 65535)
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Port number out of valid range (1-65535): {}", port);
+        return {host, port};
     }
-    return {url.substr(last_slash + 1, last_points - (last_slash + 1)), std::stoi(url.substr(last_points + 1))};
+    catch (const std::out_of_range&)
+    {
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid port number format: {}", port_str);
+    }
+    catch (const std::invalid_argument&)
+    {
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid port number: '{}'", port_str);
+    }
 }
 
 }
@@ -54,6 +79,8 @@ HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & bas
 bool HiveCatalog::empty() const
 {
     std::vector<std::string> result;
+
+    std::lock_guard lock(client_mutex);
     client.get_all_databases(result);
     return result.empty();
 }
@@ -62,11 +89,18 @@ DB::Names HiveCatalog::getTables() const
 {
     DB::Names result;
     DB::Names databases;
-    client.get_all_databases(databases);
+    {
+        std::lock_guard lock(client_mutex);
+        client.get_all_databases(databases);
+    }
+
     for (const auto & db : databases)
     {
         DB::Names current_tables;
-        client.get_all_tables(current_tables, db);
+        {
+            std::lock_guard lock(client_mutex);
+            client.get_all_tables(current_tables, db);
+        }
         for (const auto & table : current_tables)
             result.push_back(db + "." + table);
     }
@@ -76,7 +110,10 @@ DB::Names HiveCatalog::getTables() const
 bool HiveCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const
 {
     Apache::Hadoop::Hive::Table table;
-    client.get_table(table, namespace_name, table_name);
+    {
+        std::lock_guard lock(client_mutex);
+        client.get_table(table, namespace_name, table_name);
+    }
 
     if (table.tableName.empty())
         return false;
@@ -94,7 +131,10 @@ bool HiveCatalog::tryGetTableMetadata(const std::string & namespace_name, const 
 {
     Apache::Hadoop::Hive::Table table;
 
-    client.get_table(table, namespace_name, table_name);
+    {
+        std::lock_guard lock(client_mutex);
+        client.get_table(table, namespace_name, table_name);
+    }
 
     if (table.tableName.empty())
         return false;

@@ -104,7 +104,7 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
         if (table_node || table_function_node)
         {
             const auto & table_storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-            if (table_storage->getStorageID() == storage->getStorageID())
+            if (table_storage && table_storage->getStorageID() == storage->getStorageID())
                 return true;
         }
 
@@ -251,11 +251,11 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
 }
 
 bool checkCorrelatedColumn(
-    IdentifierResolveScope * scope_to_check,
+    const IdentifierResolveScope * scope_to_check,
     const QueryTreeNodePtr & column
 )
 {
-    auto * current_scope = scope_to_check;
+    const auto * current_scope = scope_to_check;
     chassert(column->getNodeType() == QueryTreeNodeType::COLUMN);
     auto * column_node = column->as<ColumnNode>();
     auto column_source = column_node->getColumnSource();
@@ -265,14 +265,24 @@ bool checkCorrelatedColumn(
     ///
     /// X would have lambda as a source node
     /// Y comes from outer scope and requires ordinary check.
-    if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+    ///
+    /// Similarly, INTERPOLATE creates fake columns with InterpolateNode as the source.
+    /// These are expression arguments, not table expressions, so they cannot be correlated.
+    auto source_type = column_source->getNodeType();
+    if (source_type == QueryTreeNodeType::LAMBDA || source_type == QueryTreeNodeType::INTERPOLATE)
         return false;
 
     bool is_correlated = false;
 
     while (scope_to_check != nullptr)
     {
+        /// Check if column source is in the FROM section of the current scope (query).
         if (scope_to_check->registered_table_expression_nodes.contains(column_source))
+            break;
+
+        /// Previous check wouldn't work in the case of resolution of alias columns.
+        /// In that case table expression is not registered yet and table expression data is being computed.
+        if (scope_to_check->table_expressions_in_resolve_process.contains(column_source.get()))
             break;
 
         if (isQueryOrUnionNode(scope_to_check->scope_node))
@@ -362,11 +372,14 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     if (value.isNull())
         return false;
 
-    UInt8 predicate_value = value.safeGet<UInt8>();
+    auto predicate_value = static_cast<UInt8>(value.safeGet<UInt8>());
     return predicate_value > 0;
 }
 
-static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expression_node)
+static ASTPtr convertIntoTableExpressionAST(
+    const QueryTreeNodePtr & table_expression_node,
+    const ConvertToASTOptions & convert_to_ast_options
+)
 {
     ASTPtr table_expression_node_ast;
     auto node_type = table_expression_node->getNodeType();
@@ -377,9 +390,9 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
         const auto & identifier = identifier_node.getIdentifier();
 
         if (identifier.getPartsSize() == 1)
-            table_expression_node_ast = std::make_shared<ASTTableIdentifier>(identifier[0]);
+            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0]);
         else if (identifier.getPartsSize() == 2)
-            table_expression_node_ast = std::make_shared<ASTTableIdentifier>(identifier[0], identifier[1]);
+            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0], identifier[1]);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Identifier for table expression must contain 1 or 2 parts. Actual '{}'",
@@ -389,10 +402,10 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     }
     else
     {
-        table_expression_node_ast = table_expression_node->toAST();
+        table_expression_node_ast = table_expression_node->toAST(convert_to_ast_options);
     }
 
-    auto result_table_expression = std::make_shared<ASTTableExpression>();
+    auto result_table_expression = make_intrusive<ASTTableExpression>();
     result_table_expression->children.push_back(table_expression_node_ast);
 
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -430,17 +443,21 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
-            result_table_expression->sample_size = std::make_shared<ASTSampleRatio>(*sample_size_ratio);
+            result_table_expression->sample_size = make_intrusive<ASTSampleRatio>(*sample_size_ratio);
 
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
-            result_table_expression->sample_offset = std::make_shared<ASTSampleRatio>(*sample_offset_ratio);
+            result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
     }
 
     return result_table_expression;
 }
 
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options)
+void addTableExpressionOrJoinIntoTablesInSelectQuery(
+    ASTPtr & tables_in_select_query_ast,
+    const QueryTreeNodePtr & table_expression,
+    const ConvertToASTOptions & convert_to_ast_options
+)
 {
     auto table_expression_node_type = table_expression->getNodeType();
 
@@ -456,9 +473,9 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
             [[fallthrough]];
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            auto table_expression_ast = convertIntoTableExpressionAST(table_expression);
+            auto table_expression_ast = convertIntoTableExpressionAST(table_expression, convert_to_ast_options);
 
-            auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
+            auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
             tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
             tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
 
@@ -962,12 +979,7 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
     function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 }
 
-/** Returns:
-  * {_, false} - multiple sources
-  * {nullptr, true} - no sources (for constants)
-  * {source, true} - single source
-  */
-std::pair<QueryTreeNodePtr, bool> getExpressionSourceImpl(const QueryTreeNodePtr & node)
+std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
 {
     if (const auto * column = node->as<ColumnNode>())
     {
@@ -983,7 +995,7 @@ std::pair<QueryTreeNodePtr, bool> getExpressionSourceImpl(const QueryTreeNodePtr
         const auto & args = func->getArguments().getNodes();
         for (const auto & arg : args)
         {
-            auto [arg_source, is_ok] = getExpressionSourceImpl(arg);
+            auto [arg_source, is_ok] = getExpressionSource(arg);
             if (!is_ok)
                 return {nullptr, false};
 
@@ -1000,14 +1012,6 @@ std::pair<QueryTreeNodePtr, bool> getExpressionSourceImpl(const QueryTreeNodePtr
         return {nullptr, true};
 
     return {nullptr, false};
-}
-
-QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node)
-{
-    auto [source, is_ok] = getExpressionSourceImpl(node);
-    if (!is_ok)
-        return nullptr;
-    return source;
 }
 
 /** There are no limits on the maximum size of the result for the subquery.
@@ -1109,7 +1113,9 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expr
             {
                 auto * column_node = current->as<ColumnNode>();
                 auto source = column_node->getColumnSourceOrNull();
-                if (source && table_expression && !source->isEqual(*table_expression))
+                /// Column source can be nullptr if JOIN node was replaced with a table expression.
+                /// In that case column is not from the specified table expression.
+                if (source != table_expression)
                     return true;
                 break;
             }
@@ -1299,7 +1305,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
             const auto & shared_variant = dynamic_column.getSharedVariant();
             auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
-            ReadBufferFromMemory buf(value_data.data, value_data.size);
+            ReadBufferFromMemory buf(value_data);
             auto type = decodeDataType(buf);
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
@@ -1323,14 +1329,16 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             size_t end = shared_data_offsets[row];
             auto dynamic_type = std::make_shared<DataTypeDynamic>();
             auto dynamic_serialization = dynamic_type->getDefaultSerialization();
+
+            FormatSettings format_settings;
             for (size_t i = start; i != end; ++i)
             {
-                String path = shared_paths->getDataAt(i).toString();
+                String path{shared_paths->getDataAt(i)};
                 auto value_data = shared_values->getDataAt(i);
-                ReadBufferFromMemory buf(value_data.data, value_data.size);
+                ReadBufferFromMemory buf(value_data);
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
-                dynamic_serialization->deserializeBinary(*tmp_column, buf, {});
+                dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);
                 object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true);
             }
 

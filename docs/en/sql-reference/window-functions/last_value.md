@@ -4,6 +4,7 @@ sidebar_label: 'last_value'
 sidebar_position: 4
 slug: /sql-reference/window-functions/last_value
 title: 'last_value'
+doc_type: 'reference'
 ---
 
 # last_value

@@ -1,7 +1,8 @@
+#include <IO/Operators.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <IO/Operators.h>
+#include <Parsers/ASTSnapshotQuery.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -16,8 +17,7 @@ namespace
 
     void formatPartitions(const ASTs & partitions, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
-        ostr << " " << (format.hilite ? IAST::hilite_keyword : "") << ((partitions.size() == 1) ? "PARTITION" : "PARTITIONS") << " "
-                    << (format.hilite ? IAST::hilite_none : "");
+        ostr << " " << ((partitions.size() == 1) ? "PARTITION" : "PARTITIONS") << " ";
         bool need_comma = false;
         for (const auto & partition : partitions)
         {
@@ -28,13 +28,12 @@ namespace
         }
     }
 
-    void formatExceptDatabases(const std::set<String> & except_databases, WriteBuffer & ostr, const IAST::FormatSettings & format)
+    void formatExceptDatabases(const std::set<String> & except_databases, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
         if (except_databases.empty())
             return;
 
-        ostr << (format.hilite ? IAST::hilite_keyword : "") << " EXCEPT "
-                    << (except_databases.size() == 1 ? "DATABASE" : "DATABASES") << " " << (format.hilite ? IAST::hilite_none : "");
+        ostr << " EXCEPT " << (except_databases.size() == 1 ? "DATABASE" : "DATABASES") << " ";
 
         bool need_comma = false;
         for (const auto & database_name : except_databases)
@@ -45,13 +44,12 @@ namespace
         }
     }
 
-    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, WriteBuffer & ostr, const IAST::FormatSettings & format, bool only_table_names=false)
+    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, WriteBuffer & ostr, const IAST::FormatSettings &, bool only_table_names=false)
     {
         if (except_tables.empty())
             return;
 
-        ostr << (format.hilite ? IAST::hilite_keyword : "") << " EXCEPT " << (except_tables.size() == 1 ? "TABLE" : "TABLES") << " "
-                    << (format.hilite ? IAST::hilite_none : "");
+        ostr << " EXCEPT " << (except_tables.size() == 1 ? "TABLE" : "TABLES") << " ";
 
         bool need_comma = false;
         for (const auto & table_name : except_tables)
@@ -71,7 +69,7 @@ namespace
         {
             case ElementType::TABLE:
             {
-                ostr << (format.hilite ? IAST::hilite_keyword : "") << "TABLE " << (format.hilite ? IAST::hilite_none : "");
+                ostr << "TABLE ";
 
                 if (!element.database_name.empty())
                     ostr << backQuoteIfNeed(element.database_name) << ".";
@@ -79,7 +77,7 @@ namespace
 
                 if ((element.new_table_name != element.table_name) || (element.new_database_name != element.database_name))
                 {
-                    ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");
+                    ostr << " AS ";
                     if (!element.new_database_name.empty())
                         ostr << backQuoteIfNeed(element.new_database_name) << ".";
                     ostr << backQuoteIfNeed(element.new_table_name);
@@ -92,12 +90,12 @@ namespace
 
             case ElementType::TEMPORARY_TABLE:
             {
-                ostr << (format.hilite ? IAST::hilite_keyword : "") << "TEMPORARY TABLE " << (format.hilite ? IAST::hilite_none : "");
+                ostr << "TEMPORARY TABLE ";
                 ostr << backQuoteIfNeed(element.table_name);
 
                 if (element.new_table_name != element.table_name)
                 {
-                    ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");
+                    ostr << " AS ";
                     ostr << backQuoteIfNeed(element.new_table_name);
                 }
                 break;
@@ -105,14 +103,12 @@ namespace
 
             case ElementType::DATABASE:
             {
-                ostr << (format.hilite ? IAST::hilite_keyword : "");
                 ostr << "DATABASE ";
-                ostr << (format.hilite ? IAST::hilite_none : "");
                 ostr << backQuoteIfNeed(element.database_name);
 
                 if (element.new_database_name != element.database_name)
                 {
-                    ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");
+                    ostr << " AS ";
                     ostr << backQuoteIfNeed(element.new_database_name);
                 }
 
@@ -122,7 +118,7 @@ namespace
 
             case ElementType::ALL:
             {
-                ostr << (format.hilite ? IAST::hilite_keyword : "") << "ALL" << (format.hilite ? IAST::hilite_none : "");
+                ostr << "ALL";
                 formatExceptDatabases(element.except_databases, ostr, format);
                 formatExceptTables(element.except_tables, ostr, format);
                 break;
@@ -146,7 +142,7 @@ namespace
         if (!settings && !base_backup_name && !cluster_host_ids)
             return;
 
-        ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
+        ostr << " SETTINGS ";
         bool empty = true;
 
         if (base_backup_name)
@@ -191,10 +187,22 @@ namespace
         changes.emplace_back("async", true);
         changes.emplace_back("host_id", params.host_id);
 
-        auto out_settings = std::make_shared<ASTSetQuery>();
+        auto out_settings = make_intrusive<ASTSetQuery>();
         out_settings->changes = std::move(changes);
         out_settings->is_standalone = false;
         return out_settings;
+    }
+
+    constexpr ASTBackupQuery::ElementType toBackupElementType(ASTSnapshotQuery::ElementType snapshot_type)
+    {
+        switch (snapshot_type)
+        {
+            case ASTSnapshotQuery::ElementType::TABLE:
+                return ASTBackupQuery::ElementType::TABLE;
+            case ASTSnapshotQuery::ElementType::ALL:
+                return ASTBackupQuery::ElementType::ALL;
+        }
+        std::unreachable();
     }
 }
 
@@ -229,6 +237,35 @@ void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database
     }
 }
 
+ASTPtr ASTBackupQuery::fromSnapshotQuery(const ASTSnapshotQuery & query)
+{
+    auto res = make_intrusive<ASTBackupQuery>();
+    res->children.clear();
+
+    const auto & element = query.element;
+    res->elements.push_back(
+        ASTBackupQuery::Element{
+            toBackupElementType(element.type),
+            element.table_name,
+            element.database_name,
+            element.table_name,
+            element.database_name,
+            /*partitions*/ {},
+            element.except_tables,
+            element.except_databases});
+    if (query.snapshot_destination)
+        res->set(res->backup_name, query.snapshot_destination->clone());
+
+    SettingsChanges changes;
+    changes.emplace_back("experimental_lightweight_snapshot", true);
+    changes.emplace_back("snapshot", true);
+    auto settings = make_intrusive<ASTSetQuery>();
+    settings->changes = std::move(changes);
+    settings->is_standalone = false;
+    res->settings = settings;
+
+    return res;
+};
 
 void ASTBackupQuery::setCurrentDatabase(ASTBackupQuery::Elements & elements, const String & current_database)
 {
@@ -245,7 +282,7 @@ String ASTBackupQuery::getID(char) const
 
 ASTPtr ASTBackupQuery::clone() const
 {
-    auto res = std::make_shared<ASTBackupQuery>(*this);
+    auto res = make_intrusive<ASTBackupQuery>(*this);
     res->children.clear();
 
     if (backup_name)
@@ -268,12 +305,12 @@ ASTPtr ASTBackupQuery::clone() const
 
 void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & fs, FormatState &, FormatStateStacked) const
 {
-    ostr << (fs.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ") << (fs.hilite ? hilite_none : "");
+    ostr << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ");
 
     formatElements(elements, ostr, fs);
     formatOnCluster(ostr, fs);
 
-    ostr << (fs.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (fs.hilite ? hilite_none : "");
+    ostr << ((kind == Kind::BACKUP) ? " TO " : " FROM ");
     backup_name->format(ostr, fs);
 
     if (settings || base_backup_name)
@@ -282,7 +319,7 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
 ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
 {
-    auto new_query = std::static_pointer_cast<ASTBackupQuery>(clone());
+    auto new_query = boost::static_pointer_cast<ASTBackupQuery>(clone());
     new_query->cluster.clear();
     new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
     ASTBackupQuery::setCurrentDatabase(new_query->elements, params.default_database);

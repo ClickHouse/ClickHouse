@@ -8,7 +8,8 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Interpreters/Context.h>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -45,12 +46,7 @@ struct MongoDBConfiguration
     String collection;
     std::unordered_set<String> oid_fields = {"_id"};
 
-    void checkHosts(const ContextPtr & context) const
-    {
-        // Because domain records will be resolved inside the driver, we can't check resolved IPs for our restrictions.
-        for (const auto & host : uri->hosts())
-            context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
-    }
+    void checkHosts(const ContextPtr & context) const;
 
     bool isOidColumn(const std::string & name) const
     {
@@ -68,6 +64,7 @@ class StorageMongoDB final : public IStorage
 {
 public:
     static MongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    static MongoDBConfiguration getConfigurationFromCollection(MutableNamedCollectionPtr named_collection, ContextPtr context);
 
     StorageMongoDB(
         const StorageID & table_id_,
@@ -78,6 +75,7 @@ public:
 
     std::string getName() const override { return "MongoDB"; }
     bool isRemote() const override { return true; }
+    bool isExternalDatabase() const override { return true; }
 
     Pipe read(
         const Names & column_names,

@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -39,20 +38,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(), arguments.empty());
+        FunctionArgumentDescriptors mandatory_args{
+            {"variant", isVariant, nullptr, "Variant"}
+        };
 
-        const DataTypeVariant * variant_type = checkAndGetDataType<DataTypeVariant>(arguments[0].type.get());
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
-        if (!variant_type)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Variant, got {} instead",
-                getName(), arguments[0].type->getName());
-
+        const auto * variant_type = checkAndGetDataType<DataTypeVariant>(arguments[0].type.get());
         const auto & variants = variant_type->getVariants();
         std::vector<std::pair<String, Int8>> enum_values;
         enum_values.reserve(variants.size() + 1);
@@ -84,28 +76,37 @@ public:
 
 REGISTER_FUNCTION(VariantType)
 {
-    factory.registerFunction<FunctionVariantType>(FunctionDocumentation{
-        .description = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the variant type name for each row of `Variant` column. If row contains NULL, it returns 'None' for it.
-)",
-        .syntax = {"variantType(variant)"},
-        .arguments = {{"variant", "Variant column"}},
-        .examples = {{{
-            "Example",
-            R"(
+)";
+    FunctionDocumentation::Syntax syntax = "variantType(variant)";
+    FunctionDocumentation::Arguments arguments = {
+        {"variant", "Variant column.", {"Variant"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an Enum column with variant type name for each row.", {"Enum"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
-SELECT variantType(v) FROM test;)",
-            R"(
+SELECT variantType(v) FROM test;
+        )",
+        R"(
 ┌─variantType(v)─┐
 │ None           │
 │ UInt64         │
 │ String         │
 │ Array(UInt64)  │
 └────────────────┘
-)"}}},
-        .category = FunctionDocumentation::Category::JSON,
-    });
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionVariantType>(documentation);
 }
 
 }

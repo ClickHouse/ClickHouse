@@ -1,6 +1,5 @@
 #include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -155,7 +154,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 
     if (!original_checksums_content)
     {
-        auto in = storage_from_detached->readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
+        auto in = storage_from_detached->readFile("checksums.txt", /* settings */ {}, /* read_hint */ {});
         original_checksums_content.emplace();
         readStringUntilEOF(*original_checksums_content, *in);
     }
@@ -165,7 +164,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 
     String detached_checksums_content;
     {
-        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
+        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {});
         readStringUntilEOF(detached_checksums_content, *in);
     }
 
@@ -235,7 +234,7 @@ std::string DataPartStorageOnDiskBase::getDiskName() const
 
 std::string DataPartStorageOnDiskBase::getDiskType() const
 {
-    return volume->getDisk()->getDataSourceDescription().toString();
+    return volume->getDisk()->getDataSourceDescription().name();
 }
 
 bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const
@@ -268,16 +267,6 @@ bool DataPartStorageOnDiskBase::isBroken() const
 bool DataPartStorageOnDiskBase::isReadonly() const
 {
     return volume->getDisk()->isReadOnly() || volume->getDisk()->isWriteOnce();
-}
-
-void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
-{
-    volume->getDisk()->syncRevision(revision);
-}
-
-UInt64 DataPartStorageOnDiskBase::getRevision() const
-{
-    return volume->getDisk()->getRevision();
 }
 
 std::string DataPartStorageOnDiskBase::getDiskPath() const
@@ -318,7 +307,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
         file_desc.file_size = file_size;
         file_desc.input_buffer_getter = [disk, path, file_size, read_settings]
         {
-            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size, file_size);
+            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size);
         };
     }
 
@@ -738,6 +727,15 @@ void DataPartStorageOnDiskBase::remove(
                 disk->removeSharedRecursive(
                     fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
             }
+            catch (const fs::filesystem_error & e)
+            {
+                if (e.code() == std::errc::no_such_file_or_directory)
+                {
+                    /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+                }
+                else
+                    throw;
+            }
             catch (...)
             {
                 LOG_ERROR(
@@ -748,26 +746,30 @@ void DataPartStorageOnDiskBase::remove(
 
         if (!disk->existsDirectory(from))
         {
-            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
             /// We will never touch this part again, so unlocking it from zero-copy
             if (!can_remove_description)
                 can_remove_description.emplace(can_remove_callback());
             return;
         }
 
+        /// Evaluate can_remove_callback before moving the directory so zero-copy reference checks
+        /// use the current (existing) path. We intentionally don't update part_dir to avoid races.
+        if (!can_remove_description)
+            can_remove_description.emplace(can_remove_callback());
+
         try
         {
             disk->moveDirectory(from, to);
-            part_dir = part_dir_without_slash;
+            /// NOTE: we intentionally don't update part_dir here because it would cause a data race
+            /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).
+            /// The part is being removed anyway, so the path doesn't need to be updated.
         }
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
             {
-                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
-                /// We will never touch this part again, so unlocking it from zero-copy
-                if (!can_remove_description)
-                    can_remove_description.emplace(can_remove_callback());
+                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
                 return;
             }
             throw;
@@ -776,12 +778,8 @@ void DataPartStorageOnDiskBase::remove(
         {
             if (e.code() == std::errc::no_such_file_or_directory)
             {
-                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
+                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
                           "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
-                /// We will never touch this part again, so unlocking it from zero-copy
-                if (!can_remove_description)
-                    can_remove_description.emplace(can_remove_callback());
-
                 return;
             }
             throw;
@@ -835,7 +833,7 @@ void DataPartStorageOnDiskBase::remove(
                 try
                 {
                     MergeTreeDataPartChecksums tmp_checksums;
-                    auto in = projection_storage->readFile(checksums_name, {}, {}, {});
+                    auto in = projection_storage->readFile(checksums_name, {}, {});
                     tmp_checksums.read(*in);
 
                     clearDirectory(fs::path(to) / name, *can_remove_description, tmp_checksums, is_temp, log);
@@ -869,7 +867,19 @@ void DataPartStorageOnDiskBase::clearDirectory(
     if (checksums.empty() || incomplete_temporary_part)
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        try
+        {
+            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+            }
+            else
+                throw;
+        }
         return;
     }
 
@@ -885,17 +895,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-        {
-            if (isGinFile(file) && (!disk->existsFile(fs::path(dir) / file)))
-                continue;
-
             request.emplace_back(fs::path(dir) / file);
-        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
-        request.emplace_back(fs::path(dir) / "columns_substreams.txt", true);
+        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);
@@ -905,7 +910,19 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Recursive directory removal does many excessive "stat" syscalls under the hood.
 
         LOG_ERROR(log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, dir), getCurrentExceptionMessage(false));
-        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        try
+        {
+            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+            }
+            else
+                throw;
+        }
     }
 }
 
@@ -963,6 +980,11 @@ void DataPartStorageOnDiskBase::createDirectories()
 bool DataPartStorageOnDiskBase::hasActiveTransaction() const
 {
     return transaction != nullptr;
+}
+
+bool DataPartStorageOnDiskBase::isCaseInsensitive() const
+{
+    return getDisk()->isCaseInsensitive();
 }
 
 }

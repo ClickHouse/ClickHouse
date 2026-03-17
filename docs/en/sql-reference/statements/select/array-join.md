@@ -3,6 +3,7 @@ description: 'Documentation for ARRAY JOIN Clause'
 sidebar_label: 'ARRAY JOIN'
 slug: /sql-reference/statements/select/array-join
 title: 'ARRAY JOIN Clause'
+doc_type: 'reference'
 ---
 
 # ARRAY JOIN Clause
@@ -222,7 +223,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-The example below uses the [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) function:
+The example below uses the [arrayEnumerate](/sql-reference/functions/array-functions#arrayEnumerate) function:
 
 ```sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -244,7 +245,7 @@ Multiple arrays with different sizes can be joined by using: `SETTINGS enable_un
 
 ```sql
 SELECT s, arr, a, b
-FROM arrays_test ARRAY JOIN arr as a, [['a','b'],['c']] as b
+FROM arrays_test ARRAY JOIN arr AS a, [['a','b'],['c']] AS b
 SETTINGS enable_unaligned_array_join = 1;
 ```
 
@@ -355,7 +356,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Example of using the [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) function:
+Example of using the [arrayEnumerate](/sql-reference/functions/array-functions#arrayEnumerate) function:
 
 ```sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num

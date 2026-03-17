@@ -4,9 +4,10 @@ sidebar_label: 'Aggregate Functions'
 sidebar_position: 33
 slug: /sql-reference/aggregate-functions/
 title: 'Aggregate Functions'
+doc_type: 'reference'
 ---
 
-# Aggregate Functions
+# Aggregate functions
 
 Aggregate functions work in the [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) way as expected by database experts.
 
@@ -15,8 +16,7 @@ ClickHouse also supports:
 - [Parametric aggregate functions](/sql-reference/aggregate-functions/parametric-functions), which accept other parameters in addition to columns.
 - [Combinators](/sql-reference/aggregate-functions/combinators), which change the behavior of aggregate functions.
 
-
-## NULL Processing {#null-processing}
+## NULL processing {#null-processing}
 
 During aggregation, all `NULL` arguments are skipped. If the aggregation has several arguments it will ignore any row in which one or more of them are NULL.
 
@@ -116,15 +116,15 @@ And here is an example of first_value with `RESPECT NULLS` where we can see that
 
 ```sql
 SELECT
-    col || '_' || ((col + 1) * 5 - 1) as range,
-    first_value(odd_or_null) as first,
+    col || '_' || ((col + 1) * 5 - 1) AS range,
+    first_value(odd_or_null) AS first,
     first_value(odd_or_null) IGNORE NULLS as first_ignore_null,
     first_value(odd_or_null) RESPECT NULLS as first_respect_nulls
 FROM
 (
     SELECT
         intDiv(number, 5) AS col,
-        if(number % 2 == 0, NULL, number) as odd_or_null
+        if(number % 2 == 0, NULL, number) AS odd_or_null
     FROM numbers(15)
 )
 GROUP BY col

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
+#include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 
@@ -24,9 +25,10 @@ extern const int TIMEOUT_EXCEEDED;
 DDLOnClusterQueryStatusSource::DDLOnClusterQueryStatusSource(
     const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait)
     : DistributedQueryStatusSource(
+          "default",
           zk_node_path,
           zk_replicas_path,
-          getSampleBlock(context_->getSettingsRef()[Setting::distributed_ddl_output_mode]),
+          std::make_shared<const Block>(getSampleBlock(context_->getSettingsRef()[Setting::distributed_ddl_output_mode])),
           context_,
           hosts_to_wait,
           "DDLOnClusterQueryStatusSource")

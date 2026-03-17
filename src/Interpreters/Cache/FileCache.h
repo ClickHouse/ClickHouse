@@ -16,9 +16,12 @@
 #include <Interpreters/Cache/QueryLimit.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
-#include <Interpreters/Cache/UserInfo.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Interpreters/Cache/SplitFileCachePriority.h>
 #include <filesystem>
+#include <random>
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -37,20 +40,37 @@ struct FileCacheReserveStat
         size_t non_releasable_size = 0;
         size_t non_releasable_count = 0;
 
+        size_t evicting_count = 0;
+        size_t moving_count = 0;
+        size_t invalidated_count = 0;
+
         Stat & operator +=(const Stat & other)
         {
             releasable_size += other.releasable_size;
             releasable_count += other.releasable_count;
             non_releasable_size += other.non_releasable_size;
             non_releasable_count += other.non_releasable_count;
+            evicting_count += other.evicting_count;
+            moving_count += other.moving_count;
+            invalidated_count += other.invalidated_count;
             return *this;
         }
+
+        std::string toString() const;
     };
 
     Stat total_stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
-    void update(size_t size, FileSegmentKind kind, bool releasable);
+    enum class State
+    {
+        Releasable,
+        NonReleasable,
+        Evicting,
+        Moving,
+        Invalidated,
+    };
+    void update(size_t size, FileSegmentKind kind, State state);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
@@ -71,8 +91,10 @@ public:
     using Priority = IFileCachePriority;
     using PriorityEntry = IFileCachePriority::Entry;
     using QueryContextHolder = FileCacheQueryLimit::QueryContextHolder;
-    using UserInfo = FileCacheUserInfo;
-    using UserID = UserInfo::UserID;
+    using OriginInfo = FileCacheOriginInfo;
+    using UserID = FileCacheOriginInfo::UserID;
+    using Type = FileSegmentKeyType;
+    using CachePriorityCreatorFunction = SplitFileCachePriority::CachePriorityCreatorFunction;
 
     FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
@@ -87,13 +109,15 @@ public:
 
     const String & getBasePath() const;
 
-    static const UserInfo & getCommonUser();
+    static const FileCacheOriginInfo & getCommonOrigin();
 
-    static const UserInfo & getInternalUser();
+    static const OriginInfo & getInternalOrigin();
 
-    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const UserInfo & user) const;
+    OriginInfo getCommonOriginWithSegmentKeyType(const std::filesystem::path & filename) const;
 
-    String getKeyPath(const Key & key, const UserInfo & user) const;
+    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const;
+
+    String getKeyPath(const Key & key, const OriginInfo & origin) const;
 
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
@@ -113,7 +137,7 @@ public:
         size_t file_size,
         const CreateFileSegmentSettings & settings,
         size_t file_segments_limit,
-        const UserInfo & user,
+        const OriginInfo & origin,
         std::optional<size_t> boundary_alignment_ = std::nullopt);
 
     /**
@@ -137,10 +161,20 @@ public:
         size_t offset,
         size_t size,
         const CreateFileSegmentSettings & settings,
-        const UserInfo & user);
+        const OriginInfo & origin);
+
+    FileSegmentsHolderPtr trySet(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        const CreateFileSegmentSettings & settings,
+        const OriginInfo & origin);
 
     /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
     void removeFileSegment(const Key & key, size_t offset, const UserID & user_id);
+
+    /// Remove file segment by `key` and `offset`. Does nothing if file segment does not exist.
+    void removeFileSegmentIfExists(const Key & key, size_t offset, const UserID & user_id);
 
     /// Remove files by `key`. Throws if key does not exist.
     void removeKey(const Key & key, const UserID & user_id);
@@ -171,21 +205,26 @@ public:
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
-        const UserInfo & user,
+        const OriginInfo & origin,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
+
+    bool tryIncreasePriority(FileSegment & file_segment);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key, const UserID & user_id);
 
-
     IFileCachePriority::PriorityDumpPtr dumpQueue();
+
+    IFileCachePriority::Type getEvictionPolicyType();
+
+    using UsageStat = IFileCachePriority::UsageStat;
+    std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 
     void deactivateBackgroundOperations();
 
-    CachePriorityGuard::Lock lockCache() const;
-    CachePriorityGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
+    CachePriorityGuard::WriteLock lockCache() const;
 
     std::vector<FileSegment::Info> sync();
 
@@ -195,9 +234,14 @@ public:
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
 
+    using CacheIteratorPtr = CacheMetadata::IteratorPtr;
+    CacheIteratorPtr getCacheIterator(const UserID & user_id);
+
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
     void freeSpaceRatioKeepingThreadFunc();
+
+    const String & getName() const { return name; }
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
@@ -218,6 +262,11 @@ private:
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;
 
+    // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
+    const bool use_split_cache;
+    const double split_cache_ratio;
+
+    String name;
     LoggerPtr log;
 
     std::exception_ptr init_exception;
@@ -228,31 +277,32 @@ private:
     std::atomic<bool> shutdown = false;
     std::atomic<bool> cache_is_being_resized = false;
 
+    std::atomic<size_t> cache_reserve_active_threads = 0;
+
     std::mutex apply_settings_mutex;
 
     CacheMetadata metadata;
 
     FileCachePriorityPtr main_priority;
     mutable CachePriorityGuard cache_guard;
+    mutable CachePriorityGuard queue_guard;
+    mutable CacheStateGuard cache_state_guard;
 
-    struct HitsCountStash
+    /// Random checks for cache correctness.
+    /// They are heavy, so cannot be done on each cache access.
+    struct CheckCacheProbability
     {
-        HitsCountStash(size_t hits_threashold_, size_t queue_size_);
-        void clear();
+        explicit CheckCacheProbability(double probability, UInt64 seed = 0);
 
-        const size_t hits_threshold;
-        const size_t queue_size;
+        bool doCheck();
 
-        std::unique_ptr<LRUFileCachePriority> queue;
-        using Records = std::unordered_map<KeyAndOffset, Priority::IteratorPtr, FileCacheKeyAndOffsetHash>;
-        Records records;
+    private:
+        pcg64_fast rndgen;
+        std::bernoulli_distribution distribution;
+        std::mutex mutex;
     };
+    CheckCacheProbability check_cache_probability;
 
-    /**
-     * A HitsCountStash allows to cache certain data only after it reached
-     * a certain hit rate, e.g. if hit rate it 5, then data is cached on 6th cache hit.
-     */
-    mutable std::unique_ptr<HitsCountStash> stash;
     /**
      * A QueryLimit allows to control cache write limit per query.
      * E.g. if a query needs n bytes from cache, but it has only k bytes, where 0 <= k <= n
@@ -264,10 +314,11 @@ private:
 
     void assertInitialized() const;
     void assertCacheCorrectness();
+    void assertCacheCorrectnessWithProbability();
 
     void loadMetadata();
     void loadMetadataImpl();
-    void loadMetadataForKeys(const std::filesystem::path & keys_dir);
+    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const OriginInfo & origin);
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit
@@ -302,8 +353,40 @@ private:
         size_t offset,
         size_t size,
         FileSegment::State state,
-        const CreateFileSegmentSettings & create_settings,
-        const CachePriorityGuard::Lock *);
+        const CreateFileSegmentSettings & create_settings);
+
+    struct SizeLimits
+    {
+        size_t max_size = 0;
+        size_t max_elements = 0;
+        double slru_size_ratio = 0;
+    };
+    SizeLimits doDynamicResize(const SizeLimits & prev_limits, const SizeLimits & desired_limits);
+    bool doDynamicResizeImpl(
+        const SizeLimits & prev_limits,
+        const SizeLimits & desired_limits,
+        SizeLimits & result_limits,
+        CacheStateGuard::Lock &);
+
+    bool doTryReserve(
+        FileSegment & file_segment,
+        size_t size,
+        FileCacheReserveStat & stat,
+        const OriginInfo & origin_info,
+        size_t lock_wait_timeout_milliseconds,
+        std::string & failure_reason);
+
+    bool doEviction(
+        const EvictionInfo & main_eviction_info,
+        const EvictionInfo * query_eviction_info,
+        FileSegment & file_segment,
+        const OriginInfo & origin_info,
+        const IFileCachePriority::IteratorPtr & main_priority_iterator,
+        FileCacheReserveStat & reserve_stat,
+        EvictionCandidates & eviction_candidates,
+        IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
+        Priority * query_priority,
+        std::string & failure_reason);
 };
 
 }

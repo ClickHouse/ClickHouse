@@ -72,7 +72,7 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
         /// and assign an alias for 02367_optimize_trivial_count_with_array_join to pass. Otherwise it will fail in
         /// ArrayJoinedColumnsVisitor (`No alias for non-trivial value in ARRAY JOIN: _a`)
         /// This looks 100% as a incomplete code working on top of a bug, but this code has already been made obsolete
-        /// by the new analyzer, so it's an inconvenience we can live with until we deprecate it.
+        /// by the analyzer, so it's an inconvenience we can live with until we deprecate it.
         if (child == tables->array_join)
             return true;
         return false;
@@ -127,7 +127,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     /// subquery and ast can be the same object and ast will be moved.
     /// Save these fields to avoid use after move.
     String subquery_alias = subquery.alias;
-    bool prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+    bool prefer_alias_to_column_name = subquery.preferAliasToColumnName();
 
     auto hash = subquery.getTreeHash(/*ignore_aliases=*/ true);
     const auto scalar_query_hash_str = toString(hash);
@@ -195,7 +195,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         if (data.only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
-            block = interpreter->getSampleBlock();
+            block = *interpreter->getSampleBlock();
             for (auto & column : block)
             {
                 if (column.column->empty())
@@ -219,7 +219,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             if (block.rows() == 0)
             {
-                auto types = interpreter->getSampleBlock().getDataTypes();
+                auto types = interpreter->getSampleBlock()->getDataTypes();
                 if (types.size() != 1)
                     types = {std::make_shared<DataTypeTuple>(types)};
 
@@ -234,14 +234,14 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                     type = makeNullable(type);
                 }
 
-                ASTPtr ast_new = std::make_shared<ASTLiteral>(Null());
+                ASTPtr ast_new = make_intrusive<ASTLiteral>(Null());
                 ast_new = addTypeConversionToAST(std::move(ast_new), type->getName());
 
                 ast_new->setAlias(ast->tryGetAlias());
                 ast = std::move(ast_new);
 
                 /// Empty subquery result is equivalent to NULL
-                block = interpreter->getSampleBlock().cloneEmpty();
+                block = interpreter->getSampleBlock()->cloneEmpty();
                 String column_name = block.columns() > 0 ?  block.safeGetByPosition(0).name : "dummy";
                 block = Block({
                     ColumnWithTypeAndName(type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), type, column_name)
@@ -297,9 +297,9 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     if (data.only_analyze || !settings[Setting::enable_scalar_subquery_optimization] || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
         || !data.getContext()->hasQueryContext())
     {
-        auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
+        auto lit = make_intrusive<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
         lit->alias = subquery_alias;
-        lit->prefer_alias_to_column_name = prefer_alias_to_column_name;
+        lit->setPreferAliasToColumnName(prefer_alias_to_column_name);
         ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
 
         /// If only analyze was requested the expression is not suitable for constant folding, disable it.
@@ -308,15 +308,15 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             ast->as<ASTFunction>()->alias.clear();
             auto func = makeASTFunction("__scalarSubqueryResult", std::move(ast));
             func->alias = subquery_alias;
-            func->prefer_alias_to_column_name = prefer_alias_to_column_name;
+            func->setPreferAliasToColumnName(prefer_alias_to_column_name);
             ast = std::move(func);
         }
     }
     else if (!data.replace_only_to_literals)
     {
-        auto func = makeASTFunction("__getScalar", std::make_shared<ASTLiteral>(scalar_query_hash_str));
+        auto func = makeASTFunction("__getScalar", make_intrusive<ASTLiteral>(scalar_query_hash_str));
         func->alias = subquery_alias;
-        func->prefer_alias_to_column_name = prefer_alias_to_column_name;
+        func->setPreferAliasToColumnName(prefer_alias_to_column_name);
         ast = std::move(func);
     }
 
@@ -341,6 +341,23 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & as
             else
                 for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
                     if (i != 1 || !func.arguments->children[i]->as<ASTSubquery>())
+                        out.push_back(&func.arguments->children[i]);
+        }
+    }
+    else if (func.name == "exists")
+    {
+        /// Since exists does not use parameters, and the only
+        /// argument to exists function is a subquery, out
+        /// should not have arguments. Thus, the following lines could
+        /// probably be changed with just `return`. However, we follow
+        /// the style that is provided in the first if.
+        for (auto & child : ast->children)
+        {
+            if (child != func.arguments)
+                out.push_back(&child);
+            else
+                for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
+                    if (i != 0 || !func.arguments->children[i]->as<ASTSubquery>())
                         out.push_back(&func.arguments->children[i]);
         }
     }

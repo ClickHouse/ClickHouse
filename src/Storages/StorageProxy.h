@@ -26,8 +26,10 @@ public:
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }
-    bool noPushingToViews() const override { return getNested()->noPushingToViews(); }
+    bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
+    bool supportsSubcolumns() const override { return getNested()->supportsSubcolumns(); }
+    bool supportsDynamicSubcolumns() const override { return getNested()->supportsDynamicSubcolumns(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
 

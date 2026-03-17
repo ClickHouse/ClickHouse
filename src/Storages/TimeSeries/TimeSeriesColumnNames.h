@@ -33,6 +33,19 @@ struct TimeSeriesColumnNames
     static constexpr const char * Type = "type";
     static constexpr const char * Unit = "unit";
     static constexpr const char * Help = "help";
+
+    /// Columns returned by the table function prometheusQuery().
+    /// The function can also output columns `tags`, `value`, and `timestamp`.
+    static constexpr const char * TimeSeries = "time_series";
+
+    /// Internal columns used by steps of prometheus query evaluation.
+    /// The function prometheusQuery() doesn't output them.
+    static constexpr const char * Group = "group";
+    static constexpr const char * NewGroup = "new_group";
+    static constexpr const char * Values = "values";
+
+    /// TODO: This column is not used, remove it.
+    static constexpr const char * Scalar = "scalar";
 };
 
 }

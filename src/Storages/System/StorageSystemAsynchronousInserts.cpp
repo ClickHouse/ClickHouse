@@ -51,7 +51,7 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
                 auto time_us = (system_clock::now() - time_diff).time_since_epoch().count();
 
                 DecimalUtils::DecimalComponents<DateTime64> components{time_us / 1'000'000, time_us % 1'000'000};
-                return DecimalField(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
+                return DecimalField<DateTime64>(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
             };
 
             const auto & insert_query = key.query->as<const ASTInsertQuery &>();

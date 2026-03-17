@@ -1,16 +1,4 @@
-CREATE TABLE default.tuple
-(
-    `j` Tuple(
-        a Int8,
-        b String)
-)
-ENGINE = Memory
+CREATE TABLE default.tuple\n(\n    `j` Tuple(\n        a Int8,\n        b String)\n)\nENGINE = Memory
 j	Tuple(\n    a Int8,\n    b String)					
-CREATE TABLE default.tuple
-(
-    `j` Tuple(
-        a Int8,
-        b String)
-)
-ENGINE = Memory
+CREATE TABLE default.tuple\n(\n    `j` Tuple(\n        a Int8,\n        b String)\n)\nENGINE = Memory
 j	Tuple(\n    a Int8,\n    b String)					

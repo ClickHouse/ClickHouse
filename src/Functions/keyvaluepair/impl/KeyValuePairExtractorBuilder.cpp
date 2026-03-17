@@ -29,4 +29,11 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withMaxNumberOfPair
     return *this;
 }
 
+KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withUnexpectedQuotingCharacterStrategy(
+    extractKV::Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy_)
+{
+    unexpected_quoting_character_strategy = unexpected_quoting_character_strategy_;
+    return *this;
+}
+
 }

@@ -105,8 +105,8 @@ static DB::ConfigurationPtr get_configuration(const std::string & config_path, b
 
         zkutil::validateZooKeeperConfig(*bootstrap_configuration);
 
-        zkutil::ZooKeeperPtr zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(
-            *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
+        zkutil::ZooKeeperArgs args(*bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
+        zkutil::ZooKeeperPtr zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(args));
 
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);

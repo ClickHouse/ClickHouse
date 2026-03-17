@@ -84,7 +84,7 @@ StorageJoin::StorageJoin(
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Key column ({}) does not exist in table declaration.", key);
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
     restore();
     optimizeUnlocked();
 }
@@ -93,15 +93,15 @@ RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock,
 {
     const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
-        = context ? context->getSettingsRef()[Setting::lock_acquire_timeout] : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
-    return tryLockTimed(lock, type, query_id, acquire_timeout);
+        = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+    return tryLockTimed(lock, type, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
 }
 
 RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context)
 {
     const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
-        = context ? context->getSettingsRef()[Setting::lock_acquire_timeout] : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+        = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     return lock->getLock(type, query_id, acquire_timeout, false);
 }
 
@@ -166,7 +166,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -188,9 +188,9 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
     auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
-    auto backup_stream = NativeWriter(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
+    auto backup_stream = NativeWriter(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
 
-    auto new_data = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
+    auto new_data = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
 
     // New scope controls lifetime of pipeline.
     {
@@ -301,9 +301,9 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     Block right_sample_block;
     for (const auto & name : required_columns_names)
         right_sample_block.insert(getRightSampleBlock().getByName(name));
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, std::make_shared<const Block>(std::move(right_sample_block)));
 
-    RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, acquire_timeout);
+    RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
     join_clone->setLock(holder);
     join_clone->reuseJoinedData(*join);
 
@@ -314,7 +314,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 {
     const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
-        = context ? context->getSettingsRef()[Setting::lock_acquire_timeout] : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+        = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
 
     return getJoinLocked(analyzed_join, query_id, acquire_timeout, required_columns_names);
 }
@@ -525,31 +525,43 @@ void registerStorageJoin(StorageFactory & factory)
         });
 }
 
+namespace
+{
+
 template <typename T>
-static const char * rawData(T & t)
+const char * rawData(T & t)
 {
     return reinterpret_cast<const char *>(&t);
 }
+
 template <typename T>
-static size_t rawSize(T &)
+size_t rawSize(T &)
 {
     return sizeof(T);
 }
+
 template <>
-const char * rawData(const StringRef & t)
+const char * rawData(const std::string_view & t)
 {
-    return t.data;
+    /// We must return a non-null pointer for empty strings because ColumnNullable::insertData
+    /// treats nullptr as NULL. Empty string_views used as "zero keys" in hash tables have
+    /// data() == nullptr, but they represent empty strings, not NULLs.
+    static constexpr char empty_string[] = "";
+    return t.data() ? t.data() : empty_string;
 }
+
 template <>
-size_t rawSize(const StringRef & t)
+size_t rawSize(const std::string_view & t)
 {
-    return t.size;
+    return t.size();
+}
+
 }
 
 class JoinSource : public ISource
 {
 public:
-    JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, Block sample_block_)
+    JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, SharedHeader sample_block_)
         : ISource(sample_block_)
         , join(join_)
         , lock_holder(lock_holder_)
@@ -559,13 +571,13 @@ public:
         if (!join->getTableJoin().oneDisjunct())
             throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
 
-        column_indices.resize(sample_block.columns());
+        column_indices.resize(sample_block->columns());
 
         auto & saved_block = join->getJoinedData()->sample_block;
 
-        for (size_t i = 0; i < sample_block.columns(); ++i)
+        for (size_t i = 0; i < sample_block->columns(); ++i)
         {
-            auto & [_, type, name] = sample_block.getByPosition(i);
+            const auto & [_, type, name] = sample_block->getByPosition(i);
             if (join->right_table_keys.has(name))
             {
                 key_pos = i;
@@ -588,7 +600,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (join->data->blocks.empty())
+        if (join->data->columns.empty())
             return {};
 
         Chunk chunk;
@@ -596,7 +608,7 @@ protected:
                 join->kind,
                 join->strictness,
                 join->data->maps.front(),
-                join->table_join->getMixedJoinExpression() != nullptr,
+                join->preferUseMapsAll(),
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;
@@ -607,7 +619,7 @@ private:
     TableLockHolder lock_holder;
 
     UInt64 max_block_size;
-    Block sample_block;
+    SharedHeader sample_block;
     Block restored_block; /// sample_block with parent column types
 
     ColumnNumbers column_indices;
@@ -648,7 +660,7 @@ private:
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const auto & src = restored_block.getByPosition(i);
-            const auto & dst = sample_block.getByPosition(i);
+            const auto & dst = sample_block->getByPosition(i);
 
             if (!src.type->equals(*dst.type))
             {
@@ -727,7 +739,7 @@ private:
             if (j == key_pos)
                 columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
             else
-                columns[j]->insertFrom(*it->getMapped().block->getByPosition(column_indices[j]).column.get(), it->getMapped().row_num);
+                columns[j]->insertFrom(*it->getMapped().columns_info->columns[column_indices[j]], it->getMapped().row_num);
         ++rows_added;
     }
 
@@ -741,7 +753,7 @@ private:
                 if (j == key_pos)
                     columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                 else
-                    columns[j]->insertFrom(*ref_it->block->getByPosition(column_indices[j]).column.get(), ref_it->row_num);
+                    columns[j]->insertFrom(*ref_it->columns_info->columns[column_indices[j]], ref_it->row_num);
             ++rows_added;
         }
     }
@@ -760,7 +772,7 @@ Pipe StorageJoin::read(
 {
     storage_snapshot->check(column_names);
 
-    Block source_sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+    auto source_sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     return Pipe(std::make_shared<JoinSource>(join, std::move(holder), max_block_size, source_sample_block));
 }

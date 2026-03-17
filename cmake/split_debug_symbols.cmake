@@ -38,23 +38,25 @@ endmacro()
 
 
 macro(clickhouse_make_empty_debug_info_for_nfpm)
-   set(oneValueArgs TARGET DESTINATION_DIR)
+   set(oneValueArgs TARGET BINARY DESTINATION_DIR)
    cmake_parse_arguments(EMPTY_DEBUG "" "${oneValueArgs}" "" ${ARGN})
 
    if (NOT DEFINED EMPTY_DEBUG_TARGET)
        message(FATAL_ERROR "A target name must be provided for stripping binary")
    endif()
-
+   if (NOT DEFINED EMPTY_DEBUG_BINARY)
+       message(FATAL_ERROR "A binary name must be provided for stripping binary")
+   endif()
    if (NOT DEFINED EMPTY_DEBUG_DESTINATION_DIR)
        message(FATAL_ERROR "Destination directory for empty debug must be provided")
    endif()
 
    add_custom_command(TARGET ${EMPTY_DEBUG_TARGET} POST_BUILD
        COMMAND mkdir -p "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug"
-       COMMAND touch "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug/${EMPTY_DEBUG_TARGET}.debug"
+       COMMAND touch "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug/${EMPTY_DEBUG_BINARY}.debug"
        COMMENT "Adding empty debug info for NFPM" VERBATIM
    )
 
    cmake_path(SET DEBUG_PATH NORMALIZE "${CMAKE_INSTALL_LIBDIR}/debug/${CMAKE_INSTALL_FULL_BINDIR}")
-   install(FILES "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug/${EMPTY_DEBUG_TARGET}.debug" DESTINATION ${DEBUG_PATH} COMPONENT clickhouse)
+   install(FILES "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug/${EMPTY_DEBUG_BINARY}.debug" DESTINATION ${DEBUG_PATH} COMPONENT clickhouse)
 endmacro()
