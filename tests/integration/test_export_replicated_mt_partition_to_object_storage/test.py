@@ -69,6 +69,42 @@ def wait_for_export_to_start(
     raise TimeoutError(f"Export did not start within {timeout}s. ")
 
 
+def wait_for_exception_count(
+    node,
+    mt_table: str,
+    s3_table: str,
+    partition_id: str,
+    min_exception_count: int = 1,
+    timeout: int = 30,
+    poll_interval: float = 0.5,
+):
+    """Wait for exception_count to reach at least min_exception_count."""
+    start_time = time.time()
+    last_exception_count = None
+    while time.time() - start_time < timeout:
+        exception_count_str = node.query(
+            f"""
+            SELECT exception_count FROM system.replicated_partition_exports
+            WHERE source_table = '{mt_table}'
+              AND destination_table = '{s3_table}'
+              AND partition_id = '{partition_id}'
+            """
+        ).strip()
+        
+        if exception_count_str:
+            exception_count = int(exception_count_str)
+            last_exception_count = exception_count
+            if exception_count >= min_exception_count:
+                return exception_count
+        
+        time.sleep(poll_interval)
+    
+    raise TimeoutError(
+        f"Exception count did not reach {min_exception_count} within {timeout}s. "
+        f"Last exception_count: {last_exception_count if last_exception_count is not None else 'N/A'}"
+    )
+
+
 def skip_if_remote_database_disk_enabled(cluster):
     """Skip test if any instance in the cluster has remote database disk enabled.
 
@@ -585,8 +621,8 @@ def test_inject_short_living_failures(cluster):
             f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table} SETTINGS export_merge_tree_partition_max_retries=100;"
         )
 
-        # wait only for a second to get at least one failure, but not enough to finish the export
-        time.sleep(5)
+        # wait for at least one exception to occur, but not enough to finish the export
+        wait_for_exception_count(node, mt_table, s3_table, "2020", min_exception_count=1, timeout=30)
 
     # wait for the export to finish
     wait_for_export_status(node, mt_table, s3_table, "2020", "COMPLETED")

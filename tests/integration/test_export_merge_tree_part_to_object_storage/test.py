@@ -52,8 +52,10 @@ def test_drop_column_during_export_snapshot(cluster):
     skip_if_remote_database_disk_enabled(cluster)
     node = cluster.instances["node1"]
 
-    mt_table = "mutations_snapshot_mt_table"
-    s3_table = "mutations_snapshot_s3_table"
+    postfix = str(uuid.uuid4()).replace("-", "_")
+
+    mt_table = f"mutations_snapshot_mt_table_{postfix}"
+    s3_table = f"mutations_snapshot_s3_table_{postfix}"
 
     create_tables_and_insert_data(node, mt_table, s3_table)
 
@@ -104,8 +106,10 @@ def test_add_column_during_export(cluster):
     skip_if_remote_database_disk_enabled(cluster)
     node = cluster.instances["node1"]
 
-    mt_table = "add_column_during_export_mt_table"
-    s3_table = "add_column_during_export_s3_table"
+    postfix = str(uuid.uuid4()).replace("-", "_")
+
+    mt_table = f"add_column_during_export_mt_table_{postfix}"
+    s3_table = f"add_column_during_export_s3_table_{postfix}"
 
     create_tables_and_insert_data(node, mt_table, s3_table)
 
@@ -157,8 +161,10 @@ def test_pending_mutations_throw_before_export(cluster):
     """Test that pending mutations before export throw an error with default settings."""
     node = cluster.instances["node1"]
 
-    mt_table = "pending_mutations_throw_mt_table"
-    s3_table = "pending_mutations_throw_s3_table"
+    postfix = str(uuid.uuid4()).replace("-", "_")
+
+    mt_table = f"pending_mutations_throw_mt_table_{postfix}"
+    s3_table = f"pending_mutations_throw_s3_table_{postfix}"
 
     create_tables_and_insert_data(node, mt_table, s3_table)
 
@@ -180,8 +186,10 @@ def test_pending_mutations_skip_before_export(cluster):
     """Test that pending mutations before export are skipped with throw_on_pending_mutations=false."""
     node = cluster.instances["node1"]
 
-    mt_table = "pending_mutations_skip_mt_table"
-    s3_table = "pending_mutations_skip_s3_table"
+    postfix = str(uuid.uuid4()).replace("-", "_")
+
+    mt_table = f"pending_mutations_skip_mt_table_{postfix}"
+    s3_table = f"pending_mutations_skip_s3_table_{postfix}"
 
     create_tables_and_insert_data(node, mt_table, s3_table)
 
@@ -210,8 +218,10 @@ def test_data_mutations_after_export_started(cluster):
     skip_if_remote_database_disk_enabled(cluster)
     node = cluster.instances["node1"]
 
-    mt_table = "mutations_after_export_mt_table"
-    s3_table = "mutations_after_export_s3_table"
+    postfix = str(uuid.uuid4()).replace("-", "_")
+
+    mt_table = f"mutations_after_export_mt_table_{postfix}"
+    s3_table = f"mutations_after_export_s3_table_{postfix}"
 
     create_tables_and_insert_data(node, mt_table, s3_table)
 
@@ -256,8 +266,10 @@ def test_pending_patch_parts_throw_before_export(cluster):
     """Test that pending patch parts before export throw an error with default settings."""
     node = cluster.instances["node1"]
 
-    mt_table = "pending_patches_throw_mt_table"
-    s3_table = "pending_patches_throw_s3_table"
+    postfix = str(uuid.uuid4()).replace("-", "_")
+
+    mt_table = f"pending_patches_throw_mt_table_{postfix}"
+    s3_table = f"pending_patches_throw_s3_table_{postfix}"
 
     create_tables_and_insert_data(node, mt_table, s3_table)
 
@@ -279,8 +291,10 @@ def test_pending_patch_parts_skip_before_export(cluster):
     """Test that pending patch parts before export are skipped with throw_on_pending_patch_parts=false."""
     node = cluster.instances["node1"]
 
-    mt_table = "pending_patches_skip_mt_table"
-    s3_table = "pending_patches_skip_s3_table"
+    postfix = str(uuid.uuid4()).replace("-", "_")
+
+    mt_table = f"pending_patches_skip_mt_table_{postfix}"
+    s3_table = f"pending_patches_skip_s3_table_{postfix}"
 
     create_tables_and_insert_data(node, mt_table, s3_table)
 
