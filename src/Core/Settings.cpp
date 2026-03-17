@@ -7530,14 +7530,14 @@ Enable experimental lazy type hints for JSON type. This feature allows optimizin
      \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries
-)", BETA, allow_statistic_optimize) \
+)", 0, allow_statistic_optimize) \
     DECLARE_WITH_ALIAS(Bool, use_statistics, true, R"( /// preferred over 'allow_statistics_optimize' because of consistency with 'use_primary_key' and 'use_skip_indexes'
 Allows using statistics to optimize queries
-)", BETA, allow_statistic_optimize) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_statistics, false, R"(
+)", 0, allow_statistic_optimize) \
+    DECLARE_WITH_ALIAS(Bool, allow_statistics, true, R"(
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
-)", EXPERIMENTAL, allow_experimental_statistic) \
-    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", BETA) \
+)", 0, allow_experimental_statistics) \
+    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", 0) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
@@ -7776,6 +7776,7 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_vector_similarity_index, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_statistic, false) \
     MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \

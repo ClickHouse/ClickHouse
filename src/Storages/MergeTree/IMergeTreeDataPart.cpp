@@ -766,7 +766,9 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     if (!index_mark_cache)
         return;
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    /// Bypass QueryMetadataCache: this runs during part destruction, and caching a dying
+    /// storage's pointer would poison lookups if a new storage is allocated at the same address.
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(/*bypass_metadata_cache=*/ true);
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
     if (secondary_indices.empty())
         return;

@@ -4190,10 +4190,22 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = element.range.intersectsRange(key_range);
             bool contains = element.range.containsRange(key_range);
 
-            /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
-            /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
-            if (unlikely(key_range.left.isNaN() || key_range.right.isNaN()))
+            /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
+            /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
+            /// analysis may incorrectly include NaN values.
+            /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
+            ///   so no comparison condition can be true.
+            /// - If only right bound is NaN: the range extends into NaN territory,
+            ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+            if (unlikely(key_range.left.isNaN()))
+            {
+                intersects = false;
                 contains = false;
+            }
+            else if (unlikely(key_range.right.isNaN()))
+            {
+                contains = false;
+            }
 
             rpn_stack.emplace_back(intersects, !contains);
 

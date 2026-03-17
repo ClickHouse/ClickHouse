@@ -394,7 +394,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         if (uuid != UUIDHelpers::Nil)
             ostr << " UUID " << quoteString(toString(uuid));
 
-        assert(attach || !has_attach_from_path);
+        chassert(attach || !has_attach_from_path);
         if (has_attach_from_path)
             ostr << " FROM " << quoteString(attach_from_path);
 

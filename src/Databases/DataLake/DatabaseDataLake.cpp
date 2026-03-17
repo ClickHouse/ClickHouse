@@ -209,48 +209,9 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 
             if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
             {
-                try
-                {
-                    const std::string & credentials_file_path = settings[DatabaseDataLakeSetting::google_adc_credentials_file].value;
-                    DB::ReadBufferFromFile file_buf(credentials_file_path);
-                    std::string json_str;
-                    DB::readStringUntilEOF(json_str, file_buf);
-
-                    Poco::JSON::Parser parser;
-                    Poco::Dynamic::Var json = parser.parse(json_str);
-                    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-                    if (object->has("type"))
-                    {
-                        String type = object->get("type").extract<String>();
-                        if (type != "authorized_user")
-                        {
-                            throw DB::Exception(
-                                DB::ErrorCodes::BAD_ARGUMENTS,
-                                "Unsupported credentials type '{}' in Google ADC credentials file. Expected 'authorized_user'",
-                                type);
-                        }
-                    }
-
-                    if (google_adc_client_id.empty() && object->has("client_id"))
-                        google_adc_client_id = object->get("client_id").extract<String>();
-                    if (google_adc_client_secret.empty() && object->has("client_secret"))
-                        google_adc_client_secret = object->get("client_secret").extract<String>();
-                    if (google_adc_refresh_token.empty() && object->has("refresh_token"))
-                        google_adc_refresh_token = object->get("refresh_token").extract<String>();
-                    if (google_adc_quota_project_id.empty() && object->has("quota_project_id"))
-                        google_adc_quota_project_id = object->get("quota_project_id").extract<String>();
-                    if (google_project_id.empty() && object->has("project_id"))
-                        google_project_id = object->get("project_id").extract<String>();
-                }
-                catch (const DB::Exception & e)
-                {
-                    throw DB::Exception(
-                        DB::ErrorCodes::BAD_ARGUMENTS,
-                        "Failed to load Google ADC credentials from file '{}': {}",
-                        settings[DatabaseDataLakeSetting::google_adc_credentials_file].value,
-                        e.message());
-                }
+                throw DB::Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "reading google credentials from file is deprecated");
             }
 
             catalog_impl = std::make_shared<DataLake::BigLakeCatalog>(

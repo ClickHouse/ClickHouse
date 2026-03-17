@@ -151,6 +151,15 @@ When reading diffs, scan for these classes of bugs:
 - Unnecessary template instantiations: template code that unconditionally instantiates specializations for cases that are statically known to be unreachable. Use `if constexpr` to prune template variants that do not apply (e.g., instantiating a `division_by_nullable=true` variant for non-division operations). Each unnecessary instantiation multiplies compile time and binary size.
 - Large `constexpr` evaluation in headers: complex `constexpr` loops or recursive `constexpr` functions in headers that the compiler must evaluate in every translation unit. Extract them into `.cpp` files or break them into smaller units.
 
+**8) Server-side file access & path traversal**
+- Any setting, table function argument, or SQL-accessible parameter that accepts a **file path** and causes the server to read or write that path is a potential arbitrary file access vulnerability. A user with the required privilege (e.g., `CREATE DATABASE`, `CREATE TABLE`) could read sensitive server-side files (`/etc/shadow`, config files with secrets, other users' data) or write to unexpected locations.
+- When a new file-path setting or argument is introduced, check that it is restricted by one of:
+  - `user_files_path` validation (like the `file()` table function),
+  - Resolution relative to a fixed directory with `..` traversal rejection,
+  - A dedicated access control check (e.g., requiring `FILE` access type or admin privileges).
+- Watch for file paths that surface contents in error messages on parse failure — even a "read then validate" pattern can leak file contents through exceptions.
+- This applies to all code paths that use `ReadBufferFromFile`, `WriteBufferToFile`, `std::ifstream`, or similar with user-controlled paths.
+
 CLICKHOUSE RULES (MANDATORY)
 - **Deletion logging**
   All data deletion events (files, parts, metadata, ZooKeeper/Keeper entries, etc.) must be logged at an appropriate level.
@@ -183,6 +192,7 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 - New feature without an experimental gate.
 - Significant performance regression in a hot path.
 - Security or privilege issues, or license incompatibility.
+- Server-side file access with user-controlled paths that bypass `user_files_path` or equivalent restrictions.
 
 **Majors** – serious but not catastrophic
 - Under-tested important edge cases or error paths.
