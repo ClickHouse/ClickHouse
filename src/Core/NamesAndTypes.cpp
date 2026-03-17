@@ -41,6 +41,14 @@ String NameAndTypePair::getNameInStorage() const
     return name.substr(0, *subcolumn_delimiter_position);
 }
 
+String NameAndTypePair::getPhysicalNameInStorage() const
+{
+    if (physical_name.empty())
+        return getNameInStorage();
+
+    return physical_name;
+}
+
 bool NameAndTypePair::operator<(const NameAndTypePair & rhs) const
 {
     return std::forward_as_tuple(name, type->getName()) < std::forward_as_tuple(rhs.name, rhs.type->getName());
@@ -65,6 +73,7 @@ String NameAndTypePair::dump() const
     out << "name: " << name << "\n"
         << "type: " << type->getName() << "\n"
         << "name in storage: " << getNameInStorage() << "\n"
+        << "physical name in storage: " << getPhysicalNameInStorage() << "\n"
         << "type in storage: " << getTypeInStorage()->getName();
 
     return out.str();

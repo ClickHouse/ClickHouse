@@ -70,11 +70,20 @@ size_t ColumnsSubstreams::getSubstreamPosition(
     const MergeTreeSettingsPtr & storage_settings) const
 {
     ISerialization::StreamFileNameSettings stream_file_name_settings(*storage_settings);
+
+    /// New parts with physical names store substreams under physical names.
+    if (!name_and_type.physical_name.empty())
+    {
+        auto substream = ISerialization::getFileNameForStreamPhysical(name_and_type, substream_path, stream_file_name_settings);
+        if (auto position = tryGetSubstreamPosition(column_position, substream))
+            return *position;
+    }
+
+    /// Old parts (or parts written before physical names) use logical names.
     auto substream = ISerialization::getFileNameForStream(name_and_type, substream_path, stream_file_name_settings);
     if (auto position = tryGetSubstreamPosition(column_position, substream))
         return *position;
 
-    /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
     if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
     {
         substream = ISerialization::getFileNameForStream(name_and_type, substream_path, stream_file_name_settings);

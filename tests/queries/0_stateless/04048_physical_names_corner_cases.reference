@@ -1,0 +1,47 @@
+1	hello
+2	world
+1	hello
+2	world
+1	hello
+2	world
+1	hello
+2	world
+1	one	3.14
+2	two	3.14
+1	one	3.14
+2	two	3.14
+3	three	2.7199999999999998
+1	one	3.14
+2	two	3.14
+3	three	2.7199999999999998
+1	10
+1	10	new
+2	20	added
+1	hello
+2	\N
+3	world
+1	hello
+2	\N
+3	world
+1	after_rename
+1	10	20
+d1	4
+d2	5
+2	world
+1	hello
+2	world
+1	{'k1':10,'k2':20}	(100,'hello')	extra
+2	{'k3':30}	(200,'world')	extra
+1	{'k1':10,'k2':20}	(100,'hello')	extra
+2	{'k3':30}	(200,'world')	extra
+1	hello
+2	world
+1	10	20
+1	10	20
+2	20	40
+n.x	1
+n.y	2
+1	one	[]	[]
+2	two	[10,20]	['a','b']
+1	one	[]	[]
+2	two	[10,20]	['a','b']

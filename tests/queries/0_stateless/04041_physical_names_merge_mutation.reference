@@ -1,0 +1,14 @@
+1	one	\N
+2	two	\N
+3	three	30
+4	four	40
+1
+1	one	0
+2	two	22
+1	one	0
+2	two	22
+3	three	33
+10	UInt64
+20	UInt64
+10	UInt64
+20	UInt64

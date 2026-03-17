@@ -387,6 +387,14 @@ String ISerialization::getFileNameForStream(const NameAndTypePair & column, cons
     return getFileNameForStream(column.getNameInStorage(), path, settings);
 }
 
+String ISerialization::getFileNameForStreamPhysical(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
+{
+    if (column.physical_name.empty())
+        return getFileNameForStream(column, path, settings);
+
+    return getFileNameForStreamPhysical(column.getPhysicalNameInStorage(), column.getNameInStorage(), path, settings);
+}
+
 static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
 {
     /// Arrays of Nested cannot be inside other types.
@@ -415,6 +423,22 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
         stream_name = escapeForFileName(nested_storage_name);
     else
         stream_name = escapeForFileName(name_in_storage);
+
+    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
+}
+
+String ISerialization::getFileNameForStreamPhysical(
+    const String & physical_name_in_storage,
+    const String & logical_name_in_storage,
+    const SubstreamPath & path,
+    const StreamFileNameSettings & settings)
+{
+    String stream_name;
+    auto nested_storage_name = Nested::extractTableName(logical_name_in_storage);
+    if (logical_name_in_storage != nested_storage_name && isPossibleOffsetsOfNested(path))
+        stream_name = escapeForFileName(nested_storage_name);
+    else
+        stream_name = escapeForFileName(physical_name_in_storage);
 
     return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
 }

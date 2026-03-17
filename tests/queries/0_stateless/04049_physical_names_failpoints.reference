@@ -1,0 +1,11 @@
+1	before_rename
+2	during_rename
+FAULT_INJECTED
+1	safe
+1	safe
+2	recovered
+parts_before_merge: multiple
+1	one
+2	two
+3	three
+parts_after_merge: 1

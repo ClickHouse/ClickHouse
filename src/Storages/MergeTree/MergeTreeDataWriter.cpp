@@ -608,6 +608,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     MergeTreePartition & partition = block_with_partition.partition;
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    if (auto pn_m = data.getPhysicalNameMapping(); pn_m && pn_m->isActive())
+        populatePhysicalNames(columns, *pn_m);
 
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
@@ -969,6 +971,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    if (auto pn_m = data.getPhysicalNameMapping(); pn_m && pn_m->isActive())
+        populatePhysicalNames(columns, *pn_m);
     SerializationInfo::Settings settings
     {
         (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],

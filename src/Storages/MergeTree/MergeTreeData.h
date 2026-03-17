@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/PhysicalNameMapping.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/DataDestinationType.h>
@@ -215,6 +216,7 @@ public:
     using PartitionIdToMinBlockPtr = std::shared_ptr<const PartitionIdToMinBlock>;
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
+    constexpr static auto PHYSICAL_NAMES_FILE_NAME = "physical_names.json";
     constexpr static auto DETACHED_DIR_NAME = "detached";
     constexpr static auto MOVING_DIR_NAME = "moving";
 
@@ -633,6 +635,25 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
+
+    bool hasPhysicalNameMapping() const
+    {
+        auto mapping = physical_name_mapping.get();
+        return mapping && mapping->isActive();
+    }
+
+    PhysicalNameMappingPtr getPhysicalNameMapping() const
+    {
+        return physical_name_mapping.get();
+    }
+
+    void setPhysicalNameMapping(PhysicalNameMapping mapping_)
+    {
+        physical_name_mapping.set(std::make_unique<const PhysicalNameMapping>(std::move(mapping_)));
+    }
+
+    void loadPhysicalNameMappingFromDisk();
+    void writePhysicalNameMappingToDisk() const;
 
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
     /// This method allows read-only replicas of tables on a shared storage.
@@ -1521,6 +1542,8 @@ protected:
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
+
+    MultiVersion<PhysicalNameMapping> physical_name_mapping;
 
     /// A cache for metadata snapshots for patch parts.
     /// The key is a partition id of patch part.

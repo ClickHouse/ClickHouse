@@ -381,7 +381,14 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
             }
         }
 
-        auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
+        String name_for_substreams = column;
+        if (!subcolumns_indexes.empty())
+        {
+            const auto & first_col = columns_to_read[subcolumns_indexes.front()];
+            if (!first_col.physical_name.empty())
+                name_for_substreams = first_col.getPhysicalNameInStorage();
+        }
+        auto order = getSubcolumnsDeserializationOrder(name_for_substreams, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
         deserialization_order.reserve(subcolumns_indexes.size());
         for (size_t i : order)
             deserialization_order.push_back(subcolumn_data_index_to_subcolumn_index[i]);

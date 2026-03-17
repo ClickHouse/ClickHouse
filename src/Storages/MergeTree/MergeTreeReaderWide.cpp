@@ -346,7 +346,25 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
     if (!stream_name)
     {
-        /// We allow missing streams only for columns/subcolumns that are not present in this part.
+        /// After DROP + re-ADD of the same column, the current mapping assigns a new
+        /// physical name (e.g. b→2) but parts loaded before the ALTER still carry the
+        /// column under the old physical name (b→1). The reader resolves to the
+        /// current mapping's physical name, so streams for the new name will not
+        /// be found in the old part. Detect this mismatch and return nullptr so the
+        /// reader uses default values instead of throwing.
+        if (!name_and_type.physical_name.empty()
+            && name_and_type.getPhysicalNameInStorage() != name_and_type.getNameInStorage())
+        {
+            auto col_pos = data_part_info_for_read->getColumnPosition(name_and_type.getNameInStorage());
+            if (!col_pos)
+                return nullptr;
+
+            auto it = data_part_info_for_read->getColumns().begin();
+            std::advance(it, *col_pos);
+            if (!it->physical_name.empty() && it->physical_name != name_and_type.physical_name)
+                return nullptr;
+        }
+
         auto column = data_part_info_for_read->getColumnsDescription().tryGetColumn(GetColumnsOptions::AllPhysical, name_and_type.getNameInStorage());
         if (column && (!name_and_type.isSubcolumn() || column->type->hasSubcolumn(name_and_type.getSubcolumnName())))
         {
@@ -379,6 +397,19 @@ ReadBuffer * MergeTreeReaderWide::getStream(
         stream.seekToStart();
     else if (seek_to_mark)
         stream.seekToMark(from_mark);
+    else if (read_without_marks
+        && !name_and_type.physical_name.empty()
+        && substream_path.size() == 1
+        && substream_path[0].type == ISerialization::Substream::ArraySizes
+        && Nested::extractTableName(name_and_type.getNameInStorage()) != name_and_type.getNameInStorage())
+    {
+        /// Flattened Nested subcolumns with physical names (e.g. "n.x", "n.y") keep
+        /// separate SubstreamsCaches but share the on-disk offset stream (e.g. "n.size0").
+        /// When read_without_marks is true (common during merges), there is no seeking
+        /// between columns; after the first sibling reads the offset stream it is
+        /// positioned at the end, so subsequent siblings must seek back to re-read.
+        stream.seekToStart();
+    }
 
     return stream.getDataBuffer();
 }

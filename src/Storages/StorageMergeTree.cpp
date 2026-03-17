@@ -23,6 +23,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -75,6 +76,8 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
+    extern const char physical_names_pause_after_metadata_alter[];
+    extern const char physical_names_throw_before_mapping_persist[];
 }
 
 namespace Setting
@@ -114,6 +117,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
+    extern const MergeTreeSettingsBool activate_physical_names_for_existing_tables;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
 
 namespace ErrorCodes
@@ -133,6 +138,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int PART_IS_LOCKED;
     extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int FAULT_INJECTED;
 }
 
 namespace ActionLocks
@@ -196,6 +202,34 @@ StorageMergeTree::StorageMergeTree(
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
+    loadPhysicalNameMappingFromDisk();
+
+    if (hasPhysicalNameMapping())
+    {
+        auto mapping = getPhysicalNameMapping();
+        auto metadata_columns = getInMemoryMetadataPtr()->getColumns().getAllPhysical();
+
+        /// Remove mapping entries whose logical name no longer exists in metadata
+        /// (stale entries from a crash where the mapping was persisted before metadata,
+        /// or from a DROP that committed). Columns in metadata but NOT in the mapping
+        /// fall back to identity via `getPhysicalNameOrDefault`, which is correct:
+        /// their files use the logical name directly.
+        PhysicalNameMapping reconciled = *mapping;
+        bool changed = false;
+        for (const auto & col_name : mapping->logicalNames())
+        {
+            if (!metadata_columns.tryGetByName(col_name))
+            {
+                reconciled.removeColumn(col_name);
+                changed = true;
+            }
+        }
+        if (changed)
+        {
+            setPhysicalNameMapping(std::move(reconciled));
+            writePhysicalNameMappingToDisk();
+        }
+    }
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
@@ -431,14 +465,85 @@ void StorageMergeTree::alter(
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
 
-    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context);
-    if (!maybe_mutation_commands.empty())
-        delayMutationOrThrowIfNeeded(nullptr, local_context);
-
     Int64 mutation_version = -1;
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
+
+    /// Evaluate activation against the post-MODIFY-SETTING state so that a
+    /// single ALTER mixing `MODIFY SETTING ... , RENAME COLUMN ...` activates
+    /// physical names and takes the metadata-only path in one shot.
+    MergeTreeSettings effective_new_settings(*getSettings());
+    if (new_metadata.settings_changes)
+        effective_new_settings.applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+
+    bool settings_enable_physical_names =
+        effective_new_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES
+        && effective_new_settings[MergeTreeSetting::activate_physical_names_for_existing_tables];
+
+    bool has_compatible_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
+    {
+        return c.type == AlterCommand::RENAME_COLUMN
+            || c.type == AlterCommand::DROP_COLUMN
+            || c.type == AlterCommand::ADD_COLUMN;
+    });
+
+    bool should_activate = !hasPhysicalNameMapping() && settings_enable_physical_names && has_compatible_alter;
+    bool physical_names_active = hasPhysicalNameMapping() || should_activate;
+
+    auto maybe_mutation_commands = commands.getMutationCommands(
+        old_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context,
+        /*with_alters=*/false, /*physical_names_active=*/physical_names_active);
+    if (!maybe_mutation_commands.empty())
+        delayMutationOrThrowIfNeeded(nullptr, local_context);
+
+    std::optional<PhysicalNameMapping> new_physical_mapping;
+    if (physical_names_active)
+    {
+        PhysicalNameMapping local_mapping;
+        if (should_activate)
+            local_mapping = PhysicalNameMapping::createForExistingTable(old_metadata.getColumns().getAllPhysical());
+        else if (auto current = getPhysicalNameMapping())
+            local_mapping = *current;
+
+        /// Process renames from commands (metadata diff can't distinguish rename from add+drop).
+        for (const auto & command : commands)
+        {
+            if (command.ignore)
+                continue;
+            if (command.type == AlterCommand::RENAME_COLUMN)
+            {
+                if (local_mapping.hasLogicalName(command.column_name))
+                    local_mapping.renameColumn(command.column_name, command.rename_to);
+            }
+        }
+
+        /// Use the actual metadata diff to handle flattened Nested correctly:
+        /// `commands.apply` expands `ADD COLUMN n Nested(...)` into `n.x`, `n.y`, etc.
+        std::set<String> old_col_names;
+        for (const auto & col : old_metadata.getColumns().getAllPhysical())
+            old_col_names.insert(col.name);
+        std::set<String> new_col_names;
+        for (const auto & col : new_metadata.getColumns().getAllPhysical())
+            new_col_names.insert(col.name);
+
+        for (const auto & col : new_metadata.getColumns().getAllPhysical())
+        {
+            if (!old_col_names.contains(col.name) && !local_mapping.hasLogicalName(col.name))
+            {
+                auto new_physical = local_mapping.allocatePhysicalName();
+                local_mapping.addColumn(col.name, new_physical);
+            }
+        }
+
+        for (const auto & col : old_metadata.getColumns().getAllPhysical())
+        {
+            if (!new_col_names.contains(col.name) && local_mapping.hasLogicalName(col.name))
+                local_mapping.removeColumn(col.name);
+        }
+
+        new_physical_mapping.emplace(std::move(local_mapping));
+    }
 
     auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
@@ -492,8 +597,29 @@ void StorageMergeTree::alter(
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata, false, local_context);
 
+            /// Persist physical name mapping BEFORE metadata commit. If we crash
+            /// between the two, the mapping on disk is "ahead" of metadata — stale
+            /// entries are harmless and columns not yet in metadata fall back to
+            /// identity via `getPhysicalNameOrDefault`.
+            bool mapping_was_changed = false;
+            std::shared_ptr<const PhysicalNameMapping> old_published_mapping;
+
             try
             {
+                if (new_physical_mapping)
+                {
+                    old_published_mapping = getPhysicalNameMapping();
+
+                    fiu_do_on(FailPoints::physical_names_throw_before_mapping_persist,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before physical name mapping persist");
+                    });
+
+                    setPhysicalNameMapping(std::move(*new_physical_mapping));
+                    writePhysicalNameMappingToDisk();
+                    mapping_was_changed = true;
+                }
+
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
             }
             catch (...)
@@ -501,8 +627,18 @@ void StorageMergeTree::alter(
                 LOG_ERROR(log, "Failed to alter table in database, reverting changes");
                 changeSettings(old_metadata.settings_changes, table_lock_holder);
                 setProperties(old_metadata, new_metadata, false, local_context);
+                if (mapping_was_changed)
+                {
+                    if (old_published_mapping)
+                        setPhysicalNameMapping(*old_published_mapping);
+                    else
+                        setPhysicalNameMapping(PhysicalNameMapping{});
+                    writePhysicalNameMappingToDisk();
+                }
                 throw;
             }
+
+            FailPointInjection::pauseFailPoint(FailPoints::physical_names_pause_after_metadata_alter);
 
             {
                 auto parts_lock = lockParts();

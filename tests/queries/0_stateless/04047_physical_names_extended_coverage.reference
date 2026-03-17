@@ -1,0 +1,32 @@
+c	1
+b
+1
+0
+1	one
+0
+1	one
+1	one
+2	two
+3	three
+2	two
+3	three
+4	four
+1	10	UInt64	x
+2	20	UInt64	x
+3	30	UInt64	y
+1	30
+2	70
+a	a
+b	b
+c	1
+a	a
+b	b
+c	1
+52	42
+1	hello world
+2	foo bar
+1	hello world
+2	foo bar
+3	baz qux
+a	a
+sum(c)	sum(c)
