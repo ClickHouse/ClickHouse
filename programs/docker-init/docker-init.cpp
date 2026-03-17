@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -38,6 +39,16 @@ namespace
 /// Path to the clickhouse multi-tool binary, derived from argv[0].
 /// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 std::string g_clickhouse_binary;
+
+/// Remove dynamic linker injection variables from the environment before exec.
+/// Defense in depth: prevents a malicious LD_PRELOAD mounted via a volume from
+/// injecting code into ClickHouse subprocesses.
+void sanitizeEnvironment()
+{
+    for (const char * var : {"LD_PRELOAD", "LD_LIBRARY_PATH", "GLIBC_TUNABLES",
+                              "LD_AUDIT", "LD_DEBUG", "DYLD_INSERT_LIBRARIES"})
+        unsetenv(var); // NOLINT(concurrency-mt-unsafe)
+}
 
 /// Get an environment variable value, returning default_value if not set.
 std::string getEnv(const char * name, const std::string & default_value = "")
@@ -66,6 +77,9 @@ int runCommand(const std::vector<std::string> & args)
 
     if (pid == 0)
     {
+        signal(SIGTERM, SIG_DFL);
+        signal(SIGINT, SIG_DFL);
+        sanitizeEnvironment();
         auto argv = buildArgv(args);
         execvp(argv[0], argv.data());
         _exit(127);
@@ -93,6 +107,9 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
 
     if (pid == 0)
     {
+        signal(SIGTERM, SIG_DFL);
+        signal(SIGINT, SIG_DFL);
+        sanitizeEnvironment();
         (void)close(pipefd[0]);
         if (dup2(pipefd[1], STDOUT_FILENO) < 0)
             _exit(127);
@@ -161,6 +178,9 @@ int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::str
     }
     if (lhs_pid == 0)
     {
+        signal(SIGTERM, SIG_DFL);
+        signal(SIGINT, SIG_DFL);
+        sanitizeEnvironment();
         (void)close(pipefd[0]);
         (void)dup2(pipefd[1], STDOUT_FILENO);
         (void)close(pipefd[1]);
@@ -180,6 +200,9 @@ int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::str
     }
     if (rhs_pid == 0)
     {
+        signal(SIGTERM, SIG_DFL);
+        signal(SIGINT, SIG_DFL);
+        sanitizeEnvironment();
         (void)close(pipefd[1]);
         (void)dup2(pipefd[0], STDIN_FILENO);
         (void)close(pipefd[0]);
@@ -493,6 +516,9 @@ void initClickHouseDB(
 
     if (server_pid == 0)
     {
+        signal(SIGTERM, SIG_DFL);
+        signal(SIGINT, SIG_DFL);
+        sanitizeEnvironment();
         auto argv = buildArgv(server_args);
         execvp(argv[0], argv.data());
         _exit(127);
@@ -520,6 +546,9 @@ void initClickHouseDB(
         pid_t check_pid = fork();
         if (check_pid == 0)
         {
+            signal(SIGTERM, SIG_DFL);
+            signal(SIGINT, SIG_DFL);
+            sanitizeEnvironment();
             int devnull = open("/dev/null", O_WRONLY);
             if (devnull >= 0)
             {
@@ -744,6 +773,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
         for (std::size_t i = 1; i < extra_args.size(); ++i)
             exec_cmd.push_back(extra_args[i]);
 
+        sanitizeEnvironment();
         auto exec_argv = buildArgv(exec_cmd);
         execvp(exec_argv[0], exec_argv.data());
         std::cerr << "docker-init: failed to exec '" << extra_args[0] << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
@@ -837,6 +867,8 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
         for (const auto & arg : extra_args)
             exec_args.push_back(arg);
 
+        sanitizeEnvironment();
+        prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
         auto exec_argv = buildArgv(exec_args);
         execvp(exec_argv[0], exec_argv.data());
         std::cerr << "docker-init: failed to exec clickhouse keeper: " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
@@ -916,6 +948,8 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     for (const auto & arg : extra_args)
         exec_args.push_back(arg);
 
+    sanitizeEnvironment();
+    prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
     auto exec_argv = buildArgv(exec_args);
     execvp(exec_argv[0], exec_argv.data());
     std::cerr << "docker-init: failed to exec clickhouse server: " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)

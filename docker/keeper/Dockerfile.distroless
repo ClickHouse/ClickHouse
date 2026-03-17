@@ -136,7 +136,8 @@ RUN mkdir -p \
 # ──────────────────────────────────────────────────────────────────────────────
 # Stage 2: Production distroless image.
 # ──────────────────────────────────────────────────────────────────────────────
-FROM gcr.io/distroless/cc-debian12:nonroot AS production
+# Pinned 2026-03-17
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:7e5b8df2f4d36f5599ef4ab856d7d444922531709becb03f3368c6d797d0a5eb AS production
 
 COPY --from=ch-builder /output/ /
 
@@ -157,7 +158,8 @@ ENTRYPOINT ["/usr/bin/clickhouse", "docker-init", "--keeper"]
 # Stage 3: Debug image — same as production but includes the busybox shell
 #           at /busybox/sh for interactive troubleshooting.
 # ──────────────────────────────────────────────────────────────────────────────
-FROM gcr.io/distroless/cc-debian12:debug-nonroot AS debug
+# Pinned 2026-03-17
+FROM gcr.io/distroless/cc-debian12:debug-nonroot@sha256:641f055b21555d5e4f77b7f1f3caca80840a76c4f7ae5df36a159a436941d2c2 AS debug
 
 COPY --from=ch-builder /output/ /
 
