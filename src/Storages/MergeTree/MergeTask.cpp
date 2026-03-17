@@ -308,8 +308,8 @@ static void addMissedColumnsToSerializationInfos(
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
-    return (future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId()) : merges_blocker->isCancelled())
-        || merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed);
+    bool merges_stopped = future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId()) : merges_blocker->isCancelled();
+    return merges_stopped || merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed);
 }
 
 void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
