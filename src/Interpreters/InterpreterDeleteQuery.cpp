@@ -65,6 +65,10 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 /// This is needed because the DELETE predicate is re-formatted as a string and re-parsed
 /// in the context of an UPDATE/ALTER query, where qualified names like db.table.column
 /// cannot be resolved. See #71760.
+///
+/// Only qualifiers that actually match the target table (and database) are stripped;
+/// `IdentifierSemantic::setColumnShortName` checks the match via `canReferColumnToTable`
+/// and leaves non-matching identifiers untouched.
 static void stripQualifiedNamesImpl(ASTPtr & ast, const DatabaseAndTableWithAlias & db_and_table)
 {
     if (auto * identifier = ast->as<ASTIdentifier>())
