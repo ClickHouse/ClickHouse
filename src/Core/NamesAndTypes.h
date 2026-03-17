@@ -30,6 +30,7 @@ public:
         const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_);
 
     String getNameInStorage() const;
+    String getPhysicalNameInStorage() const;
     String getSubcolumnName() const;
 
     bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
@@ -43,9 +44,11 @@ public:
     /// Can be used to convert "t.a.b.c" from meaning "column `t` in storage, subcolumn `a.b.c` inside it"
     /// to meaning "column `t.a.b` in storage, subcolumn `c` inside it".
     void setDelimiterAndTypeInStorage(const String & name_in_storage_, DataTypePtr type_in_storage_);
+    void setPhysicalName(const String & physical_name_) { physical_name = physical_name_; }
 
     String name;
     DataTypePtr type;
+    String physical_name;
 
 private:
     DataTypePtr type_in_storage;

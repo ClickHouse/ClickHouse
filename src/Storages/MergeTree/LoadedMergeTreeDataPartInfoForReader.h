@@ -94,6 +94,15 @@ public:
     const RangesInDataPartReadHints & getReadHints() const override { return read_hints; }
 
     size_t getRowCount() const override { return data_part->rows_count; }
+
+    PhysicalNameMappingPtr getPhysicalNameMapping() const override
+    {
+        auto mapping = data_part->storage.getPhysicalNameMapping();
+        if (mapping && mapping->isActive())
+            return mapping;
+        return nullptr;
+    }
+
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;

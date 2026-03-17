@@ -42,6 +42,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
@@ -215,6 +216,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool activate_physical_names_for_existing_tables;
     extern const MergeTreeSettingsBool allow_experimental_reverse_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
@@ -496,6 +498,51 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
+
+void MergeTreeData::loadPhysicalNameMappingFromDisk()
+{
+    const auto physical_names_path = fs::path(relative_data_path) / PHYSICAL_NAMES_FILE_NAME;
+
+    for (const auto & disk : getDisks())
+    {
+        if (disk->isBroken())
+            continue;
+
+        if (auto buf = disk->readFileIfExists(physical_names_path, getReadSettings()))
+        {
+            setPhysicalNameMapping(PhysicalNameMapping::deserialize(*buf));
+            assertEOF(*buf);
+            return;
+        }
+    }
+}
+
+void MergeTreeData::writePhysicalNameMappingToDisk() const
+{
+    const auto physical_names_path = fs::path(relative_data_path) / PHYSICAL_NAMES_FILE_NAME;
+    auto mapping = getPhysicalNameMapping();
+    if (!mapping)
+        return;
+
+    for (const auto & disk : getStoragePolicy()->getDisks())
+    {
+        if (disk->isBroken())
+            continue;
+
+        if (!disk->isReadOnly() && !disk->isWriteOnce())
+        {
+            auto buf = disk->writeFile(physical_names_path, 4096, WriteMode::Rewrite, getContext()->getWriteSettings());
+            mapping->serialize(*buf);
+            buf->finalize();
+            if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+                buf->sync();
+            return;
+        }
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write `{}` for table {}", PHYSICAL_NAMES_FILE_NAME, getStorageID().getNameForLogs());
+}
+
 DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
@@ -4215,7 +4262,28 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
-        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context);
+        /// Evaluate activation against the post-MODIFY-SETTING state so that a
+        /// single ALTER mixing `MODIFY SETTING ... , RENAME COLUMN ...` activates
+        /// physical names and correctly takes the metadata-only path.
+        StorageInMemoryMetadata check_metadata = new_metadata;
+        commands.apply(check_metadata, local_context);
+
+        MergeTreeSettings effective_settings(*settings_from_storage);
+        if (check_metadata.settings_changes)
+            effective_settings.applyChanges(check_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+
+        bool settings_enable_pn =
+            effective_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES
+            && effective_settings[MergeTreeSetting::activate_physical_names_for_existing_tables];
+        bool has_compat_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
+        {
+            return c.type == AlterCommand::RENAME_COLUMN || c.type == AlterCommand::DROP_COLUMN || c.type == AlterCommand::ADD_COLUMN;
+        });
+        bool pn_active = hasPhysicalNameMapping() || (settings_enable_pn && has_compat_alter);
+
+        auto mutation_commands = commands.getMutationCommands(
+            new_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
+            /*with_alters=*/false, /*physical_names_active=*/pn_active);
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -8955,6 +9023,10 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 {
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
     auto columns_list = Nested::collect(columns.getAllPhysical());
+
+    if (auto mapping = getPhysicalNameMapping(); mapping && mapping->isActive())
+        populatePhysicalNames(columns_list, *mapping);
+
     SerializationInfo::Settings serialization_settings
     {
         settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
@@ -8971,7 +9043,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 
         auto callback = [&](const auto & substream_path)
         {
-            auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
+            auto full_stream_name = ISerialization::getFileNameForStreamPhysical(column, substream_path, ISerialization::StreamFileNameSettings(settings));
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
             column_streams.emplace(stream_name, full_stream_name);
         };

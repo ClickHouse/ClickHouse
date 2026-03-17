@@ -6,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
+#include <Storages/MergeTree/PhysicalNameMapping.h>
 #include <base/EnumReflection.h>
 
 #include <Poco/JSON/JSON.h>
@@ -374,35 +375,36 @@ bool SerializationInfoByName::needsPersistence() const
     return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
-void SerializationInfoByName::writeJSON(WriteBuffer & out) const
+template <typename NameMapper>
+static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & out, NameMapper && name_mapper)
 {
     Poco::JSON::Object object;
     Poco::JSON::Array column_infos;
 
-    for (const auto & [name, info] : *this)
+    for (const auto & [name, info] : infos)
     {
         Poco::JSON::Object info_json;
         info->toJSON(info_json);
-        info_json.set(KEY_NAME, name);
+        info_json.set(KEY_NAME, name_mapper(name));
         column_infos.add(std::move(info_json)); /// NOLINT
     }
 
-    auto version = getVersion();
+    auto version = infos.getVersion();
     object.set(KEY_VERSION, static_cast<uint8_t>(version));
     object.set(KEY_COLUMNS, std::move(column_infos)); /// NOLINT
 
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
         Poco::JSON::Object type_versions_obj;
-        type_versions_obj.set(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
-        if (settings.nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
-            type_versions_obj.set(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
+        type_versions_obj.set(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(infos.getSettings().string_serialization_version));
+        if (infos.getSettings().nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
+            type_versions_obj.set(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(infos.getSettings().nullable_serialization_version));
         object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
 
         /// Write flag propagate_types_serialization_versions_to_nested_types only if it's set,
         /// so old versions can read this info if the flag is disabled.
-        if (settings.propagate_types_serialization_versions_to_nested_types)
-            object.set(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types);
+        if (infos.getSettings().propagate_types_serialization_versions_to_nested_types)
+            object.set(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, infos.getSettings().propagate_types_serialization_versions_to_nested_types);
     }
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -410,6 +412,22 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     Poco::JSON::Stringifier::stringify(object, oss);
 
     writeString(oss.str(), out);
+}
+
+void SerializationInfoByName::writeJSON(WriteBuffer & out) const
+{
+    writeJSONImpl(*this, out, [](const String & name) -> const String &
+    {
+        return name;
+    });
+}
+
+void SerializationInfoByName::writeJSONWithPhysicalNames(WriteBuffer & out, const PhysicalNameMapping & physical_name_mapping) const
+{
+    writeJSONImpl(*this, out, [&](const String & name)
+    {
+        return physical_name_mapping.getPhysicalNameOrDefault(name);
+    });
 }
 
 SerializationInfoByName SerializationInfoByName::clone() const
@@ -420,7 +438,16 @@ SerializationInfoByName SerializationInfoByName::clone() const
     return res;
 }
 
-SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str)
+namespace
+{
+
+struct ParsedJSON
+{
+    Poco::JSON::Array::Ptr columns_array;
+    SerializationInfoSettings settings;
+};
+
+ParsedJSON parseJSONEnvelope(const std::string & json_str)
 {
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
@@ -468,7 +495,6 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     MergeTreeNullableSerializationVersion nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
-        /// types_serialization_versions is mandatory in WITH_TYPES mode
         if (!type_versions_obj)
         {
             throw Exception(
@@ -508,6 +534,15 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         nullable_serialization_version,
         propagate_types_serialization_versions_to_nested_types);
 
+    return {std::move(columns_array), std::move(settings)};
+}
+
+} /// anonymous namespace
+
+SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str)
+{
+    auto [columns_array, settings] = parseJSONEnvelope(json_str);
+
     SerializationInfoByName infos(settings);
     if (columns_array)
     {
@@ -544,6 +579,52 @@ SerializationInfoByName SerializationInfoByName::readJSON(const NamesAndTypesLis
     String json_str;
     readString(json_str, in);
     return readJSONFromString(columns, json_str);
+}
+
+SerializationInfoByName SerializationInfoByName::readJSONWithPhysicalNames(
+    const NamesAndTypesList & columns,
+    const PhysicalNameMapping & physical_name_mapping,
+    ReadBuffer & in)
+{
+    String json_str;
+    readString(json_str, in);
+    auto [columns_array, settings] = parseJSONEnvelope(json_str);
+
+    SerializationInfoByName infos(settings);
+    if (!columns_array)
+        return infos;
+
+    std::unordered_map<std::string_view, const IDataType *> column_type_by_name;
+    for (const auto & [name, type] : columns)
+        column_type_by_name.emplace(name, type.get());
+
+    for (const auto & elem : *columns_array)
+    {
+        const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+
+        if (!elem_object->has(KEY_NAME))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed field '{}' in serialization infos", KEY_NAME);
+
+        auto stored_name = elem_object->getValue<String>(KEY_NAME);
+        String logical_name;
+
+        if (physical_name_mapping.hasPhysicalName(stored_name))
+            logical_name = physical_name_mapping.getLogicalName(stored_name);
+        else if (physical_name_mapping.getPhysicalNameOrDefault(stored_name) == stored_name && column_type_by_name.contains(stored_name))
+            logical_name = stored_name;
+        else
+            continue;
+
+        auto it = column_type_by_name.find(logical_name);
+        if (it == column_type_by_name.end())
+            continue;
+
+        auto info = it->second->createSerializationInfo(infos.getSettings());
+        info->fromJSON(*elem_object);
+        infos.emplace(logical_name, std::move(info));
+    }
+
+    return infos;
 }
 
 }
