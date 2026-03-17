@@ -59,3 +59,7 @@ SELECT toFloat64('nan');
 SELECT toFloat32('inf');
 SELECT toFloat32('-inf');
 SELECT toFloat32('nan');
+
+-- Test oversized precision (should throw)
+SET output_format_float_precision = 61;
+SELECT 1.0/3; -- { serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER }

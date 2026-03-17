@@ -2,6 +2,7 @@
 #include <base/DecomposedFloat.h>
 #include <base/hex.h>
 #include <Common/formatIPv6.h>
+#include <Common/NaNUtils.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-parameter"
@@ -183,11 +184,17 @@ template <typename T>
 requires is_floating_point<T>
 void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
 {
-    if (settings.float_precision == 0)
+    if (settings.float_precision == 0 || !isFinite(x))
     {
         writeFloatText(x, buf);
         return;
     }
+
+    static constexpr UInt64 max_float_precision = 60;
+    if (settings.float_precision > max_float_precision)
+        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+            "output_format_float_precision value {} exceeds the maximum allowed value {}",
+            settings.float_precision, max_float_precision);
 
     DoubleConverter<false>::BufferType buffer;
     double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
