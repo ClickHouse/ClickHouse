@@ -1776,11 +1776,15 @@ TEST_F(ALPTest, CompressProducesCorrectHeader)
     {
         auto codec = makeCodec(codec_name, data_type);
 
-        Memory<> compressed_memory;
-        compressed_memory.resize(ICompressionCodec::getHeaderSize() + codec->getCompressedReserveSize(0));
-
         Memory<> source_memory;
         source_memory.resize(data_type->getSizeOfValueInMemory());
+        for (size_t i = 0; i < source_memory.size(); ++i)
+            source_memory.data()[i] = char {0};
+
+        Memory<> compressed_memory;
+        UInt32 compressed_size = static_cast<UInt32>(data_type->getSizeOfValueInMemory());
+        compressed_memory.resize(ICompressionCodec::getHeaderSize() + codec->getCompressedReserveSize(compressed_size));
+
         codec->compress(source_memory.data(), static_cast<UInt32>(source_memory.size()), compressed_memory.data());
 
         ASSERT_EQ(compressed_memory[ICompressionCodec::getHeaderSize()], expected_meta_byte) << "for codec " << codec_name << " and data type " << data_type->getName();

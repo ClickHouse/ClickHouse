@@ -18,7 +18,7 @@ namespace DB
  * ALP (Adaptive Lossless floating-Point) compression codec.
  *
  * This implementation is based on the ALP paper (https://ir.cwi.nl/pub/33334) and implements both ALP variants for Float32 and Float64.
- * Standard APL variant encodes floating-point values as scaled integers (plus a small set of exceptions), then applies Frame-of-Reference + bit-packing.
+ * Standard ALP variant encodes floating-point values as scaled integers (plus a small set of exceptions), then applies Frame-of-Reference + bit-packing.
  * RD (real doubles) ALP variant encodes doubles as a pair of integers (left and right bits) and applies dictionary encoding to the left parts.
  *
  * Overall Stream Layout
@@ -920,7 +920,6 @@ private:
         Unsigned right_part_mask = (static_cast<Unsigned>(1) << right_bits) - 1;
 
         block.exceptions.clear();
-
         for (UInt16 i = 0; i < float_count; ++i, source += sizeof(T))
         {
             const Unsigned value = unalignedLoadLittleEndian<Unsigned>(source); // reinterpret float bits as unsigned integer
@@ -937,6 +936,10 @@ private:
 
             block.encoded_right[i] = static_cast<Unsigned>(value & right_part_mask); // right part is the remaining bits after removing the left part
         }
+
+        // Fill remaining positions with zeros (if any), FFOR always encodes 1024 values even if block is partial
+        std::fill(block.encoded_left + float_count, block.encoded_left + ALP_BLOCK_MAX_FLOAT_COUNT, 0);
+        std::fill(block.encoded_right + float_count, block.encoded_right + ALP_BLOCK_MAX_FLOAT_COUNT, 0);
 
         auto dict_bits = ALPUtils<T>::calculateBitWidth(block.dict_values.size());
         block.bitpacked_left_bytes = Compression::FFOR::calculateBitpackedBytes(dict_bits);
@@ -1006,10 +1009,10 @@ private:
 
         // Count frequency of left part values
         std::unordered_map<UInt16, UInt16> left_part_freq(float_count); // left part value → occurrence count
-        auto * ut_source = reinterpret_cast<const Unsigned *>(source);
         for (UInt16 i = 0; i < float_count; ++i)
         {
-            auto left_part = static_cast<UInt16>(ut_source[i] >> right_bits);
+            Unsigned value = std::bit_cast<Unsigned>(source[i]);
+            UInt16 left_part = static_cast<UInt16>(value >> right_bits);
             ++left_part_freq[left_part];
         }
 
@@ -1024,11 +1027,9 @@ private:
                       return a.first != b.first ? a.first > b.first : a.second < b.second;
                   });
 
-        UInt8 dict_size = static_cast<UInt8>(params.left_part_freq.size());
-
         // Number of values that cannot be encoded with the current left_bits and would become exceptions
         UInt16 exceptions_count = 0;
-        for (UInt8 i = ALP_RD_MAX_DICT_SIZE; i < dict_size; ++i)
+        for (UInt8 i = ALP_RD_MAX_DICT_SIZE; i < static_cast<UInt8>(params.left_part_freq.size()); ++i)
             exceptions_count += params.left_part_freq[i].first;
 
         // Trim dictionary to max size and calculate estimated encoding size
@@ -1036,7 +1037,7 @@ private:
             params.left_part_freq.resize(ALP_RD_MAX_DICT_SIZE);
 
         // Estimated size
-        params.estimated_size = calcTotalSize(dict_size, left_bits, exceptions_count);
+        params.estimated_size = calcTotalSize(static_cast<UInt8>(params.left_part_freq.size()), left_bits, exceptions_count);
 
         return params;
     }
