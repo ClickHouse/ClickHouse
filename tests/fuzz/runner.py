@@ -18,6 +18,7 @@ TIMEOUT = int(os.getenv("TIMEOUT", "0"))
 OUTPUT = "/test_output"
 RUNNERS = int(os.getenv("RUNNERS", "16"))
 DEFAULT_INPUT_TIMEOUT = 1200 # libFuzzer default value for '-timeout' option
+SKIP_MERGE = int(os.getenv("SKIP_MERGE", "0"))
 
 INPUT_TIMEOUT = 0 # for debugging, set 0 when not debugging
 
@@ -88,11 +89,11 @@ class Stopwatch:
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
-    
+
     seed_corpus_dir = f"{fuzzer}.in"
-    with Path(seed_corpus_dir) as path:
-        if not path.exists() or not path.is_dir():
-            seed_corpus_dir = ""
+    path = Path(seed_corpus_dir)
+    if not path.exists() or not path.is_dir():
+        seed_corpus_dir = ""
 
     active_corpus_present = True
     active_corpus_dir = f"corpus/{fuzzer}"
@@ -146,52 +147,52 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
     env = {}
 
-    with Path(options_file) as path:
-        if path.exists() and path.is_file():
-            parser = configparser.ConfigParser()
-            parser.read(path)
+    path = Path(options_file)
+    if path.exists() and path.is_file():
+        parser = configparser.ConfigParser()
+        parser.read(path)
 
-            if parser.has_section("asan"):
-                env["ASAN_OPTIONS"] = (
-                    f"{os.environ['ASAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['asan'].items())}"
-                )
+        if parser.has_section("asan"):
+            env["ASAN_OPTIONS"] = (
+                f"{os.environ['ASAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['asan'].items())}"
+            )
 
-            if parser.has_section("msan"):
-                env["MSAN_OPTIONS"] = (
-                    f"{os.environ['MSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['msan'].items())}"
-                )
+        if parser.has_section("msan"):
+            env["MSAN_OPTIONS"] = (
+                f"{os.environ['MSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['msan'].items())}"
+            )
 
-            if parser.has_section("ubsan"):
-                env["UBSAN_OPTIONS"] = (
-                    f"{os.environ['UBSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['ubsan'].items())}"
-                )
+        if parser.has_section("ubsan"):
+            env["UBSAN_OPTIONS"] = (
+                f"{os.environ['UBSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['ubsan'].items())}"
+            )
 
-            if parser.has_section("fuzzer_arguments"):
-                fuzzer_arguments = " ".join(
-                    (f"{key}") if value == "" else (f"{key}={value}")
-                    for key, value in parser["fuzzer_arguments"].items()
-                )
+        if parser.has_section("fuzzer_arguments"):
+            fuzzer_arguments = " ".join(
+                (f"{key}") if value == "" else (f"{key}={value}")
+                for key, value in parser["fuzzer_arguments"].items()
+            )
 
-            if parser.has_section("libfuzzer"):
-                libfuzzer_options = " ".join(
-                    f"-{key}={value}"
-                    for key, value in parser["libfuzzer"].items()
-                    if key in allowed_libfuzzer_options
-                )
-                libfuzzer_merge_options = " ".join(
-                    f"-{key}={value}"
-                    for key, value in parser["libfuzzer"].items()
-                    if key in allowed_merge_libfuzzer_options
-                )
-                input_timeout = parser["libfuzzer"].getint("timeout", fallback=input_timeout)
+        if parser.has_section("libfuzzer"):
+            libfuzzer_options = " ".join(
+                f"-{key}={value}"
+                for key, value in parser["libfuzzer"].items()
+                if key in allowed_libfuzzer_options
+            )
+            libfuzzer_merge_options = " ".join(
+                f"-{key}={value}"
+                for key, value in parser["libfuzzer"].items()
+                if key in allowed_merge_libfuzzer_options
+            )
+            input_timeout = parser["libfuzzer"].getint("timeout", fallback=input_timeout)
 
-            # FUZZER_ARGS flag is used to make it deliver libFuzzer arguments throught FUZZER_ARGS environment variable
-            # for special cases of fuzzers written in the way they don't use libFuzzer framework, but rather
-            # implement their own main (usually it's a whole application which implements fuzzer functionality alongside)
-            # and then initialize libFuzzer driver themselves. Such approach allows fuzzer executable to process its
-            # arguments as usual, without any special measures, but initialization of libFuzer driver then should take
-            # arguments from FUZZER_ARGS environment variable.
-            use_fuzzer_args = parser.getboolean("CI", "FUZZER_ARGS", fallback=False)
+        # FUZZER_ARGS flag is used to make it deliver libFuzzer arguments throught FUZZER_ARGS environment variable
+        # for special cases of fuzzers written in the way they don't use libFuzzer framework, but rather
+        # implement their own main (usually it's a whole application which implements fuzzer functionality alongside)
+        # and then initialize libFuzzer driver themselves. Such approach allows fuzzer executable to process its
+        # arguments as usual, without any special measures, but initialization of libFuzer driver then should take
+        # arguments from FUZZER_ARGS environment variable.
+        use_fuzzer_args = parser.getboolean("CI", "FUZZER_ARGS", fallback=False)
 
     if INPUT_TIMEOUT:
         libfuzzer_options += f" -timeout={INPUT_TIMEOUT}"
@@ -203,7 +204,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     artifact_prefix = f"{results_path}"
 
     # Corpus minimization
-    if active_corpus_present:
+    if active_corpus_present and not SKIP_MERGE:
         logging.info(
             "Running corpus minimization for fuzzer %s for %d seconds...",
             fuzzer,
@@ -340,7 +341,10 @@ def run_fuzzer(fuzzer: str, timeout: int):
             # Delete minimized corpus directory
             shutil.rmtree(mini_corpus_dir)
     else:
-        logging.info("Not running corpus minimization for fuzzer %s - persistent corpus is empty", fuzzer)
+        if SKIP_MERGE:
+            logging.info("Not running corpus minimization for fuzzer %s - SKIP_MERGE is set", fuzzer)
+        else:
+            logging.info("Not running corpus minimization for fuzzer %s - persistent corpus is empty", fuzzer)
 
 
     # Fuzzing

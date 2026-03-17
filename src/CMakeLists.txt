@@ -234,6 +234,9 @@ set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-f
 
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
+if (TARGET ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_malloc PRIVATE ch_contrib::jemalloc clickhouse_common_io)
+endif()
 
 add_library (clickhouse_new_delete STATIC Common/AllocationInterceptors.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)

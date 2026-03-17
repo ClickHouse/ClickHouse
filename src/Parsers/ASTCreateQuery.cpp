@@ -607,9 +607,12 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         /// SETTINGS clause would be consumed by ParserSelectQuery as part of the
         /// last SELECT in the UNION/INTERSECT chain during re-parsing, instead of
         /// remaining on the ASTCreateQuery — breaking the formatting roundtrip.
+        /// The outer parentheses already protect against SETTINGS consumption, so
+        /// clear the flag to prevent inner nodes from adding redundant parentheses.
         if (settings_ast)
         {
             ostr << "(";
+            frame.parent_has_trailing_settings = false;
             select->format(ostr, settings, state, frame);
             ostr << ")";
         }

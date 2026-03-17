@@ -23,16 +23,27 @@ def check_changelog_entry(category, pr_body: str) -> str:
     entry = ""
     i = 0
     while i < len(lines):
-        if re.match(
-            r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
-        ):
-            i += 1
-            # Can have one empty line between header and the entry itself.
-            # Filter it out.
-            if i < len(lines) and not lines[i]:
+        m = re.match(
+            r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)(?:[^:]*:\s*(.*))?$",
+            lines[i],
+        )
+        if m:
+            # Check if the entry is on the same line (e.g. "Changelog entry: Fix something")
+            inline = (m.group(2) or "").strip()
+            # Strip markdown formatting markers (e.g. "**Changelog entry:**" yields "**")
+            inline = re.sub(r"^[-*_\s]*", "", inline)
+            inline = re.sub(r"[-*_\s]*$", "", inline)
+            if inline:
+                entry_lines = [inline]
                 i += 1
+            else:
+                i += 1
+                # Can have one empty line between header and the entry itself.
+                # Filter it out.
+                if i < len(lines) and not lines[i]:
+                    i += 1
+                entry_lines = []
             # All following lines until empty one are the changelog entry.
-            entry_lines = []
             while i < len(lines) and lines[i]:
                 entry_lines.append(lines[i])
                 i += 1
