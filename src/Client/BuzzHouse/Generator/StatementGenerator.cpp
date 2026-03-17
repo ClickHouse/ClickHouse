@@ -2565,7 +2565,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         {3 * static_cast<uint32_t>(!fc.disks.empty()), [&] { sc->set_restart_disk(rg.pickRandomly(fc.disks).name); }},
         {3 * static_cast<uint32_t>(!fc.disks.empty()),
          [&] { sc->set_clear_disk_metadata_cache(rg.nextBool() ? rg.pickRandomly(fc.disks).name : ""); }},
-        {3 * static_cast<uint32_t>(freeze_counter > 0),
+        {3 * static_cast<uint32_t>(supports_cloud_features && freeze_counter > 0),
          [&]
          {
              chassert(freeze_counter > 0);
