@@ -1,13 +1,13 @@
 #pragma once
-#include <memory>
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
 {
 
-class TextIndexDictionaryBlockCache;
-using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
+class TextIndexTokensCache;
+using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
 
 class TextIndexHeaderCache;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
@@ -83,7 +83,7 @@ public:
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
-    TextIndexDictionaryBlockCachePtr dictionaryBlockCache() const { return dictionary_block_cache; }
+    TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
 
@@ -134,12 +134,20 @@ private:
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
 
+    /// Returns true if the node represents `arrayElement(map_col, 'key')`
+    /// and there is a text index built on `mapValues(map_col)`.
+    bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
+
     std::vector<String> stringToTokens(const Field & field) const;
     std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     std::vector<String> stringLikeToTokens(const Field & field) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
-    static TextSearchMode getTextSearchMode(const RPNElement & element);
+
+    /// Returns true if all tokens must be read for text index analysis
+    /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
+    /// E.g. "hasAnyTokens(s, 'tokens')" or "hasAllTokens(s, 'tokens1') OR hasAllTokens(s, 'tokens2')""
+    static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
     TokenizerPtr tokenizer;
@@ -156,11 +164,11 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
-    /// Instance of the text index dictionary block cache
-    TextIndexDictionaryBlockCachePtr dictionary_block_cache;
-    /// Instance of the text index dictionary block cache
+    /// Cache for tokens and their infos (cardinality, etc.)
+    TextIndexTokensCachePtr tokens_cache;
+    /// Cache for headers of the text index
     TextIndexHeaderCachePtr header_cache;
-    /// Instance of the text index dictionary block cache
+    /// Cache for posting lists of tokens.
     TextIndexPostingsCachePtr postings_cache;
 };
 

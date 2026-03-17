@@ -29,7 +29,7 @@ FROM join_inner_table__fuzz_146_replicated
 SYSTEM FLUSH LOGS query_log;
 SELECT is_initial_query, ProfileEvents['ParallelReplicasQueryCount'] as c, query
 FROM system.query_log
-WHERE event_date >= yesterday()
+WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND query_id =
       (

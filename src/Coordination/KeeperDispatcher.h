@@ -9,6 +9,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <functional>
+#include <unordered_set>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
@@ -37,6 +38,9 @@ private:
 
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
+
+    mutable std::mutex finished_sessions_mutex;
+    std::unordered_set<int64_t> finished_sessions;
 
     mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
@@ -77,6 +81,10 @@ private:
     KeeperSnapshotManagerS3 snapshot_s3;
 
     KeeperContextPtr keeper_context;
+
+    /// Flag to signal TCP handlers that they should close connections.
+    /// Set before the full shutdown() to allow handlers to exit promptly.
+    std::atomic<bool> shutting_down{false};
 
     /// Thread put requests to raft
     void requestThread();
@@ -145,6 +153,12 @@ public:
     /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
     Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
 
+    /// Signal TCP handlers to close connections before the full shutdown.
+    void signalShutdown() { shutting_down.store(true, std::memory_order_relaxed); }
+
+    /// Returns true if signalShutdown() was called.
+    bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
+
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
 
@@ -166,7 +180,7 @@ public:
     void finishSession(int64_t session_id);
 
     /// Invoked when a request completes.
-    void updateKeeperStatLatency(uint64_t process_time_ms);
+    void updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests = 1);
 
     /// Are we leader
     bool isLeader() const

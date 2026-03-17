@@ -88,8 +88,8 @@ $CLICKHOUSE_CLIENT -q "
     SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_tsv_kafka;
 "
 
-# Wait for all messages to be consumed
-for i in $(seq 1 30); do
+# Wait for all messages to be consumed (120s to allow for slow consumer group assignment)
+for i in $(seq 1 120); do
     json_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_json_dst")
     csv_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_csv_dst")
     tsv_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_tsv_dst")

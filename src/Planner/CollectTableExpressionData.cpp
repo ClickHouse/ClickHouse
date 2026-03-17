@@ -78,6 +78,9 @@ public:
             return;
         }
 
+        if (column_source_node_type == QueryTreeNodeType::CROSS_JOIN)
+            return;
+
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(column_source_node);
 
         if (isAliasColumn(node))

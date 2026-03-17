@@ -113,6 +113,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char lightweight_show_tables[];
+    extern const char datalake_try_get_table_return_nullptr[];
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -542,6 +543,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         std::this_thread::sleep_for(std::chrono::seconds(10));
     });
 
+    fiu_do_on(FailPoints::datalake_try_get_table_return_nullptr,
+    {
+        return nullptr;
+    });
+
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
     if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
@@ -661,6 +667,23 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         );
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Azure for Iceberg OneLake catalog");
+#endif
+    }
+
+    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
+    {
+#if USE_AWS_S3
+        auto s3_configuration = std::dynamic_pointer_cast<StorageS3Configuration>(configuration);
+        if (!s3_configuration)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not S3 type for BigLake catalog");
+        auto biglake_catalog = std::static_pointer_cast<DataLake::BigLakeCatalog>(catalog);
+        s3_configuration->setInitializationAsBigLake(
+            biglake_catalog->getGoogleADCClientId(),
+            biglake_catalog->getGoogleADCClientSecret(),
+            biglake_catalog->getGoogleADCRefreshToken()
+        );
+#else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type S3 for Iceberg BigLake catalog");
 #endif
     }
 

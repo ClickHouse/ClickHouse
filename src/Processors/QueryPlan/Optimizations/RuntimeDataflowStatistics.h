@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -93,11 +94,16 @@ public:
 
     void recordAggregationKeySizes(const Aggregator & aggregator, const Block & block);
 
+    /// Updates should_continue_sampling to true if the current read block is chosen for sampling.
+    /// It is needed because in general we read each block in multiple steps because of prewhere.
+    /// If the first part of the block was chosen for sampling, we want to record statistics for the whole block in later steps,
+    /// so should_continue_sampling remains true for subsequent calls for the same logical block.
     void recordInputColumns(
         const ColumnsWithTypeAndName & input_columns,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
-        size_t read_bytes);
+        size_t read_bytes,
+        std::optional<bool> & should_continue_sampling);
 
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 

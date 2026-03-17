@@ -596,6 +596,11 @@ private:
         /// It can happen when the original function returns Nullable or LowCardinality type and replacement doesn't.
         if (!function_node.result_type->equals(*replacement.node->result_type))
             replacement.node = &actions_dag.addCast(*replacement.node, function_node.result_type, "", context);
+
+        /// Preserve the original column name so that downstream steps (e.g. ExpressionStep for SELECT)
+        /// that reference the predicate by its original name can still find it in the block.
+        if (replacement.node->result_name != function_node.result_name)
+            replacement.node = &actions_dag.addAlias(*replacement.node, function_node.result_name);
     }
 };
 
@@ -609,8 +614,13 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index);
     auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
 
+    /// Even when no virtual columns are added (added_columns is empty),
+    /// the DAG may have been modified by text index preprocessing
+    /// (e.g. applying tokenizer/preprocessor to hasAnyTokens).
+    /// In that case, result.filter_node is non-null and we must return it
+    /// so the caller can update the filter column name to match the modified DAG.
     if (result.added_columns.empty())
-        return nullptr;
+        return result.filter_node;
 
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
     LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));

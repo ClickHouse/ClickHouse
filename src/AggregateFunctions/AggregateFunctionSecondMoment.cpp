@@ -65,7 +65,7 @@ SELECT round(varSamp(x),3) AS var_samp FROM test_data;
     FunctionDocumentation::Category category_varSamp = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_varSamp = {description_varSamp, syntax_varSamp, arguments_varSamp, {}, returned_value_varSamp, examples_varSamp, introduced_in_varSamp, category_varSamp};
 
-    factory.registerFunction("varSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::varSamp>, {}, documentation_varSamp});
+    factory.registerFunction("varSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::varSamp>, documentation_varSamp});
 
     /// varPop documentation
     FunctionDocumentation::Description description_varPop = R"(
@@ -123,7 +123,7 @@ FROM test_data;
     FunctionDocumentation::Category category_varPop = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_varPop = {description_varPop, syntax_varPop, arguments_varPop, {}, returned_value_varPop, examples_varPop, introduced_in_varPop, category_varPop};
 
-    factory.registerFunction("varPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::varPop>, {}, documentation_varPop});
+    factory.registerFunction("varPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::varPop>, documentation_varPop});
     FunctionDocumentation::Description description_stddevSamp = R"(
 Returns the sample standard deviation of a numeric data sequence.
 The result is equal to the square root of [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp).
@@ -168,7 +168,7 @@ FROM test_data;
     FunctionDocumentation::Category category_stddevSamp = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_stddevSamp = {description_stddevSamp, syntax_stddevSamp, arguments_stddevSamp, {}, returned_value_stddevSamp, examples_stddevSamp, introduced_in_stddevSamp, category_stddevSamp};
 
-    factory.registerFunction("stddevSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::stddevSamp>, {}, documentation_stddevSamp});
+    factory.registerFunction("stddevSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::stddevSamp>, documentation_stddevSamp});
     FunctionDocumentation::Description description_stddevPop = R"(
 Returns the population standard deviation of a numeric data sequence.
 The result is equal to the square root of [`varPop`](/sql-reference/aggregate-functions/reference/varPop).
@@ -204,7 +204,7 @@ SELECT stddevPop(population) AS stddev FROM test_data;
     FunctionDocumentation::Category category_stddevPop = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_stddevPop = {description_stddevPop, syntax_stddevPop, arguments_stddevPop, {}, returned_value_stddevPop, examples_stddevPop, introduced_in_stddevPop, category_stddevPop};
 
-    factory.registerFunction("stddevPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::stddevPop>, {}, documentation_stddevPop});
+    factory.registerFunction("stddevPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::stddevPop>, documentation_stddevPop});
 
     /// Synonyms for compatibility.
     factory.registerAlias("VAR_SAMP", "varSamp", AggregateFunctionFactory::Case::Insensitive);

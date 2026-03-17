@@ -104,7 +104,7 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
         if (table_node || table_function_node)
         {
             const auto & table_storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-            if (table_storage->getStorageID() == storage->getStorageID())
+            if (table_storage && table_storage->getStorageID() == storage->getStorageID())
                 return true;
         }
 
@@ -265,7 +265,11 @@ bool checkCorrelatedColumn(
     ///
     /// X would have lambda as a source node
     /// Y comes from outer scope and requires ordinary check.
-    if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+    ///
+    /// Similarly, INTERPOLATE creates fake columns with InterpolateNode as the source.
+    /// These are expression arguments, not table expressions, so they cannot be correlated.
+    auto source_type = column_source->getNodeType();
+    if (source_type == QueryTreeNodeType::LAMBDA || source_type == QueryTreeNodeType::INTERPOLATE)
         return false;
 
     bool is_correlated = false;

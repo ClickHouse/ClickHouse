@@ -1,4 +1,5 @@
 #include <Disks/IO/IOUringReader.h>
+#include <Common/ErrnoException.h>
 
 #if USE_LIBURING
 

@@ -5,6 +5,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
+#include <Common/Logger_fwd.h>
 #include <map>
 #include <mutex>
 

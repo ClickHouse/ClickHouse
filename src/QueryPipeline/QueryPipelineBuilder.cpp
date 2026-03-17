@@ -428,9 +428,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool default_totals = false;
 
-    if (!join->supportTotals() && (left->hasTotals() || right->hasTotals()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
-
     if (!left->hasTotals() && right->hasTotals())
     {
         left->addDefaultTotals();

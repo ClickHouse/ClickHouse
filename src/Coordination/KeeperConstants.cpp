@@ -237,6 +237,7 @@
     M(KeeperPacketsSent) \
     M(KeeperPacketsReceived) \
     M(KeeperRequestTotal) \
+    M(KeeperRequestTotalWithSubrequests) \
     M(KeeperLatency) \
     M(KeeperTotalElapsedMicroseconds) \
     M(KeeperProcessElapsedMicroseconds) \
@@ -309,6 +310,8 @@
     M(JemallocFailedDeallocationSampleTracking) \
 \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
+    M(KeeperStaleRequestsSkipped) \
+    M(KeeperFinishedSessionsCacheFull) \
 
 namespace ProfileEvents
 {

@@ -7,6 +7,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ErrnoException.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>

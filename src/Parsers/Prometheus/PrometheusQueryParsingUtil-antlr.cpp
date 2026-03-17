@@ -147,11 +147,9 @@ namespace
             parent->children.push_back(new_child);
         }
 
+        static String getText(const antlr4::tree::TerminalNode * ctx) { return ctx->getSymbol()->getText(); }
+
         static size_t getStartPos(const antlr4::tree::TerminalNode * ctx) { return ctx->getSymbol()->getStartIndex(); }
-        static size_t getStartPos(const antlr4::ParserRuleContext * ctx) { return ctx->start->getStartIndex(); }
-        static size_t getLength(const antlr4::tree::TerminalNode * ctx) { return ctx->getSymbol()->getStopIndex() - ctx->getSymbol()->getStartIndex() + 1; }
-        static size_t getLength(const antlr4::ParserRuleContext * ctx) { return ctx->stop->getStopIndex() - ctx->start->getStartIndex() + 1; }
-        std::string_view getText(const antlr4::tree::TerminalNode * ctx) const { return std::string_view{promql_query}.substr(getStartPos(ctx), getLength(ctx)); }
 
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {
@@ -243,8 +241,6 @@ namespace
         Node * makeStringLiteral(antlr4::tree::TerminalNode * ctx)
         {
             auto new_node = std::make_unique<StringLiteral>();
-            new_node->start_pos = getStartPos(ctx);
-            new_node->length = getLength(ctx);
             if (!parseStringLiteral(ctx, new_node->string))
             {
                 chassert(error_listener.hasError());
@@ -263,8 +259,6 @@ namespace
                 return nullptr;
             }
             auto new_node = std::make_unique<Scalar>();
-            new_node->start_pos = getStartPos(ctx);
-            new_node->length = getLength(ctx);
             new_node->scalar = scalar;
             return addNode(std::move(new_node));
         }
@@ -334,8 +328,6 @@ namespace
         Node * makeInstantSelector(antlr4_grammars::PromQLParser::InstantSelectorContext * ctx)
         {
             auto new_node = std::make_unique<InstantSelector>();
-            new_node->start_pos = getStartPos(ctx);
-            new_node->length = getLength(ctx);
 
             MatcherList matchers;
             if (auto * metric_name_ctx = ctx->metricName())
@@ -364,8 +356,6 @@ namespace
         Node * makeRangeSelector(antlr4_grammars::PromQLParser::RangeSelectorContext * ctx)
         {
             auto new_node = std::make_unique<RangeSelector>();
-            new_node->start_pos = getStartPos(ctx);
-            new_node->length = getLength(ctx);
             auto * instant_selector_ctx = ctx->instantSelector();
             auto * selector_range_ctx = ctx->SELECTOR_RANGE();
             if (!instant_selector_ctx || !selector_range_ctx)
@@ -387,8 +377,6 @@ namespace
         Node * makeSubquery(antlr4_grammars::PromQLParser::SubqueryOpContext * ctx, Node * expression)
         {
             auto new_node = std::make_unique<Subquery>();
-            new_node->start_pos = expression->start_pos;
-            new_node->length = expression->length + getLength(ctx);
             auto * subquery_range_ctx = ctx->SUBQUERY_RANGE();
             if (!subquery_range_ctx)
                 throwInconsistentSchema("SubqueryOp", ctx->getText());
@@ -404,10 +392,7 @@ namespace
             auto * res_node = addNode(std::move(new_node));
 
             if (auto * offset_op_ctx = ctx->offsetOp())
-            {
-                res_node->length -= getLength(offset_op_ctx);
                 res_node = makeOffset(offset_op_ctx, res_node);
-            }
 
             return res_node;
         }
@@ -416,8 +401,6 @@ namespace
         Node * makeOffset(antlr4_grammars::PromQLParser::OffsetOpContext * ctx, Node * expression)
         {
             auto new_node = std::make_unique<Offset>();
-            new_node->start_pos = expression->start_pos;
-            new_node->length = expression->length + getLength(ctx);
             new_node->result_type = expression->result_type;
 
             bool ok = true;
@@ -453,11 +436,9 @@ namespace
         }
 
         /// Makes a node for an unary operation.
-        Node * makeUnaryOperator(std::string_view operator_name, Node * argument, size_t start_pos)
+        Node * makeUnaryOperator(std::string_view operator_name, Node * argument)
         {
             auto new_node = std::make_unique<UnaryOperator>();
-            new_node->start_pos = start_pos;
-            new_node->length = argument->start_pos + argument->length - start_pos;
             new_node->result_type = argument->result_type;
             new_node->operator_name = operator_name;
             addChild(new_node.get(), argument);
@@ -474,7 +455,7 @@ namespace
             else
                 throwInconsistentSchema("UnaryOp", ctx->getText());
 
-            return makeUnaryOperator(operator_name, argument, getStartPos(ctx));
+            return makeUnaryOperator(operator_name, argument);
         }
 
         /// Makes a node for a binary operation.
@@ -482,8 +463,6 @@ namespace
                                   antlr4_grammars::PromQLParser::GroupingContext * grouping, bool bool_modifier)
         {
             auto new_node = std::make_unique<BinaryOperator>();
-            new_node->start_pos = left_argument->start_pos;
-            new_node->length = right_argument->start_pos + right_argument->length - left_argument->start_pos;
             new_node->operator_name = operator_name;
             new_node->result_type = getBinaryOperatorResultType(left_argument->result_type, right_argument->result_type);
 
@@ -610,13 +589,11 @@ namespace
         }
 
         /// Makes a node to call a function.
-        Node * makeFunction(std::string_view function_name, const std::vector<Node *> & arguments, size_t start_pos, size_t length)
+        Node * makeFunction(std::string_view function_name, const std::vector<Node *> & arguments)
         {
             auto new_node = std::make_unique<Function>();
             new_node->function_name = function_name;
             new_node->result_type = getFunctionResultType(function_name);
-            new_node->start_pos = start_pos;
-            new_node->length = length;
 
             new_node->children.reserve(arguments.size());
             for (auto * argument : arguments)
@@ -632,7 +609,7 @@ namespace
                 throwInconsistentSchema("Function", ctx->getText());
 
             auto function_name = getText(function_name_ctx);
-            return makeFunction(function_name, arguments, getStartPos(ctx), getLength(ctx));
+            return makeFunction(function_name, arguments);
         }
 
         /// Returns the result type of a function.
@@ -647,12 +624,9 @@ namespace
         /// Makes a node for an aggregation operator.
         Node * makeAggregationOperator(std::string_view operator_name, const std::vector<Node *> & arguments,
                                        antlr4_grammars::PromQLParser::ByContext * by,
-                                       antlr4_grammars::PromQLParser::WithoutContext * without,
-                                       size_t start_pos, size_t length)
+                                       antlr4_grammars::PromQLParser::WithoutContext * without)
         {
             auto new_node = std::make_unique<AggregationOperator>();
-            new_node->start_pos = start_pos;
-            new_node->length = length;
             new_node->operator_name = operator_name;
             new_node->result_type = ResultType::INSTANT_VECTOR;
             if (by)
@@ -686,7 +660,7 @@ namespace
                 throwInconsistentSchema("Aggregation", ctx->getText());
 
             auto operator_name = getText(operator_name_ctx);
-            return makeAggregationOperator(operator_name, arguments, ctx->by(), ctx->without(), getStartPos(ctx), getLength(ctx));
+            return makeAggregationOperator(operator_name, arguments, ctx->by(), ctx->without());
         }
 
         /// ANTLR visitors:

@@ -1,6 +1,8 @@
 #include <Access/AccessBackup.h>
 #include <Access/AccessRights.h>
 #include <Access/ContextAccess.h>
+#include <Access/User.h>
+#include <Access/Role.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupMetadataFinder.h>
 #include <Backups/BackupSettings.h>
@@ -366,7 +368,44 @@ AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const Str
     if (!access_restorer)
         return {};
     access_restorer->generateRandomIDsAndResolveDependencies(context->getAccessControl());
-    return access_restorer->getEntitiesToRestore(data_path_in_backup);
+    auto entities = access_restorer->getEntitiesToRestore(data_path_in_backup);
+
+    if (restore_settings.restore_access_entities_with_current_grants)
+    {
+        /// Limit restored grants to what the current user is allowed to grant (same as GRANT CURRENT GRANTS).
+        auto current_user_grantable_rights = context->getAccess()->getAccessRights()->getGrantableRights();
+
+        for (auto & [id, entity] : entities.new_entities)
+        {
+            auto entity_type = entity->getType();
+            if (entity_type == User::TYPE)
+            {
+                const auto & user = typeid_cast<const User &>(*entity);
+                AccessRights limited_access = user.access;
+                limited_access.makeIntersection(current_user_grantable_rights);
+                if (limited_access != user.access)
+                {
+                    auto cloned = entity->clone();
+                    typeid_cast<User &>(*cloned).access = std::move(limited_access);
+                    entity = cloned;
+                }
+            }
+            else if (entity_type == Role::TYPE)
+            {
+                const auto & role = typeid_cast<const Role &>(*entity);
+                AccessRights limited_access = role.access;
+                limited_access.makeIntersection(current_user_grantable_rights);
+                if (limited_access != role.access)
+                {
+                    auto cloned = entity->clone();
+                    typeid_cast<Role &>(*cloned).access = std::move(limited_access);
+                    entity = cloned;
+                }
+            }
+        }
+    }
+
+    return entities;
 }
 
 void RestorerFromBackup::createAndCheckDatabases()
@@ -386,9 +425,7 @@ void RestorerFromBackup::createAndCheckDatabases()
 
 void RestorerFromBackup::createAndCheckDatabase(const String & database_name)
 {
-    schedule(
-        [this, database_name]() { createAndCheckDatabaseImpl(database_name); },
-        ThreadName::RESTORE_MAKE_DATABASE);
+    schedule([this, database_name]() { createAndCheckDatabaseImpl(database_name); }, ThreadName::RESTORE_MAKE_DATABASE);
 }
 
 void RestorerFromBackup::createAndCheckDatabaseImpl(const String & database_name)

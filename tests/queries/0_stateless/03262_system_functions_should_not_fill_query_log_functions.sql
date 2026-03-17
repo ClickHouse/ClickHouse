@@ -3,7 +3,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT used_aggregate_functions, used_functions, used_table_functions
 FROM system.query_log
 WHERE
-    event_date >= yesterday()
+    event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query LIKE '%bitShiftLeft%';

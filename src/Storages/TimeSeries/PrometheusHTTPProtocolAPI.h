@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Logger_fwd.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -94,7 +95,7 @@ private:
 
     std::shared_ptr<const StorageTimeSeries> time_series_storage;
     FormatSettings format_settings;
-    Poco::LoggerPtr log;
+    LoggerPtr log;
 };
 
 }

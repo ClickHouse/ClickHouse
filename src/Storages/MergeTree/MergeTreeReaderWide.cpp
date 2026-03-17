@@ -615,4 +615,31 @@ void MergeTreeReaderWide::readData(
         column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
 }
 
+std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()
+{
+    /// We need to read prefixes to be able to collect all streams (because of dynamic structure of some columns).
+    deserializePrefixForAllColumns(columns_to_read.size(), 0, getLastMark(all_mark_ranges));
+    std::unordered_map<String, std::vector<String>> column_to_streams;
+    for (size_t i = 0; i < columns_to_read.size(); ++i)
+    {
+        const auto & name_and_type = columns_to_read[i];
+        const auto & serialization = serializations[i];
+
+        ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
+        {
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                return;
+
+            if (auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings))
+                column_to_streams[name_and_type.name].push_back(*stream_name);
+        };
+
+        auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);
+        ISerialization::EnumerateStreamsSettings settings;
+        serialization->enumerateStreams(settings, callback, data);
+    }
+
+    return column_to_streams;
+}
+
 }

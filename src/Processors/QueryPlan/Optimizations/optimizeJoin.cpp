@@ -309,7 +309,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         return RelationStats{
             .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = {},
+            .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName()};
     }
 
@@ -576,22 +576,40 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     if (isTrivialStep(node))
         node = node->children[0];
 
-    auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
-    if (child_join_step && !child_join_step->isOptimized())
     {
-        auto child_join_kind = child_join_step->getJoinOperator().kind;
-        bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
-        allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
-        if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
+        auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
+        if (child_join_step && !child_join_step->isOptimized())
         {
-            QueryGraphBuilder child_graph(graph.context);
-            buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
-            size_t count = child_graph.inputs.size();
-            uniteGraphs(graph, std::move(child_graph));
-            return count;
+            auto child_join_kind = child_join_step->getJoinOperator().kind;
+            bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
+            allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
+            if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
+            {
+                QueryGraphBuilder child_graph(graph.context);
+                buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
+                size_t count = child_graph.inputs.size();
+                uniteGraphs(graph, std::move(child_graph));
+                return count;
+            }
+            /// Optimize child subplan before continuing to get size estimation
+            optimizeJoinLogicalImpl(child_join_step, *node, nodes, graph.context->optimization_settings);
         }
-        /// Optimize child subplan before continuing to get size estimation
-        optimizeJoinLogicalImpl(child_join_step, *node, nodes, graph.context->optimization_settings);
+    }
+
+    /// When the leaf is a subquery with Join-s wrapped in Expression/Aggregating steps, we cannot Joins to the graph, but we want to optimize
+    /// those child Join to get proper statistics to use in the parent Join reordering.
+    {
+        auto * child_node = node;
+        while (child_node->children.size() == 1)
+        {
+            child_node = child_node->children[0];
+        }
+
+        auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
+        if (child_join_step && !child_join_step->isOptimized())
+        {
+            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
+        }
     }
 
     graph.inputs.push_back(node);
@@ -811,6 +829,16 @@ static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
     return node;
 }
 
+constexpr bool isSwapOnlyJoinKind(JoinKind kind)
+{
+    return kind == JoinKind::Full;
+}
+
+constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
+{
+    return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
+}
+
 QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     QueryGraph query_graph;
@@ -951,8 +979,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 
             /// fixme: USING clause handled specially in join algorithm, so swap breaks it
-            /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
-            /// At the time of writing, we're not able to swap inputs for ANY partial merge join, because it only supports ANY inner or left joins, but not right.
+            /// At the time of writing, we're not able to swap inputs for ANY or SEMI partial merge join, because it only supports inner or left joins, but not right
+            /// ANTI partial merge join is not supported for any join kind
             const bool partial_merge_join_can_be_selected = std::ranges::any_of(
                 join_settings.join_algorithms,
                 [](JoinAlgorithm alg)
@@ -960,8 +988,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             const bool should_worry_about_partial_merge_join = partial_merge_join_can_be_selected
                 && (!MergeJoin::isSupported(join_operator.kind, join_operator.strictness)
                     || !MergeJoin::isSupported(reverseJoinKind(join_operator.kind), join_operator.strictness));
-            const bool suitable_any_join = join_operator.strictness == JoinStrictness::Any && !should_worry_about_partial_merge_join;
-            if (join_operator.strictness != JoinStrictness::All && !suitable_any_join)
+            const bool suitable_swap_only_join = isSwapOnlyJoinStrictness(join_operator.strictness) && !should_worry_about_partial_merge_join;
+            if (join_operator.strictness != JoinStrictness::All && !suitable_swap_only_join)
                 flip_join = false;
 
             if (flip_join)
@@ -1122,7 +1150,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
             relation_names[entry->relations] = join_step->getReadableRelationName();
 
-            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation);
+            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats);
 
             auto right_table_key = query_graph_builder.context->statistics_context.getCachedKey(right_child_node);
             if (right_table_key)
@@ -1172,10 +1200,9 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto kind = join_operator.kind;
     auto locality = join_operator.locality;
     if (!optimization_settings.query_plan_optimize_join_order_limit
-        || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any)
+        || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness))
         || locality != JoinLocality::Unspecified
         || kind == JoinKind::Paste
-        || kind == JoinKind::Full
         || !join_operator.residual_filter.empty()
     )
     {
@@ -1187,8 +1214,8 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     query_graph_builder.context->dummy_stats = join_step->getDummyStats();
 
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
-    if (strictness == JoinStrictness::Any)
-        /// Do not reorder ANY joins, only allow swap
+    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2)
+        /// Do not reorder joins, only allow swap
         query_graph_size_limit = 2;
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
