@@ -109,9 +109,9 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     return {};
 }
 
-std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
+VectorWithMemoryTracking<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
 {
-    std::vector<ActionsAndName> res;
+    VectorWithMemoryTracking<ActionsAndName> res;
 
     while (auto condition = trySplitSingleAndFilter(dag, filter_name))
         res.push_back(std::move(*condition));
@@ -145,7 +145,7 @@ FilterStep::FilterStep(
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    std::vector<ActionsAndName> and_atoms;
+    VectorWithMemoryTracking<ActionsAndName> and_atoms;
 
     /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.
@@ -198,7 +198,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
 
     auto cloned_dag = actions_dag.clone();
 
-    std::vector<ActionsAndName> and_atoms;
+    VectorWithMemoryTracking<ActionsAndName> and_atoms;
     if (!actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
 
@@ -227,7 +227,7 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     auto cloned_dag = actions_dag.clone();
 
-    std::vector<ActionsAndName> and_atoms;
+    VectorWithMemoryTracking<ActionsAndName> and_atoms;
     if (!actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
 

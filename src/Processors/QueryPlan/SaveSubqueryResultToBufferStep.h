@@ -11,7 +11,7 @@ class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
 using ColumnIdentifier = std::string;
-using ColumnIdentifiers = std::vector<ColumnIdentifier>;
+using ColumnIdentifiers = VectorWithMemoryTracking<ColumnIdentifier>;
 
 struct ChunkBuffer;
 using ChunkBufferPtr = std::shared_ptr<ChunkBuffer>;

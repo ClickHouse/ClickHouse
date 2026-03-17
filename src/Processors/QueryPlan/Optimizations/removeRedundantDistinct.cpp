@@ -64,7 +64,7 @@ namespace
     }
 
     /// build actions DAG from stack of steps
-    std::optional<ActionsDAG> buildActionsForPlanPath(std::vector<const ActionsDAG *> & dag_stack)
+    std::optional<ActionsDAG> buildActionsForPlanPath(VectorWithMemoryTracking<const ActionsDAG *> & dag_stack)
     {
         if (dag_stack.empty())
             return {};
@@ -82,7 +82,7 @@ namespace
     }
 
     bool compareAggregationKeysWithDistinctColumns(
-        const Names & aggregation_keys, const DistinctColumns & distinct_columns, std::vector<std::vector<const ActionsDAG *>> actions_chain)
+        const Names & aggregation_keys, const DistinctColumns & distinct_columns, VectorWithMemoryTracking<VectorWithMemoryTracking<const ActionsDAG *>> actions_chain)
     {
         logDebug("aggregation_keys", aggregation_keys);
         logDebug("aggregation_keys size", aggregation_keys.size());
@@ -152,8 +152,8 @@ namespace
         const DistinctStep * distinct_step = typeid_cast<DistinctStep *>(distinct_node->step.get());
         chassert(distinct_step);
 
-        std::vector<const ActionsDAG *> dag_stack;
-        std::vector<std::vector<const ActionsDAG *>> actions_chain;
+        VectorWithMemoryTracking<const ActionsDAG *> dag_stack;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<const ActionsDAG *>> actions_chain;
         const DistinctStep * inner_distinct_step = nullptr;
         const IQueryPlanStep * aggregation_before_distinct = nullptr;
         const QueryPlan::Node * node = distinct_node;
@@ -222,7 +222,7 @@ namespace
         chassert(distinct_step);
         const auto distinct_columns = getDistinctColumns(distinct_step);
 
-        std::vector<const ActionsDAG *> dag_stack;
+        VectorWithMemoryTracking<const ActionsDAG *> dag_stack;
         const DistinctStep * inner_distinct_step = nullptr;
         const QueryPlan::Node * node = distinct_node;
         while (!node->children.empty())

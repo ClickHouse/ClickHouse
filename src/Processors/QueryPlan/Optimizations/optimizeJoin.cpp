@@ -457,10 +457,10 @@ struct QueryGraphBuilder
 {
     JoinExpressionActions expression_actions;
 
-    std::vector<RelationStats> relation_stats;
-    std::vector<QueryPlan::Node *> inputs;
+    VectorWithMemoryTracking<RelationStats> relation_stats;
+    VectorWithMemoryTracking<QueryPlan::Node *> inputs;
 
-    std::vector<JoinActionRef> join_edges;
+    VectorWithMemoryTracking<JoinActionRef> join_edges;
 
     /// Outer joined relation should be joined after all other relations involved in its join expressions.
     /// It is joined with specified join kind.
@@ -766,12 +766,12 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Residual filter is not supported in join reorder");
 }
 
-static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
+static VectorWithMemoryTracking<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
 {
-    std::vector<DPJoinEntry *> result;
+    VectorWithMemoryTracking<DPJoinEntry *> result;
     result.reserve(root->relations.count() * 2);
 
-    std::vector<DPJoinEntry *> stack;
+    VectorWithMemoryTracking<DPJoinEntry *> stack;
     stack.push_back(root.get());
 
     while (!stack.empty())
@@ -926,7 +926,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     std::unordered_map<const ActionsDAG::Node *, size_t> input_node_map;
 
     /// input_position -> (relation no, input)
-    std::vector<std::pair<size_t, const ActionsDAG::Node *>> current_input_nodes;
+    VectorWithMemoryTracking<std::pair<size_t, const ActionsDAG::Node *>> current_input_nodes;
 
     const auto & global_inputs = global_actions_dag->getInputs();
     for (size_t input_idx = 0; input_idx < global_inputs.size(); ++input_idx)

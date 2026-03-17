@@ -124,7 +124,7 @@ ExpressionSide getExpressionSide(
     return ExpressionSide::UNKNOWN;
 }
 
-using JoinConditionParts = std::vector<ActionsDAG>;
+using JoinConditionParts = VectorWithMemoryTracking<ActionsDAG>;
 
 const ActionsDAG::Node & createResultPredicate(
     ActionsDAG & filter_dag,

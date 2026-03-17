@@ -36,7 +36,7 @@ struct NamePair
     std::string_view rhs_name;
 };
 
-using NamePairs = std::vector<NamePair>;
+using NamePairs = VectorWithMemoryTracking<NamePair>;
 
 InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
@@ -58,7 +58,7 @@ InConversion buildInConversion(
 
     rhs_dag.getOutputs().clear();
 
-    std::vector<const ActionsDAG::Node *> left_columns;
+    ActionsDAG::NodeRawConstPtrs left_columns;
     for (const auto & name_pair : name_pairs)
     {
         auto it = lhs_outputs.find(name_pair.lhs_name);
@@ -161,7 +161,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         return 0;
 
     /// Only equality expressions are supported.
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> key_pairs;
+    VectorWithMemoryTracking<std::pair<JoinActionRef, JoinActionRef>> key_pairs;
     for (const auto & predicate : join_operator.expression)
     {
         auto [op, lhs, rhs] = predicate.asBinaryPredicate();

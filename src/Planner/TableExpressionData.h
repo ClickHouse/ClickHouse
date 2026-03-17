@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
@@ -17,7 +18,7 @@ namespace ErrorCodes
 }
 
 using ColumnIdentifier = std::string;
-using ColumnIdentifiers = std::vector<ColumnIdentifier>;
+using ColumnIdentifiers = VectorWithMemoryTracking<ColumnIdentifier>;
 using ColumnIdentifierSet = std::unordered_set<ColumnIdentifier>;
 using AliasColumnExpression = std::pair<std::string, ActionsDAG>;
 using AliasColumnExpressions = std::vector<AliasColumnExpression>;

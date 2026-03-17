@@ -7,7 +7,7 @@ namespace DB
 {
 
 using ColumnIdentifier = std::string;
-using ColumnIdentifiers = std::vector<ColumnIdentifier>;
+using ColumnIdentifiers = VectorWithMemoryTracking<ColumnIdentifier>;
 
 class CommonSubplanReferenceStep : public ISourceStep
 {

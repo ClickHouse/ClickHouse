@@ -78,7 +78,7 @@ const SharedHeader & QueryPlan::getCurrentHeader() const
     return root->step->getOutputHeader();
 }
 
-void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
+void QueryPlan::unitePlans(QueryPlanStepPtr step, VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans)
 {
     if (isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
@@ -826,10 +826,10 @@ void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
     {
         Node * node;
         Node * clone;
-        std::vector<Node *> children = {};
+        VectorWithMemoryTracking<Node *> children = {};
     };
 
-    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
+    VectorWithMemoryTracking<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
 
     while (!nodes_to_process.empty())
     {
@@ -877,10 +877,10 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
     {
         Node * node;
         Node * clone;
-        std::vector<Node *> children = {};
+        VectorWithMemoryTracking<Node *> children = {};
     };
 
-    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
+    VectorWithMemoryTracking<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
 
     while (!nodes_to_process.empty())
     {

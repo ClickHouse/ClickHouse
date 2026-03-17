@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -63,9 +64,9 @@ struct RelationStats
 
 struct QueryGraph
 {
-    std::vector<RelationStats> relation_stats;
+    VectorWithMemoryTracking<RelationStats> relation_stats;
 
-    std::vector<JoinActionRef> edges;
+    VectorWithMemoryTracking<JoinActionRef> edges;
 
     std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
     std::unordered_map<JoinActionRef, size_t> pinned;

@@ -230,7 +230,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     /// Here we take all the parts from all the sources.
     /// Update part index to restore back the set of parts.
     RangesInDataParts all_parts;
-    std::vector<ReadFromMergeTree::AnalysisResultPtr> analysis_results;
+    VectorWithMemoryTracking<ReadFromMergeTree::AnalysisResultPtr> analysis_results;
     for (auto & source : data.sources)
     {
         auto analysis_result = source->getAnalyzedResult();
@@ -253,7 +253,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     auto logger = getLogger("optimizeJoinByLayers");
     auto all_split = splitIntersectingPartsRangesIntoLayers(
         all_parts, data.sources.front()->getNumStreams(), data.common_prefix, data.is_reverse_order, logger);
-    std::vector<SplitPartsByRanges> splits(analysis_results.size());
+    VectorWithMemoryTracking<SplitPartsByRanges> splits(analysis_results.size());
     splits[0].borders = std::move(all_split.borders);
     splits[0].in_reverse_order = data.is_reverse_order;
     for (size_t i = 1; i < splits.size(); ++i)
@@ -336,7 +336,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
     {
         const QueryPlan::Node * node;
         size_t next_child_to_process = 0;
-        std::vector<std::optional<Result>> results{};
+        VectorWithMemoryTracking<std::optional<Result>> results{};
     };
 
     std::optional<Result> result;

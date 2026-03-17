@@ -218,7 +218,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
     join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
 
-    query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
+    {
+        auto algorithms = static_cast<std::vector<JoinOrderAlgorithm>>(from[Setting::query_plan_optimize_join_order_algorithm]);
+        query_plan_optimize_join_order_algorithm.assign(algorithms.begin(), algorithms.end());
+    }
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 

@@ -314,17 +314,17 @@ public:
         return findOrAdd(a) == findOrAdd(b);
     }
 
-    std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> getClasses()
+    std::unordered_map<JoinActionRef, VectorWithMemoryTracking<JoinActionRef>> getClasses()
     {
-        std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> classes;
+        std::unordered_map<JoinActionRef, VectorWithMemoryTracking<JoinActionRef>> classes;
         for (auto & [ref, _] : parent)
             classes[findOrAdd(ref)].push_back(ref);
         return classes;
     }
 
-    std::vector<JoinActionRef> getClass(JoinActionRef ref)
+    VectorWithMemoryTracking<JoinActionRef> getClass(JoinActionRef ref)
     {
-        std::vector<JoinActionRef> res;
+        VectorWithMemoryTracking<JoinActionRef> res;
         JoinActionRef root = findOrAdd(ref);
         for (auto & [other_ref, _] : parent)
         {
@@ -349,9 +349,9 @@ struct JoinActionRefPairHash
     }
 };
 
-std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+VectorWithMemoryTracking<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
 {
-    std::vector<JoinActionRefPair> joining_keys;
+    VectorWithMemoryTracking<JoinActionRefPair> joining_keys;
     for (const auto & predicate : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
@@ -372,10 +372,10 @@ std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & jo
     return joining_keys;
 }
 
-std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
+VectorWithMemoryTracking<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
     EquivalentJoinKeySet & equivalent_sets,
     const JoinStepLogical * join_step,
-    const std::vector<QueryPlan::Node *> & child_nodes,
+    const VectorWithMemoryTracking<QueryPlan::Node *> & child_nodes,
     int lookup_depth = 0)
 {
     auto join_inputs = join_step->getInputActions();
@@ -488,7 +488,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_right_stream_column_to_left_stream_column;
-    std::vector<JoinActionRefPair> equivalent_expressions;
+    VectorWithMemoryTracking<JoinActionRefPair> equivalent_expressions;
 
     bool has_single_clause = table_join_ptr && table_join_ptr->getClauses().size() == 1;
     if (has_single_clause && !filled_join)
@@ -515,7 +515,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         EquivalentJoinKeySet equivalent_sets;
         equivalent_expressions = buildEquialentSetsForJoinStepLogical(equivalent_sets, logical_join, child_node->children);
         std::unordered_set<JoinActionRefPair, JoinActionRefPairHash> equivalent_expressions_set(equivalent_expressions.begin(), equivalent_expressions.end());
-        std::vector<JoinActionRefPair> extra_equivalent_expressions;
+        VectorWithMemoryTracking<JoinActionRefPair> extra_equivalent_expressions;
         for (const auto & [lhs, rhs] : equivalent_expressions)
         {
             for (const auto & eq_expr : equivalent_sets.getClass(lhs))
@@ -751,7 +751,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto * node : filter_dag_inputs)
             filter_dag_inputs_map[node->result_name]++;
 
-        std::vector<JoinActionRef> required_actions;
+        VectorWithMemoryTracking<JoinActionRef> required_actions;
         for (const auto & join_action : join_actions)
         {
             auto it = filter_dag_inputs_map.find(join_action.getColumnName());
@@ -771,7 +771,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         if (logical_join)
         {
             const auto & filter_dag_inputs = join_filter_push_down_actions.left_stream_filter_to_push_down->getInputs();
-            std::vector<JoinActionRef> required_actions_from_join = get_required_pre_actions(logical_join->getOutputActions(), filter_dag_inputs);
+            VectorWithMemoryTracking<JoinActionRef> required_actions_from_join = get_required_pre_actions(logical_join->getOutputActions(), filter_dag_inputs);
             for (auto [lhs, _] : equivalent_expressions)
             {
                 if (auto it = equivalent_expressions_alias.find(lhs); it != equivalent_expressions_alias.end())
@@ -805,7 +805,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         if (logical_join)
         {
             const auto & filter_dag_inputs = join_filter_push_down_actions.right_stream_filter_to_push_down->getInputs();
-            std::vector<JoinActionRef> required_actions_from_join = get_required_pre_actions(logical_join->getOutputActions(), filter_dag_inputs);
+            VectorWithMemoryTracking<JoinActionRef> required_actions_from_join = get_required_pre_actions(logical_join->getOutputActions(), filter_dag_inputs);
             for (auto [_, rhs] : equivalent_expressions)
             {
                 if (auto it = equivalent_expressions_alias.find(rhs); it != equivalent_expressions_alias.end())

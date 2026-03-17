@@ -98,7 +98,7 @@ static void addToNullableIfNeeded(
     JoinKind join_kind,
     bool use_nulls,
     const NameSet & required_output_columns,
-    std::vector<const ActionsDAG::Node *> & actions_after_join,
+    ActionsDAG::NodeRawConstPtrs & actions_after_join,
     const std::unordered_map<String, const ActionsDAG::Node *> & changed_types)
 {
     auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
@@ -175,7 +175,7 @@ JoinStepLogical::JoinStepLogical(
     const SharedHeader & right_header_,
     JoinOperator join_operator_,
     JoinExpressionActions join_expression_actions_,
-    std::vector<const ActionsDAG::Node *> actions_after_join_,
+    ActionsDAG::NodeRawConstPtrs actions_after_join_,
     JoinSettings join_settings_,
     SortingStep::Settings sorting_settings_)
     : expression_actions(std::move(join_expression_actions_))
@@ -288,9 +288,9 @@ String JoinStepLogical::getReadableRelationName() const
     return fmt::format("{} {} {}", left_table_label, joinTypePretty(join_operator), right_table_label);
 }
 
-std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
+VectorWithMemoryTracking<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
 {
-    std::vector<std::pair<String, String>> description;
+    VectorWithMemoryTracking<std::pair<String, String>> description;
 
     auto readable_relation_name = getReadableRelationName();
     if (!readable_relation_name.empty())
@@ -994,7 +994,7 @@ static void constructPhysicalStep(
 }
 
 static QueryPlanNode buildPhysicalJoinImpl(
-    std::vector<QueryPlanNode *> children,
+    VectorWithMemoryTracking<QueryPlanNode *> children,
     JoinOperator join_operator,
     JoinExpressionActions expression_actions,
     JoinSettings join_settings,
@@ -1172,7 +1172,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         actions_after_join_fold[action] = action;
     }
 
-    std::vector<const ActionsDAG::Node *> required_residual_nodes;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> required_residual_nodes;
     if (residual_filter_condition)
     {
         std::stack<const ActionsDAG::Node *> stack;
@@ -1489,9 +1489,9 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
     });
 }
 
-std::vector<JoinActionRef> JoinStepLogical::getInputActions() const
+VectorWithMemoryTracking<JoinActionRef> JoinStepLogical::getInputActions() const
 {
-    std::vector<JoinActionRef> input_actions;
+    VectorWithMemoryTracking<JoinActionRef> input_actions;
     const auto & raw_inputs = expression_actions.getActionsDAG()->getInputs();
     for (const auto * node : raw_inputs)
         input_actions.emplace_back(node, expression_actions);
@@ -1499,9 +1499,9 @@ std::vector<JoinActionRef> JoinStepLogical::getInputActions() const
 }
 
 
-std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
+VectorWithMemoryTracking<JoinActionRef> JoinStepLogical::getOutputActions() const
 {
-    std::vector<JoinActionRef> output_actions;
+    VectorWithMemoryTracking<JoinActionRef> output_actions;
     const auto & raw_outputs = expression_actions.getActionsDAG()->getOutputs();
     for (const auto * node : raw_outputs)
         output_actions.emplace_back(node, expression_actions);

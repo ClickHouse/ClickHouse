@@ -108,7 +108,7 @@ struct AggregateFunctionMatch
     DataTypes argument_types;
 };
 
-using AggregateFunctionMatches = std::vector<AggregateFunctionMatch>;
+using AggregateFunctionMatches = VectorWithMemoryTracking<AggregateFunctionMatch>;
 
 /// Here we try to match aggregate functions from the query to
 /// aggregate functions from projection.
@@ -122,7 +122,7 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
     AggregateFunctionMatches res;
 
     /// Index (projection agg function name) -> pos
-    std::unordered_map<std::string, std::vector<size_t>> projection_aggregate_functions;
+    std::unordered_map<std::string, VectorWithMemoryTracking<size_t>> projection_aggregate_functions;
     for (size_t i = 0; i < info.aggregates.size(); ++i)
         projection_aggregate_functions[info.aggregates[i].function->getName()].push_back(i);
 
@@ -329,7 +329,7 @@ struct MinMaxProjectionCandidate
 
 struct AggregateProjectionCandidates
 {
-    std::vector<AggregateProjectionCandidate> real;
+    VectorWithMemoryTracking<AggregateProjectionCandidate> real;
     std::optional<MinMaxProjectionCandidate> minmax_projection;
 
     /// This flag means that DAG for projection candidate should be used in FilterStep.
@@ -356,7 +356,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     ContextPtr context = reading.getContext();
 
     const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
+    VectorWithMemoryTracking<const ProjectionDescription *> agg_projections;
 
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Aggregate)
@@ -454,7 +454,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(QueryPlan::Node &
     ContextPtr context = reading.getContext();
 
     const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
+    VectorWithMemoryTracking<const ProjectionDescription *> agg_projections;
 
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Aggregate)
@@ -816,7 +816,7 @@ std::optional<String> optimizeUseAggregateProjections(
 
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
 
-        std::vector<char> state(agg_count->sizeOfData());
+        VectorWithMemoryTracking<char> state(agg_count->sizeOfData());
         AggregateDataPtr place = state.data();
         agg_count->create(place);
         SCOPE_EXIT_MEMORY_SAFE(agg_count->destroy(place));

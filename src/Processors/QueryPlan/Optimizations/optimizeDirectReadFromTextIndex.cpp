@@ -95,7 +95,7 @@ const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node *
     else if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
         auto old_children = node->children;
-        std::vector<const ActionsDAG::Node *> new_children;
+        ActionsDAG::NodeRawConstPtrs new_children;
 
         for (const auto & child : old_children)
             new_children.push_back(replaceNodes(dag, child, replacements));
@@ -357,10 +357,10 @@ private:
         return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
     }
 
-    std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node)
+    VectorWithMemoryTracking<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node)
     {
         NameSet used_index_columns;
-        std::vector<SelectedCondition> selected_conditions;
+        VectorWithMemoryTracking<SelectedCondition> selected_conditions;
 
         for (const auto & [index_name, info] : text_index_read_infos)
         {
@@ -432,7 +432,7 @@ private:
     /// Applies preprocessor and tokenizer for text-search functions.
     void preprocessTextIndexFunction(
         NodeReplacement & replacement,
-        const std::vector<SelectedCondition> & selected_conditions,
+        const VectorWithMemoryTracking<SelectedCondition> & selected_conditions,
         const ContextPtr & context)
     {
         const auto & function_node = *replacement.node;
@@ -526,7 +526,7 @@ private:
     /// Optimizes text-search functions by replacing them with virtual columns.
     void replaceFunctionsToVirtualColumns(
         NodeReplacement & replacement,
-        const std::vector<SelectedCondition> & selected_conditions,
+        const VectorWithMemoryTracking<SelectedCondition> & selected_conditions,
         std::unordered_map<String, const ActionsDAG::Node *> & virtual_column_to_node,
         const ContextPtr & context)
     {

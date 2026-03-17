@@ -17,7 +17,7 @@ protected:
         size_t next_child = 0;
     };
 
-    using StackWithParent = std::vector<FrameWithParent>;
+    using StackWithParent = VectorWithMemoryTracking<FrameWithParent>;
 
     QueryPlan::Node * root = nullptr;
     StackWithParent stack;

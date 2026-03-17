@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Core/Field.h>
@@ -133,7 +134,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
 
                     if (frame.mapped_children.size() > 1)
                     {
-                        std::vector<Parents *> other_parents;
+                        VectorWithMemoryTracking<Parents *> other_parents;
                         size_t mapped_children_size = frame.mapped_children.size();
                         other_parents.reserve(mapped_children_size);
                         for (size_t i = 1; i < mapped_children_size; ++i)
@@ -248,7 +249,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
 struct PossiblyMonotonicChain
 {
     const ActionsDAG::Node * input_node = nullptr;
-    std::vector<size_t> non_const_arg_pos;
+    VectorWithMemoryTracking<size_t> non_const_arg_pos;
     bool changes_order = false;
     bool is_strict = true;
 };
@@ -256,7 +257,7 @@ struct PossiblyMonotonicChain
 /// Build a chain of functions which may be monotonic.
 static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node * node)
 {
-    std::vector<size_t> chain;
+    VectorWithMemoryTracking<size_t> chain;
 
     while (node->type != ActionsDAG::ActionType::INPUT)
     {
@@ -364,7 +365,7 @@ void applyActionsToSortDescription(
         bool changes_order = false;
     };
 
-    std::vector<SortColumn> sort_columns(descr_size);
+    VectorWithMemoryTracking<SortColumn> sort_columns(descr_size);
     std::unordered_map<const ActionsDAG::Node *, size_t> input_to_sort_column;
 
     {
@@ -513,7 +514,7 @@ bool isInjectiveFunction(const ActionsDAG::Node * node)
     for (const auto & child : node->children)
         if (child->type == ActionsDAG::ActionType::COLUMN)
             ++fixed_args;
-    static const std::vector<String> injective = {"plus", "minus", "negate", "tuple"};
+    static const VectorWithMemoryTracking<String> injective = {"plus", "minus", "negate", "tuple"};
     return (fixed_args + 1 >= node->children.size()) && (std::ranges::find(injective, node->function_base->getName()) != injective.end());
 }
 

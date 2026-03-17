@@ -84,7 +84,7 @@ struct RangeWithStep
     UInt128 size;   /// how many values in this range
 };
 
-using RangesWithStep = std::vector<RangeWithStep>;
+using RangesWithStep = VectorWithMemoryTracking<RangeWithStep>;
 
 std::optional<RangeWithStep> steppedRangeFromRange(const Range & r, UInt64 step, UInt64 remainder)
 {

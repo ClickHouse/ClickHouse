@@ -68,7 +68,7 @@ public:
         const SharedHeader & right_header_,
         JoinOperator join_operator_,
         JoinExpressionActions join_expression_actions_,
-        std::vector<const ActionsDAG::Node *> actions_after_join_,
+        ActionsDAG::NodeRawConstPtrs actions_after_join_,
         JoinSettings join_settings_,
         SortingStep::Settings sorting_settings_);
 
@@ -92,8 +92,8 @@ public:
 
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
 
-    std::vector<JoinActionRef> getInputActions() const;
-    std::vector<JoinActionRef> getOutputActions() const;
+    VectorWithMemoryTracking<JoinActionRef> getInputActions() const;
+    VectorWithMemoryTracking<JoinActionRef> getOutputActions() const;
 
     std::pair<JoinExpressionActions, JoinOperator> detachExpressions()
     {
@@ -183,7 +183,7 @@ protected:
 
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
 
-    std::vector<std::pair<String, String>> describeJoinProperties() const;
+    VectorWithMemoryTracking<std::pair<String, String>> describeJoinProperties() const;
 
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;

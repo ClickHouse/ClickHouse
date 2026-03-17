@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/KeyDescription.h>
@@ -49,10 +50,10 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
 
 struct SplitPartsByRanges
 {
-    using Values = std::vector<Field>;
+    using Values = VectorWithMemoryTracking<Field>;
 
-    std::vector<RangesInDataParts> layers;
-    std::vector<Values> borders;
+    VectorWithMemoryTracking<RangesInDataParts> layers;
+    VectorWithMemoryTracking<Values> borders;
     bool in_reverse_order = false;
 };
 

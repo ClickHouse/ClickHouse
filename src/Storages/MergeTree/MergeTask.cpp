@@ -1409,7 +1409,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
 MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
 {
     /// Read from all parts
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
     /// Do not apply mask for lightweight delete in vertical merge, because it is applied in merging algorithm
     bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
@@ -2626,7 +2626,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     }
 
     /// Read from all parts
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
     for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
     {

@@ -37,7 +37,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 
 /// Add converting to common header actions if needed for each plan
 void addConvertingToCommonHeaderActionsIfNeeded(
-    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
     SharedHeaders & query_plans_headers,
     ContextPtr context);

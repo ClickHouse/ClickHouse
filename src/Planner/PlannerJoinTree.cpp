@@ -1898,11 +1898,11 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type), max_step_description_length);
 
-        std::vector<QueryPlanPtr> plans;
+        VectorWithMemoryTracking<QueryPlanPtr> plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
 
-        result_plan.unitePlans(std::move(join_step), {std::move(plans)});
+        result_plan.unitePlans(std::move(join_step), std::move(plans));
     }
 
     /// If residuals were not moved to JOIN algorithm,
@@ -1949,12 +1949,12 @@ JoinTreeQueryPlan joinPlansWithStep(
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan)
 {
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_join_tree_query_plan.query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_join_tree_query_plan.query_plan)));
 
     QueryPlan result_plan;
-    result_plan.unitePlans(std::move(join_step), {std::move(plans)});
+    result_plan.unitePlans(std::move(join_step), std::move(plans));
 
     /// Collect all required row_policies and actions sets from left and right join tree query plans
 

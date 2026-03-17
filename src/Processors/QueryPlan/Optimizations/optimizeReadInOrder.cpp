@@ -107,7 +107,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
     return nullptr;
 }
 
-using StepStack = std::vector<IQueryPlanStep*>;
+using StepStack = VectorWithMemoryTracking<IQueryPlanStep*>;
 
 
 struct FindReadingStepContext
@@ -495,7 +495,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
         const MatchedTrees::Match * monotonic = nullptr;
     };
 
-    std::vector<MatchInfo> match_infos;
+    VectorWithMemoryTracking<MatchInfo> match_infos;
     match_infos.reserve(description.size());
 
     while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
@@ -1422,7 +1422,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         bool use_buffering = false;
         const SortDescription * max_sort_descr = nullptr;
 
-        std::vector<InputOrderInfoPtr> infos;
+        VectorWithMemoryTracking<InputOrderInfoPtr> infos;
         infos.reserve(node.children.size());
 
         for (const auto * child : union_node->children)

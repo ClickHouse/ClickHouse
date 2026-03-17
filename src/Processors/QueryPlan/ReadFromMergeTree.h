@@ -39,8 +39,8 @@ struct UsefulSkipIndexes
 {
     bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
 
-    std::vector<MergeTreeIndexWithCondition> useful_indices;
-    std::vector<std::vector<size_t>> per_part_index_orders;
+    VectorWithMemoryTracking<MergeTreeIndexWithCondition> useful_indices;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> per_part_index_orders;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
@@ -53,7 +53,7 @@ struct ProjectionIndexReadInfo
     ProjectionDescriptionRawPtr projection;
     PrewhereInfoPtr prewhere_info;
 };
-using ProjectionIndexReadInfos = std::vector<ProjectionIndexReadInfo>;
+using ProjectionIndexReadInfos = VectorWithMemoryTracking<ProjectionIndexReadInfo>;
 
 struct ProjectionIndexReadDescription
 {
@@ -115,10 +115,10 @@ public:
         size_t num_granules_after;
         MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
 
-        std::vector<DistributedIndexStat> distributed = {};
+        VectorWithMemoryTracking<DistributedIndexStat> distributed = {};
     };
 
-    using IndexStats = std::vector<IndexStat>;
+    using IndexStats = VectorWithMemoryTracking<IndexStat>;
 
     /// Information about used projections.
     struct ProjectionStat

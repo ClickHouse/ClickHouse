@@ -304,11 +304,11 @@ QueryPlan decorrelateQueryPlan(
         /// Add CROSS JOIN to combine data streams from left and right plans.
         QueryPlan result_plan;
 
-        std::vector<QueryPlanPtr> plans;
+        VectorWithMemoryTracking<QueryPlanPtr> plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
-        result_plan.unitePlans(std::move(decorrelated_join), {std::move(plans)});
+        result_plan.unitePlans(std::move(decorrelated_join), std::move(plans));
 
         return result_plan;
     }
@@ -402,7 +402,7 @@ QueryPlan decorrelateQueryPlan(
 
         SharedHeaders query_plans_headers{ decorrelated_lhs_plan.getCurrentHeader(), decorrelated_rhs_plan.getCurrentHeader() };
 
-        std::vector<QueryPlanPtr> child_plans;
+        VectorWithMemoryTracking<QueryPlanPtr> child_plans;
         child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_lhs_plan)));
         child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_rhs_plan)));
 
@@ -604,11 +604,11 @@ QueryPlan buildLogicalJoin(
 
     QueryPlan result_plan;
 
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
-    result_plan.unitePlans(std::move(result_join), {std::move(plans)});
+    result_plan.unitePlans(std::move(result_join), std::move(plans));
     return result_plan;
 }
 

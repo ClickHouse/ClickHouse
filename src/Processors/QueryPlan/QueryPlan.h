@@ -12,6 +12,7 @@
 #include <list>
 #include <memory>
 #include <unordered_map>
+#include <Common/VectorWithMemoryTracking.h>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 
@@ -89,7 +90,7 @@ public:
     QueryPlan(QueryPlan &&) noexcept;
     QueryPlan & operator=(QueryPlan &&) noexcept;
 
-    void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
+    void unitePlans(QueryPlanStepPtr step, VectorWithMemoryTracking<QueryPlanPtr> plans);
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
@@ -149,7 +150,7 @@ public:
     struct Node
     {
         QueryPlanStepPtr step;
-        std::vector<Node *> children = {};
+        VectorWithMemoryTracking<Node *> children = {};
     };
 
     using Nodes = std::list<Node>;

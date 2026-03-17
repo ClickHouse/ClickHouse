@@ -109,7 +109,7 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_)
+    JoinOrderOptimizer(QueryGraph query_graph_, const VectorWithMemoryTracking<JoinOrderAlgorithm> & enabled_algorithms_)
         : query_graph(std::move(query_graph_))
         , enabled_algorithms(enabled_algorithms_)
     {
@@ -129,10 +129,10 @@ private:
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
-    std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
+    VectorWithMemoryTracking<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
 
     double computeSelectivity(const JoinActionRef & edge);
-    double computeSelectivity(const std::vector<JoinActionRef *> & edges);
+    double computeSelectivity(const VectorWithMemoryTracking<JoinActionRef *> & edges);
     size_t getColumnStats(BitSet rels, const String & column_name);
 
     /// Peridically called from potentially long running optimization to check time limits and send progress
@@ -145,7 +145,7 @@ private:
     std::unordered_map<JoinActionRef, double> expression_selectivity;
     std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
 
-    const std::vector<JoinOrderAlgorithm> enabled_algorithms;
+    const VectorWithMemoryTracking<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 
     QueryStatusPtr query_status;
@@ -204,7 +204,7 @@ double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
     return selectivity;
 }
 
-double JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *> & edges)
+double JoinOrderOptimizer::computeSelectivity(const VectorWithMemoryTracking<JoinActionRef *> & edges)
 {
     double selectivity = 1.0;
     for (const auto & edge : edges)
@@ -287,9 +287,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 }
 
 
-std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const BitSet & left, const BitSet & right)
+VectorWithMemoryTracking<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const BitSet & left, const BitSet & right)
 {
-    std::vector<JoinActionRef *> applicable;
+    VectorWithMemoryTracking<JoinActionRef *> applicable;
 
     BitSet joined_rels = left | right;
     for (auto & edge : query_graph.edges)
@@ -330,7 +330,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
     }
 
-    std::vector<JoinActionRef *> applied_edge;
+    VectorWithMemoryTracking<JoinActionRef *> applied_edge;
     /// Iteratively join components until we have a single plan
     while (components.size() > 1)
     {
@@ -452,7 +452,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     const size_t total_relations_count = query_graph.relation_stats.size();
 
     /// Components by size (index 0 is not used that why the size is N+1)
-    std::vector<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
+    VectorWithMemoryTracking<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
 
     /// Populate DP table for components of size=1
     for (size_t i = 0; i < total_relations_count; ++i)
@@ -496,7 +496,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
 
                     auto applicable_edge = getApplicableExpressions(left->relations, right->relations);
                     /// Only leave the edges that connect left and right
-                    std::vector<JoinActionRef *> edge;
+                    VectorWithMemoryTracking<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
                         if (connects(edge_it, left->relations, right->relations))

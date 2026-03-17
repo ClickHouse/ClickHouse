@@ -22,9 +22,9 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
+VectorWithMemoryTracking<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
 {
-    std::vector<std::pair<String, String>> description;
+    VectorWithMemoryTracking<std::pair<String, String>> description;
     const auto & table_join = join->getTableJoin();
 
     description.emplace_back("Type", toString(table_join.kind()));

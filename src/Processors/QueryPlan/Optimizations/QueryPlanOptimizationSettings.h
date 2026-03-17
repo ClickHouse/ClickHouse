@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
@@ -153,7 +154,7 @@ struct QueryPlanOptimizationSettings
     UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
 
-    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
+    VectorWithMemoryTracking<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
     /// Please, avoid using this
     ///

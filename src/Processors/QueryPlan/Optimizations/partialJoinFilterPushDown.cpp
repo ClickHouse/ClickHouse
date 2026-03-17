@@ -46,8 +46,8 @@ struct ConditionList
     };
 
     ConditionType condition_type = SingleCondition;
-    std::vector<const ActionsDAG::Node *> existing_nodes;
-    std::vector<ConditionList> subconditions;
+    ActionsDAG::NodeRawConstPtrs existing_nodes;
+    VectorWithMemoryTracking<ConditionList> subconditions;
 
     bool assumedTrue() const
     {

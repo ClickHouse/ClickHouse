@@ -845,7 +845,7 @@ namespace
 
 struct PartRangesReadInfo
 {
-    std::vector<size_t> sum_marks_in_parts;
+    VectorWithMemoryTracking<size_t> sum_marks_in_parts;
 
     size_t sum_marks = 0;
     size_t total_rows = 0;
@@ -1300,7 +1300,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     {
         const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
 
-        std::vector<RangesInDataParts> split_parts_and_ranges;
+        VectorWithMemoryTracking<RangesInDataParts> split_parts_and_ranges;
         split_parts_and_ranges.reserve(num_streams);
 
         for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
@@ -1640,7 +1640,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     /// So we will store iterators pointed to the beginning of each partition range (and parts.end()),
     /// then we will create a pipe for each partition that will run selecting processor and merging processor
     /// for the parts with this partition. In the end we will unite all the pipes.
-    std::vector<RangesInDataParts::iterator> parts_to_merge_ranges;
+    VectorWithMemoryTracking<RangesInDataParts::iterator> parts_to_merge_ranges;
     auto it = parts_with_ranges.begin();
     parts_to_merge_ranges.push_back(it);
 
@@ -2067,7 +2067,7 @@ void ReadFromMergeTree::buildIndexes(
                                                         && settings[Setting::use_skip_indexes_if_final_exact_mode]
                                                         && !areAllSkipIndexColumnsInPrimaryKey(primary_key_column_names, skip_indexes);
     {
-        std::vector<size_t> index_sizes;
+        VectorWithMemoryTracking<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
 
         for (const auto & part : parts)
@@ -2212,7 +2212,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
             NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
 
-            std::vector<const ActionsDAG::Node *> index_nodes;
+            ActionsDAG::NodeRawConstPtrs index_nodes;
 
             /// collect sorting-key-only atoms from a (possibly nested) AND tree
             std::function<void(const ActionsDAG::Node *)> collect_sorting_key_atoms =
@@ -2531,7 +2531,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
             /// Index stats
             {
-                std::vector<DistributedIndexStat> distributed_index_stats;
+                VectorWithMemoryTracking<DistributedIndexStat> distributed_index_stats;
 
                 size_t received_granules = 0;
                 size_t received_parts = 0;

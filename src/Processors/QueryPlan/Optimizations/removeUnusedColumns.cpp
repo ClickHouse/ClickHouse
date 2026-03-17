@@ -34,7 +34,7 @@ bool addDiscardingExpressionStepIfNeeded(QueryPlan::Nodes & nodes, QueryPlan::No
     const auto input_header = parent.step->getInputHeaders()[child_id];
     const auto output_header = parent.children[child_id]->step->getOutputHeader();
 
-    std::vector<const ColumnWithTypeAndName *> columns_to_discard;
+    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns_to_discard;
     auto input_it = input_header->begin();
     auto output_it = output_header->begin();
     while (input_it != input_header->end() && output_it != output_header->end())

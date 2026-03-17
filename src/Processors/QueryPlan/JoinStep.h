@@ -49,7 +49,7 @@ public:
         std::string rhs_name;
     };
 
-    struct PrimaryKeySharding : std::vector<PrimaryKeyNamesPair>
+    struct PrimaryKeySharding : VectorWithMemoryTracking<PrimaryKeyNamesPair>
     {
         bool is_reverse_order = false;
     };

@@ -169,7 +169,7 @@ struct Frame
     size_t next_child = 0;
 };
 
-using Stack = std::vector<Frame>;
+using Stack = VectorWithMemoryTracking<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);

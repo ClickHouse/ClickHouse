@@ -23,7 +23,7 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-using StepStack = std::vector<IQueryPlanStep *>;
+using StepStack = VectorWithMemoryTracking<IQueryPlanStep *>;
 
 static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 {
@@ -42,13 +42,13 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 /// Returns two vectors of total size equal to the number of columns in the header.
 /// The first vector (size of `inputs.size()`) contains positions of the inputs in the header.
 /// The second vector contains other positions (sorted).
-std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+std::pair<VectorWithMemoryTracking<size_t>, VectorWithMemoryTracking<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
     std::unordered_map<std::string, std::list<size_t>> name_to_position;
     for (size_t i = 0; i < header.columns(); ++i)
         name_to_position[header.getByPosition(i).name].push_back(i);
 
-    std::vector<size_t> positions;
+    VectorWithMemoryTracking<size_t> positions;
     positions.reserve(inputs.size());
     for (const auto * input : inputs)
     {
@@ -60,7 +60,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(c
         lst.pop_front();
     }
 
-    std::vector<size_t> non_mapped;
+    VectorWithMemoryTracking<size_t> non_mapped;
     for (size_t i = 0; i < header.columns(); ++i)
         for (auto idx : name_to_position[header.getByPosition(i).name])
             non_mapped.push_back(idx);
@@ -71,7 +71,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(c
 /// Returns a boolean mask which indicate if the header column is required.
 /// The required_output_positions is the same mask for the output header.
 /// There may be less DAG outputs than required_output_positions.size().
-std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
+VectorWithMemoryTracking<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, VectorWithMemoryTracking<bool> required_output_positions)
 {
     std::unordered_set<const ActionsDAG::Node *> required_nodes;
     std::stack<const ActionsDAG::Node *> stack;
@@ -82,7 +82,7 @@ std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block
             stack.push(dag.getOutputs()[i]);
     }
 
-    std::vector<bool> required_input_positions(header.columns(), false);
+    VectorWithMemoryTracking<bool> required_input_positions(header.columns(), false);
 
     while (!stack.empty())
     {
@@ -113,7 +113,7 @@ std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block
 }
 
 /// Add filter column to required_output_positions.
-void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_positions, const FilterStep & filter_step)
+void updateRequiredColumnsForFilterDAG(VectorWithMemoryTracking<bool> & required_output_positions, const FilterStep & filter_step)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
@@ -138,7 +138,7 @@ void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_posit
 
 struct SplitExpressionStepResult
 {
-    std::vector<bool> required_input_positions;
+    VectorWithMemoryTracking<bool> required_input_positions;
     ActionsDAG main_expression_step;
     ActionsDAG lazy_expression_step;
 };
@@ -168,7 +168,7 @@ void removeDanglingNodes(ActionsDAG & dag)
     dag.removeUnusedActions();
 }
 
-SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, std::vector<bool> required_output_positions)
+SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, VectorWithMemoryTracking<bool> required_output_positions)
 {
     const auto & expression = expression_step.getExpression();
     const auto & outputs = expression.getOutputs();
@@ -187,12 +187,12 @@ SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_
 
 struct SplitFilterResult
 {
-    std::vector<bool> required_input_positions;
+    VectorWithMemoryTracking<bool> required_input_positions;
     FilterDAGInfo main_filter_step;
     ActionsDAG lazy_expression_step;
 };
 
-SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bool> required_output_positions)
+SplitFilterResult splitFilterStep(const FilterStep & filter_step, VectorWithMemoryTracking<bool> required_output_positions)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
@@ -220,7 +220,7 @@ SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bo
     return { std::move(required_input_positions), std::move(filter_dag_info), std::move(split_result.second) };
 }
 
-std::unique_ptr<LazilyReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
+std::unique_ptr<LazilyReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const VectorWithMemoryTracking<bool> & required_output_positions)
 {
     const auto & cols = reading_step.getOutputHeader()->getColumnsWithTypeAndName();
     chassert(cols.size() == required_output_positions.size());
@@ -318,7 +318,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         return false;
 
     const auto & sorting_header = *sorting_step->getOutputHeader();
-    std::vector<bool> required_columns(sorting_header.columns(), false);
+    VectorWithMemoryTracking<bool> required_columns(sorting_header.columns(), false);
 
     for (const auto & descr : sorting_step->getSortDescription())
         required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
@@ -442,7 +442,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     QueryPlan result_plan;
 
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(main_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
 

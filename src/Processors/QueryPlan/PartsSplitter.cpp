@@ -29,7 +29,7 @@ using namespace DB;
 namespace
 {
 
-using Values = std::vector<Field>;
+using Values = VectorWithMemoryTracking<Field>;
 
 std::string toString(const Values & value)
 {
@@ -225,7 +225,7 @@ public:
     }
 private:
     const RangesInDataParts & parts;
-    std::vector<IMergeTreeDataPart::IndexPtr> indices;
+    VectorWithMemoryTracking<IMergeTreeDataPart::IndexPtr> indices;
     size_t loaded_columns;
 };
 
@@ -392,13 +392,13 @@ struct SplitPartsRangesResult
     RangesInDataParts intersecting_parts_ranges;
 };
 
-void dump(const std::vector<PartsRangesIterator> & ranges_iterators, WriteBuffer & buffer)
+void dump(const VectorWithMemoryTracking<PartsRangesIterator> & ranges_iterators, WriteBuffer & buffer)
 {
     for (const auto & range_iterator : ranges_iterators)
         range_iterator.dump(buffer);
 }
 
-String toString(const std::vector<PartsRangesIterator> & ranges_iterators)
+String toString(const VectorWithMemoryTracking<PartsRangesIterator> & ranges_iterators)
 {
     WriteBufferFromOwnString buffer;
     dump(ranges_iterators, buffer);
@@ -465,7 +465,7 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
       */
 
     IndexAccess index_access(ranges_in_data_parts);
-    std::vector<PartsRangesIterator> parts_ranges;
+    VectorWithMemoryTracking<PartsRangesIterator> parts_ranges;
 
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
@@ -705,7 +705,7 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
     IndexAccess index_access(ranges_in_data_parts, max_columns_in_index);
 
     using PartsRangesIteratorWithIndex = std::pair<PartsRangesIterator, PartRangeIndex>;
-    std::priority_queue<PartsRangesIteratorWithIndex, std::vector<PartsRangesIteratorWithIndex>, std::greater<>> parts_ranges_queue;
+    std::priority_queue<PartsRangesIteratorWithIndex, VectorWithMemoryTracking<PartsRangesIteratorWithIndex>, std::greater<>> parts_ranges_queue;
 
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
@@ -744,8 +744,8 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
     std::unordered_map<PartRangeIndex, size_t, PartRangeIndexHash> current_part_range_end;
 
     /// Determine borders between layers.
-    std::vector<Values> borders;
-    std::vector<RangesInDataParts> result_layers;
+    VectorWithMemoryTracking<Values> borders;
+    VectorWithMemoryTracking<RangesInDataParts> result_layers;
 
     size_t total_intersecting_rows_count = ranges_in_data_parts.getRowsCountAllParts();
     const size_t rows_per_layer = std::max<size_t>(total_intersecting_rows_count / max_layers, 1);
@@ -851,7 +851,7 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
 
 
 /// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range (borders[i-1], borders[i]].
-static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> & borders, bool in_reverse_order)
+static ASTs buildFilters(const KeyDescription & primary_key, const VectorWithMemoryTracking<Values> & borders, bool in_reverse_order)
 {
     auto add_and_condition = [&](ASTPtr & result, const ASTPtr & foo) { result = (!result) ? foo : makeASTFunction("and", result, foo); };
 
@@ -920,8 +920,8 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
 RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
-    std::vector<PartsRangesIterator> selected_ranges;
-    std::vector<PartsRangesIterator> rejected_ranges;
+    VectorWithMemoryTracking<PartsRangesIterator> selected_ranges;
+    VectorWithMemoryTracking<PartsRangesIterator> rejected_ranges;
 
     RangesInDataPartsBuilder result(ranges_in_data_parts);
 
@@ -942,7 +942,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     }
 
     PartsRangesIterator selected_upper_bound;
-    std::vector<std::vector<size_t>> part_selected_ranges(ranges_in_data_parts.size(), std::vector<size_t>());
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> part_selected_ranges(ranges_in_data_parts.size(), VectorWithMemoryTracking<size_t>());
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
@@ -1034,8 +1034,8 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
 
     ::sort(rejected_ranges.begin(), rejected_ranges.end());
 
-    std::vector<PartsRangesIterator>::iterator selected_ranges_iter = selected_ranges.begin();
-    std::vector<PartsRangesIterator>::iterator rejected_ranges_iter = rejected_ranges.begin();
+    VectorWithMemoryTracking<PartsRangesIterator>::iterator selected_ranges_iter = selected_ranges.begin();
+    VectorWithMemoryTracking<PartsRangesIterator>::iterator rejected_ranges_iter = rejected_ranges.begin();
     size_t more_ranges_added = 0;
 
     while (selected_ranges_iter != selected_ranges.end() && rejected_ranges_iter != rejected_ranges.end())

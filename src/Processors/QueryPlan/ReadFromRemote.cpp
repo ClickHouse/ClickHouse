@@ -887,7 +887,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Tables external_tables_,
     LoggerPtr log_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
-    std::vector<ConnectionPoolPtr> pools_to_use_,
+    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
     std::shared_ptr<const QueryPlan> query_plan_)
@@ -912,7 +912,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
 {
     chassert(cluster->getShardCount() == 1);
 
-    std::vector<String> replicas;
+    VectorWithMemoryTracking<String> replicas;
     replicas.reserve(pools_to_use.size());
 
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
@@ -957,7 +957,7 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeade
 {
     Pipes pipes;
 
-    std::vector<std::string_view> addresses;
+    VectorWithMemoryTracking<std::string_view> addresses;
     addresses.reserve(pools_to_use.size());
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {

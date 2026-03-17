@@ -46,7 +46,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     if (proj_header.columns() != num_columns)
         return {};
 
-    std::vector<size_t> const_positions;
+    VectorWithMemoryTracking<size_t> const_positions;
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto col_proj = proj_header.getByPosition(i).column;
@@ -105,7 +105,7 @@ std::optional<String> optimizeUseNormalProjections(
     const auto metadata = reading->getStorageMetadata();
     const auto & projections = metadata->projections;
 
-    std::vector<const ProjectionDescription *> normal_projections;
+    VectorWithMemoryTracking<const ProjectionDescription *> normal_projections;
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Normal)
             normal_projections.push_back(&projection);
