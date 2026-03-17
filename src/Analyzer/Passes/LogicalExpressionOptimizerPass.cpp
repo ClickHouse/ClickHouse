@@ -405,11 +405,11 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
                 prune_left = accurateLess(lc, rc);
                 break;
             case ComparisonFunction::NOT_EQUALS:
-                prune_left = accurateEquals(lc, rc);
+                if (accurateEquals(lc, rc))
+                    return ValueComparisonResult::PRUNE_RIGHT;
                 break;
             case ComparisonFunction::EQUALS:
-                chassert(false);
-                break;
+                UNREACHABLE();
             }
             return prune_left ? ValueComparisonResult::PRUNE_LEFT : ValueComparisonResult::NONE;
         }
@@ -491,6 +491,59 @@ static AddComparisonFilterResult addComparisonFilter(
     }
     info_list.push_back(std::move(new_filter));
     return AddComparisonFilterResult::ADDED;
+}
+
+/// Convert surviving notEquals chains to NOT IN when the chain is long enough
+static void convertNotEqualsChainToNotIn(
+    QueryTreeNodePtrWithHashMap<QueryTreeNodes> & node_to_not_equals_functions,
+    QueryTreeNodes & and_operands,
+    const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    auto not_in_function_resolver = FunctionFactory::instance().get("notIn", context);
+
+    for (auto & [expression, not_equals_functions] : node_to_not_equals_functions)
+    {
+        if (not_equals_functions.size() < settings[Setting::optimize_min_inequality_conjunction_chain_length]
+            && !expression.node->getResultType()->lowCardinality())
+        {
+            std::move(not_equals_functions.begin(), not_equals_functions.end(), std::back_inserter(and_operands));
+            continue;
+        }
+
+        Tuple args;
+        args.reserve(not_equals_functions.size());
+        for (const auto & not_equals : not_equals_functions)
+        {
+            const auto * not_equals_function = not_equals->as<FunctionNode>();
+            assert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
+
+            const auto & not_equals_arguments = not_equals_function->getArguments().getNodes();
+            if (const auto * rhs_literal = not_equals_arguments[1]->as<ConstantNode>())
+                args.push_back(rhs_literal->getValue());
+            else
+            {
+                const auto * lhs_literal = not_equals_arguments[0]->as<ConstantNode>();
+                assert(lhs_literal);
+                args.push_back(lhs_literal->getValue());
+            }
+        }
+
+        auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
+
+        auto not_in_function = std::make_shared<FunctionNode>("notIn");
+        not_in_function->markAsOperator();
+
+        QueryTreeNodes not_in_arguments;
+        not_in_arguments.reserve(2);
+        not_in_arguments.push_back(expression.node);
+        not_in_arguments.push_back(std::move(rhs_node));
+
+        not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
+        not_in_function->resolveAsFunction(not_in_function_resolver);
+
+        and_operands.push_back(std::move(not_in_function));
+    }
 }
 
 struct CommonExpressionExtractionResult
@@ -1232,16 +1285,6 @@ private:
                 return;
             }
 
-            /// For notEquals that survived conflict/redundancy checks, also collect using original dedup for NOT IN conversion
-            if (*comparison_func == ComparisonFunction::NOT_EQUALS && result == AddComparisonFilterResult::ADDED)
-            {
-                auto & constant_set = not_equals_node_to_constants[expression];
-                if (!constant_set.contains(constant))
-                {
-                    constant_set.insert(constant);
-                    node_to_not_equals_functions[expression].push_back(argument);
-                }
-            }
             ++argument_index;
         }
 
@@ -1253,8 +1296,19 @@ private:
         {
             for (auto & filter : filters)
             {
-                if (filter.function != ComparisonFunction::NOT_EQUALS)
+                if (filter.function == ComparisonFunction::NOT_EQUALS)
+                {
+                    auto & constant_set = not_equals_node_to_constants[expression];
+                    if (!constant_set.contains(filter.constant_node))
+                    {
+                        constant_set.insert(filter.constant_node);
+                        node_to_not_equals_functions[expression].push_back(std::move(filter.original_node));
+                    }
+                }
+                else
+                {
                     surviving_filters.emplace_back(filter.original_index, std::move(filter.original_node));
+                }
             }
         }
         std::sort(surviving_filters.begin(), surviving_filters.end(),
@@ -1262,54 +1316,7 @@ private:
         for (auto & [_, node_ptr] : surviving_filters)
             and_operands.push_back(std::move(node_ptr));
 
-        auto not_in_function_resolver = FunctionFactory::instance().get("notIn", getContext());
-
-        for (auto & [expression, not_equals_functions] : node_to_not_equals_functions)
-        {
-            const auto & settings = getSettings();
-            if (not_equals_functions.size() < settings[Setting::optimize_min_inequality_conjunction_chain_length]
-                && !expression.node->getResultType()->lowCardinality())
-            {
-                std::move(not_equals_functions.begin(), not_equals_functions.end(), std::back_inserter(and_operands));
-                continue;
-            }
-
-            Tuple args;
-            args.reserve(not_equals_functions.size());
-            /// first we create tuple from RHS of notEquals functions
-            for (const auto & not_equals : not_equals_functions)
-            {
-                const auto * not_equals_function = not_equals->as<FunctionNode>();
-                assert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
-
-                const auto & not_equals_arguments = not_equals_function->getArguments().getNodes();
-                if (const auto * rhs_literal = not_equals_arguments[1]->as<ConstantNode>())
-                {
-                    args.push_back(rhs_literal->getValue());
-                }
-                else
-                {
-                    const auto * lhs_literal = not_equals_arguments[0]->as<ConstantNode>();
-                    assert(lhs_literal);
-                    args.push_back(lhs_literal->getValue());
-                }
-            }
-
-            auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
-
-            auto not_in_function = std::make_shared<FunctionNode>("notIn");
-            not_in_function->markAsOperator();
-
-            QueryTreeNodes not_in_arguments;
-            not_in_arguments.reserve(2);
-            not_in_arguments.push_back(expression.node);
-            not_in_arguments.push_back(std::move(rhs_node));
-
-            not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
-            not_in_function->resolveAsFunction(not_in_function_resolver);
-
-            and_operands.push_back(std::move(not_in_function));
-        }
+        convertNotEqualsChainToNotIn(node_to_not_equals_functions, and_operands, getContext());
 
         if (and_operands.size() == function_node.getArguments().getNodes().size())
             return;
