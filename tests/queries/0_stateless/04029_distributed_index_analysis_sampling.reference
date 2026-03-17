@@ -2,6 +2,7 @@
 20086
 10076
 10076
+1
 -- { echo }
 EXPLAIN indexes = 1 SELECT * FROM t_dia_sampling SAMPLE 0.1 SETTINGS distributed_index_analysis = 0;
 Expression ((Project names + (Projection + Change column names to column identifiers)))
