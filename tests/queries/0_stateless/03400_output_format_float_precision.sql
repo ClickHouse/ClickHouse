@@ -43,11 +43,19 @@ SELECT 1.234567;
 SELECT toDecimalString(1.234567, 4);
 
 SET output_format_float_precision = 3;
--- Test TabSeparated  
-SELECT 1.0/3 FORMAT TabSeparated; 
-  
--- Test JSON  
+-- Test TabSeparated
+SELECT 1.0/3 FORMAT TabSeparated;
+
+-- Test JSON
 SELECT 1.0/3 FORMAT JSONEachRow;
-  
--- Test CSV  
+
+-- Test CSV
 SELECT 1.0/3 FORMAT CSV;
+
+-- Test non-finite values with non-zero precision (should not throw)
+SELECT toFloat64('inf');
+SELECT toFloat64('-inf');
+SELECT toFloat64('nan');
+SELECT toFloat32('inf');
+SELECT toFloat32('-inf');
+SELECT toFloat32('nan');

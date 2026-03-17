@@ -26,3 +26,9 @@
 0.333
 {"divide(1., 3)":0.333}
 0.333
+inf
+-inf
+nan
+inf
+-inf
+nan
