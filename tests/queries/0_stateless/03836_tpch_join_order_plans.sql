@@ -97,7 +97,7 @@ SET param__internal_cascades_cost_config = '{
     "io_weight":1,
     "memory_weight":1,
     "network_weight":1,
-    "sequential_weight":100
+    "sequential_weight":1000
 }';
 
 -- SF100 baseline cardinalities, bytes_per_row, and key column NDVs for all TPC-H tables.
