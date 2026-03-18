@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
@@ -269,7 +270,7 @@ void ColumnObject::get(size_t n, Field & res) const
     res = (*this)[n];
 }
 
-void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (options.notFull(name_buf))
         name_buf << '{';
@@ -288,7 +289,7 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
             else
                 name_buf << ", ";
             writeDoubleQuoted(path, name_buf);
-            column->getValueNameImpl(name_buf, n, options);
+            column->getValueNameAndTypeImpl(name_buf, n, options);
         }
     }
 
@@ -309,7 +310,7 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
             else
                 name_buf << ", ";
             writeDoubleQuoted(path, name_buf);
-            column->getValueNameImpl(name_buf, n, options);
+            column->getValueNameAndTypeImpl(name_buf, n, options);
         }
     }
 
@@ -345,12 +346,14 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
             const auto column = decoded_type->createColumn();
             decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
 
-            column->getValueNameImpl(name_buf, 0, options);
+            column->getValueNameAndTypeImpl(name_buf, 0, options);
         }
     }
 
     if (options.notFull(name_buf))
         name_buf << "}";
+
+    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 }
 
 bool ColumnObject::isDefaultAt(size_t n) const

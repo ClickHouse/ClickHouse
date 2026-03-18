@@ -100,13 +100,15 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeProjection>(
+    {
+        .documentation =
         {
             .description = "Reading directly from MergeTree projection",
             .examples = {{"mergeTreeProjection", "SELECT * FROM mergeTreeProjection(currentDatabase(), mt_table, proj_name)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        {.allow_readonly = true}
-    );
+        .allow_readonly = true,
+    });
 }
 
 }

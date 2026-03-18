@@ -88,7 +88,7 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override;
 
     std::string_view getDataAt(size_t index) const override
     {

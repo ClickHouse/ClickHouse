@@ -1,5 +1,4 @@
 
-#include <algorithm>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperClientCLI/Commands.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
@@ -45,7 +44,7 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
         if (std::exchange(need_space, true))
             client->cout << " ";
 
-        client->cout << formatKeeperNodeName(child);
+        client->cout << child;
     }
 
     client->cout << "\n";
@@ -391,11 +390,7 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClientBase * cl
         bool onListChildren(const fs::path & path, const Strings & children, const KeeperClientBase * client_) const
         {
             if (children.size() >= threshold)
-            {
                 client_->cout << static_cast<String>(path) << "\t" << children.size() << "\n";
-                /// Do not traverse children of super nodes
-                return false;
-            }
             return true;
         }
 

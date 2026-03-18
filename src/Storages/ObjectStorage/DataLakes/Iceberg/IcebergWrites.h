@@ -85,8 +85,7 @@ public:
         const Iceberg::PersistentTableComponents & persistent_table_components_,
         const StorageID & table_id_);
 
-    ~IcebergStorageSink() override;
-
+    ~IcebergStorageSink() override = default;
 
     String getName() const override { return "IcebergStorageSink"; }
 

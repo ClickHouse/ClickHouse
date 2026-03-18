@@ -657,17 +657,13 @@ bool optimizePlanForExists(QueryPlan & query_plan)
             node = node->children[0];
             continue;
         }
-        if (auto * limit_step = typeid_cast<LimitStep *>(node->step.get()))
+        if (typeid_cast<LimitStep *>(node->step.get()))
         {
-            if (limit_step->getOffset() == 0 && limit_step->getLimit() > 0)
-            {
-                /// TODO: Support LimitStep in decorrelation process.
-                /// For now, we just remove it, because it only increases the number of rows in the result.
-                /// It doesn't affect the result of correlated subquery.
-                node = node->children[0];
-                continue;
-            }
-            break;
+            /// TODO: Support LimitStep in decorrelation process.
+            /// For now, we just remove it, because it only increases the number of rows in the result.
+            /// It doesn't affect the result of correlated subquery.
+            node = node->children[0];
+            continue;
         }
         break;
     }
