@@ -1,4 +1,5 @@
 -- Test 1: Projection parts survive rename and reload
+SELECT 'Test 1: projection parts survive rename and reload';
 DROP TABLE IF EXISTS t_phys_proj;
 
 CREATE TABLE t_phys_proj
@@ -27,6 +28,9 @@ ALTER TABLE t_phys_proj RENAME COLUMN b TO d;
 SELECT a, sum(c) FROM t_phys_proj GROUP BY a ORDER BY a SETTINGS force_optimize_projection = 1;
 
 OPTIMIZE TABLE t_phys_proj FINAL;
+
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_proj' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 SELECT a, sum(c) FROM t_phys_proj GROUP BY a ORDER BY a SETTINGS force_optimize_projection = 1;
 
 DROP TABLE t_phys_proj;
@@ -42,6 +46,7 @@ ALTER TABLE t_phys_proj_flat ADD COLUMN n Nested(x UInt64, y String); -- { serve
 DROP TABLE t_phys_proj_flat;
 
 -- Test 3: Non-flattened Nested with physical names (flatten_nested = 0)
+SELECT 'Test 3: non-flattened Nested with physical names';
 SET flatten_nested = 0;
 DROP TABLE IF EXISTS t_phys_nested_nf;
 

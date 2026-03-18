@@ -1,14 +1,32 @@
+Test 1: merge with ADD COLUMN
 1	one	\N
 2	two	\N
 3	three	30
 4	four	40
 1
+a	a
+b	b
+c	1
+Test 2: compact parts
 1	one	0
 2	two	22
 1	one	0
 2	two	22
 3	three	33
+a	a
+b	b
+c	1
+Test 3: mutation MODIFY COLUMN
+a	a
+a	a
+b	b
+b	b
+c	1
+c	1
 10	UInt64
 20	UInt64
 10	UInt64
 20	UInt64
+a	a
+b	b
+c	1

@@ -1,3 +1,5 @@
+SELECT 'Test 1: basic wide part with ADD COLUMN';
+
 DROP TABLE IF EXISTS t_physical_names_basic;
 
 CREATE TABLE t_physical_names_basic
@@ -16,13 +18,14 @@ ALTER TABLE t_physical_names_basic ADD COLUMN c Nullable(String);
 INSERT INTO t_physical_names_basic (a, b, c) VALUES (2, 'two', 'second');
 
 SELECT * FROM t_physical_names_basic ORDER BY a;
-SELECT column, count()
+SELECT column, physical_name
 FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_physical_names_basic' AND active
-GROUP BY column
+WHERE database = currentDatabase() AND table = 't_physical_names_basic' AND active AND NOT startsWith(column, '_')
 ORDER BY column;
 
 DROP TABLE t_physical_names_basic;
+
+SELECT 'Test 2: virtual columns';
 
 DROP TABLE IF EXISTS t_physical_names_virtuals;
 
@@ -43,6 +46,10 @@ ALTER TABLE t_physical_names_virtuals ADD COLUMN c UInt64 DEFAULT a + 10;
 INSERT INTO t_physical_names_virtuals (a, c) VALUES (2, 22);
 
 SELECT a, c FROM t_physical_names_virtuals ORDER BY a;
+SELECT column, physical_name
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_physical_names_virtuals' AND active AND NOT startsWith(column, '_')
+ORDER BY column;
 SELECT countDistinct(_block_number), sum(_block_offset) FROM t_physical_names_virtuals;
 
 DELETE FROM t_physical_names_virtuals WHERE a = 1;
@@ -55,6 +62,8 @@ INSERT INTO t_physical_names_virtuals (a, c) VALUES (3, 33);
 SELECT a, c FROM t_physical_names_virtuals ORDER BY a;
 
 DROP TABLE t_physical_names_virtuals;
+
+SELECT 'Test 3: complex types';
 
 SET flatten_nested = 0;
 DROP TABLE IF EXISTS t_physical_names_complex;
@@ -73,6 +82,10 @@ SETTINGS
 
 INSERT INTO t_physical_names_complex VALUES ([(1, 'a'), (2, 'b')], (3, 'c'), map('k', 4));
 SELECT n.x, n.y, t.x, t.y, mapKeys(m), mapValues(m) FROM t_physical_names_complex;
+SELECT column, physical_name
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_physical_names_complex' AND active AND NOT startsWith(column, '_')
+ORDER BY column;
 
 DROP TABLE t_physical_names_complex;
 SET flatten_nested = 1;

@@ -1,3 +1,4 @@
+Test 1: chained rename
 1	hello
 2	world
 1	hello
@@ -6,6 +7,9 @@
 2	world
 1	hello
 2	world
+a	a
+f	b
+Test 2: multi-operation ALTER
 1	one	3.14
 2	two	3.14
 1	one	3.14
@@ -14,29 +18,58 @@
 1	one	3.14
 2	two	3.14
 3	three	2.7199999999999998
+a	a
+d	1
+name	b
+Test 3: rename, drop, re-add
 1	10
 1	10	new
 2	20	added
+d	1
+Test 4: nullable column rename
 1	hello
 2	\N
 3	world
 1	hello
 2	\N
 3	world
+a	a
+d	b
+Test 5: empty table operations
 1	after_rename
+a	a
+d	b
+Test 6: counter monotonicity
 1	10	20
 d1	4
 d2	5
+Test 7: detach/attach across rename
 2	world
 1	hello
 2	world
+a	a
+a	a
+b	b
+d	b
+Test 8: complex types with physical names
 1	{'k1':10,'k2':20}	(100,'hello')	extra
 2	{'k3':30}	(200,'world')	extra
 1	{'k1':10,'k2':20}	(100,'hello')	extra
 2	{'k3':30}	(200,'world')	extra
+a	a
+b	b
+c	c
+e	1
+Test 9: deduplicate after rename
 1	hello
 2	world
+a	a
+d	b
+Test 10: default expression with rename
 1	10	20
+a	a
+b	b
+c	c
 1	10	20
 2	20	40
 Test 11: flattened Nested guard

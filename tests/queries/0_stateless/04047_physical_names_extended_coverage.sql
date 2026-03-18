@@ -1,4 +1,5 @@
 -- Test 1: serialization.json is keyed by physical name, not logical name
+SELECT 'Test 1: serialization.json is keyed by physical name';
 DROP TABLE IF EXISTS t_phys_ser_json;
 
 CREATE TABLE t_phys_ser_json
@@ -28,6 +29,7 @@ DROP TABLE t_phys_ser_json;
 
 -- Test 2: columns.txt uses logical names (backward compat)
 -- After metadata-only rename, part-level columns.txt still has old name
+SELECT 'Test 2: columns.txt uses logical names';
 DROP TABLE IF EXISTS t_phys_colnames;
 
 CREATE TABLE t_phys_colnames
@@ -53,6 +55,7 @@ ORDER BY column;
 DROP TABLE t_phys_colnames;
 
 -- Test 3: Setting disabled prevents activation
+SELECT 'Test 3: setting disabled prevents activation';
 DROP TABLE IF EXISTS t_phys_no_activate;
 
 CREATE TABLE t_phys_no_activate
@@ -79,6 +82,7 @@ SELECT count() >= 1 FROM system.mutations WHERE database = currentDatabase() AND
 DROP TABLE t_phys_no_activate;
 
 -- Test 4: First activating RENAME is metadata-only
+SELECT 'Test 4: first activating RENAME is metadata-only';
 DROP TABLE IF EXISTS t_phys_first_rename;
 
 CREATE TABLE t_phys_first_rename
@@ -102,9 +106,12 @@ ALTER TABLE t_phys_first_rename RENAME COLUMN b TO d;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_phys_first_rename' AND NOT is_done;
 SELECT a, d FROM t_phys_first_rename ORDER BY a;
 
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_first_rename' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 DROP TABLE t_phys_first_rename;
 
 -- Test 5: First activating DROP is metadata-only
+SELECT 'Test 5: first activating DROP is metadata-only';
 DROP TABLE IF EXISTS t_phys_first_drop;
 
 CREATE TABLE t_phys_first_drop
@@ -132,6 +139,7 @@ SELECT * FROM t_phys_first_drop ORDER BY a;
 DROP TABLE t_phys_first_drop;
 
 -- Test 6: RENAME non-key column on partitioned table, verify partition pruning and minmax
+SELECT 'Test 6: RENAME non-key column on partitioned table';
 DROP TABLE IF EXISTS t_phys_rename_pk;
 
 CREATE TABLE t_phys_rename_pk
@@ -167,6 +175,7 @@ SELECT a, d FROM t_phys_rename_pk WHERE a >= 3 ORDER BY a;
 DROP TABLE t_phys_rename_pk;
 
 -- Test 7: Mutation on compact physical-name table
+SELECT 'Test 7: mutation on compact physical-name table';
 DROP TABLE IF EXISTS t_phys_compact_mut;
 
 CREATE TABLE t_phys_compact_mut
@@ -194,6 +203,7 @@ SELECT a, b, toTypeName(b), c FROM t_phys_compact_mut ORDER BY a;
 DROP TABLE t_phys_compact_mut;
 
 -- Test 8: Projection merge across rename boundary
+SELECT 'Test 8: projection merge across rename boundary';
 DROP TABLE IF EXISTS t_phys_proj_merge;
 
 CREATE TABLE t_phys_proj_merge
@@ -225,12 +235,15 @@ INSERT INTO t_phys_proj_merge VALUES (2, 'four', 40);
 -- Merge pre-rename and post-rename parts
 OPTIMIZE TABLE t_phys_proj_merge FINAL;
 
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_proj_merge' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 -- Projection should still work after merging parts from both sides of the rename
 SELECT a, sum(c) FROM t_phys_proj_merge GROUP BY a ORDER BY a SETTINGS force_optimize_projection = 1;
 
 DROP TABLE t_phys_proj_merge;
 
 -- Test 9: system.parts_columns exposes physical_name
+SELECT 'Test 9: system.parts_columns exposes physical_name';
 DROP TABLE IF EXISTS t_phys_sysparts;
 
 CREATE TABLE t_phys_sysparts
@@ -252,7 +265,7 @@ INSERT INTO t_phys_sysparts VALUES (1, 'one', 10);
 -- 'c' should have a counter-allocated physical name ('1')
 SELECT column, physical_name
 FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_phys_sysparts' AND active
+WHERE database = currentDatabase() AND table = 't_phys_sysparts' AND active AND NOT startsWith(column, '_')
 ORDER BY column;
 
 -- After rename, part-level column names remain unchanged (metadata-only rename)
@@ -261,12 +274,13 @@ ALTER TABLE t_phys_sysparts RENAME COLUMN b TO d;
 -- Part still shows 'b' at part level, physical_name unchanged
 SELECT column, physical_name
 FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_phys_sysparts' AND active
+WHERE database = currentDatabase() AND table = 't_phys_sysparts' AND active AND NOT startsWith(column, '_')
 ORDER BY column;
 
 DROP TABLE t_phys_sysparts;
 
 -- Test 10: Merge compact + wide parts
+SELECT 'Test 10: merge compact and wide parts';
 DROP TABLE IF EXISTS t_phys_mixed_parts;
 
 CREATE TABLE t_phys_mixed_parts
@@ -291,11 +305,15 @@ ALTER TABLE t_phys_mixed_parts ADD COLUMN c UInt64 DEFAULT 0;
 INSERT INTO t_phys_mixed_parts VALUES (200, 'z', 42);
 
 OPTIMIZE TABLE t_phys_mixed_parts FINAL;
+
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_mixed_parts' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 SELECT count(), sum(c) FROM t_phys_mixed_parts;
 
 DROP TABLE t_phys_mixed_parts;
 
 -- Test 11: RENAME column used in skip index
+SELECT 'Test 11: RENAME column used in skip index';
 DROP TABLE IF EXISTS t_phys_skip_idx;
 
 CREATE TABLE t_phys_skip_idx
@@ -320,11 +338,15 @@ SELECT a, d FROM t_phys_skip_idx ORDER BY a;
 
 INSERT INTO t_phys_skip_idx VALUES (3, 'baz qux');
 OPTIMIZE TABLE t_phys_skip_idx FINAL;
+
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_skip_idx' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 SELECT a, d FROM t_phys_skip_idx ORDER BY a;
 
 DROP TABLE t_phys_skip_idx;
 
 -- Test 12: system.projection_parts_columns exposes physical_name
+SELECT 'Test 12: system.projection_parts_columns exposes physical_name';
 DROP TABLE IF EXISTS t_phys_proj_sys;
 
 CREATE TABLE t_phys_proj_sys
@@ -345,7 +367,7 @@ INSERT INTO t_phys_proj_sys VALUES (1, 'one', 10);
 
 SELECT column, physical_name
 FROM system.projection_parts_columns
-WHERE database = currentDatabase() AND table = 't_phys_proj_sys' AND active
+WHERE database = currentDatabase() AND table = 't_phys_proj_sys' AND active AND NOT startsWith(column, '_')
 ORDER BY column;
 
 DROP TABLE t_phys_proj_sys;

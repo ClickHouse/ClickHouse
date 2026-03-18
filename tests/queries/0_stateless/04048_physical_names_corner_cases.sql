@@ -1,4 +1,5 @@
 -- Test 1: Chained rename b → d → e → f
+SELECT 'Test 1: chained rename';
 DROP TABLE IF EXISTS t_phys_chain;
 
 CREATE TABLE t_phys_chain
@@ -28,9 +29,12 @@ SELECT a, f FROM t_phys_chain ORDER BY a;
 OPTIMIZE TABLE t_phys_chain FINAL;
 SELECT a, f FROM t_phys_chain ORDER BY a;
 
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_chain' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 DROP TABLE t_phys_chain;
 
 -- Test 2: Multi-operation ALTER (ADD + RENAME + DROP in one statement)
+SELECT 'Test 2: multi-operation ALTER';
 DROP TABLE IF EXISTS t_phys_multi_op;
 
 CREATE TABLE t_phys_multi_op
@@ -62,9 +66,12 @@ SELECT a, name, d FROM t_phys_multi_op ORDER BY a;
 OPTIMIZE TABLE t_phys_multi_op FINAL;
 SELECT a, name, d FROM t_phys_multi_op ORDER BY a;
 
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_multi_op' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 DROP TABLE t_phys_multi_op;
 
 -- Test 3: RENAME then DROP of same column in separate ALTERs
+SELECT 'Test 3: rename, drop, re-add';
 DROP TABLE IF EXISTS t_phys_rename_drop;
 
 CREATE TABLE t_phys_rename_drop
@@ -91,9 +98,12 @@ ALTER TABLE t_phys_rename_drop ADD COLUMN d String DEFAULT 'new';
 INSERT INTO t_phys_rename_drop VALUES (2, 20, 'added');
 SELECT a, c, d FROM t_phys_rename_drop ORDER BY a;
 
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_rename_drop' AND active AND column = 'd' ORDER BY column;
+
 DROP TABLE t_phys_rename_drop;
 
 -- Test 4: Nullable column rename
+SELECT 'Test 4: nullable column rename';
 DROP TABLE IF EXISTS t_phys_nullable;
 
 CREATE TABLE t_phys_nullable
@@ -118,9 +128,12 @@ SELECT a, d FROM t_phys_nullable ORDER BY a;
 OPTIMIZE TABLE t_phys_nullable FINAL;
 SELECT a, d FROM t_phys_nullable ORDER BY a;
 
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_nullable' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 DROP TABLE t_phys_nullable;
 
 -- Test 5: Empty table operations (no data parts)
+SELECT 'Test 5: empty table operations';
 DROP TABLE IF EXISTS t_phys_empty;
 
 CREATE TABLE t_phys_empty
@@ -142,9 +155,12 @@ ALTER TABLE t_phys_empty DROP COLUMN c;
 INSERT INTO t_phys_empty VALUES (1, 'after_rename');
 SELECT a, d FROM t_phys_empty ORDER BY a;
 
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_empty' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 DROP TABLE t_phys_empty;
 
 -- Test 6: Counter monotonicity across ADD/DROP cycles
+SELECT 'Test 6: counter monotonicity';
 DROP TABLE IF EXISTS t_phys_counter;
 
 CREATE TABLE t_phys_counter
@@ -180,6 +196,7 @@ ORDER BY column;
 DROP TABLE t_phys_counter;
 
 -- Test 7: DETACH/ATTACH partition across rename
+SELECT 'Test 7: detach/attach across rename';
 DROP TABLE IF EXISTS t_phys_detach;
 
 CREATE TABLE t_phys_detach
@@ -206,9 +223,12 @@ SELECT a, d FROM t_phys_detach ORDER BY a;
 ALTER TABLE t_phys_detach ATTACH PARTITION 1;
 SELECT a, d FROM t_phys_detach ORDER BY a;
 
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_detach' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 DROP TABLE t_phys_detach;
 
 -- Test 8: Map and Tuple types with physical names
+SELECT 'Test 8: complex types with physical names';
 DROP TABLE IF EXISTS t_phys_complex_types;
 
 CREATE TABLE t_phys_complex_types
@@ -235,9 +255,12 @@ SELECT a, b, c, e FROM t_phys_complex_types ORDER BY a;
 OPTIMIZE TABLE t_phys_complex_types FINAL;
 SELECT a, b, c, e FROM t_phys_complex_types ORDER BY a;
 
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_complex_types' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 DROP TABLE t_phys_complex_types;
 
 -- Test 9: OPTIMIZE DEDUPLICATE after rename
+SELECT 'Test 9: deduplicate after rename';
 DROP TABLE IF EXISTS t_phys_dedup;
 
 CREATE TABLE t_phys_dedup
@@ -261,9 +284,12 @@ ALTER TABLE t_phys_dedup RENAME COLUMN b TO d;
 OPTIMIZE TABLE t_phys_dedup FINAL DEDUPLICATE BY a, d;
 SELECT a, d FROM t_phys_dedup ORDER BY a;
 
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_dedup' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 DROP TABLE t_phys_dedup;
 
 -- Test 10: Default expression referencing another column + rename
+SELECT 'Test 10: default expression with rename';
 DROP TABLE IF EXISTS t_phys_defaults;
 
 CREATE TABLE t_phys_defaults
@@ -283,6 +309,9 @@ INSERT INTO t_phys_defaults (a, b) VALUES (1, 10);
 SELECT a, b, c FROM t_phys_defaults ORDER BY a;
 
 ALTER TABLE t_phys_defaults RENAME COLUMN b TO val;
+
+SELECT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_defaults' AND active AND NOT startsWith(column, '_') ORDER BY column;
+
 INSERT INTO t_phys_defaults (a, val) VALUES (2, 20);
 SELECT a, val, c FROM t_phys_defaults ORDER BY a;
 

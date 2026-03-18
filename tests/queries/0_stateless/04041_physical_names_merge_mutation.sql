@@ -1,3 +1,5 @@
+SELECT 'Test 1: merge with ADD COLUMN';
+
 DROP TABLE IF EXISTS t_physical_merge;
 
 CREATE TABLE t_physical_merge
@@ -26,9 +28,15 @@ SELECT count()
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_physical_merge' AND active;
 
+SELECT column, physical_name
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_physical_merge' AND active AND NOT startsWith(column, '_')
+ORDER BY column;
+
 DROP TABLE t_physical_merge;
 
--- Test compact parts with physical names
+SELECT 'Test 2: compact parts';
+
 DROP TABLE IF EXISTS t_physical_compact;
 
 CREATE TABLE t_physical_compact
@@ -53,9 +61,15 @@ INSERT INTO t_physical_compact (a, b, c) VALUES (3, 'three', 33);
 OPTIMIZE TABLE t_physical_compact FINAL;
 SELECT * FROM t_physical_compact ORDER BY a;
 
+SELECT column, physical_name
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_physical_compact' AND active AND NOT startsWith(column, '_')
+ORDER BY column;
+
 DROP TABLE t_physical_compact;
 
--- Test mutation (MODIFY COLUMN) with physical names
+SELECT 'Test 3: mutation MODIFY COLUMN';
+
 DROP TABLE IF EXISTS t_physical_mutation;
 
 CREATE TABLE t_physical_mutation
@@ -73,10 +87,20 @@ ALTER TABLE t_physical_mutation ADD COLUMN c UInt32 DEFAULT 0;
 INSERT INTO t_physical_mutation (a, b, c) VALUES (1, 'one', 10);
 INSERT INTO t_physical_mutation (a, b, c) VALUES (2, 'two', 20);
 
+SELECT column, physical_name
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_physical_mutation' AND active AND NOT startsWith(column, '_')
+ORDER BY column;
+
 ALTER TABLE t_physical_mutation MODIFY COLUMN c UInt64;
 SELECT c, toTypeName(c) FROM t_physical_mutation ORDER BY a;
 
 OPTIMIZE TABLE t_physical_mutation FINAL;
 SELECT c, toTypeName(c) FROM t_physical_mutation ORDER BY a;
+
+SELECT column, physical_name
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_physical_mutation' AND active AND NOT startsWith(column, '_')
+ORDER BY column;
 
 DROP TABLE t_physical_mutation;

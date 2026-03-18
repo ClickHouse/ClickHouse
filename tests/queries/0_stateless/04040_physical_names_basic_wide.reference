@@ -1,13 +1,24 @@
+Test 1: basic wide part with ADD COLUMN
 1	one	\N
 2	two	second
-a	2
-b	2
+a	a
+a	a
+b	b
+b	b
 c	1
+Test 2: virtual columns
 1	11
 2	22
+a	a
+a	a
+c	1
 2	0
 1
 1
 2	22
 3	33
+Test 3: complex types
 [1,2]	['a','b']	3	c	['k']	[4]
+m	m
+n	n
+t	t
