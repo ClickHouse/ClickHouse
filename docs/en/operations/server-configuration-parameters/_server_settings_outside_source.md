@@ -323,12 +323,13 @@ To disable `error_log` setting, you should create the following file `/etc/click
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
-List of prefixes for [custom settings](/operations/settings/query-level#custom_settings). The prefixes must be separated with commas.
+List of prefixes used for [custom settings](/operations/settings/query-level#custom_settings).
+Multiple prefixes should be separated by commas.
 
 **Example**
 
 ```xml
-<custom_settings_prefixes>custom_</custom_settings_prefixes>
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
 ```
 
 **See Also**
@@ -1832,7 +1833,6 @@ Settings for optional improvements in the access control system.
 | `table_engines_require_grant` | Sets whether creating a table with a specific table engine requires a grant.                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false` |
 | `throw_on_unmatched_row_policies` | Sets whether reading from a table should throw an exception if the table has row policies, but none of them are for the current user | `false` |
 | `users_without_row_policies_can_read_rows` | Sets whether users without permissive row policies can still read rows using a `SELECT` query. For example, if there are two users A and B and a row policy is defined only for A, then if this setting is true, user B will see all rows. If this setting is false, user B will see no rows.                                                                                                                                                                                                                    | `true`  |
-| `disallow_config_defined_profiles_for_sql_defined_users` | When enabled, prevents config-defined settings profiles (those defined in XML configuration files such as `users.xml`), except for the default profile, from being applied to SQL-defined users. Profiles assigned to roles granted to a SQL-defined user are also checked. | `false` |
 
 Example:
 
@@ -1845,7 +1845,6 @@ Example:
     <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
-    <disallow_config_defined_profiles_for_sql_defined_users>false</disallow_config_defined_profiles_for_sql_defined_users>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
 </access_control_improvements>
 ```

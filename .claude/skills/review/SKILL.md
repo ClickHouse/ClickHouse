@@ -15,17 +15,17 @@ allowed-tools: Task, Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
 ## Obtaining the Diff
 
 **If a PR number is given:**
-- Fetch the PR info: `gh pr view $0 --json title,body,baseRefName,headRefName,files`
-- Get the diff: `gh pr diff $0`
+- Fetch PR metadata (title, description, base/head refs, changed files).
+- Fetch the full PR diff.
 - Note the PR title, description, and linked issues
 
 **If a branch name is given:**
-- Get the diff against master: `git diff master...$0`
+- Get the diff against `master`.
 - Use the branch name as context
 
 **If a diff spec is given (e.g., `HEAD~3..HEAD`):**
-- Get the diff: `git diff $0`
-- Get commit messages: `git log --oneline $0`
+- Get the diff for the specified range.
+- Get commit messages for the same range.
 
 Store the diff for analysis. If the diff is very large (>5000 lines), use the Task tool with `subagent_type=Explore` to analyze different parts in parallel.
 
@@ -45,6 +45,7 @@ SCOPE & LANGUAGE
 
 INPUTS YOU WILL RECEIVE
 - PR title, description, motivation
+- PR template fields (`Changelog category`, `Changelog entry`)
 - Diff (file paths, added/removed lines)
 - Linked issues / discussions
 - CI status and logs (if available)
@@ -92,6 +93,7 @@ WHAT TO REVIEW VS WHAT TO IGNORE
 - Scan all changed lines for typos in comments, variable names, string literals, log messages, error messages, and documentation.
 - Report all typos found with suggested corrections.
 - Check that error messages are clear, informative, and help the user understand what went wrong and how to fix it.
+- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present and user-readable.
 
 **Explicitly ignore (do not comment on these unless they indicate a bug):**
 - Commented debugging code (completely ignore for draft PR, no more than one message in total)
@@ -120,14 +122,18 @@ When reading diffs, scan for these classes of bugs:
 - Misuse of `std::unique_ptr` / `std::shared_ptr` / intrusive refcounts: cycles, double ownership, or forgotten release.
 
 **3) Concurrency & threading**
-- Access to shared state without appropriate locking/atomics.
-- Lock ordering changes that could introduce ABBA deadlocks.
-- Using non-thread-safe data structures from multiple threads.
-- Mutable globals or singletons accessed from many places.
+- Access to shared state without a lock or atomic: look for member variable reads/writes that happen outside the guarded region, especially on fast paths that skip locking as an optimization.
+- Lock scope too narrow (TOCTOU): a check is performed under a lock, the lock is released, and then an action is taken based on the check — the state may have changed in between.
+- Lock ordering changes that could introduce ABBA deadlocks: if two locks are now acquired in different orders on different paths, a deadlock is possible.
+- `std::atomic` with wrong memory ordering: `relaxed` is rarely correct for anything beyond counters; loads/stores that must synchronize with other threads need at least `acquire`/`release`.
+- Condition variable misuse: `wait` without a predicate loop (vulnerable to spurious wakeups), or notifying while the lock is still held.
+- Using non-thread-safe containers (e.g. `std::unordered_map`, most STL containers) from multiple threads without a lock.
+- Mutable globals or singletons modified from multiple threads.
 
 **4) Error handling & observability**
 - Ignored return values of functions that can fail (IO, network, syscalls).
-- Exceptions that cross module boundaries in unexpected ways.
+- Exception safety on all control-flow paths: early returns, loop continues, callbacks, and branches added by the PR — not just the happy path. Check that every resource acquired before a potentially-throwing call is released on the exception path (RAII or explicit catch).
+- **Changed-throws and `noexcept` boundary checklist:** whenever a PR adds a new throw path (or broadens throws), find all call sites using `grep` (not only diff/direct callers), verify each is exception-safe, and trace the full caller chain including RAII-triggered callbacks (e.g. `scope_guard` / `BasicScopeGuard` destructor callbacks, subscription/notification handlers, C callbacks). Confirm exceptions are caught before any destructor/`noexcept` boundary or intentionally converted to a logged non-throwing path. Watch for partial try/catch coverage; unhandled exceptions crossing a `noexcept` boundary call `std::terminate`.
 - Inconsistent error codes or messages that make debugging impossible.
 - Missing logs for serious failure modes (data loss risk, query aborts, background task failures).
 
@@ -146,8 +152,9 @@ When reading diffs, scan for these classes of bugs:
 - Extra syscalls, unnecessary fsyncs, sleeps, or polling in hot paths.
 
 **7) Compilation time & build impact**
+- ClickHouse has ~10k translation units; compilation time is a key developer productivity concern.
 - Adding non-trivial code (function bodies, method implementations, template definitions) to widely-included headers instead of moving it to `.cpp` files. Large function bodies in headers force recompilation of every translation unit that includes them. Prefer keeping only declarations, forward declarations, and truly trivial inline functions in `.h` files.
-- Adding or pulling heavy transitive includes into high-fan-out headers. When a header is included by hundreds or thousands of translation units, every extra `#include` it carries multiplies across the entire build. Watch for headers like `Exception.h`, `IColumn.h`, `IDataType.h`, and other foundational headers gaining new includes. Prefer forward declarations, dedicated lightweight `_fwd.h` headers, or moving the dependency into `.cpp` files.
+- Adding or pulling heavy transitive includes into high-fan-out headers. When a header is included by hundreds or thousands of translation units, every extra `#include` it carries multiplies across the entire build. Watch for foundational headers like `Exception.h`, `IColumn.h`, `IDataType.h`, `typeid_cast.h`, `assert_cast.h`, and `Context_fwd.h` gaining new includes. Prefer forward declarations, dedicated lightweight `_fwd.h` headers, or moving the dependency into `.cpp` files.
 - Unnecessary template instantiations: template code that unconditionally instantiates specializations for cases that are statically known to be unreachable. Use `if constexpr` to prune template variants that do not apply (e.g., instantiating a `division_by_nullable=true` variant for non-division operations). Each unnecessary instantiation multiplies compile time and binary size.
 - Large `constexpr` evaluation in headers: complex `constexpr` loops or recursive `constexpr` functions in headers that the compiler must evaluate in every translation unit. Extract them into `.cpp` files or break them into smaller units.
 
@@ -160,13 +167,18 @@ When reading diffs, scan for these classes of bugs:
 - Watch for file paths that surface contents in error messages on parse failure — even a "read then validate" pattern can leak file contents through exceptions.
 - This applies to all code paths that use `ReadBufferFromFile`, `WriteBufferToFile`, `std::ifstream`, or similar with user-controlled paths.
 
+**9) Semantic correctness & fix completeness**
+- **Partial / asymmetric fixes:** when a behavior is changed in one code path, check whether symmetric paths need the same change. Examples: fixing `SYSTEM STOP MERGES` for merge selection but not mutation selection; fixing `ReplicatedMergeTree` but not `SharedMergeTree`. Use `grep` to find all related call sites.
+- **Multi-instance resource selection:** when a PR adds support for multiple instances of a resource (e.g. auxiliary ZooKeeper clusters, secondary storage backends), grep for every place that accesses the resource and verify the correct instance is selected — not just in the newly added code paths.
+
+
 CLICKHOUSE RULES (MANDATORY)
 - **Deletion logging**
   All data deletion events (files, parts, metadata, ZooKeeper/Keeper entries, etc.) must be logged at an appropriate level.
 - **Serialization versioning**
   Any format (columns, aggregates, protocol, settings serialization, replication metadata) must be versioned. Check upgrade/downgrade resilience and the impact on existing clusters.
 - **Core-area scrutiny**
-  Apply stricter scrutiny to query execution, storage engines, replication, Keeper/coordination, system tables, and MergeTree internals.
+  For changes in query execution, storage engines, replication, Keeper/coordination, system tables, and MergeTree internals: read the full modified file (not just the diff context); verify invariants hold under concurrent background operations (merges, mutations, replication); check all error paths including those not touched by the diff; and confirm the change is consistent with symmetric subsystems — e.g. if fixing `ReplicatedMergeTree`, check `SharedMergeTree` and partition-level variants for the same issue.
 - **No test removal**
   Do **not** delete or relax existing tests. New behavior requires **new tests**.
   Tests replace random database names with `default` in output normalization. Do **not** flag hardcoded `default.` or `default_` prefixes in expected test output as incorrect or suggest using `${CLICKHOUSE_DATABASE}` – this is by design.
@@ -175,11 +187,11 @@ CLICKHOUSE RULES (MANDATORY)
 - **No magic constants**
   Avoid magic constants; represent important thresholds or alternative behaviors as settings with sensible defaults.
 - **Backward compatibility**
-  New versions must be configurable to behave like older versions via `compatibility` settings. Ensure `SettingsHistory.cpp` is updated when settings change.
+  New versions must be configurable to behave like older versions via `compatibility` settings. Ensure `SettingsChangesHistory.cpp` is updated when settings change. **New validation / enforcement on existing data:** if a PR adds a check that throws at `CREATE TABLE`, query execution, or server startup, and that check applies to objects created before the PR, it is a backward-incompatibility — the constraint may be violated by legitimate existing setups. It should either be gated behind a setting or applied only to newly created objects.
 - **Safe rollout**
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
 - **Compilation time**
-  ClickHouse has ~10k translation units; compilation time is a key developer productivity concern. Non-trivial function bodies, template definitions, and `constexpr` logic should live in `.cpp` files, not in headers. Do not add heavy `#include` directives to foundational headers (e.g. `Exception.h`, `IColumn.h`, `IDataType.h`, `typeid_cast.h`, `assert_cast.h`, `Context_fwd.h`); prefer forward declarations or `_fwd.h` headers. Use `if constexpr` to avoid instantiating template specializations that are statically unreachable.
+  Follow checklist **7) Compilation time & build impact**. Treat violations there as ClickHouse-rule issues.
 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
 
@@ -216,6 +228,7 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 
 **Missing context** (omit if none)
 - Bullet list of critical info you lacked. Prefix each item with ⚠️ (e.g., ⚠️ No CI logs available, ⚠️ No benchmarks provided).
+- If PR motivation/reason is not clear from the title and description, add a ⚠️ item explicitly stating that motivation is unclear.
 
 **Findings** (omit if no findings)
 - **❌ Blockers**
@@ -226,6 +239,7 @@ Focus on problems — do not describe what was checked and found to be fine. Use
   - Suggested fix.
 - **💡 Nits** (only if they reduce bug risk or user confusion)
   - `[File:Line(s)]` Issue + quick fix.
+  - Use this section for changelog-template quality issues (`Changelog category` mismatch, missing/unclear required `Changelog entry`).
 
 If there are **no Blockers or Majors**, you may omit the "Nits" section entirely and just say the PR looks good.
 
@@ -245,8 +259,8 @@ Example:
 | No test removal | ✅ | |
 | Experimental gate | ❌ | New feature `X` has no gate |
 | No magic constants | ✅ | |
-| Backward compatibility | ⚠️ | Default changed without `SettingsHistory.cpp` update |
-| `SettingsHistory.cpp` | ❌ | Not updated |
+| Backward compatibility | ⚠️ | Default changed without `SettingsChangesHistory.cpp` update |
+| `SettingsChangesHistory.cpp` | ❌ | Not updated |
 | Safe rollout | ➖ | |
 | Compilation time | ✅ | |
 
@@ -267,15 +281,3 @@ STYLE & CONDUCT
 - Avoid changing scope: review what's in the PR; suggest follow-ups separately.
 - If you are not reasonably confident a finding is a real issue or meaningful risk, **do not mention it**.
 - When performing a code review, **ignore `/.github/workflows/*` files**.
-
-## Examples
-
-- `/review 98239` — Review PR #98239
-- `/review my-feature-branch` — Review changes on branch vs master
-- `/review HEAD~3..HEAD` — Review the last 3 commits
-
-## Notes
-
-- For large PRs, use Task tool with `subagent_type=Explore` to analyze different subsystems in parallel
-- Read full files when diff context is insufficient to judge correctness
-- Include code suggestions as minimal diffs where helpful
