@@ -129,6 +129,8 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Date32:
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
         case TypeIndex::String:
             return true;
         default:
@@ -157,6 +159,8 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Int64:
             return dumpValue(field.safeGet<Int64>());
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
             return dumpValue(field.safeGet<Decimal64>().getValue().value);
         case TypeIndex::String:
         {
