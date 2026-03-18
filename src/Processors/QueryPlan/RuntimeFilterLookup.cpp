@@ -6,6 +6,9 @@
 #include <Common/SharedMutex.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <city.h>
+#include <algorithm>
+#include <vector>
 
 namespace ProfileEvents
 {
@@ -103,6 +106,78 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 }
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
+static constexpr size_t HASH_BATCH_SIZE = 1024;
+static constexpr UInt64 SEED_GEN_A = 845897321;
+static constexpr UInt64 SEED_GEN_B = 217728422;
+
+namespace
+{
+ALWAYS_INLINE BloomFilterHashPair makeCityHashPair(const char * data, size_t size, UInt64 seed)
+{
+    return
+    {
+        CityHash_v1_0_2::CityHash64WithSeed(data, size, seed),
+        CityHash_v1_0_2::CityHash64WithSeed(data, size, SEED_GEN_A * seed + SEED_GEN_B)
+    };
+}
+
+void hashFixedSizeCityHash(
+    const char * raw_data,
+    size_t value_size,
+    size_t row_count,
+    UInt64 seed,
+    BloomFilterHashPair * out_hashes)
+{
+    const char * position = raw_data;
+    for (size_t row = 0; row < row_count; ++row)
+    {
+        out_hashes[row] = makeCityHashPair(position, value_size, seed);
+        position += value_size;
+    }
+}
+
+template <typename ProcessBatch>
+void forEachColumnHashBatchCityHash(const IColumn & column, UInt64 seed, ProcessBatch && process_batch)
+{
+    const size_t row_count = column.size();
+    if (row_count == 0)
+        return;
+
+    std::vector<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count));
+
+    if (!isColumnConst(column) && column.isFixedAndContiguous())
+    {
+        const size_t value_size = column.sizeOfValueIfFixed();
+        const std::string_view raw_data = column.getRawData();
+
+        chassert(value_size == 0 || raw_data.size() / value_size >= row_count);
+
+        size_t start_row = 0;
+        while (start_row < row_count)
+        {
+            const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
+            const char * batch_data = raw_data.data() + start_row * value_size;
+            hashFixedSizeCityHash(batch_data, value_size, batch_size, seed, hash_pairs.data());
+            process_batch(hash_pairs.data(), batch_size, start_row);
+            start_row += batch_size;
+        }
+        return;
+    }
+
+    size_t start_row = 0;
+    while (start_row < row_count)
+    {
+        const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
+        for (size_t index = 0; index < batch_size; ++index)
+        {
+            const auto value = column.getDataAt(start_row + index);
+            hash_pairs[index] = makeCityHashPair(value.data(), value.size(), seed);
+        }
+        process_batch(hash_pairs.data(), batch_size, start_row);
+        start_row += batch_size;
+    }
+}
+}
 
 void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 {
@@ -144,8 +219,7 @@ void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 
 bool ApproximateRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
-    /// Current BloomFilter implementation relies on IColumn::getDataAt method that returns a string_view of contiguous
-    /// memory chunk containing the value
+    /// Runtime BloomFilter hashing uses byte representation from either fixed contiguous column storage or getDataAt().
     return data_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
 
@@ -279,14 +353,11 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
         dst_data.resize(values.column->size());
 
         size_t found_count = 0;
-        for (size_t row = 0; row < values.column->size(); ++row)
-        {
-            /// TODO: optimize: consider replacing hash calculation with vectorized version
-            const auto & value = values.column->getDataAt(row);
-            const bool found = bloom_filter->find(value.data(), value.size());
-            found_count += found ? 1 : 0;
-            dst_data[row] = found;
-        }
+        forEachColumnHashBatchCityHash(*values.column, bloom_filter->getSeed(),
+            [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
+            {
+                found_count += bloom_filter->findHashPairs(hash_pairs, count, dst_data.data() + start_row);
+            });
         updateStats(values.column->size(), found_count);
 
         return dst;
@@ -299,13 +370,11 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
 
 void ApproximateRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
 {
-    const size_t num_rows = values->size();
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        /// TODO: make this efficient: compute hashes in vectorized manner
-        auto value = values->getDataAt(row);
-        bloom_filter->add(value.data(), value.size());
-    }
+    forEachColumnHashBatchCityHash(*values, bloom_filter->getSeed(),
+        [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t /* start_row */)
+        {
+            bloom_filter->addHashPairs(hash_pairs, count);
+        });
 }
 
 void ApproximateRuntimeFilter::switchToBloomFilter()
