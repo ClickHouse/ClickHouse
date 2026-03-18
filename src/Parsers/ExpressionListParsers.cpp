@@ -911,6 +911,7 @@ struct ParserExpressionImpl
     ParserMySQLGlobalVariable mysql_global_variable_parser;
 
     ParserKeyword any_parser{Keyword::ANY};
+    ParserKeyword some_parser{Keyword::SOME};
     ParserKeyword all_parser{Keyword::ALL};
 
     // Recursion
@@ -2715,7 +2716,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
 
-        if (any_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
+        if ((any_parser.ignore(pos, expected) || some_parser.ignore(pos, expected)) && subquery_parser.parse(pos, tmp, expected))
             subquery_function_type = SubqueryFunctionType::ANY;
         else if (all_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
             subquery_function_type = SubqueryFunctionType::ALL;
