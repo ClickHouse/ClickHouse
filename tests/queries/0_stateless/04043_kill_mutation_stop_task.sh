@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT -q "
 # Wait for the mutation to be in progress and paused at the failpoint.
 # At this point, new_data_part is non-null (prepare completed).
 wait_for_mutation_in_progress "t_kill_mut_prec" "mutation_2.txt"
-# Sleep doesn't affect the correctness of the test, but it help to
+# Sleep doesn't affect the correctness of the test, but it helps to
 # reduce the chance of test failure.
 sleep 1
 
