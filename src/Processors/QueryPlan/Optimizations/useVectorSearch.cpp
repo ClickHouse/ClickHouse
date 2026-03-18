@@ -123,12 +123,20 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
                     }
                 }
 
-                if (auto * expr = typeid_cast<ExpressionStep *>(current->step.get()))
-                    child_expression_step = expr;
+                if (!child_expression_step)
+                {
+                    if (auto * expr = typeid_cast<ExpressionStep *>(current->step.get()))
+                        child_expression_step = expr;
+                }
+
+                if (typeid_cast<FilterStep *>(current->step.get()))
+                    additional_filters_present = true;
 
                 if (auto * read = typeid_cast<ReadFromMergeTree *>(current->step.get()))
                 {
                     child_read_step = read;
+                    if (const auto & prewhere_info = read->getPrewhereInfo())
+                        additional_filters_present = true;
                     break;
                 }
 
@@ -298,7 +306,9 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     if (has_union)
     {
-        /// Check at least one of the validated steps has the index
+        /// Check at least one of the validated steps has the index.
+        /// For `remote()` queries all shards read from the same table, so if one has the index, all do.
+        /// If a step's table somehow lacks the index, the downstream read handles it gracefully (no skip).
         for (auto * validated_step : validated_read_steps)
         {
             const auto & indexes = validated_step->getStorageMetadata()->getSecondaryIndices();
@@ -341,17 +351,17 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         return no_layers_updated;
 
     /// All set for 2nd pass - apply vector search parameters
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, true);
+    VectorSearchParameters vector_search_parameters{search_column, distance_function, n, reference_vector, additional_filters_present, true};
 
     if (has_union)
     {
         /// For Distributed tables, apply parameters only to validated ReadFromMergeTree steps
         for (auto * validated_step : validated_read_steps)
-            validated_step->setVectorSearchParameters(std::make_optional(vector_search_parameters.value()));
+            validated_step->setVectorSearchParameters(std::make_optional(vector_search_parameters));
     }
     else
     {
-        read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
+        read_from_mergetree_step->setVectorSearchParameters(std::make_optional(std::move(vector_search_parameters)));
     }
 
     return no_layers_updated;

@@ -70,6 +70,8 @@ SELECT
 FROM remote('127.{1,2}', currentDatabase(), tab_local)
 ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3
+-- serialize_query_plan=0 is needed because the distributed query plan is built on the initiator
+-- and serialized plans don't preserve the Union structure needed for EXPLAIN
 SETTINGS log_comment='direct-query-on-remote', serialize_query_plan=0
 FORMAT Null;
 
@@ -93,6 +95,15 @@ SELECT DISTINCT id
 FROM remote('127.{1,2}', currentDatabase(), tab_local)
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 5;
+
+SELECT '# Distributed query with WHERE clause - expect index usage with filters detected';
+EXPLAIN indexes = 1
+SELECT
+    id
+FROM remote('127.{1,2}', currentDatabase(), tab_local)
+WHERE id > 3
+ORDER BY L2Distance(vec, [1.0, 1.0])
+LIMIT 3;
 
 SELECT '# Distance function in SELECT but NOT in ORDER BY via remote() - must NOT use vector search index';
 EXPLAIN indexes = 1

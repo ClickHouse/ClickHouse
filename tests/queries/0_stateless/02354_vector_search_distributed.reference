@@ -43,6 +43,30 @@ Expression (Project names)
 3
 4
 5
+# Distributed query with WHERE clause - expect index usage with filters detected
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Merge sorted streams after aggregation stage for ORDER BY)
+      Union
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + Projection))
+            Filter ((WHERE + Change column names to column identifiers))
+              ReadFromMergeTree (default.tab_local)
+              Indexes:
+                PrimaryKey
+                  Keys:
+                    id
+                  Condition: (id in [4, +Inf))
+                  Parts: 1/1
+                  Granules: 4/4
+                  Search Algorithm: binary search
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 2
+                  Parts: 1/1
+                  Granules: 2/4
+                Ranges: 2
+        ReadFromRemote (Read from remote replica)
 # Distance function in SELECT but NOT in ORDER BY via remote() - must NOT use vector search index
 Expression (Project names)
   Limit (preliminary LIMIT)
