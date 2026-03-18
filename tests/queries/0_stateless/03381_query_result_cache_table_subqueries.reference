@@ -1,5 +1,5 @@
 51
 SELECT ceil(avg(number)) AS `ceil(avg(number))` FROM numbers(1, 100) SETTINGS use_query_cache = true, query_cache_for_subqueries = true	1
 51
-2
-1
+3
+0
