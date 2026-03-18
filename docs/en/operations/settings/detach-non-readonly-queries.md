@@ -1,13 +1,13 @@
 ---
 description: 'Run non-readonly queries in a background thread and return query_id immediately'
-sidebar_label: 'detach_non_readonly_queries'
+sidebar_label: 'allow_experimental_detach_non_readonly_queries'
 sidebar_position: 65
 slug: /operations/settings/detach-non-readonly-queries
-title: 'detach_non_readonly_queries'
+title: 'allow_experimental_detach_non_readonly_queries'
 doc_type: 'reference'
 ---
 
-# detach_non_readonly_queries {#detach-non-readonly-queries}
+# allow_experimental_detach_non_readonly_queries {#detach-non-readonly-queries}
 
 When enabled, non-readonly queries (e.g. `INSERT`, `INSERT ... SELECT`, `DELETE`, `UPDATE`) are **detached**: the server returns immediately with the `query_id` while the query runs in a background thread.
 
@@ -19,7 +19,7 @@ For [clickhouse-local](/operations/utilities/clickhouse-local), this setting is 
 
 This is **distinct from [async_insert](/operations/settings/settings#async_insert)**:
 - **async_insert** queues small inserts and may batch them; it changes insert semantics and supports `wait_for_async_insert`.
-- **detach_non_readonly_queries** only detaches execution (return immediately with `query_id`, run in a background thread); it does not batch or queue inserts.
+- **allow_experimental_detach_non_readonly_queries** only detaches execution (return immediately with `query_id`, run in a background thread); it does not batch or queue inserts.
 
 **Possible values:** `0` (default), `1`
 
@@ -32,7 +32,7 @@ You can enable it in one of these ways:
 **1. In the request URL (per request):**
 
 ```bash
-curl -sS "http://localhost:8123/?detach_non_readonly_queries=1&query=INSERT+INTO+my_table+SELECT+1" -X POST -d ""
+curl -sS "http://localhost:8123/?allow_experimental_detach_non_readonly_queries=1&query=INSERT+INTO+my_table+SELECT+1" -X POST -d ""
 ```
 
 **2. In the server config** (e.g. `config.xml` or `users.xml`):
@@ -40,7 +40,7 @@ curl -sS "http://localhost:8123/?detach_non_readonly_queries=1&query=INSERT+INTO
 ```xml
 <profiles>
     <default>
-        <detach_non_readonly_queries>1</detach_non_readonly_queries>
+        <allow_experimental_detach_non_readonly_queries>1</allow_experimental_detach_non_readonly_queries>
     </default>
 </profiles>
 ```
@@ -48,15 +48,15 @@ curl -sS "http://localhost:8123/?detach_non_readonly_queries=1&query=INSERT+INTO
 **3. In a session (SQL):**
 
 ```sql
-SET detach_non_readonly_queries = 1;
+SET allow_experimental_detach_non_readonly_queries = 1;
 ```
 
 **4. Native client (clickhouse-client):** pass the setting on the command line or in the query (when connected to a server):
 
 ```bash
-clickhouse-client --detach_non_readonly_queries 1 -q "INSERT INTO my_table SELECT 1"
+clickhouse-client --allow_experimental_detach_non_readonly_queries 1 -q "INSERT INTO my_table SELECT 1"
 # or in the query:
-clickhouse-client -q "INSERT INTO my_table SELECT 1 SETTINGS detach_non_readonly_queries=1"
+clickhouse-client -q "INSERT INTO my_table SELECT 1 SETTINGS allow_experimental_detach_non_readonly_queries=1"
 ```
 
 ## Response {#response}
@@ -74,7 +74,7 @@ The connection can be closed immediately; the query continues on the server. You
 
 ```bash
 # Detached INSERT ... SELECT; server returns immediately with query_id
-curl -sS "http://localhost:8123/?detach_non_readonly_queries=1&query=INSERT+INTO+my_table+SELECT+number+FROM+numbers(1000)" -X POST -d ""
+curl -sS "http://localhost:8123/?allow_experimental_detach_non_readonly_queries=1&query=INSERT+INTO+my_table+SELECT+number+FROM+numbers(1000)" -X POST -d ""
 ```
 
 Example response body: `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
@@ -85,14 +85,14 @@ Useful when the query is long or you prefer to send it in the body. The body mus
 
 ```bash
 # Query only in body; no query= in URL (body must be uncompressed)
-curl -sS "http://localhost:8123/?detach_non_readonly_queries=1" -X POST --data-binary "INSERT INTO my_table SELECT number FROM numbers(1000)"
+curl -sS "http://localhost:8123/?allow_experimental_detach_non_readonly_queries=1" -X POST --data-binary "INSERT INTO my_table SELECT number FROM numbers(1000)"
 ```
 
 ### INSERT with data in body (query in URL, data in body) {#insert-with-data-in-body}
 
 ```bash
 # Query in URL, INSERT data in body
-curl -sS "http://localhost:8123/?detach_non_readonly_queries=1&query=INSERT+INTO+my_table+FORMAT+TabSeparated" -X POST -d "1
+curl -sS "http://localhost:8123/?allow_experimental_detach_non_readonly_queries=1&query=INSERT+INTO+my_table+FORMAT+TabSeparated" -X POST -d "1
 2
 3"
 ```
@@ -103,7 +103,7 @@ SELECT and other read-only queries always run synchronously; the response contai
 
 ```bash
 # SELECT is unchanged: result is in the response body
-curl -sS "http://localhost:8123/?detach_non_readonly_queries=1&query=SELECT+count()+FROM+my_table" -X POST -d ""
+curl -sS "http://localhost:8123/?allow_experimental_detach_non_readonly_queries=1&query=SELECT+count()+FROM+my_table" -X POST -d ""
 ```
 
 ### Native client (clickhouse-client) {#native-client}
@@ -112,17 +112,17 @@ With the setting enabled, an `INSERT ... SELECT` returns immediately with the `q
 
 ```bash
 # Enable via command line
-clickhouse-client --detach_non_readonly_queries 1 -q "INSERT INTO my_table SELECT number FROM numbers(10)"
+clickhouse-client --allow_experimental_detach_non_readonly_queries 1 -q "INSERT INTO my_table SELECT number FROM numbers(10)"
 # Output (example):  a1b2c3d4-e5f6-7890-abcd-ef1234567890
 
 # Or enable in the query
-clickhouse-client -q "INSERT INTO my_table SELECT 1 SETTINGS detach_non_readonly_queries=1"
+clickhouse-client -q "INSERT INTO my_table SELECT 1 SETTINGS allow_experimental_detach_non_readonly_queries=1"
 ```
 
 SELECT is never detached; you get the normal result:
 
 ```bash
-clickhouse-client --detach_non_readonly_queries 1 -q "SELECT count() FROM my_table"
+clickhouse-client --allow_experimental_detach_non_readonly_queries 1 -q "SELECT count() FROM my_table"
 # Output: normal result (e.g. 10)
 ```
 

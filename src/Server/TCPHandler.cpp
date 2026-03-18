@@ -135,7 +135,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool apply_settings_from_server;
-    extern const SettingsBool detach_non_readonly_queries;
+    extern const SettingsBool allow_experimental_detach_non_readonly_queries;
 }
 
 namespace ServerSetting
@@ -604,10 +604,10 @@ void TCPHandler::runImpl()
             /// If query received, then settings in query_context has been updated.
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(query_state->query_context);
-            /// Detach path: for non-readonly queries when detach_non_readonly_queries is on, run the query in a background thread and return query_id immediately.
+            /// Detach path: for non-readonly queries when allow_experimental_detach_non_readonly_queries is on, run the query in a background thread and return query_id immediately.
             /// Skip when async_insert is set (preserve async-insert queue semantics). Only detach when the query does not need data from the client (e.g. INSERT...SELECT, not INSERT FORMAT ...).
             const auto & settings_ref = query_state->query_context->getSettingsRef();
-            if (settings_ref[Setting::detach_non_readonly_queries] && !settings_ref[Setting::async_insert])
+            if (settings_ref[Setting::allow_experimental_detach_non_readonly_queries] && !settings_ref[Setting::async_insert])
             {
                 /// Set by the thread once the query is registered in ProcessList and quotas are checked.
                 /// Kept outside the try/catch below so that query-start failures (quota, duplicate query_id,

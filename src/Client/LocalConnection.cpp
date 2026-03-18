@@ -37,7 +37,7 @@ namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
-    extern const SettingsBool detach_non_readonly_queries;
+    extern const SettingsBool allow_experimental_detach_non_readonly_queries;
     extern const SettingsDialect dialect;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
@@ -240,7 +240,7 @@ void LocalConnection::sendQuery(
         }
     }
 
-    /// Detach path (interactive mode only): when detach_non_readonly_queries is on and query is non-readonly
+    /// Detach path (interactive mode only): when allow_experimental_detach_non_readonly_queries is on and query is non-readonly
     /// (and does not need client data), run query in a background thread and return query_id immediately.
     if (is_interactive)
     {
@@ -256,7 +256,7 @@ void LocalConnection::sendQuery(
             ContextMutablePtr check_context = Context::createCopy(query_context);
             InterpreterSetQuery::applySettingsFromQuery(ast, check_context);
             const auto & check_settings = check_context->getSettingsRef();
-            if (check_settings[Setting::detach_non_readonly_queries] && !check_settings[Setting::async_insert]
+            if (check_settings[Setting::allow_experimental_detach_non_readonly_queries] && !check_settings[Setting::async_insert]
                 && ast && isNonReadOnlyQuery(ast.get()))
             {
                 const auto * insert_ast = ast->as<ASTInsertQuery>();

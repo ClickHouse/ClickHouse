@@ -258,7 +258,7 @@ Using `async_insert` or the [`Buffer` table engine](/engines/table-engines/speci
 
 ### Detached query execution {#detached-query-execution}
 
-You can run non-readonly queries (including `INSERT` and `INSERT ... SELECT`) in a **detached** way: the server returns immediately with a `query_id` in the response and runs the query in a background thread. Enable the [detach_non_readonly_queries](/operations/settings/detach-non-readonly-queries) setting (in the URL, config, or session). This is different from [async_insert](/operations/settings/settings#async_insert): it does not batch inserts; it only returns immediately and runs the query in the background.
+You can run non-readonly queries (including `INSERT` and `INSERT ... SELECT`) in a **detached** way: the server returns immediately with a `query_id` in the response and runs the query in a background thread. Enable the [allow_experimental_detach_non_readonly_queries](/operations/settings/detach-non-readonly-queries) setting (in the URL, config, or session). This is different from [async_insert](/operations/settings/settings#async_insert): it does not batch inserts; it only returns immediately and runs the query in the background.
 
 ### Large or long-running inserts {#large-or-long-running-inserts}
 
@@ -266,7 +266,7 @@ When you are inserting large amounts of data, ClickHouse will optimize write per
 
 **See Also**
 
-- [detach_non_readonly_queries](/operations/settings/detach-non-readonly-queries) — return immediately with query_id for non-readonly queries
+- [allow_experimental_detach_non_readonly_queries](/operations/settings/detach-non-readonly-queries) — return immediately with query_id for non-readonly queries
 - [async_insert](/operations/settings/settings#async_insert)
 - [wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
 - [wait_for_async_insert_timeout](/operations/settings/settings#wait_for_async_insert_timeout)

@@ -72,7 +72,7 @@ extern const SettingsBool allow_settings_after_format_in_insert;
 extern const SettingsBool async_insert;
 extern const SettingsBool cancel_http_readonly_queries_on_client_close;
 extern const SettingsBool enable_http_compression;
-extern const SettingsBool detach_non_readonly_queries;
+extern const SettingsBool allow_experimental_detach_non_readonly_queries;
 extern const SettingsBool implicit_select;
 extern const SettingsUInt64 http_headers_progress_interval_ms;
 extern const SettingsUInt64 http_max_request_param_data_size;
@@ -545,14 +545,14 @@ void HTTPHandler::processQuery(
             });
     }
 
-    /// Detach path: for non-readonly queries (e.g. INSERT-SELECT) when detach_non_readonly_queries is on,
+    /// Detach path: for non-readonly queries (e.g. INSERT-SELECT) when allow_experimental_detach_non_readonly_queries is on,
     /// run the query in a background thread and return immediately with query_id.
     /// Supports both query in URL (?query=...) and query in POST body (e.g. curl -X POST --data-binary "INSERT ...").
     /// We skip this path when async_insert=1 so that the server's async-insert queue semantics (and wait_for_async_insert) are preserved.
     /// Prepared-statement parameters from the URL (param_xxx) are already on the context and are copied into the background thread's context.
-    /// Also check params directly so the detach path is taken when the client sends detach_non_readonly_queries=1 in the URL.
+    /// Also check params directly so the detach path is taken when the client sends allow_experimental_detach_non_readonly_queries=1 in the URL.
     const bool want_detach_non_readonly
-        = settings[Setting::detach_non_readonly_queries] || params.getParsedLast<bool>("detach_non_readonly_queries", false);
+        = settings[Setting::allow_experimental_detach_non_readonly_queries] || params.getParsedLast<bool>("allow_experimental_detach_non_readonly_queries", false);
     if (want_detach_non_readonly && !settings[Setting::async_insert] && request.getMethod() == HTTPServerRequest::HTTP_POST
         && !has_external_data)
     {
