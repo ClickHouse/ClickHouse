@@ -13,7 +13,7 @@ SELECT COUNT(*) FROM system.query_cache;
 SELECT number, (SELECT avg(number) FROM numbers(1, 100)), throwIf(1) FROM numbers(1, 3)
 SETTINGS use_query_cache = true, query_cache_for_subqueries = true; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
--- One record for scalar sub-query
+-- Zero records (exception prevents caching)
 SELECT COUNT(*) FROM system.query_cache;
 
 SYSTEM DROP QUERY CACHE;

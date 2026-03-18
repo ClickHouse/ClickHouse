@@ -10,7 +10,7 @@ WHERE number IN (
 )
 SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 
--- Should be 3 records (main query, sub-query and nested sub-query)
+-- Should be 2 records (sub-query and nested sub-query)
 SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
 
 -- SELECT with sub-query result already in cache

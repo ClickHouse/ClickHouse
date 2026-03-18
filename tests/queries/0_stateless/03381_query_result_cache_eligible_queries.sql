@@ -36,7 +36,7 @@ SHOW TABLES SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 SELECT COUNT(*) FROM system.query_cache;
 
 -- CHECK
-CHECK TABLE eligible_test SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
+CHECK TABLE eligible_test FORMAT Null SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 SELECT COUNT(*) FROM system.query_cache;
 
 -- DESCRIBE

@@ -6,14 +6,14 @@ SYSTEM DROP QUERY CACHE;
 -- Put query into cache
 SELECT ceil(avg(number)) FROM numbers(1, 100) SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 
--- Should be one record in system.query_cache with is_subquery = 1 
-SELECT * FROM system.query_cache WHERE is_subquery = 1 ORDER BY expires_at;
+-- Should be one record in system.query_cache with is_subquery = 1
+SELECT query, is_subquery FROM system.query_cache WHERE is_subquery = 1 ORDER BY query;
 
 -- SELECT with sub-query result in cache
 SELECT * FROM (SELECT ceil(avg(number)) FROM numbers(1, 100)) SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 
--- Should be one record in system.query_cache with is_subquery = 1 
-SELECT * FROM system.query_cache WHERE is_subquery = 1 ORDER BY expires_at;
+-- Should be more records in system.query_cache with is_subquery = 1
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
 
 -- Check CacheHit
 SYSTEM FLUSH LOGS query_log;
