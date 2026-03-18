@@ -509,6 +509,33 @@ NullsAction QueryFuzzer::fuzzNullsAction(NullsAction action)
     return action;
 }
 
+void QueryFuzzer::fuzzWindowDefinition(ASTWindowDefinition & def)
+{
+    auto removeChild = [](ASTWindowDefinition & wdef, ASTPtr & member)
+    {
+        auto & ch = wdef.children;
+        member->children.clear();
+        ch.erase(std::remove(ch.begin(), ch.end(), member), ch.end());
+        member = nullptr;
+    };
+
+    if (def.partition_by)
+    {
+        if (fuzz_rand() % 50 == 0)
+            removeChild(def, def.partition_by);
+        else
+            fuzzColumnLikeExpressionList(def.partition_by.get());
+    }
+    if (def.order_by)
+    {
+        if (fuzz_rand() % 50 == 0)
+            removeChild(def, def.order_by);
+        else
+            fuzzOrderByList(def.order_by.get(), 0);
+    }
+    fuzzWindowFrame(def);
+}
+
 void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 {
     checkIterationLimit();
@@ -1076,10 +1103,79 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
 
 void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projection)
 {
-    UNUSED(projection);
+    if (!projection.query)
+        return;
+    auto * select = typeid_cast<ASTProjectionSelectQuery *>(projection.query);
+    if (!select || !select->select())
+        return;
 
-    /// TODO finish this soon
+    /// Occasionally add _part_offset to SELECT before fuzzing,
+    /// so the fuzz passes can move/replace it along with other expressions.
+    /// _part_offset is valid in projection SELECT and GROUP BY, but NOT in ORDER BY.
+    if (fuzz_rand() % 20 == 0)
+    {
+        select->select()->children.emplace_back(make_intrusive<ASTIdentifier>("_part_offset"));
+    }
+    fuzzColumnLikeExpressionList(select->select().get());
+    /// GROUP BY — ASTProjectionSelectQuery has no ROLLUP/CUBE/GROUPING SETS/TOTALS/HAVING/WHERE
+    if (select->groupBy().get())
+    {
+        if (fuzz_rand() % 50 == 0)
+        {
+            select->groupBy()->children.clear();
+            select->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, {});
+        }
+        else
+        {
+            if (fuzz_rand() % 20 == 0)
+            {
+                /// Occasionally add _part_offset to GROUP BY,
+                select->groupBy()->children.emplace_back(make_intrusive<ASTIdentifier>("_part_offset"));
+            }
+            fuzzColumnLikeExpressionList(select->groupBy().get());
+        }
+    }
+    else if (fuzz_rand() % 50 == 0)
+    {
+        /// Add a GROUP BY when the projection has none.
+        select->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, getRandomExpressionList(select->select()->children.size()));
+    }
+    if (select->orderBy().get())
+    {
+        if (fuzz_rand() % 50 == 0)
+        {
+            select->orderBy()->children.clear();
+            select->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, {});
+        }
+        else
+        {
+            /// ASTProjectionSelectQuery stores ORDER BY as either a bare ASTOrderByElement
+            /// (single key) or an ASTFunction("tuple", arguments=ASTExpressionList)
+            /// (multiple keys) — never as a bare ASTExpressionList like ASTSelectQuery.
+            auto * as_func = select->orderBy().get()->as<ASTFunction>();
+            if (as_func && as_func->name == "tuple" && as_func->arguments)
+            {
+                fuzzOrderByList(as_func->arguments.get(), 0);
+            }
+        }
+    }
+    else if (fuzz_rand() % 50 == 0)
+    {
+        /// Add an ORDER BY when the projection has none.
+        const auto col = getRandomColumnLike();
+        if (col)
+        {
+            auto elem = make_intrusive<ASTOrderByElement>();
+            elem->children.emplace_back(col);
+            elem->direction = 1;
+            elem->nulls_direction = 1;
+            elem->nulls_direction_was_explicitly_specified = false;
+            elem->with_fill = false;
+            select->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, std::move(elem));
+        }
+    }
 }
+
 
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
@@ -1562,29 +1658,101 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
     }
     for (auto & child : expr_list.children)
     {
+        ASTPtr new_child = nullptr;
         static const constexpr int asterisk_prob = 2000;
 
-        if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
+        /// ORDER BY lists contain ASTOrderByElement nodes which must not be replaced by
+        /// arbitrary expressions — doing so breaks the order_by_all formatting invariant
+        /// (ASTSelectQuery::formatImpl assumes children[0] is ASTOrderByElement when
+        /// order_by_all == true) and causes a null-pointer crash in format().
+        if (!typeid_cast<ASTOrderByElement *>(child.get()))
         {
-            /// Return a '*' literal
-            if (fuzz_rand() % asterisk_prob == 0)
-                child = make_intrusive<ASTAsterisk>();
-            else if (fuzz_rand() % 13 == 0)
-                child = fuzzLiteralUnderExpressionList(child);
-        }
-        else if (fuzz_rand() % asterisk_prob == 0 && dynamic_cast<ASTWithAlias *>(child.get()))
-        {
-            /// Return a '*' literal
-            child = make_intrusive<ASTAsterisk>();
-        }
-        else
-        {
-            auto new_child = reverseLiteralFuzzing(child);
-            if (new_child)
-                child = new_child;
+            if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
+            {
+                /// Return a '*' literal
+                if (fuzz_rand() % asterisk_prob == 0)
+                    new_child = make_intrusive<ASTAsterisk>();
+                else if (fuzz_rand() % 13 == 0)
+                    new_child = fuzzLiteralUnderExpressionList(child);
+            }
+            else if (fuzz_rand() % asterisk_prob == 0 && dynamic_cast<ASTWithAlias *>(child.get()))
+            {
+                /// Return a '*' literal
+                new_child = make_intrusive<ASTAsterisk>();
+            }
+            else if (fuzz_rand() % 1500 == 0 && current_ast_depth < 80)
+            {
+                /// Wrap child in a scalar subquery (SELECT child)
+                auto sel_list = make_intrusive<ASTExpressionList>();
+                sel_list->children.emplace_back(child->clone());
+                auto select_query = make_intrusive<ASTSelectQuery>();
+                select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(sel_list));
+                new_child = make_intrusive<ASTSubquery>(std::move(select_query));
+            }
+            else if (fuzz_rand() % 1000 == 0)
+            {
+                /// Wrap child in arithmetic: child op other (or other op child)
+                static const Strings arith_ops = {"plus", "minus", "multiply", "divide", "intDiv", "modulo"};
+                auto other = getRandomColumnLike();
+                if (other)
+                {
+                    const String & op = arith_ops[fuzz_rand() % arith_ops.size()];
+                    if (fuzz_rand() % 2 == 0)
+                        new_child = makeASTFunction(op, child, other);
+                    else
+                        new_child = makeASTFunction(op, other, child);
+                }
+            }
+            else if (fuzz_rand() % 1000 == 0 && current_ast_depth < 80)
+            {
+                /// Wrap child in if(cond, child, other) or if(cond, other, child)
+                ASTPtr cond = generatePredicate();
+                auto other = getRandomColumnLike();
+                if (cond && other)
+                {
+                    if (fuzz_rand() % 2 == 0)
+                        new_child = makeASTFunction("if", cond, child, other);
+                    else
+                        new_child = makeASTFunction("if", cond, other, child);
+                }
+            }
+            else if (fuzz_rand() % 800 == 0 && current_ast_depth < 80)
+            {
+                /// Build multiIf(cond1, e1[, cond2, e2], else): a CASE WHEN expression
+                auto multiif_func = make_intrusive<ASTFunction>();
+                multiif_func->name = "multiIf";
+                multiif_func->arguments = make_intrusive<ASTExpressionList>();
+                multiif_func->children.push_back(multiif_func->arguments);
+                const int nclauses = (fuzz_rand() % 2) + 1;
+                bool ok = true;
+                for (int ci = 0; ci < nclauses && ok; ci++)
+                {
+                    ASTPtr cond = generatePredicate();
+                    auto val = getRandomColumnLike();
+                    if (cond && val)
+                    {
+                        multiif_func->arguments->children.emplace_back(cond);
+                        multiif_func->arguments->children.emplace_back(val);
+                    }
+                    else
+                        ok = false;
+                }
+                auto else_val = getRandomColumnLike();
+                if (ok && else_val)
+                {
+                    multiif_func->arguments->children.emplace_back(else_val);
+                    new_child = multiif_func;
+                }
+            }
             else
-                fuzz(child);
+            {
+                new_child = reverseLiteralFuzzing(child);
+            }
         }
+        if (new_child)
+            child = new_child;
+        else
+            fuzz(child);
     }
 }
 
@@ -1695,7 +1863,7 @@ ASTPtr QueryFuzzer::generatePredicate()
             for (int i = 0; i < nconditions; i++)
             {
                 ASTPtr next_condition = nullptr;
-                const int nprob = fuzz_rand() % 10;
+                const int nprob = fuzz_rand() % 12;
 
                 /// Pick a random identifier
                 auto rand_col1 = colids.begin();
@@ -1707,7 +1875,43 @@ ASTPtr QueryFuzzer::generatePredicate()
                 {
                     next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", expression_1);
                 }
-                else
+                else if (nprob == 1 && !table_like.empty() && current_ast_depth < 80)
+                {
+                    /// col IN/NOT IN/globalIn/globalNotIn (subquery), or EXISTS (subquery)
+                    static const Strings subquery_variants = {"in", "notIn", "globalIn", "globalNotIn", "exists"};
+                    for (size_t att = 0; att < 10; ++att)
+                    {
+                        const auto & entry = table_like[fuzz_rand() % table_like.size()];
+                        if (typeid_cast<ASTSubquery *>(entry.second.get()))
+                        {
+                            const String & variant = subquery_variants[fuzz_rand() % subquery_variants.size()];
+                            if (variant == "exists")
+                                next_condition = makeASTFunction(variant, entry.second->clone());
+                            else
+                                next_condition = makeASTFunction(variant, expression_1, entry.second->clone());
+                            break;
+                        }
+                    }
+                }
+                else if (nprob == 2)
+                {
+                    /// col IN (expr1, expr2, ...) or col NOT IN (...) with a literal tuple
+                    static const Strings in_tuple_variants = {"in", "notIn", "globalIn", "globalNotIn"};
+                    auto tuple_func = make_intrusive<ASTFunction>();
+                    tuple_func->name = "tuple";
+                    tuple_func->arguments = make_intrusive<ASTExpressionList>();
+                    tuple_func->children.push_back(tuple_func->arguments);
+                    const size_t n_items = (fuzz_rand() % 4) + 1;
+                    for (size_t j = 0; j < n_items; j++)
+                    {
+                        auto rand_col = column_like.begin();
+                        std::advance(rand_col, fuzz_rand() % column_like.size());
+                        tuple_func->arguments->children.push_back(rand_col->second->clone());
+                    }
+                    next_condition = makeASTFunction(in_tuple_variants[fuzz_rand() % in_tuple_variants.size()], expression_1, tuple_func);
+                }
+                /// Fall back to a column comparison if no subquery was available (case 1) or for nprob >= 3
+                if (!next_condition)
                 {
                     /// Pick any other column reference
                     auto rand_col2 = column_like.begin();
@@ -2349,17 +2553,18 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         auto & union_members = with_union->list_of_selects->children;
         if (union_members.size() > 1 && fuzz_rand() % 100 == 0)
         {
-            /// Drop a random member from the UNION; remove a mode to keep sizes in sync
+            /// Drop a random member from the UNION; rebuild modes to keep sizes in sync.
+            /// After normalization, list_of_modes may be stale (wrong size), so we
+            /// rebuild it entirely from union_mode rather than trying to erase one entry.
             union_members.erase(union_members.begin() + fuzz_rand() % union_members.size());
-            if (!with_union->list_of_modes.empty())
-                with_union->list_of_modes.pop_back();
+            with_union->list_of_modes.assign(union_members.empty() ? 0 : union_members.size() - 1, with_union->union_mode);
             with_union->is_normalized = false;
         }
         else if (!union_members.empty() && fuzz_rand() % 100 == 0)
         {
-            /// Duplicate a random member; push a matching mode to keep sizes in sync
+            /// Duplicate a random member; rebuild modes to keep sizes in sync.
             union_members.push_back(union_members[fuzz_rand() % union_members.size()]->clone());
-            with_union->list_of_modes.push_back(with_union->union_mode);
+            with_union->list_of_modes.assign(union_members.size() - 1, with_union->union_mode);
         }
 
         fuzz(with_union->list_of_selects);
@@ -2517,9 +2722,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         if (fn->isWindowFunction() && fn->window_definition)
         {
             auto & def = fn->window_definition->as<ASTWindowDefinition &>();
-            fuzzColumnLikeExpressionList(def.partition_by.get());
-            fuzzOrderByList(def.order_by.get(), 0);
-            fuzzWindowFrame(def);
+            fuzzWindowDefinition(def);
         }
 
         fuzz(fn->children);
@@ -2722,10 +2925,22 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             addOrReplacePredicate(select, ASTSelectQuery::Expression::QUALIFY);
         }
 
-        fuzzOrderByList(select->orderBy().get(), select->select()->children.size());
-        if (select->orderBy().get() && fuzz_rand() % 50 == 0)
+        if (select->orderBy().get())
         {
-            select->order_by_all = !select->order_by_all;
+            if (fuzz_rand() % 50 == 0)
+            {
+                select->orderBy()->children.clear();
+                select->setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+                select->order_by_all = false;
+            }
+            else
+            {
+                if (fuzz_rand() % 50 == 0)
+                {
+                    select->order_by_all = !select->order_by_all;
+                }
+                fuzzOrderByList(select->orderBy().get(), select->select()->children.size());
+            }
         }
         if (select->limitLength())
         {
@@ -2848,7 +3063,15 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         /// Toggle CREATE ↔ ATTACH to exercise the attach path with the same schema
         if (fuzz_rand() % 100 == 0)
+        {
             create_query->attach = !create_query->attach;
+            /// `FROM 'path'` is only valid for ATTACH, not CREATE
+            if (!create_query->attach)
+            {
+                create_query->has_attach_from_path = false;
+                create_query->attach_from_path.clear();
+            }
+        }
         fuzzCreateQuery(*create_query);
     }
     else if (auto * drop_query = typeid_cast<ASTDropQuery *>(ast.get()))
@@ -3129,9 +3352,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * wdef = typeid_cast<ASTWindowDefinition *>(ast.get()))
     {
-        fuzzColumnLikeExpressionList(wdef->partition_by.get());
-        fuzzOrderByList(wdef->order_by.get(), 0);
-        fuzzWindowFrame(*wdef);
+        fuzzWindowDefinition(*wdef);
         fuzz(wdef->children);
     }
     else if (auto * with_elem = typeid_cast<ASTWithElement *>(ast.get()))
