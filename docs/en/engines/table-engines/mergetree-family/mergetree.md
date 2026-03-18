@@ -1255,7 +1255,7 @@ When the `serialization_info_version` setting is set to `with_physical_names`, e
 A persistent mapping from logical column names to physical names is stored in a `physical_names.json` file alongside the table metadata.
 This decouples file names from logical column names and enables metadata-only `RENAME COLUMN` and `DROP COLUMN` operations.
 
-### Enabling physical names
+### Enabling physical names {#enabling-physical-names}
 
 For new tables, set the `serialization_info_version` table setting:
 
@@ -1283,7 +1283,7 @@ ALTER TABLE example MODIFY SETTING
 ALTER TABLE example RENAME COLUMN name TO title;
 ```
 
-### Behavior changes
+### Behavior changes {#physical-names-behavior-changes}
 
 Once physical names are active:
 
@@ -1300,7 +1300,7 @@ Once physical names are active:
 
 - **`ADD COLUMN`** allocates a new counter-based physical name for the column.
 
-### Checking physical names
+### Checking physical names {#checking-physical-names}
 
 The `physical_name` column in [`system.parts_columns`](/operations/system-tables/parts_columns) shows the physical name for each column in each part:
 
