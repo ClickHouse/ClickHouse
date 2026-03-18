@@ -233,4 +233,4 @@ for test_case in "${curl_flush_logs_tests[@]}"; do
 done
 
 # CLICKHOUSE_URL already includes "?"
-git grep -P 'CLICKHOUSE_URL(|_HTTPS)(}|}/|/|)\?' $ROOT_PATH/tests/queries/0_stateless/*.sh
+git grep -P 'CLICKHOUSE_URL(|_HTTPS)(}|}/|/|)\?' $ROOT_PATH/tests/queries/0_stateless/*.sh && echo "CLICKHOUSE_URL already includes '?', use '&' to append query parameters"

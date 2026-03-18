@@ -399,7 +399,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         }
         else if (virtual_column.name == "_row_number")
         {
-#if USE_PARQUET
             auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
             if (chunk_info)
             {
@@ -414,7 +413,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
                 return;
             }
-#endif
             /// Row numbers not known, _row_number = NULL.
             chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
@@ -426,6 +424,14 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                     convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
         }
     }
+}
+
+bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns)
+{
+    return std::any_of(
+        requested_virtual_columns.begin(),
+        requested_virtual_columns.end(),
+        [](const auto & col) { return col.name == "_row_number"; });
 }
 
 static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allowed_inputs)

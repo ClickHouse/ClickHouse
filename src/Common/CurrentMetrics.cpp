@@ -495,6 +495,10 @@
     M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
     \
     M(S3CachedCredentialsProviders, "Total number of cached credentials providers") \
+    \
+    M(MergeTreeSnapshotCommitThreads, "Number of threads used to commit snapshot") \
+    M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
+    M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS

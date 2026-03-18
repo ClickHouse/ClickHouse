@@ -60,8 +60,8 @@ void SerializationDynamicElement::enumerateStreams(
 
     settings.path.push_back(Substream::DynamicData);
     auto variant_data = SubstreamData(deserialize_state->variant_serialization)
-                            .withType(data.type)
-                            .withColumn(data.column)
+                            .withType(deserialize_state->read_from_shared_variant ? ColumnDynamic::getSharedVariantDataType() : data.type)
+                            .withColumn(deserialize_state->read_from_shared_variant ? ColumnDynamic::getSharedVariantDataType()->createColumn() : data.column)
                             .withSerializationInfo(data.serialization_info)
                             .withDeserializeState(deserialize_state->variant_element_state);
     settings.path.back().data = variant_data;
@@ -111,7 +111,7 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
         chassert(shared_variant_global_discr.has_value());
         settings.path.push_back(Substream::DynamicData);
         dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(
-            ColumnDynamic::getSharedVariantDataType()->getDefaultSerialization(),
+            shared_variant_serialization,
             ColumnDynamic::getSharedVariantTypeName(),
             *shared_variant_global_discr);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
