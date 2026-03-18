@@ -3,7 +3,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <numeric>
 #include <vector>
 
 namespace DB
@@ -18,38 +17,25 @@ namespace ErrorCodes
 
 static constexpr size_t MAX_COMBINATION_RESULT_ELEMENTS = 1000000;
 
-/// Compute C(n, k) exactly, return 0 if result > limit.
-/// Uses GCD reduction to keep intermediates small and avoid overflow.
+/// Compute C(n, k) exactly in O(k), return 0 if result > limit.
+/// Uses 128-bit intermediate to avoid overflow in result * (n - i)
+/// before the exact division by (i + 1).
 static size_t combinationCountCapped(size_t n, size_t k, size_t limit)
 {
     if (k > n) return 0;
     if (k == 0 || k == n) return 1;
     k = std::min(k, n - k);
 
-    /// Store numerator factors to allow cross-cancellation with denominators.
-    std::vector<size_t> numer(k);
-    for (size_t i = 0; i < k; ++i)
-        numer[i] = n - i;
-
-    for (size_t i = 2; i <= k; ++i)
-    {
-        size_t d = i;
-        for (size_t j = 0; j < k && d > 1; ++j)
-        {
-            size_t g = std::gcd(numer[j], d);
-            numer[j] /= g;
-            d /= g;
-        }
-    }
-
     size_t result = 1;
     for (size_t i = 0; i < k; ++i)
     {
-        if (numer[i] > 1 && result > limit / numer[i])
+        /// C(n, i+1) = C(n, i) * (n - i) / (i + 1), always an integer.
+        /// Use 128-bit multiply to avoid overflow before the exact division.
+        result = static_cast<size_t>(static_cast<unsigned __int128>(result) * (n - i) / (i + 1));
+        if (result > limit)
             return 0;
-        result *= numer[i];
     }
-    return result <= limit ? result : 0;
+    return result;
 }
 
 class FunctionArrayCombinations : public IFunction
@@ -114,11 +100,12 @@ public:
                 continue;
             }
 
-            /// Check output size to prevent OOM
-            size_t num_results = combinationCountCapped(n, static_cast<size_t>(k), MAX_COMBINATION_RESULT_ELEMENTS);
+            /// Check total output elements (rows * k) to prevent OOM
+            size_t uk = static_cast<size_t>(k);
+            size_t num_results = combinationCountCapped(n, uk, MAX_COMBINATION_RESULT_ELEMENTS / uk);
             if (num_results == 0)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                    "Result of function {} would exceed {} elements for array of length {} with k={}",
+                    "Result of function {} would exceed {} total elements for array of length {} with k={}",
                     getName(), MAX_COMBINATION_RESULT_ELEMENTS, n, k);
 
             /// Generate combinations using iterative approach with index array

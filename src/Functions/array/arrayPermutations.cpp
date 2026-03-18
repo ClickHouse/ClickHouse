@@ -123,14 +123,15 @@ public:
                 continue;
             }
 
-            /// Check output size to prevent OOM
+            /// Check total output elements (rows * k) to prevent OOM
+            size_t max_rows = MAX_PERMUTATION_RESULT_ELEMENTS / k;
             size_t num_results = IsPartial || k < n
-                ? partialPermCountCapped(n, k, MAX_PERMUTATION_RESULT_ELEMENTS)
-                : factorialCapped(n, MAX_PERMUTATION_RESULT_ELEMENTS);
+                ? partialPermCountCapped(n, k, max_rows)
+                : factorialCapped(n, max_rows);
 
             if (num_results == 0)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                    "Result of function {} would exceed {} elements for array of length {} with k={}",
+                    "Result of function {} would exceed {} total elements for array of length {} with k={}",
                     getName(), MAX_PERMUTATION_RESULT_ELEMENTS, n, k);
 
             /// Generate k-permutations of n elements using index arrays.
