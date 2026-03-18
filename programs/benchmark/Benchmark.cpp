@@ -40,6 +40,7 @@
 #include <Common/CurrentMetrics.h>
 #include <IO/WriteBuffer.h>
 #include <Client/ClientApplicationBaseParser.h>
+#include <Parsers/parseQuery.h>
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
@@ -54,6 +55,15 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool implicit_select;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
 
 using Ports = std::vector<UInt16>;
 static constexpr std::string_view DEFAULT_CLIENT_NAME = "benchmark";
@@ -107,6 +117,7 @@ public:
         max_consecutive_errors(options["max-consecutive-errors"].as<size_t>()),
         reconnect(options["reconnect"].as<size_t>()),
         display_client_side_time(options.contains("client-side-time")),
+        multiline(options.contains("multiline")),
         print_stacktrace(print_stacktrace_),
         settings(std::move(settings_)),
         shared_context(Context::createShared()),
@@ -256,6 +267,7 @@ private:
     size_t max_consecutive_errors;
     size_t reconnect;
     bool display_client_side_time;
+    bool multiline;
     bool print_stacktrace;
     const Settings & settings;
     SharedContextHolder shared_context;
@@ -440,14 +452,36 @@ private:
         {
             ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
-            while (!in.eof())
+            if (multiline)
             {
-                String query;
-                readText(query, in);
-                assertChar('\n', in);
+                String all_queries_text;
+                readStringUntilEOF(all_queries_text, in);
 
-                if (!query.empty())
-                    queries.emplace_back(std::move(query));
+                auto parse_res = splitMultipartQuery(
+                    all_queries_text,
+                    queries,
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks],
+                    settings[Setting::allow_settings_after_format_in_insert],
+                    settings[Setting::implicit_select]);
+
+                if (!parse_res.second)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot parse query near: {}", String(parse_res.first, std::min<size_t>(100, all_queries_text.data() + all_queries_text.size() - parse_res.first)));
+            }
+            else
+            {
+                /// Default: one query per line
+                while (!in.eof())
+                {
+                    String query;
+                    readText(query, in);
+                    assertChar('\n', in);
+
+                    if (!query.empty())
+                        queries.emplace_back(std::move(query));
+                }
             }
 
             if (queries.empty())
@@ -851,6 +885,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("help", "Print usage summary and exit; combine with --verbose to display all options")
             ("verbose", "Increase output verbosity")
             ("query,q",       value<std::string>()->default_value(""),          "query to execute")
+            ("multiline,m",                                                     "allow multi-line queries (split by ';' instead of newline)")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("max_concurrency,C", value<unsigned>()->default_value(0),          "gradually increase number of parallel queries up to specified value, making one report for every concurrency level")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")

@@ -1,0 +1,6 @@
+OK: Single multiline query
+OK: Multiple multiline queries
+OK: Short option -m
+OK: Semicolons in comments ignored
+OK: Default mode (line-by-line)
+All multiline tests passed
