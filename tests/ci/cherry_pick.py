@@ -43,6 +43,7 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
+from github.GithubException import GithubException
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from pr_info import Labels
 from report import GITHUB_JOB_URL
@@ -308,12 +309,34 @@ close it.
             f"{GIT_PREFIX} push -f {self.REMOTE} "
             f"{self.backport_branch}:{self.backport_branch}"
         )
-        self.backport_pr = self.repo.create_pull(
-            title=title,
-            body=self.body_header() + self.BACKPORT_DESCRIPTION + self.pr_source,
-            base=self.name,
-            head=self.backport_branch,
-        )
+        try:
+            self.backport_pr = self.repo.create_pull(
+                title=title,
+                body=self.body_header() + self.BACKPORT_DESCRIPTION + self.pr_source,
+                base=self.name,
+                head=self.backport_branch,
+            )
+        except GithubException as e:
+            if e.status != 422 or "already exists" not in str(e):
+                raise
+            # The backport PR was created in a previous run but left without the
+            # `pr-backport` label (e.g. the run was interrupted after `create_pull`
+            # but before `add_to_labels`). Find and reuse it.
+            existing = list(
+                self.repo.get_pulls(
+                    head=f"{self.repo.owner.login}:{self.backport_branch}",
+                    base=self.name,
+                    state="open",
+                )
+            )
+            if not existing:
+                raise
+            self.backport_pr = existing[0]
+            logging.warning(
+                "Backport PR #%s for PR #%s already exists without label, reusing it",
+                self.backport_pr.number,
+                self.pr.number,
+            )
         self.backport_pr.add_to_labels(Labels.PR_BACKPORT)
         if Labels.PR_CRITICAL_BUGFIX in [label.name for label in self.pr.labels]:
             self.backport_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
