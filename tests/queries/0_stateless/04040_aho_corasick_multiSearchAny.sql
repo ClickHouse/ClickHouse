@@ -576,13 +576,13 @@ SELECT multiSearchAny('this string contains pattern_150 somewhere', {pattern_1: 
 -- Test case-insensitive variant with >255 patterns
 SELECT multiSearchAnyCaseInsensitive('THIS STRING CONTAINS PATTERN_200 SOMEWHERE', {pattern_1: Array(String)});
 
--- Test UTF8 variant
--- TODO: this is a lie. It's not testing unicode at all
+-- Test UTF8 variant with >255 patterns
 SELECT multiSearchAnyUTF8('unicode text with pattern_50 and emojis', {pattern_1: Array(String)});
 
--- Test case-insensitive UTF8 variant
+-- Test case-insensitive UTF8 variant with real Unicode case folding
+-- Ö (U+00D6) should match ö (U+00F8), Ü should match ü
 SELECT
-    multiSearchAnyCaseInsensitiveUTF8('I Cøntain ∆∆', ['AIN ∆∆', 'not here', 'something else'])
+    multiSearchAnyCaseInsensitiveUTF8('Ünïcödé text ÜBER', ['über', 'not here', 'something else'])
     SETTINGS force_daachorse_for_multi_search = 1;
 
 -- Test no match case
@@ -598,7 +598,7 @@ SELECT
   multiSearchAny('thing', ['thing1', 'thing2']),
   multiSearchAny('a zerp in here', ['zerp in here', 'zarp']),
   multiSearchAnyCaseInsensitive('nothing to SEE', ['something', 'else', 'see']),
-  multiSearchAnyCaseInsensitiveUTF8('I Cøntain ∆∆', ['AIN ∆∆', 'not here', 'something else'])
+  multiSearchAnyCaseInsensitiveUTF8('Ünïcödé text ÜBER', ['über', 'not here', 'something else'])
 SETTINGS force_daachorse_for_multi_search = 1;
 
 

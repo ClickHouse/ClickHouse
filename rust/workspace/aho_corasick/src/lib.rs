@@ -15,7 +15,7 @@ pub struct AhoCorasickHandle {
 /// * `patterns` - Pointer to array of pattern data pointers
 /// * `pattern_sizes` - Pointer to array of pattern sizes (u64)
 /// * `num_patterns` - Number of patterns
-/// * `case_insensitive` - If true, use ASCII case-insensitive matching
+/// * `case_insensitive` - If true, use Unicode-aware case-insensitive matching
 ///
 /// # Returns
 /// Pointer to the automaton handle, or null on error.
@@ -50,8 +50,13 @@ pub unsafe extern "C" fn aho_corasick_create(
             }
             let pattern = slice::from_raw_parts(pattern_ptrs[i], sizes[i] as usize);
             if case_insensitive {
-                // Lowercase for case-insensitive matching
-                pattern_vec.push(pattern.to_ascii_lowercase());
+                // Unicode-aware lowercasing: convert bytes to UTF-8 string, lowercase, convert back.
+                // For invalid UTF-8 (shouldn't happen with ClickHouse data), fall back to ASCII lowering.
+                let lowered = match std::str::from_utf8(pattern) {
+                    Ok(s) => s.to_lowercase().into_bytes(),
+                    Err(_) => pattern.to_ascii_lowercase(),
+                };
+                pattern_vec.push(lowered);
             } else {
                 pattern_vec.push(pattern.to_vec());
             }
@@ -138,10 +143,13 @@ pub unsafe extern "C" fn aho_corasick_search_batch(
 
             let haystack = slice::from_raw_parts(haystack_data.add(start), end - start);
 
-            // For case-insensitive, we need to lowercase the haystack
+            // For case-insensitive, we need to lowercase the haystack (Unicode-aware)
             let search_haystack = if handle_ref.case_insensitive {
                 lowercase_buf.clear();
-                lowercase_buf.extend(haystack.iter().map(|b| b.to_ascii_lowercase()));
+                match std::str::from_utf8(haystack) {
+                    Ok(s) => lowercase_buf.extend(s.to_lowercase().as_bytes()),
+                    Err(_) => lowercase_buf.extend(haystack.iter().map(|b| b.to_ascii_lowercase())),
+                }
                 &lowercase_buf[..]
             } else {
                 haystack
@@ -242,6 +250,58 @@ mod tests {
             assert_eq!(results[0], 1);
             assert_eq!(results[1], 1);
             assert_eq!(results[2], 0);
+
+            aho_corasick_free(handle);
+        }
+    }
+
+    #[test]
+    fn test_case_insensitive_unicode() {
+        // Test Unicode case folding: Ö (U+00D6) should match ö (U+00F6)
+        let pattern_straße = "STRASSE".as_bytes(); // ASCII pattern
+        let pattern_umlaut = "ÜBER".as_bytes(); // Ü = U+00DC
+        let patterns: Vec<&[u8]> = vec![pattern_straße, pattern_umlaut];
+        let pattern_ptrs: Vec<*const u8> = patterns.iter().map(|p| p.as_ptr()).collect();
+        let pattern_sizes: Vec<u64> = patterns.iter().map(|p| p.len() as u64).collect();
+
+        unsafe {
+            let handle = aho_corasick_create(
+                pattern_ptrs.as_ptr(),
+                pattern_sizes.as_ptr(),
+                patterns.len() as u64,
+                true,
+            );
+            assert!(!handle.is_null());
+
+            // "über" contains ü (U+00FC) which should match pattern "ÜBER" (Ü = U+00DC)
+            // "strasse" should match "STRASSE"
+            // "test" should not match
+            let haystack1 = "über\0".as_bytes();
+            let haystack2 = "strasse\0".as_bytes();
+            let haystack3 = "test\0".as_bytes();
+            let mut all_data: Vec<u8> = Vec::new();
+            all_data.extend_from_slice(haystack1);
+            all_data.extend_from_slice(haystack2);
+            all_data.extend_from_slice(haystack3);
+
+            let offsets: Vec<u64> = vec![
+                haystack1.len() as u64,
+                (haystack1.len() + haystack2.len()) as u64,
+                (haystack1.len() + haystack2.len() + haystack3.len()) as u64,
+            ];
+            let mut results: Vec<u8> = vec![0; 3];
+
+            aho_corasick_search_batch(
+                handle,
+                all_data.as_ptr(),
+                offsets.as_ptr(),
+                3,
+                results.as_mut_ptr(),
+            );
+
+            assert_eq!(results[0], 1, "über should match ÜBER case-insensitively");
+            assert_eq!(results[1], 1, "strasse should match STRASSE case-insensitively");
+            assert_eq!(results[2], 0, "test should not match");
 
             aho_corasick_free(handle);
         }
