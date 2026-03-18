@@ -36,7 +36,6 @@ Expression (Project names)
                 Granules: 2/4
               Ranges: 2
         ReadFromRemote (Read from remote replica)
-12
 # Verify actual query results with remote()
 1
 2

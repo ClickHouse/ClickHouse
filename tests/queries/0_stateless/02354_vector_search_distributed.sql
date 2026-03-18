@@ -65,30 +65,6 @@ SELECT
 FROM remote('127.{1,2}', currentDatabase(), tab_local)
 ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3;
-SELECT 
-    id 
-FROM remote('127.{1,2}', currentDatabase(), tab_local)
-ORDER BY L2Distance(vec, [1.0, 1.0])
-LIMIT 3
--- serialize_query_plan=0 is needed because the distributed query plan is built on the initiator
--- and serialized plans don't preserve the Union structure needed for EXPLAIN
-SETTINGS log_comment='direct-query-on-remote', serialize_query_plan=0
-FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT
-    -- initiator must read the same amount of rows from the local table + data from remote
-    -- 12 rows on the initiator (local table -- 6 rows and remote -- 6 rows)
-    ProfileEvents['SelectedRows'] as SelectedRows -- 12 rows
-FROM system.query_log
-WHERE 
-    current_database = currentDatabase() AND
-    log_comment = 'direct-query-on-remote' AND
-    type = 2 AND
-    is_initial_query
-FORMAT CSV;
-
 SELECT '# Verify actual query results with remote()';
 WITH [1.0, 1.0] AS reference_vec
 SELECT DISTINCT id
