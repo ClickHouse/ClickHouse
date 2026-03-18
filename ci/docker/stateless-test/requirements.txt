@@ -18,4 +18,4 @@ scipy==1.14.1
 
 # sqllogic tests
 sqlglot==28.10.1
-deepdiff==8.6.1
+deepdiff==8.6.2
