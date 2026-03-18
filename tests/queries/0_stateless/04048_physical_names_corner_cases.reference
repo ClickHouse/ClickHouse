@@ -73,3 +73,10 @@ c	c
 1	10	20
 2	20	40
 Test 11: flattened Nested guard
+Test 12: drop and re-add in single ALTER
+1	new_default
+2	inserted
+b	b
+b	1
+1	new_default
+2	inserted

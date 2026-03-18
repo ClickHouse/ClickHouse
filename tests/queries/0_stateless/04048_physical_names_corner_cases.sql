@@ -327,3 +327,21 @@ CREATE TABLE t_phys_flat_nested (a UInt64) ENGINE = MergeTree ORDER BY a
 INSERT INTO t_phys_flat_nested VALUES (1);
 ALTER TABLE t_phys_flat_nested ADD COLUMN n Nested(x UInt64, y String); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE t_phys_flat_nested;
+
+-- Test 12: DROP + re-ADD same column in a single ALTER gets a fresh physical name
+SELECT 'Test 12: drop and re-add in single ALTER';
+DROP TABLE IF EXISTS t_phys_drop_readd;
+CREATE TABLE t_phys_drop_readd (a UInt64, b String) ENGINE = MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+INSERT INTO t_phys_drop_readd VALUES (1, 'old_data');
+ALTER TABLE t_phys_drop_readd DROP COLUMN b, ADD COLUMN b String DEFAULT 'new_default';
+INSERT INTO t_phys_drop_readd VALUES (2, 'inserted');
+SELECT a, b FROM t_phys_drop_readd ORDER BY a;
+SELECT column, physical_name FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_phys_drop_readd' AND active AND column = 'b' AND NOT startsWith(column, '_')
+    ORDER BY name;
+OPTIMIZE TABLE t_phys_drop_readd FINAL;
+SELECT a, b FROM t_phys_drop_readd ORDER BY a;
+DROP TABLE t_phys_drop_readd;

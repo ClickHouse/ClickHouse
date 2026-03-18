@@ -500,6 +500,26 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
                     parent);
         }
 
+        /// Handle same-ALTER DROP + re-ADD for the same column: the column
+        /// exists in both old and new metadata so the set-diff below would
+        /// miss it. Force a fresh physical name to avoid exposing stale data.
+        std::set<String> explicitly_dropped;
+        for (const auto & command : commands)
+        {
+            if (command.ignore)
+                continue;
+            if (command.type == AlterCommand::DROP_COLUMN)
+                explicitly_dropped.insert(command.column_name);
+        }
+        for (const auto & dropped_name : explicitly_dropped)
+        {
+            if (new_col_names.contains(dropped_name) && local_mapping.hasLogicalName(dropped_name))
+            {
+                local_mapping.removeColumn(dropped_name);
+                local_mapping.addColumn(dropped_name, local_mapping.allocatePhysicalName());
+            }
+        }
+
         /// Allocate counter-based physical names for newly added columns.
         for (const auto & col : new_metadata.getColumns().getAllPhysical())
         {
@@ -514,11 +534,11 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
         /// side of a two-phase rename — those are cleaned up after commit).
         std::set<String> rename_old_set(plan.rename_old_names.begin(), plan.rename_old_names.end());
         for (const auto & col : old_metadata.getColumns().getAllPhysical())
-    {
-        if (!new_col_names.contains(col.name) && local_mapping.hasLogicalName(col.name)
-            && !rename_old_set.contains(col.name))
-            local_mapping.removeColumn(col.name);
-    }
+        {
+            if (!new_col_names.contains(col.name) && local_mapping.hasLogicalName(col.name)
+                && !rename_old_set.contains(col.name))
+                local_mapping.removeColumn(col.name);
+        }
 
     plan.new_mapping.emplace(std::move(local_mapping));
     return plan;

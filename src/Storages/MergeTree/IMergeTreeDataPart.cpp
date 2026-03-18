@@ -2032,13 +2032,6 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
     const auto current_columns = getMetadataSnapshot()->getColumns().getAllPhysical();
     const bool checksums_preloaded = !checksums.empty();
 
-    auto is_persistent_virtual = [](const String & column_name)
-    {
-        return column_name == RowExistsColumn::name
-            || column_name == BlockNumberColumn::name
-            || column_name == BlockOffsetColumn::name;
-    };
-
     /// Check whether all expected data files for a column (under its physical name)
     /// are present in the preloaded checksums. Used for case (b) above.
     auto has_column_files_in_checksums = [&](const NameAndTypePair & current_column, const String & physical_name)
@@ -2075,7 +2068,7 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
     for (const auto & column : loaded_columns)
     {
         /// Case (d): persistent virtual columns are not managed by the mapping.
-        if (is_persistent_virtual(column.name))
+        if (isPersistentVirtualColumn(column.name))
         {
             auto remapped_column = column;
             remapped_column.setPhysicalName(column.getNameInStorage());
