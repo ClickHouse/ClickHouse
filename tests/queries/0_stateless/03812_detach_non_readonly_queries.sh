@@ -4,6 +4,8 @@
 # query runs in a background thread. Covers both HTTP interface and native (clickhouse-client).
 set -e
 
+set -x
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Set before sourcing shell_config so CLICKHOUSE_CLIENT etc. use the build binary
 export CLICKHOUSE_BINARY="${CLICKHOUSE_BINARY:-${CURDIR}/../../../build/programs/clickhouse}"
