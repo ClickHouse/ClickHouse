@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-# Tag no-parallel: Fails due to failpoint intersection
+# Tags: no-parallel, no-replicated-database, no-shared-catalog
+# Tag no-parallel: fails due to failpoint intersection
+# Tags no-replicated-database, no-shared-catalog: failpoints are not activated on shards
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
