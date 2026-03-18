@@ -10,6 +10,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+trap '$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_mutate_task_pause_in_execute" 2>/dev/null ||:' EXIT
+
 function wait_for_mutation_done_or_killed()
 {
     local table=$1
