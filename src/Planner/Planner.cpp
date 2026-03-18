@@ -1800,13 +1800,16 @@ void Planner::buildPlanForUnionNode()
     }
 }
 
-/// Returns true if query caching should be used for this subquery node.
-/// For subqueries: explicit SETTINGS `use_query_cache` wins, then `query_cache_for_subqueries` propagation,
-/// otherwise no caching.
-static bool shouldUseQueryCacheForSubquery(const QueryNode & query_node, bool outer_can_use_cache, const Settings & settings)
+/// Returns true if the Planner-level query result cache (with `is_subquery = true` key) should be used.
+/// For actual subqueries (is_subquery=true): explicit SETTINGS `use_query_cache` on the node wins.
+/// For all Planner invocations: `query_cache_for_subqueries` propagation from outer query.
+/// By default, `use_query_cache` does NOT propagate.
+static bool shouldUseQueryCacheForSubquery(
+    const QueryNode & query_node, bool outer_can_use_cache, const Settings & settings, bool is_subquery)
 {
-    /// Check if `use_query_cache` was explicitly set in this node's SETTINGS clause
-    if (query_node.hasSettingsChanges())
+    /// Only check explicit per-node `use_query_cache` for actual subqueries.
+    /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
+    if (is_subquery && query_node.hasSettingsChanges())
     {
         for (const auto & change : query_node.getSettingsChanges())
         {
@@ -1815,11 +1818,10 @@ static bool shouldUseQueryCacheForSubquery(const QueryNode & query_node, bool ou
         }
     }
 
-    /// `query_cache_for_subqueries` enables automatic propagation from outer query
+    /// `query_cache_for_subqueries` enables the Planner-level cache for all query nodes
     if (settings[Setting::query_cache_for_subqueries] && outer_can_use_cache)
         return true;
 
-    /// By default, `use_query_cache` does NOT propagate to subqueries
     return false;
 }
 
@@ -1844,14 +1846,14 @@ void Planner::buildPlanForQueryNode()
     bool can_use_query_result_cache = query_context->getCanUseQueryResultCache();
     ASTPtr ast = select_query_info.query;
 
-    /// Determine if this subquery should use the query cache.
-    /// Only applies when this is actually a subquery (the outer query's caching is handled by `executeQuery`).
+    /// Determine if the query result cache should be used for this query node (with `is_subquery = true` key).
+    /// The Planner-level cache is separate from the `executeQuery`-level cache (`is_subquery = false`).
     /// Rules:
-    /// 1. Explicit SETTINGS `use_query_cache` on this node wins
-    /// 2. `query_cache_for_subqueries` propagates from outer query
-    /// 3. By default, no propagation
-    bool should_cache = select_query_options.is_subquery
-        && shouldUseQueryCacheForSubquery(query_node, can_use_query_result_cache, settings);
+    /// 1. For actual subqueries: explicit SETTINGS `use_query_cache` on the node wins
+    /// 2. `query_cache_for_subqueries` propagates from outer query (applies to all Planner invocations)
+    /// 3. By default, `use_query_cache` does NOT propagate from outer query to subqueries
+    bool should_cache = shouldUseQueryCacheForSubquery(query_node, can_use_query_result_cache, settings,
+        select_query_options.is_subquery);
 
     /// For explicit per-subquery opt-in (SETTINGS `use_query_cache = true` on the subquery),
     /// ensure the context flag is set so that `checkCanWriteQueryResultCache` works.
