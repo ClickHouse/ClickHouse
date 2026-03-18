@@ -8995,9 +8995,10 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
                 /// (matches `<prefix>.size<digits>`) — anything else is a real error.
                 if (other_full_name == full_stream_name)
                 {
-                    auto prefix_a = Nested::extractTableName(column.name);
-                    auto prefix_b = Nested::extractTableName(other_column_name);
-                    if (!prefix_a.empty() && prefix_a == prefix_b)
+                    auto [prefix_a, suffix_a] = Nested::splitName(column.name);
+                    auto [prefix_b, suffix_b] = Nested::splitName(other_column_name);
+                    if (!prefix_a.empty() && prefix_a == prefix_b
+                        && !suffix_a.empty() && !suffix_b.empty())
                     {
                         /// Verify the stream name is `<prefix>.size<digits>`.
                         auto expected_prefix = escapeForFileName(prefix_a) + ".size";
