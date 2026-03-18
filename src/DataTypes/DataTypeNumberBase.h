@@ -30,7 +30,6 @@ public:
     Field getDefault() const override;
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createUninitializedColumnWithSize(size_t size) const override;
 
     bool isParametric() const override { return false; }
     bool haveSubtypes() const override { return false; }
@@ -54,7 +53,7 @@ public:
 
     void updateHashImpl(SipHash &) const override { /* For numeric types, the type ID is sufficient */ }
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return std::make_shared<SerializationNumber<T>>(); }
+    SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
 };
 
 /// Prevent implicit template instantiation of DataTypeNumberBase for common numeric types

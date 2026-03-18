@@ -22,7 +22,6 @@ services:
         condition: service_completed_successfully
       db:
         condition: service_healthy
-    cpus: 3
 
   migrate:
     image: vakamo/lakekeeper:v0.9.4
@@ -36,7 +35,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    cpus: 3
 
   bootstrap:
     image: curlimages/curl
@@ -57,7 +55,6 @@ services:
       - '{"accept-terms-of-use": true}'
       - "-o"
       - "/dev/null"
-    cpus: 3
 
   db:
     image: postgres:16
@@ -71,7 +68,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 10s
-    cpus: 3
 
   minio:
     image: minio/minio:RELEASE.2024-07-31T05-46-26Z
@@ -85,7 +81,6 @@ services:
         aliases:
           - warehouse-rest.minio
     command: ["server", "/data", "--console-address", ":9001"]
-    cpus: 3
 
   mc:
     depends_on:
@@ -103,4 +98,3 @@ services:
       /usr/bin/mc mb minio/warehouse-rest --ignore-existing;
       /usr/bin/mc policy set public minio/warehouse-rest;
       " # FIX 3: Removed 'tail -f /dev/null' to make this a one-shot setup task.
-    cpus: 3

@@ -42,12 +42,9 @@ namespace ErrorCodes
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
-    DECLARE(UInt64, max_finished_sessions_cache_size, 100000, "Maximum number of finished sessions to track for stale request filtering. Entries are normally cleaned up when the corresponding Close commits; this limit is a safety cap.", 0) \
     DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", 0) \
     DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", 0) \
-    DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", 0) \
     DECLARE(UInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
-    DECLARE(UInt64, max_requests_append_bytes_size, 10*1024*1024, "Max size in bytes of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_flush_batch_size, 1000, "Max size of batch of requests that can be flushed together", 0) \
     DECLARE(UInt64, max_requests_quick_batch_size, 100, "Max size of batch of requests to try to get before proceeding with RAFT. Keeper will not wait for requests but take only requests that are already in queue" , 0) \
     DECLARE(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
@@ -60,7 +57,7 @@ namespace ErrorCodes
     DECLARE(UInt64, min_request_size_for_cache, 50 * 1024, "Minimal size of the request to cache the deserialization result. Caching can have negative effect on latency for smaller requests, set to 0 to disable", 0) \
     DECLARE(UInt64, raft_limits_reconnect_limit, 50, "If connection to a peer is silent longer than this limit * (multiplied by heartbeat interval), we re-establish the connection.", 0) \
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
-    DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
+    DECLARE(Bool, async_replication, false, "Enable async replication. All write and read guarantees are preserved while better performance is achieved. Settings is disabled by default to not break backwards compatibility.", 0) \
     DECLARE(Bool, experimental_use_rocksdb, false, "Use rocksdb as backend storage", 0) \
     DECLARE(UInt64, rocksdb_load_batch_size, 1000, "Size of write batch used during snapshot loading", 0) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
@@ -241,8 +238,6 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(coordination_settings[CoordinationSetting::max_requests_batch_size]);
     writeText("max_requests_batch_bytes_size=", buf);
     write_int(coordination_settings[CoordinationSetting::max_requests_batch_bytes_size]);
-    writeText("max_request_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_request_size]);
     writeText("max_flush_batch_size=", buf);
     write_int(coordination_settings[CoordinationSetting::max_flush_batch_size]);
     writeText("max_request_queue_size=", buf);
@@ -288,9 +283,6 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_bool(coordination_settings[CoordinationSetting::use_xid_64]);
     writeText("check_node_acl_on_remove=", buf);
     write_bool(coordination_settings[CoordinationSetting::check_node_acl_on_remove]);
-
-    writeText("max_finished_sessions_cache_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_finished_sessions_cache_size]);
 }
 
 KeeperConfigurationAndSettingsPtr

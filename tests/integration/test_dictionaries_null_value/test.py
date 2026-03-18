@@ -15,8 +15,7 @@ def started_cluster():
 
         instance.query(
             """
-            DROP DATABASE IF EXISTS test;
-            CREATE DATABASE test;
+            CREATE DATABASE IF NOT EXISTS test;
             DROP TABLE IF EXISTS test.source;
             CREATE TABLE test.source (id UInt64, key0 UInt8, key0_str String, key1 UInt8,
                     StartDate Date, EndDate Date,

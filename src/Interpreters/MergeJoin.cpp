@@ -55,8 +55,8 @@ String deriveTempName(const String & name, JoinTableSide block_side)
 ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const String & src_column_name, JoinTableSide block_side)
 {
     size_t res_size = block.rows();
-    auto data_col = ColumnUInt8::create(res_size, static_cast<UInt8>(0));
-    auto null_map = ColumnUInt8::create(res_size, static_cast<UInt8>(0));
+    auto data_col = ColumnUInt8::create(res_size, 0);
+    auto null_map = ColumnUInt8::create(res_size, 0);
 
     if (!src_column_name.empty())
     {
@@ -78,8 +78,8 @@ ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const Stri
     return {res_col, res_col_type, res_name};
 }
 
-template <bool has_left_nulls, bool has_right_nulls, bool track = false>
-Int64 nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
+template <bool has_left_nulls, bool has_right_nulls>
+int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
 {
     static constexpr int null_direction_hint = 1;
 
@@ -122,10 +122,7 @@ Int64 nullableCompareAt(const IColumn & left_column, const IColumn & right_colum
         }
     }
 
-    if constexpr (track)
-        return left_column.compareTrackAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
-    else
-        return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+    return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
 }
 
 /// Get first and last row from sorted block
@@ -248,15 +245,11 @@ public:
         /// SortCursorImpl can work with permutation, but MergeJoinCursor can't.
         if (impl.permutation)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinCursor doesn't support permutation");
-
-        if (impl.sort_columns_size == 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinCursor requires sort_columns size greater then 0");
     }
 
-    size_t position() const { return impl.getPos(); }
+    size_t position() const { return impl.getRow(); }
     size_t end() const { return impl.rows; }
-    bool atEnd() const { return impl.getPos() >= impl.rows; }
-    void next() { ++impl.getPosRef(); }
+    bool atEnd() const { return impl.getRow() >= impl.rows; }
     void nextN(size_t num) { impl.getPosRef() += num; }
 
     void setCompareNullability(const MergeJoinCursor & rhs)
@@ -288,8 +281,8 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected block size");
 
         size_t last_position = end() - 1;
-        Int64 first_vs_max = 0;
-        Int64 last_vs_min = 0;
+        int first_vs_max = 0;
+        int last_vs_min = 0;
 
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
         {
@@ -319,60 +312,52 @@ private:
     template <bool left_nulls, bool right_nulls>
     MergeJoinEqualRange getNextEqualRangeImpl(MergeJoinCursor & rhs)
     {
-        if (atEnd() || rhs.atEnd())
-            return MergeJoinEqualRange{position(), rhs.position(), 0, 0};
-
-        while (true)
+        while (!atEnd() && !rhs.atEnd())
         {
-            Int64 cmp = nullableCompareAt<left_nulls, right_nulls, true>(
-                *impl.sort_columns[0], *rhs.impl.sort_columns[0], position(), rhs.position());
-
-            for (size_t i = 1; (!cmp) && i < impl.sort_columns_size; ++i)
-            {
-                const auto * left_column = impl.sort_columns[i];
-                const auto * right_column = rhs.impl.sort_columns[i];
-
-                cmp = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, position(), rhs.position());
-            }
-
+            int cmp = compareAtCursor<left_nulls, right_nulls>(rhs);
             if (cmp < 0)
-            {
-                nextN(-cmp);
-                if (atEnd())
-                    break;
-            }
+                impl.next();
             else if (cmp > 0)
-            {
-                rhs.nextN(cmp);
-                if (rhs.atEnd())
-                    break;
-            }
-            else
-                return MergeJoinEqualRange{position(), rhs.position(), getEqualLength(), rhs.getEqualLength()};
+                rhs.impl.next();
+            else if (!cmp)
+                return MergeJoinEqualRange{impl.getRow(), rhs.impl.getRow(), getEqualLength(), rhs.getEqualLength()};
         }
 
-        return MergeJoinEqualRange{position(), rhs.position(), 0, 0};
+        return MergeJoinEqualRange{impl.getRow(), rhs.impl.getRow(), 0, 0};
+    }
+
+    template <bool left_nulls, bool right_nulls>
+    int ALWAYS_INLINE compareAtCursor(const MergeJoinCursor & rhs) const
+    {
+        for (size_t i = 0; i < impl.sort_columns_size; ++i)
+        {
+            const auto * left_column = impl.sort_columns[i];
+            const auto * right_column = rhs.impl.sort_columns[i];
+
+            int res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, impl.getRow(), rhs.impl.getRow());
+            if (res)
+                return res;
+        }
+        return 0;
     }
 
     /// Expects !atEnd()
     size_t getEqualLength()
     {
-        const size_t base_pos = impl.getPos();
-        size_t pos = base_pos + 1;
+        size_t pos = impl.getRow() + 1;
         for (; pos < impl.rows; ++pos)
-            if (cmpPrev(base_pos, pos))
+            if (!samePrev(pos))
                 break;
-        return pos - base_pos;
+        return pos - impl.getRow();
     }
 
-    int ALWAYS_INLINE cmpPrev(size_t base_pos, size_t pos) const
+    /// Expects lhs_pos > 0
+    bool ALWAYS_INLINE samePrev(size_t lhs_pos) const
     {
-        int res = impl.sort_columns[0]->compareAt(base_pos, pos, *(impl.sort_columns[0]), 1);
-
-        for (size_t i = 1; (!res) && i < impl.sort_columns_size; ++i)
-            res = impl.sort_columns[i]->compareAt(base_pos, pos, *(impl.sort_columns[i]), 1);
-
-        return res;
+        for (size_t i = 0; i < impl.sort_columns_size; ++i)
+            if (impl.sort_columns[i]->compareAt(lhs_pos - 1, lhs_pos, *(impl.sort_columns[i]), 1) != 0)
+                return false;
+        return true;
     }
 };
 

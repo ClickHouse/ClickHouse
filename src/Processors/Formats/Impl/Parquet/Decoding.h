@@ -53,7 +53,7 @@ struct Dictionary
 struct PageDecoder
 {
     virtual void skip(size_t num_values) = 0;
-    virtual void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) = 0;
+    virtual void decode(size_t num_values, IColumn &) = 0;
 
     explicit PageDecoder(std::span<const char> data_) : data(data_.data()), end(data_.data() + data_.size()) {}
     virtual ~PageDecoder() = default;
@@ -155,8 +155,7 @@ struct PageDecoderInfo
 };
 
 
-/// Input physical type: BOOLEAN, INT32, or INT64.
-/// input_size in {1, 4, 8}.
+/// Input physical type: INT32 or INT64.
 /// Output column type: [U]Int{8,16,32,64}.
 /// Output Field type: [U]Int64, IPv4, or Decimal{32,64}.
 struct IntConverter : public FixedSizeConverter

@@ -1,8 +1,6 @@
 #pragma once
-
 #include <cstddef>
 #include <type_traits>
-
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -24,9 +22,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/castColumn.h>
-#include <Columns/ColumnObject.h>
-#include <Columns/ColumnDynamic.h>
-#include <DataTypes/DataTypeObject.h>
 
 
 namespace DB
@@ -99,35 +94,13 @@ private:
 
     static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] == static_cast<Initial>(right);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) == right;
-        }
-        else
-        {
-            return left[i] == right;
-        }
+        return left[i] == right;
     }
 
     static constexpr bool compare(
             const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j) noexcept
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] == static_cast<Initial>(right[j]);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) == right[j];
-        }
-        else
-        {
-            return left[i] == right[j];
-        }
+        return left[i] == right[j];
     }
 
     /// LowCardinality
@@ -149,18 +122,7 @@ private:
 
     static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] >= static_cast<Initial>(right);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) >= right;
-        }
-        else
-        {
-            return left[i] >= right;
-        }
+        return left[i] >= right;
     }
 
     static bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) { return left[i] >= right; }
@@ -521,24 +483,14 @@ public:
 
         DataTypePtr inner_type;
 
-        const DataTypeObject * object_type = checkAndGetDataType<DataTypeObject>(first_argument_type.get());
+        /// If map is first argument only has(map_column, key) function is supported
         if constexpr (std::is_same_v<ConcreteAction, HasAction>)
         {
-            if (!array_type && !map_type && !object_type)
+            if (!array_type && !map_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array, map or JSON. Actual {}",
+                    "First argument for function {} must be an array or map. Actual {}",
                     getName(),
                     first_argument_type->getName());
-
-            if (object_type)
-            {
-                if (!isStringOrFixedString(second_argument_type))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Second argument for function {} must be String when the first argument is JSON. Actual {}",
-                        getName(), second_argument_type->getName());
-
-                return std::make_shared<DataTypeUInt8>();
-            }
 
             inner_type = map_type ? map_type->getKeyType() : array_type->getNestedType();
         }
@@ -571,9 +523,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         if (auto res = executeMap(arguments, result_type))
-            return res;
-
-        if (auto res = executeObject(arguments, result_type))
             return res;
 
         if (auto res = executeArrayLowCardinality(arguments))
@@ -860,7 +809,7 @@ private:
             if (right->isNullable())
                 right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
 
-            std::string_view elem = right->getDataAt(0);
+            StringRef elem = right->getDataAt(0);
             const auto & left_dict = left_lc->getDictionary();
 
             if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
@@ -919,197 +868,6 @@ private:
         return executeArrayImpl(arguments_copy, result_type);
     }
 
-    /**
-     * Helper function to check if a path or its prefix exists in shared data.
-     */
-     static bool hasPathInSharedData(
-        const String & path,
-        const String & prefix,
-        const ColumnString * shared_paths,
-        const ColumnVector<UInt64>::Container & shared_offsets,
-        size_t row)
-    {
-        if (!shared_paths)
-            return false;
-
-        size_t start = shared_offsets[static_cast<ssize_t>(row) - 1];
-        size_t end = shared_offsets[row];
-
-        if (start == end)
-            return false;
-
-        /// Check for exact match
-        size_t pos = ColumnObject::findPathLowerBoundInSharedData(path, *shared_paths, start, end);
-        if (pos < end && shared_paths->getDataAt(pos) == path)
-            return true;
-
-        /// Check for prefix match (path + ".")
-        pos = ColumnObject::findPathLowerBoundInSharedData(prefix, *shared_paths, start, end);
-        if (pos < end && shared_paths->getDataAt(pos).starts_with(prefix))
-            return true;
-
-        return false;
-    }
-
-    /**
-     * Check if a path exists in JSON object for a specific row.
-     * Returns true if the path (or any path with this prefix) exists.
-     */
-    static bool hasPathInObjectRow(
-        const ColumnObject & object_column,
-        size_t row,
-        const String & path,
-        const String & prefix,
-        const ColumnString * shared_paths,
-        const ColumnVector<UInt64>::Container & shared_offsets)
-    {
-        /// First, check for the requested path in typed paths.
-        /// Typed paths are always considered to be present in each row (even if null).
-        const auto & typed_paths = object_column.getTypedPaths();
-        if (typed_paths.contains(path))
-            return true;
-
-        for (const auto & [key, col] : typed_paths)
-        {
-            if (key.starts_with(prefix))
-                return true;
-        }
-
-        /// Second, check for the requested path in dynamic paths.
-        /// For dynamic paths, we consider null equivalent to absence of the value.
-        const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
-        if (auto it = dynamic_paths.find(path); it != dynamic_paths.end() && !it->second->isNullAt(row))
-            return true;
-
-        for (const auto & [key, col] : dynamic_paths)
-        {
-            if (key.starts_with(prefix) && !col->isNullAt(row))
-                return true;
-        }
-
-        /// Third, check for the requested path in shared data.
-        return hasPathInSharedData(path, prefix, shared_paths, shared_offsets, row);
-    }
-
-    /**
-     * Execute has() function for JSON/Object type.
-     * Checks if a path exists in the JSON object.
-     *
-     * The function checks three storage tiers in order:
-     * 1. Typed paths - explicitly declared paths that are always present (even if null)
-     * 2. Dynamic paths - paths inferred at runtime, null means absence
-     * 3. Shared data - overflow storage for rare paths, uses binary search
-     *
-     * Optimizations:
-     * - For constant path: if found in typed paths, returns 1 for all rows immediately
-     * - For constant path: pre-collects relevant dynamic columns to avoid repeated lookups
-     * - For non-constant path: uses hasPathInObjectRow() helper with early returns
-     *
-     * @param arguments - [0] JSON column (or const JSON), [1] path column
-     * @return ColumnUInt8 with 1 if path exists, 0 otherwise
-    */
-    ColumnPtr executeObject(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/) const
-    {
-        if constexpr (!std::is_same_v<ConcreteAction, HasAction>)
-            return nullptr;
-
-        const auto * object_type = checkAndGetDataType<DataTypeObject>(arguments[0].type.get());
-        if (!object_type)
-            return nullptr;
-
-        auto non_const_object_column = arguments[0].column->convertToFullColumnIfConst();
-        const auto & object_column = assert_cast<const ColumnObject &>(*non_const_object_column);
-        const auto & path_column = *arguments[1].column;
-        const size_t input_rows_count = object_column.size();
-
-        if (input_rows_count == 0)
-            return ColumnUInt8::create();
-
-        auto res_col = ColumnUInt8::create(input_rows_count);
-        auto & res_data = res_col->getData();
-
-        const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
-        const auto & shared_offsets = object_column.getSharedDataOffsets();
-
-        if (isColumnConst(path_column))
-        {
-            const String path(path_column.getDataAt(0));
-            const String prefix = path + ".";
-
-            /// Optimization: if path or its prefix exists in typed paths,
-            /// we can return 1 for all rows since typed paths are always present.
-            const auto & typed_paths = object_column.getTypedPaths();
-            bool found_in_typed = typed_paths.contains(path);
-            if (!found_in_typed)
-            {
-                for (const auto & [key, col] : typed_paths)
-                {
-                    if (key.starts_with(prefix))
-                    {
-                        found_in_typed = true;
-                        break;
-                    }
-                }
-            }
-
-            if (found_in_typed)
-            {
-                /// Path exists in typed paths - return 1 for all rows
-                std::fill(res_data.begin(), res_data.end(), 1);
-                return res_col;
-            }
-
-            /// Collect columns from dynamic paths that match exact path or prefix.
-            /// These columns need to be checked for non-null values per row.
-            std::vector<const IColumn *> relevant_dynamic_columns;
-            const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
-
-            if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
-                relevant_dynamic_columns.push_back(it->second);
-
-            for (const auto & [key, col] : dynamic_paths)
-            {
-                if (key.starts_with(prefix))
-                    relevant_dynamic_columns.push_back(col);
-            }
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                bool found = false;
-
-                /// Check dynamic paths - need to verify non-null for each row
-                for (const auto * col : relevant_dynamic_columns)
-                {
-                    if (!col->isNullAt(i))
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-
-                /// Check shared data if not found in dynamic paths
-                if (!found)
-                {
-                    found = hasPathInSharedData(path, prefix, shared_paths, shared_offsets, i);
-                }
-                res_data[i] = found;
-            }
-        }
-        else
-        {
-            /// Non-constant path: check each row individually
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                const String path(path_column.getDataAt(i));
-                const String prefix = path + ".";
-
-                res_data[i] = hasPathInObjectRow(object_column, i, path, prefix, shared_paths, shared_offsets);
-            }
-        }
-
-        return res_col;
-    }
-
     static ColumnPtr executeString(const ColumnsWithTypeAndName & arguments)
     {
         const auto * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
@@ -1136,7 +894,7 @@ private:
                     array->getOffsets(),
                     left->getOffsets(),
                     item_const_string->getChars(),
-                    item_const_string->getDataAt(0).size(),
+                    item_const_string->getDataAt(0).size,
                     result->getData(),
                     null_map_data,
                     null_map_item);
