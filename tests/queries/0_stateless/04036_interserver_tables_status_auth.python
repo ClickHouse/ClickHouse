@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""
+Regression test for unauthenticated TablesStatusRequest in interserver mode.
+
+Before the fix, a client could send TablesStatusRequest before completing
+cluster-secret authentication, leaking table existence and replication status.
+After the fix, the server closes the connection with AUTHENTICATION_FAILED.
+"""
+
+import os
+import socket
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+
+# Use a revision that supports TablesStatusRequest (>= 54226) but is below
+# the version that adds many optional Hello fields (< 54461), so the
+# server Hello response is easy to parse deterministically.
+CLIENT_REVISION = 54449
+
+USER_INTERSERVER_MARKER = " INTERSERVER SECRET "
+
+
+# ---------- wire-format helpers ----------
+
+def write_var_uint(x, ba):
+    for _ in range(9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+        ba.append(byte)
+        x >>= 7
+        if x == 0:
+            return
+
+
+def write_string_binary(s, ba):
+    b = s.encode("utf-8")
+    write_var_uint(len(b), ba)
+    ba.extend(b)
+
+
+def read_strict(s, size):
+    buf = bytearray()
+    while len(buf) < size:
+        chunk = s.recv(size - len(buf))
+        if not chunk:
+            raise EOFError("Connection closed while reading")
+        buf.extend(chunk)
+    return buf
+
+
+def read_var_uint(s):
+    x = 0
+    for i in range(9):
+        byte = read_strict(s, 1)[0]
+        x |= (byte & 0x7F) << (7 * i)
+        if not (byte & 0x80):
+            return x
+    return x
+
+
+def read_string_binary(s):
+    size = read_var_uint(s)
+    return read_strict(s, size).decode("utf-8")
+
+
+# ---------- protocol helpers ----------
+
+def send_interserver_hello(s):
+    """Send Hello packet claiming to be an interserver connection."""
+    ba = bytearray()
+    write_var_uint(0, ba)                         # packet type: Hello
+    write_string_binary("python-test", ba)        # client name
+    write_var_uint(24, ba)                        # version major
+    write_var_uint(3, ba)                         # version minor
+    write_var_uint(CLIENT_REVISION, ba)           # revision
+    write_string_binary("", ba)                   # database (empty)
+    write_string_binary(USER_INTERSERVER_MARKER, ba)  # user
+    write_string_binary("", ba)                   # password (empty)
+    # processClusterNameAndSalt is called synchronously inside receiveHello
+    # before sendHello, so we must append cluster+salt in the same send.
+    write_string_binary("", ba)                   # cluster name
+    write_string_binary("", ba)                   # salt
+    s.sendall(bytes(ba))
+
+
+def receive_server_hello(s):
+    """
+    Parse the server Hello response for CLIENT_REVISION = 54449.
+
+    Fields present at this revision:
+      VarUInt  packet_type  (must be 0)
+      String   server_name
+      VarUInt  version_major
+      VarUInt  version_minor
+      VarUInt  server_revision
+      String   timezone      (>= 54058)
+      String   display_name  (>= 54372)
+      VarUInt  version_patch (>= 54401)
+    Fields NOT present (< 54461 / 54462 / 54470 / 54471 / 54474 ...):
+      password_complexity_rules, nonce, chunked caps, settings, etc.
+    """
+    ptype = read_var_uint(s)
+    if ptype == 2:
+        # Exception packet – server rejected us before Hello
+        raise RuntimeError("Server sent Exception during Hello handshake")
+    assert ptype == 0, f"Expected Hello (0), got {ptype}"
+    read_string_binary(s)   # server_name
+    read_var_uint(s)        # version_major
+    read_var_uint(s)        # version_minor
+    read_var_uint(s)        # server_revision
+    read_string_binary(s)   # timezone
+    read_string_binary(s)   # display_name
+    read_var_uint(s)        # version_patch
+
+
+def send_tables_status_request(s, database, table):
+    """Send a TablesStatusRequest (packet type 5) for one table."""
+    ba = bytearray()
+    write_var_uint(5, ba)               # packet type: TablesStatusRequest
+    write_var_uint(1, ba)               # number of tables
+    write_string_binary(database, ba)   # database name
+    write_string_binary(table, ba)      # table name
+    s.sendall(bytes(ba))
+
+
+# ---------- test ----------
+
+def test_unauthenticated_tables_status_is_rejected():
+    """
+    Verify that sending TablesStatusRequest before completing interserver
+    authentication results in the connection being closed (not a response).
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(5)
+    sock.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+
+    try:
+        send_interserver_hello(sock)
+        receive_server_hello(sock)
+        send_tables_status_request(sock, CLICKHOUSE_DATABASE, "t_interserver_auth_check")
+
+        # After the fix the server throws AUTHENTICATION_FAILED which is caught
+        # by the unauthenticated-interserver guard (lines 917-924) and silently
+        # closes the connection.  We expect EOF here.
+        try:
+            data = sock.recv(4096)
+            if data:
+                print(
+                    "FAIL: server returned data instead of closing connection; "
+                    f"first bytes: {data[:16].hex()}"
+                )
+            else:
+                print("OK: connection closed without leaking table status")
+        except (ConnectionResetError, socket.timeout):
+            # A reset or timeout is also acceptable – the server dropped us.
+            print("OK: connection closed without leaking table status")
+    finally:
+        sock.close()
+
+
+if __name__ == "__main__":
+    test_unauthenticated_tables_status_is_rejected()
