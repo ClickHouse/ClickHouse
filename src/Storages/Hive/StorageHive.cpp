@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -1096,7 +1095,7 @@ void registerStorageHive(StorageFactory & factory)
                 args.columns,
                 args.constraints,
                 args.comment,
-                partition_by->ptr(),
+                args.storage_def->getChild(*partition_by),
                 std::move(hive_settings),
                 args.getContext());
         },

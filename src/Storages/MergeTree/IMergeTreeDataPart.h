@@ -27,7 +27,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Poco/LRUCache.h>
 
 
 namespace zkutil
@@ -51,7 +50,6 @@ class IMergeTreeReader;
 class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
-class PackedFilesReader;
 
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -109,8 +107,6 @@ public:
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
     const ColumnSizeByName & getColumnSizes() const;
-    /// Return the size of all files required to read the specified subcolumn.
-    ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -173,9 +169,7 @@ public:
     void remove();
 
     ColumnsStatistics loadStatistics() const;
-    ColumnsStatistics loadStatistics(const Names & required_columns) const;
     Estimates getEstimates() const;
-    void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -188,12 +182,6 @@ public:
 
     /// Removes marks from cache for all columns in part.
     virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
-
-    /// Loads index marks for secondary indices and saves them into the index mark cache.
-    void loadIndexMarksToCache(MarkCache * index_mark_cache) const;
-
-    /// Removes index marks for secondary indices from the index mark cache.
-    void removeIndexMarksFromCache(MarkCache * index_mark_cache) const;
 
     /// Removes data related to data part from mark and primary index caches.
     void clearCaches();
@@ -420,7 +408,7 @@ public:
     UInt64 getIndexGranularityBytes() const;
     UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
-    IndexSize getIndexSizeFromFile() const;
+    UInt64 getIndexSizeFromFile() const;
 
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     UInt64 getBytesUncompressedOnDisk() const { return bytes_uncompressed_on_disk; }
@@ -674,19 +662,10 @@ private:
     mutable ColumnSize total_columns_size;
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
     mutable ColumnSizeByName columns_sizes;
+
     mutable ColumnSize total_secondary_indices_size;
 
     mutable IndexSizeByName secondary_index_sizes;
-
-    /// Sometimes we need to calculate the size of all files required to read a specific subcolumn.
-    /// We do it on the first request and save it in the subcolumns_sizes_cache.
-    /// The number of subcolumns can be infinite due to dynamic subcolumns in JSON, so we use LRU cache here.
-    mutable Poco::LRUCache<String, ColumnSize> subcolumns_sizes_cache = Poco::LRUCache<String, ColumnSize>(1024);
-
-    /// PackedFilesReader for statistics archive.
-    /// Lazily loaded on first access to loadStatistics when packed format is used.
-    mutable std::mutex statistics_reader_mutex;
-    mutable std::unique_ptr<PackedFilesReader> statistics_reader TSA_GUARDED_BY(statistics_reader_mutex);
 
 protected:
     /// Total size on disk, not only columns. May not contain size of
@@ -714,9 +693,6 @@ protected:
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
-
-    /// Calculate the size of all files required to read a specified subcolumn.
-    virtual ColumnSize calculateSubcolumnSize(const String & /*subcolumn_name*/) const { return {}; }
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -760,7 +736,7 @@ private:
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized on a first access.
     mutable std::mutex estimates_mutex;
-    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
+    mutable std::optional<Estimates> estimates;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
@@ -803,10 +779,6 @@ private:
     /// any specifial compression.
     void loadDefaultCompressionCodec();
     void loadSourcePartsSet();
-
-    ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
-    ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
-    PackedFilesReader * getStatisticsPackedReader() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
     void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;

@@ -5,8 +5,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
-#include <Common/OpenTelemetryTraceContext.h>
-#include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -18,9 +16,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-#include <Coordination/KeeperCommon.h>
-#include <Common/ZooKeeper/KeeperSpans.h>
-#include <Interpreters/Context.h>
 #include <Common/thread_local_rng.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperReconfiguration.h>
@@ -32,7 +27,6 @@
 #include <future>
 #include <chrono>
 #include <limits>
-#include <string>
 
 #include <fmt/ranges.h>
 
@@ -52,8 +46,6 @@ namespace ProfileEvents
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
-    extern const Event KeeperStaleRequestsSkipped;
-    extern const Event KeeperFinishedSessionsCacheFull;
 }
 
 namespace HistogramMetrics
@@ -70,7 +62,6 @@ namespace DB
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
-    extern const CoordinationSettingsUInt64 max_finished_sessions_cache_size;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
@@ -168,21 +159,6 @@ void KeeperDispatcher::requestThread()
 
     while (!shutdown_called)
     {
-        const auto handle_opentelemetery_spans = [this](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
-        {
-            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                request->spans.dispatcher_requests_queue,
-                [&]
-                {
-                    return std::vector<OpenTelemetry::SpanAttribute>{
-                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                        {"keeper.session_id", session_id},
-                        {"keeper.xid", request->xid},
-                        {"keeper.dispatcher.requests_queue.size", requests_queue->size()},
-                    };
-                });
-        };
-
         KeeperRequestForSession request;
 
         const auto & coordination_settings = configuration_and_settings->coordination_settings;
@@ -204,47 +180,6 @@ void KeeperDispatcher::requestThread()
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
                 if (shutdown_called)
                     break;
-
-                /// Skip stale requests for finished sessions.
-                /// Close must pass through RAFT (ephemeral cleanup, watch cleanup, etc.).
-                /// SessionID uses internal IDs (session_id = -1), ignore it just to be safe.
-                auto is_stale_session_request = [&](const KeeperRequestForSession & req) -> bool
-                {
-                    if (req.request->getOpNum() != Coordination::OpNum::Close
-                        && req.request->getOpNum() != Coordination::OpNum::SessionID)
-                    {
-                        std::lock_guard lock(finished_sessions_mutex);
-                        if (finished_sessions.contains(req.session_id))
-                        {
-                            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-
-                            /// Finalize the dispatcher_requests_queue span that was initialized
-                            /// when the request was enqueued. Without this the span leaks because
-                            /// handle_opentelemetery_spans (which normally finalizes it) is skipped.
-                            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                                req.request->spans.dispatcher_requests_queue,
-                                [&]
-                                {
-                                    return std::vector<OpenTelemetry::SpanAttribute>{
-                                        {"keeper.operation", Coordination::opNumToString(req.request->getOpNum())},
-                                        {"keeper.session_id", req.session_id},
-                                        {"keeper.xid", req.request->xid},
-                                        {"keeper.stale", true},
-                                    };
-                                },
-                                OpenTelemetry::SpanStatus::ERROR,
-                                "Session finished before request could execute");
-
-                            return true;
-                        }
-                    }
-                    return false;
-                };
-
-                if (is_stale_session_request(request))
-                    continue;
-
-                handle_opentelemetery_spans(request.request, request.session_id);
 
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
@@ -283,18 +218,10 @@ void KeeperDispatcher::requestThread()
                         if (requests_queue->tryPop(request))
                         {
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
-
-                            /// Skip stale requests for finished sessions during batch assembly.
-                            if (is_stale_session_request(request))
-                                return true; // consumed, keep draining
-
-                            handle_opentelemetery_spans(request.request, request.session_id);
-
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
                             {
                                 const auto & last_request = current_batch.back();
-                                ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
                                 std::lock_guard lock(read_request_queue_mutex);
                                 read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
                             }
@@ -321,7 +248,9 @@ void KeeperDispatcher::requestThread()
 
                     const auto prev_result_done = [&]
                     {
-                        return !prev_result || prev_result->has_result();
+                        /// has_result == false && get_result_code == OK means that our request still not processed.
+                        /// Sometimes NuRaft set errorcode without setting result, so we check both here.
+                        return !prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK;
                     };
 
                     /// Waiting until previous append will be successful, or batch is big enough
@@ -409,27 +338,10 @@ void KeeperDispatcher::requestThread()
                 /// Read request always goes after write batch (last request)
                 if (has_read_request)
                 {
-                    bool finished;
-                    {
-                        std::lock_guard lock(finished_sessions_mutex);
-                        finished = finished_sessions.contains(request.session_id);
-                    }
-                    if (!finished)
-                    {
-                        if (server->isLeaderAlive())
-                            server->putLocalReadRequest({request});
-                        else
-                            addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
-                    }
+                    if (server->isLeaderAlive())
+                        server->putLocalReadRequest({request});
                     else
-                    {
-                        /// The session became finished after the initial stale check
-                        /// (e.g. a Close was committed in the preceding write batch).
-                        /// The dispatcher_requests_queue span was already finalized
-                        /// at handle_opentelemetery_spans above.
-                        ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-                        LOG_TRACE(log, "Dropping stale read request for finished session {}, xid {}", request.session_id, request.request->xid);
-                    }
+                        addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
                 }
             }
         }
@@ -456,34 +368,13 @@ void KeeperDispatcher::responseThread()
             if (shutdown_called)
                 break;
 
-            const UInt64 dequeue_time_us = ZooKeeperOpentelemetrySpans::now();
-
-            bool response_was_sent = false;
             try
             {
-                response_was_sent = setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
+                setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
             }
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-
-            if (response_was_sent && response_for_session.request)
-            {
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    response_for_session.request->spans.dispatcher_responses_queue,
-                    [&]
-                    {
-                        return std::vector<OpenTelemetry::SpanAttribute>{
-                            {"keeper.operation", Coordination::opNumToString(response_for_session.request->getOpNum())},
-                            {"keeper.session_id", response_for_session.session_id},
-                            {"keeper.xid", response_for_session.request->xid},
-                            {"keeper.dispatcher.responses_queue.size", responses_queue.size()},
-                        };
-                    },
-                    OpenTelemetry::SpanStatus::OK,
-                    "",
-                    dequeue_time_us);
             }
         }
     }
@@ -515,7 +406,7 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
-bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
+void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
 
@@ -526,12 +417,11 @@ bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
 
         /// Nobody waits for this session id
         if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.contains(session_id_resp.internal_id))
-            return false;
+            return;
 
         auto callback = new_session_id_response_callback[session_id_resp.internal_id];
         callback(response, request);
         new_session_id_response_callback.erase(session_id_resp.internal_id);
-        return true;
     }
     else /// Normal response, just write to client
     {
@@ -539,7 +429,7 @@ bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
 
         /// Session was disconnected, just skip this response
         if (session_response_callback == session_to_response_callback.end())
-            return false;
+            return;
 
         session_response_callback->second(response, request);
 
@@ -549,8 +439,6 @@ bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
             session_to_response_callback.erase(session_response_callback);
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
-
-        return true;
     }
 }
 
@@ -573,8 +461,6 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (keeper_context->isShutdownCalled())
         return false;
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
-
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
     {
@@ -592,15 +478,6 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
     {
-        std::lock_guard lock(finished_sessions_mutex);
-        if (finished_sessions.contains(session_id))
-        {
-            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-            return false;
-        }
-    }
-
-    {
         /// If session was already disconnected than we will ignore requests
         std::lock_guard lock(session_to_response_callback_mutex);
         if (!session_to_response_callback.contains(session_id))
@@ -617,6 +494,7 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
         return false;
 
     server->putLocalReadRequest(request_info);
+    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
     return true;
 }
 
@@ -657,64 +535,15 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                     {
                         for (const auto & read_request : request_queue_it->second)
                         {
-                            /// Skip reads whose session has been finished
-                            {
-                                std::lock_guard finished_lock(finished_sessions_mutex);
-                                if (finished_sessions.contains(read_request.session_id))
-                                {
-                                    ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-
-                                    ZooKeeperOpentelemetrySpans::maybeFinalize(
-                                        read_request.request->spans.read_wait_for_write,
-                                        [&]
-                                        {
-                                            return std::vector<OpenTelemetry::SpanAttribute>{
-                                                {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                                                {"keeper.session_id", read_request.session_id},
-                                                {"keeper.xid", read_request.request->xid},
-                                                {"keeper.stale", true},
-                                            };
-                                        },
-                                        OpenTelemetry::SpanStatus::ERROR,
-                                        "Session finished before read could execute");
-
-                                    continue;
-                                }
-                            }
-
-                            if (!server->isLeaderAlive())
-                            {
+                            if (server->isLeaderAlive())
+                                server->putLocalReadRequest(read_request);
+                            else
                                 addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
-                                continue;
-                            }
-
-                            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                                read_request.request->spans.read_wait_for_write,
-                                [&]
-                                {
-                                    return std::vector<OpenTelemetry::SpanAttribute>{
-                                        {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                                        {"keeper.session_id", read_request.session_id},
-                                        {"keeper.xid", read_request.request->xid},
-                                    };
-                                });
-
-                            server->putLocalReadRequest(read_request);
                         }
 
                         xid_to_request_queue.erase(request_queue_it);
                     }
                 }
-            }
-
-            /// When Close commits, all prior requests for this session have been processed.
-            /// Remove from finished_sessions to reclaim memory.
-            /// Done after the pending-read loop so reads queued for the closing session
-            /// are still filtered by the stale check above.
-            if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
-            {
-                std::lock_guard lock(finished_sessions_mutex);
-                finished_sessions.erase(request_for_session.session_id);
             }
         });
 
@@ -906,9 +735,6 @@ void KeeperDispatcher::sessionCleanerTask()
                     /// Close session == send close request to raft server
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
-
-                    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
-
                     using namespace std::chrono;
                     KeeperRequestForSession request_info
                     {
@@ -917,17 +743,12 @@ void KeeperDispatcher::sessionCleanerTask()
                         .request = std::move(request),
                         .digest = std::nullopt
                     };
-                    /// Mark session as finished before pushing Close to the queue.
-                    /// This prevents a race where Close commits and erases from
-                    /// `finished_sessions` before `finishSession` inserts it,
-                    /// which would permanently leak the session ID in the set.
-                    /// Close requests are exempt from stale filtering, so the
-                    /// Close will still pass through RAFT for ephemeral cleanup.
-                    finishSession(dead_session);
-
                     if (!requests_queue->push(std::move(request_info)))
                         LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
                     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+
+                    /// Remove session from registered sessions
+                    finishSession(dead_session);
                     LOG_INFO(log, "Dead session close request pushed");
                 }
             }
@@ -957,30 +778,6 @@ void KeeperDispatcher::finishSession(int64_t session_id)
             callback = std::move(session_it->second);
             session_to_response_callback.erase(session_it);
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
-        }
-        else
-        {
-            /// Session was already finished by another path (e.g. `sessionCleanerTask`
-            /// raced with `KeeperTCPHandler`). The `Close` request may have already
-            /// committed and erased `finished_sessions`, so inserting now would leak
-            /// the session ID with no one to clean it up.
-            return;
-        }
-    }
-
-    /// Mark session as finished so `requestThread` can skip stale requests
-    /// still sitting in the queue for this session.
-    {
-        std::lock_guard lock(finished_sessions_mutex);
-        if (finished_sessions.size() < configuration_and_settings->coordination_settings[CoordinationSetting::max_finished_sessions_cache_size])
-        {
-            finished_sessions.insert(session_id);
-        }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::KeeperFinishedSessionsCacheFull);
-            LOG_WARNING(LogFrequencyLimiter(log, 10), "Finished sessions cache is full (size {}), session {} will not be tracked for stale request filtering",
-                finished_sessions.size(), session_id);
         }
     }
 
@@ -1095,8 +892,6 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         };
     }
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
-
     /// Push new session request to queue
     if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push session id request to queue within session timeout");
@@ -1184,7 +979,7 @@ void KeeperDispatcher::clusterUpdateThread()
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
 
             std::this_thread::sleep_for(last_command_was_leader_change
-                ? std::chrono::milliseconds(configuration_and_settings->coordination_settings[CoordinationSetting::sleep_before_leader_change_ms].totalMilliseconds())
+                ? configuration_and_settings->coordination_settings[CoordinationSetting::sleep_before_leader_change_ms]
                 : 50ms);
         }
     }
@@ -1238,9 +1033,9 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     keeper_context->updateKeeperMemorySoftLimit(config);
 }
 
-void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests)
+void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
 {
-    keeper_stats.updateLatency(process_time_ms, subrequests);
+    keeper_stats.updateLatency(process_time_ms);
 }
 
 static uint64_t getTotalSize(const DiskPtr & disk, const std::string & path = "")
@@ -1279,10 +1074,11 @@ uint64_t KeeperDispatcher::getSnapDirSize() const
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 {
     Keeper4LWInfo result = server->getPartiallyFilled4LWInfo();
-    result.outstanding_requests_count
-        = CurrentMetrics::values[CurrentMetrics::KeeperOutstandingRequests].load(std::memory_order_relaxed);
-    result.alive_connections_count
-        = CurrentMetrics::values[CurrentMetrics::KeeperAliveConnections].load(std::memory_order_relaxed);
+    result.outstanding_requests_count = requests_queue->size();
+    {
+        std::lock_guard lock(session_to_response_callback_mutex);
+        result.alive_connections_count = session_to_response_callback.size();
+    }
     return result;
 }
 

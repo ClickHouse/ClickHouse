@@ -154,11 +154,3 @@ Positions: 1
               Type: INNER
                   ReadFromMergeTree (default.lineitem)
                   ReadFromMergeTree (default.part)
-6.428571428571429
-6.428571428571429
-6.428571428571429
-6.428571428571429
-6.428571428571429
-6.428571428571429
-6.428571428571429
-6.428571428571429

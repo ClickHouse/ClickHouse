@@ -1,3 +1,5 @@
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -86,7 +88,7 @@ void ColumnMap::get(size_t n, Field & res) const
         map.push_back(getNestedData()[offset + i]);
 }
 
-void ColumnMap::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t offset = offsets[n - 1];
@@ -94,18 +96,20 @@ void ColumnMap::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, 
 
     if (options.notFull(name_buf))
         name_buf << "[";
+    DataTypes element_types;
+    element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        getNestedData().getValueNameImpl(name_buf, offset + i, options);
-        if (!options.notFull(name_buf))
-            break;
+        const auto & type = getNestedData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+        element_types.push_back(type);
     }
-
     if (options.notFull(name_buf))
         name_buf << "]";
+
+    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
@@ -332,12 +336,12 @@ void ColumnMap::protect()
     nested->protect();
 }
 
-void ColumnMap::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnMap::getExtremes(Field & min, Field & max) const
 {
     Field nested_min;
     Field nested_max;
 
-    nested->getExtremes(nested_min, nested_max, start, end);
+    nested->getExtremes(nested_min, nested_max);
 
     /// Convert result Array fields to Map fields because client expect min and max field to have type Map
 

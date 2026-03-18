@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnVariant.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
 #include <Common/WeakHash.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 
 namespace DB
@@ -63,6 +62,9 @@ public:
     using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
     using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
+private:
+    friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
+
     struct VariantInfo
     {
         DataTypePtr variant_type;
@@ -74,9 +76,6 @@ public:
         /// It's used during variant extension.
         std::unordered_map<String, UInt8> variant_name_to_discriminator;
     };
-
-private:
-    friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
 
     explicit ColumnDynamic(size_t max_dynamic_types_);
     ColumnDynamic(MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {});
@@ -144,7 +143,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override
     {
@@ -264,9 +263,9 @@ public:
         return variant_column_ptr->hasEqualValues();
     }
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
+    void getExtremes(Field & min, Field & max) const override
     {
-        variant_column_ptr->getExtremes(min, max, start, end);
+        variant_column_ptr->getExtremes(min, max);
     }
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -471,7 +470,7 @@ public:
 
     String getTypeNameAt(size_t row_num) const;
     DataTypePtr getTypeAt(size_t row_num) const;
-    void getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> & names) const;
+    void getAllTypeNamesInto(std::unordered_set<String> & names) const;
 
 private:
     void createVariantInfo(const DataTypePtr & variant_type);

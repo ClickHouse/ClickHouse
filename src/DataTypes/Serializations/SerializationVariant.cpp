@@ -58,17 +58,16 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
     }
 };
 
-SerializationVariant::SerializationVariant(
-    const DataTypes & variant_types_,
-    const VariantSerializations & variant_serializations_,
-    const Names & variant_names_,
-    const String & variant_name_)
-    : variant_types(variant_types_)
-    , variant_serializations(variant_serializations_)
-    , variant_names(variant_names_)
-    , deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_))
-    , variant_name(variant_name_)
+SerializationVariant::SerializationVariant(const DataTypes & variant_types_, const String & variant_name_) : variant_types(variant_types_), deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_)), variant_name(variant_name_)
 {
+    variant_serializations.reserve(variant_serializations.size());
+    variant_names.reserve(variant_serializations.size());
+
+    for (const auto & variant : variant_types)
+    {
+        variant_serializations.push_back(variant->getDefaultSerialization());
+        variant_names.push_back(variant->getName());
+    }
 }
 
 
@@ -245,9 +244,6 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
         readBinaryLittleEndian(mode, *discriminators_stream);
         discriminators_state = std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(mode);
         addToSubstreamsDeserializeStatesCache(cache, settings.path, discriminators_state);
-
-        if (settings.release_all_prefixes_streams && settings.release_stream_callback)
-            settings.release_stream_callback(settings.path);
     }
 
     settings.path.pop_back();

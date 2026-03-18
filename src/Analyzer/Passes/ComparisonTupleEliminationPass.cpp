@@ -81,20 +81,8 @@ public:
         else if (lhs_argument_node_type == QueryTreeNodeType::CONSTANT && rhs_argument_node_type == QueryTreeNodeType::FUNCTION)
             candidate = tryOptimizeComparisonTupleFunctionAndConstant(rhs_argument, lhs_argument, comparison_function_name);
 
-        if (candidate != nullptr)
-        {
-            if (node->getResultType()->equals(*candidate->getResultType()))
-            {
-                node = candidate;
-            }
-            else if (node->getResultType()->equals(*makeNullableSafe(candidate->getResultType())))
-            {
-                /// The node's result type may be wrapped in Nullable due to group_by_use_nulls.
-                /// Transfer the Nullable wrapper to the candidate so the optimization still applies.
-                candidate->convertToNullable();
-                node = candidate;
-            }
-        }
+        if (candidate != nullptr && node->getResultType()->equals(*candidate->getResultType()))
+            node = candidate;
     }
 
 private:

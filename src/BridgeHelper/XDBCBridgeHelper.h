@@ -101,7 +101,7 @@ protected:
 
             return checkString(PING_OK_ANSWER, *buf);
         }
-        catch (...) // Ok: bridge is not available
+        catch (...)
         {
             return false;
         }

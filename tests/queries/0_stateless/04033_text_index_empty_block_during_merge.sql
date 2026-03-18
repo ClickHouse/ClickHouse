@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS tab;
 
+SET enable_full_text_index = 1;
+
 CREATE TABLE tab
 (
     id UInt32,

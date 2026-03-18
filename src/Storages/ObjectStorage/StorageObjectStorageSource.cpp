@@ -1,5 +1,4 @@
 #include <memory>
-#include <Common/CurrentThread.h>
 #include <optional>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
@@ -13,7 +12,6 @@
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -21,7 +19,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -75,8 +72,6 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
-    extern const SettingsBool use_parquet_metadata_cache;
-    extern const SettingsBool input_format_parquet_use_native_reader_v3;
 }
 
 namespace ErrorCodes
@@ -635,10 +630,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto mapper = configuration->getColumnMapperForObject(object_info);
             if (!mapper)
                 return format_filter_info;
-            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
+            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, nullptr, nullptr);
         }();
-
-        chassert(object_info->getObjectMetadata().has_value());
 
         LOG_DEBUG(
             log,
@@ -647,36 +640,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             object_info->getObjectMetadata()->size_bytes,
             object_info->getFileFormat().value_or(configuration->format));
 
-        bool use_native_reader_v3 = format_settings.has_value()
-            ? format_settings->parquet.use_native_reader_v3
-            : context_->getSettingsRef()[Setting::input_format_parquet_use_native_reader_v3];
-
-        InputFormatPtr input_format;
-        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] && use_native_reader_v3
-            && (object_info->getFileFormat().value_or(configuration->format) == "Parquet")
-            && !object_info->getObjectMetadata()->etag.empty())
-        {
-            const std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
-            input_format = FormatFactory::instance().getInputWithMetadata(
-                object_info->getFileFormat().value_or(configuration->format),
-                *read_buf,
-                initial_header,
-                context_,
-                max_block_size,
-                object_with_metadata,
-                format_settings,
-                parser_shared_resources,
-                filter_info,
-                true /* is_remote_fs */,
-                compression_method,
-                need_only_count,
-                std::nullopt /*min_block_size_bytes*/,
-                std::nullopt /*min_block_size_rows*/,
-                std::nullopt /*max_block_size_bytes*/);
-        }
-        else
-        {
-            input_format = FormatFactory::instance().getInput(
+        auto input_format = FormatFactory::instance().getInput(
             object_info->getFileFormat().value_or(configuration->format),
             *read_buf,
             initial_header,
@@ -688,7 +652,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
-        }
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
@@ -802,22 +765,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 || object_storage->getType() == ObjectStorageType::S3);
     }
 
-    bool use_page_cache = !use_distributed_cache && !use_filesystem_cache
-        && effective_read_settings.page_cache && effective_read_settings.use_page_cache_for_object_storage;
-
-
-    /// We need object metadata for a few use cases:
+    /// We need object metadata for two cases:
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
-    /// 3. object etag as a cache key for parquet metadata caching
     if (!object_info.metadata)
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
-
-    if (use_page_cache && object_info.metadata->etag.empty())
-    {
-        LOG_WARNING(log, "Cannot use page cache, no etag specified");
-        use_page_cache = false;
-    }
 
     const auto & object_size = object_info.metadata->size_bytes;
 
@@ -838,7 +790,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     /// FIXME: Use async buffer if use_cache,
     /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
-    bool use_async_buffer = use_prefetch || use_distributed_cache;
+    bool use_async_buffer = use_prefetch || use_filesystem_cache || use_distributed_cache;
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
 #if ENABLE_DISTRIBUTED_CACHE
@@ -846,9 +798,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     {
         const std::string path = object_info.getPath();
         StoredObject object(path, "", object_size);
-        auto read_buffer_creator = [path, object_size, modified_read_settings, object_storage]()
+        auto read_buffer_creator = [object, nested_buffer_read_settings, object_storage]()
         {
-            return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings.withNestedBuffer(/* seekable */false));
+            return object_storage->readObject(object, nested_buffer_read_settings);
         };
 
         impl = std::make_unique<ReadBufferFromDistributedCache>(
@@ -894,7 +846,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 object_info.getPath(),
                 cache_key,
                 cache,
-                FileCache::getCommonOrigin(),
+                FileCache::getCommonUser(),
                 read_buffer_creator,
                 use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings,
                 std::string(CurrentThread::getQueryId()),
@@ -921,18 +873,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings);
     }
 
-    if (use_page_cache)
-    {
-        PageCacheKey key = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
-        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(key, effective_read_settings.page_cache, std::move(impl), modified_read_settings);
-    }
-
     if (!use_async_buffer)
     {
         LOG_TRACE(log, "Downloading object {} of size {} without initial prefetch", object_info.getPath(), object_size);
         return impl;
     }
 
+    LOG_TRACE(log, "Downloading object {} of size {} with initial prefetch", object_info.getPath(), object_size);
     bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size
         && impl->isCached();
 
@@ -942,10 +889,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     if (object_size)
         buffer_size = std::min<size_t>(object_size, buffer_size);
-
-    LOG_TRACE(
-        log, "Downloading object {} of size {} {} initial prefetch (buffer size: {})",
-        object_info.getPath(), object_size, use_prefetch ? "with" : "without", buffer_size);
 
     auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     impl = std::make_unique<AsynchronousBoundedReadBuffer>(
@@ -957,7 +900,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
-    if (use_prefetch && !impl->supportsReadAt())
+    if (use_prefetch)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
@@ -995,7 +938,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
 
-        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
+        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags);
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
         if (!matcher->ok())

@@ -37,7 +37,6 @@
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -184,7 +183,7 @@ struct CustomizeAggregateFunctionsSuffixData
         const auto & instance = AggregateFunctionFactory::instance();
         if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix) && !endsWith(func.name, customized_func_suffix + "If"))
         {
-            auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
+            auto properties = instance.tryGetProperties(func.name, func.nulls_action);
             if (properties && !properties->returns_default_when_only_null)
             {
                 func.name += customized_func_suffix;
@@ -228,7 +227,7 @@ struct CustomizeAggregateFunctionsMoveSuffixData
         {
             if (endsWith(func.name, customized_func_suffix))
             {
-                auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
+                auto properties = instance.tryGetProperties(func.name, func.nulls_action);
                 if (properties && !properties->returns_default_when_only_null)
                 {
                     func.name = moveSuffixAhead(func.name);
@@ -305,7 +304,7 @@ struct ReplacePositionalArgumentsData
             for (auto & expr : select_query.groupBy()->children)
                 replaceForPositionalArguments(expr, &select_query, ASTSelectQuery::Expression::GROUP_BY);
         }
-        if (select_query.orderBy() && !select_query.order_by_all)
+        if (select_query.orderBy())
         {
             for (auto & expr : select_query.orderBy()->children)
             {
@@ -921,7 +920,7 @@ public:
     static void visitLiteral(ASTLiteral & literal, ASTPtr &)
     {
         if (literal.value.getType() == Field::Types::Tuple)
-            literal.setUseLegacyColumnNameOfTuple(true);
+            literal.use_legacy_column_name_of_tuple = true;
     }
     static void visitFunction(ASTFunction & func, ASTPtr &ast)
     {
@@ -1174,19 +1173,10 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 source_columns.push_back(*column);
                 it = unknown_required_source_columns.erase(it);
             }
-            else if (const auto * common_column_desc = common_virtual_columns.tryGetDescription(*it))
+            else if (auto common_column = common_virtual_columns.tryGet(*it))
             {
-                /// Ephemeral common virtual columns (e.g. `_table`) are only supported
-                /// by the analyzer which fills them via ExpressionStep.
-                /// The old analyzer has no mechanism to fill them, so skip them here
-                /// to avoid a type mismatch between the header and the actual data.
-                if (!common_column_desc->isEphemeral())
-                {
-                    source_columns.emplace_back(common_column_desc->name, common_column_desc->type);
-                    it = unknown_required_source_columns.erase(it);
-                }
-                else
-                    ++it;
+                source_columns.push_back(*common_column);
+                it = unknown_required_source_columns.erase(it);
             }
             else
             {
@@ -1384,23 +1374,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         expandGroupByAll(select_query);
 
     // expand ORDER BY ALL
-    if (select_query->order_by_all)
-    {
-        if (settings[Setting::enable_order_by_all])
-        {
-            expandOrderByAll(select_query, tables_with_columns);
-        }
-        else
-        {
-            /// When `enable_order_by_all` is disabled, revert the ORDER BY ALL keyword
-            /// back to an ordinary ORDER BY with `all` as a column reference.
-            /// Replace the child with a fresh identifier AFTER normalization so that it
-            /// refers to the table column named "all", not to any alias.
-            auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
-            all_elem->children[0] = make_intrusive<ASTIdentifier>("all");
-            select_query->order_by_all = false;
-        }
-    }
+    if (settings[Setting::enable_order_by_all] && select_query->order_by_all)
+        expandOrderByAll(select_query, tables_with_columns);
 
     if (select_query->limit_by_all)
     {
