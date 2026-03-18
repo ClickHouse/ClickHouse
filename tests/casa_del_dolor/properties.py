@@ -501,7 +501,6 @@ policy_properties = {
     "move_factor": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "perform_ttl_move_on_insert": true_false_lambda,
     "prefer_not_to_merge": true_false_lambda,
-    "volume_priority": threshold_generator(0.2, 0.2, 1, 10),
 }
 
 
@@ -855,11 +854,12 @@ class DiskPropertiesGroup(PropertiesGroup):
                 possible_types.extend(
                     ["s3_with_keeper", "s3_with_keeper", "s3_with_keeper"]
                 )
+            disk_xml_elem = ET.SubElement(disk_element, f"disk{i}")
             next_created_disk_pair = add_single_disk(
                 i,
                 args,
                 cluster,
-                ET.SubElement(disk_element, f"disk{i}"),
+                disk_xml_elem,
                 backups_element,
                 random.choice(possible_types),
                 created_disks_types,
@@ -872,11 +872,14 @@ class DiskPropertiesGroup(PropertiesGroup):
                 is_private_binary
                 and args.set_shared_mergetree_disk
                 and next_created_disk_pair[2] == "s3_with_keeper"
+                and disk_xml_elem.findtext("readonly") != "1"
             ):
                 created_keeper_disks.append(i)
-            if next_created_disk_pair[3] == "local" and next_created_disk_pair[
-                2
-            ] not in ("cache", "encrypted"):
+            if (
+                next_created_disk_pair[3] == "local"
+                and next_created_disk_pair[2] not in ("cache", "encrypted")
+                and disk_xml_elem.findtext("readonly") != "1"
+            ):
                 safe_for_database_disk.append(i)
 
         # Allow any disk in any table engine
@@ -919,6 +922,13 @@ class DiskPropertiesGroup(PropertiesGroup):
                     disk_xml.text = f"disk{input_disks[i]}"
                 if main_xml is not None and random.randint(1, 100) <= 70:
                     apply_properties_recursively(main_xml, policy_properties)
+                # Assign volume_priority as a valid permutation of 1..N (no gaps allowed)
+                if volume_counter > 0 and random.randint(1, 100) <= 20:
+                    priorities = list(range(1, volume_counter + 1))
+                    random.shuffle(priorities)
+                    for idx, vol_xml in enumerate(volumes_xml):
+                        prio_xml = ET.SubElement(vol_xml, "volume_priority")
+                        prio_xml.text = str(priorities[idx])
                 if random.randint(1, 100) <= 70:
                     apply_properties_recursively(next_policy_xml, policy_properties)
 

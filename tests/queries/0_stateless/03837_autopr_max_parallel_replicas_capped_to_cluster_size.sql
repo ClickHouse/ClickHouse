@@ -1,40 +1,46 @@
--- Verify that max_parallel_replicas in the automatic parallel replicas optimization
--- is capped to the actual cluster size, not the raw setting value.
+-- Verify that max_parallel_replicas is capped to the actual cluster size.
+-- With max_parallel_replicas=1000 (uncapped), the formula would favor parallel replicas.
+-- But since the cluster has only 3 nodes, num_replicas is capped to 3 and the formula
+-- should NOT favor parallel replicas for a query where output_bytes ≈ input_bytes.
 
 DROP TABLE IF EXISTS t;
 
-CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t(key UInt64, value UInt64) ENGINE = MergeTree ORDER BY tuple();
 
--- max_parallel_replicas=100 is intentionally much larger than the cluster size (3 replicas)
+-- max_parallel_replicas=1000 is intentionally much larger than the cluster size (3 replicas).
+-- merge_tree_min_bytes_per_task_for_remote_reading=0 disables the effective reading threads cap
+-- so the formula simplifies to: input / max_threads vs input / (max_threads * num_replicas) + output / num_replicas.
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
-    parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=100, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
+    parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=1000, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 
 SET enable_analyzer=1;
 SET max_threads=4;
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
-INSERT INTO t SELECT 'key' || toString(number % 10), number FROM numbers(5e5);
+-- To not let other heuristics interfere with the logic we test
+SET merge_tree_min_bytes_per_task_for_remote_reading=0;
+SET automatic_parallel_replicas_min_bytes_per_replica=0;
+
+-- Many unique keys so output_bytes ≈ input_bytes after GROUP BY.
+-- With num_replicas=3: replicas_cost = input/12 + output/3 ≈ input*5/12 > input/4 = local_cost → PR not enabled.
+-- With num_replicas=1000 (uncapped): replicas_cost ≈ input/4000 + output/1000 ≈ 0 < input/4 → PR would be enabled.
+INSERT INTO t SELECT number, number FROM numbers(5e5);
 
 -- First query: collect statistics (cache is empty)
-SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='03837_autopr_max_parallel_replicas_capped_query_0';
+SELECT key, value FROM t GROUP BY key, value FORMAT Null SETTINGS log_comment='03837_autopr_max_parallel_replicas_capped_query_0';
 
--- Second query: statistics available, formula is evaluated using effective num_replicas
-SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='03837_autopr_max_parallel_replicas_capped_query_1';
+-- Second query: statistics available, formula is evaluated using capped num_replicas=3.
+-- Parallel replicas should NOT be enabled because with only 3 replicas the cost is higher.
+SELECT key, value FROM t GROUP BY key, value FORMAT Null SETTINGS log_comment='03837_autopr_max_parallel_replicas_capped_query_1';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
-SYSTEM FLUSH LOGS query_log, text_log;
+SYSTEM FLUSH LOGS query_log;
 
-SET max_rows_to_read = 0;
-
--- The optimizer logs "The applied formula: {input_bytes} / {max_threads} ? ({input_bytes} / ({max_threads} * {num_replicas}) + ...)"
--- Extract num_replicas from the formula and verify it equals 3 (cluster size), not 100 (setting).
-SELECT DISTINCT toUInt64(extract(message, '\\(\\d+ \\* (\\d+)\\)')) AS num_replicas_in_formula
-FROM system.text_log
-WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (logger_name = 'optimizeTree') AND (message LIKE 'The applied formula:%') AND (query_id IN (
-    SELECT query_id
-    FROM system.query_log
-    WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment = '03837_autopr_max_parallel_replicas_capped_query_1') AND (type = 'QueryFinish')
-));
+SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0 AS stats_collected, ProfileEvents['ParallelReplicasUsedCount'] > 0 AS pr_used
+FROM system.query_log
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE '03837_autopr_max_parallel_replicas_capped_query_%') AND (type = 'QueryFinish')
+ORDER BY log_comment
+FORMAT TSVWithNames;
 
 DROP TABLE t;

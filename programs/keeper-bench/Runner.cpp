@@ -1279,7 +1279,7 @@ void Runner::runBenchmarkWithGenerator()
 
     warmup_complete = warmup_seconds <= 0;
 
-    auto start_timestamp_ms = Poco::Timestamp().epochMicroseconds() / 1000;
+    int64_t start_timestamp_ms = 0;
 
     try
     {
@@ -1297,6 +1297,10 @@ void Runner::runBenchmarkWithGenerator()
     }
 
     DB::InterruptListener interrupt_listener;
+    /// Reset regardless of warmup so setup time is excluded from throughput and time limit
+    info->elapsed.restart();
+    total_watch.restart();
+    start_timestamp_ms = Poco::Timestamp().epochMicroseconds() / 1000;
     Stopwatch warmup_watch;
     delay_watch.restart();
 
@@ -1448,48 +1452,69 @@ Runner::~Runner()
 namespace
 {
 
-void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path)
+void flushBatch(Coordination::ZooKeeper & zookeeper, Coordination::Requests & batch)
+{
+    if (batch.empty())
+        return;
+
+    auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
+    auto future = promise->get_future();
+    zookeeper.multi(batch, [promise](const Coordination::MultiResponse & response)
+    {
+        promise->set_value(response);
+    });
+    auto response = future.get();
+    if (response.error != Coordination::Error::ZOK)
+        throw zkutil::KeeperException(response.error, "Failed to remove batch of {} nodes, first path in batch: {}", batch.size(), batch.front()->getPath());
+
+    /// Defensive: also verify individual sub-request results for better error messages.
+    for (size_t i = 0; i < response.responses.size(); ++i)
+    {
+        if (response.responses[i]->error != Coordination::Error::ZOK)
+            throw zkutil::KeeperException(response.responses[i]->error, "Failed to remove node: {}", batch[i]->getPath());
+    }
+
+    batch.clear();
+}
+
+void removeRecursiveImpl(Coordination::ZooKeeper & zookeeper, const std::string & path,
+                         Coordination::Requests & batch)
 {
     namespace fs = std::filesystem;
 
-    auto promise = std::make_shared<std::promise<void>>();
+    auto promise = std::make_shared<std::promise<Coordination::Error>>();
     auto future = promise->get_future();
 
     Strings children;
-    auto list_callback = [promise, &children] (const Coordination::ListResponse & response)
+    auto list_callback = [promise, &children](const Coordination::ListResponse & response)
     {
         children = response.names;
-        promise->set_value();
+        promise->set_value(response.error);
     };
     zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {}, false, false);
-    future.get();
+    auto error = future.get();
+    if (error == Coordination::Error::ZNONODE)
+        return; /// Node doesn't exist, nothing to remove
+    if (error != Coordination::Error::ZOK)
+        throw zkutil::KeeperException(error, "Failed to list children of {}", path);
 
-    /// First, recursively remove all subtrees
+    /// Recurse into children first (post-order)
     for (const auto & child : children)
-        removeRecursive(zookeeper, fs::path(path) / child);
+        removeRecursiveImpl(zookeeper, fs::path(path) / child, batch);
 
-    /// Then batch-remove the direct children in chunks of 1000
-    std::span children_span(children);
-    while (!children_span.empty())
-    {
-        Coordination::Requests ops;
-        size_t batch_size = std::min(children_span.size(), size_t{1000});
-        for (size_t i = 0; i < batch_size; ++i)
-            ops.emplace_back(zkutil::makeRemoveRequest(fs::path(path) / children_span[i], -1));
+    /// Append this node to the batch
+    batch.emplace_back(zkutil::makeRemoveRequest(path, -1));
 
-        auto multi_promise = std::make_shared<std::promise<void>>();
-        auto multi_future = multi_promise->get_future();
-        zookeeper.multi(ops, [multi_promise](const Coordination::MultiResponse &) { multi_promise->set_value(); });
-        multi_future.get();
+    /// Flush when batch is full
+    if (batch.size() >= 1000)
+        flushBatch(zookeeper, batch);
+}
 
-        children_span = children_span.subspan(batch_size);
-    }
-
-    /// Finally remove the node itself
-    auto remove_promise = std::make_shared<std::promise<void>>();
-    auto remove_future = remove_promise->get_future();
-    zookeeper.remove(path, -1, [remove_promise](const Coordination::RemoveResponse &) { remove_promise->set_value(); });
-    remove_future.get();
+void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path)
+{
+    Coordination::Requests batch;
+    removeRecursiveImpl(zookeeper, path, batch);
+    flushBatch(zookeeper, batch);
 }
 
 }
