@@ -6,9 +6,11 @@
 #include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -16,21 +18,26 @@
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool async_insert;
+    extern const SettingsBool detach_non_readonly_queries;
     extern const SettingsDialect dialect;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
@@ -57,13 +64,44 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
+namespace
+{
+bool isNonReadOnlyQuery(const IAST * ast)
+{
+    if (!ast)
+        return false;
+    switch (ast->getQueryKind())
+    {
+        case IAST::QueryKind::Insert:
+        case IAST::QueryKind::Delete:
+        case IAST::QueryKind::Update:
+        case IAST::QueryKind::Create:
+        case IAST::QueryKind::Drop:
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Alter:
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::Move:
+        case IAST::QueryKind::Optimize:
+        case IAST::QueryKind::Backup:
+        case IAST::QueryKind::Restore:
+        case IAST::QueryKind::Copy:
+            return true;
+        default:
+            return false;
+    }
+}
+}
+
+LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_, bool is_interactive_)
     : WithContext(context_)
     , session(std::make_unique<Session>(getContext(), ClientInfo::Interface::LOCAL))
     , send_progress(send_progress_)
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
+    , is_interactive(is_interactive_)
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
@@ -73,18 +111,22 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
 }
 
 LocalConnection::LocalConnection(
-    std::unique_ptr<Session> && session_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
+    std::unique_ptr<Session> && session_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_, bool is_interactive_)
     : WithContext(session_->sessionContext())
     , session(std::move(session_))
     , send_progress(send_progress_)
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
+    , is_interactive(is_interactive_)
 {
 }
 
 LocalConnection::~LocalConnection()
 {
+    /// Wait for any detached non-readonly query to complete so data is persisted before process exit.
+    if (detached_query_thread && detached_query_thread->joinable())
+        detached_query_thread->join();
     /// Last query may not have been finished or cancelled due to exception on client side.
     if (state && !state->is_finished && !state->is_cancelled)
     {
@@ -185,6 +227,109 @@ void LocalConnection::sendQuery(
         state->after_send_profile_events.restart();
 
     next_packet_type.reset();
+
+    /// Wait for any previous detached query to complete before starting a new one.
+    if (detached_query_thread && detached_query_thread->joinable())
+    {
+        detached_query_thread->join();
+        if (detached_query_exception && *detached_query_exception)
+        {
+            std::exception_ptr e = *detached_query_exception;
+            detached_query_exception.reset();
+            std::rethrow_exception(e);
+        }
+    }
+
+    /// Detach path (interactive mode only): when detach_non_readonly_queries is on and query is non-readonly
+    /// (and does not need client data), run query in a background thread and return query_id immediately.
+    if (is_interactive)
+    {
+        try
+        {
+            const auto & settings_ref = query_context->getSettingsRef();
+            const size_t max_query_size_val = settings_ref[Setting::max_query_size] ? settings_ref[Setting::max_query_size] : std::numeric_limits<size_t>::max();
+            const char * begin = state->query.data();
+            const char * end = begin + state->query.size();
+            ParserQuery parser(end, settings_ref[Setting::allow_settings_after_format_in_insert], settings_ref[Setting::implicit_select]);
+            ASTPtr ast = parseQuery(parser, begin, end, "", max_query_size_val, settings_ref[Setting::max_parser_depth], settings_ref[Setting::max_parser_backtracks]);
+
+            ContextMutablePtr check_context = Context::createCopy(query_context);
+            InterpreterSetQuery::applySettingsFromQuery(ast, check_context);
+            const auto & check_settings = check_context->getSettingsRef();
+            if (check_settings[Setting::detach_non_readonly_queries] && !check_settings[Setting::async_insert]
+                && ast && isNonReadOnlyQuery(ast.get()))
+            {
+                const auto * insert_ast = ast->as<ASTInsertQuery>();
+                bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
+                if (!insert_needs_client_data)
+                {
+                    const String current_query_id = query_context->getClientInfo().current_query_id;
+                    ContextMutablePtr async_context = Context::createCopy(query_context);
+                    async_context->setProgressCallback(nullptr);
+                    /// Ensure the background thread uses the same path and current database as this session.
+                    String path = query_context->getPath();
+                    if (!path.empty())
+                        async_context->setPath(path);
+                    String db = query_context->getCurrentDatabase();
+                    if (!db.empty())
+                        async_context->setCurrentDatabase(db);
+                    String query_copy = state->query;
+                    QueryProcessingStage::Enum stage_copy = state->stage;
+                    detached_query_exception = std::make_shared<std::exception_ptr>();
+
+                    detached_query_thread = std::make_unique<std::thread>([async_context, query_copy, stage_copy, exc_ptr = detached_query_exception]()
+                    {
+                        setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
+                        ThreadStatus thread_status;
+                        QueryScope async_query_scope = QueryScope::create(async_context);
+                        try
+                        {
+                            BlockIO io = executeQuery(query_copy, async_context, QueryFlags{}, stage_copy).second;
+                            /// Actually run the pipeline (executeQuery only builds it). Without this, no data is written.
+                            if (io.pipeline.pushing())
+                            {
+                                PushingPipelineExecutor executor(io.pipeline);
+                                executor.start();
+                                executor.finish();
+                            }
+                            else if (io.pipeline.pulling())
+                            {
+                                PullingPipelineExecutor executor(io.pipeline);
+                                Block block;
+                                while (executor.pull(block)) { }
+                            }
+                            else if (io.pipeline.completed())
+                            {
+                                CompletedPipelineExecutor executor(io.pipeline);
+                                executor.execute();
+                            }
+                            io.onFinish();
+                        }
+                        catch (...)
+                        {
+                            *exc_ptr = std::current_exception();
+                            tryLogCurrentException("LocalConnection", "Detached local non-readonly query failed");
+                        }
+                    });
+
+                    auto col = ColumnString::create();
+                    col->insertData(current_query_id.data(), current_query_id.size());
+                    state->block = Block({{std::move(col), std::make_shared<DataTypeString>(), "query_id"}});
+                    next_packet_type = Protocol::Server::Data;
+                    state->is_finished = true;
+                    state->sent_totals = true;
+                    state->sent_extremes = true;
+                    state->sent_profile_info = true;
+                    state->sent_profile_events = true;
+                    return;
+                }
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException("LocalConnection", "Cannot run local query in detach mode, falling back to sync");
+        }
+    }
 
     /// Prepare input() function
     query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
@@ -785,23 +930,25 @@ void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &
 ServerConnectionPtr LocalConnection::createConnection(
     const ConnectionParameters &,
     ContextPtr current_context,
-    ReadBuffer * in,
-    bool send_progress,
-    bool send_profile_events,
-    const String & server_display_name)
+    ReadBuffer * in_buffer,
+    bool send_progress_val,
+    bool send_profile_events_val,
+    const String & server_display_name_val,
+    bool is_interactive_val)
 {
-    return std::make_unique<LocalConnection>(current_context, in, send_progress, send_profile_events, server_display_name);
+    return std::make_unique<LocalConnection>(current_context, in_buffer, send_progress_val, send_profile_events_val, server_display_name_val, is_interactive_val);
 }
 
 ServerConnectionPtr LocalConnection::createConnection(
     const ConnectionParameters &,
-    std::unique_ptr<Session> && session,
-    ReadBuffer * in,
-    bool send_progress,
-    bool send_profile_events,
-    const String & server_display_name)
+    std::unique_ptr<Session> && session_ptr,
+    ReadBuffer * in_buffer,
+    bool send_progress_val,
+    bool send_profile_events_val,
+    const String & server_display_name_val,
+    bool is_interactive_val)
 {
-    return std::make_unique<LocalConnection>(std::move(session), in, send_progress, send_profile_events, server_display_name);
+    return std::make_unique<LocalConnection>(std::move(session_ptr), in_buffer, send_progress_val, send_profile_events_val, server_display_name_val, is_interactive_val);
 }
 
 

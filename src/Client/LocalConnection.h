@@ -6,6 +6,8 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/QueryScope.h>
+#include <thread>
+#include <exception>
 
 
 namespace DB
@@ -74,14 +76,16 @@ public:
         ReadBuffer * in_,
         bool send_progress_,
         bool send_profile_events_,
-        const String & server_display_name_);
+        const String & server_display_name_,
+        bool is_interactive_ = false);
 
     explicit LocalConnection(
         std::unique_ptr<Session> && session_,
         ReadBuffer * in_,
         bool send_progress_ = false,
         bool send_profile_events_ = false,
-        const String & server_display_name_ = "");
+        const String & server_display_name_ = "",
+        bool is_interactive_ = false);
 
     ~LocalConnection() override;
 
@@ -93,15 +97,17 @@ public:
         ReadBuffer * in = nullptr,
         bool send_progress = false,
         bool send_profile_events = false,
-        const String & server_display_name = "");
+        const String & server_display_name = "",
+        bool is_interactive = false);
 
     static ServerConnectionPtr createConnection(
         const ConnectionParameters & connection_parameters,
         std::unique_ptr<Session> && session,
-        ReadBuffer * in_,
+        ReadBuffer * in,
         bool send_progress = false,
         bool send_profile_events = false,
-        const String & server_display_name = "");
+        const String & server_display_name = "",
+        bool is_interactive = false);
 
     void setDefaultDatabase(const String & database) override;
 
@@ -196,6 +202,14 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     ReadBuffer * in;
+
+    bool is_interactive = false;
+
+    /// When detach_non_readonly_queries is used in interactive mode, the query runs in this thread.
+    /// Joined in destructor and at start of next sendQuery so the process does not exit before the insert completes.
+    std::unique_ptr<std::thread> detached_query_thread;
+    /// Exception from the last detached query (if any); rethrown when main thread joins.
+    std::shared_ptr<std::exception_ptr> detached_query_exception;
 };
 
 }

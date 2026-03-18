@@ -256,12 +256,17 @@ It is possible to asynchronously insert data in small but frequent inserts. The 
 
 Using `async_insert` or the [`Buffer` table engine](/engines/table-engines/special/buffer) results in additional buffering.
 
+### Detached query execution {#detached-query-execution}
+
+You can run non-readonly queries (including `INSERT` and `INSERT ... SELECT`) in a **detached** way: the server returns immediately with a `query_id` in the response and runs the query in a background thread. Enable the [detach_non_readonly_queries](/operations/settings/detach-non-readonly-queries) setting (in the URL, config, or session). This is different from [async_insert](/operations/settings/settings#async_insert): it does not batch inserts; it only returns immediately and runs the query in the background.
+
 ### Large or long-running inserts {#large-or-long-running-inserts}
 
 When you are inserting large amounts of data, ClickHouse will optimize write performance through a process called "squashing". Small blocks of inserted data in memory are merged and squashed into larger blocks before being written to disk. Squashing reduces the overhead associated with each write operation. In this process, inserted data will be available to query after ClickHouse completes writing each [`max_insert_block_size`](/operations/settings/settings#max_insert_block_size) rows.
 
 **See Also**
 
+- [detach_non_readonly_queries](/operations/settings/detach-non-readonly-queries) — return immediately with query_id for non-readonly queries
 - [async_insert](/operations/settings/settings#async_insert)
 - [wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
 - [wait_for_async_insert_timeout](/operations/settings/settings#wait_for_async_insert_timeout)
