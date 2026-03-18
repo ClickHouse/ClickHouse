@@ -112,7 +112,9 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         chassert(parent_part);
 
         auto part_state = all_parts_state[part_number];
-        auto columns_size = part->getTotalColumnsSize();
+        ColumnSize columns_size;
+        if (!part->is_broken)
+            columns_size = part->getTotalColumnsSize();
         auto parent_columns_size = parent_part->getTotalColumnsSize();
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
