@@ -992,8 +992,8 @@ static NameToNameVector collectFilesForRenames(
     const NameSet & updated_columns_in_patches,
     const String & mrk_extension)
 {
-    auto pn_mapping_ptr = source_part->storage.getPhysicalNameMapping();
-    bool has_physical_names = pn_mapping_ptr && pn_mapping_ptr->isActive();
+    auto pn_mapping_ptr = source_part->storage.getActivePhysicalNameMapping();
+    bool has_physical_names = pn_mapping_ptr != nullptr;
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     auto stream_counts = has_physical_names
@@ -1250,8 +1250,7 @@ void finalizeMutatedPart(
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        auto mutation_pn_mapping = new_data_part->storage.getPhysicalNameMapping();
-        if (mutation_pn_mapping && mutation_pn_mapping->isActive())
+        if (auto mutation_pn_mapping = new_data_part->storage.getActivePhysicalNameMapping())
             serialization_infos.writeJSONWithPhysicalNames(out_hashing, *mutation_pn_mapping);
         else
             serialization_infos.writeJSON(out_hashing);
@@ -2301,7 +2300,7 @@ private:
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
             auto mutation_columns = ctx->updated_header.getNamesAndTypesList();
-            if (auto pn_m = ctx->data->getPhysicalNameMapping(); pn_m && pn_m->isActive())
+            if (auto pn_m = ctx->data->getActivePhysicalNameMapping())
                 populatePhysicalNames(mutation_columns, *pn_m);
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
@@ -2502,7 +2501,7 @@ MutateTask::MutateTask(
     ctx->storage_snapshot = ctx->data->getStorageSnapshotWithoutData(ctx->metadata_snapshot, context_);
     ctx->space_reservation = space_reservation_;
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
-    if (auto pn_m = ctx->data->getPhysicalNameMapping(); pn_m && pn_m->isActive())
+    if (auto pn_m = ctx->data->getActivePhysicalNameMapping())
         populatePhysicalNames(ctx->storage_columns, *pn_m);
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
@@ -2941,7 +2940,7 @@ bool MutateTask::prepare()
         ctx->source_part, ctx->updated_header, ctx->storage_columns,
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
 
-    if (auto pn_m = ctx->data->getPhysicalNameMapping(); pn_m && pn_m->isActive())
+    if (auto pn_m = ctx->data->getActivePhysicalNameMapping())
         populatePhysicalNames(new_columns, *pn_m);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());

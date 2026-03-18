@@ -150,14 +150,18 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
     auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
     size_t minmax_idx_size = minmax_column_types.size();
 
-    auto pn_mapping = part.storage.getPhysicalNameMapping();
+    auto pn_mapping = part.storage.getActivePhysicalNameMapping();
 
     hyperrectangle.reserve(minmax_idx_size);
     FormatSettings format_settings;
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
         String file_col = getFileColumnName(minmax_column_names[i], part.checksums);
-        if (pn_mapping && pn_mapping->isActive()
+
+        /// Parts written after physical name activation store minmax files
+        /// under the physical (counter-based) name; fall back to it when
+        /// the logical-name file is missing.
+        if (pn_mapping
             && !part.checksums.files.contains("minmax_" + file_col + ".idx")
             && pn_mapping->hasLogicalName(minmax_column_names[i]))
         {
@@ -191,7 +195,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
     auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
 
-    if (physical_name_mapping && physical_name_mapping->isActive())
+    if (physical_name_mapping)
     {
         for (auto & col_name : minmax_column_names)
         {
@@ -297,12 +301,12 @@ void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, St
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
     size_t minmax_idx_size = minmax_column_names.size();
-    auto pn_mapping = data.getPhysicalNameMapping();
+    auto pn_mapping = data.getActivePhysicalNameMapping();
 
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
         String file_col = getFileColumnName(minmax_column_names[i], data.getSettings(), data_part_storage);
-        if (pn_mapping && pn_mapping->isActive()
+        if (pn_mapping
             && !data_part_storage.existsFile("minmax_" + file_col + ".idx")
             && pn_mapping->hasLogicalName(minmax_column_names[i]))
         {
@@ -1998,6 +2002,136 @@ void IMergeTreeDataPart::loadUUID()
     }
 }
 
+/// Translates the part's on-disk column list from physical storage names back
+/// to logical names using the table-level physical name mapping.
+///
+/// When physical names are active, columns.txt in each part stores the physical
+/// (counter-allocated) names, not the logical column names from the table schema.
+/// For example, a column added as the third ALTER gets physical name "2" on disk,
+/// while the user sees it as "my_column" in queries.
+///
+/// This function handles four cases for each column in the on-disk list:
+///
+///  (a) Physical name known to the mapping (normal case for parts written after
+///      activation): translate to the current logical name.
+///
+///  (b) Logical name known AND expected physical files exist in checksums
+///      (transitional: parts written before activation, then merged after):
+///      look up the physical name from the mapping.
+///
+///  (c) Logical name known but physical files are absent (the column was dropped
+///      and re-added with a new physical name): skip the column entirely so the
+///      reader falls back to default values instead of reading stale data.
+///
+///  (d) Name unknown to the mapping (persistent virtual columns like _row_exists,
+///      or columns that predate physical names): pass through with identity mapping.
+NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
+    const NamesAndTypesList & loaded_columns,
+    const PhysicalNameMapping & mapping) const
+{
+    const auto current_columns = getMetadataSnapshot()->getColumns().getAllPhysical();
+    const bool checksums_preloaded = !checksums.empty();
+
+    auto is_persistent_virtual = [](const String & column_name)
+    {
+        return column_name == RowExistsColumn::name
+            || column_name == BlockNumberColumn::name
+            || column_name == BlockOffsetColumn::name;
+    };
+
+    /// Check whether all expected data files for a column (under its physical name)
+    /// are present in the preloaded checksums. Used for case (b) above.
+    auto has_column_files_in_checksums = [&](const NameAndTypePair & current_column, const String & physical_name)
+    {
+        if (!checksums_preloaded)
+            return false;
+
+        auto column_with_physical_name = current_column;
+        column_with_physical_name.setPhysicalName(physical_name);
+
+        bool has_any = false;
+        bool missing_any = false;
+        auto serialization = IDataType::getSerialization(column_with_physical_name);
+        serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (missing_any || ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                return;
+
+            if (getStreamNameForColumn(
+                column_with_physical_name,
+                substream_path,
+                ".bin",
+                checksums,
+                storage.getSettings()))
+                has_any = true;
+            else
+                missing_any = true;
+        });
+
+        return has_any && !missing_any;
+    };
+
+    NamesAndTypesList remapped_columns;
+    for (const auto & column : loaded_columns)
+    {
+        /// Case (d): persistent virtual columns are not managed by the mapping.
+        if (is_persistent_virtual(column.name))
+        {
+            auto remapped_column = column;
+            remapped_column.setPhysicalName(column.getNameInStorage());
+            remapped_columns.push_back(remapped_column);
+            continue;
+        }
+
+        String physical_name;
+        String logical_name;
+
+        if (mapping.hasPhysicalName(column.name))
+        {
+            /// Case (a): columns.txt has the physical name, resolve to logical.
+            physical_name = column.name;
+            logical_name = mapping.getLogicalName(column.name);
+        }
+        else if (mapping.hasLogicalName(column.name) && checksums_preloaded)
+        {
+            /// Case (b): columns.txt has a logical name (pre-activation part);
+            /// verify the physical files actually exist before using the mapping.
+            auto current_column = current_columns.tryGetByName(column.name);
+            if (current_column)
+            {
+                auto candidate_physical_name = mapping.getPhysicalName(column.name);
+                if (has_column_files_in_checksums(*current_column, candidate_physical_name))
+                {
+                    physical_name = candidate_physical_name;
+                    logical_name = column.name;
+                }
+            }
+        }
+
+        if (!physical_name.empty())
+        {
+            auto remapped_column = column;
+            remapped_column.name = logical_name;
+            remapped_column.setPhysicalName(physical_name);
+            remapped_columns.push_back(remapped_column);
+        }
+        else if (mapping.hasLogicalName(column.name))
+        {
+            /// Case (c): the mapping knows the column but its physical files are
+            /// not in this part -- skip so the reader uses defaults.
+        }
+        else
+        {
+            /// Case (d): unknown to the mapping -- pass through unchanged.
+            auto remapped_column = column;
+            remapped_column.setPhysicalName(column.getNameInStorage());
+            remapped_columns.push_back(remapped_column);
+        }
+    }
+
+    return remapped_columns;
+}
+
 void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 {
     String path = fs::path(getDataPartStorage().getRelativePath()) / "columns.txt";
@@ -2022,8 +2156,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         auto metadata_snapshot = getMetadataSnapshot();
         /// If there is no file with a list of columns, write it down.
         auto columns_to_load = metadata_snapshot->getColumns().getAllPhysical();
-        auto physical_mapping_snapshot = storage.getPhysicalNameMapping();
-        if (physical_mapping_snapshot && physical_mapping_snapshot->isActive())
+        if (auto physical_mapping_snapshot = storage.getActivePhysicalNameMapping())
             populatePhysicalNames(columns_to_load, *physical_mapping_snapshot);
 
         for (const auto & column : columns_to_load)
@@ -2037,113 +2170,13 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
             writeColumns(loaded_columns, {});
     }
 
-    auto physical_mapping = storage.getPhysicalNameMapping();
-    if (physical_mapping && physical_mapping->isActive())
-    {
-        const auto & mapping = *physical_mapping;
-        const auto current_columns = getMetadataSnapshot()->getColumns().getAllPhysical();
-        const bool checksums_preloaded = !checksums.empty();
-
-        auto is_persistent_virtual = [](const String & column_name)
-        {
-            return column_name == RowExistsColumn::name
-                || column_name == BlockNumberColumn::name
-                || column_name == BlockOffsetColumn::name;
-        };
-
-        auto has_column_files_in_checksums = [&](const NameAndTypePair & current_column, const String & physical_name)
-        {
-            if (!checksums_preloaded)
-                return false;
-
-            auto column_with_physical_name = current_column;
-            column_with_physical_name.setPhysicalName(physical_name);
-
-            bool has_any = false;
-            bool missing_any = false;
-            auto serialization = IDataType::getSerialization(column_with_physical_name);
-            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
-            {
-                if (missing_any || ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                    return;
-
-                if (getStreamNameForColumn(
-                    column_with_physical_name,
-                    substream_path,
-                    ".bin",
-                    checksums,
-                    storage.getSettings()))
-                    has_any = true;
-                else
-                    missing_any = true;
-            });
-
-            return has_any && !missing_any;
-        };
-
-        NamesAndTypesList remapped_columns;
-        for (const auto & column : loaded_columns)
-        {
-            if (is_persistent_virtual(column.name))
-            {
-                auto remapped_column = column;
-                remapped_column.setPhysicalName(column.getNameInStorage());
-                remapped_columns.push_back(remapped_column);
-                continue;
-            }
-
-            String physical_name;
-            String logical_name;
-
-            if (mapping.hasPhysicalName(column.name))
-            {
-                physical_name = column.name;
-                logical_name = mapping.getLogicalName(column.name);
-            }
-            else if (mapping.hasLogicalName(column.name) && checksums_preloaded)
-            {
-                auto current_column = current_columns.tryGetByName(column.name);
-                if (current_column)
-                {
-                    auto candidate_physical_name = mapping.getPhysicalName(column.name);
-                    if (has_column_files_in_checksums(*current_column, candidate_physical_name))
-                    {
-                        physical_name = candidate_physical_name;
-                        logical_name = column.name;
-                    }
-                }
-            }
-
-            if (!physical_name.empty())
-            {
-                auto remapped_column = column;
-                remapped_column.name = logical_name;
-                remapped_column.setPhysicalName(physical_name);
-                remapped_columns.push_back(remapped_column);
-            }
-            else if (mapping.hasLogicalName(column.name))
-            {
-                /// The mapping knows about this column but the expected physical
-                /// files are not in this part (e.g. the column was dropped and
-                /// re-added with a new physical name). Skip it so the reader
-                /// uses default values instead of stale data from the old name.
-            }
-            else
-            {
-                auto remapped_column = column;
-                remapped_column.setPhysicalName(column.getNameInStorage());
-                remapped_columns.push_back(remapped_column);
-            }
-        }
-
-        loaded_columns = remapped_columns;
-    }
+    if (auto physical_mapping = storage.getActivePhysicalNameMapping())
+        loaded_columns = remapColumnsWithPhysicalNames(loaded_columns, *physical_mapping);
 
     SerializationInfoByName infos({});
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
     {
-        auto pn_mapping = storage.getPhysicalNameMapping();
-        if (pn_mapping && pn_mapping->isActive())
+        if (auto pn_mapping = storage.getActivePhysicalNameMapping())
             infos = SerializationInfoByName::readJSONWithPhysicalNames(loaded_columns, *pn_mapping, *in);
         else
             infos = SerializationInfoByName::readJSON(loaded_columns, *in);
@@ -2687,9 +2720,11 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             if (metadata_snapshot->hasPartitionKey() && !checksums.files.contains("partition.dat"))
                 throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksum for partition.dat");
 
+            /// Verify minmax index checksums exist. Try the logical column
+            /// name first, then fall back to the physical name when active.
             if (!isEmpty() && !parent_part)
             {
-                auto pn_mapping_check = storage.getPhysicalNameMapping();
+                auto pn_mapping_check = storage.getActivePhysicalNameMapping();
                 for (const String & col_name : MergeTreeData::getMinMaxColumnsNames(partition_key))
                 {
                     auto check_minmax = [&](const String & minmax_col)
@@ -2700,7 +2735,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
                     if (!check_minmax(col_name))
                     {
                         bool found_physical = false;
-                        if (pn_mapping_check && pn_mapping_check->isActive() && pn_mapping_check->hasLogicalName(col_name))
+                        if (pn_mapping_check && pn_mapping_check->hasLogicalName(col_name))
                             found_physical = check_minmax(pn_mapping_check->getPhysicalName(col_name));
                         if (!found_physical)
                             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No minmax idx file checksum for column {}", col_name);
@@ -2761,36 +2796,39 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             if (!parent_part)
             {
-                auto pn_mapping_file = storage.getPhysicalNameMapping();
+                auto pn_mapping_file = storage.getActivePhysicalNameMapping();
+
+                /// Try candidate file names for a minmax column until one
+                /// succeeds: escaped name, hashed name, and — when physical
+                /// names are active — physical escaped/hashed variants.
+                auto check_minmax_file_not_empty = [&](const String & col_name)
+                {
+                    auto try_file = [&](const String & file_name) -> bool
+                    {
+                        try { check_file_not_empty(file_name); return true; }
+                        catch (Exception &) { return false; }
+                    };
+
+                    auto escaped = escapeForFileName(col_name);
+                    if (try_file("minmax_" + escaped + ".idx"))
+                        return;
+                    if (try_file("minmax_" + sipHash128String(escaped) + ".idx"))
+                        return;
+
+                    if (pn_mapping_file && pn_mapping_file->hasLogicalName(col_name))
+                    {
+                        auto phys_escaped = escapeForFileName(pn_mapping_file->getPhysicalName(col_name));
+                        if (try_file("minmax_" + phys_escaped + ".idx"))
+                            return;
+                        if (try_file("minmax_" + sipHash128String(phys_escaped) + ".idx"))
+                            return;
+                    }
+
+                    check_file_not_empty("minmax_" + escaped + ".idx");
+                };
+
                 for (const String & col_name : MergeTreeData::getMinMaxColumnsNames(partition_key))
-                    try
-                    {
-                        check_file_not_empty("minmax_" + escapeForFileName(col_name) + ".idx");
-                    }
-                    catch (Exception &)
-                    {
-                        try
-                        {
-                            check_file_not_empty("minmax_" + sipHash128String(escapeForFileName(col_name)) + ".idx");
-                        }
-                        catch (Exception &)
-                        {
-                            if (pn_mapping_file && pn_mapping_file->isActive() && pn_mapping_file->hasLogicalName(col_name))
-                            {
-                                auto phys = pn_mapping_file->getPhysicalName(col_name);
-                                try
-                                {
-                                    check_file_not_empty("minmax_" + escapeForFileName(phys) + ".idx");
-                                }
-                                catch (Exception &)
-                                {
-                                    check_file_not_empty("minmax_" + sipHash128String(escapeForFileName(phys)) + ".idx");
-                                }
-                            }
-                            else
-                                throw;
-                        }
-                    }
+                    check_minmax_file_not_empty(col_name);
             }
         }
     }

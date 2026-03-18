@@ -203,35 +203,7 @@ StorageMergeTree::StorageMergeTree(
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
     loadPhysicalNameMappingFromDisk();
-
-    if (hasPhysicalNameMapping())
-    {
-        auto mapping = getPhysicalNameMapping();
-        auto metadata_columns = getInMemoryMetadataPtr()->getColumns().getAllPhysical();
-
-        /// Remove mapping entries whose logical name no longer exists in metadata.
-        /// This handles: (a) stale entries from a crash where the mapping was
-        /// persisted before metadata, (b) completed DROPs, (c) incomplete two-phase
-        /// renames where the old logical name was kept for crash safety but the
-        /// metadata commit did not happen.  Columns in metadata but NOT in the
-        /// mapping fall back to identity via `getPhysicalNameOrDefault`, which is
-        /// correct: their files use the logical name directly.
-        PhysicalNameMapping reconciled = *mapping;
-        bool changed = false;
-        for (const auto & col_name : mapping->logicalNames())
-        {
-            if (!metadata_columns.tryGetByName(col_name))
-            {
-                reconciled.removeColumn(col_name);
-                changed = true;
-            }
-        }
-        if (changed)
-        {
-            setPhysicalNameMapping(std::move(reconciled));
-            writePhysicalNameMappingToDisk();
-        }
-    }
+    reconcilePhysicalNameMappingWithMetadata();
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
@@ -443,6 +415,131 @@ void StorageMergeTree::drop()
     dropAllData();
 }
 
+StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMappingForAlter(
+    const AlterCommands & commands,
+    const StorageInMemoryMetadata & old_metadata,
+    const StorageInMemoryMetadata & new_metadata) const
+{
+    PhysicalNameAlterPlan plan;
+
+    /// Evaluate activation against the post-MODIFY-SETTING state so that a
+    /// single ALTER mixing `MODIFY SETTING ... , RENAME COLUMN ...` activates
+    /// physical names and takes the metadata-only path in one shot.
+    MergeTreeSettings effective_new_settings(*getSettings());
+    if (new_metadata.settings_changes)
+        effective_new_settings.applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+
+    bool settings_enable_physical_names =
+        effective_new_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES
+        && effective_new_settings[MergeTreeSetting::activate_physical_names_for_existing_tables];
+
+    bool has_compatible_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
+    {
+        return c.type == AlterCommand::RENAME_COLUMN
+            || c.type == AlterCommand::DROP_COLUMN
+            || c.type == AlterCommand::ADD_COLUMN;
+    });
+
+    bool should_activate = !hasPhysicalNameMapping() && settings_enable_physical_names && has_compatible_alter;
+    plan.physical_names_active = hasPhysicalNameMapping() || should_activate;
+
+    if (!plan.physical_names_active)
+        return plan;
+
+    PhysicalNameMapping local_mapping;
+    if (should_activate)
+        local_mapping = PhysicalNameMapping::createForExistingTable(old_metadata.getColumns().getAllPhysical());
+    else if (auto current = getPhysicalNameMapping())
+        local_mapping = *current;
+
+    /// Two-phase rename: `beginRename` keeps both old and new logical names
+    /// in the mapping so the persisted state is crash-safe.  After metadata
+    /// commit, `finishRename` removes the old entry.
+    for (const auto & command : commands)
+    {
+        if (command.ignore)
+            continue;
+        if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            if (local_mapping.hasLogicalName(command.column_name))
+            {
+                local_mapping.beginRename(command.column_name, command.rename_to);
+                plan.rename_old_names.push_back(command.column_name);
+            }
+        }
+    }
+
+    /// Use the actual metadata diff to handle flattened Nested correctly:
+    /// `commands.apply` expands `ADD COLUMN n Nested(...)` into `n.x`, `n.y`, etc.
+    std::set<String> old_col_names;
+    for (const auto & col : old_metadata.getColumns().getAllPhysical())
+        old_col_names.insert(col.name);
+    std::set<String> new_col_names;
+    for (const auto & col : new_metadata.getColumns().getAllPhysical())
+        new_col_names.insert(col.name);
+
+    /// Guard: adding flattened Nested subcolumns with physical names active
+    /// is not yet supported (SubstreamsCache key collision in the reader
+    /// produces wrong results for siblings sharing offset streams).
+    std::map<String, size_t> nested_parent_counts;
+    for (const auto & col : new_metadata.getColumns().getAllPhysical())
+    {
+        if (!old_col_names.contains(col.name))
+        {
+            auto dot_pos = col.name.find('.');
+            if (dot_pos != String::npos)
+                nested_parent_counts[col.name.substr(0, dot_pos)]++;
+        }
+    }
+        for (const auto & [parent, count] : nested_parent_counts)
+        {
+            if (count > 1)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Adding flattened Nested column '{}' with physical names active is not yet supported. "
+                    "Use `SET flatten_nested = 0` before adding Nested columns, or disable physical names",
+                    parent);
+        }
+
+        /// Allocate counter-based physical names for newly added columns.
+        for (const auto & col : new_metadata.getColumns().getAllPhysical())
+        {
+            if (!old_col_names.contains(col.name) && !local_mapping.hasLogicalName(col.name))
+            {
+                auto new_physical = local_mapping.allocatePhysicalName();
+                local_mapping.addColumn(col.name, new_physical);
+            }
+        }
+
+        /// Remove mapping entries for dropped columns (but not for the old
+        /// side of a two-phase rename — those are cleaned up after commit).
+        std::set<String> rename_old_set(plan.rename_old_names.begin(), plan.rename_old_names.end());
+        for (const auto & col : old_metadata.getColumns().getAllPhysical())
+    {
+        if (!new_col_names.contains(col.name) && local_mapping.hasLogicalName(col.name)
+            && !rename_old_set.contains(col.name))
+            local_mapping.removeColumn(col.name);
+    }
+
+    plan.new_mapping.emplace(std::move(local_mapping));
+    return plan;
+}
+
+void StorageMergeTree::finalizePhysicalNameRenames(const std::vector<String> & old_names)
+{
+    if (old_names.empty())
+        return;
+
+    auto current = getPhysicalNameMapping();
+    if (!current)
+        return;
+
+    PhysicalNameMapping finalized = *current;
+    for (const auto & old_name : old_names)
+        finalized.finishRename(old_name);
+    setPhysicalNameMapping(std::move(finalized));
+    writePhysicalNameMappingToDisk();
+}
+
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
@@ -472,110 +569,13 @@ void StorageMergeTree::alter(
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
-    /// Evaluate activation against the post-MODIFY-SETTING state so that a
-    /// single ALTER mixing `MODIFY SETTING ... , RENAME COLUMN ...` activates
-    /// physical names and takes the metadata-only path in one shot.
-    MergeTreeSettings effective_new_settings(*getSettings());
-    if (new_metadata.settings_changes)
-        effective_new_settings.applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
-
-    bool settings_enable_physical_names =
-        effective_new_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES
-        && effective_new_settings[MergeTreeSetting::activate_physical_names_for_existing_tables];
-
-    bool has_compatible_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
-    {
-        return c.type == AlterCommand::RENAME_COLUMN
-            || c.type == AlterCommand::DROP_COLUMN
-            || c.type == AlterCommand::ADD_COLUMN;
-    });
-
-    bool should_activate = !hasPhysicalNameMapping() && settings_enable_physical_names && has_compatible_alter;
-    bool physical_names_active = hasPhysicalNameMapping() || should_activate;
+    auto pn_plan = preparePhysicalNameMappingForAlter(commands, old_metadata, new_metadata);
 
     auto maybe_mutation_commands = commands.getMutationCommands(
         old_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context,
-        /*with_alters=*/false, /*physical_names_active=*/physical_names_active);
+        /*with_alters=*/false, /*physical_names_active=*/pn_plan.physical_names_active);
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
-
-    std::optional<PhysicalNameMapping> new_physical_mapping;
-    std::vector<String> rename_old_names;
-    if (physical_names_active)
-    {
-        PhysicalNameMapping local_mapping;
-        if (should_activate)
-            local_mapping = PhysicalNameMapping::createForExistingTable(old_metadata.getColumns().getAllPhysical());
-        else if (auto current = getPhysicalNameMapping())
-            local_mapping = *current;
-
-        /// Two-phase rename: `beginRename` keeps both old and new logical names
-        /// in the mapping so the persisted state is crash-safe.  After metadata
-        /// commit, `finishRename` removes the old entry (see below).
-        for (const auto & command : commands)
-        {
-            if (command.ignore)
-                continue;
-            if (command.type == AlterCommand::RENAME_COLUMN)
-            {
-                if (local_mapping.hasLogicalName(command.column_name))
-                {
-                    local_mapping.beginRename(command.column_name, command.rename_to);
-                    rename_old_names.push_back(command.column_name);
-                }
-            }
-        }
-
-        /// Use the actual metadata diff to handle flattened Nested correctly:
-        /// `commands.apply` expands `ADD COLUMN n Nested(...)` into `n.x`, `n.y`, etc.
-        std::set<String> old_col_names;
-        for (const auto & col : old_metadata.getColumns().getAllPhysical())
-            old_col_names.insert(col.name);
-        std::set<String> new_col_names;
-        for (const auto & col : new_metadata.getColumns().getAllPhysical())
-            new_col_names.insert(col.name);
-
-        /// Guard: adding flattened Nested subcolumns with physical names active
-        /// is not yet supported (SubstreamsCache key collision in the reader
-        /// produces wrong results for siblings sharing offset streams).
-        std::map<String, size_t> nested_parent_counts;
-        for (const auto & col : new_metadata.getColumns().getAllPhysical())
-        {
-            if (!old_col_names.contains(col.name))
-            {
-                auto dot_pos = col.name.find('.');
-                if (dot_pos != String::npos)
-                    nested_parent_counts[col.name.substr(0, dot_pos)]++;
-            }
-        }
-        for (const auto & [parent, count] : nested_parent_counts)
-        {
-            if (count > 1)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Adding flattened Nested column '{}' with physical names active is not yet supported. "
-                    "Use `SET flatten_nested = 0` before adding Nested columns, or disable physical names",
-                    parent);
-        }
-
-        for (const auto & col : new_metadata.getColumns().getAllPhysical())
-        {
-            if (!old_col_names.contains(col.name) && !local_mapping.hasLogicalName(col.name))
-            {
-                auto new_physical = local_mapping.allocatePhysicalName();
-                local_mapping.addColumn(col.name, new_physical);
-            }
-        }
-
-        std::set<String> rename_old_set(rename_old_names.begin(), rename_old_names.end());
-        for (const auto & col : old_metadata.getColumns().getAllPhysical())
-        {
-            if (!new_col_names.contains(col.name) && local_mapping.hasLogicalName(col.name)
-                && !rename_old_set.contains(col.name))
-                local_mapping.removeColumn(col.name);
-        }
-
-        new_physical_mapping.emplace(std::move(local_mapping));
-    }
 
     auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
@@ -638,7 +638,7 @@ void StorageMergeTree::alter(
 
             try
             {
-                if (new_physical_mapping)
+                if (pn_plan.new_mapping)
                 {
                     old_published_mapping = getPhysicalNameMapping();
 
@@ -647,7 +647,7 @@ void StorageMergeTree::alter(
                         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before physical name mapping persist");
                     });
 
-                    setPhysicalNameMapping(std::move(*new_physical_mapping));
+                    setPhysicalNameMapping(std::move(*pn_plan.new_mapping));
                     writePhysicalNameMappingToDisk();
                     mapping_was_changed = true;
                 }
@@ -670,23 +670,7 @@ void StorageMergeTree::alter(
                 throw;
             }
 
-            /// Phase 2 of two-phase rename: remove old logical names from the
-            /// mapping now that metadata has committed.  If this persist fails
-            /// or we crash here, the mapping on disk still has both entries;
-            /// the startup reconciliation will remove the stale old entry
-            /// because it is no longer in metadata.
-            if (!rename_old_names.empty())
-            {
-                auto current = getPhysicalNameMapping();
-                if (current)
-                {
-                    PhysicalNameMapping finalized = *current;
-                    for (const auto & old_name : rename_old_names)
-                        finalized.finishRename(old_name);
-                    setPhysicalNameMapping(std::move(finalized));
-                    writePhysicalNameMappingToDisk();
-                }
-            }
+            finalizePhysicalNameRenames(pn_plan.rename_old_names);
 
             FailPointInjection::pauseFailPoint(FailPoints::physical_names_pause_after_metadata_alter);
 

@@ -190,6 +190,29 @@ private:
     /// equals zero creates object with deduplication window equals zero.
     void loadDeduplicationLog();
 
+    /// Encapsulates the result of preparing physical name mapping changes for
+    /// an ALTER: the updated mapping, whether physical names are active (for
+    /// deciding mutation strategy), and old logical names from two-phase
+    /// renames that must be finalized after metadata commit.
+    struct PhysicalNameAlterPlan
+    {
+        std::optional<PhysicalNameMapping> new_mapping;
+        std::vector<String> rename_old_names;
+        bool physical_names_active = false;
+    };
+
+    /// Compute how the physical name mapping should change for the given ALTER.
+    /// Handles first-time activation, two-phase renames, column adds/drops, and
+    /// the flattened Nested guard.
+    PhysicalNameAlterPlan preparePhysicalNameMappingForAlter(
+        const AlterCommands & commands,
+        const StorageInMemoryMetadata & old_metadata,
+        const StorageInMemoryMetadata & new_metadata) const;
+
+    /// Finalize two-phase renames after metadata commit: remove old logical
+    /// names from the mapping and persist.
+    void finalizePhysicalNameRenames(const std::vector<String> & old_names);
+
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.

@@ -174,8 +174,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         assertEOF(*buf);
     }
 
-    auto pn_mapping = data_part->storage.getPhysicalNameMapping();
-    bool physical_names_active = pn_mapping && pn_mapping->isActive();
+    auto pn_mapping = data_part->storage.getActivePhysicalNameMapping();
+    bool physical_names_active = pn_mapping != nullptr;
 
     if (!physical_names_active)
     {

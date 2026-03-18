@@ -97,10 +97,7 @@ public:
 
     PhysicalNameMappingPtr getPhysicalNameMapping() const override
     {
-        auto mapping = data_part->storage.getPhysicalNameMapping();
-        if (mapping && mapping->isActive())
-            return mapping;
-        return nullptr;
+        return data_part->storage.getActivePhysicalNameMapping();
     }
 
 private:

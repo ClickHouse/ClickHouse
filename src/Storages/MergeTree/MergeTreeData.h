@@ -638,10 +638,21 @@ public:
 
     bool hasPhysicalNameMapping() const
     {
-        auto mapping = physical_name_mapping.get();
-        return mapping && mapping->isActive();
+        return getActivePhysicalNameMapping() != nullptr;
     }
 
+    /// Returns the physical name mapping only if it is active (i.e. physical
+    /// names have been activated for this table). Returns nullptr otherwise.
+    PhysicalNameMappingPtr getActivePhysicalNameMapping() const
+    {
+        auto mapping = physical_name_mapping.get();
+        if (mapping && mapping->isActive())
+            return mapping;
+        return nullptr;
+    }
+
+    /// Returns the raw physical name mapping pointer regardless of activation
+    /// state. Needed during ALTER when transitioning from inactive to active.
     PhysicalNameMappingPtr getPhysicalNameMapping() const
     {
         return physical_name_mapping.get();
@@ -654,6 +665,12 @@ public:
 
     void loadPhysicalNameMappingFromDisk();
     void writePhysicalNameMappingToDisk() const;
+
+    /// Remove mapping entries whose logical name no longer exists in table
+    /// metadata. Called after loading the mapping from disk to handle stale
+    /// entries left by: (a) a crash between mapping persist and metadata commit,
+    /// (b) completed DROPs, (c) incomplete two-phase renames.
+    void reconcilePhysicalNameMappingWithMetadata();
 
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
     /// This method allows read-only replicas of tables on a shared storage.

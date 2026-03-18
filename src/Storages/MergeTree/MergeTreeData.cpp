@@ -543,6 +543,32 @@ void MergeTreeData::writePhysicalNameMappingToDisk() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write `{}` for table {}", PHYSICAL_NAMES_FILE_NAME, getStorageID().getNameForLogs());
 }
 
+void MergeTreeData::reconcilePhysicalNameMappingWithMetadata()
+{
+    if (!hasPhysicalNameMapping())
+        return;
+
+    auto mapping = getPhysicalNameMapping();
+    auto metadata_columns = getInMemoryMetadataPtr()->getColumns().getAllPhysical();
+
+    PhysicalNameMapping reconciled = *mapping;
+    bool changed = false;
+    for (const auto & col_name : mapping->logicalNames())
+    {
+        if (!metadata_columns.tryGetByName(col_name))
+        {
+            reconciled.removeColumn(col_name);
+            changed = true;
+        }
+    }
+
+    if (changed)
+    {
+        setPhysicalNameMapping(std::move(reconciled));
+        writePhysicalNameMappingToDisk();
+    }
+}
+
 DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
@@ -9024,7 +9050,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
     auto columns_list = Nested::collect(columns.getAllPhysical());
 
-    if (auto mapping = getPhysicalNameMapping(); mapping && mapping->isActive())
+    if (auto mapping = getActivePhysicalNameMapping())
         populatePhysicalNames(columns_list, *mapping);
 
     SerializationInfo::Settings serialization_settings

@@ -539,7 +539,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
-    if (auto pn_mapping = global_ctx->data->getPhysicalNameMapping(); pn_mapping && pn_mapping->isActive())
+    if (auto pn_mapping = global_ctx->data->getActivePhysicalNameMapping())
         populatePhysicalNames(global_ctx->storage_columns, *pn_mapping);
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
 

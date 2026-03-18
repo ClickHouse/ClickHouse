@@ -773,6 +773,14 @@ private:
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require, bool load_metadata_version);
 
+    /// When a physical name mapping is active, the on-disk column list
+    /// (columns.txt) uses physical storage names that differ from the logical
+    /// names in the current table schema. This method translates each entry
+    /// back to its logical name and attaches the physical name as metadata.
+    NamesAndTypesList remapColumnsWithPhysicalNames(
+        const NamesAndTypesList & loaded_columns,
+        const PhysicalNameMapping & mapping) const;
+
     /// Reads columns substreams from columns_substreams.txt.
     void loadColumnsSubstreams();
 

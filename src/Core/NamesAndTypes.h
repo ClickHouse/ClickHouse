@@ -48,6 +48,18 @@ public:
 
     String name;
     DataTypePtr type;
+
+    /// The name used for on-disk storage files (.bin, .mrk, etc.).
+    ///
+    /// When a table has a PhysicalNameMapping (serialization_info_version =
+    /// 'with_physical_names'), each column is assigned a stable, counter-allocated
+    /// physical name (e.g. "0", "1", "2") that never changes across renames or
+    /// drops. This decouples the file names on disk from the logical column names
+    /// visible to users, enabling metadata-only RENAME and DROP without rewriting
+    /// data files.
+    ///
+    /// When empty (the default), the logical `name` is used as the file name --
+    /// this is the traditional behavior for tables without physical name mapping.
     String physical_name;
 
 private:
