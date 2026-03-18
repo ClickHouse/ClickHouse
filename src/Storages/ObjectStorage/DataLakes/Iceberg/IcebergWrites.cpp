@@ -712,6 +712,11 @@ IcebergStorageSink::IcebergStorageSink(
     }
 }
 
+IcebergStorageSink::~IcebergStorageSink()
+{
+    cancelBuffers();
+}
+
 void IcebergStorageSink::consume(Chunk & chunk)
 {
     if (isCancelled())

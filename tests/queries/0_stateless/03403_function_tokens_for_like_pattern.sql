@@ -34,3 +34,16 @@ SELECT tokens('\\\\%test'), tokensForLikePattern('\\\\%test');
 SELECT tokens('abc%d'), tokensForLikePattern('abc%d');
 SELECT tokens('%%%%'), tokensForLikePattern('%%%%');
 SELECT tokens('____'), tokensForLikePattern('____');
+
+-- unicode_word tokenizer
+SELECT 'unicode_word:';
+SELECT tokens('hello', 'unicode_word'), tokensForLikePattern('hello', 'unicode_word');
+SELECT tokens('你好世界', 'unicode_word'), tokensForLikePattern('你好世界', 'unicode_word');
+SELECT tokens('hello', 'unicode_word'), tokensForLikePattern('%hello%', 'unicode_word');
+SELECT tokens('hello_world', 'unicode_word'), tokensForLikePattern('hello\_world%', 'unicode_word');
+SELECT tokens('你好世界', 'unicode_word'), tokensForLikePattern('%你好%世界%', 'unicode_word');
+SELECT tokens('a:bc.d', 'unicode_word'), tokensForLikePattern('a:b%c.d', 'unicode_word');
+SELECT tokens('测试数据', 'unicode_word'), tokensForLikePattern('%测试，数据%', 'unicode_word');
+SELECT tokens('test_data', 'unicode_word'), tokensForLikePattern('test\_%data', 'unicode_word');
+-- Stop word followed by escaped character in LIKE pattern (exercises escaped-state reset before stop word check)
+SELECT tokens('and%test', 'unicode_word', ['and']), tokensForLikePattern('and\%test', 'unicode_word', ['and']);
