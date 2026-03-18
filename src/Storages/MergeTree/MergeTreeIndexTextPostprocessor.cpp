@@ -119,7 +119,7 @@ std::vector<String> MergeTreeIndexTextPostprocessor::applyBatch(std::vector<Stri
     for (size_t i = 0; i < result->size(); ++i)
     {
         auto ref = result->getDataAt(i);
-        if (ref.size() > 0)
+        if (!ref.empty())
             tokens.push_back(String{ref.data(), ref.size()});
     }
     return tokens;
@@ -163,7 +163,7 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(ColumnPtr tok
         while (flat_idx < row_end)
         {
             auto ref = flat_transformed->getDataAt(flat_idx);
-            if (ref.size() > 0)
+            if (!ref.empty())
             {
                 result_data->insertData(ref.data(), ref.size());
                 ++write_offset;
