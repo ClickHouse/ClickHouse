@@ -94,4 +94,39 @@ FROM remote('127.{1,2}', currentDatabase(), tab_local)
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 5;
 
+SELECT '# Distance function in SELECT but NOT in ORDER BY via remote() - must NOT use vector search index';
+EXPLAIN indexes = 1
+SELECT
+    id, L2Distance(vec, [1.0, 1.0]) as dist
+FROM remote('127.{1,2}', currentDatabase(), tab_local)
+ORDER BY id
+LIMIT 3;
+
+SELECT '# Table without vector similarity index via remote() - must NOT use vector search index';
+DROP TABLE IF EXISTS tab_no_idx SYNC;
+CREATE TABLE tab_no_idx
+(
+    id Int32,
+    vec Array(Float32)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 3;
+
+INSERT INTO tab_no_idx VALUES
+  (1, [1.0, 0.0]),
+  (2, [1.1, 0.0]),
+  (3, [1.2, 0.0]),
+  (4, [1.3, 0.0]),
+  (5, [1.4, 0.0]),
+  (6, [1.5, 0.0]);
+
+EXPLAIN indexes = 1
+SELECT
+    id
+FROM remote('127.{1,2}', currentDatabase(), tab_no_idx)
+ORDER BY L2Distance(vec, [1.0, 1.0])
+LIMIT 3;
+
+DROP TABLE tab_no_idx SYNC;
 DROP TABLE tab_local SYNC;

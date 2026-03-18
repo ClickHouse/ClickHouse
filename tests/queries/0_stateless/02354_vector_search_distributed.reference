@@ -43,3 +43,34 @@ Expression (Project names)
 3
 4
 5
+# Distance function in SELECT but NOT in ORDER BY via remote() - must NOT use vector search index
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Merge sorted streams after aggregation stage for ORDER BY)
+      Union
+        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)) [lifted up part])
+          Sorting (Sorting for ORDER BY)
+            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+              ReadFromMergeTree (default.tab_local)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Ranges: 1
+        ReadFromRemote (Read from remote replica)
+# Table without vector similarity index via remote() - must NOT use vector search index
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Merge sorted streams after aggregation stage for ORDER BY)
+      Union
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            ReadFromMergeTree (default.tab_no_idx)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 2/2
+              Ranges: 1
+        ReadFromRemote (Read from remote replica)
