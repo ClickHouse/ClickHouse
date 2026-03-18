@@ -118,9 +118,26 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     int direction = sort_description.front().direction;
 
-    if ((settings.use_skip_indexes_for_top_k &&
-            read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name) && settings.use_skip_indexes_on_data_read) ||
-        (settings.use_top_k_dynamic_filtering && !read_from_mergetree_step->getPrewhereInfo()))
+    bool use_skip_index = settings.use_skip_indexes_for_top_k
+        && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name)
+        && settings.use_skip_indexes_on_data_read;
+
+    /// Do not inject `__topKFilter` as prewhere when a WHERE clause exists
+    /// (as FilterStep or already in prewhere).  `optimizePrewhere` runs later
+    /// and may push the WHERE to prewhere; injecting `__topKFilter` now would
+    /// block that push-down (optimizePrewhere bails out when prewhere is
+    /// already occupied).
+    bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
+        && !where_clause;
+
+    /// Always create the tracker when the setting is enabled, even if
+    /// prewhere injection is skipped.  The tracker enables
+    /// `PartialSortingTransform` to publish thresholds at small LIMIT values
+    /// (below `min_limit_for_partial_sort_optimization`) and triggers
+    /// `MergeSortingTransform` to remerge earlier, reducing sort work.
+    bool use_threshold_tracker = settings.use_top_k_dynamic_filtering;
+
+    if (use_skip_index || use_threshold_tracker)
     {
         threshold_tracker = std::make_shared<TopKThresholdTracker>(direction);
         sorting_step->setTopKThresholdTracker(threshold_tracker);
@@ -128,15 +145,12 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     bool added_step = false;
 
-    if  (settings.use_top_k_dynamic_filtering &&
-         !read_from_mergetree_step->getPrewhereInfo())
+    if (use_dynamic_filtering)
     {
         auto new_prewhere_info = std::make_shared<PrewhereInfo>();
         NameAndTypePair sort_column_name_and_type(sort_column_name, sort_column.type);
         new_prewhere_info->prewhere_actions = ActionsDAG({sort_column_name_and_type});
 
-        /// Cannot use get() because need to pass an argument to constructor
-        /// auto filter_function = FunctionFactory::instance().get("__topKFilter",nullptr);
         auto filter_function =  DB::createInternalFunctionTopKFilterResolver(threshold_tracker);
         const auto & prewhere_node = new_prewhere_info->prewhere_actions.addFunction(
                 filter_function, {new_prewhere_info->prewhere_actions.getInputs().front()}, {});

@@ -41,7 +41,9 @@ SELECT trimLeft(explain) AS explain FROM (
     SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 0)
 WHERE explain LIKE '%TopK%';
 
--- Verify that dynamic filter injects PREWHERE dynamic filter
+-- When WHERE is present, __topKFilter is not injected as prewhere to avoid
+-- displacing the WHERE clause that optimizePrewhere will push to prewhere.
+-- So this should return no rows.
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN actions = 1
     SELECT id, v1
