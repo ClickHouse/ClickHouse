@@ -14,12 +14,12 @@ ConnectionRegistry & ConnectionRegistry::instance()
 
 void ConnectionRegistry::enable()
 {
-    enabled_.store(true, std::memory_order_relaxed);
+    enabled.store(true, std::memory_order_relaxed);
 }
 
 ConnectionRegistry::Handle ConnectionRegistry::add(ConnectionInfo info)
 {
-    if (!enabled_.load(std::memory_order_relaxed))
+    if (!enabled.load(std::memory_order_relaxed))
         return Handle(); /// no-op handle when feature is disabled
 
     UInt64 id = next_id.fetch_add(1, std::memory_order_relaxed);

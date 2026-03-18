@@ -7,6 +7,7 @@
 
 #include <base/types.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/SharedMutex.h>
 #include <Poco/Net/IPAddress.h>
 
 
@@ -93,8 +94,8 @@ private:
     void remove(UInt64 id);
     void update(UInt64 id, const String & status, const String & query_id, time_t last_query_time);
 
-    std::atomic<bool> enabled_{false};
-    mutable std::shared_mutex mutex;
+    std::atomic<bool> enabled{false};
+    mutable DB::SharedMutex mutex;
     std::unordered_map<UInt64, ConnectionInfo> connections;
     std::atomic<UInt64> next_id{1};
 };
