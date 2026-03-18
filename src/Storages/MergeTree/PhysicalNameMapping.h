@@ -67,6 +67,15 @@ public:
     void removeColumn(const String & logical_name);
     void renameColumn(const String & old_logical_name, const String & new_logical_name);
 
+    /// Two-phase rename for crash safety.  `beginRename` adds the new logical
+    /// name while keeping the old one — both map to the same physical name.
+    /// The mapping is persisted in this state.  After the metadata commit
+    /// succeeds, `finishRename` removes the old entry.  If we crash between
+    /// the two persists, reconciliation at startup sees the old logical name
+    /// in metadata and keeps that entry, removing the new one.
+    void beginRename(const String & old_logical_name, const String & new_logical_name);
+    void finishRename(const String & old_logical_name);
+
     Names logicalNames() const;
 
     /// For existing tables: every column gets physical_name == column_name.

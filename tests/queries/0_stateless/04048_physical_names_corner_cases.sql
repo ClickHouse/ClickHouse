@@ -288,7 +288,13 @@ SELECT a, val, c FROM t_phys_defaults ORDER BY a;
 
 DROP TABLE t_phys_defaults;
 
--- Test 11 (flattened Nested ADD) is disabled: known bug where flattened Nested
--- subcolumns with physical names produce empty String data on read (the offset
--- stream is found but data stream resolution fails for flat NameAndTypePair
--- entries that lack TupleElement in their substream path).
+-- Test 11: Flattened Nested ADD is blocked with a clear error.
+SELECT 'Test 11: flattened Nested guard';
+DROP TABLE IF EXISTS t_phys_flat_nested;
+CREATE TABLE t_phys_flat_nested (a UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+INSERT INTO t_phys_flat_nested VALUES (1);
+ALTER TABLE t_phys_flat_nested ADD COLUMN n Nested(x UInt64, y String); -- { serverError NOT_IMPLEMENTED }
+DROP TABLE t_phys_flat_nested;

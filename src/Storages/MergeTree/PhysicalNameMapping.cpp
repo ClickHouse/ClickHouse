@@ -146,8 +146,18 @@ void PhysicalNameMapping::removeColumn(const String & logical_name)
     if (it == logical_to_physical.end())
         throwMissingLogicalName(logical_name);
 
-    physical_to_logical.erase(it->second);
+    const String physical = it->second;
     logical_to_physical.erase(it);
+
+    for (const auto & [other_logical, other_physical] : logical_to_physical)
+    {
+        if (other_physical == physical)
+        {
+            physical_to_logical[physical] = other_logical;
+            return;
+        }
+    }
+    physical_to_logical.erase(physical);
 }
 
 void PhysicalNameMapping::renameColumn(const String & old_logical_name, const String & new_logical_name)
@@ -163,6 +173,40 @@ void PhysicalNameMapping::renameColumn(const String & old_logical_name, const St
     logical_to_physical.erase(it);
     logical_to_physical.emplace(new_logical_name, physical_name);
     physical_to_logical[physical_name] = new_logical_name;
+}
+
+void PhysicalNameMapping::beginRename(const String & old_logical_name, const String & new_logical_name)
+{
+    auto it = logical_to_physical.find(old_logical_name);
+    if (it == logical_to_physical.end())
+        throwMissingLogicalName(old_logical_name);
+
+    if (logical_to_physical.contains(new_logical_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical column name '{}' is already registered in `PhysicalNameMapping`", new_logical_name);
+
+    auto physical_name = it->second;
+    logical_to_physical.emplace(new_logical_name, physical_name);
+    physical_to_logical[physical_name] = new_logical_name;
+}
+
+void PhysicalNameMapping::finishRename(const String & old_logical_name)
+{
+    auto it = logical_to_physical.find(old_logical_name);
+    if (it == logical_to_physical.end())
+        return;
+
+    const String physical = it->second;
+    logical_to_physical.erase(it);
+
+    for (const auto & [logical, phys] : logical_to_physical)
+    {
+        if (phys == physical)
+        {
+            physical_to_logical[physical] = logical;
+            return;
+        }
+    }
+    physical_to_logical.erase(physical);
 }
 
 Names PhysicalNameMapping::logicalNames() const
@@ -253,7 +297,11 @@ PhysicalNameMapping PhysicalNameMapping::fromString(const String & str)
 
     auto mapping_object = object->getObject(KEY_MAPPING);
     for (const auto & [logical_name, physical_name_value] : *mapping_object)
-        mapping.addColumn(logical_name, physical_name_value.convert<String>());
+    {
+        String physical = physical_name_value.convert<String>();
+        mapping.logical_to_physical.emplace(logical_name, physical);
+        mapping.physical_to_logical[physical] = logical_name;
+    }
 
     mapping.active = mapping.active || !mapping.logical_to_physical.empty();
     if (mapping.next_physical_column_id == 1 && mapping.active)

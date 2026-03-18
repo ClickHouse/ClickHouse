@@ -94,6 +94,61 @@ TEST(PhysicalNameMapping, UnmappedColumnsPassthrough)
     EXPECT_EQ(row_exists->getPhysicalNameInStorage(), "_row_exists");
 }
 
+TEST(PhysicalNameMapping, TwoPhaseRenameNormal)
+{
+    auto mapping = PhysicalNameMapping::createForExistingTable(makeColumns({"a", "b"}));
+
+    mapping.beginRename("a", "c");
+
+    EXPECT_TRUE(mapping.hasLogicalName("a"));
+    EXPECT_TRUE(mapping.hasLogicalName("c"));
+    EXPECT_EQ(mapping.getPhysicalName("a"), "a");
+    EXPECT_EQ(mapping.getPhysicalName("c"), "a");
+
+    mapping.finishRename("a");
+
+    EXPECT_FALSE(mapping.hasLogicalName("a"));
+    EXPECT_TRUE(mapping.hasLogicalName("c"));
+    EXPECT_EQ(mapping.getPhysicalName("c"), "a");
+    EXPECT_EQ(mapping.getLogicalName("a"), "c");
+}
+
+TEST(PhysicalNameMapping, TwoPhaseRenameCrashRecovery)
+{
+    auto mapping = PhysicalNameMapping::createForExistingTable(makeColumns({"a", "b"}));
+
+    mapping.beginRename("a", "c");
+
+    auto serialized = mapping.toString();
+    auto restored = PhysicalNameMapping::fromString(serialized);
+
+    EXPECT_TRUE(restored.hasLogicalName("a"));
+    EXPECT_TRUE(restored.hasLogicalName("c"));
+
+    restored.removeColumn("c");
+
+    EXPECT_TRUE(restored.hasLogicalName("a"));
+    EXPECT_FALSE(restored.hasLogicalName("c"));
+    EXPECT_EQ(restored.getPhysicalName("a"), "a");
+    EXPECT_EQ(restored.getLogicalName("a"), "a");
+}
+
+TEST(PhysicalNameMapping, TwoPhaseRenameRemoveOldPreservesPhysical)
+{
+    auto mapping = PhysicalNameMapping::createForExistingTable(makeColumns({"a", "b"}));
+
+    auto phys = mapping.allocatePhysicalName();
+    mapping.addColumn("c", phys);
+
+    mapping.beginRename("c", "d");
+
+    mapping.removeColumn("c");
+
+    EXPECT_TRUE(mapping.hasLogicalName("d"));
+    EXPECT_EQ(mapping.getPhysicalName("d"), phys);
+    EXPECT_TRUE(mapping.hasPhysicalName(phys));
+}
+
 TEST(PhysicalNameMapping, ConcurrentDropAddCycle)
 {
     auto mapping = PhysicalNameMapping::createForExistingTable(makeColumns({"a"}));

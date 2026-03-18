@@ -209,11 +209,13 @@ StorageMergeTree::StorageMergeTree(
         auto mapping = getPhysicalNameMapping();
         auto metadata_columns = getInMemoryMetadataPtr()->getColumns().getAllPhysical();
 
-        /// Remove mapping entries whose logical name no longer exists in metadata
-        /// (stale entries from a crash where the mapping was persisted before metadata,
-        /// or from a DROP that committed). Columns in metadata but NOT in the mapping
-        /// fall back to identity via `getPhysicalNameOrDefault`, which is correct:
-        /// their files use the logical name directly.
+        /// Remove mapping entries whose logical name no longer exists in metadata.
+        /// This handles: (a) stale entries from a crash where the mapping was
+        /// persisted before metadata, (b) completed DROPs, (c) incomplete two-phase
+        /// renames where the old logical name was kept for crash safety but the
+        /// metadata commit did not happen.  Columns in metadata but NOT in the
+        /// mapping fall back to identity via `getPhysicalNameOrDefault`, which is
+        /// correct: their files use the logical name directly.
         PhysicalNameMapping reconciled = *mapping;
         bool changed = false;
         for (const auto & col_name : mapping->logicalNames())
@@ -498,6 +500,7 @@ void StorageMergeTree::alter(
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 
     std::optional<PhysicalNameMapping> new_physical_mapping;
+    std::vector<String> rename_old_names;
     if (physical_names_active)
     {
         PhysicalNameMapping local_mapping;
@@ -506,7 +509,9 @@ void StorageMergeTree::alter(
         else if (auto current = getPhysicalNameMapping())
             local_mapping = *current;
 
-        /// Process renames from commands (metadata diff can't distinguish rename from add+drop).
+        /// Two-phase rename: `beginRename` keeps both old and new logical names
+        /// in the mapping so the persisted state is crash-safe.  After metadata
+        /// commit, `finishRename` removes the old entry (see below).
         for (const auto & command : commands)
         {
             if (command.ignore)
@@ -514,7 +519,10 @@ void StorageMergeTree::alter(
             if (command.type == AlterCommand::RENAME_COLUMN)
             {
                 if (local_mapping.hasLogicalName(command.column_name))
-                    local_mapping.renameColumn(command.column_name, command.rename_to);
+                {
+                    local_mapping.beginRename(command.column_name, command.rename_to);
+                    rename_old_names.push_back(command.column_name);
+                }
             }
         }
 
@@ -527,6 +535,28 @@ void StorageMergeTree::alter(
         for (const auto & col : new_metadata.getColumns().getAllPhysical())
             new_col_names.insert(col.name);
 
+        /// Guard: adding flattened Nested subcolumns with physical names active
+        /// is not yet supported (SubstreamsCache key collision in the reader
+        /// produces wrong results for siblings sharing offset streams).
+        std::map<String, size_t> nested_parent_counts;
+        for (const auto & col : new_metadata.getColumns().getAllPhysical())
+        {
+            if (!old_col_names.contains(col.name))
+            {
+                auto dot_pos = col.name.find('.');
+                if (dot_pos != String::npos)
+                    nested_parent_counts[col.name.substr(0, dot_pos)]++;
+            }
+        }
+        for (const auto & [parent, count] : nested_parent_counts)
+        {
+            if (count > 1)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Adding flattened Nested column '{}' with physical names active is not yet supported. "
+                    "Use `SET flatten_nested = 0` before adding Nested columns, or disable physical names",
+                    parent);
+        }
+
         for (const auto & col : new_metadata.getColumns().getAllPhysical())
         {
             if (!old_col_names.contains(col.name) && !local_mapping.hasLogicalName(col.name))
@@ -536,9 +566,11 @@ void StorageMergeTree::alter(
             }
         }
 
+        std::set<String> rename_old_set(rename_old_names.begin(), rename_old_names.end());
         for (const auto & col : old_metadata.getColumns().getAllPhysical())
         {
-            if (!new_col_names.contains(col.name) && local_mapping.hasLogicalName(col.name))
+            if (!new_col_names.contains(col.name) && local_mapping.hasLogicalName(col.name)
+                && !rename_old_set.contains(col.name))
                 local_mapping.removeColumn(col.name);
         }
 
@@ -636,6 +668,24 @@ void StorageMergeTree::alter(
                     writePhysicalNameMappingToDisk();
                 }
                 throw;
+            }
+
+            /// Phase 2 of two-phase rename: remove old logical names from the
+            /// mapping now that metadata has committed.  If this persist fails
+            /// or we crash here, the mapping on disk still has both entries;
+            /// the startup reconciliation will remove the stale old entry
+            /// because it is no longer in metadata.
+            if (!rename_old_names.empty())
+            {
+                auto current = getPhysicalNameMapping();
+                if (current)
+                {
+                    PhysicalNameMapping finalized = *current;
+                    for (const auto & old_name : rename_old_names)
+                        finalized.finishRename(old_name);
+                    setPhysicalNameMapping(std::move(finalized));
+                    writePhysicalNameMappingToDisk();
+                }
             }
 
             FailPointInjection::pauseFailPoint(FailPoints::physical_names_pause_after_metadata_alter);
