@@ -24,7 +24,9 @@ public:
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
 
     bool canBeUsedAsVersion() const override { return true; }
-    bool isSummable() const override { return true; }
+    /// Custom data types with numeric representations are not necessarily summable.
+    /// For example, the `Bool` type isn't.
+    bool isSummable() const override { return !this->hasCustomName(); }
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
     bool canBeInsideNullable() const override { return true; }

@@ -69,8 +69,8 @@ def clone_submodules():
         # Roll back to 10 if this starts hitting GitHub rate limits.
         command=f"xargs --max-procs={min([Utils.cpu_count(), 20])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
         stdin_str="\0".join(submodules_to_update) + "\0",
-        timeout=240,
-        retries=2,
+        timeout=300,
+        retries=3,
         verbose=True,
     )
     # NOTE: the three "git submodule foreach" cleanup commands (reset --hard,
