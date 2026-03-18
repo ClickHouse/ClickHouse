@@ -598,7 +598,7 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     if (postings.empty() || search_query->tokens.empty())
         return;
 
-    if (search_query->search_mode == TextSearchMode::Any || postings.size() == 1)
+    if (search_query->search_mode == TextSearchMode::Any)
         applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
     else if (search_query->search_mode == TextSearchMode::All)
         applyPostingsAll(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);

@@ -1778,7 +1778,6 @@
 "detectLanguage"
 "detectLanguageMixed"
 "detectLanguageUnknown"
-"detectProgrammingLanguage"
 "detectTonality"
 "dictGet"
 "dictGetAll"

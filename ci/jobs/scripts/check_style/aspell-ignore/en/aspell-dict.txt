@@ -1862,7 +1862,6 @@ detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
-detectProgrammingLanguage
 detectTonality
 determinator
 deterministically
