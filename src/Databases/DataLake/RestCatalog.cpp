@@ -933,7 +933,13 @@ bool RestCatalog::getTableMetadataImpl(
         if (object->has("metadata-location") && !object->get("metadata-location").isEmpty())
         {
             auto metadata_location = object->get("metadata-location").extract<String>();
-            result.setDataLakeSpecificProperties(DataLakeSpecificProperties{ .iceberg_metadata_file_location = metadata_location });
+            String table_uuid;
+            if (metadata_object && metadata_object->has("table-uuid"))
+                table_uuid = DB::Iceberg::normalizeUuid(metadata_object->getValue<String>("table-uuid"));
+            result.setDataLakeSpecificProperties(DataLakeSpecificProperties{
+                .iceberg_metadata_file_location = metadata_location,
+                .iceberg_table_uuid = table_uuid,
+            });
         }
     }
 

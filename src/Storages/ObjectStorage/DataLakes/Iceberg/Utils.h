@@ -64,6 +64,16 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     const ContextPtr & local_context,
     LoggerPtr log,
     CompressionMethod compression_method,
+    const std::optional<String> & table_uuid,
+    String & raw_json_out);
+
+Poco::JSON::Object::Ptr getMetadataJSONObject(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method,
     const std::optional<String> & table_uuid);
 
 

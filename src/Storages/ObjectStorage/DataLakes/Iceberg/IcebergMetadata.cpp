@@ -165,17 +165,31 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     ContextPtr context_,
     LoggerPtr log)
 {
+    /// UUID may be known ahead of time (e.g. from REST catalog inline response); use it to hit the metadata cache.
+    std::optional<String> known_uuid;
+    const auto & settings_uuid = configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_metadata_table_uuid];
+    if (settings_uuid.changed && !settings_uuid.value.empty())
+        known_uuid = normalizeUuid(settings_uuid.value);
+
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), known_uuid, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
+    String raw_metadata_json;
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
+        = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, known_uuid, raw_metadata_json);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);
     std::optional<String> table_uuid = std::nullopt;
     if (metadata_object->has(Iceberg::f_table_uuid))
     {
         table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
+        /// The initial fetch bypassed the cache (UUID was unknown). Now that we have the UUID,
+        /// retroactively populate the cache so subsequent queries avoid the network round-trip.
+        if (cache_ptr)
+        {
+            auto cache_key = IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path);
+            cache_ptr->getOrSetTableMetadata(cache_key, [json = std::move(raw_metadata_json)]() mutable { return std::move(json); });
+        }
     }
     else
     {
