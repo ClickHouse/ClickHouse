@@ -54,7 +54,7 @@ SELECT 1.0/3 FORMAT CSV;
 
 -- Test out-of-range precision (> 60) raises an exception
 SET output_format_float_precision = 61;
-SELECT 1.0/3; -- { serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER }
+SELECT 1.0/3; -- {serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER}
 
 -- Test non-finite values with non-zero precision (should not throw)
 SET output_format_float_precision = 3;
