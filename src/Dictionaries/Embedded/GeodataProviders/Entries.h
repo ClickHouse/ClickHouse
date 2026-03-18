@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <Dictionaries/Embedded/GeodataProviders/Types.h>
+#include "Types.h"
 
 namespace DB
 {

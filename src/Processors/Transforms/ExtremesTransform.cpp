@@ -6,7 +6,7 @@
 namespace DB
 {
 
-ExtremesTransform::ExtremesTransform(SharedHeader header)
+ExtremesTransform::ExtremesTransform(const Block & header)
     : ISimpleTransform(header, header, true)
 {
     /// Port for Extremes.
@@ -82,7 +82,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
                 Field min_value;
                 Field max_value;
 
-                src->getExtremes(min_value, max_value, 0, src->size());
+                src->getExtremes(min_value, max_value);
 
                 extremes_columns[i] = src->cloneEmpty();
 
@@ -104,7 +104,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
             Field cur_min_value;
             Field cur_max_value;
 
-            columns[i]->getExtremes(cur_min_value, cur_max_value, 0, columns[i]->size());
+            columns[i]->getExtremes(cur_min_value, cur_max_value);
 
             // getExtremes implementations for Nullable and floating point are ignoring Nulls, so do the same here
             auto isNullORNaN = [] (const Field & value)

@@ -7,16 +7,15 @@
 namespace DB
 {
 
-void ASTQueryParameter::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
+void ASTQueryParameter::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << '{' << name << ':' << type << '}';
-}
-
-ASTPtr ASTQueryParameter::clone() const
-{
-    auto ret = make_intrusive<ASTQueryParameter>(*this);
-    ret->cloneChildren();
-    return ret;
+    ostr
+        << (settings.hilite ? hilite_substitution : "") << '{'
+        << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(name)
+        << (settings.hilite ? hilite_substitution : "") << ':'
+        << (settings.hilite ? hilite_identifier : "") << type
+        << (settings.hilite ? hilite_substitution : "") << '}'
+        << (settings.hilite ? hilite_none : "");
 }
 
 void ASTQueryParameter::appendColumnNameImpl(WriteBuffer & ostr) const

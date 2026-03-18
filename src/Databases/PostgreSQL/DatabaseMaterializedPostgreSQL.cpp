@@ -12,7 +12,6 @@
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
-#include <Common/AsyncLoader.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -25,7 +24,6 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/AlterCommands.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -70,7 +68,7 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
-    , startup_task(getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "MaterializedPostgreSQLDatabaseStartup", [this]{ tryStartSynchronization(); }))
+    , startup_task(getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ tryStartSynchronization(); }))
 {
 }
 
@@ -307,18 +305,18 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 
 ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingChange & new_setting)
 {
-    auto set = make_intrusive<ASTSetQuery>();
+    auto set = std::make_shared<ASTSetQuery>();
     set->is_standalone = false;
     set->changes = {new_setting};
 
-    auto command = make_intrusive<ASTAlterCommand>();
+    auto command = std::make_shared<ASTAlterCommand>();
     command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
     command->settings_changes = command->children.emplace_back(std::move(set)).get();
 
-    auto command_list = make_intrusive<ASTExpressionList>();
+    auto command_list = std::make_shared<ASTExpressionList>();
     command_list->children.push_back(command);
 
-    auto query = make_intrusive<ASTAlterQuery>();
+    auto query = std::make_shared<ASTAlterQuery>();
     auto * alter = query->as<ASTAlterQuery>();
 
     alter->alter_object = ASTAlterQuery::AlterObjectType::DATABASE;
@@ -360,7 +358,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
 {
     /// If there is query context then we need to attach materialized storage.
     /// If there is no query context then we need to attach internal storage from atomic database.
-    if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
+    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
     {
         auto current_context = Context::createCopy(getContext()->getGlobalContext());
         current_context->setInternalQuery(true);
@@ -409,7 +407,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
 {
     /// If there is query context then we need to detach materialized storage.
     /// If there is no query context then we need to detach internal storage from atomic database.
-    if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
+    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
     {
         auto & table_to_delete = materialized_tables[table_name];
         if (!table_to_delete)

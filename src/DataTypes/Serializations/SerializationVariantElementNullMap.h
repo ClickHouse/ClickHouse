@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
@@ -59,7 +58,6 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,

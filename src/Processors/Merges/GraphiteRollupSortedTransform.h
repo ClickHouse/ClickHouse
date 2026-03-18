@@ -11,12 +11,11 @@ class GraphiteRollupSortedTransform final : public IMergingTransform<GraphiteRol
 {
 public:
     GraphiteRollupSortedTransform(
-        SharedHeader header,
+        const Block & header,
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
-        std::optional<size_t> max_dynamic_subcolumns_,
         Graphite::Params params_,
         time_t time_of_merge_)
         : IMergingTransform(
@@ -26,7 +25,6 @@ public:
             std::move(description_),
             max_block_size_rows,
             max_block_size_bytes,
-            max_dynamic_subcolumns_,
             std::move(params_),
             time_of_merge_)
     {

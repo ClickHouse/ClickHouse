@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
-}
-
 SerializationDateTime64::SerializationDateTime64(
     UInt32 scale_, const TimezoneMixin & time_zone_)
     : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
@@ -248,12 +243,6 @@ void SerializationDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & 
             readCSVString(datetime_str, istr, settings.csv);
             ReadBufferFromString buf(datetime_str);
             readText(x, scale, buf, settings, time_zone, utc_time_zone);
-            if (!buf.eof())
-                throw Exception(
-                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
-                    "Unexpected data '{}' after parsed DateTime64 value '{}'",
-                    String(buf.position(), buf.buffer().end()),
-                    String(buf.buffer().begin(), buf.position()));
         }
     }
 

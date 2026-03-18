@@ -80,10 +80,10 @@ public:
     std::optional<DB::HashTablesCacheStatistics> getCacheStats() const;
 
 private:
-    CachePtr getHashTableStatsCache(const Params & params);
+    CachePtr getHashTableStatsCache(const Params & params, const std::lock_guard<std::mutex> &);
 
     mutable std::mutex mutex;
-    CachePtr hash_table_stats TSA_GUARDED_BY(mutex);
+    CachePtr hash_table_stats;
 };
 
 template <typename Entry>

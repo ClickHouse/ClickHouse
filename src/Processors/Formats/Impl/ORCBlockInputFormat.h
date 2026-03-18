@@ -2,7 +2,6 @@
 #include "config.h"
 #if USE_ORC
 
-#include <Core/BlockMissingValues.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -22,7 +21,7 @@ class ArrowColumnToCHColumn;
 class ORCBlockInputFormat : public IInputFormat
 {
 public:
-    ORCBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_);
+    ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
@@ -76,7 +75,6 @@ private:
     void initializeIfNeeded();
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
-    std::shared_ptr<const arrow::KeyValueMetadata> metadata;
     std::shared_ptr<arrow::Schema> schema;
     const FormatSettings format_settings;
 };

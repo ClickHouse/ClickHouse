@@ -1,6 +1,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Parsers/IAST_erase.h>
+#include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -30,7 +31,7 @@ void ASTQueryWithTableAndOutput::setDatabase(const String & name)
 
     if (!name.empty())
     {
-        database = make_intrusive<ASTIdentifier>(name);
+        database = std::make_shared<ASTIdentifier>(name);
         children.push_back(database);
     }
 }
@@ -45,7 +46,7 @@ void ASTQueryWithTableAndOutput::setTable(const String & name)
 
     if (!name.empty())
     {
-        table = make_intrusive<ASTIdentifier>(name);
+        table = std::make_shared<ASTIdentifier>(name);
         children.push_back(table);
     }
 }

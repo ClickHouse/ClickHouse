@@ -11,7 +11,7 @@ namespace DB
 class SourceFromChunks : public ISource
 {
 public:
-    SourceFromChunks(SharedHeader header, Chunks chunks_);
+    SourceFromChunks(Block header, Chunks chunks_);
 
     String getName() const override;
 

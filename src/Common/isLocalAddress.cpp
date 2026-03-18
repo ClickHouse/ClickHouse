@@ -6,7 +6,6 @@
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/levenshteinDistance.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -133,7 +132,7 @@ size_t getHostNamePrefixDistance(const std::string & local_hostname, const std::
 
 size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const std::string & host)
 {
-    return levenshteinDistanceCaseInsensitive(local_hostname, host);
+    return levenshteinDistance(local_hostname, host);
 }
 
 }

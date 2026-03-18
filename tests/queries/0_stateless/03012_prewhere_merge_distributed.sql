@@ -1,4 +1,3 @@
--- Tags: log-engine
 DROP TABLE IF EXISTS test_local;
 DROP TABLE IF EXISTS test_distributed;
 

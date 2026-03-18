@@ -6,7 +6,6 @@
 #include <pcg_random.hpp>
 #include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
-#include <Core/ColumnsWithTypeAndName.h>
 
 #include <base/defines.h>
 
@@ -14,6 +13,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -38,13 +38,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"length", &isNumber, nullptr, "(U)Int*"}
-        };
+        if (!isNumber(*arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
 
-        validateFunctionArguments(*this, arguments, mandatory_args);
         return std::make_shared<DataTypeString>();
     }
 
@@ -127,18 +125,21 @@ public:
 
                 UInt32 code_point1 = generate_code_point(static_cast<UInt32>(rand));
 
-                size_t bytes1 = UTF8::convertCodePointToUTF8(code_point1, reinterpret_cast<char *>(pos), 4);
+                size_t bytes1 = UTF8::convertCodePointToUTF8(code_point1, pos, 4);
                 chassert(bytes1 <= 4);
                 pos += bytes1;
 
                 if (i + 1 != codepoints)
                 {
                     UInt32 code_point2 = generate_code_point(static_cast<UInt32>(rand >> 32u));
-                    size_t bytes2 = UTF8::convertCodePointToUTF8(code_point2, reinterpret_cast<char *>(pos), 4);
+                    size_t bytes2 = UTF8::convertCodePointToUTF8(code_point2, pos, 4);
                     chassert(bytes2 <= 4);
                     pos += bytes2;
                 }
             }
+
+            *pos = 0;
+            ++pos;
 
             offset = pos - data_to.data();
             offsets_to[row_num] = offset;
@@ -154,27 +155,6 @@ public:
 
 REGISTER_FUNCTION(RandomStringUTF8)
 {
-    FunctionDocumentation::Description description = R"(
-Generates a random [UTF-8](https://en.wikipedia.org/wiki/UTF-8) string with the specified number of codepoints.
-No codepoints from unassigned [planes](https://en.wikipedia.org/wiki/Plane_(Unicode)) (planes 4 to 13) are returned.
-It is still possible that the client interacting with ClickHouse server is not able to display the produced UTF-8 string correctly.
-    )";
-    FunctionDocumentation::Syntax syntax = "randomStringUTF8(length)";
-    FunctionDocumentation::Arguments arguments = {
-        {"length", "Length of the string in code points.", {"(U)Int*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random UTF-8 codepoints.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT randomStringUTF8(13)", R"(
-┌─randomStringUTF8(13)─┐
-│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛       │
-└──────────────────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionRandomStringUTF8>(documentation);
+    factory.registerFunction<FunctionRandomStringUTF8>();
 }
 }

@@ -11,7 +11,6 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool compress_marks;
-    extern const MergeTreeSettingsBool write_marks_for_substreams_in_compact_parts;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
 }
@@ -55,18 +54,12 @@ MarkType::MarkType(std::string_view extension)
         adaptive = true;
         part_type = MergeTreeDataPartType::Compact;
     }
-    else if (extension == "4")
-    {
-        adaptive = true;
-        with_substreams = true;
-        part_type = MergeTreeDataPartType::Compact;
-    }
     else
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Unknown mark file extension: '{}'", extension);
 }
 
-MarkType::MarkType(bool adaptive_, bool compressed_, bool with_substreams_, MergeTreeDataPartType::Value part_type_)
-    : adaptive(adaptive_), compressed(compressed_), with_substreams(with_substreams_), part_type(part_type_)
+MarkType::MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Value part_type_)
+    : adaptive(adaptive_), compressed(compressed_), part_type(part_type_)
 {
     if (!adaptive && part_type != MergeTreeDataPartType::Wide)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-Wide data part type with non-adaptive granularity");
@@ -95,7 +88,7 @@ std::string MarkType::getFileExtension() const
         case MergeTreeDataPartType::Wide:
             return res + "2";
         case MergeTreeDataPartType::Compact:
-            return res + (with_substreams ? "4" : "3");
+            return res + "3";
         case MergeTreeDataPartType::Unknown:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data part type");
     }
@@ -103,7 +96,7 @@ std::string MarkType::getFileExtension() const
 
 std::string MarkType::describe() const
 {
-    return fmt::format("adaptive: {}, compressed: {}, with_substreams: {}, part_type: {}", adaptive, compressed, with_substreams, part_type);
+    return fmt::format("adaptive: {}, compressed: {}, part_type: {}", adaptive, compressed, part_type);
 }
 
 std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(const IDataPartStorage & data_part_storage)
@@ -116,20 +109,22 @@ std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesyste
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
-    const MergeTreeData & storage, const MergeTreeSettings & storage_settings, MergeTreeDataPartType type_)
-    : MergeTreeIndexGranularityInfo(
-          storage_settings,
-          {storage.canUseAdaptiveGranularity(),
-           storage_settings[MergeTreeSetting::compress_marks],
-           storage_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts],
-           type_.getValue()})
+    MarkType mark_type_, size_t index_granularity_, size_t index_granularity_bytes_)
+    : mark_type(mark_type_)
+    , fixed_index_granularity(index_granularity_)
+    , index_granularity_bytes(index_granularity_bytes_)
 {
 }
 
-MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeSettings & storage_settings, MarkType mark_type_)
+MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_)
+    : MergeTreeIndexGranularityInfo(storage, {storage.canUseAdaptiveGranularity(), (*storage.getSettings())[MergeTreeSetting::compress_marks], type_.getValue()})
+{
+}
+
+MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_)
     : mark_type(mark_type_)
-    , fixed_index_granularity(storage_settings[MergeTreeSetting::index_granularity])
-    , index_granularity_bytes(storage_settings[MergeTreeSetting::index_granularity_bytes])
+    , fixed_index_granularity((*storage.getSettings())[MergeTreeSetting::index_granularity])
+    , index_granularity_bytes((*storage.getSettings())[MergeTreeSetting::index_granularity_bytes])
 {
 }
 

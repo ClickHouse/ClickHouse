@@ -1,8 +1,0 @@
-<test>
-    <create_query>CREATE TABLE small_strings (s String) ENGINE = Log</create_query>
-    <fill_query>INSERT INTO small_strings SELECT number % 10 = 0 ? 'ab' : 'c' FROM numbers_mt(1e9)</fill_query>
-
-    <query>SELECT count() FROM small_strings WHERE NOT ignore(s)</query>
-
-    <drop_query>DROP TABLE IF EXISTS small_strings</drop_query>
-</test>

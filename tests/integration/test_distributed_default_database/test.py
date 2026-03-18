@@ -17,8 +17,7 @@ from helpers.test_tools import TSV
 
 def bootstrap(cluster):
     for i, node in enumerate(list(cluster.instances.values())):
-        node.query(f"DROP DATABASE IF EXISTS r{i}")
-        node.query(f"CREATE DATABASE r{i}")
+        node.query(f"CREATE DATABASE IF NOT EXISTS r{i}")
         node.query(f"CREATE TABLE r{i}.test_data(v UInt64) ENGINE = Memory()")
         node.query(f"INSERT INTO r{i}.test_data SELECT * FROM numbers(10)")
         node.query(
@@ -50,8 +49,9 @@ def start_cluster():
 def test_query():
     with start_cluster() as cluster:
         node1 = cluster.instances["node1"]
+
         # For now, serialize_query_plan is disabled, because all the tables must exist on initiator.
-        assert TSV(node1.query("SELECT count() FROM default.test settings serialize_query_plan = 0")) == TSV("20")
+        assert TSV(node1.query("SELECT count() FROM default.test")) == TSV("20")
 
         # Setting allow_push_predicate_ast_for_distributed_subqueries should work when the inner table does not exist.
-        assert TSV(node1.query("SELECT count() FROM (SELECT v FROM default.test) where v != 0 settings serialize_query_plan = 0")) == TSV("18")
+        assert TSV(node1.query("SELECT count() FROM (SELECT v FROM default.test) where v != 0")) == TSV("18")

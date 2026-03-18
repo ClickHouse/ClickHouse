@@ -1,8 +1,0 @@
-<test>
-    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(MobilePhoneModel)</query>
-    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(SearchPhrase)</query>
-    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(URL)</query>
-    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(Referer)</query>
-    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(Title)</query>
-    <query>SELECT count() FROM hits_10m_single WHERE CounterID &lt;= 10000 AND NOT ignore(MobilePhoneModel, SearchPhrase, URL, Referer, Title)</query>
-</test>

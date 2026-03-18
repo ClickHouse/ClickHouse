@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTCreateWorkloadQuery::clone() const
 {
-    auto res = make_intrusive<ASTCreateWorkloadQuery>(*this);
+    auto res = std::make_shared<ASTCreateWorkloadQuery>(*this);
     res->children.clear();
 
     res->workload_name = workload_name->clone();
@@ -29,7 +29,7 @@ ASTPtr ASTCreateWorkloadQuery::clone() const
 
 void ASTCreateWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << "CREATE ";
+    ostr << (format.hilite ? hilite_keyword : "") << "CREATE ";
 
     if (or_replace)
         ostr << "OR REPLACE ";
@@ -39,19 +39,21 @@ void ASTCreateWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
     if (if_not_exists)
         ostr << "IF NOT EXISTS ";
 
-    ostr << backQuoteIfNeed(getWorkloadName());
+    ostr << (format.hilite ? hilite_none : "");
+
+    ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadName()) << (format.hilite ? hilite_none : "");
 
     formatOnCluster(ostr, format);
 
     if (hasParent())
     {
-        ostr << " IN ";
-        ostr << backQuoteIfNeed(getWorkloadParent());
+        ostr << (format.hilite ? hilite_keyword : "") << " IN " << (format.hilite ? hilite_none : "");
+        ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadParent()) << (format.hilite ? hilite_none : "");
     }
 
     if (!changes.empty())
     {
-        ostr << ' ' << "SETTINGS" << ' ';
+        ostr << ' ' << (format.hilite ? hilite_keyword : "") << "SETTINGS" << (format.hilite ? hilite_none : "") << ' ';
 
         bool first = true;
 
@@ -64,8 +66,8 @@ void ASTCreateWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
             ostr << change.name << " = " << applyVisitor(FieldVisitorToString(), change.value);
             if (!change.resource.empty())
             {
-                ostr << ' ' << "FOR" << ' ';
-                ostr << backQuoteIfNeed(change.resource);
+                ostr << ' ' << (format.hilite ? hilite_keyword : "") << "FOR" << (format.hilite ? hilite_none : "") << ' ';
+                ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(change.resource) << (format.hilite ? hilite_none : "");
             }
         }
     }

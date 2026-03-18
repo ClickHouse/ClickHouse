@@ -1,4 +1,3 @@
--- Tags: memory-engine
 DROP TABLE IF EXISTS defaults;
 CREATE TABLE defaults
 (

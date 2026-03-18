@@ -11,11 +11,9 @@ class WriteBuffer;
 class CustomSeparatedRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    CustomSeparatedRowOutputFormat(SharedHeader header_, WriteBuffer & out_, const FormatSettings & format_settings_, bool with_names_, bool with_types_);
+    CustomSeparatedRowOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & format_settings_, bool with_names_, bool with_types_);
 
     String getName() const override { return "CustomSeparatedRowOutputFormat"; }
-
-    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
 
 private:
     using EscapingRule = FormatSettings::EscapingRule;

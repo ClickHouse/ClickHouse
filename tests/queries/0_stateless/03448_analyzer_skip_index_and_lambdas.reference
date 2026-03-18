@@ -14,7 +14,6 @@ Expression
         Description: bloom_filter GRANULARITY 1
         Parts: 1/1
         Granules: 1/4
-      Ranges: 1
 SELECT arr
 FROM index_test
 WHERE has(arrayMap(x -> lower(x), arr), lower('a_12'))
@@ -36,7 +35,6 @@ Expression
         Description: bloom_filter GRANULARITY 1
         Parts: 1/1
         Granules: 1/4
-      Ranges: 1
 SELECT arr
 FROM index_test
 WHERE has(arrayMap((x, y) -> concat(lower(x), y), arr, arr), 'a_12A_12')
@@ -58,7 +56,6 @@ Expression
         Description: bloom_filter GRANULARITY 1
         Parts: 1/1
         Granules: 1/4
-      Ranges: 1
 SELECT arr
 FROM index_test
 WHERE has(arrayMap((x, y) -> concat(lower(x), y, '_', toString(id)), arr, arr), 'a_12A_12_13')

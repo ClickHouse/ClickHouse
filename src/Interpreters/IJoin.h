@@ -3,7 +3,7 @@
 #include <memory>
 
 #include <Core/Block.h>
-#include <Core/Block_fwd.h>
+#include <Core/Names.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Common/Exception.h>
 
@@ -14,6 +14,9 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
 }
+
+struct ExtraBlock;
+using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
 class TableJoin;
 class NotJoinedBlocks;
@@ -44,28 +47,6 @@ enum class JoinPipelineType : uint8_t
     YShaped,
 };
 
-class IJoinResult;
-using JoinResultPtr = std::unique_ptr<IJoinResult>;
-
-class IJoinResult
-{
-public:
-    virtual ~IJoinResult() = default;
-
-    struct JoinResultBlock
-    {
-        Block block;
-        /// Pointer to next block to process, if any.
-        /// Should be used once we got last result and is_last is true.
-        ScatteredBlock * next_block = nullptr;
-        bool is_last = true;
-    };
-
-    virtual JoinResultBlock next() = 0;
-
-    static JoinResultPtr createFromBlock(Block block);
-};
-
 class IJoin
 {
 public:
@@ -81,10 +62,10 @@ public:
         return false;
     }
 
-    /// Clone underlying JOIN algorithm using table join, left sample block, right sample block
+    /// Clone underlyhing JOIN algorithm using table join, left sample block, right sample block
     virtual std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
-        SharedHeader left_sample_block_,
-        SharedHeader right_sample_block_) const
+        const Block & left_sample_block_,
+        const Block & right_sample_block_) const
     {
         (void)(table_join_);
         (void)(left_sample_block_);
@@ -92,23 +73,9 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
     }
 
-    virtual std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_,
-        SharedHeader left_sample_block_,
-        SharedHeader right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
-
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
     virtual bool addBlockToJoin(const Block & block, bool check_limits = true) = 0; /// NOLINT
-
-    /// Overload that accepts the actual number of rows from the Chunk.
-    /// Needed because Block::rows() returns 0 when the block has no columns
-    /// (e.g., when PREWHERE consumed all columns from the right side of a cross join).
-    virtual bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits = true) /// NOLINT
-    {
-        /// Default implementation ignores num_rows; HashJoin overrides this for CROSS joins.
-        (void)num_rows;
-        return addBlockToJoin(block, check_limits);
-    }
 
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.
@@ -120,7 +87,14 @@ public:
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
-    virtual JoinResultPtr joinBlock(Block block) = 0;
+    virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
+
+    virtual bool isScatteredJoin() const { return false; }
+    virtual void joinBlock(
+        [[maybe_unused]] Block & block, [[maybe_unused]] ExtraScatteredBlocks & extra_blocks, [[maybe_unused]] std::vector<Block> & res)
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "joinBlock is not supported for {}", getName());
+    }
 
     /** Set/Get totals for right table
       * Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
@@ -142,6 +116,7 @@ public:
 
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
+    virtual bool supportTotals() const { return true; }
 
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
@@ -151,20 +126,6 @@ public:
 
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
-
-    virtual bool supportParallelNonJoinedBlocksProcessing() const { return false; }
-
-    /// Get non-joined blocks for a specific stream partition
-    /// stream_idx is in [0, num_streams), each stream must produce a disjoint subset of rows
-    /// Default: stream 0 returns everything, others return nothing
-    virtual IBlocksStreamPtr getNonJoinedBlocks(
-        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
-        size_t stream_idx, size_t /*num_streams*/) const
-    {
-        if (stream_idx != 0)
-            return {};
-        return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
-    }
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
@@ -182,7 +143,7 @@ public:
         if (finished)
             return {};
 
-        if (Block res = nextImpl(); !res.empty())
+        if (Block res = nextImpl())
             return res;
 
         finished = true;

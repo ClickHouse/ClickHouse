@@ -26,8 +26,6 @@ class WriteBufferFromHTTPServerResponse final : public HTTPWriteBuffer
 {
 public:
     static constexpr std::string_view EXCEPTION_MARKER = "__exception__";
-    static constexpr size_t EXCEPTION_TAG_LENGTH = 16;
-    static constexpr size_t MAX_EXCEPTION_SIZE= 16 * 1024; // 16K
 
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
@@ -35,7 +33,7 @@ public:
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     /// Writes progress in repeating HTTP headers.
-    void onProgress(const Progress & progress, ContextPtr context);
+    void onProgress(const Progress & progress);
 
     /// Turn CORS on or off.
     /// The setting has any effect only if HTTP headers haven't been sent yet.
@@ -100,6 +98,8 @@ private:
     bool is_http_method_head;
     bool add_cors_header = false;
 
+    bool initialized = false;
+
     bool headers_started_sending = false;
     bool headers_finished_sending = false;    /// If true, you could not add any headers.
 
@@ -111,8 +111,6 @@ private:
     CompressionMethod compression_method = CompressionMethod::None;
 
     int exception_code = 0;
-
-    std::string exception_tag;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };

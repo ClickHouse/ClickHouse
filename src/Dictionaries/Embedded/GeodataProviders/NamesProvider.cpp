@@ -1,7 +1,7 @@
-#include <Dictionaries/Embedded/GeodataProviders/NamesProvider.h>
+#include "NamesProvider.h"
 
 #include <IO/ReadBufferFromFile.h>
-#include <Dictionaries/Embedded/GeodataProviders/NamesFormatReader.h>
+#include "NamesFormatReader.h"
 #include <filesystem>
 
 namespace fs = std::filesystem;

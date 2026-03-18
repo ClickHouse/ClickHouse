@@ -1,5 +1,4 @@
 #include <memory>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IParserBase.h>
@@ -7,12 +6,16 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTWithElement.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -32,7 +35,7 @@ namespace ErrorCodes
 
 bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto select_query = make_intrusive<ASTSelectQuery>();
+    auto select_query = std::make_shared<ASTSelectQuery>();
     node = select_query;
 
     ParserKeyword s_select(Keyword::SELECT);
@@ -302,97 +305,31 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
     if (s_order_by.ignore(pos, expected))
     {
-        /// ParserKeyword only matches BareWord tokens, so quoted identifiers like `all` won't match.
-        /// This allows ORDER BY `all` to refer to a column named "all" rather than ORDER BY ALL.
-        ///
-        /// After matching the ALL keyword with optional ASC/DESC/NULLS modifiers,
-        /// we check if a comma follows. If so, this is a multi-column ORDER BY (e.g. ORDER BY all, a)
-        /// and `all` should be treated as a regular column reference, not the ALL keyword.
-        auto saved_pos = pos;
-        bool is_order_by_all = false;
+        if (!order_list.parse(pos, order_expression_list, expected))
+            return false;
 
-        if (s_all.ignore(pos, expected))
+        /// if any WITH FILL parse possible INTERPOLATE list
+        if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
+                [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
         {
-            is_order_by_all = true;
-
-            /// Parse the optional ASC/DESC and NULLS direction after ORDER BY ALL.
-            ParserKeyword s_desc(Keyword::DESC);
-            ParserKeyword s_descending(Keyword::DESCENDING);
-            ParserKeyword s_asc(Keyword::ASC);
-            ParserKeyword s_ascending(Keyword::ASCENDING);
-            ParserKeyword s_nulls(Keyword::NULLS);
-            ParserKeyword s_last(Keyword::LAST);
-
-            int direction = 1;
-            int nulls_direction = 1;
-            bool nulls_direction_was_explicitly_specified = false;
-
-            if (s_desc.ignore(pos, expected) || s_descending.ignore(pos, expected))
+            if (s_interpolate.ignore(pos, expected))
             {
-                direction = -1;
-                nulls_direction = -1;
-            }
-            else
-            {
-                s_asc.ignore(pos, expected) || s_ascending.ignore(pos, expected);
-            }
-
-            if (s_nulls.ignore(pos, expected))
-            {
-                nulls_direction_was_explicitly_specified = true;
-                if (s_first.ignore(pos, expected))
-                    nulls_direction = -direction;
-                else if (s_last.ignore(pos, expected))
-                    ;
-                else
-                    return false;
-            }
-
-            /// If a comma follows, this is a multi-column ORDER BY (e.g., ORDER BY all, a).
-            /// In this case, `all` should be treated as a regular column, not the ALL keyword.
-            if (pos->type == TokenType::Comma)
-            {
-                /// Backtrack to before we consumed `ALL`.
-                pos = saved_pos;
-                is_order_by_all = false;
-            }
-            else
-            {
-                select_query->order_by_all = true;
-
-                auto elem = make_intrusive<ASTOrderByElement>();
-                elem->direction = direction;
-                elem->nulls_direction = nulls_direction;
-                elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
-                elem->children.push_back(make_intrusive<ASTIdentifier>("all"));
-
-                order_expression_list = make_intrusive<ASTExpressionList>();
-                order_expression_list->children.push_back(std::move(elem));
+                if (open_bracket.ignore(pos, expected))
+                {
+                    if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
+                        return false;
+                    if (!close_bracket.ignore(pos, expected))
+                        return false;
+                } else
+                    interpolate_expression_list = std::make_shared<ASTExpressionList>();
             }
         }
-
-        if (!is_order_by_all)
+        else if (order_expression_list->children.size() == 1)
         {
-            if (!order_list.parse(pos, order_expression_list, expected))
-                return false;
-
-            /// if any WITH FILL parse possible INTERPOLATE list
-            if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
-                    [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
-            {
-                if (s_interpolate.ignore(pos, expected))
-                {
-                    if (open_bracket.ignore(pos, expected))
-                    {
-                        if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
-                            return false;
-                        if (!close_bracket.ignore(pos, expected))
-                            return false;
-                    }
-                    else
-                        interpolate_expression_list = make_intrusive<ASTExpressionList>();
-                }
-            }
+            /// ORDER BY ALL
+            auto * identifier = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTIdentifier>();
+            if (identifier != nullptr && Poco::toUpper(identifier->name()) == "ALL")
+                select_query->order_by_all = true;
         }
     }
 
@@ -454,16 +391,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             limit_length = nullptr;
             limit_offset = nullptr;
 
-            if (s_all.ignore(pos, expected))
-            {
-                select_query->limit_by_all = true;
-                limit_by_expression_list = make_intrusive<ASTExpressionList>();
-            }
-            else
-            {
-                if (!exp_list.parse(pos, limit_by_expression_list, expected))
-                    return false;
-            }
+            if (!exp_list.parse(pos, limit_by_expression_list, expected))
+                return false;
         }
 
         if (top_length && limit_length)
@@ -540,7 +469,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         /// Transform `DISTINCT ON expr` to `LIMIT 1 BY expr`
         limit_by_expression_list = distinct_on_expression_list;
-        limit_by_length = make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        limit_by_length = std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
         distinct_on_expression_list = nullptr;
     }
 

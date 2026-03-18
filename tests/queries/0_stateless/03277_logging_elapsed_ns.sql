@@ -1,9 +1,9 @@
 SELECT 42 SETTINGS log_comment='03277_logging_elapsed_ns';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     ProfileEvents['LogDebug'] + ProfileEvents['LogTrace'] > 0,
     ProfileEvents['LoggerElapsedNanoseconds'] > 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND log_comment = '03277_logging_elapsed_ns' AND type = 'QueryFinish';
+WHERE current_database = currentDatabase() AND log_comment = '03277_logging_elapsed_ns' AND type = 'QueryFinish';

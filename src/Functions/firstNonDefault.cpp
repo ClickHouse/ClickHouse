@@ -131,7 +131,6 @@ REGISTER_FUNCTION(FirstNonDefault)
 {
     FunctionDocumentation doc;
     doc.description = "Returns the first non-default value from a set of arguments";
-    doc.syntax = "firstNonDefault(arg1[, arg2[ ...]])";
     doc.arguments = {
         {"arg1", "The first argument to check"},
         {"arg2", "The second argument to check"},
@@ -145,9 +144,7 @@ REGISTER_FUNCTION(FirstNonDefault)
         {"nulls", "SELECT firstNonDefault(NULL, 0 :: UInt8, 1 :: UInt8)", "1"},
         {"nullable zero", "SELECT firstNonDefault(NULL, 0 :: Nullable(UInt8), 1 :: Nullable(UInt8))", "0"},
     };
-    doc.category = {FunctionDocumentation::Category::Null};
 
-    doc.introduced_in = {25, 9};
     factory.registerFunction<FunctionFirstNonDefault>(doc, FunctionFactory::Case::Insensitive);
 }
 

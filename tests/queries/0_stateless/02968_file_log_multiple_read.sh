@@ -40,7 +40,7 @@ CREATE MATERIALIZED VIEW file_log_mv TO table_to_store_data AS
             FROM file_log
         )
     );
-" || exit 1
+"
 
 function count()
 {

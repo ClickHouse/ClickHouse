@@ -5,7 +5,7 @@
 
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include "ArrowBufferedStreams.h"
 
 namespace arrow { class Schema; }
 namespace arrow::ipc { class RecordBatchWriter; }
@@ -18,9 +18,11 @@ class CHColumnToArrowColumn;
 class ArrowBlockOutputFormat : public IOutputFormat
 {
 public:
-    ArrowBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_);
+    ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_);
 
-    String getName() const override { return "Arrow"; }
+    String getName() const override { return "ArrowBlockOutputFormat"; }
+
+    String getContentType() const override { return "application/octet-stream"; }
 
 private:
     void consume(Chunk) override;

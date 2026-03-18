@@ -1,0 +1,27 @@
+('k1','Int64')
+('k2','String')
+1	{"k1":"1","k2":"foo"}
+('k1','Int64')
+('k2','String')
+('k3','String')
+1	{"k1":"1","k2":"foo"}
+2	{"k1":"2","k2":"bar"}
+3	{"k1":"3","k3":"aaa"}
+('arr','Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))')
+('arr','String')
+('k1','Int64')
+('k2','String')
+('k3','String')
+1	{"k1":"1","k2":"foo"}
+2	{"k1":"2","k2":"bar"}
+3	{"k1":"3","k3":"aaa"}
+4	{"arr":[{"k11":"5","k22":"6"},{"k11":"7","k33":"8"}]}
+5	{"arr":"not array"}
+{"data":{"k1":"1","k10":[{"a":"1","b":"2"},{"a":"2","b":"3"}]}}
+{"data":{"k1":"2","k10":[{"a":"1","b":"2","c":{"k11":"haha"}}]}}
+('k1','Int64')
+('k10','Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))')
+{"data":{"k1":"1","k10":[{"a":"1","b":"2"},{"a":"2","b":"3"}]}}
+{"data":{"k1":"2","k10":[{"a":"1","b":"2","c":{"k11":"haha"}}]}}
+('k1','Int64')
+('k10','Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))')

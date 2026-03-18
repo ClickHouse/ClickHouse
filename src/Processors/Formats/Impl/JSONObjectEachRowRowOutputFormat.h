@@ -20,7 +20,7 @@ class JSONObjectEachRowRowOutputFormat : public JSONEachRowRowOutputFormat
 public:
     JSONObjectEachRowRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header_,
+        const Block & header_,
         const FormatSettings & settings_);
 
     String getName() const override { return "JSONObjectEachRowRowOutputFormat"; }

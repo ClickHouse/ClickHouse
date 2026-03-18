@@ -1,4 +1,4 @@
--- Tags: long, no-asan, no-msan, no-tsan
+-- Tags: long
 
 DROP TABLE IF EXISTS tvs;
 

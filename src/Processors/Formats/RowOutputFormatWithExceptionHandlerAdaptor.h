@@ -14,7 +14,7 @@ template <typename Base, typename... Args>
 class RowOutputFormatWithExceptionHandlerAdaptor : public Base
 {
 public:
-    RowOutputFormatWithExceptionHandlerAdaptor(SharedHeader header, WriteBuffer & out_, bool handle_exceptions, Args... args)
+    RowOutputFormatWithExceptionHandlerAdaptor(const Block & header, WriteBuffer & out_, bool handle_exceptions, Args... args)
         : Base(header, out_, std::forward<Args>(args)...)
     {
         if (handle_exceptions)
@@ -33,7 +33,6 @@ public:
 
         auto num_rows = chunk.getNumRows();
         const auto & columns = chunk.getColumns();
-        Base::updateSerializationsIfNeeded(columns);
 
         for (size_t row = 0; row < num_rows; ++row)
         {

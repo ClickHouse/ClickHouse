@@ -68,9 +68,6 @@ class MockControl:
     def setup_at_part_upload(self, **kwargs):
         self.setup_action("at_part_upload", **kwargs)
 
-    def setup_at_listing(self, **kwargs):
-        self.setup_action("at_listing", **kwargs)
-
     def setup_at_create_multi_part_upload(self, **kwargs):
         self.setup_action("at_create_multi_part_upload", **kwargs)
 
@@ -124,47 +121,7 @@ class MockControl:
         assert response == "OK", response
 
 
-class Throttler:
-    def __init__(self, rate_limit_bps):
-        self._lock = threading.Lock()
-        self._rate_limit_bps = rate_limit_bps
-        self._window_start = time.time()
-        self._bytes_in_window = 0
-        self._window_duration_seconds = 1.0
-
-    @property
-    def rate_limit_bps(self):
-        with self._lock:
-            return self._rate_limit_bps
-
-    @rate_limit_bps.setter
-    def rate_limit_bps(self, value):
-        if value < 0:
-            raise ValueError("rate_limit_bps must be non-negative")
-
-        with self._lock:
-            self._rate_limit_bps = value
-
-    def check_and_update(self, size_bytes):
-        with self._lock:
-            now = time.time()
-            if now - self._window_start >= self._window_duration_seconds:
-                self._window_start = now
-                self._bytes_in_window = 0
-
-            self._bytes_in_window += size_bytes
-            current_rate_bps = (
-                self._bytes_in_window * 8
-            ) / self._window_duration_seconds
-
-            if current_rate_bps > self._rate_limit_bps:
-                return False
-            return True
-
-
 class _ServerRuntime:
-    throttler = Throttler(rate_limit_bps=int(10_000_000_000))
-
     class SlowPut:
         def __init__(
             self,
@@ -251,28 +208,6 @@ class _ServerRuntime:
             )
             request_handler.write_error(429, data)
 
-    class ThrottleToBpsAction:
-        def __init__(self, rate_limit_bps="10_000_000"):
-            throttler = _runtime.throttler
-            throttler.rate_limit_bps = int(rate_limit_bps)
-
-        def inject_error(self, request_handler):
-            throttler = _runtime.throttler
-            headers = request_handler.headers
-            content_length = int(headers.get("Content-Length", 0)) if headers else 0
-            if throttler and not throttler.check_and_update(content_length):
-                data = (
-                    '<?xml version="1.0" encoding="UTF-8"?>'
-                    "<Error>"
-                    "<Code>SlowDown</Code>"
-                    "<Message>Slow Down.</Message>"
-                    "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
-                    "</Error>"
-                )
-                request_handler.write_error(503, data)
-            else:
-                request_handler.redirect()
-
     class RedirectAction:
         def __init__(self, host="localhost", port=1):
             self.dst_host = _and_then(host, str)
@@ -317,28 +252,6 @@ class _ServerRuntime:
             )
             request_handler.connection.close()
 
-    class TimeoutAction:
-        def inject_error(self, request_handler):
-            request_handler.log_message("timeout action: read all input and send 200")
-
-            request_handler.read_all_input()
-
-            request_handler.send_response(200)
-            request_handler.send_header("Content-Type", "text/xml")
-            request_handler.end_headers()
-
-            request_handler.log_message("timeout action: write partial data")
-            request_handler.wfile.write(b'<?xml version="1.0" encoding="UTF-8"?> <')
-            request_handler.wfile.flush()
-
-            request_handler.log_message("timeout action: sleep")
-            time.sleep(10)
-            request_handler.log_message("timeout action: close connection")
-            request_handler.connection.setsockopt(
-                socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
-            )
-            request_handler.connection.close()
-
     class ConnectionRefusedAction(RedirectAction):
         pass
 
@@ -373,12 +286,6 @@ class _ServerRuntime:
                 self.error_handler = _ServerRuntime.TotalQpsLimitExceededAction(
                     *self.action_args
                 )
-            elif self.action == "throttle_to_bps":
-                self.error_handler = _ServerRuntime.ThrottleToBpsAction(
-                    *self.action_args
-                )
-            elif self.action == "timeout":
-                self.error_handler = _ServerRuntime.TimeoutAction()
             else:
                 self.error_handler = _ServerRuntime.Expected500ErrorAction()
 
@@ -399,9 +306,10 @@ class _ServerRuntime:
             with self.lock:
                 if self.after:
                     self.after -= 1
-                elif self.count:
-                    self.count -= 1
-                    return True
+                if self.after == 0:
+                    if self.count:
+                        self.count -= 1
+                        return True
                 return False
 
         def inject_error(self, request_handler):
@@ -436,7 +344,6 @@ class _ServerRuntime:
             self.slow_put = None
             self.fake_multipart_upload = None
             self.at_create_multi_part_upload = None
-            self.at_listing = None
 
 
 _runtime = _ServerRuntime()
@@ -450,8 +357,6 @@ def get_random_string(length):
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
-    throttler = _runtime.throttler
-
     def _ok(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
@@ -614,14 +519,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             )
             return self._ok()
 
-        if path[1] == "at_listing":
-            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            _runtime.at_listing = _ServerRuntime.CountAfter.from_cgi_params(
-                _runtime.lock, params
-            )
-            self.log_message("set at_listing %s", _runtime.at_listing)
-            return self._ok()
-
         if path[1] == "reset":
             _runtime.reset()
             self.log_message("reset")
@@ -635,14 +532,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path.startswith("/mock_settings"):
             return self._mock_settings()
-
-        parts = urllib.parse.urlsplit(self.path)
-        params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-        is_listing = params.get("list-type", [None])[0] is not None
-
-        if is_listing and _runtime.at_listing is not None:
-            if _runtime.at_listing.has_effect():
-                return _runtime.at_listing.inject_error(self)
 
         self.log_message("get redirect")
         return self.redirect()

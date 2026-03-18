@@ -34,7 +34,9 @@ void ASTSubquery::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     ///   (select 1 in ((select 1) as sub))
     if (!cte_name.empty())
     {
+        ostr << (settings.hilite ? hilite_identifier : "");
         settings.writeIdentifier(ostr, cte_name, /*ambiguous=*/false);
+        ostr << (settings.hilite ? hilite_none : "");
         return;
     }
 
@@ -73,3 +75,4 @@ String ASTSubquery::tryGetAlias() const
 }
 
 }
+

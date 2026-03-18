@@ -6,10 +6,7 @@ namespace DB
 {
 
 PartsRanges constructPartsRanges(
-    std::vector<MergeTreeDataPartsVector> && ranges,
-    const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    const time_t & current_time)
+    std::vector<MergeTreeDataPartsVector> && ranges, const StorageMetadataPtr & metadata_snapshot, const time_t & current_time)
 {
     PartsRanges properties_ranges;
     properties_ranges.reserve(ranges.size());
@@ -17,10 +14,10 @@ PartsRanges constructPartsRanges(
     for (const auto & range : ranges)
     {
         PartsRange properties_range;
-        properties_range.reserve(range.size());
+        properties_ranges.reserve(range.size());
 
         for (const auto & part : range)
-            properties_range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time));
+            properties_range.push_back(buildPartProperties(part, metadata_snapshot, current_time));
 
         properties_ranges.push_back(std::move(properties_range));
     }
@@ -34,7 +31,7 @@ MergeTreeDataPartsVector filterByPartitions(
     if (!partitions_to_keep)
         return parts;
 
-    std::erase_if(parts, [&partitions_to_keep](const auto & part) { return !partitions_to_keep->contains(part->info.getPartitionId()); });
+    std::erase_if(parts, [&partitions_to_keep](const auto & part) { return !partitions_to_keep->contains(part->info.partition_id); });
 
     return parts;
 }

@@ -2,7 +2,7 @@
 
 #include <unordered_set>
 
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
 #include <Parsers/ASTSelectIntersectExceptQuery.h>

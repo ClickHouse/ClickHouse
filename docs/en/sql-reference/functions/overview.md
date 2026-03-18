@@ -4,10 +4,9 @@ sidebar_label: 'Overview'
 sidebar_position: 1
 slug: /sql-reference/functions/overview
 title: 'Regular Functions'
-doc_type: 'reference'
 ---
 
-# Regular functions
+# Regular Functions
 
 There are at least\* two types of functions - regular functions (they are just called "functions") and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function does not depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
 

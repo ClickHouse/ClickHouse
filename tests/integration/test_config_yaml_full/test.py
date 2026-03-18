@@ -12,6 +12,7 @@ def test_yaml_full_conf():
         "configs/config.d/access_control.yaml",
         "configs/config.d/error_log.yaml",
         "configs/config.d/keeper_port.yaml",
+        "configs/config.d/latency_log.yaml",
         "configs/config.d/logging_no_rotate.yaml",
         "configs/config.d/log_to_console.yaml",
         "configs/config.d/macros.yaml",

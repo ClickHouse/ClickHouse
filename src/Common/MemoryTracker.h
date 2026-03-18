@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <base/types.h>
@@ -68,7 +67,7 @@ private:
     Int64 profiler_step = 0;
 
     /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
-    std::atomic<double> fault_probability = 0;
+    double fault_probability = 0;
 
     /// To randomly sample allocations and deallocations in trace_log.
     double sample_probability = -1;
@@ -78,9 +77,6 @@ private:
 
     /// Randomly sample allocations only smaller or equal to this size
     UInt64 max_allocation_size_bytes = 0;
-
-    UInt64 jemalloc_flush_profile_interval_bytes = 0;
-    bool jemalloc_flush_profile_on_memory_exceeded = false;
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
@@ -147,7 +143,16 @@ public:
     // This method is intended to fix the counter inside of background_memory_tracker.
     // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
     // of total_memory_tracker.
-    void adjustOnBackgroundTaskEnd(const MemoryTracker * child);
+    void adjustOnBackgroundTaskEnd(const MemoryTracker * child)
+    {
+        auto background_memory_consumption = child->amount.load(std::memory_order_relaxed);
+        amount.fetch_sub(background_memory_consumption, std::memory_order_relaxed);
+
+        // Also fix CurrentMetrics::MergesMutationsMemoryTracking
+        auto metric_loaded = metric.load(std::memory_order_relaxed);
+        if (metric_loaded != CurrentMetrics::end())
+            CurrentMetrics::sub(metric_loaded, background_memory_consumption);
+    }
 
     Int64 getPeak() const
     {
@@ -173,9 +178,7 @@ public:
 
     void setFaultProbability(double value)
     {
-        /// Cap to 0.5 to avoid infinite loops where every allocation fails
-        /// and operations that retry on memory errors can never make progress.
-        fault_probability.store(std::min(value, 0.5), std::memory_order_relaxed);
+        fault_probability = value;
     }
 
     void injectFault() const;
@@ -190,16 +193,6 @@ public:
     void setSampleMinAllocationSize(UInt64 value)
     {
         min_allocation_size_bytes = value;
-    }
-
-    void setJemallocFlushProfileInterval(UInt64 interval)
-    {
-        jemalloc_flush_profile_interval_bytes = interval;
-    }
-
-    void setJemallocFlushProfileOnMemoryExceeded(bool flush)
-    {
-        jemalloc_flush_profile_on_memory_exceeded = flush;
     }
 
     void setSampleMaxAllocationSize(UInt64 value)
@@ -280,6 +273,8 @@ public:
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
+
+    void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]]);
 };
 
 extern MemoryTracker total_memory_tracker;

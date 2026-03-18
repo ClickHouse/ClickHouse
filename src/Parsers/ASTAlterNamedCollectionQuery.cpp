@@ -9,19 +9,19 @@ namespace DB
 
 ASTPtr ASTAlterNamedCollectionQuery::clone() const
 {
-    return make_intrusive<ASTAlterNamedCollectionQuery>(*this);
+    return std::make_shared<ASTAlterNamedCollectionQuery>(*this);
 }
 
 void ASTAlterNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << "ALTER NAMED COLLECTION ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "ALTER NAMED COLLECTION ";
     if (if_exists)
         ostr << "IF EXISTS ";
-    ostr << backQuoteIfNeed(collection_name);
+    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
     formatOnCluster(ostr, settings);
     if (!changes.empty())
     {
-        ostr << " SET ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " SET " << (settings.hilite ? hilite_none : "");
         bool first = true;
         for (const auto & change : changes)
         {
@@ -42,7 +42,7 @@ void ASTAlterNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::Fo
     }
     if (!delete_keys.empty())
     {
-        ostr << " DELETE ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " DELETE " << (settings.hilite ? hilite_none : "");
         bool first = true;
         for (const auto & key : delete_keys)
         {

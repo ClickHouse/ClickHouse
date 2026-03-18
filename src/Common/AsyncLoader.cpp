@@ -44,7 +44,7 @@ void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopw
 {
     if (total && (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS)))
     {
-        LOG_INFO(log, "Processed: {:.1f}%", static_cast<double>(processed) * 100.0 / static_cast<double>(total));
+        LOG_INFO(log, "Processed: {:.1f}%", static_cast<double>(processed) * 100.0 / total);
         watch.restart();
     }
 }
@@ -241,7 +241,14 @@ AsyncLoader::~AsyncLoader()
     // When all jobs are done we could still have finalizing workers.
     // These workers could call updateCurrentPriorityAndSpawn() that scans all pools.
     // We need to stop all of them before destructing any of them.
-    shutdown();
+    stop();
+}
+
+void AsyncLoader::start()
+{
+    std::unique_lock lock{mutex};
+    is_running = true;
+    updateCurrentPriorityAndSpawn(lock);
 }
 
 void AsyncLoader::wait()
@@ -270,27 +277,7 @@ void AsyncLoader::wait()
     }
 }
 
-void AsyncLoader::shutdown()
-{
-    LoadJobSet jobs;
-
-    {
-        std::unique_lock lock{mutex};
-        shutdown_requested = true;
-        is_running = false;
-
-        for (const auto & [job, _] : scheduled_jobs)
-            jobs.insert(job);
-    }
-
-    // Cancel scheduled jobs, wait for currently running jobs to finish.
-    remove(jobs);
-
-    for (auto & p : pools)
-        p.thread_pool->wait();
-}
-
-void AsyncLoader::pause()
+void AsyncLoader::stop()
 {
     {
         std::unique_lock lock{mutex};
@@ -300,13 +287,6 @@ void AsyncLoader::pause()
     // Wait for all currently running jobs to finish (and do NOT wait all pending jobs)
     for (auto & p : pools)
         p.thread_pool->wait();
-}
-
-void AsyncLoader::unpause()
-{
-    std::unique_lock lock{mutex};
-    is_running = true;
-    updateCurrentPriorityAndSpawn(lock);
 }
 
 void AsyncLoader::schedule(LoadTask & task)
@@ -350,12 +330,6 @@ void AsyncLoader::schedule(const LoadJobSet & jobs_to_schedule)
     LoadJobSet jobs;
     for (const auto & job : jobs_to_schedule)
         gatherNotScheduled(job, jobs, lock);
-
-    if (jobs.empty())
-        return;
-
-    if (shutdown_requested)
-        throw Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "AsyncLoader was shut down");
 
     // Ensure scheduled_jobs graph will have no cycles. The only way to get a cycle is to add a cycle, assuming old jobs cannot reference new ones.
     checkCycle(jobs, lock);
@@ -924,7 +898,7 @@ void AsyncLoader::worker(Pool & pool)
     while (true)
     {
         // This is inside the loop to also reset previous thread names set inside the jobs
-        DB::setThreadName(ThreadName::ASYNC_TABLE_LOADER);
+        setThreadName(pool.name.c_str());
 
         {
             std::unique_lock lock{mutex};

@@ -7,17 +7,18 @@ namespace DB
 
 ASTPtr ASTDropWorkloadQuery::clone() const
 {
-    return make_intrusive<ASTDropWorkloadQuery>(*this);
+    return std::make_shared<ASTDropWorkloadQuery>(*this);
 }
 
 void ASTDropWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << "DROP WORKLOAD ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "DROP WORKLOAD ";
 
     if (if_exists)
         ostr << "IF EXISTS ";
 
-    ostr << backQuoteIfNeed(workload_name);
+    ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(workload_name) << (settings.hilite ? hilite_none : "");
     formatOnCluster(ostr, settings);
 }
 

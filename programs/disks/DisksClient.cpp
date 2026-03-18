@@ -1,13 +1,12 @@
-#include <DisksClient.h>
+#include "DisksClient.h"
 #include <optional>
 #include <Client/ClientBase.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Disks/IDisk.h>
-#include <base/types.h>
+#include "Disks/IDisk.h"
+#include "base/types.h"
 
 #include <Formats/registerFormats.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -49,18 +48,6 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
     {
         path = String{"/"};
     }
-
-    String relative_path = normalizePathAndGetAsRelative(path);
-    if (disk->existsDirectory(relative_path) || relative_path.empty())
-    {
-        return;
-    }
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Initializing path {} (normalized path: {}) at disk {} is not a directory",
-        path,
-        relative_path,
-        disk->getName());
 }
 
 std::vector<String> DiskWithPath::listAllFilesByPath(const String & any_path) const
@@ -161,7 +148,6 @@ String DiskWithPath::normalizePath(const String & path)
 DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, ContextPtr context_)
     : config(config_), context(std::move(context_)), log(getLogger("DisksClient"))
 {
-    auto component_guard = Coordination::setCurrentComponent("DisksClient::DisksClient");
     String begin_disk = config.getString("disk", DEFAULT_DISK_NAME);
     String config_prefix = "storage_configuration.disks";
     Poco::Util::AbstractConfiguration::Keys keys;

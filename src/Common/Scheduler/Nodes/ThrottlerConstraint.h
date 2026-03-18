@@ -91,21 +91,18 @@ public:
     {
         // Dequeue request from the child
         auto [request, child_now_active] = child->dequeueRequest();
+        if (!request)
+            return {nullptr, false};
 
-        // Deactivate if necessary
+        // We don't do `request->addConstraint(this)` because `finishRequest()` is no-op
+
+        updateBucket(request->cost);
+
         child_active = child_now_active;
         if (!active())
             busy_periods++;
-
-        if (request)
-        {
-            // We don't do `request->addConstraint(this)` because `finishRequest()` is no-op
-            ResourceCost cost = request->ignore_throttling ? 0 : request->cost;
-            updateBucket(cost);
-            incrementDequeued(cost);
-            return {request, active()};
-        }
-        return {nullptr, false};
+        incrementDequeued(request->cost);
+        return {request, active()};
     }
 
     void finishRequest(ResourceRequest *) override
@@ -153,7 +150,7 @@ public:
     double getTokens() const
     {
         auto now = event_queue->now();
-        double elapsed = static_cast<double>(std::chrono::nanoseconds(now - last_update).count()) / 1e9;
+        double elapsed = std::chrono::nanoseconds(now - last_update).count() / 1e9;
         return std::min(tokens + max_speed * elapsed, max_burst);
     }
 
@@ -182,9 +179,9 @@ private:
         auto now = event_queue->now();
         if (max_speed > 0.0)
         {
-            double elapsed = static_cast<double>(std::chrono::nanoseconds(now - last_update).count()) / 1e9;
+            double elapsed = std::chrono::nanoseconds(now - last_update).count() / 1e9;
             tokens = std::min(tokens + max_speed * elapsed, max_burst);
-            tokens -= static_cast<double>(use); // This is done outside min() to avoid passing large requests w/o token consumption after long idle period
+            tokens -= use; // This is done outside min() to avoid passing large requests w/o token consumption after long idle period
 
             // Postpone activation until there is positive amount of tokens
             if (!do_not_postpone && tokens < 0.0)

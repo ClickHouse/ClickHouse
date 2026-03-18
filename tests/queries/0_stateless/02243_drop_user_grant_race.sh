@@ -19,9 +19,7 @@ $CLICKHOUSE_CLIENT -m -q "
 
 function create_drop_grant()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02243 GRANTEES NONE" ||:
         $CLICKHOUSE_CLIENT -q "GRANT ALL ON *.* TO test_user_02243 WITH GRANT OPTION" ||:
         $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02243" &
@@ -29,8 +27,10 @@ function create_drop_grant()
     done
 }
 
+export -f create_drop_grant
+
 TIMEOUT=10
-create_drop_grant 2> /dev/null &
+timeout $TIMEOUT bash -c create_drop_grant 2> /dev/null &
 wait
 
 $CLICKHOUSE_CLIENT --user kek_02243 -q "SELECT * FROM test" 2>&1| grep -Fa "Exception: " | grep -Eo ACCESS_DENIED | uniq

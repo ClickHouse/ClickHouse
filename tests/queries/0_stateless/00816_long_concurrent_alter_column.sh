@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-msan
-# no-msan: too slow, concurrent ALTER operations with 500 columns can cause timeout
+# Tags: long
 
 set -e
 
@@ -9,22 +8,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 echo "DROP TABLE IF EXISTS concurrent_alter_column" | ${CLICKHOUSE_CLIENT}
-echo "CREATE TABLE concurrent_alter_column (ts DATETIME) ENGINE = MergeTree PARTITION BY toStartOfDay(ts) ORDER BY tuple() SETTINGS auto_statistics_types = ''" | ${CLICKHOUSE_CLIENT}
+echo "CREATE TABLE concurrent_alter_column (ts DATETIME) ENGINE = MergeTree PARTITION BY toStartOfDay(ts) ORDER BY tuple()" | ${CLICKHOUSE_CLIENT}
 
 function thread1()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         for i in {1..500}; do echo "ALTER TABLE concurrent_alter_column ADD COLUMN c$i DOUBLE;"; done | ${CLICKHOUSE_CLIENT} -n --query_id=alter_00816_1
     done
 }
 
 function thread2()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         echo "ALTER TABLE concurrent_alter_column ADD COLUMN d DOUBLE" | ${CLICKHOUSE_CLIENT} --query_id=alter_00816_2;
         sleep "$(echo 0.0$RANDOM)";
         echo "ALTER TABLE concurrent_alter_column DROP COLUMN d" | ${CLICKHOUSE_CLIENT} --query_id=alter_00816_2;
@@ -33,9 +28,7 @@ function thread2()
 
 function thread3()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         echo "ALTER TABLE concurrent_alter_column ADD COLUMN e DOUBLE" | ${CLICKHOUSE_CLIENT} --query_id=alter_00816_3;
         sleep "$(echo 0.0$RANDOM)";
         echo "ALTER TABLE concurrent_alter_column DROP COLUMN e" | ${CLICKHOUSE_CLIENT} --query_id=alter_00816_3;
@@ -44,21 +37,25 @@ function thread3()
 
 function thread4()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         echo "ALTER TABLE concurrent_alter_column ADD COLUMN f DOUBLE" | ${CLICKHOUSE_CLIENT} --query_id=alter_00816_4;
         sleep "$(echo 0.0$RANDOM)";
         echo "ALTER TABLE concurrent_alter_column DROP COLUMN f" | ${CLICKHOUSE_CLIENT} --query_id=alter_00816_4;
     done
 }
 
+# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
+export -f thread1;
+export -f thread2;
+export -f thread3;
+export -f thread4;
+
 TIMEOUT=20
 
-thread1 2> /dev/null &
-thread2 2> /dev/null &
-thread3 2> /dev/null &
-thread4 2> /dev/null &
+timeout $TIMEOUT bash -c thread1 2> /dev/null &
+timeout $TIMEOUT bash -c thread2 2> /dev/null &
+timeout $TIMEOUT bash -c thread3 2> /dev/null &
+timeout $TIMEOUT bash -c thread4 2> /dev/null &
 
 wait
 

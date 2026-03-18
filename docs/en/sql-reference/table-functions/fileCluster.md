@@ -8,7 +8,6 @@ sidebar_label: 'fileCluster'
 sidebar_position: 61
 slug: /sql-reference/table-functions/fileCluster
 title: 'fileCluster'
-doc_type: 'reference'
 ---
 
 # fileCluster Table Function
@@ -20,23 +19,21 @@ This function will operate _correctly_ only in case the set of files matching th
 In case these files differ between nodes, the return value cannot be predetermined and depends on the order in which worker nodes request tasks from the initiator.
 :::
 
-## Syntax {#syntax}
+**Syntax**
 
-```sql
+``` sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-## Arguments {#arguments}
+**Arguments**
 
-| Argument             | Description                                                                                                                                                                        |
-|----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `cluster_name`       | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.                                                                  |
-| `path`               | The relative path to the file from [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path). Path to file also supports [globs](#globs-in-path). |
-| `format`             | [Format](/sql-reference/formats) of the files. Type: [String](../../sql-reference/data-types/string.md).                                                                           |
-| `structure`          | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).                             |
-| `compression_method` | Compression method. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.                                                                                     |
+- `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
+- `path` — The relative path to the file from [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path). Path to file also supports [globs](#globs-in-path).
+- `format` — [Format](/sql-reference/formats) of the files. Type: [String](../../sql-reference/data-types/string.md).
+- `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
+- `compression_method` — Compression method. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.
 
-## Returned value {#returned_value}
+**Returned value**
 
 A table with the specified format and structure and with data from files matching the specified path.
 
@@ -44,7 +41,7 @@ A table with the specified format and structure and with data from files matchin
 
 Given a cluster named `my_cluster` and given the following value of setting `user_files_path`:
 
-```bash
+``` bash
 $ grep user_files_path /etc/clickhouse-server/config.xml
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
@@ -82,10 +79,11 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
+
 ## Globs in Path {#globs-in-path}
 
 All patterns supported by [File](../../sql-reference/table-functions/file.md#globs-in-path) table function are supported by FileCluster.
 
-## Related {#related}
+**See Also**
 
 - [File table function](../../sql-reference/table-functions/file.md)

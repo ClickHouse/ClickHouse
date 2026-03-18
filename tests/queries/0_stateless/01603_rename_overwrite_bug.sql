@@ -1,4 +1,4 @@
--- Tags: no-parallel, memory-engine, log-engine
+-- Tags: no-parallel
 
 SET send_logs_level = 'fatal';
 

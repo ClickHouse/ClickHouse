@@ -7,7 +7,6 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
-# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
     "node1",
     main_configs=[
@@ -16,7 +15,6 @@ node1 = cluster.add_instance(
         "configs/enable_keeper1.xml",
     ],
     macros={"replica": "node1"},
-    with_remote_database_disk=False,
 )
 
 node2 = cluster.add_instance(
@@ -27,14 +25,12 @@ node2 = cluster.add_instance(
         "configs/enable_keeper2.xml",
     ],
     macros={"replica": "node2"},
-    with_remote_database_disk=False,
 )
 
 node3 = cluster.add_instance(
     "node3",
     main_configs=["configs/remote_servers.xml", "configs/enable_keeper3.xml"],
     macros={"replica": "node3"},
-    with_remote_database_disk=False,
 )
 
 
@@ -69,4 +65,4 @@ def test_create_insert(started_cluster):
     for node in [node1, node2, node3]:
         expected = [[1, "str1"], [2, "str2"]]
         assert node.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
-        assert node.query("CHECK TABLE tbl SETTINGS check_query_single_value_result = 1") == "1\n"
+        assert node.query("CHECK TABLE tbl") == "1\n"

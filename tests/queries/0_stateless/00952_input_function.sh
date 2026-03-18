@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
-# no-parallel-replicas: https://github.com/ClickHouse/ClickHouse/issues/80438
+
 set -e
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

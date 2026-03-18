@@ -1,4 +1,3 @@
-#include <Common/setThreadName.h>
 #include <Common/Scheduler/Nodes/CustomResourceManager.h>
 
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
@@ -178,16 +177,10 @@ ResourceLink CustomResourceManager::Classifier::get(const String & resource_name
         return ResourceLink{}; // unlimited access
 }
 
-WorkloadSettings CustomResourceManager::Classifier::getWorkloadSettings(const String & resource_name) const
-{
-    UNUSED(resource_name);
-    return {};
-}
-
 CustomResourceManager::CustomResourceManager()
     : state(new State())
 {
-    scheduler.start(ThreadName::CUSTOM_RESOURCE_MANAGER);
+    scheduler.start();
 }
 
 void CustomResourceManager::updateConfiguration(const Poco::Util::AbstractConfiguration & config)

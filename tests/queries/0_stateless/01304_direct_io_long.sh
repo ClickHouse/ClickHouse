@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage, no-flaky-check, no-tsan, no-msan
-# - no-msan - too slow
-# - no-flaky-check - It can be too long with ThreadFuzzer
-# - no-tsan - It is slow under TSan and may lead to query timeouts
-# - no-asan - It is slow under ASan and may lead to query timeouts
+# Tags: long, no-object-storage-with-slow-build, no-flaky-check
+# It can be too long with ThreadFuzzer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --max_execution_time 300 --max_rows_to_read 50M --query "
+$CLICKHOUSE_CLIENT --max_rows_to_read 50M --query "
     DROP TABLE IF EXISTS bug;
     CREATE TABLE bug (UserID UInt64, Date Date) ENGINE = MergeTree ORDER BY Date
         SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', merge_max_block_size = 8192;

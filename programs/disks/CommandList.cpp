@@ -1,8 +1,8 @@
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
-#include <DisksApp.h>
-#include <DisksClient.h>
-#include <ICommand.h>
+#include "DisksApp.h"
+#include "DisksClient.h"
+#include "ICommand.h"
 #include <Common/logger_useful.h>
 namespace DB
 {
@@ -21,8 +21,8 @@ public:
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        bool recursive = options.contains("recursive");
-        bool show_hidden = options.contains("all");
+        bool recursive = options.count("recursive");
+        bool show_hidden = options.count("all");
         const auto & disk = client.getCurrentDiskWithPath();
         String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
 

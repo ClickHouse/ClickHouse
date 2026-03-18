@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <vector>
-#include <Common/MultiVersion.h>
+#include "Common/MultiVersion.h"
 
 namespace Poco
 {
@@ -54,7 +54,6 @@ public:
 
     /// Returns the number of matched rules.
     size_t wipeSensitiveData(std::string & data) const;
-    size_t wipeSensitiveDataThrow(std::string & data) const;
 
     /// setInstance is not thread-safe and should be called once in single-thread mode.
     /// https://github.com/ClickHouse/ClickHouse/pull/6810#discussion_r321183367
@@ -62,12 +61,7 @@ public:
     static MaskerMultiVersion::Version getInstance();
 
     /// Used in tests.
-    void addMaskingRule(
-        const std::string & name,
-        const std::string & regexp_string,
-        const std::string & replacement_string,
-        bool throw_on_match
-    );
+    void addMaskingRule(const std::string & name, const std::string & regexp_string, const std::string & replacement_string);
 
 #ifndef NDEBUG
     void printStats();

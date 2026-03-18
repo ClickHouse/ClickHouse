@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 
 namespace DB

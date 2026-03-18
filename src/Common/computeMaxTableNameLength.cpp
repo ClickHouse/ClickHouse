@@ -1,6 +1,5 @@
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
-#include <Interpreters/Context.h>
 
 #include <filesystem>
 #include <unistd.h>

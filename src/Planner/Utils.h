@@ -9,7 +9,6 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ActionsDAG.h>
 
-#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -17,7 +16,6 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <Planner/PlannerContext.h>
-#include <Planner/PlannerCorrelatedSubqueries.h>
 
 #include <Storages/SelectQueryInfo.h>
 
@@ -33,14 +31,7 @@ String dumpQueryPlan(const QueryPlan & query_plan);
 String dumpQueryPipeline(const QueryPlan & query_plan);
 
 /// Build common header for UNION query
-Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type);
-
-/// Add converting to common header actions if needed for each plan
-void addConvertingToCommonHeaderActionsIfNeeded(
-    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
-    const Block & union_common_header,
-    SharedHeaders & query_plans_headers,
-    ContextPtr context);
+Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);
 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);
@@ -58,21 +49,15 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
   */
-std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
-    const QueryTreeNodePtr & expression_node,
+ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context,
-    const ColumnNodePtrWithHashSet & correlated_columns_set,
-    bool use_column_identifier_as_action_node_name = true);
+    const PlannerContextPtr & planner_context);
 
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);
 
 /// Returns true if query node JOIN TREE contains ARRAY JOIN node, false otherwise
 bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node);
-
-/// Returns true if any query tree children have WITH TOTALS, false otherwise.
-bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node);
 
 /** Returns true if query node JOIN TREE contains QUERY node with WITH TOTALS, false otherwise.
   * Function is applied recursively to subqueries in JOIN TREE.
@@ -112,16 +97,5 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 /// if it have any one. Otherwise return empty.
 /// If the window frame is set in sql, use it anyway.
 std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
-
-ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
-
-/// Remove query plan steps that don't affect the number of rows in the result.
-/// Returns true if the query always returns at least 1 row.
-bool optimizePlanForExists(QueryPlan & query_plan);
-
-/// Create ExpressionStep that projects only used columns
-QueryPlanStepPtr projectOnlyUsedColumns(
-    const SharedHeader & stream_header,
-    const ColumnIdentifiers & used_column_identifiers);
 
 }

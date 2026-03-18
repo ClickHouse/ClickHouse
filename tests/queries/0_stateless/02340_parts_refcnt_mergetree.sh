@@ -28,7 +28,6 @@ function check_refcnt_for_table()
         --format Null
         --max_threads 1
         --max_block_size 1
-        --enable_shared_storage_snapshot_in_query 0
         --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0.0
         --query_id "$query_id"
         --send_logs_level "test"
@@ -39,7 +38,6 @@ function check_refcnt_for_table()
     # - query may sleep 0.1*(2000/4)=50 seconds maximum, it is enough to check system.parts
     # - "part = 1" condition should prune all parts except first
     # - max_block_size=1 with index_granularity=1 will allow to cancel the query earlier
-    # - enable_shared_storage_snapshot_in_query=0 will release unrelated parts earlier
     $CLICKHOUSE_CLIENT "${args[@]}" -q "select sleepEachRow(0.1) from $table where part = 1" &
     PID=$!
 
@@ -53,16 +51,11 @@ function check_refcnt_for_table()
     done
 
     # NOTE: parts that are used in query will be holded in multiple places, and
-    # this is where magic 8 came from.
-    # Three of these are held reference held in the MergeTreeData itself
-    # - one which is the canonical reference to that part
-    # - another in a precomputed vector of active parts
-    # - another in a precomputed vector of ranges in active parts (each range in turn refers to the part)
-    # In addition to this, there also there could be some other
+    # this is where magic 6 came from. Also there could be some other
     # background threads (i.e. asynchronous metrics) that uses the part, so we
-    # simply filter parts not by "refcount > 1" but with some delta - "5", to
+    # simply filter parts not by "refcount > 1" but with some delta - "3", to
     # avoid flakiness.
-    $CLICKHOUSE_CLIENT -q "select table, name, refcount>=8 from system.parts where database = '$CLICKHOUSE_DATABASE' and table = '$table' and refcount >= 5"
+    $CLICKHOUSE_CLIENT -q "select table, name, refcount>=6 from system.parts where database = '$CLICKHOUSE_DATABASE' and table = '$table' and refcount >= 3"
 
     # Kill the query gracefully.
     kill -INT $PID

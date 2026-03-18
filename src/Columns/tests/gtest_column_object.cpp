@@ -1,11 +1,11 @@
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Common/Arena.h>
-#include <Core/Field.h>
+#include "Core/Field.h"
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -38,7 +38,7 @@ TEST(ColumnObject, GetName)
 Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
 {
     auto data = values->getDataAt(n);
-    ReadBufferFromMemory buf(data);
+    ReadBufferFromMemory buf(data.data, data.size);
     Field res;
     std::make_shared<SerializationDynamic>()->deserializeBinary(res, buf, FormatSettings());
     return res;
@@ -313,17 +313,15 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos, nullptr);
-    col_object.serializeValueIntoArena(1, arena, pos, nullptr);
-    col_object.serializeValueIntoArena(2, arena, pos, nullptr);
+    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos);
+    col_object.serializeValueIntoArena(1, arena, pos);
+    col_object.serializeValueIntoArena(2, arena, pos);
 
     auto col2 = type->createColumn();
     auto & col_object2 = assert_cast<ColumnObject &>(*col);
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    col_object2.deserializeAndInsertFromArena(in, nullptr);
-    col_object2.deserializeAndInsertFromArena(in, nullptr);
-    col_object2.deserializeAndInsertFromArena(in, nullptr);
-    ASSERT_TRUE(in.eof());
+    pos = col_object2.deserializeAndInsertFromArena(ref1.data);
+    pos = col_object2.deserializeAndInsertFromArena(pos);
+    col_object2.deserializeAndInsertFromArena(pos);
 
     ASSERT_EQ(col_object2[0], (Object{{"b.d", Field(42u)}, {"a.b", Array{"Str1", "Str2"}}, {"a.a", Tuple{"Str3", 441u}}, {"a.c", Field("Str4")}, {"a.d", Array{Field(45), Field(46)}}, {"a.e", Field(47)}}));
     ASSERT_EQ(col_object2[1], (Object{{"b.d", Field{0u}}, {"a.b", Array{}}, {"b.a", Field(48)}, {"b.b", Array{Field(49), Field(50)}}}));
@@ -341,16 +339,16 @@ TEST(ColumnObject, SkipSerializedInArena)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos, nullptr);
-    col_object.serializeValueIntoArena(1, arena, pos, nullptr);
-    col_object.serializeValueIntoArena(2, arena, pos, nullptr);
+    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos);
+    col_object.serializeValueIntoArena(1, arena, pos);
+    auto ref3 = col_object.serializeValueIntoArena(2, arena, pos);
 
+    const char * end = ref3.data + ref3.size;
     auto col2 = type->createColumn();
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    col2->skipSerializedInArena(in);
-    col2->skipSerializedInArena(in);
-    col2->skipSerializedInArena(in);
-    ASSERT_TRUE(in.eof());
+    pos = col2->skipSerializedInArena(ref1.data);
+    pos = col2->skipSerializedInArena(pos);
+    pos = col2->skipSerializedInArena(pos);
+    ASSERT_EQ(pos, end);
 }
 
 TEST(ColumnObject, rollback)

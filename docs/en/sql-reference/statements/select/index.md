@@ -4,7 +4,6 @@ sidebar_label: 'SELECT'
 sidebar_position: 32
 slug: /sql-reference/statements/select/
 title: 'SELECT Query'
-doc_type: 'reference'
 ---
 
 # SELECT Query
@@ -13,7 +12,7 @@ doc_type: 'reference'
 
 ## Syntax {#syntax}
 
-```sql
+``` sql
 [WITH expr_list(subquery)]
 SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
@@ -31,7 +30,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION  ...]
-[INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
+[INTO OUTFILE filename [COMPRESSION type [LEVEL level]] ]
 [FORMAT format]
 ```
 
@@ -66,27 +65,28 @@ Specifics of each optional clause are covered in separate sections, which are li
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
+
 ### Dynamic column selection {#dynamic-column-selection}
 
 Dynamic column selection (also known as a COLUMNS expression) allows you to match some columns in a result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression.
 
-```sql
+``` sql
 COLUMNS('regexp')
 ```
 
 For example, consider the table:
 
-```sql
+``` sql
 CREATE TABLE default.col_names (aa Int8, ab Int8, bc Int8) ENGINE = TinyLog
 ```
 
 The following query selects data from all the columns containing the `a` symbol in their name.
 
-```sql
+``` sql
 SELECT COLUMNS('a') FROM col_names
 ```
 
-```text
+``` text
 ┌─aa─┬─ab─┐
 │  1 │  1 │
 └────┴────┘
@@ -98,11 +98,11 @@ You can use multiple `COLUMNS` expressions in a query and apply functions to the
 
 For example:
 
-```sql
+``` sql
 SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
 ```
 
-```text
+``` text
 ┌─aa─┬─ab─┬─bc─┬─toTypeName(bc)─┐
 │  1 │  1 │  1 │ Int8           │
 └────┴────┴────┴────────────────┘
@@ -112,11 +112,11 @@ Each column returned by the `COLUMNS` expression is passed to the function as a 
 
 For example:
 
-```sql
+``` sql
 SELECT COLUMNS('a') + COLUMNS('c') FROM col_names
 ```
 
-```text
+``` text
 Received exception from server (version 19.14.1):
 Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus does not match: passed 3, should be 2.
 ```
@@ -177,11 +177,77 @@ For more information, see the section "Settings". It is possible to use external
 
 You can use the following modifiers in `SELECT` queries.
 
-| Modifier                            | Description                                                                                                                                                                                                                                                                                                                                                                              |
-|-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`APPLY`](./apply_modifier.md)     | Allows you to invoke some function for each row returned by an outer table expression of a query.                                                                                                                                                                                                                                                                                        |
-| [`EXCEPT`](./except_modifier.md)   | Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.                                                                                                                                                                                                                                                            |
-| [`REPLACE`](./replace_modifier.md) | Specifies one or more [expression aliases](/sql-reference/syntax#expression-aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`. This modifier does not change the names or order of columns. However, it can change the value and the value type. |
+### APPLY {#apply}
+
+Allows you to invoke some function for each row returned by an outer table expression of a query.
+
+**Syntax:**
+
+```sql
+SELECT <expr> APPLY( <func> ) FROM [db.]table_name
+```
+
+**Example:**
+
+```sql
+CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
+INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
+SELECT * APPLY(sum) FROM columns_transformers;
+```
+
+```response
+┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
+│    220 │     18 │    347 │
+└────────┴────────┴────────┘
+```
+
+### EXCEPT {#except}
+
+Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
+
+**Syntax:**
+
+``` sql
+SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
+```
+
+**Example:**
+
+```sql
+SELECT * EXCEPT (i) from columns_transformers;
+```
+
+```response
+┌──j─┬───k─┐
+│ 10 │ 324 │
+│  8 │  23 │
+└────┴─────┘
+```
+
+### REPLACE {#replace}
+
+Specifies one or more [expression aliases](/sql-reference/syntax#expression-aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`.
+
+This modifier does not change the names or order of columns. However, it can change the value and the value type.
+
+**Syntax:**
+
+``` sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
+```
+
+**Example:**
+
+```sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```response
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```
 
 ### Modifier Combinations {#modifier-combinations}
 
@@ -192,7 +258,7 @@ You can use each modifier separately or combine them.
 Using the same modifier multiple times.
 
 ```sql
-SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) FROM columns_transformers;
+SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_transformers;
 ```
 
 ```response
@@ -218,8 +284,6 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
 
 Other ways to make settings see [here](/operations/settings/overview).
-
-For boolean settings set to true, you can use a shorthand syntax by omitting the value assignment. When only the setting name is specified, it is automatically set to `1` (true).
 
 **Example**
 

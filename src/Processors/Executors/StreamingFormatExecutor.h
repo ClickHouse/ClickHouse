@@ -25,18 +25,16 @@ public:
         const Block & header_,
         InputFormatPtr format_,
         ErrorCallback on_error_ = [](const MutableColumns &, const ColumnCheckpoints, Exception & e) -> size_t { throw std::move(e); },
-        size_t total_bytes_ = 0,
-        size_t total_chunks_ = 0,
         SimpleTransformPtr adding_defaults_transform_ = nullptr);
 
     /// Returns numbers of new read rows.
-    size_t execute(size_t num_bytes = 0);
+    size_t execute();
 
     /// Execute with provided read buffer.
-    size_t execute(ReadBuffer & buffer, size_t num_bytes = 0);
+    size_t execute(ReadBuffer & buffer);
 
     /// Inserts into result columns already preprocessed chunk.
-    size_t insertChunk(Chunk chunk, size_t num_bytes = 0);
+    size_t insertChunk(Chunk chunk);
 
     /// Releases currently accumulated columns.
     MutableColumns getResultColumns();
@@ -45,8 +43,6 @@ public:
     void setQueryParameters(const NameToNameMap & parameters);
 
 private:
-    void preallocateResultColumns(size_t num_bytes, const Chunk & chunk);
-
     const Block header;
     const InputFormatPtr format;
     const ErrorCallback on_error;
@@ -55,10 +51,6 @@ private:
     InputPort port;
     MutableColumns result_columns;
     ColumnCheckpoints checkpoints;
-
-    size_t total_bytes;
-    size_t total_chunks;
-    bool try_preallocate = true;
 };
 
 }

@@ -1,4 +1,4 @@
-#include <Core/PostgreSQL/Connection.h>
+#include "Connection.h"
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>

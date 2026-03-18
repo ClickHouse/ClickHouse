@@ -1,3 +1,0 @@
-<clickhouse>
-    <filesystem_caches_path>/var/log/clickhouse/fs-cache/</filesystem_caches_path>
-</clickhouse>

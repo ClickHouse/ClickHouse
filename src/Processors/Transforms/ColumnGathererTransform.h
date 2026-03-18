@@ -61,7 +61,6 @@ public:
         ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
-        std::optional<size_t> max_dynamic_subcolumns_,
         bool is_result_sparse_);
 
     const char * getName() const override { return "ColumnGathererStream"; }
@@ -95,7 +94,6 @@ private:
 
     const size_t block_preferred_size_rows;
     const size_t block_preferred_size_bytes;
-    const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
 
     Source * source_to_fully_copy = nullptr;
@@ -110,12 +108,11 @@ class ColumnGathererTransform final : public IMergingTransform<ColumnGathererStr
 {
 public:
     ColumnGathererTransform(
-        SharedHeader header,
+        const Block & header,
         size_t num_inputs,
         std::unique_ptr<ReadBuffer> row_sources_buf_,
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
-        std::optional<size_t> max_dynamic_subcolumns_,
         bool is_result_sparse_);
 
     String getName() const override { return "ColumnGathererTransform"; }

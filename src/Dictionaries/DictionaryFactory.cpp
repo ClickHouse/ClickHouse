@@ -1,9 +1,9 @@
-#include <Dictionaries/DictionaryFactory.h>
+#include "DictionaryFactory.h"
 
 #include <memory>
-#include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+#include "getDictionaryConfigurationFromAST.h"
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
@@ -25,15 +25,6 @@ void DictionaryFactory::registerLayout(const std::string & layout_type, LayoutCr
 
     RegisteredLayout layout { .layout_create_function = create_layout, .is_layout_complex = is_layout_complex, .has_layout_complex = has_layout_complex };
     registered_layouts.emplace(layout_type, std::move(layout));
-}
-
-std::vector<String> DictionaryFactory::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
-{
-    std::vector<String> result; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    result.reserve(registered_layouts.size());
-    for (const auto & pair : registered_layouts)
-        result.push_back(pair.first);
-    return result;
 }
 
 DictionaryPtr DictionaryFactory::create(

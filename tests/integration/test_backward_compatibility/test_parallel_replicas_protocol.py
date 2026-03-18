@@ -8,11 +8,11 @@ nodes = [
     cluster.add_instance(
         f"node{num}",
         main_configs=["configs/clusters.xml"],
-        with_zookeeper=True,
+        with_zookeeper=False,
         image="clickhouse/clickhouse-server",
-        tag="24.3",  # earlier versions lead to "Not found column sum(a) in block." exception 🤷
+        tag="23.11",  # earlier versions lead to "Not found column sum(a) in block." exception 🤷
         stay_alive=True,
-        use_old_analyzer=False,
+        use_old_analyzer=True,
         with_installed_binary=True,
     )
     for num in range(2)
@@ -20,8 +20,8 @@ nodes = [
     cluster.add_instance(
         "node2",
         main_configs=["configs/clusters.xml"],
-        with_zookeeper=True,
-        use_old_analyzer=False,
+        with_zookeeper=False,
+        use_old_analyzer=True,
     )
 ]
 
@@ -37,18 +37,9 @@ def start_cluster():
 
 
 def test_backward_compatability(start_cluster):
-    for num in range(len(nodes)):
-        node = nodes[num]
-        node.query("drop table if exists t sync")
-        node.query(
-            f"""
-            create table if not exists t(a UInt64)
-            engine = ReplicatedMergeTree('/test_backward_compatability/test_parallel_replicas_protocol/shard0/t', '{num}')
-            order by (a)
-        """
-        )
-        node.query("insert into t select number % 100000 from numbers_mt(1000000) ORDER BY ALL")
-        node.query("optimize table t final")
+    for node in nodes:
+        node.query("create table t (a UInt64) engine = MergeTree order by tuple()")
+        node.query("insert into t select number % 100000 from numbers_mt(1000000)")
 
     # all we want is the query to run without errors
     for node in nodes:
@@ -63,13 +54,10 @@ def test_backward_compatability(start_cluster):
                     "max_parallel_replicas": 3,
                     "allow_experimental_parallel_reading_from_replicas": 1,
                     "parallel_replicas_for_non_replicated_merge_tree": 1,
-                    "merge_tree_min_rows_for_concurrent_read": 0,
-                    "merge_tree_min_bytes_for_concurrent_read": 0,
-                    "merge_tree_min_read_task_size": 1,
                 },
             )
             == "49999500000\n"
         )
 
     for node in nodes:
-        node.query("drop table t sync")
+        node.query("drop table t")

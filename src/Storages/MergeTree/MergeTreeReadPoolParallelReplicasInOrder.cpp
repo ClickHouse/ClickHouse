@@ -26,10 +26,8 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     RangesInDataParts parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
-    const IndexReadTasks & index_read_tasks_,
     bool has_limit_below_one_block_,
     const StorageSnapshotPtr & storage_snapshot_,
-    const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
@@ -41,9 +39,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         std::move(parts_),
         std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
-        index_read_tasks_,
         storage_snapshot_,
-        row_level_filter_,
         prewhere_info_,
         actions_settings_,
         reader_settings_,
@@ -64,16 +60,10 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
             ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
     for (const auto & part : parts_ranges)
-    {
-        bool is_projection = part.data_part->isProjectionPart();
-        chassert(!is_projection || part.parent_part);
+        request.push_back({part.data_part->info, MarkRanges{}});
 
-        auto info = is_projection ? part.parent_part->info : part.data_part->info;
-        auto projection_name = is_projection ? part.data_part->name : "";
-
-        request.push_back({.info = info, .ranges = MarkRanges{}, .projection_name = projection_name});
-        buffered_tasks.push_back({.info = std::move(info), .ranges = MarkRanges{}, .projection_name = std::move(projection_name)});
-    }
+    for (const auto & part : parts_ranges)
+        buffered_tasks.push_back({part.data_part->info, MarkRanges{}});
 
     extension.sendInitialRequest(mode, parts_ranges, /*mark_segment_size_=*/0);
 
@@ -88,11 +78,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Requested task with idx {}, but there are only {} parts", task_idx, per_part_infos.size());
 
-    bool is_projection = per_part_infos[task_idx]->data_part->isProjectionPart();
-    chassert(!is_projection || per_part_infos[task_idx]->parent_part);
-
-    const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
-    const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
+    const auto & part_info = per_part_infos[task_idx]->data_part->info;
     const auto & data_settings = per_part_infos[task_idx]->data_part->storage.getSettings();
     auto & marks_in_range = per_part_marks_in_range[task_idx];
     auto get_from_buffer = [&,
@@ -102,7 +88,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
         const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
         for (auto & desc : buffered_tasks)
         {
-            if (desc.info == part_info && desc.projection_name == projection_name && !desc.ranges.empty())
+            if (desc.info == part_info && !desc.ranges.empty())
             {
                 if (mode == CoordinationMode::WithOrder)
                 {
@@ -186,33 +172,13 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     if (no_more_tasks)
         return nullptr;
 
-    if (failed_to_get_task)
-        return nullptr;
+    auto response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
 
-    std::optional<ParallelReadResponse> response;
-    try
+    if (!response || response->description.empty() || response->finish)
     {
-        response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
-        if (response)
-        {
-            LOG_DEBUG(log, "Got response: {}", response->describe());
-            if (response->description.empty() || response->finish)
-                no_more_tasks = true;
-        }
-        else
-        {
-            LOG_DEBUG(log, "Got no response");
-            no_more_tasks = true;
-        }
-    }
-    catch (...)
-    {
-        failed_to_get_task = true;
-        throw;
-    }
-
-    if (no_more_tasks)
+        no_more_tasks = true;
         return nullptr;
+    }
 
     /// Fill the buffer
     for (size_t i = 0; i < request.size(); ++i)

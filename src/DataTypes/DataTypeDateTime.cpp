@@ -1,15 +1,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
-#include <Common/DateLUTImpl.h>
-
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
 
-DataTypeDateTime::DataTypeDateTime(std::string_view time_zone_name)
+DataTypeDateTime::DataTypeDateTime(const String & time_zone_name)
     : TimezoneMixin(time_zone_name)
 {
 }
@@ -36,7 +34,7 @@ bool DataTypeDateTime::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
-SerializationPtr DataTypeDateTime::doGetSerialization(const SerializationInfoSettings &) const
+SerializationPtr DataTypeDateTime::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationDateTime>(*this);
 }

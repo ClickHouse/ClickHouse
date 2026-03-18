@@ -19,12 +19,18 @@ static void inline hexStringDecode(const char * pos, const char * end, char *& o
         pos += word_size;
         ++out;
     }
+    *out = '\0';
+    ++out;
 }
 
 static void inline binStringDecode(const char * pos, const char * end, char *& out, size_t word_size)
 {
     if (pos == end)
+    {
+        *out = '\0';
+        ++out;
         return;
+    }
 
     UInt8 left = 0;
 
@@ -35,7 +41,7 @@ static void inline binStringDecode(const char * pos, const char * end, char *& o
     /// then, left_cnt is 0, remain input is '01000001'.
     for (UInt8 left_cnt = (end - pos) & 7; left_cnt > 0; --left_cnt)
     {
-        left = static_cast<UInt8>(left << 1);
+        left = left << 1;
         if (*pos != '0')
             left += 1;
         ++pos;
@@ -54,7 +60,7 @@ static void inline binStringDecode(const char * pos, const char * end, char *& o
         UInt8 c = 0;
         for (UInt8 i = 0; i < 8; ++i)
         {
-            c = static_cast<UInt8>(c << 1);
+            c = c << 1;
             if (*pos != '0')
                 c += 1;
             ++pos;
@@ -62,6 +68,9 @@ static void inline binStringDecode(const char * pos, const char * end, char *& o
         *out = c;
         ++out;
     }
+
+    *out = '\0';
+    ++out;
 }
 
 }

@@ -1,11 +1,10 @@
 #pragma once
 
 #include <Processors/Transforms/SortingTransform.h>
-#include <Common/Logger.h>
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Processors/TopKThresholdTracker.h>
 
 
 namespace DB
@@ -21,7 +20,7 @@ class MergeSortingTransform : public SortingTransform
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingTransform(
-        SharedHeader header,
+        const Block & header,
         const SortDescription & description_,
         size_t max_merged_block_size_,
         size_t max_block_bytes,
@@ -32,8 +31,7 @@ public:
         size_t max_bytes_in_block_before_external_sort_,
         size_t max_bytes_in_query_before_external_sort_,
         TemporaryDataOnDiskScopePtr tmp_data_,
-        size_t min_free_disk_space_,
-        TopKThresholdTrackerPtr threshold_tracker_ = nullptr);
+        size_t min_free_disk_space_);
 
     String getName() const override { return "MergeSortingTransform"; }
 
@@ -66,8 +64,6 @@ private:
     void remerge();
 
     ProcessorPtr external_merging_sorted;
-
-    TopKThresholdTrackerPtr threshold_tracker;
 };
 
 }

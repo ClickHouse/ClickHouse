@@ -24,7 +24,7 @@ class Block;
 class ResizeProcessor final : public IProcessor
 {
 public:
-    ResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs);
+    ResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs);
 
     String getName() const override { return "Resize"; }
 
@@ -72,14 +72,11 @@ private:
     std::vector<OutputPortWithStatus> output_ports;
 };
 
-/// This is an analog of ResizeProcessor, but it tries to bind one specific input to one specific output.
-/// This is an attempt to keep thread locality of data, but support rebalance when some inputs are finished earlier.
-/// Usually, it's N to N mapping. Probably, we can simplify the implementation because of it.
 class StrictResizeProcessor : public IProcessor
 {
 public:
     /// TODO Check that there is non zero number of inputs and outputs.
-    StrictResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs)
+    StrictResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs)
         : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
         , current_input(inputs.begin())
         , current_output(outputs.begin())

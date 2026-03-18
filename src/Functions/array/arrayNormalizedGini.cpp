@@ -149,7 +149,7 @@ private:
         Float64 pred_cumsum = 0;
         for (size_t i = 0; i < array_size; ++i)
         {
-            pred_cumsum += static_cast<Float64>(sorted_array2[i]) / total_sum;
+            pred_cumsum += sorted_array2[i] / total_sum;
             pred_cumsum_ratio[i] = pred_cumsum;
         }
 
@@ -159,16 +159,16 @@ private:
         Float64 ltv_cumsum = 0;
         for (size_t i = 0; i < array_size; ++i)
         {
-            ltv_cumsum += static_cast<Float64>(array2[i]) / total_sum;
+            ltv_cumsum += array2[i] / total_sum;
             ltv_cumsum_ratio[i] = ltv_cumsum;
         }
 
-        Float64 random_gain_cumsum_ratio = 0.5 * static_cast<Float64>(array_size + 1);
+        Float64 random_gain_cumsum_ratio = 0.5 * (array_size + 1);
         Float64 accumulate_pred_ratio = std::accumulate(pred_cumsum_ratio.begin(), pred_cumsum_ratio.end(), 0.0);
         Float64 accumulate_ltv_ratio = std::accumulate(ltv_cumsum_ratio.begin(), ltv_cumsum_ratio.end(), 0.0);
 
-        Float64 pred_gini = (random_gain_cumsum_ratio - accumulate_pred_ratio) / static_cast<Float64>(array_size);
-        Float64 gini_labels = (random_gain_cumsum_ratio - accumulate_ltv_ratio) / static_cast<Float64>(array_size);
+        Float64 pred_gini = (random_gain_cumsum_ratio - accumulate_pred_ratio) / array_size;
+        Float64 gini_labels = (random_gain_cumsum_ratio - accumulate_ltv_ratio) / array_size;
 
         return std::make_tuple(pred_gini, gini_labels, pred_gini / gini_labels);
     }
@@ -400,19 +400,16 @@ REGISTER_FUNCTION(NormalizedGini)
 {
     FunctionDocumentation::Description doc_description = "Calculates the normalized Gini coefficient.";
     FunctionDocumentation::Syntax doc_syntax = "arrayNormalizedGini(predicted, label)";
-    FunctionDocumentation::Arguments doc_arguments = {
-        {"predicted", "The predicted value.", {"Array(T)"}},
-        {"label", "The actual value.", {"Array(T)"}}
-    };
-    FunctionDocumentation::ReturnedValue doc_returned_value = {"A tuple containing the Gini coefficients of the predicted values, the Gini coefficient of the normalized values, and the normalized Gini coefficient (= the ratio of the former two Gini coefficients)", {"Tuple(Float64, Float64, Float64)"}};
-    FunctionDocumentation::Examples doc_examples = {
-        {"Usage example", "SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);", "(0.18055555555555558, 0.2638888888888889, 0.6842105263157896)"}
-    };
-    FunctionDocumentation::IntroducedIn doc_introduced_in = {25, 1};
-    FunctionDocumentation::Category doc_category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {doc_description, doc_syntax, doc_arguments, {}, doc_returned_value, doc_examples, doc_introduced_in, doc_category};
+    FunctionDocumentation::Arguments doc_arguments = {{"predicted", "Predicted value (Array(T))."}, {"label", "Actual value (Array(T))."}};
+    FunctionDocumentation::ReturnedValue doc_returned_value = "A tuple containing the Gini coefficients of the predicted values, the Gini coefficient of the normalized values, and the normalized Gini coefficient (= the ratio of the former two Gini coefficients).";
+    FunctionDocumentation::Examples doc_examples
+        = {{"Example",
+            "SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);",
+            "(0.18055555555555558,0.2638888888888889,0.6842105263157896)"}};
+    FunctionDocumentation::Category doc_category = {"Array"};
 
-    factory.registerFunction<FunctionArrayNormalizedGini>(documentation, FunctionFactory::Case::Sensitive);
+    factory.registerFunction<FunctionArrayNormalizedGini>(
+        {doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_category}, FunctionFactory::Case::Sensitive);
 }
 
 }

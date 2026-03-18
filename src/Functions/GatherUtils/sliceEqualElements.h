@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/AccurateComparison.h>
-#include <Functions/GatherUtils/Slices.h>
+#include "Slices.h"
 
 namespace DB::GatherUtils
 {

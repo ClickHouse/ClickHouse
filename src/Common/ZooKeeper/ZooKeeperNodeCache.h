@@ -4,9 +4,17 @@
 #include <unordered_set>
 #include <mutex>
 #include <memory>
-#include <base/defines.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/Common.h>
+#include <optional>
+#include <Poco/Event.h>
+#include "ZooKeeper.h"
+#include "Common.h"
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+    }
+}
 
 namespace zkutil
 {
@@ -26,7 +34,7 @@ public:
     explicit ZooKeeperNodeCache(GetZooKeeper get_zookeeper);
 
     ZooKeeperNodeCache(const ZooKeeperNodeCache &) = delete;
-    ZooKeeperNodeCache(ZooKeeperNodeCache &&) = delete;
+    ZooKeeperNodeCache(ZooKeeperNodeCache &&) = default;
 
     struct ZNode
     {
@@ -35,7 +43,8 @@ public:
         Coordination::Stat stat{};
     };
 
-    ZNode get(const std::string & path, Coordination::EventPtr caller_watch_event);
+    ZNode get(const std::string & path, EventPtr watch_event);
+    ZNode get(const std::string & path, Coordination::WatchCallback watch_callback);
 
     void sync();
 

@@ -27,19 +27,19 @@ String ASTMoveAccessEntityQuery::getID(char) const
 
 ASTPtr ASTMoveAccessEntityQuery::clone() const
 {
-    auto res = make_intrusive<ASTMoveAccessEntityQuery>(*this);
+    auto res = std::make_shared<ASTMoveAccessEntityQuery>(*this);
 
     if (row_policy_names)
-        res->row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
+        res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
 
     return res;
 }
 
 void ASTMoveAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr
+    ostr << (settings.hilite ? hilite_keyword : "")
                   << "MOVE " << AccessEntityTypeInfo::get(type).name
-                 ;
+                  << (settings.hilite ? hilite_none : "");
 
     if (type == AccessEntityType::ROW_POLICY)
     {
@@ -49,8 +49,8 @@ void ASTMoveAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     else
         formatNames(names, ostr);
 
-    ostr
-                  << " TO "
+    ostr << (settings.hilite ? hilite_keyword : "")
+                  << " TO " << (settings.hilite ? hilite_none : "")
                   << backQuoteIfNeed(storage_name);
 
     formatOnCluster(ostr, settings);

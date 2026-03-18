@@ -19,12 +19,12 @@
   (open! [this test node]
     (assoc
      (assoc this
-            :conn (zk-connect node 9181 30000 (:with-auth test)))
+            :conn (zk-connect node 9181 30000))
      :nodename node))
 
   (setup! [this test]
     (chu/exec-with-retries 30 (fn []
-      (zk-create-if-not-exists conn root-path "" :with-acl (:with-auth test)))))
+      (zk-create-if-not-exists conn root-path ""))))
 
   (invoke! [this test op]
     (case (:f op)
@@ -38,7 +38,7 @@
                                                      :value (count (zk-list conn root-path)))))
       :add (try
              (do
-               (zk-multi-create-many-seq-nodes conn (concat-path root-path "seq-") (:value op) :with-acl (:with-auth test))
+               (zk-multi-create-many-seq-nodes conn (concat-path root-path "seq-") (:value op))
                (assoc op :type :ok))
              (catch Exception _ (assoc op :type :info, :error :connect-error)))))
 

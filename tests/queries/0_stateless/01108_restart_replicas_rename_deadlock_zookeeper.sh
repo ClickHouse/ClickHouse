@@ -14,8 +14,7 @@ done
 
 function rename_thread_1()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         $CLICKHOUSE_CLIENT -q "RENAME TABLE replica_01108_1 TO replica_01108_1_tmp,
                                             replica_01108_2 TO replica_01108_2_tmp,
                                             replica_01108_3 TO replica_01108_3_tmp,
@@ -26,8 +25,7 @@ function rename_thread_1()
 
 function rename_thread_2()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         $CLICKHOUSE_CLIENT -q "RENAME TABLE replica_01108_1_tmp TO replica_01108_2,
                                             replica_01108_2_tmp TO replica_01108_3,
                                             replica_01108_3_tmp TO replica_01108_4,
@@ -38,8 +36,7 @@ function rename_thread_2()
 
 function restart_replicas_loop()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         for i in $(seq 4); do
             $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICA replica_01108_${i}"
             $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICA replica_01108_${i}_tmp"
@@ -48,11 +45,15 @@ function restart_replicas_loop()
     done |& grep LOGICAL_ERROR
 }
 
+export -f rename_thread_1
+export -f rename_thread_2
+export -f restart_replicas_loop
+
 TIMEOUT=10
 
-rename_thread_1 &
-rename_thread_2 &
-restart_replicas_loop &
+timeout $TIMEOUT bash -c rename_thread_1 &
+timeout $TIMEOUT bash -c rename_thread_2 &
+timeout $TIMEOUT bash -c restart_replicas_loop &
 
 wait
 

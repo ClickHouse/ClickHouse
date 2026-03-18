@@ -1,5 +1,4 @@
--- Tags: stateful, no-parallel, no-msan
--- no-parallel: Heavy
+-- Tags: stateful
 SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32152608;
 SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9627212;
 SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25152951;
@@ -1001,7 +1000,7 @@ SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6308405;
 SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20762370;
 SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14121177;
 
-SYSTEM CLEAR UNCOMPRESSED CACHE;
+SYSTEM DROP UNCOMPRESSED CACHE;
 
 SET local_filesystem_read_method = 'pread_threadpool';
 SET min_bytes_to_use_direct_io = 1;

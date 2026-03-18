@@ -6,6 +6,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -53,8 +55,8 @@ struct FunctionDetectTonalityImpl
         /// Calculate average value of tonality.
         /// Convert values -12..6 to -1..1
         if (weight > 0)
-            return static_cast<Float32>(weight / static_cast<Float64>(count_words) / 6);
-        return static_cast<Float32>(weight / static_cast<Float64>(count_words) / 12);
+            return static_cast<Float32>(weight / count_words / 6);
+        return static_cast<Float32>(weight / count_words / 12);
     }
 
     static void vector(
@@ -68,7 +70,7 @@ struct FunctionDetectTonalityImpl
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = detectTonality(data.data() + prev_offset, offsets[i] - prev_offset, emotional_dict);
+            res[i] = detectTonality(data.data() + prev_offset, offsets[i] - 1 - prev_offset, emotional_dict);
             prev_offset = offsets[i];
         }
     }
@@ -83,35 +85,7 @@ using FunctionDetectTonality = FunctionTextClassificationFloat<FunctionDetectTon
 
 REGISTER_FUNCTION(DetectTonality)
 {
-    FunctionDocumentation::Description description = R"(
-Determines the sentiment of the provided text data.
-
-:::note Limitation
-This function is limited in its current form in that it makes use of the embedded emotional dictionary and only works for the Russian language.
-:::
-)";
-    FunctionDocumentation::Syntax syntax = "detectTonality(s)";
-    FunctionDocumentation::Arguments arguments = {
-        {"s", "The text to be analyzed.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the average sentiment value of the words in text", {"Float32"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Russian sentiment analysis",
-        R"(
-SELECT
-    detectTonality('Шарик - хороший пёс'),
-    detectTonality('Шарик - пёс'),
-    detectTonality('Шарик - плохой пёс')
-        )",
-        "0.44445, 0, -0.3"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionDetectTonality>(documentation);
+    factory.registerFunction<FunctionDetectTonality>();
 }
 
 }

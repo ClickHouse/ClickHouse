@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-ordinary-database, no-encrypted-storage, no-msan, no-azure-blob-storage
-# no-msan: it is too slow
+# Tags: long, no-ordinary-database
 # shellcheck disable=SC2119
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

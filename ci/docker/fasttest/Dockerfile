@@ -3,28 +3,22 @@ FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-ARG LLVM_APT_VERSION="1:21.1.5~"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ARG LLVM_APT_VERSION="1:19.1.4"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=21
-
-# We need ca-certificates first to be able to update all repos. This is why it's run twice
-RUN apt-get update \
-    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
 
 RUN apt-get update \
     && apt-get install \
         apt-transport-https \
         apt-utils \
+        ca-certificates \
         curl \
-        netcat-openbsd \
         gnupg \
         lsb-release \
         wget \
         git \
         xxd \
-        time \
-        awscli \
         --yes --no-install-recommends --verbose-versions \
     && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
@@ -43,7 +37,7 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
     echo "deb [signed-by=/etc/apt/trusted.gpg.d/kitware.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list.d/kitware.list
 
 # moreutils - provides ts fo FT
-# expect, bzip2, less - requried by FT
+# expect, bzip2 - requried by FT
 # bsdmainutils - provides hexdump for FT
 # nasm - nasm copiler for one of submodules, required from normal build
 # yasm - asssembler for libhdfs3, required from normal build
@@ -51,20 +45,17 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
 RUN apt-get update \
     && apt-get install \
         clang-${LLVM_VERSION} \
-        clang-tidy-${LLVM_VERSION} \
         cmake \
         libclang-${LLVM_VERSION}-dev \
         libclang-rt-${LLVM_VERSION}-dev \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
-        libmpfr6 \
         lsof \
         ninja-build \
         python3 \
         python3-pip \
         zstd \
         moreutils \
-        less \
         expect \
         bsdmainutils \
         pv \
@@ -76,41 +67,7 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-# Rust toolchain and libraries
-ENV RUSTUP_HOME=/rust/rustup
-ENV CARGO_HOME=/rust/cargo
-ENV PATH="/rust/cargo/bin:${PATH}"
-ENV RUSTUP_VERSION=1.28.1
-
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then \
-        RUSTUP_ARCH="x86_64-unknown-linux-gnu"; \
-    elif [ "$ARCH" = "aarch64" ]; then \
-        RUSTUP_ARCH="aarch64-unknown-linux-gnu"; \
-    else \
-        echo "Unsupported architecture: $ARCH"; exit 1; \
-    fi && \
-    curl -fsSL -o rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${RUSTUP_ARCH}/rustup-init" && \
-    chmod +x rustup-init && \
-    ./rustup-init -y && \
-    rm rustup-init && \
-    chmod 777 -R /rust && \
-    rustup toolchain install nightly-2025-07-07 --no-self-update && \
-    rustup default nightly-2025-07-07 && \
-    rustup toolchain remove stable && \
-    rustup component add rust-src && \
-    rustup target add x86_64-unknown-linux-gnu && \
-    rustup target add aarch64-unknown-linux-gnu && \
-    rustup target add x86_64-apple-darwin && \
-    rustup target add x86_64-unknown-freebsd && \
-    rustup target add aarch64-apple-darwin && \
-    rustup target add powerpc64le-unknown-linux-gnu && \
-    rustup target add x86_64-unknown-linux-musl && \
-    rustup target add aarch64-unknown-linux-musl && \
-    rustup target add riscv64gc-unknown-linux-gnu
-
-# Note, libmpfr6 is also a requirement for gdb
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
 # Give suid to gdb to grant it attach permissions
 RUN chmod u+s /opt/gdb/bin/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"

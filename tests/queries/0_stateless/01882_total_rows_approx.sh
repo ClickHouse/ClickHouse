@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
 
 # Check that total_rows_approx (via http headers) includes all rows from
 # all parts at the query start.

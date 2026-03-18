@@ -19,7 +19,6 @@ WITH '(\\w+): (\\d+)' AS pattern,
      AND line NOT LIKE '%S3DiskConnections%'
      AND line NOT LIKE '%S3DiskAddresses%'
      AND line NOT LIKE '%RequestThrottlerCount%'
-     AND line NOT LIKE '%RetryableErrors%'
      ) AS pe_map
 SELECT * FROM (
     SELECT untuple(arrayJoin(pe_map) AS pe)
@@ -39,7 +38,7 @@ SELECT type,
        'S3CompleteMultipartUpload', ProfileEvents['S3CompleteMultipartUpload'],
        'S3PutObject', ProfileEvents['S3PutObject']
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query LIKE '%profile_events.csv%'
+WHERE query LIKE '%profile_events.csv%'
 AND type = 'QueryFinish'
 AND current_database = currentDatabase()
 ORDER BY query_start_time DESC;
@@ -53,10 +52,7 @@ CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
     storage_policy='default',
     min_rows_for_wide_part = 1000000,
     min_bytes_for_wide_part = 1000000,
-    ratio_of_defaults_for_sparse_serialization=1.0,
-    serialization_info_version='basic',
-    write_marks_for_substreams_in_compact_parts=1,
-    auto_statistics_types = '';
+    ratio_of_defaults_for_sparse_serialization=1.0;
 "
 
 echo "INSERT"
@@ -88,7 +84,7 @@ SELECT type,
        query,
        'FileOpen', ProfileEvents['FileOpen']
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+WHERE current_database = currentDatabase()
 AND ( query LIKE '%SELECT % FROM times%' OR query LIKE '%INSERT INTO times%' )
 AND type = 'QueryFinish'
 ORDER BY query_start_time_microseconds ASC, query DESC;

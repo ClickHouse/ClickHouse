@@ -1,5 +1,5 @@
 #include <Interpreters/Context.h>
-#include <ICommand.h>
+#include "ICommand.h"
 
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -7,15 +7,9 @@
 #include <IO/copyData.h>
 #include <Common/TerminalSize.h>
 #include <Common/logger_useful.h>
-#include <Disks/WriteMode.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
 
 class CommandWrite final : public ICommand
 {
@@ -24,12 +18,8 @@ public:
     {
         command_name = "write";
         description = "Write a file from `path-from` to `path-to`";
-        options_description.add_options()(
-            "path-from",
-            po::value<String>(),
-            "file from which we are reading, defaults to `stdin` (input from `stdin` is finished by Ctrl+D)")(
-            "path-to", po::value<String>(), "file to which we are writing (mandatory, positional)")(
-            "mode", po::value<String>(), "write mode: `rewrite` (default) or `append`");
+        options_description.add_options()("path-from", po::value<String>(), "file from which we are reading, defaults to `stdin` (input from `stdin` is finished by Ctrl+D)")(
+            "path-to", po::value<String>(), "file to which we are writing (mandatory, positional)");
         positional_options_description.add("path-to", 1);
     }
 
@@ -41,18 +31,6 @@ public:
         std::optional<String> path_from = getValueFromCommandLineOptionsWithOptional<String>(options, "path-from");
 
         String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
-        std::optional<String> write_mode_param = getValueFromCommandLineOptionsWithOptional<String>(options, "mode");
-        WriteMode write_mode = WriteMode::Rewrite;
-        if (write_mode_param.has_value())
-        {
-            if (*write_mode_param == "rewrite")
-                write_mode = WriteMode::Rewrite;
-            else if (*write_mode_param == "append")
-                write_mode = WriteMode::Append;
-            else
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "invalid `mode`, expected `rewrite` or `append`, actual '{}'", *write_mode_param);
-        }
 
         auto in = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
         {
@@ -67,14 +45,8 @@ public:
             return std::make_unique<ReadBufferFromEmptyFile>();
         }();
 
-        LOG_INFO(
-            log,
-            "Writing file from '{}' to '{}' with mode '{}' at disk '{}'",
-            path_from.value_or("stdin"),
-            path_to,
-            write_mode,
-            disk.getDisk()->getName());
-        auto out = disk.getDisk()->writeFile(path_to, DBMS_DEFAULT_BUFFER_SIZE, write_mode);
+        LOG_INFO(log, "Writing file from '{}' to '{}' at disk '{}'", path_from.value_or("stdin"), path_to, disk.getDisk()->getName());
+        auto out = disk.getDisk()->writeFile(path_to);
         copyData(*in, *out);
         out->finalize();
     }

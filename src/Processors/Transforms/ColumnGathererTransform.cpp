@@ -35,13 +35,11 @@ ColumnGathererStream::ColumnGathererStream(
     ReadBuffer & row_sources_buf_,
     size_t block_preferred_size_rows_,
     size_t block_preferred_size_bytes_,
-    std::optional<size_t> max_dynamic_subcolumns_,
     bool is_result_sparse_)
     : sources(num_inputs)
     , row_sources_buf(row_sources_buf_)
     , block_preferred_size_rows(block_preferred_size_rows_)
     , block_preferred_size_bytes(block_preferred_size_bytes_)
-    , max_dynamic_subcolumns(max_dynamic_subcolumns_)
     , is_result_sparse(is_result_sparse_)
 {
     if (num_inputs == 0)
@@ -65,7 +63,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
             continue;
 
         if (!is_result_sparse)
-            removeSpecialColumnRepresentations(inputs[i].chunk);
+            convertToFullIfSparse(inputs[i].chunk);
 
         sources[i].update(inputs[i].chunk.detachColumns().at(0));
         source_columns.push_back(sources[i].column);
@@ -79,7 +77,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
         result_column = ColumnSparse::create(std::move(result_column));
 
     if (result_column->hasDynamicStructure())
-        result_column->takeDynamicStructureFromSourceColumns(source_columns, max_dynamic_subcolumns);
+        result_column->takeDynamicStructureFromSourceColumns(source_columns);
 }
 
 IMergingAlgorithm::Status ColumnGathererStream::merge()
@@ -180,7 +178,7 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
     if (input.chunk)
     {
         if (!is_result_sparse)
-            removeSpecialColumnRepresentations(input.chunk);
+            convertToFullIfSparse(input.chunk);
 
         source.update(input.chunk.getColumns().at(0));
     }
@@ -192,22 +190,21 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
 }
 
 ColumnGathererTransform::ColumnGathererTransform(
-    SharedHeader header,
+    const Block & header,
     size_t num_inputs,
     std::unique_ptr<ReadBuffer> row_sources_buf_,
     size_t block_preferred_size_rows_,
     size_t block_preferred_size_bytes_,
-    std::optional<size_t> max_dynamic_subcolumns_,
     bool is_result_sparse_)
     : IMergingTransform<ColumnGathererStream>(
         num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
-        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, max_dynamic_subcolumns_, is_result_sparse_)
+        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, is_result_sparse_)
     , row_sources_buf_holder(std::move(row_sources_buf_))
     , log(getLogger("ColumnGathererStream"))
 {
-    if (header->columns() != 1)
+    if (header.columns() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Header should have 1 column, but contains {}",
-            toString(header->columns()));
+            toString(header.columns()));
 }
 
 void ColumnGathererTransform::onFinish()

@@ -129,7 +129,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 auto unreserved_space = disk->getUnreservedSpace();
                 if (total_space && unreserved_space)
                 {
-                    UInt64 required_maximum_available_space = static_cast<UInt64>(static_cast<double>(*total_space) * policy->getMoveFactor());
+                    UInt64 required_maximum_available_space = static_cast<UInt64>(*total_space * policy->getMoveFactor());
 
                     if (*unreserved_space < required_maximum_available_space && !disk->isBroken())
                         need_to_move.emplace(disk, required_maximum_available_space - *unreserved_space);
@@ -184,7 +184,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 to_insert->second.decreaseRequiredSizeAndRemoveRedundantParts(part->getBytesOnDisk());
 
             ++parts_to_move_by_ttl_rules;
-            parts_to_move_total_size_bytes += static_cast<double>(part->getBytesOnDisk());
+            parts_to_move_total_size_bytes += part->getBytesOnDisk();
         }
         else
         {
@@ -198,7 +198,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         auto min_volume_index = policy->getVolumeIndexByDiskName(move.first->getName()) + 1;
         for (auto && part : move.second.getAccumulatedParts())
         {
-            auto reservation = policy->reserve(part->getBytesOnDisk(), min_volume_index).value_or(nullptr);
+            auto reservation = policy->reserve(part->getBytesOnDisk(), min_volume_index);
             if (!reservation)
             {
                 /// Next parts to move from this disk has greater size and same min volume index.
@@ -208,7 +208,7 @@ bool MergeTreePartsMover::selectPartsForMove(
             }
             parts_to_move.emplace_back(part, std::move(reservation));
             ++parts_to_move_by_policy_rules;
-            parts_to_move_total_size_bytes += static_cast<double>(part->getBytesOnDisk());
+            parts_to_move_total_size_bytes += part->getBytesOnDisk();
         }
     }
 
@@ -222,9 +222,9 @@ bool MergeTreePartsMover::selectPartsForMove(
 
 MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const
 {
-    auto cancellation_hook = [&my_moves_blocker = moves_blocker]()
+    auto cancellation_hook = [&moves_blocker_ = moves_blocker]()
     {
-        if (my_moves_blocker.isCancelled())
+        if (moves_blocker_.isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
     };
     cancellation_hook();

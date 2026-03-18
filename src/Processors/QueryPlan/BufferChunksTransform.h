@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
@@ -20,7 +19,7 @@ class BufferChunksTransform : public IProcessor
 public:
     /// OR condition is used for the limits on rows and bytes.
     BufferChunksTransform(
-        SharedHeader header_,
+        const Block & header_,
         size_t max_rows_to_buffer_,
         size_t max_bytes_to_buffer_,
         size_t limit_);

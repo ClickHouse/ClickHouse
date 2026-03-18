@@ -1,6 +1,5 @@
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
 
-#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -87,7 +86,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
         break;
     }
 
-    auto attribute_declaration = make_intrusive<ASTDictionaryAttributeDeclaration>();
+    auto attribute_declaration = std::make_shared<ASTDictionaryAttributeDeclaration>();
     node = attribute_declaration;
     tryGetIdentifierNameInto(name, attribute_declaration->name);
 

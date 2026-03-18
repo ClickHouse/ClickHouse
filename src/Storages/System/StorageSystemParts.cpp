@@ -69,7 +69,6 @@ Name of the data part. The part naming structure can be used to determine many a
         {"active",                                      std::make_shared<DataTypeUInt8>(),     "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
         {"marks",                                       std::make_shared<DataTypeUInt64>(),    "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                        std::make_shared<DataTypeUInt64>(),    "The number of rows."},
-        {"files",                                       std::make_shared<DataTypeUInt64>(),    "The number of files in the data part."},
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>(),    "Total size of all the data part files in bytes."},
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>(),    "Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
@@ -92,8 +91,8 @@ Name of the data part. The part naming structure can be used to determine many a
         {"data_version",                                std::make_shared<DataTypeUInt64>(),    "Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than data_version)."},
         {"primary_key_bytes_in_memory",                 std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values."},
         {"primary_key_bytes_in_memory_allocated",       std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for primary key values."},
-        {"index_granularity_bytes_in_memory",           std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by index granularity values (will be 0 in case of primary_key_lazy_load=1 and use_primary_key_cache=1)."},
-        {"index_granularity_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for index granularity values (will be 0 in case of primary_key_lazy_load=1 and use_primary_key_cache=1)."},
+        {"index_granularity_bytes_in_memory",           std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by index granularity values."},
+        {"index_granularity_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for index granularity values."},
         {"is_frozen",                                   std::make_shared<DataTypeUInt8>(),     "Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. "},
 
         {"database",                                    std::make_shared<DataTypeString>(),    "Name of the database."},
@@ -159,20 +158,8 @@ void StorageSystemParts::processNextStorage(
         const auto & part = all_parts[part_number];
         auto part_state = all_parts_state[part_number];
 
-        std::unique_ptr<ColumnSize> columns_size;
-        auto get_columns_size = [&]()
-        {
-            if (!columns_size)
-                columns_size = std::make_unique<ColumnSize>(part->getTotalColumnsSize());
-            return *columns_size;
-        };
-        std::unique_ptr<ColumnSize> secondary_indexes_size;
-        auto get_secondary_indexes_size = [&]()
-        {
-            if (!secondary_indexes_size)
-                secondary_indexes_size = std::make_unique<ColumnSize>(part->getTotalSecondaryIndicesSize());
-            return *secondary_indexes_size;
-        };
+        ColumnSize columns_size = part->getTotalColumnsSize();
+        ColumnSize secondary_indexes_size = part->getTotalSecondaryIndicesSize();
 
         size_t src_index = 0;
         size_t res_index = 0;
@@ -191,26 +178,21 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->rows_count);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->checksums.files.size());
-        if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getBytesOnDisk());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_columns_size().data_compressed);
+            columns[res_index++]->insert(columns_size.data_compressed);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_columns_size().data_uncompressed);
+            columns[res_index++]->insert(columns_size.data_uncompressed);
         if (columns_mask[src_index++])
-        {
-            auto index_size = part->getIndexSizeFromFile();
-            columns[res_index++]->insert(index_size.data_compressed > 0 ? index_size.data_compressed : index_size.data_uncompressed);
-        }
+            columns[res_index++]->insert(part->getIndexSizeFromFile());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_columns_size().marks);
+            columns[res_index++]->insert(columns_size.marks);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_secondary_indexes_size().data_compressed);
+            columns[res_index++]->insert(secondary_indexes_size.data_compressed);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_secondary_indexes_size().data_uncompressed);
+            columns[res_index++]->insert(secondary_indexes_size.data_uncompressed);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_secondary_indexes_size().marks);
+            columns[res_index++]->insert(secondary_indexes_size.marks);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt64>(part->modification_time));
 
@@ -236,7 +218,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->info.getPartitionId());
+            columns[res_index++]->insert(part->info.partition_id);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->info.min_block);
         if (columns_mask[src_index++])

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, memory-engine
+# Tags: no-parallel, no-fasttest
+# Because we are creating a backup with fixed path.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,9 +11,9 @@ DROP TABLE IF EXISTS test;
 CREATE TABLE test (x String) ENGINE = Memory SETTINGS compress = 1;
 INSERT INTO test SELECT 'Hello, world' FROM numbers(1000000);
 "
-backup_path="$CLICKHOUSE_DATABASE"_02973_backup_of_in_memory_compressed
+
 $CLICKHOUSE_CLIENT "
-BACKUP TABLE test TO File('$backup_path.zip');
+BACKUP TABLE test TO File('test.zip');
 " --format Null
 
 $CLICKHOUSE_CLIENT "
@@ -21,7 +22,7 @@ SELECT count() FROM test;
 "
 
 $CLICKHOUSE_CLIENT "
-RESTORE TABLE test FROM File('$backup_path.zip');
+RESTORE TABLE test FROM File('test.zip');
 " --format Null
 
 $CLICKHOUSE_CLIENT "

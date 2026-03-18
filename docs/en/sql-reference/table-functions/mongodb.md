@@ -5,33 +5,35 @@ sidebar_label: 'mongodb'
 sidebar_position: 135
 slug: /sql-reference/table-functions/mongodb
 title: 'mongodb'
-doc_type: 'reference'
 ---
 
 # mongodb Table Function
 
 Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server.
 
-## Syntax {#syntax}
+**Syntax**
 
-```sql
-mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]]);
-mongodb(uri, collection, structure[, oid_columns]);
-mongodb(named_collection_name[, <arg>=<value>...]);
+``` sql
+mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]])
 ```
 
-## Arguments {#arguments}
+**Arguments**
 
-| Argument      | Description                                                                                            |
-|---------------|--------------------------------------------------------------------------------------------------------|
-| `host:port`   | MongoDB server address.                                                                                |
-| `database`    | Remote database name.                                                                                  |
-| `collection`  | Remote collection name.                                                                                |
-| `user`        | MongoDB user.                                                                                          |
-| `password`    | User password.                                                                                         |
-| `structure`   | The schema for the ClickHouse table returned from this function.                                       |
-| `options`     | MongoDB connection string options (optional parameter).                                                |
-| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
+- `host:port` — MongoDB server address.
+
+- `database` — Remote database name.
+
+- `collection` — Remote collection name.
+
+- `user` — MongoDB user.
+
+- `password` — User password.
+
+- `structure` - The schema for the ClickHouse table returned from this function.
+
+- `options` - MongoDB connection string options (optional parameter).
+
+- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
 
 :::tip
 If you are using the MongoDB Atlas cloud offering please add these options:
@@ -43,31 +45,26 @@ If you are using the MongoDB Atlas cloud offering please add these options:
 
 You can also connect by URI:
 
-```sql
+``` sql
 mongodb(uri, collection, structure[, oid_columns])
 ```
 
-| Argument      | Description                                                                                            |
-|---------------|--------------------------------------------------------------------------------------------------------|
-| `uri`         | Connection string.                                                                                     |
-| `collection`  | Remote collection name.                                                                                |
-| `structure`   | The schema for the ClickHouse table returned from this function.                                       |
-| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
-:::
+**Arguments**
 
-You can pass the arguments using a named collection:
+- `uri` — Connection string.
 
-```sql
-mongodb(_named_collection_[, host][, port][, database][, collection][, user][, password][, structure][, options][, oid_columns])
--- or
-mongodb(_named_collection_[, uri][, structure][, oid_columns])
-```
+- `collection` — Remote collection name.
 
-## Returned value {#returned_value}
+- `structure` — The schema for the ClickHouse table returned from this function.
+
+- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
+
+**Returned Value**
 
 A table object with the same columns as the original MongoDB table.
 
-## Examples {#examples}
+
+**Examples**
 
 Suppose we have a collection named `my_collection` defined in a MongoDB database named `test`, and we insert a couple of documents:
 
@@ -109,21 +106,7 @@ SELECT * FROM mongodb(
 )
 ```
 
-or:
-
-```sql
-CREATE NAMED COLLECTION mongo_creds AS
-       uri='mongodb://test_user:password@127.0.0.1:27017/test?connectionTimeoutMS=10000',
-       collection='default_collection';
-
-SELECT * FROM mongodb(
-        mongo_creds,
-        collection = 'my_collection',
-        structure = 'log_type String, host String, command String'
-)
-```
-
-## Related {#related}
+**See Also**
 
 - [The `MongoDB` table engine](engines/table-engines/integrations/mongodb.md)
-- [Using MongoDB as a dictionary source](../statements/create/dictionary/sources/mongodb.md)
+- [Using MongoDB as a dictionary source](sql-reference/dictionaries/index.md#mongodb)

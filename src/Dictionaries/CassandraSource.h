@@ -18,7 +18,7 @@ public:
     CassandraSource(
             const CassSessionShared & session_,
             const String & query_str,
-            SharedHeader & sample_block,
+            const Block & sample_block,
             size_t max_block_size);
 
     String getName() const override { return "Cassandra"; }

@@ -1,4 +1,3 @@
--- add_minmax_index_for_numeric_columns=0: Would use the index and not the projection that we want to test (id2 = 3)
 set log_queries=1;
 set log_queries_min_type='QUERY_FINISH';
 set optimize_use_implicit_projections=1;
@@ -30,11 +29,10 @@ CREATE TABLE t
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns=0;
+SETTINGS index_granularity = 8;
 
 insert into t SELECT number, -number, number FROM numbers(10000);
 
-set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 SELECT * FROM t WHERE id2 = 3 FORMAT Null;
 SELECT sum(id3) FROM t GROUP BY id2 FORMAT Null;
 SELECT min(id) FROM t FORMAT Null;
@@ -47,7 +45,7 @@ SELECT
 FROM
     system.query_log
 WHERE
-    event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() and query = 'SELECT * FROM t WHERE id2 = 3 FORMAT Null;';
+    current_database=currentDatabase() and query = 'SELECT * FROM t WHERE id2 = 3 FORMAT Null;';
 
 SELECT
     --Remove the prefix string which is a mutable database name.
@@ -55,7 +53,7 @@ SELECT
 FROM
     system.query_log
 WHERE
-    event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() and query = 'SELECT sum(id3) FROM t GROUP BY id2 FORMAT Null;';
+    current_database=currentDatabase() and query = 'SELECT sum(id3) FROM t GROUP BY id2 FORMAT Null;';
 
 SELECT
     --Remove the prefix string which is a mutable database name.
@@ -63,6 +61,6 @@ SELECT
 FROM
     system.query_log
 WHERE
-    event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() and query = 'SELECT min(id) FROM t FORMAT Null;';
+    current_database=currentDatabase() and query = 'SELECT min(id) FROM t FORMAT Null;';
 
 DROP TABLE t;

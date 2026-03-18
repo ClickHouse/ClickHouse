@@ -13,7 +13,7 @@ class ReadBuffer;
 class FormRowInputFormat final : public IRowInputFormat
 {
 public:
-    FormRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
+    FormRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "FormInputFormat"; }
     void resetParser() override;
 
@@ -25,7 +25,7 @@ private:
     const String & columnName(size_t i) const;
 
     /// Hash table matches field name to position in the block
-    using NameMap = HashMap<std::string_view, size_t, StringViewHash>;
+    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
     NameMap name_map;
 
 protected:

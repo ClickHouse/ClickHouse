@@ -72,8 +72,8 @@ public:
 
                 QueryTreeNodes new_arguments{2};
 
-                /// We need to preserve the output type from if(). Notice that the return type of count() is the same either way
-                if (if_arguments_nodes[1]->getResultType()->getName() != if_node->getResultType()->getName() && lower_name != "count")
+                /// We need to preserve the output type from if()
+                if (if_arguments_nodes[1]->getResultType()->getName() != if_node->getResultType()->getName())
                     new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[1]), if_node->getResultType(), getContext());
                 else
                     new_arguments[0] = std::move(if_arguments_nodes[1]);
@@ -99,14 +99,12 @@ public:
 
                 QueryTreeNodes new_arguments{2};
 
-                /// We need to preserve the output type from if(). Notice that the return type of count() is the same either way
-                if (if_arguments_nodes[2]->getResultType()->getName() != if_node->getResultType()->getName() && lower_name != "count")
+                if (if_arguments_nodes[2]->getResultType()->getName() != if_node->getResultType()->getName())
                     new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[2]), if_node->getResultType(), getContext());
                 else
                     new_arguments[0] = std::move(if_arguments_nodes[2]);
 
                 auto not_function = std::make_shared<FunctionNode>("not");
-                not_function->markAsOperator();
                 auto & not_function_arguments = not_function->getArguments().getNodes();
                 not_function_arguments.push_back(std::move(if_arguments_nodes[0]));
                 not_function->resolveAsFunction(

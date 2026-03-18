@@ -4,7 +4,6 @@ sidebar_label: 'Named collections'
 sidebar_position: 69
 slug: /operations/named-collections
 title: 'Named collections'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -47,13 +46,13 @@ url = 'https://connection.url/'
 
 In the above example:
 
-* `key_1` can always be overridden.
-* `key_2` can never be overridden.
-* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+ * `key_1` can always be overridden.
+ * `key_2` can never be overridden.
+ * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
 ### Permissions to create named collections with DDL {#permissions-to-create-named-collections-with-ddl}
 
-To manage named collections with DDL a user must have the `named_collection_control` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
+To manage named collections with DDL a user must have the `named_control_collection` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
 
 ```xml title='/etc/clickhouse-server/users.d/user_default.xml'
 <clickhouse>
@@ -116,9 +115,9 @@ An optional configuration parameter `update_timeout_ms` by default is equal to `
 
 In the above example:
 
-* `key_1` can always be overridden.
-* `key_2` can never be overridden.
-* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+ * `key_1` can always be overridden.
+ * `key_2` can never be overridden.
+ * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
 ## Modifying named collections {#modifying-named-collections}
 
@@ -368,6 +367,8 @@ SELECT * FROM postgresql(mypg, table = 'test');
 │ 2 │ two │
 │ 1 │ one │
 └───┴─────┘
+
+
 SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
 
 ┌─a─┐
@@ -526,6 +527,7 @@ kafka_max_block_size = '1048576';
 
 Both of the following examples use the same named collection `my_kafka_cluster`:
 
+
 ```sql
 CREATE TABLE queue
 (
@@ -548,7 +550,7 @@ SETTINGS kafka_num_consumers = 4,
 
 ## Named collections for backups {#named-collections-for-backups}
 
-For the description of parameters see [Backup and Restore](/operations/backup/overview).
+For the description of parameters see [Backup and Restore](./backup.md).
 
 ### DDL example {#ddl-example-4}
 

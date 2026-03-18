@@ -42,28 +42,14 @@ rect.zoom-panel {
     background: rgba(0, 0, 0, 0.8);
     color: #fff;
     border-radius: 2px;
-    pointer-events: none !important;
-    user-select: text;
 }
 
-.d3-tip.pinned {
-    pointer-events: auto !important;
-}
-
-.d3-tip table {
-    border-collapse: collapse;
-}
-
-.d3-tip td {
-    padding: 4px 8px;
-}
-
-.d3-tip tr:nth-child(even) {
-    background-color: rgba(255, 255, 255, 0.1);
-}
-
-.d3-tip td:nth-child(even) {
-    text-align: right;
+.d3-tip pre {
+    font-weight: bold;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0);
+    color: #fff;
+    border: 0px;
 }
 
 /* Style northward tooltips differently */
@@ -79,17 +65,11 @@ rect.zoom-panel {
     stroke-dasharray:0;
 }
 
-.bar {
-    stroke-width: 1px;
-    stroke: rgba(0, 0, 0, 0.3);
-}
-
 .bar-u {
     opacity: 0.2;
 }
 
-.bar:hover,
-.bar[data-pinned] {
+.bar:hover {
     stroke-width: 1px;
     stroke: black;
 }

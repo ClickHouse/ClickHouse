@@ -1,5 +1,4 @@
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include "ZooKeeperNodeCache.h"
 
 namespace DB
 {
@@ -18,7 +17,16 @@ ZooKeeperNodeCache::ZooKeeperNodeCache(GetZooKeeper get_zookeeper_)
 {
 }
 
-ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coordination::EventPtr caller_watch_event)
+ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, EventPtr watch_event)
+{
+    Coordination::WatchCallback watch_callback;
+    if (watch_event)
+        watch_callback = [watch_event](const Coordination::WatchResponse &) { watch_event->set(); };
+
+    return get(path, watch_callback);
+}
+
+ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coordination::WatchCallback caller_watch_callback)
 {
     std::unordered_set<std::string> invalidated_paths;
     {
@@ -45,39 +53,36 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coor
     if (cache_it != path_to_cached_znode.end())
         return cache_it->second;
 
-    auto wrapped_watch_callback = zookeeper->createWatchFromRawCallback("ZooKeeperNodeCache::" + path, [&]() -> Coordination::WatchCallback
+    std::weak_ptr<Context> weak_context(context);
+    auto watch_callback = [weak_context, caller_watch_callback](const Coordination::WatchResponse & response)
     {
-        std::weak_ptr<Context> weak_context(context);
-        return [weak_context, caller_watch_event](const Coordination::WatchResponse & response)
+        if (!(response.type != Coordination::SESSION || response.state == Coordination::EXPIRED_SESSION))
+            return;
+
+        auto owned_context = weak_context.lock();
+        if (!owned_context)
+            return;
+
+        bool changed = false;
         {
-            if (!(response.type != Coordination::SESSION || response.state == Coordination::EXPIRED_SESSION))
-                return;
+            std::lock_guard lock(owned_context->mutex);
 
-            auto owned_context = weak_context.lock();
-            if (!owned_context)
-                return;
-
-            bool changed = false;
+            if (response.type != Coordination::SESSION)
+                changed = owned_context->invalidated_paths.emplace(response.path).second;
+            else if (response.state == Coordination::EXPIRED_SESSION)
             {
-                std::lock_guard ctx_lock(owned_context->mutex);
-
-                if (response.type != Coordination::SESSION)
-                    changed = owned_context->invalidated_paths.emplace(response.path).second;
-                else if (response.state == Coordination::EXPIRED_SESSION)
-                {
-                    owned_context->invalidated_paths.clear();
-                    owned_context->all_paths_invalidated = true;
-                    changed = true;
-                }
+                owned_context->invalidated_paths.clear();
+                owned_context->all_paths_invalidated = true;
+                changed = true;
             }
-            if (changed && caller_watch_event)
-                caller_watch_event->set();
-        };
-    });
+        }
+        if (changed && caller_watch_callback)
+            caller_watch_callback(response);
+    };
 
     ZNode result;
 
-    result.exists = zookeeper->tryGetWatch(path, result.contents, &result.stat, wrapped_watch_callback);
+    result.exists = zookeeper->tryGetWatch(path, result.contents, &result.stat, watch_callback);
     if (result.exists)
     {
         path_to_cached_znode.emplace(path, result);
@@ -86,7 +91,7 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coor
 
     /// Node doesn't exist. We must set a watch on node creation (because it wasn't set by tryGetWatch).
 
-    result.exists = zookeeper->existsWatch(path, &result.stat, wrapped_watch_callback);
+    result.exists = zookeeper->existsWatch(path, &result.stat, watch_callback);
     if (!result.exists)
     {
         path_to_cached_znode.emplace(path, result);

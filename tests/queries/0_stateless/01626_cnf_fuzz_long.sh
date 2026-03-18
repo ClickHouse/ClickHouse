@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan, no-flaky-check
-# no-msan: it is too slow
+# Tags: no-fasttest, long
 # Tag no-fasttest: Require python libraries like scipy, pandas and numpy
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

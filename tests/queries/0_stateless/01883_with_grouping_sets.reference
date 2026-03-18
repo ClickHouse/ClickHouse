@@ -79,7 +79,7 @@ ExpressionTransform
 SELECT
     fact_1_id,
     fact_3_id,
-    SUM(sales_value) AS sales_value
+    sum(sales_value) AS sales_value
 FROM grouping_sets
 GROUP BY
     GROUPING SETS (

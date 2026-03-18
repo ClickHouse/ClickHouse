@@ -1,0 +1,59 @@
+1	{}	{}
+2	{"k1":"v1","k2":"2"}	{'k1':'String','k2':'Int64'}
+1	\N	\N
+2	v1	2
+========
+1	{"k1":[]}	{'k1':'Array(Nullable(String))'}
+2	{"k1":[{"k2":"v1","k3":"v3"},{"k2":"v4"}]}	{'k1':'Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))'}
+1	\N	\N
+2	\N	\N
+1	{"k1":[]}	{'k1':'Array(Nullable(String))'}
+2	{"k1":[{"k2":"v1","k3":"v3"},{"k2":"v4"}]}	{'k1':'Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))'}
+3	{"k1":[]}	{'k1':'Array(Nullable(String))'}
+4	{"k1":[]}	{'k1':'Array(Nullable(String))'}
+1	\N	\N
+2	\N	\N
+3	\N	\N
+4	\N	\N
+all_2_2_0	data	JSON
+all_3_3_0	data	JSON
+data	JSON
+1	\N	\N
+2	\N	\N
+3	\N	\N
+4	\N	\N
+========
+1	{"k1":{"k2":"1","k3":"foo"}}	{'k1.k2':'Int64','k1.k3':'String'}
+2	{"k4":["1","2","3"]}	{'k4':'Array(Nullable(Int64))'}
+3	{"k1":{"k2":"10"},"k4":[]}	{'k1.k2':'Int64','k4':'Array(Nullable(Int64))'}
+1	1	foo	\N
+2	\N	\N	[1,2,3]
+3	10	\N	[]
+1	{}	{}
+2	{"k1":"v1","k2":"2"}	{'k1':'String','k2':'Int64'}
+1	\N	\N
+2	v1	2
+========
+1	{"k1":[]}	{'k1':'Array(Nullable(String))'}
+2	{"k1":[{"k2":"v1","k3":"v3"},{"k2":"v4"}]}	{'k1':'Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))'}
+1	\N	\N
+2	\N	\N
+1	{"k1":[]}	{'k1':'Array(Nullable(String))'}
+2	{"k1":[{"k2":"v1","k3":"v3"},{"k2":"v4"}]}	{'k1':'Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))'}
+3	{"k1":[]}	{'k1':'Array(Nullable(String))'}
+4	{"k1":[]}	{'k1':'Array(Nullable(String))'}
+1	\N	\N
+2	\N	\N
+3	\N	\N
+4	\N	\N
+1	\N	\N
+2	\N	\N
+3	\N	\N
+4	\N	\N
+========
+1	{"k1":{"k2":"1","k3":"foo"}}	{'k1.k2':'Int64','k1.k3':'String'}
+2	{"k4":["1","2","3"]}	{'k4':'Array(Nullable(Int64))'}
+3	{"k1":{"k2":"10"},"k4":[]}	{'k1.k2':'Int64','k4':'Array(Nullable(Int64))'}
+1	1	foo	\N
+2	\N	\N	[1,2,3]
+3	10	\N	[]

@@ -5,12 +5,10 @@ env:
   PYTHONUNBUFFERED: 1
 
 "on":
-  schedule:
-    # On changing the time, please describe the reason in the comments below.
-    # Thursdays 15:55 UTC
-    # autorelease are done at the moment, and we'll have the whole Friday to fix any issues
-    # Update: Changed to Fridays at 11:55 UTC to cover often new releases done on Thursdays
-    - cron: '55 11 * * 5'
+  ### Disabled until the workflow will work ###
+  # schedule:
+  #   # Fridays 09:55 UTC
+  #   - cron: '55 9 * * 5'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -36,7 +34,7 @@ jobs:
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          DRY_RUN=${{ github.event.inputs.dry-run == 'true' && '--dry-run' || '' }}
+          DRY_RUN=${{ github.event.inputs.dry-run && '--dry-run' || '' }}
           ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
           ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
           RCSK

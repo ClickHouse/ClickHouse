@@ -63,8 +63,8 @@ SELECT arrayFirst(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 SELECT arrayFirst(x -> x > 1, [1, 2, 3]);
 SELECT arrayFirst(x -> x > 3, [1, 2, 3]);
 SELECT arrayFirst(x -> x, [1, 2, 3]);
-SELECT arrayFirst(x -> NULL, [1, 2, 3]);
-SELECT arrayFirst(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayFirst(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayFirst(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
 SELECT '---last---';
 SELECT arrayLast(x -> 0, emptyArrayUInt8());
 SELECT arrayLast(x -> 0, [1, 2, 3]);
@@ -75,8 +75,8 @@ SELECT arrayLast(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 SELECT arrayLast(x -> x > 1, [1, 2, 3]);
 SELECT arrayLast(x -> x > 3, [1, 2, 3]);
 SELECT arrayLast(x -> x, [1, 2, 3]);
-SELECT arrayLast(x -> NULL, [1, 2, 3]);
-SELECT arrayLast(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayLast(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayLast(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
 SELECT '---first index---';
 SELECT arrayFirstIndex(x -> 0, emptyArrayUInt8());
 SELECT arrayFirstIndex(x -> 0, [1, 2, 3]);
@@ -87,8 +87,8 @@ SELECT arrayFirstIndex(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 SELECT arrayFirstIndex(x -> x > 1, [1, 2, 3]);
 SELECT arrayFirstIndex(x -> x > 3, [1, 2, 3]);
 SELECT arrayFirstIndex(x -> x, [1, 2, 3]);
-SELECT arrayFirstIndex(x -> NULL, [1, 2, 3]);
-SELECT arrayFirstIndex(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayFirstIndex(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayFirstIndex(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
 SELECT '---lastindex---';
 SELECT arrayLastIndex(x -> 0, emptyArrayUInt8());
 SELECT arrayLastIndex(x -> 0, [1, 2, 3]);
@@ -99,8 +99,8 @@ SELECT arrayLastIndex(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 SELECT arrayLastIndex(x -> x > 1, [1, 2, 3]);
 SELECT arrayLastIndex(x -> x > 3, [1, 2, 3]);
 SELECT arrayLastIndex(x -> x, [1, 2, 3]);
-SELECT arrayLastIndex(x -> NULL, [1, 2, 3]);
-SELECT arrayLastIndex(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayLastIndex(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayLastIndex(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
 SELECT '---cumsum---';
 SELECT arrayCumSum(x -> 0, emptyArrayUInt8());
 SELECT arrayCumSum(x -> 0, [1, 2, 3]);

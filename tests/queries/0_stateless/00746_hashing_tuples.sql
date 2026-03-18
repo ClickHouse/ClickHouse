@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-openssl-fips
+-- Tags: no-fasttest
 
 SELECT sipHash64(1, 2, 3);
 SELECT sipHash64(1, 3, 2);

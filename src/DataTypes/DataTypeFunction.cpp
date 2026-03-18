@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
@@ -32,22 +31,6 @@ std::string DataTypeFunction::doGetName() const
 bool DataTypeFunction::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
-}
-
-void DataTypeFunction::updateHashImpl(SipHash & hash) const
-{
-    /// Argument types and return type can be nullptr when the lambda is not yet resolved.
-    hash.update(argument_types.size());
-    for (const auto & arg_type : argument_types)
-    {
-        hash.update(arg_type != nullptr);
-        if (arg_type)
-            arg_type->updateHash(hash);
-    }
-
-    hash.update(return_type != nullptr);
-    if (return_type)
-        return_type->updateHash(hash);
 }
 
 }

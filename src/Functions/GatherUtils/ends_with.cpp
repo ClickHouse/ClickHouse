@@ -1,6 +1,6 @@
-#include <Functions/GatherUtils/GatherUtils.h>
-#include <Functions/GatherUtils/Selectors.h>
-#include <Functions/GatherUtils/Algorithms.h>
+#include "GatherUtils.h"
+#include "Selectors.h"
+#include "Algorithms.h"
 
 namespace DB::GatherUtils
 {

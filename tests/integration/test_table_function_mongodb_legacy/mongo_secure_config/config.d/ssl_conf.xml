@@ -1,0 +1,8 @@
+<clickhouse>
+    <openSSL>
+        <client>
+            <!-- For self-signed certificate -->
+            <verificationMode>none</verificationMode>
+        </client>
+    </openSSL>
+</clickhouse>

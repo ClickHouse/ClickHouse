@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/SerializationNamed.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -77,14 +76,13 @@ void SerializationNamed::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationNamed::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
     addToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
     settings.path.pop_back();
 }
 
@@ -92,13 +90,6 @@ void SerializationNamed::addToPath(SubstreamPath & path) const
 {
     path.push_back(substream_type);
     path.back().name_of_substream = name;
-}
-
-SerializationPtr removeNamedSerialization(const SerializationPtr & serialization)
-{
-    if (const auto * named = typeid_cast<const SerializationNamed *>(serialization.get()))
-        return named->getNested();
-    return serialization;
 }
 
 }

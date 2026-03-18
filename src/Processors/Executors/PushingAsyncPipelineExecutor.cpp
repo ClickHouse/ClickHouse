@@ -21,7 +21,7 @@ namespace ErrorCodes
 class PushingAsyncSource : public ISource
 {
 public:
-    explicit PushingAsyncSource(SharedHeader header)
+    explicit PushingAsyncSource(const Block & header)
         : ISource(header)
     {}
 
@@ -101,7 +101,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PUSHING_ASYNC_EXECUTOR);
+        ThreadGroupSwitcher switcher(thread_group, "QueryPushPipeEx");
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -109,10 +109,11 @@ static void threadFunction(
     {
         data.exception = std::current_exception();
         data.has_exception = true;
-    }
 
-    if (data.source)
-        data.source->finish();
+        /// Finish source in case of exception. Otherwise thread.join() may hung.
+        if (data.source)
+            data.source->finish();
+    }
 
     data.is_finished = true;
     data.finish_event.set();
@@ -124,7 +125,7 @@ PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipel
     if (!pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getSharedHeader());
+    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getHeader());
     connect(pushing_source->getPort(), *pipeline.input);
     pipeline.processors->emplace_back(pushing_source);
 }

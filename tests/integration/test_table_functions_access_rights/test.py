@@ -41,7 +41,12 @@ def test_merge():
     assert instance.query(select_query) == "1\n2\n"
 
     instance.query("CREATE USER A")
+    assert (
+        "it's necessary to have the grant CREATE TEMPORARY TABLE ON *.*"
+        in instance.query_and_get_error(select_query, user="A")
+    )
 
+    instance.query("GRANT CREATE TEMPORARY TABLE ON *.* TO A")
     assert "no tables satisfied provided regexp" in instance.query_and_get_error(
         select_query, user="A"
     )
@@ -58,9 +63,10 @@ def test_merge():
     instance.query("REVOKE ALL ON default.* FROM A")
     instance.query("GRANT SELECT ON default.table1 TO A")
     instance.query("GRANT INSERT ON default.table2 TO A")
-    err = instance.query_and_get_error(select_query, user="A")
-    # INSERT on table2 implies SHOW_COLUMNS, so the hint is allowed to include column names.
-    assert "it's necessary to have the grant SELECT(x) ON default.table2" in err
+    assert (
+        "it's necessary to have the grant SELECT(x) ON default.table2"
+        in instance.query_and_get_error(select_query, user="A")
+    )
 
     instance.query("REVOKE ALL ON default.* FROM A")
     describe_query = f"DESCRIBE TABLE {merge_spec}"

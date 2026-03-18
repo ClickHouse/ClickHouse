@@ -27,8 +27,6 @@ def started_cluster():
 
 def test_numbers_of_detached_parts(started_cluster):
     cluster.start()
-    node1.query("DROP TABLE IF EXISTS t SYNC")
-
     query_create = """
     CREATE TABLE t
     (
@@ -102,14 +100,11 @@ def test_numbers_of_detached_parts(started_cluster):
     assert 3 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
 
     # inject some data directly and wait until asynchronous metrics notice it
-    data_path = node1.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='t'"
-    ).strip()
     node1.exec_in_container(
         [
             "bash",
             "-c",
-            f"mkdir {data_path}/detached/unexpected_all_0_0_0",
+            "mkdir /var/lib/clickhouse/data/default/t/detached/unexpected_all_0_0_0",
         ]
     )
 
@@ -128,7 +123,9 @@ def test_numbers_of_detached_parts(started_cluster):
         [
             "bash",
             "-c",
-            f"rm -rf {data_path}/detached/{partition_name}",
+            "rm -rf /var/lib/clickhouse/data/default/t/detached/{}".format(
+                partition_name
+            ),
         ]
     )
 
@@ -141,5 +138,3 @@ def test_numbers_of_detached_parts(started_cluster):
         "3\n",
     )
     assert 2 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
-
-    node1.query("DROP TABLE t SYNC")

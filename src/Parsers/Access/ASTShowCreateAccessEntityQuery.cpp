@@ -38,10 +38,10 @@ String ASTShowCreateAccessEntityQuery::getID(char) const
 
 ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 {
-    auto res = make_intrusive<ASTShowCreateAccessEntityQuery>(*this);
+    auto res = std::make_shared<ASTShowCreateAccessEntityQuery>(*this);
 
     if (row_policy_names)
-        res->row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
+        res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
 
     return res;
 }
@@ -49,7 +49,7 @@ ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 
 void ASTShowCreateAccessEntityQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << "SHOW CREATE " << getKeyword();
+    ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CREATE " << getKeyword() << (settings.hilite ? hilite_none : "");
 
     if (!names.empty())
         formatNames(names, ostr);
@@ -67,7 +67,7 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(WriteBuffer & ostr, const F
     {
         const String & database = database_and_table_name->first;
         const String & table_name = database_and_table_name->second;
-        ostr << " ON ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
         ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
         ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
     }

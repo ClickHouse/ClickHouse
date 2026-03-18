@@ -27,7 +27,7 @@ struct BitHammingDistanceImpl
         if constexpr (sizeof(A) <= sizeof(UInt64) && sizeof(B) <= sizeof(UInt64))
         {
             UInt64 res = static_cast<UInt64>(a) ^ static_cast<UInt64>(b);
-            return static_cast<ResultType>(std::popcount(res));
+            return std::popcount(res);
         }
         else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         {
@@ -55,28 +55,6 @@ using FunctionBitHammingDistance = BinaryArithmeticOverloadResolver<BitHammingDi
 
 REGISTER_FUNCTION(BitHammingDistance)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two numbers.
-Can be used with [`SimHash`](../../sql-reference/functions/hash-functions.md#ngramSimHash) functions for detection of semi-duplicate strings.
-The smaller the distance, the more similar the strings are.
-)";
-    FunctionDocumentation::Syntax syntax = "bitHammingDistance(x, y)";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "First number for Hamming distance calculation.", {"(U)Int*", "Float*"}},
-        {"y", "Second number for Hamming distance calculation.", {"(U)Int*", "Float*"}},
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the hamming distance between `x` and `y`", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT bitHammingDistance(111, 121);",
-        R"(
-┌─bitHammingDistance(111, 121)─┐
-│                            3 │
-└──────────────────────────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionBitHammingDistance>(documentation);
+    factory.registerFunction<FunctionBitHammingDistance>();
 }
 }

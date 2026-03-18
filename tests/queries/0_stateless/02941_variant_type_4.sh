@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-msan, no-azure-blob-storage
-# msan: too slow
+# Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

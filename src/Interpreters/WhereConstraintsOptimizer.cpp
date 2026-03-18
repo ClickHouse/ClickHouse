@@ -33,7 +33,7 @@ enum class MatchState : uint8_t
     NONE, /// other
 };
 
-MatchState match(CNFQueryAtomicFormula a, CNFQueryAtomicFormula b)
+MatchState match(CNFQuery::AtomicFormula a, CNFQuery::AtomicFormula b)
 {
     bool match_means_ok = (a.negative == b.negative);
     if (a.ast->getTreeHash(/*ignore_aliases=*/ true) == b.ast->getTreeHash(/*ignore_aliases=*/ true))
@@ -107,7 +107,7 @@ bool checkIfGroupAlwaysTrueAtoms(const CNFQuery::OrGroup & group)
     return false;
 }
 
-bool checkIfAtomAlwaysFalseFullMatch(const CNFQueryAtomicFormula & atom, const ConstraintsDescription & constraints_description)
+bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const ConstraintsDescription & constraints_description)
 {
     const auto constraint_atom_ids = constraints_description.getAtomIds(atom.ast);
     if (constraint_atom_ids)
@@ -123,7 +123,7 @@ bool checkIfAtomAlwaysFalseFullMatch(const CNFQueryAtomicFormula & atom, const C
     return false;
 }
 
-bool checkIfAtomAlwaysFalseGraph(const CNFQueryAtomicFormula & atom, const ComparisonGraph<ASTPtr> & graph)
+bool checkIfAtomAlwaysFalseGraph(const CNFQuery::AtomicFormula & atom, const ComparisonGraph<ASTPtr> & graph)
 {
     const auto * func = atom.ast->as<ASTFunction>();
     if (func && func->arguments->children.size() == 2)
@@ -150,9 +150,9 @@ void replaceToConstants(ASTPtr & term, const ComparisonGraph<ASTPtr> & graph)
     }
 }
 
-CNFQueryAtomicFormula replaceTermsToConstants(const CNFQueryAtomicFormula & atom, const ComparisonGraph<ASTPtr> & graph)
+CNFQuery::AtomicFormula replaceTermsToConstants(const CNFQuery::AtomicFormula & atom, const ComparisonGraph<ASTPtr> & graph)
 {
-    CNFQueryAtomicFormula result;
+    CNFQuery::AtomicFormula result;
     result.negative = atom.negative;
     result.ast = atom.ast->clone();
 
@@ -168,7 +168,7 @@ void WhereConstraintsOptimizer::perform()
     if (select_query->where() && metadata_snapshot)
     {
         const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
-        auto cnf = TreeCNFConverter::toCNF(select_query->where().get());
+        auto cnf = TreeCNFConverter::toCNF(select_query->where());
         cnf.pullNotOutFunctions()
             .filterAlwaysTrueGroups([&compare_graph, this](const auto & group)
             {

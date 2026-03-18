@@ -1,5 +1,3 @@
-#include <algorithm>
-#include <set>
 #include <unordered_set>
 
 #include <IO/WriteBufferFromString.h>
@@ -17,14 +15,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime.h>
-#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
-#include <DataTypes/DataTypeObject.h>
 
 
 namespace DB
@@ -276,90 +271,6 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
 }
 
 template <LeastSupertypeOnError on_error>
-DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
-{
-    Strings element_names;
-    size_t element_size = 0;
-    std::vector<DataTypes> element_types;
-
-    bool have_nullable = false;
-
-    for (const auto & type : types)
-    {
-        const IDataType * unwrapped_type = type.get();
-
-        // Unwrap Nullable if present
-        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped_type))
-        {
-            have_nullable = true;
-            unwrapped_type = nullable_type->getNestedType().get();
-        }
-
-        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(unwrapped_type))
-        {
-            const auto & current_elements = type_tuple->getElements();
-            if (element_types.empty())
-            {
-                element_size = current_elements.size();
-                element_types.resize(element_size);
-                for (size_t i = 0; i < element_size; ++i)
-                    element_types[i].reserve(types.size());
-                if (type_tuple->hasExplicitNames())
-                    element_names = type_tuple->getElementNames();
-            }
-
-            if (element_size != type_tuple->getElements().size())
-                return throwOrReturn<on_error>(types, "because Tuples have different sizes", ErrorCodes::NO_COMMON_TYPE);
-            for (size_t i = 0; i < element_size; ++i)
-                element_types[i].emplace_back(current_elements[i]);
-
-            // If there are different names, drop all names. The result will be an unnamed tuple.
-            if (element_names.empty() == type_tuple->hasExplicitNames())
-                element_names.clear();
-            if (!element_names.empty())
-            {
-                const auto & current_element_names = type_tuple->getElementNames();
-                for (size_t i = 0; i < element_size; ++i)
-                {
-                    if (element_names[i] != current_element_names[i])
-                    {
-                        element_names.clear();
-                        break;
-                    }
-                }
-            }
-        }
-        else if (typeid_cast<const DataTypeNothing *>(unwrapped_type)) /// NULL value (i.e. Nullable(Nothing))
-            continue;
-        else
-            return throwOrReturn<on_error>(types, "because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
-    }
-
-
-    DataTypes commont_element_types(element_size);
-    for (size_t i = 0; i < element_size; ++i)
-    {
-        auto common_type = getLeastSupertype<on_error>(element_types[i]);
-        /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
-        /// common_type will be nullptr, we should return nullptr in this case.
-        if (!common_type)
-            return nullptr;
-        commont_element_types[i] = common_type;
-    }
-
-    DataTypePtr result_type;
-    if (element_names.empty())
-        result_type = std::make_shared<DataTypeTuple>(commont_element_types);
-    else
-        result_type = std::make_shared<DataTypeTuple>(commont_element_types, element_names);
-
-    if (have_nullable && result_type->canBeInsideNullable())
-        result_type = std::make_shared<DataTypeNullable>(result_type);
-
-    return result_type;
-}
-
-template <LeastSupertypeOnError on_error>
 DataTypePtr getLeastSupertype(const DataTypes & types)
 {
     /// Trivial cases
@@ -456,23 +367,52 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     /// For tuples
     {
         bool have_tuple = false;
+        bool all_tuples = true;
+        size_t tuple_size = 0;
+
+        std::vector<DataTypes> nested_types;
+
         for (const auto & type : types)
         {
-            const IDataType * unwrapped_type = type.get();
-
-            // Unwrap Nullable if present
-            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped_type))
-                unwrapped_type = nullable_type->getNestedType().get();
-
-            if (typeid_cast<const DataTypeTuple *>(unwrapped_type))
+            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
             {
+                if (!have_tuple)
+                {
+                    tuple_size = type_tuple->getElements().size();
+                    nested_types.resize(tuple_size);
+                    for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
+                        nested_types[elem_idx].reserve(types.size());
+                }
+                else if (tuple_size != type_tuple->getElements().size())
+                    return throwOrReturn<on_error>(types, "because Tuples have different sizes", ErrorCodes::NO_COMMON_TYPE);
+
                 have_tuple = true;
-                break;
+
+                for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
+                    nested_types[elem_idx].emplace_back(type_tuple->getElements()[elem_idx]);
             }
+            else
+                all_tuples = false;
         }
 
         if (have_tuple)
-            return getLeastSuperTypeForTuple<on_error>(types);
+        {
+            if (!all_tuples)
+                return throwOrReturn<on_error>(types, "because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+
+            DataTypes common_tuple_types(tuple_size);
+            for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
+            {
+                auto common_type = getLeastSupertype<on_error>(nested_types[elem_idx]);
+                /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+                /// common_type will be nullptr, we should return nullptr in this case.
+                if (!common_type)
+                    return nullptr;
+                common_tuple_types[elem_idx] = common_type;
+            }
+
+            return std::make_shared<DataTypeTuple>(common_tuple_types);
+        }
     }
 
     /// For maps
@@ -586,96 +526,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         }
     }
 
-    /// For JSON (Object) types.
-    /// This must be after Nullable, because JSON can be inside Nullable.
-    /// The Nullable handler strips Nullable wrappers first, so by this point all types are bare JSON.
-    {
-        bool have_object = false;
-        bool all_objects = true;
-
-        for (const auto & type : types)
-        {
-            if (typeid_cast<const DataTypeObject *>(type.get()))
-                have_object = true;
-            else
-                all_objects = false;
-        }
-
-        if (have_object)
-        {
-            if (!all_objects)
-                return throwOrReturn<on_error>(types, "because some of them are JSON and some of them are not", ErrorCodes::NO_COMMON_TYPE);
-
-            const auto & first = assert_cast<const DataTypeObject &>(*types[0]);
-            auto schema_format = first.getSchemaFormat();
-
-            /// Merge all JSON parameters in a single pass:
-            /// - schema format: verify all types match
-            /// - typed paths: intersection by path name with type promotion
-            /// - paths to skip / path regexps to skip: intersection using sorted sets
-            /// - max_dynamic_paths / max_dynamic_types: take the maximum
-            std::unordered_map<String, DataTypePtr> merged_typed_paths = first.getTypedPaths();
-            std::set<String> merged_paths_to_skip(first.getPathsToSkip().begin(), first.getPathsToSkip().end());
-            std::set<String> merged_regexps_to_skip(first.getPathRegexpsToSkip().begin(), first.getPathRegexpsToSkip().end());
-            size_t merged_max_dynamic_paths = first.getMaxDynamicPaths();
-            size_t merged_max_dynamic_types = first.getMaxDynamicTypes();
-
-            for (size_t i = 1; i < types.size(); ++i)
-            {
-                const auto & current = assert_cast<const DataTypeObject &>(*types[i]);
-
-                if (current.getSchemaFormat() != schema_format)
-                    return throwOrReturn<on_error>(types, "because JSON types have different schema formats", ErrorCodes::NO_COMMON_TYPE);
-
-                /// Typed paths intersection with type promotion.
-                const auto & current_typed_paths = current.getTypedPaths();
-                std::unordered_map<String, DataTypePtr> new_merged;
-                for (auto & [path, type] : merged_typed_paths)
-                {
-                    auto it = current_typed_paths.find(path);
-                    if (it == current_typed_paths.end())
-                        continue; /// Path not in current type — drop it.
-
-                    auto common_type = getLeastSupertype<on_error>(DataTypes{type, it->second});
-                    if (!common_type)
-                        continue; /// Types are incompatible — drop the path.
-
-                    new_merged.emplace(path, std::move(common_type));
-                }
-                merged_typed_paths = std::move(new_merged);
-
-                /// Paths to skip intersection.
-                std::set<String> skip_set(current.getPathsToSkip().begin(), current.getPathsToSkip().end());
-                std::set<String> skip_intersection;
-                std::set_intersection(
-                    merged_paths_to_skip.begin(), merged_paths_to_skip.end(),
-                    skip_set.begin(), skip_set.end(),
-                    std::inserter(skip_intersection, skip_intersection.begin()));
-                merged_paths_to_skip = std::move(skip_intersection);
-
-                /// Path regexps to skip intersection.
-                std::set<String> regexp_set(current.getPathRegexpsToSkip().begin(), current.getPathRegexpsToSkip().end());
-                std::set<String> regexp_intersection;
-                std::set_intersection(
-                    merged_regexps_to_skip.begin(), merged_regexps_to_skip.end(),
-                    regexp_set.begin(), regexp_set.end(),
-                    std::inserter(regexp_intersection, regexp_intersection.begin()));
-                merged_regexps_to_skip = std::move(regexp_intersection);
-
-                merged_max_dynamic_paths = std::max(merged_max_dynamic_paths, current.getMaxDynamicPaths());
-                merged_max_dynamic_types = std::max(merged_max_dynamic_types, current.getMaxDynamicTypes());
-            }
-
-            return std::make_shared<DataTypeObject>(
-                schema_format,
-                std::move(merged_typed_paths),
-                std::unordered_set<String>(merged_paths_to_skip.begin(), merged_paths_to_skip.end()),
-                std::vector<String>(merged_regexps_to_skip.begin(), merged_regexps_to_skip.end()),
-                merged_max_dynamic_paths,
-                merged_max_dynamic_types);
-        }
-    }
-
     /// Non-recursive rules
 
     TypeIndexSet type_ids;
@@ -706,124 +556,61 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         size_t have_date32 = type_ids.count(TypeIndex::Date32);
         size_t have_datetime = type_ids.count(TypeIndex::DateTime);
         size_t have_datetime64 = type_ids.count(TypeIndex::DateTime64);
-        size_t have_time = type_ids.count(TypeIndex::Time);
-        size_t have_time64 = type_ids.count(TypeIndex::Time64);
 
-        if (have_date || have_date32 || have_datetime || have_datetime64 || have_time || have_time64)
+        if (have_date || have_date32 || have_datetime || have_datetime64)
         {
-            bool all_date_time_family = type_ids.size()
-                == (have_date + have_date32 + have_datetime + have_datetime64 + have_time + have_time64);
-            if (!all_date_time_family)
+            bool all_date_or_datetime = type_ids.size() == (have_date + have_date32 + have_datetime + have_datetime64);
+            if (!all_date_or_datetime)
                 return throwOrReturn<on_error>(types,
-                    "because some of them are Date/Date32/DateTime/DateTime64/Time/Time64 and some of them are not",
+                    "because some of them are Date/Date32/DateTime/DateTime64 and some of them are not",
                     ErrorCodes::NO_COMMON_TYPE);
 
-            if ((have_date || have_date32) && (have_time || have_time64))
-                return throwOrReturn<on_error>(types,
-                    "because Date/Date32 and Time/Time64 are incompatible",
-                    ErrorCodes::NO_COMMON_TYPE);
-
-            /// only Time/Time64 types
-            if (!have_date && !have_date32 && !have_datetime && !have_datetime64)
-            {
-                if (!have_time64)
-                    return std::make_shared<DataTypeTime>();
-
-                UInt8 max_scale = 0;
-                size_t max_scale_time64_index = 0;
-                for (size_t i = 0; i < types.size(); ++i)
-                {
-                    if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(types[i].get()))
-                    {
-                        const auto scale = time64_type->getScale();
-                        if (scale >= max_scale)
-                        {
-                            max_scale_time64_index = i;
-                            max_scale = static_cast<UInt8>(scale);
-                        }
-                    }
-                }
-
-                if (have_time && have_time64)
-                    return std::make_shared<DataTypeTime64>(max_scale);
-                return types[max_scale_time64_index];
-            }
-
-            /// Only Date/Date32 types (no DateTime, no Time)
-            if (!have_datetime && !have_datetime64 && !have_time && !have_time64)
-            {
-                for (const auto & type : types)
-                {
-                    if (isDate32(type))
-                        return type;
-                }
-                return std::make_shared<DataTypeDate>();
-            }
-
-            /// Time/Time64 mixed with DateTime/DateTime64: promote to DateTime/DateTime64
-            /// (Time gets epoch date 1970-01-01 prepended, analogous to Date getting midnight appended).
-            /// Time/Time64 mixed with only Date/Date32 (no DateTime): also promote to DateTime/DateTime64.
-            /// From here on, the result is always DateTime or DateTime64.
-
-            if (!have_datetime64 && !have_date32 && !have_time64)
+            if (have_datetime64 == 0 && have_date32 == 0)
             {
                 for (const auto & type : types)
                 {
                     if (isDateTime(type))
                         return type;
                 }
+
                 return std::make_shared<DataTypeDateTime>();
             }
 
+            /// For Date and Date32, the common type is Date32
+            if (have_datetime == 0 && have_datetime64 == 0)
+            {
+                for (const auto & type : types)
+                {
+                    if (isDate32(type))
+                        return type;
+                }
+            }
+
             /// For Datetime and Date32, the common type is Datetime64
-            if (have_datetime == 1 && have_date32 == 1 && have_datetime64 == 0
-                && !have_time && !have_time64)
+            if (have_datetime == 1 && have_date32 == 1 && have_datetime64 == 0)
             {
                 return std::make_shared<DataTypeDateTime64>(0);
             }
 
-            /// Find max scale across DateTime64 and Time64 types
             UInt8 max_scale = 0;
             size_t max_scale_date_time_index = 0;
 
             for (size_t i = 0; i < types.size(); ++i)
             {
                 const auto & type = types[i];
-                UInt8 scale = 0;
-                bool is_scaled = false;
 
                 if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(type.get()))
                 {
-                    scale = static_cast<UInt8>(date_time64_type->getScale());
-                    is_scaled = true;
-                }
-                else if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(type.get()))
-                {
-                    scale = static_cast<UInt8>(time64_type->getScale());
-                    is_scaled = true;
-                }
-
-                if (is_scaled && scale >= max_scale)
-                {
-                    max_scale = scale;
-                    max_scale_date_time_index = i;
+                    const auto scale = date_time64_type->getScale();
+                    if (scale >= max_scale)
+                    {
+                        max_scale_date_time_index = i;
+                        max_scale = scale;
+                    }
                 }
             }
 
-            /// If the max-scale type is already DateTime64, return it (preserves timezone)
-            if (typeid_cast<const DataTypeDateTime64 *>(types[max_scale_date_time_index].get()))
-                return types[max_scale_date_time_index];
-
-            /// max scale came from Time64, find a DateTime[64] to preserve its timezone
-            for (const auto & type : types)
-            {
-                if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
-                    return std::make_shared<DataTypeDateTime64>(max_scale, *dt64);
-                if (const auto * dt = typeid_cast<const DataTypeDateTime *>(type.get()))
-                    return std::make_shared<DataTypeDateTime64>(max_scale, *dt);
-            }
-
-            return std::make_shared<DataTypeDateTime64>(max_scale);
+            return types[max_scale_date_time_index];
         }
     }
 

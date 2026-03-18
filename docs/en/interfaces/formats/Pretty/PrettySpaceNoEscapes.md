@@ -6,7 +6,6 @@ keywords: ['PrettySpaceNoEscapes']
 output_format: true
 slug: /interfaces/formats/PrettySpaceNoEscapes
 title: 'PrettySpaceNoEscapes'
-doc_type: 'reference'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -20,8 +19,8 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 Differs from the [`PrettySpace`](./PrettySpace.md) format in that [ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) are not used. 
 This is necessary for displaying this format in a browser, as well as for using the 'watch' command-line utility.
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
 
 <PrettyFormatSettings/>

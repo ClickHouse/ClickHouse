@@ -1,7 +1,8 @@
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionDistinct.h>
+#include "AggregateFunctionDistinct.h"
+#include "AggregateFunctionCombinatorFactory.h"
 
 #include <AggregateFunctions/Helpers.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

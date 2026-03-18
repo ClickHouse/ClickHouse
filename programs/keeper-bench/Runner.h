@@ -1,16 +1,19 @@
 #pragma once
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include "Common/ZooKeeper/ZooKeeperArgs.h"
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include "Generator.h"
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/InterruptListener.h>
-#include <Interpreters/Context.h>
+#include <Common/CurrentMetrics.h>
 
-#include <Generator.h>
-#include <Stats.h>
+#include <Core/Types.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include "Interpreters/Context.h"
+#include "Stats.h"
 
 #include <filesystem>
 
@@ -66,7 +69,7 @@ public:
         std::cerr << "Requests executed: " << num << ".\n";
     }
 
-    bool tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && request, DB::InterruptListener & interrupt_listener);
+    bool tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && request, DB::InterruptListener & interrupt_listener);
 
     void runBenchmark();
 
@@ -91,18 +94,14 @@ private:
     void runBenchmarkWithGenerator();
     void runBenchmarkFromLog();
 
-    void writeOutputString(const std::string & output_string, int64_t start_timestamp_ms);
-
     void createConnections();
     std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
-    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx) const;
+    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx);
 
     std::string input_request_log;
     std::string setup_nodes_snapshot_path;
 
     size_t concurrency = 1;
-    size_t queue_depth = 1;
-    size_t pipeline_depth = 1;
 
     std::optional<ThreadPool> pool;
 
@@ -110,26 +109,22 @@ private:
     double max_time = 0;
     double delay = 1;
     bool continue_on_error = false;
-    bool enable_tracing = false;
     size_t max_iterations = 0;
 
     std::atomic<size_t> requests_executed = 0;
     std::atomic<bool> shutdown = false;
 
-    double warmup_seconds = 0;
-    std::atomic<bool> warmup_complete = false;
-
     std::shared_ptr<Stats> info;
-    bool print_to_stdout = false;
+    bool print_to_stdout;
     std::optional<std::filesystem::path> file_output;
-    bool output_file_with_timestamp = false;
+    bool output_file_with_timestamp;
 
     Stopwatch total_watch;
     Stopwatch delay_watch;
 
     std::mutex mutex;
 
-    using Queue = ConcurrentBoundedQueue<ZooKeeperRequestWithCallbacks>;
+    using Queue = ConcurrentBoundedQueue<Coordination::ZooKeeperRequestPtr>;
     std::optional<Queue> queue;
 
     std::mutex connection_mutex;

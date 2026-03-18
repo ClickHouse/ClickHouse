@@ -154,12 +154,12 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
     {
         if (itr.key != "/")
         {
-            auto parent_path = Coordination::parentNodePath(itr.key);
+            auto parent_path = parentNodePath(itr.key);
             storage.container.updateValue(
                 parent_path,
                 [my_path = itr.key](typename Storage::Node & value)
                 {
-                    value.addChild(Coordination::getBaseNodeName(my_path));
+                    value.addChild(getBaseNodeName(my_path));
                     value.stats.increaseNumChildren();
                 });
         }
@@ -559,12 +559,6 @@ template<typename Storage>
 void deserializeLogAndApplyToStorage(Storage & storage, const std::string & log_path, LoggerPtr log)
 {
     ReadBufferFromFile reader(log_path);
-
-    if (reader.eof())
-    {
-        LOG_WARNING(log, "Log file {} is empty, skipping", log_path);
-        return;
-    }
 
     LOG_INFO(log, "Deserializing log {}", log_path);
     deserializeLogMagic(reader);

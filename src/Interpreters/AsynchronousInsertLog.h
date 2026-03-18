@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Interpreters/AsynchronousInsertQueueDataKind.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
@@ -30,7 +32,7 @@ struct AsynchronousInsertLogElement
     String exception;
     Status status{};
 
-    using DataKind = AsynchronousInsertQueueDataKind;
+    using DataKind = AsynchronousInsertQueue::DataKind;
     DataKind data_kind{};
 
     time_t flush_time{};

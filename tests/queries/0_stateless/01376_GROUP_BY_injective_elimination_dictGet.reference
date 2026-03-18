@@ -1,7 +1,7 @@
 1.1
 SELECT dictGet(\'dictdb_01376.dict_exists\', \'value\', toUInt64(1)) AS val
 FROM numbers(2)
-GROUP BY val
+GROUP BY toUInt64(1)
 QUERY id: 0
   PROJECTION COLUMNS
     val Float64

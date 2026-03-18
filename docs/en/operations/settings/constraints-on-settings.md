@@ -2,14 +2,13 @@
 description: 'Constraints on settings can be defined in the `profiles` section of
   the `user.xml` configuration file and prohibit users from changing some of the settings
   with the `SET` query.'
-sidebar_label: 'Constraints on settings'
+sidebar_label: 'Constraints on Settings'
 sidebar_position: 62
 slug: /operations/settings/constraints-on-settings
-title: 'Constraints on settings'
-doc_type: 'reference'
+title: 'Constraints on Settings'
 ---
 
-# Constraints on settings
+# Constraints on Settings
 
 ## Overview {#overview}
 
@@ -47,14 +46,6 @@ Constraints are defined as follows:
         <max>upper_boundary</max>
         <changeable_in_readonly/>
       </setting_name_5>
-      <setting_name_6>
-        <min>lower_boundary</min>
-        <max>upper_boundary</max>
-        <disallowed>value1</disallowed>
-        <disallowed>value2</disallowed>
-        <disallowed>value3</disallowed>
-        <changeable_in_readonly/>
-      </setting_name_6>
     </constraints>
   </user_name>
 </profiles>
@@ -68,15 +59,11 @@ setting remains unchanged.
 There are a few types of constraints supported in ClickHouse:
 - `min`
 - `max`
-- `disallowed`
 - `readonly` (with alias `const`)
 - `changeable_in_readonly`
 
 The `min` and `max` constraints specify upper and lower boundaries for a numeric 
 setting and can be used in combination with each other. 
-
-The `disallowed` constraint can be used to specify specific value(s) which should not
-be allowed for a specific setting.
 
 The `readonly` or `const` constraint specifies that the user cannot change the 
 corresponding setting at all. 
@@ -89,7 +76,7 @@ otherwise settings are not allowed to be changed in `readonly=1` mode.
 `changeable_in_readonly` is supported only if `settings_constraints_replace_previous`
 is enabled:
 
-```xml
+``` xml
 <access_control_improvements>
   <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 </access_control_improvements>
@@ -116,6 +103,7 @@ with the `readonly` constraint type:
    unless `changeable_in_readonly` is set.
 - `readonly=2`: Only read queries are allowed, but settings can be changed, 
   except for `readonly` setting itself.
+
 
 ### Example {#example-read-only}
 

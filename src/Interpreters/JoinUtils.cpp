@@ -4,7 +4,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/FilterDescription.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -148,7 +147,8 @@ DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 /// Returns nullptr if conversion cannot be performed.
 static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 {
-    col = removeSpecialRepresentations(col);
+    if (col->isSparse())
+        col = recursiveRemoveSparse(col);
 
     if (isColumnNullable(*col) || col->canBeInsideNullable())
         return makeNullable(col);
@@ -234,7 +234,7 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->isNullable())
         {
-            column.column = column.column->convertToFullIfNeeded();
+            column.column = column.column->convertToFullColumnIfConst();
             const auto * nullable_col = checkAndGetColumn<ColumnNullable>(column.column.get());
             if (!nullable_col)
             {
@@ -300,7 +300,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
 
 ColumnPtr materializeColumn(const ColumnPtr & column)
 {
-    return recursiveRemoveLowCardinality(removeSpecialRepresentations(column->convertToFullColumnIfConst()));
+    return recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
 }
 
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
@@ -423,9 +423,9 @@ void checkTypesOfMasks(const Block & block_left, const String & condition_name_l
         if (col_name.empty())
             return;
 
-        DataTypePtr dtype = block.getByName(col_name).type;
+        DataTypePtr dtype = removeNullable(recursiveRemoveLowCardinality(block.getByName(col_name).type));
 
-        if (!dtype->canBeUsedInBooleanContext())
+        if (!dtype->equals(DataTypeUInt8{}))
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                             "Expected logical expression in JOIN ON section, got unexpected column '{}' of type '{}'",
                             col_name, dtype->getName());
@@ -470,7 +470,9 @@ void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_j
 
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
 {
-    type->insertManyDefaultsInto(column, count);
+    column.reserve(column.size() + count);
+    for (size_t i = 0; i < count; ++i)
+        type->insertDefaultInto(column);
 }
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
@@ -478,19 +480,6 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     DataTypePtr left_type_strict = removeNullable(removeLowCardinality(left_type));
     DataTypePtr right_type_strict = removeNullable(removeLowCardinality(right_type));
     return left_type_strict->equals(*right_type_strict);
-}
-
-ColumnPtr castToBoolColumn(ColumnPtr column)
-{
-    if (!typeid_cast<const ColumnUInt8 *>(column.get()))
-    {
-        auto casted_column = ColumnUInt8::create(column->size());
-        if (!tryConvertAnyColumnToBool(*column, casted_column->getData()))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Illegal type {} of column for JOIN filter. Must be Number or Nullable(Number).", column->getName());
-        return casted_column;
-    }
-    return column;
 }
 
 JoinMask getColumnAsMask(const Block & block, const String & column_name)
@@ -515,18 +504,16 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
         if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))
             return JoinMask(false, block.rows());
 
-        auto nested_column = castToBoolColumn(nullable_col->getNestedColumnPtr());
         /// Return nested column with NULL set to false
-        const auto & nest_col = assert_cast<const ColumnUInt8 &>(*nested_column);
+        const auto & nest_col = assert_cast<const ColumnUInt8 &>(nullable_col->getNestedColumn());
         const auto & null_map = nullable_col->getNullMapColumn();
 
-        auto res = ColumnUInt8::create(nullable_col->size(), static_cast<UInt8>(0));
+        auto res = ColumnUInt8::create(nullable_col->size(), 0);
         for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
             res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
         return JoinMask(std::move(res));
     }
-
-    return JoinMask(castToBoolColumn(join_condition_col));
+    return JoinMask(std::move(join_condition_col));
 }
 
 
@@ -600,9 +587,7 @@ static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Bl
 
 static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
-    /// Use the "fastrange" method from Daniel Lemire:
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards,
-        [num_shards](size_t hash) { return ((hash & 0xFFFFFFFF) * num_shards) >> 32; });
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](size_t hash) { return hash % num_shards; });
 }
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)

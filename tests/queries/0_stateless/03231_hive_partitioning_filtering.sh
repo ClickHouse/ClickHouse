@@ -14,13 +14,13 @@ $CLICKHOUSE_CLIENT --query_id="test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME" --quer
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SYSTEM FLUSH LOGS query_log;
+    SYSTEM FLUSH LOGS;
 "
 
 for _ in {1..5}; do
     count=$( $CLICKHOUSE_CLIENT --query "
         SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
+        WHERE query_id='test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
         current_database = currentDatabase() and type='QueryFinish';" )
     if [[ "$count" == "1" ]]; then
         echo "1"
@@ -34,13 +34,13 @@ $CLICKHOUSE_CLIENT --query_id="test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME" --quer
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SYSTEM FLUSH LOGS query_log;
+    SYSTEM FLUSH LOGS;
 "
 
 for _ in {1..5}; do
     count=$( $CLICKHOUSE_CLIENT --query "
         SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
+        WHERE query_id='test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
         current_database = currentDatabase() and type='QueryFinish';" )
     if [[ "$count" == "1" ]]; then
         echo "1"
@@ -54,13 +54,13 @@ $CLICKHOUSE_CLIENT --query_id="test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME" --quer
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SYSTEM FLUSH LOGS query_log;
+    SYSTEM FLUSH LOGS;
 "
 
 for _ in {1..5}; do
     count=$( $CLICKHOUSE_CLIENT --query "
         SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
+        WHERE query_id='test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
         current_database = currentDatabase() and type='QueryFinish';" )
     if [[ "$count" == "1" ]]; then
         echo "1"

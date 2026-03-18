@@ -1,4 +1,4 @@
-#include <Compression/CachedCompressedReadBuffer.h>
+#include "CachedCompressedReadBuffer.h"
 
 #include <IO/WriteHelpers.h>
 #include <Compression/LZ4_decompress_faster.h>

@@ -2,5 +2,5 @@
 
 namespace DB
 {
-void registerDictionaries();
+void registerDictionaries(bool use_legacy_mongodb_integration);
 }

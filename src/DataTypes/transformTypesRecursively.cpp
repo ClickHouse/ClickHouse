@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Formats/SchemaInferenceUtils.h>
 
 
 namespace DB
@@ -17,11 +16,7 @@ TypeIndexesSet getTypesIndexes(const DataTypes & types)
     return type_indexes;
 }
 
-void transformTypesRecursively(
-    DataTypes & types,
-    std::function<void(DataTypes &, TypeIndexesSet &)> transform_simple_types,
-    std::function<void(DataTypes &, TypeIndexesSet &)> transform_complex_types,
-    const FormatSettings * format_settings)
+void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &, TypeIndexesSet &)> transform_simple_types, std::function<void(DataTypes &, TypeIndexesSet &)> transform_complex_types)
 {
     TypeIndexesSet type_indexes = getTypesIndexes(types);
 
@@ -46,13 +41,11 @@ void transformTypesRecursively(
             }
         }
 
-        transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types, format_settings);
+        transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types);
         for (size_t i = 0; i != types.size(); ++i)
         {
             /// Type could be changed so it cannot be inside Nullable anymore.
-            const bool can_make_nullable = format_settings ? canBeInsideNullableBySchemaSettings(nested_types[i], *format_settings)
-                                                           : nested_types[i]->canBeInsideNullable();
-            if (is_nullable[i] && can_make_nullable)
+            if (is_nullable[i] && nested_types[i]->canBeInsideNullable())
                 types[i] = makeNullable(nested_types[i]);
             else
                 types[i] = nested_types[i];
@@ -78,7 +71,7 @@ void transformTypesRecursively(
             for (const auto & type : types)
                 nested_types.push_back(typeid_cast<const DataTypeArray *>(type.get())->getNestedType());
 
-            transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types, format_settings);
+            transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types);
             for (size_t i = 0; i != types.size(); ++i)
                 types[i] = std::make_shared<DataTypeArray>(nested_types[i]);
         }
@@ -98,7 +91,7 @@ void transformTypesRecursively(
             std::vector<DataTypes> nested_types;
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(types[0].get());
             size_t tuple_size = type_tuple->getElements().size();
-            bool has_explicit_names = type_tuple->hasExplicitNames();
+            bool have_explicit_names = type_tuple->haveExplicitNames();
             nested_types.resize(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
                 nested_types[elem_idx].reserve(types.size());
@@ -131,14 +124,14 @@ void transformTypesRecursively(
                 std::vector<DataTypes> transposed_nested_types(types.size());
                 for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
                 {
-                    transformTypesRecursively(nested_types[elem_idx], transform_simple_types, transform_complex_types, format_settings);
+                    transformTypesRecursively(nested_types[elem_idx], transform_simple_types, transform_complex_types);
                     for (size_t i = 0; i != types.size(); ++i)
                         transposed_nested_types[i].push_back(nested_types[elem_idx][i]);
                 }
 
                 for (size_t i = 0; i != types.size(); ++i)
                 {
-                    if (has_explicit_names)
+                    if (have_explicit_names)
                         types[i] = std::make_shared<DataTypeTuple>(transposed_nested_types[i], element_names);
                     else
                         types[i] = std::make_shared<DataTypeTuple>(transposed_nested_types[i]);
@@ -169,8 +162,8 @@ void transformTypesRecursively(
                 value_types.emplace_back(type_map->getValueType());
             }
 
-            transformTypesRecursively(key_types, transform_simple_types, transform_complex_types, format_settings);
-            transformTypesRecursively(value_types, transform_simple_types, transform_complex_types, format_settings);
+            transformTypesRecursively(key_types, transform_simple_types, transform_complex_types);
+            transformTypesRecursively(value_types, transform_simple_types, transform_complex_types);
 
             for (size_t i = 0; i != types.size(); ++i)
                 types[i] = std::make_shared<DataTypeMap>(key_types[i], value_types[i]);

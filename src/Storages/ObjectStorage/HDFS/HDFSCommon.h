@@ -10,6 +10,7 @@
 #include <hdfs/hdfs.h>
 #include <base/types.h>
 
+#include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 

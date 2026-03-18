@@ -31,7 +31,7 @@ struct SelectMergeFailure
  */
 class MergeTreeDataMergerMutator
 {
-    void updateTTLMergeTimes(const MergeSelectorChoices & choices, const MergeTreeSettingsPtr & settings, time_t current_time);
+    void updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, const MergeTreeSettingsPtr & settings, time_t current_time);
 
 public:
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
@@ -51,7 +51,7 @@ public:
       *  - Parts between which another part can still appear can not be merged. Refer to METR-7001.
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
-    std::expected<MergeSelectorChoices, SelectMergeFailure> selectPartsToMerge(
+    std::expected<MergeSelectorChoice, SelectMergeFailure> selectPartsToMerge(
         const PartsCollectorPtr & parts_collector,
         const MergePredicatePtr & merge_predicate,
         const MergeSelectorApplier & selector,
@@ -62,7 +62,7 @@ public:
       * but if setting optimize_skip_merged_partitions is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
       */
-    std::expected<MergeSelectorChoices, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
+    std::expected<MergeSelectorChoice, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
         const StorageMetadataPtr & metadata_snapshot,
         const PartsCollectorPtr & parts_collector,
         const MergePredicatePtr & merge_predicate,
@@ -79,7 +79,7 @@ public:
       */
     MergeTaskPtr mergePartsToTemporaryPart(
         FutureMergedMutatedPartPtr future_part,
-        StorageMetadataPtr metadata_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         MergeListEntry * merge_entry,
         std::unique_ptr<MergeListElement> projection_merge_list_element,
         TableLockHolder & table_lock_holder,
@@ -89,10 +89,9 @@ public:
         bool deduplicate,
         const Names & deduplicate_by_columns,
         bool cleanup,
-        MergeTreeData::MergingParams merging_params,
-        MergeTreeTransactionPtr txn,
+        const MergeTreeData::MergingParams & merging_params,
+        const MergeTreeTransactionPtr & txn,
         bool need_prefix = true,
-        ProjectionDescriptionRawPtr projection = nullptr,
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 
@@ -135,7 +134,5 @@ private:
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };
-
-std::string convertMergeConstraintsToString(const MergeConstraints & constraints);
 
 }

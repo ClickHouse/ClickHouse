@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Parsers/IParser.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 
 namespace DB
@@ -11,11 +12,10 @@ namespace DB
 /// The `host` can be an ip address, ip subnet, or a host name.
 /// The % and _ wildcard characters are permitted in `host`.
 /// These have the same meaning as for pattern-matching operations performed with the LIKE operator.
-/// It supports query parameters if 'allow_query_parameter' is true, but not in 'host' part.
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, bool allow_query_parameter);
+bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name);
 
 /// Parses a comma-separated list of user names.
-bool parseUserNames(IParser::Pos & pos, Expected & expected, Strings & user_names, bool allow_query_parameter);
+bool parseUserNames(IParser::Pos & pos, Expected & expected, Strings & user_names);
 
 
 /// Parses either the 'CURRENT_USER' keyword (or some of its aliases).
@@ -26,13 +26,13 @@ bool parseCurrentUserTag(IParser::Pos & pos, Expected & expected);
 /// (because roles are not used to connect to server).
 inline bool parseRoleName(IParser::Pos & pos, Expected & expected, String & role_name)
 {
-    return parseUserName(pos, expected, role_name, /*allow_query_parameter=*/ false);
+    return parseUserName(pos, expected, role_name);
 }
 
 /// Parses a comma-separated list of role names.
 inline bool parseRoleNames(IParser::Pos & pos, Expected & expected, Strings & role_names)
 {
-    return parseUserNames(pos, expected, role_names, /*allow_query_parameter=*/ false);
+    return parseUserNames(pos, expected, role_names);
 }
 
 }

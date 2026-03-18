@@ -173,11 +173,11 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;
-    std::string_view getDataAt(size_t n) const override;
+    StringRef getDataAt(size_t n) const override;
 
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
@@ -213,31 +213,31 @@ public:
     void insertManyDefaults(size_t length) override;
 
     void popBack(size_t n) override;
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
-    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
-    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * deserializeVariantAndInsertFromArena(Discriminator global_discr, const char * pos);
+    const char * skipSerializedInArena(const char * pos) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     template <typename Type>
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
     bool hasEqualValues() const override;
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
+    void getExtremes(Field & min, Field & max) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -246,7 +246,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -260,12 +260,6 @@ public:
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
-
-    /// Variant columns pair variant sub-columns with DataTypeVariant's sorted type list.
-    /// The default convertToFullIfNeeded recurses into sub-columns and strips LowCardinality
-    /// from variant columns, but cannot update the corresponding DataTypeVariant, creating
-    /// column/type position mismatches. Override to skip recursion.
-    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
     bool structureEquals(const IColumn & rhs) const override;
     ColumnPtr compress(bool force_compression) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
@@ -350,11 +344,9 @@ public:
 
     bool hasDynamicStructure() const override;
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
     void fixDynamicStructure() override;
-
-    void validateState() const;
 
 private:
     void insertFromImpl(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
@@ -362,7 +354,6 @@ private:
     void insertManyFromImpl(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
 
     void initIdentityGlobalToLocalDiscriminatorsMapping();
-    void constructOffsetsFromDiscriminators();
 
     template <bool inverted>
     void applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map);

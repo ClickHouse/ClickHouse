@@ -1,6 +1,5 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/ISink.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
@@ -17,7 +16,12 @@
 
 namespace ProfileEvents
 {
+    extern const Event ExternalSortWritePart;
     extern const Event ExternalSortMerge;
+    extern const Event ExternalSortCompressedBytes;
+    extern const Event ExternalSortUncompressedBytes;
+    extern const Event ExternalProcessingCompressedBytesTotal;
+    extern const Event ExternalProcessingUncompressedBytesTotal;
 }
 
 
@@ -29,86 +33,45 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class BufferingToFileSink : public ISink
+class BufferingToFileTransform : public IAccumulatingTransform
 {
 public:
-    BufferingToFileSink(SharedHeader header, TemporaryBlockStreamHolder tmp_stream_, LoggerPtr log_)
-        : ISink(std::move(header))
+    BufferingToFileTransform(const Block & header, TemporaryBlockStreamHolder tmp_stream_, LoggerPtr log_)
+        : IAccumulatingTransform(header, header)
         , tmp_stream(std::move(tmp_stream_))
         , log(log_)
     {
-        outputs.emplace_back(Block(), this);
         LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.getHolder()->describeFilePath());
+        ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
     }
 
-    Status prepare() override
-    {
-        auto status = ISink::prepare();
-        if (status == Status::Finished)
-            outputs.front().finish();
-        return status;
-    }
-
-    String getName() const override { return "BufferingToFileSink"; }
+    String getName() const override { return "BufferingToFileTransform"; }
 
     void consume(Chunk chunk) override
     {
-        Block block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        Block block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
         tmp_stream->write(block);
     }
-
-    void onFinish() override
-    {
-        auto stat = tmp_stream.finishWriting();
-        LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
-            tmp_stream.getHolder()->describeFilePath(),
-            ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
-    }
-
-    TemporaryBlockStreamHolder & getHolder() { return tmp_stream; }
-
-private:
-    TemporaryBlockStreamHolder tmp_stream;
-    LoggerPtr log;
-};
-
-class BufferingFromFileSource : public ISource
-{
-public:
-    BufferingFromFileSource(SharedHeader header, TemporaryBlockStreamHolder & tmp_stream_, LoggerPtr log_)
-        : ISource(std::move(header))
-        , tmp_stream(tmp_stream_)
-        , log(log_)
-    {
-        inputs.emplace_back(Block(), this);
-    }
-
-    Status prepare() override
-    {
-        if (!inputs.front().isFinished())
-        {
-            if (inputs.front().hasData())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read the data from BufferingToFileSource input");
-
-            inputs.front().setNeeded();
-            return Status::NeedData;
-        }
-
-        return ISource::prepare();
-    }
-
-    String getName() const override { return "BufferingFromFileSource"; }
 
     Chunk generate() override
     {
         if (!tmp_read_stream)
         {
-            LOG_INFO(log, "Start reading part of data from temporary file");
+            auto stat = tmp_stream.finishWriting();
             tmp_read_stream = tmp_stream.getReadStream();
+
+            ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
+            ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
+            ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, stat.compressed_size);
+            ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, stat.uncompressed_size);
+
+            LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
+                tmp_stream.getHolder()->describeFilePath(),
+                ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
         }
 
         Block block = tmp_read_stream.value()->read();
-        if (block.empty())
+        if (!block)
             return {};
 
         UInt64 num_rows = block.rows();
@@ -116,13 +79,14 @@ public:
     }
 
 private:
-    TemporaryBlockStreamHolder & tmp_stream;
+    TemporaryBlockStreamHolder tmp_stream;
     std::optional<TemporaryBlockStreamReaderHolder> tmp_read_stream;
+
     LoggerPtr log;
 };
 
 MergeSortingTransform::MergeSortingTransform(
-    SharedHeader header,
+    const Block & header,
     const SortDescription & description_,
     size_t max_merged_block_size_,
     size_t max_block_bytes_,
@@ -133,8 +97,7 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_in_block_before_external_sort_,
     size_t max_bytes_in_query_before_external_sort_,
     TemporaryDataOnDiskScopePtr tmp_data_,
-    size_t min_free_disk_space_,
-    TopKThresholdTrackerPtr threshold_tracker_)
+    size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
@@ -143,31 +106,30 @@ MergeSortingTransform::MergeSortingTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
-    , threshold_tracker(threshold_tracker_)
 {
 }
 
 Processors MergeSortingTransform::expandPipeline()
 {
-    if (processors.size() > 2)
+    if (processors.size() > 1)
     {
         /// Add external_merging_sorted.
         inputs.emplace_back(header_without_constants, this);
         connect(external_merging_sorted->getOutputs().front(), inputs.back());
     }
 
-    auto & source = processors.at(0);
+    auto & buffer = processors.front();
 
     static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput();
-    connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
+    connect(buffer->getOutputs().back(), external_merging_sorted->getInputs().back());
 
-    if (processors.size() > 1)
+    if (!buffer->getInputs().empty())
     {
-        auto & sink = processors.at(1);
         /// Serialize
         outputs.emplace_back(header_without_constants, this);
-        connect(sink->getOutputs().front(), source->getInputs().front());
-        connect(getOutputs().back(), sink->getInputs().back());
+        connect(getOutputs().back(), buffer->getInputs().back());
+        /// Hack. Say buffer that we need data from port (otherwise it will return PortFull).
+        external_merging_sorted->getInputs().back().setNeeded();
     }
     else
         /// Generate
@@ -201,12 +163,12 @@ void MergeSortingTransform::consume(Chunk chunk)
 
     /** If significant amount of data was accumulated, perform preliminary merging step.
       */
-    if ((chunks.size() > 1
+    if (chunks.size() > 1
         && limit
         && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
         && remerge_is_useful
         && max_bytes_before_remerge
-        && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
+        && sum_bytes_in_blocks > max_bytes_before_remerge)
     {
         remerge();
     }
@@ -224,16 +186,11 @@ void MergeSortingTransform::consume(Chunk chunk)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDisk is not set for MergeSortingTransform");
             temporary_files_num++;
 
-            LOG_TRACE(log, "Will dump sorting block ({}, limit: {}) to disk (query memory: {}, limit: {})",
-                formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks),
-                formatReadableSizeWithBinarySuffix(max_bytes_in_block_before_external_sort),
-                formatReadableSizeWithBinarySuffix(query_memory),
-                formatReadableSizeWithBinarySuffix(max_bytes_in_query_before_external_sort));
+            LOG_TRACE(log, "Will dump sorting block to disk ({} > {})", formatReadableSizeWithBinarySuffix(query_memory), formatReadableSizeWithBinarySuffix(max_bytes_in_query_before_external_sort));
 
             /// If there's less free disk space than reserve_size, an exception will be thrown
             size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
-            SharedHeader shared_header_without_constants = std::make_shared<const Block>(header_without_constants);
-            TemporaryBlockStreamHolder tmp_stream(shared_header_without_constants, tmp_data, reserve_size);
+            TemporaryBlockStreamHolder tmp_stream(header_without_constants, tmp_data, reserve_size);
             size_t max_merged_block_size = this->max_merged_block_size;
             if (max_block_bytes > 0 && sum_rows_in_blocks > 0 && sum_bytes_in_blocks > 0)
             {
@@ -241,12 +198,10 @@ void MergeSortingTransform::consume(Chunk chunk)
                 /// max_merged_block_size >= 128
                 max_merged_block_size = std::max(std::min(max_merged_block_size, max_block_bytes / avg_row_bytes), 128UL);
             }
-            merge_sorter = std::make_unique<MergeSorter>(shared_header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
-            auto sink = std::make_shared<BufferingToFileSink>(shared_header_without_constants, std::move(tmp_stream), log);
-            auto source = std::make_shared<BufferingFromFileSource>(shared_header_without_constants, sink->getHolder(), log);
+            merge_sorter = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+            auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, std::move(tmp_stream), log);
 
-            processors.emplace_back(source);
-            processors.emplace_back(sink);
+            processors.emplace_back(current_processor);
 
             if (!external_merging_sorted)
             {
@@ -255,17 +210,15 @@ void MergeSortingTransform::consume(Chunk chunk)
                 bool apply_virtual_row = false;
 
                 external_merging_sorted = std::make_shared<MergingSortedTransform>(
-                        shared_header_without_constants,
+                        header_without_constants,
                         0,
                         description,
                         max_merged_block_size,
-                        /*max_merged_block_size_bytes=*/0,
-                        /*max_dynamic_subcolumns=*/std::nullopt,
+                        /*max_merged_block_size_bytes*/0,
                         SortingQueueStrategy::Batch,
                         limit,
                         /*always_read_till_end_=*/ false,
-                        /*out_row_sources_buf=*/ nullptr,
-                        /*filter_column_name=*/ std::nullopt,
+                        nullptr,
                         use_average_block_sizes,
                         apply_virtual_row,
                         have_all_inputs);
@@ -293,7 +246,7 @@ void MergeSortingTransform::generate()
     {
         if (temporary_files_num == 0)
         {
-            merge_sorter = std::make_unique<MergeSorter>(std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit);
+            merge_sorter = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
         }
         else
         {
@@ -301,7 +254,7 @@ void MergeSortingTransform::generate()
             LOG_INFO(log, "There are {} temporary sorted parts to merge", temporary_files_num);
 
             processors.emplace_back(std::make_shared<MergeSorterSource>(
-                    std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit));
+                    header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
         }
 
         generated_prefix = true;
@@ -322,7 +275,7 @@ void MergeSortingTransform::remerge()
     LOG_DEBUG(log, "Re-merging intermediate ORDER BY data ({} blocks with {} rows) to save memory consumption", chunks.size(), sum_rows_in_blocks);
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
-    MergeSorter remerge_sorter(std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit);
+    MergeSorter remerge_sorter(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
 
     Chunks new_chunks;
     size_t new_sum_rows_in_blocks = 0;
@@ -338,7 +291,7 @@ void MergeSortingTransform::remerge()
     LOG_DEBUG(log, "Memory usage is lowered from {} to {}", ReadableSize(sum_bytes_in_blocks), ReadableSize(new_sum_bytes_in_blocks));
 
     /// If the memory consumption was not lowered enough - we will not perform remerge anymore.
-    if (remerge_lowered_memory_bytes_ratio > 0.0 && (static_cast<double>(new_sum_bytes_in_blocks) * remerge_lowered_memory_bytes_ratio > static_cast<double>(sum_bytes_in_blocks)))
+    if (remerge_lowered_memory_bytes_ratio > 0.0 && (new_sum_bytes_in_blocks * remerge_lowered_memory_bytes_ratio > sum_bytes_in_blocks))
     {
         remerge_is_useful = false;
         LOG_DEBUG(log, "Re-merging is not useful (memory usage was not lowered by remerge_sort_lowered_memory_bytes_ratio={})", remerge_lowered_memory_bytes_ratio);
@@ -347,15 +300,6 @@ void MergeSortingTransform::remerge()
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
-
-    /// Publish the updated TopK value if optimization is ON
-    if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)
-    {
-        Field value;
-        chunks[0].getColumns()[0]->get(limit - 1, value);
-        threshold_tracker->testAndSet(value);
-        LOG_DEBUG(log, "TopK threshold tracker is updated");
-    }
 }
 
 }

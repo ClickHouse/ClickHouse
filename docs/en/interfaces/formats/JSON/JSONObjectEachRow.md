@@ -6,7 +6,6 @@ keywords: ['JSONObjectEachRow']
 output_format: true
 slug: /interfaces/formats/JSONObjectEachRow
 title: 'JSONObjectEachRow'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -17,9 +16,9 @@ doc_type: 'reference'
 
 In this format, all data is represented as a single JSON Object, with each row represented as a separate field of this object similar to the [`JSONEachRow`](./JSONEachRow.md) format.
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Basic example {#basic-example}
+### Basic Example {#basic-example}
 
 Given some JSON:
 
@@ -89,7 +88,8 @@ DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_ro
 └─────────────┴─────────────────┘
 ```
 
-### Inserting data {#json-inserting-data}
+
+### Inserting Data {#json-inserting-data}
 
 ```sql title="Query"
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS example_table
 When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
 :::
 
-### Selecting data {#json-selecting-data}
+### Selecting Data {#json-selecting-data}
 
 Consider the `UserActivity` table as an example:
 
@@ -208,7 +208,7 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                                                                            | Description                                                                                                                                                             | Default  | Notes                                                                                                                                                                                         |
 |------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

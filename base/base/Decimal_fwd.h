@@ -27,7 +27,6 @@ using Decimal128 = Decimal<Int128>;
 using Decimal256 = Decimal<Int256>;
 
 class DateTime64;
-class Time64;
 
 template <class T>
 concept is_decimal =
@@ -35,8 +34,7 @@ concept is_decimal =
     || std::is_same_v<T, Decimal64>
     || std::is_same_v<T, Decimal128>
     || std::is_same_v<T, Decimal256>
-    || std::is_same_v<T, DateTime64>
-    || std::is_same_v<T, Time64>;
+    || std::is_same_v<T, DateTime64>;
 
 template <class T>
 concept is_over_big_int =

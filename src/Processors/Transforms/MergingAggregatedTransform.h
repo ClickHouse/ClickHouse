@@ -15,7 +15,12 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class MergingAggregatedTransform : public IAccumulatingTransform
 {
 public:
-    MergingAggregatedTransform(SharedHeader header_, Aggregator::Params params_, bool final_, GroupingSetsParamsList grouping_sets_params);
+    MergingAggregatedTransform(
+        Block header_,
+        Aggregator::Params params_,
+        bool final_,
+        GroupingSetsParamsList grouping_sets_params,
+        size_t max_threads_);
 
     ~MergingAggregatedTransform() override;
 
@@ -29,6 +34,7 @@ protected:
 
 private:
     LoggerPtr log = getLogger("MergingAggregatedTransform");
+    size_t max_threads;
 
     struct GroupingSet
     {

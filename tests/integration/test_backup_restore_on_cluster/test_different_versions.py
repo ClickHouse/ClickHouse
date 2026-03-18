@@ -12,7 +12,7 @@ main_configs = [
     "configs/cluster_different_versions.xml",
 ]
 
-user_configs = ["configs/user_config.xml"]
+user_configs = []
 
 new_node = cluster.add_instance(
     "new_node",

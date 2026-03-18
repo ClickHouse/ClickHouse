@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
 #include <Storages/IStorage_fwd.h>
@@ -21,19 +20,8 @@ namespace DB
 class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
-    DatabaseAtomic(
-        String name_,
-        String metadata_path_,
-        UUID uuid,
-        const String & logger_name,
-        ContextPtr context_,
-        DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
-    DatabaseAtomic(
-        String name_,
-        String metadata_path_,
-        UUID uuid,
-        ContextPtr context_,
-        DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
+    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_);
+    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, ContextPtr context_);
 
     String getEngineName() const override { return "Atomic"; }
     UUID getUUID() const override { return db_uuid; }
@@ -100,8 +88,8 @@ protected:
     NameToPathMap table_name_to_path TSA_GUARDED_BY(mutex);
 
     DetachedTables detached_tables TSA_GUARDED_BY(mutex);
-    std::filesystem::path path_to_table_symlinks;
-    std::filesystem::path path_to_metadata_symlink;
+    String path_to_table_symlinks;
+    String path_to_metadata_symlink;
     const UUID db_uuid;
 
     LoadTaskPtr startup_atomic_database_task TSA_GUARDED_BY(mutex);

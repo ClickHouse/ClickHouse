@@ -25,17 +25,15 @@ public:
         bool delay_read_for_global_sub_queries_);
 
     ReadFromMemoryStorageStep() = delete;
-    ReadFromMemoryStorageStep(const ReadFromMemoryStorageStep &) = default;
+    ReadFromMemoryStorageStep(const ReadFromMemoryStorageStep &) = delete;
     ReadFromMemoryStorageStep & operator=(const ReadFromMemoryStorageStep &) = delete;
 
     ReadFromMemoryStorageStep(ReadFromMemoryStorageStep &&) = default;
-    ReadFromMemoryStorageStep & operator=(ReadFromMemoryStorageStep &&) = delete;
+    ReadFromMemoryStorageStep & operator=(ReadFromMemoryStorageStep &&) = default;
 
     String getName() const override { return name; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    QueryPlanStepPtr clone() const override;
 
     const StoragePtr & getStorage() const { return storage; }
 

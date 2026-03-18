@@ -1,31 +1,26 @@
 ---
-description: 'Documentation for ALTER TABLE ... MODIFY COMMENT which allow
-adding, modifying, or removing table comments'
-sidebar_label: 'ALTER TABLE ... MODIFY COMMENT'
+description: 'Documentation for ALTER TABLE ... MODIFY COMMENT'
+sidebar_label: 'COMMENT'
 sidebar_position: 51
 slug: /sql-reference/statements/alter/comment
 title: 'ALTER TABLE ... MODIFY COMMENT'
-keywords: ['ALTER TABLE', 'MODIFY COMMENT']
-doc_type: 'reference'
 ---
 
 # ALTER TABLE ... MODIFY COMMENT
 
-Adds, modifies, or removes a table comment, regardless of whether it was set 
-before or not. The comment change is reflected in both [`system.tables`](../../../operations/system-tables/tables.md) 
-and in the `SHOW CREATE TABLE` query.
+Adds, modifies, or removes comment to the table, regardless if it was set before or not. Comment change is reflected in both [system.tables](../../../operations/system-tables/tables.md) and `SHOW CREATE TABLE` query.
 
-## Syntax {#syntax}
+**Syntax**
 
-```sql
+``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-## Examples {#examples}
+**Examples**
 
-To create a table with a comment:
+Creating a table with comment (for more information, see the [COMMENT](/sql-reference/statements/create/table#comment-clause) clause):
 
-```sql
+``` sql
 CREATE TABLE table_with_comment
 (
     `k` UInt64,
@@ -35,56 +30,38 @@ ENGINE = Memory()
 COMMENT 'The temporary table';
 ```
 
-To modify the table comment:
+Modifying the table comment:
 
-```sql
-ALTER TABLE table_with_comment 
-MODIFY COMMENT 'new comment on a table';
+``` sql
+ALTER TABLE table_with_comment MODIFY COMMENT 'new comment on a table';
+SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'table_with_comment';
 ```
 
-To view the modified comment:
+Output of a new comment:
 
-```sql title="Query"
-SELECT comment 
-FROM system.tables 
-WHERE database = currentDatabase() AND name = 'table_with_comment';
-```
-
-```text title="Response"
+```text
 ┌─comment────────────────┐
 │ new comment on a table │
 └────────────────────────┘
 ```
 
-To remove the table comment:
+Removing the table comment:
 
-```sql
+``` sql
 ALTER TABLE table_with_comment MODIFY COMMENT '';
+SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'table_with_comment';
 ```
 
-To verify that the comment was removed:
+Output of a removed comment:
 
-```sql title="Query"
-SELECT comment 
-FROM system.tables 
-WHERE database = currentDatabase() AND name = 'table_with_comment';
-```
-
-```text title="Response"
+```text
 ┌─comment─┐
 │         │
 └─────────┘
 ```
 
-## Caveats {#caveats}
+**Caveats**
 
-For Replicated tables, the comment can be different on different replicas. 
-Modifying the comment applies to a single replica.
+For Replicated tables, the comment can be different on different replicas. Modifying the comment applies to a single replica.
 
-The feature is available since version 23.9. It does not work in previous 
-ClickHouse versions.
-
-## Related content {#related-content}
-
-- [`COMMENT`](/sql-reference/statements/create/table#comment-clause) clause
-- [`ALTER DATABASE ... MODIFY COMMENT`](./database-comment.md)
+The feature is available since version 23.9. It does not work in previous ClickHouse versions.

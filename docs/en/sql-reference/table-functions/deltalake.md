@@ -5,44 +5,35 @@ sidebar_label: 'deltaLake'
 sidebar_position: 45
 slug: /sql-reference/table-functions/deltalake
 title: 'deltaLake'
-doc_type: 'reference'
 ---
 
-# deltaLake table function
+# deltaLake Table Function
 
-Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system, supporting both reads and writes (from v25.10)
+Provides a read-only table-like interface to the [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3.
 
 ## Syntax {#syntax}
 
-`deltaLake` is an alias of `deltaLakeS3` which is supported for compatibility.
-
-```sql
+``` sql
 deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
-
-deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
-
-deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
-
-deltaLakeLocal(path, [,format])
 ```
 
 ## Arguments {#arguments}
 
-The arguments for this table function are the same as for the `s3`, `azureBlobStorage`, `HDFS` and `file` table functions respectively.
-The `format` argument stands for the format of data files in the Delta lake table.
+- `url` — Bucket url with path to existing Delta Lake table in S3.
+- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3).
+- `format` — The [format](/interfaces/formats) of the file.
+- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
+- `compression` — Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension.
 
-## Returned value {#returned_value}
+**Returned value**
 
-Returns a table with the specified structure for reading or writing data from/to the specified Delta Lake table.
+A table with the specified structure for reading data in the specified Delta Lake table in S3.
 
-## Examples {#examples}
+**Examples**
 
-### Reading data {#reading-data}
+Selecting rows from the table in S3 `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`:
 
-Consider a table in S3 storage at `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`.
-To read data from the table in ClickHouse, run:
-
-```sql title="Query"
+``` sql
 SELECT
     URL,
     UserAgent
@@ -51,61 +42,14 @@ WHERE URL IS NOT NULL
 LIMIT 2
 ```
 
-```response title="Response"
+``` response
 ┌─URL───────────────────────────────────────────────────────────────────┬─UserAgent─┐
 │ http://auto.ria.ua/search/index.kz/jobinmoscow/detail/55089/hasimages │         1 │
 │ http://auto.ria.ua/search/index.kz/jobinmoscow.ru/gosushi             │         1 │
 └───────────────────────────────────────────────────────────────────────┴───────────┘
 ```
 
-### Inserting data {#inserting-data}
-
-Consider a table in S3 storage at `s3://ch-docs-s3-bucket/people_10k/`.
-To insert data into the table, first enable the experimental feature:
-
-```sql
-SET allow_experimental_delta_lake_writes=1
-```
-
-Then write:
-
-```sql title="Query"
-INSERT INTO TABLE FUNCTION deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>') VALUES (10001, 'John', 'Smith', 'Male', 30)
-```
-
-```response title="Response"
-Query id: 09069b47-89fa-4660-9e42-3d8b1dde9b17
-
-Ok.
-
-1 row in set. Elapsed: 3.426 sec.
-```
-
-You can confirm the insert worked by reading the table again:
-
-```sql title="Query"
-SELECT *
-FROM deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>')
-WHERE (firstname = 'John') AND (lastname = 'Smith')
-```
-
-```response title="Response"
-Query id: 65032944-bed6-4d45-86b3-a71205a2b659
-
-   ┌────id─┬─firstname─┬─lastname─┬─gender─┬─age─┐
-1. │ 10001 │ John      │ Smith    │ Male   │  30 │
-   └───────┴───────────┴──────────┴────────┴─────┘
-```
-
-## Virtual Columns {#virtual-columns}
-
-- `_path` — Path to the file. Type: `LowCardinality(String)`.
-- `_file` — Name of the file. Type: `LowCardinality(String)`.
-- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
-- `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
-
-## Related {#related}
+**See Also**
 
 - [DeltaLake engine](engines/table-engines/integrations/deltalake.md)
 - [DeltaLake cluster table function](sql-reference/table-functions/deltalakeCluster.md)

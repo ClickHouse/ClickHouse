@@ -137,8 +137,7 @@ def check_replica_added():
 
 
 def test_modify_engine_on_restart(started_cluster):
-    ch1.query(f"DROP DATABASE IF EXISTS {database_name} ON CLUSTER cluster SYNC")
-    ch1.query(f"CREATE DATABASE {database_name} ON CLUSTER cluster")
+    ch1.query("CREATE DATABASE " + database_name + " ON CLUSTER cluster")
 
     create_tables()
 
@@ -161,5 +160,3 @@ def test_modify_engine_on_restart(started_cluster):
     ch1.restart_clickhouse()
 
     check_tables(True)
-
-    ch1.query(f"DROP DATABASE IF EXISTS {database_name} ON CLUSTER cluster SYNC")

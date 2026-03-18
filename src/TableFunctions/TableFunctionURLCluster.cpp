@@ -1,7 +1,7 @@
 #include <TableFunctions/TableFunctionURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 namespace DB
 {
@@ -36,14 +36,14 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context, true),
+        getActualTableStructure(context, /* is_insert_query */ true),
         ConstraintsDescription{},
         configuration);
 }
 
 void registerTableFunctionURLCluster(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionURLCluster>({});
+    factory.registerFunction<TableFunctionURLCluster>();
 }
 
 }

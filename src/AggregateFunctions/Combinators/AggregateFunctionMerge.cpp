@@ -1,5 +1,5 @@
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionMerge.h>
+#include "AggregateFunctionMerge.h"
+#include "AggregateFunctionCombinatorFactory.h"
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -25,8 +25,6 @@ class AggregateFunctionCombinatorMerge final : public IAggregateFunctionCombinat
 {
 public:
     String getName() const override { return "Merge"; }
-
-    bool transformsArgumentTypes() const override { return true; }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

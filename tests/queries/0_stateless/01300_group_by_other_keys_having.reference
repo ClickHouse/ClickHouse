@@ -26,19 +26,10 @@ SELECT (number % 5) * (number % 5) AS k FROM numbers(10000000) GROUP BY number %
 SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    (number % 2) * (number % 3),
     number % 3,
     number % 2
 HAVING avg(log(2) * number) > 3465735.3
 ORDER BY k ASC
-SELECT avg(log(2) * number) AS k
-FROM numbers(10000000)
-GROUP BY
-    number % 3,
-    number % 2
-HAVING avg(log(2) * number) > 3465735.3
-ORDER BY avg(log(2) * number) AS k ASC
-SETTINGS enable_analyzer = 0
 QUERY id: 0
   PROJECTION COLUMNS
     k Float64
@@ -95,7 +86,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 35, nodes: 1
       SORT id: 36, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION k
+        EXPRESSION
           FUNCTION id: 37, function_name: multiply, function_type: ordinary, result_type: Float64
             ARGUMENTS
               LIST id: 38, nodes: 2
@@ -111,17 +102,9 @@ QUERY id: 0
                       COLUMN id: 45, column_name: number, result_type: UInt64, source_id: 11
 SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
-GROUP BY
-    number % 5,
-    (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
-ORDER BY k ASC
-SELECT avg(log(2) * number) AS k
-FROM numbers(10000000)
 WHERE ((number % 5) * (number % 5)) < 5
 GROUP BY number % 5
-ORDER BY avg(log(2) * number) AS k ASC
-SETTINGS enable_analyzer = 0
+ORDER BY k ASC
 QUERY id: 0
   PROJECTION COLUMNS
     k Float64
@@ -173,7 +156,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 32, nodes: 1
       SORT id: 33, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION k
+        EXPRESSION
           FUNCTION id: 34, function_name: multiply, function_type: ordinary, result_type: Float64
             ARGUMENTS
               LIST id: 35, nodes: 2
@@ -189,17 +172,9 @@ QUERY id: 0
                       COLUMN id: 42, column_name: number, result_type: UInt64, source_id: 11
 SELECT (number % 5) * (number % 5) AS k
 FROM numbers(10000000)
-GROUP BY
-    number % 5,
-    (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
-ORDER BY k ASC
-SELECT (number % 5) * (number % 5) AS k
-FROM numbers(10000000)
 WHERE ((number % 5) * (number % 5)) < 5
 GROUP BY number % 5
-ORDER BY (number % 5) * (number % 5) AS k ASC
-SETTINGS enable_analyzer = 0
+ORDER BY k ASC
 QUERY id: 0
   PROJECTION COLUMNS
     k UInt16
@@ -251,7 +226,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 33, nodes: 1
       SORT id: 34, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION k
+        EXPRESSION
           FUNCTION id: 35, function_name: multiply, function_type: ordinary, result_type: UInt16
             ARGUMENTS
               LIST id: 36, nodes: 2
@@ -351,7 +326,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 45, nodes: 1
       SORT id: 46, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION k
+        EXPRESSION
           FUNCTION id: 47, function_name: multiply, function_type: ordinary, result_type: Float64
             ARGUMENTS
               LIST id: 48, nodes: 2
@@ -367,15 +342,15 @@ QUERY id: 0
                       COLUMN id: 55, column_name: number, result_type: UInt64, source_id: 11
 SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
+WHERE ((number % 5) * (number % 5)) < 5
 GROUP BY
     number % 5,
     (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
 ORDER BY k ASC
 SELECT (number % 5) * (number % 5) AS k
 FROM numbers(10000000)
+WHERE ((number % 5) * (number % 5)) < 5
 GROUP BY
     number % 5,
     (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
 ORDER BY k ASC

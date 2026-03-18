@@ -1,6 +1,5 @@
 #include <unordered_map>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -10,12 +9,12 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include "AggregateFunctionCombinatorFactory.h"
 
 
 namespace DB
@@ -34,7 +33,7 @@ template <typename KeyType>
 struct AggregateFunctionMapCombinatorData
 {
     using SearchType = KeyType;
-    UnorderedMapWithMemoryTracking<KeyType, AggregateDataPtr> merged_maps;
+    std::unordered_map<KeyType, AggregateDataPtr> merged_maps;
 
     static void writeKey(KeyType key, WriteBuffer & buf) { writeBinaryLittleEndian(key, buf); }
     static void readKey(KeyType & key, ReadBuffer & buf) { readBinaryLittleEndian(key, buf); }
@@ -52,7 +51,7 @@ struct AggregateFunctionMapCombinatorData<String>
     };
 
     using SearchType = std::string_view;
-    UnorderedMapWithMemoryTracking<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
+    std::unordered_map<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
 
     static void writeKey(String key, WriteBuffer & buf)
     {
@@ -77,7 +76,7 @@ struct AggregateFunctionMapCombinatorData<IPv6>
     };
 
     using SearchType = IPv6;
-    UnorderedMapWithMemoryTracking<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
+    std::unordered_map<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
 
     static void writeKey(const IPv6 & key, WriteBuffer & buf)
     {
@@ -164,7 +163,7 @@ public:
 
             if constexpr (std::is_same_v<KeyType, String>)
             {
-                std::string_view key_ref;
+                StringRef key_ref;
                 if (key_type->getTypeId() == TypeIndex::FixedString)
                     key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(offset + i);
                 else if (key_type->getTypeId() == TypeIndex::IPv6)
@@ -172,7 +171,7 @@ public:
                 else
                     key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
 
-                key = key_ref;
+                key = key_ref.toView();
             }
             else
             {
@@ -299,7 +298,7 @@ public:
         auto & merged_maps = this->data(place).merged_maps;
 
         // sort the keys
-        VectorWithMemoryTracking<KeyType> keys;
+        std::vector<KeyType> keys;
         keys.reserve(merged_maps.size());
         for (auto & it : merged_maps)
         {
@@ -341,8 +340,6 @@ class AggregateFunctionCombinatorMap final : public IAggregateFunctionCombinator
 {
 public:
     String getName() const override { return "Map"; }
-
-    bool transformsArgumentTypes() const override { return true; }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

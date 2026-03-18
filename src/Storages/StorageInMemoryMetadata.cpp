@@ -7,17 +7,17 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSQLSecurity.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Storages/IndicesDescription.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
@@ -33,16 +33,10 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_QUERY;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
-    , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
-    , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
-    , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
-    , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
@@ -61,7 +55,6 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , sql_security_type(other.sql_security_type)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
-    , datalake_table_state(other.datalake_table_state)
 {
 }
 
@@ -71,10 +64,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         return *this;
 
     columns = other.columns;
-    add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
-    add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
-    add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
-    escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
@@ -98,8 +87,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     sql_security_type = other.sql_security_type;
     comment = other.comment;
     metadata_version = other.metadata_version;
-    datalake_table_state = other.datalake_table_state;
-
     return *this;
 }
 
@@ -132,7 +119,7 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
     return access_control.getID<User>(*definer);
 }
 
-ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info) const
+ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context) const
 {
     if (!sql_security_type)
         return Context::createCopy(context);
@@ -141,14 +128,11 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         return Context::createCopy(context);
 
     auto new_context = Context::createCopy(context->getGlobalContext());
-    if (client_info)
-        new_context->setClientInfo(*client_info);
-    else
-        new_context->setClientInfo(context->getClientInfo());
+    new_context->setClientInfo(context->getClientInfo());
     new_context->makeQueryContext();
 
     const auto & database = context->getCurrentDatabase();
-    if (!database.empty() && database != new_context->getCurrentDatabase())
+    if (!database.empty())
         new_context->setCurrentDatabase(database);
 
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
@@ -172,15 +156,6 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
-    new_context->setSetting("allow_ddl", 1);
-
-    // parallel replicas related
-    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
-    {
-        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
-        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
-        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
-    }
 
     return new_context;
 }
@@ -238,11 +213,6 @@ void StorageInMemoryMetadata::setRefresh(ASTPtr refresh_)
 void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
 {
     metadata_version = metadata_version_;
-}
-
-void StorageInMemoryMetadata::setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_)
-{
-    datalake_table_state = datalake_table_state_;
 }
 
 StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
@@ -619,17 +589,6 @@ ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
         return settings_changes->clone();
     return nullptr;
 }
-
-Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) const
-{
-    if (!settings_changes)
-        return Field();
-
-    const auto & changes = settings_changes->as<const ASTSetQuery &>().changes;
-    auto it = std::ranges::find_if(changes, [&setting_name](const SettingChange & change) { return change.name == setting_name; });
-    return it != changes.end() ? it->value : Field();
-}
-
 const SelectQueryDescription & StorageInMemoryMetadata::getSelectQuery() const
 {
     return select;
@@ -640,20 +599,10 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
     return select.select_query != nullptr;
 }
 
-bool StorageInMemoryMetadata::hasStatistics() const
-{
-    for (const auto & column : columns)
-    {
-        if (!column.statistics.empty())
-            return true;
-    }
-    return false;
-}
-
 namespace
 {
-    using NamesAndTypesMap = HashMapWithSavedHash<std::string_view, const IDataType *, StringViewHash>;
-    using UniqueStrings = HashSetWithSavedHash<std::string_view, StringViewHash>;
+    using NamesAndTypesMap = HashMapWithSavedHash<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = HashSetWithSavedHash<StringRef, StringRefHash>;
 
     NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
     {
@@ -714,7 +663,8 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
 
         const auto * available_type = it->getMapped();
 
-        if (!column.type->equals(*available_type)
+        if (!available_type->hasDynamicSubcolumnsDeprecated()
+            && !column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -723,7 +673,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 available_type->getName(),
                 column.type->getName());
 
-        if (unique_names.contains(column.name))
+        if (unique_names.end() != unique_names.find(column.name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 column.name);
@@ -761,7 +711,8 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
         const auto * provided_column_type = it->getMapped();
         const auto * available_column_type = jt->getMapped();
 
-        if (!provided_column_type->equals(*available_column_type)
+        if (!provided_column_type->hasDynamicSubcolumnsDeprecated()
+            && !provided_column_type->equals(*available_column_type)
             && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -770,7 +721,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
                 available_column_type->getName(),
                 provided_column_type->getName());
 
-        if (unique_names.contains(name))
+        if (unique_names.end() != unique_names.find(name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 name);
@@ -804,7 +755,8 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!column.type->equals(*available_type)
+        if (!available_type->hasDynamicSubcolumnsDeprecated()
+            && !column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -824,91 +776,5 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
     }
 }
 
-std::unordered_map<std::string, ColumnSize> StorageInMemoryMetadata::getFakeColumnSizes() const
-{
-    std::unordered_map<std::string, ColumnSize> sizes;
-    for (const auto & col : columns)
-        sizes[col.name] = ColumnSize {.marks = 1000, .data_compressed = 100000000, .data_uncompressed = 1000000000};
-    return sizes;
-}
 
-NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const
-{
-    auto exclude_map = exclude.getNameToTypeMap();
-    NameSet names;
-    for (const auto & col : columns)
-        if (!col.default_desc.expression && !exclude_map.contains(col.name))
-            names.insert(col.name);
-    return names;
-}
-
-void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context)
-{
-    // Ephemeral columns are excluded from implicit indices because they are not persisted;
-    // this is a key behavioral change (see PR description) to avoid creating indices for columns
-    // that do not exist in storage and cannot be indexed.
-    if (column.default_desc.kind == ColumnDefaultKind::Ephemeral)
-        return;
-
-    // Skip ALIAS columns that are just aliases to other columns (not expressions).
-    // Only create implicit indices for ALIAS columns with actual expressions.
-    // For example: `a ALIAS b` should be skipped, but `a ALIAS b > 0` should get an index.
-    if (column.default_desc.kind == ColumnDefaultKind::Alias && column.default_desc.expression)
-    {
-        // If the expression is just a simple identifier (column reference), skip creating implicit index
-        // because the underlying column will already have its own implicit index if needed.
-        if (column.default_desc.expression->as<ASTIdentifier>())
-            return;
-    }
-
-    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns)
-        || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(column.type) && add_minmax_index_for_temporal_columns))
-    {
-        bool minmax_index_exists = false;
-
-        for (const auto & index : secondary_indices)
-        {
-            if (index.column_names.front() == column.name && index.type == "minmax")
-            {
-                minmax_index_exists = true;
-                break;
-            }
-        }
-
-        if (!minmax_index_exists)
-        {
-            auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
-            bool valid_index = true;
-            try
-            {
-                MergeTreeIndexFactory::instance().validate(index, false);
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::BAD_ARGUMENTS || e.code() == ErrorCodes::INCORRECT_QUERY)
-                    valid_index = false;
-                else
-                    throw;
-            }
-            if (valid_index)
-                secondary_indices.push_back(std::move(index));
-        }
-
-    }
-}
-
-void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column_name)
-{
-    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
-    {
-        /// We check the index name rather than column_names because for ALIAS columns,
-        /// the column_names contains the resolved underlying expression columns, not the alias name.
-        /// For example, for `alias UInt64 ALIAS value>0`, the implicit index is named
-        /// `auto_minmax_index_alias` but its column_names contains `["value"]`, not `["alias"]`.
-        if (index_it->isImplicitlyCreated() && index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
-            index_it = secondary_indices.erase(index_it);
-        else
-            ++index_it;
-    }
-}
 }

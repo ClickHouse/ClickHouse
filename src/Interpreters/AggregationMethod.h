@@ -48,7 +48,7 @@ struct AggregationMethodOneNumber
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
     // Insert the key from the hash table into columns.
-    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/, const IColumn::SerializationSettings * settings);
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/);
 };
 
 /// For the case where there is one string key.
@@ -81,9 +81,9 @@ struct AggregationMethodString
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnString *>(key_columns[0])->insertData(key.data(), key.size());
+        static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
 };
 
@@ -117,7 +117,7 @@ struct AggregationMethodStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &);
 };
 
 /// For the case where there is one fixed-length string key.
@@ -150,7 +150,7 @@ struct AggregationMethodFixedString
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &);
 };
 
 /// Same as above but without cache
@@ -183,8 +183,7 @@ struct AggregationMethodFixedStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(
-        std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &);
 };
 
 /// Single low cardinality column.
@@ -215,11 +214,8 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(
-        const Key & key,
-        std::vector<IColumn *> & key_columns_low_cardinality,
-        const Sizes & /*key_sizes*/,
-        const IColumn::SerializationSettings * settings);
+    static void insertKeyIntoColumns(const Key & key,
+         std::vector<IColumn *> & key_columns_low_cardinality, const Sizes & /*key_sizes*/);
 };
 
 /// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
@@ -263,8 +259,7 @@ struct AggregationMethodKeysFixed
         return State::shuffleKeyColumns(key_columns, key_sizes);
     }
 
-    static void insertKeyIntoColumns(
-        const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const IColumn::SerializationSettings * settings);
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes);
 };
 
 /** Aggregates by concatenating serialized key values.
@@ -283,9 +278,7 @@ struct AggregationMethodSerialized
 
     AggregationMethodSerialized() = default;
 
-    explicit AggregationMethodSerialized(size_t size_hint) : data(size_hint)
-    {
-    }
+    explicit AggregationMethodSerialized(size_t size_hint) : data(size_hint) { }
 
     template <typename Other>
     explicit AggregationMethodSerialized(const Other & other) : data(other.data)
@@ -303,7 +296,7 @@ struct AggregationMethodSerialized
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &);
 };
 
 template <typename TData>

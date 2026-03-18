@@ -6,6 +6,7 @@
     <query_metric_log remove="remove" />
     <query_views_log remove="remove" />
     <metric_log remove="remove"/>
+    <latency_log remove="remove"/>
     <error_log remove="remove"/>
     <text_log remove="remove"/>
     <trace_log remove="remove"/>
@@ -14,7 +15,6 @@
     <part_log remove="remove" />
     <crash_log remove="remove" />
     <opentelemetry_span_log remove="remove" />
-    <iceberg_metadata_log remove="remove" />
     <!-- just in case it will be enabled by default -->
     <zookeeper_log remove="remove" />
     <transactions_info_log remove="remove" />

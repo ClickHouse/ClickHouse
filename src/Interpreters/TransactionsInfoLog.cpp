@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/Context.h>

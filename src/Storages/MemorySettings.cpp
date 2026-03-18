@@ -30,11 +30,11 @@ struct MemorySettingsImpl : public BaseSettings<MemorySettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MemorySettings##TYPE NAME = &MemorySettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MemorySettings##TYPE NAME = &MemorySettingsImpl ::NAME;
 
 namespace MemorySetting
 {
-MEMORY_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+MEMORY_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -80,7 +80,7 @@ void MemorySettings::loadFromQuery(ASTStorage & storage_def)
 
 ASTPtr MemorySettings::getSettingsChangesQuery()
 {
-    auto settings_ast = make_intrusive<ASTSetQuery>();
+    auto settings_ast = std::make_shared<ASTSetQuery>();
     settings_ast->is_standalone = false;
     for (const auto & change : impl->changes())
         settings_ast->changes.push_back(change);

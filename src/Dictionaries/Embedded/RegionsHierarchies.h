@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <unordered_map>
 #include <Poco/Exception.h>
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
-#include <Dictionaries/Embedded/RegionsHierarchy.h>
+#include "GeodataProviders/IHierarchiesProvider.h"
+#include "RegionsHierarchy.h"
 
 namespace DB
 {
@@ -15,7 +15,7 @@ namespace DB
 class RegionsHierarchies
 {
 private:
-    using Container = UnorderedMapWithMemoryTracking<std::string, RegionsHierarchy>;
+    using Container = std::unordered_map<std::string, RegionsHierarchy>;
     Container data;
 
 public:

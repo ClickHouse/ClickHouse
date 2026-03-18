@@ -47,7 +47,7 @@ static String toValidUTF8String(const String & name, const FormatSettings & sett
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
-    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_), settings(settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
@@ -89,18 +89,18 @@ template <typename StringColumnType>
 static void writeBSONString(const IColumn & column, size_t row_num, const String & name, WriteBuffer & buf, bool as_bson_string)
 {
     const auto & string_column = assert_cast<const StringColumnType &>(column);
-    std::string_view data = string_column.getDataAt(row_num);
+    StringRef data = string_column.getDataAt(row_num);
     if (as_bson_string)
     {
         writeBSONTypeAndKeyName(BSONType::STRING, name, buf);
-        writeBSONSize(data.size() + 1, buf);
+        writeBSONSize(data.size + 1, buf);
         writeString(data, buf);
         writeChar(0x00, buf);
     }
     else
     {
         writeBSONTypeAndKeyName(BSONType::BINARY, name, buf);
-        writeBSONSize(data.size(), buf);
+        writeBSONSize(data.size, buf);
         writeBSONType(BSONBinarySubtype::BINARY, buf);
         writeString(data, buf);
     }
@@ -167,7 +167,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         case TypeIndex::String:
         {
             const auto & string_column = assert_cast<const ColumnString &>(column);
-            return size + sizeof(BSONSizeT) + string_column.getDataAt(row_num).size() + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
+            return size + sizeof(BSONSizeT) + string_column.getDataAt(row_num).size + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
         }
         case TypeIndex::FixedString:
         {
@@ -460,7 +460,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
             const auto & nested_columns = tuple_column.getColumns();
 
-            BSONType bson_type =  tuple_type->hasExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
+            BSONType bson_type =  tuple_type->haveExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
             writeBSONTypeAndKeyName(bson_type, name, out);
 
             String current_path = path + "." + name;
@@ -542,11 +542,10 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "BSONEachRow",
-        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings, FormatFilterInfoPtr /*format_filter_info*/)
-        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), _format_settings); });
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
+        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
     factory.markOutputFormatNotTTYFriendly("BSONEachRow");
-    factory.setContentType("BSONEachRow", "application/octet-stream");
 }
 
 }

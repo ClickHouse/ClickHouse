@@ -1,7 +1,6 @@
 #pragma once
 #include <Core/Settings.h>
 #include <Functions/IFunctionCustomWeek.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {

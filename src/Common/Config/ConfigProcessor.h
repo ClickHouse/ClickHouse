@@ -20,19 +20,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 
-namespace Poco
-{
-class Logger;
-}
+namespace Poco { class Logger; }
 
 namespace zkutil
 {
-class ZooKeeperNodeCache;
-}
-
-namespace Coordination
-{
-using EventPtr = std::shared_ptr<Poco::Event>;
+    class ZooKeeperNodeCache;
+    using EventPtr = std::shared_ptr<Poco::Event>;
 }
 
 namespace DB
@@ -51,8 +44,7 @@ public:
         const std::string & path,
         bool throw_on_bad_incl = false,
         bool log_to_console = false,
-        const Substitutions & substitutions = Substitutions(),
-        bool throw_on_bad_include_from = true);
+        const Substitutions & substitutions = Substitutions());
 
     /// Perform config includes and substitutions and return the resulting XML-document.
     ///
@@ -71,22 +63,10 @@ public:
     XMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
-        const Coordination::EventPtr & zk_changed_event = nullptr,
+        const zkutil::EventPtr & zk_changed_event = nullptr,
         bool is_config_changed = true);
 
-    static void processIncludes(
-        XMLDocumentPtr & config,
-        const Substitutions & substitutions,
-        const std::string & include_from_path,
-        bool throw_on_bad_incl,
-        Poco::XML::DOMParser & dom_parser,
-        const LoggerPtr & log,
-        std::unordered_set<std::string> * contributing_zk_paths = {},
-        std::vector<std::string> * contributing_files = {},
-        zkutil::ZooKeeperNodeCache * zk_node_cache = {},
-        const Coordination::EventPtr & zk_changed_event = {});
-
-    static XMLDocumentPtr parseConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser);
+    XMLDocumentPtr parseConfig(const std::string & config_path);
 
     /// These configurations will be used if there is no configuration file.
     static void registerEmbeddedConfig(std::string name, std::string_view content);
@@ -114,8 +94,8 @@ public:
     /// If fallback_to_preprocessed is true, then if KeeperException is thrown during config
     /// processing, load the configuration from the preprocessed file.
     LoadedConfig loadConfigWithZooKeeperIncludes(
-        zkutil::ZooKeeperNodeCache * zk_node_cache,
-        const Coordination::EventPtr & zk_changed_event,
+        zkutil::ZooKeeperNodeCache & zk_node_cache,
+        const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false,
         bool is_config_changed = true);
 
@@ -154,7 +134,6 @@ private:
     std::string preprocessed_path;
 
     bool throw_on_bad_incl;
-    bool throw_on_bad_include_from;
 
     LoggerPtr log;
     Poco::AutoPtr<Poco::Channel> channel_ptr;
@@ -183,23 +162,19 @@ private:
     void hideRecursive(Poco::XML::Node * config_root);
     XMLDocumentPtr hideElements(XMLDocumentPtr xml_tree);
 
-    static void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
+    void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 
     /// If config root node name is not 'clickhouse' and merging config's root node names doesn't match, bypasses merging and returns false.
     /// For compatibility root node 'yandex' considered equal to 'clickhouse'.
     bool merge(XMLDocumentPtr config, XMLDocumentPtr with);
 
-    static void doIncludesRecursive(
+    void doIncludesRecursive(
             XMLDocumentPtr config,
             XMLDocumentPtr include_from,
-            const Substitutions & substitutions,
-            bool throw_on_bad_incl,
-            Poco::XML::DOMParser & dom_parser,
-            const LoggerPtr & log,
             Poco::XML::Node * node,
             zkutil::ZooKeeperNodeCache * zk_node_cache,
-            const Coordination::EventPtr & zk_changed_event,
-            std::unordered_set<std::string> * contributing_zk_paths);
+            const zkutil::EventPtr & zk_changed_event,
+            std::unordered_set<std::string> & contributing_zk_paths);
 };
 
 }

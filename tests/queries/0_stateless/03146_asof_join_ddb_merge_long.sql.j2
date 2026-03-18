@@ -1,7 +1,7 @@
 -- Tags: long
 
-SET enable_analyzer=1;
-SET max_execution_time = 600;
+SET allow_experimental_analyzer=1;
+
 SET session_timezone = 'UTC';
 
 {% for join_algorithm in ['default', 'full_sorting_merge'] -%}

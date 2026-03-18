@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel, long, no-msan
-
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
+# Tags: race, zookeeper, no-parallel, long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,7 +18,7 @@ function create_db()
         $CLICKHOUSE_CLIENT --query \
         "create database if not exists ${CLICKHOUSE_DATABASE}_repl_01111_$SUFFIX engine=Replicated('/test/01111/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '$SHARD', '$REPLICA')" \
          2>&1| grep -Fa "Exception: " | grep -Fv "REPLICA_ALREADY_EXISTS" | grep -Fiv "Will not try to start it up" | \
-         grep -Fv "Coordination::Exception" | grep -Fv "already contains some data and it does not look like Replicated database path" | grep -Fv QUERY_WAS_CANCELLED
+         grep -Fv "Coordination::Exception" | grep -Fv "already contains some data and it does not look like Replicated database path"
         sleep 0.$RANDOM
     done
 }
@@ -33,7 +31,7 @@ function drop_db()
         if [[ "$database" == "$CLICKHOUSE_DATABASE" ]]; then continue; fi
         if [ -z "$database" ]; then continue; fi
         $CLICKHOUSE_CLIENT --query \
-        "drop database if exists $database" 2>&1| grep -Fa "Exception: " | grep -Fv DATABASE_NOT_EMPTY | grep -Fv QUERY_WAS_CANCELLED
+        "drop database if exists $database" 2>&1| grep -Fa "Exception: "
         sleep 0.$RANDOM
     done
 }
@@ -45,7 +43,7 @@ function sync_db()
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$database" ]; then continue; fi
         $CLICKHOUSE_CLIENT --receive_timeout=1 -q \
-        "system sync database replica $database" 2>&1| grep -Fa "Exception: " | grep -Fv TIMEOUT_EXCEEDED | grep -Fv "only with Replicated engine" | grep -Fv UNKNOWN_DATABASE | grep -Fv UNFINISHED | grep -Fv QUERY_WAS_CANCELLED
+        "system sync database replica $database" 2>&1| grep -Fa "Exception: " | grep -Fv TIMEOUT_EXCEEDED | grep -Fv "only with Replicated engine" | grep -Fv UNKNOWN_DATABASE
         sleep 0.$RANDOM
     done
 }
@@ -56,9 +54,9 @@ function create_table()
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$database" ]; then continue; fi
-        $CLICKHOUSE_CLIENT --lock_acquire_timeout=120 --distributed_ddl_task_timeout=0 -q \
+        $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=0 -q \
         "create table $database.rmt_${RANDOM}_${RANDOM}_${RANDOM} (n int) engine=ReplicatedMergeTree order by tuple() -- suppress $CLICKHOUSE_TEST_ZOOKEEPER_PREFIX" \
-        2>&1| grep -Fa "Exception: " | grep -Fv "Macro 'uuid' in engine arguments is" | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv TABLE_IS_DROPPED | grep -Fv UNFINISHED | grep -Fv TIMEOUT_EXCEEDED | grep -Fv QUERY_WAS_CANCELLED
+        2>&1| grep -Fa "Exception: " | grep -Fv "Macro 'uuid' and empty arguments" | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv TABLE_IS_DROPPED
         sleep 0.$RANDOM
     done
 }
@@ -69,9 +67,9 @@ function alter_table()
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$table" ]; then continue; fi
-        $CLICKHOUSE_CLIENT --max_execution_time 300 --lock_acquire_timeout=120 --distributed_ddl_task_timeout=0 -q \
+        $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=0 -q \
         "alter table $table update n = n + (select max(n) from merge(REGEXP('${CLICKHOUSE_DATABASE}.*'), '.*')) where 1 settings allow_nondeterministic_mutations=1" \
-        2>&1| grep -Fa "Exception: " | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY | grep -Fv TABLE_IS_DROPPED | grep -Fv ABORTED | grep -Fv "There are no tables satisfied provided regexp" | grep -Fv UNFINISHED | grep -Fv TIMEOUT_EXCEEDED | grep -Fv QUERY_WAS_CANCELLED
+        2>&1| grep -Fa "Exception: " | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY | grep -Fv TABLE_IS_DROPPED | grep -Fv ABORTED | grep -Fv "There are no tables satisfied provided regexp"
         sleep 0.$RANDOM
     done
 }
@@ -83,7 +81,7 @@ function insert()
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$table" ]; then continue; fi
         $CLICKHOUSE_CLIENT -q \
-        "insert into $table values ($RANDOM)" 2>&1| grep -Fa "Exception: " | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY | grep -Fv TABLE_IS_DROPPED | grep -Fv TABLE_UUID_MISMATCH | grep -Fv QUERY_WAS_CANCELLED
+        "insert into $table values ($RANDOM)" 2>&1| grep -Fa "Exception: " | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY | grep -Fv TABLE_IS_DROPPED
     done
 }
 

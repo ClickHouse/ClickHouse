@@ -1,7 +1,0 @@
-([2,3],'Hello',1)
-('hello',1)
-('world',2)
-('clickhouse',3)
-1	hello
-2	world
-3	clickhouse

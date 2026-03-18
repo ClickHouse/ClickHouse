@@ -1,8 +1,0 @@
-output_format_parallel_formatting=1
-output_format_parallel_formatting	1	0
-output_format_parallel_formatting=0
-output_format_parallel_formatting	0	1
-output_format_parallel_formatting=1&output_format_parallel_formatting=0
-output_format_parallel_formatting	0	1
-output_format_parallel_formatting=0&output_format_parallel_formatting=1
-output_format_parallel_formatting	1	0

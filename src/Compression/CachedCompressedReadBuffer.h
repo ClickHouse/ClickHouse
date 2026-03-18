@@ -1,14 +1,15 @@
 #pragma once
 
 #include <memory>
-#include <ctime>
+#include <time.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Compression/CompressedReadBufferBase.h>
+#include "CompressedReadBufferBase.h"
 #include <IO/UncompressedCache.h>
 
 
 namespace DB
 {
+
 
 /** A buffer for reading from a compressed file using the cache of decompressed blocks.
   * The external cache is passed as an argument to the constructor.
@@ -51,8 +52,6 @@ public:
     /// Seek is lazy. It doesn't move the position anywhere, just remember them and perform actual
     /// seek inside nextImpl.
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block) override;
-
-    off_t getPosition() const override { return file_pos; }
 
     void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
     {

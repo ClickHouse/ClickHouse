@@ -1,4 +1,4 @@
-#include <Dictionaries/DictionarySourceFactory.h>
+#include "DictionarySourceFactory.h"
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "DictionaryStructure.h"
 
 namespace DB
 {
@@ -75,15 +75,6 @@ void DictionarySourceFactory::registerSource(const std::string & source_type, Cr
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionarySourceFactory: the source name '{}' is not unique", source_type);
 }
 
-std::vector<String> DictionarySourceFactory::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
-{
-    std::vector<String> result; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    result.reserve(registered_sources.size());
-    for (const auto & pair : registered_sources)
-        result.push_back(pair.first);
-    return result;
-}
-
 DictionarySourcePtr DictionarySourceFactory::create(
     const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
@@ -108,7 +99,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     {
         const auto & create_source = found->second;
         auto sample_block = createSampleBlock(dict_struct);
-        return create_source(name, dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
+        return create_source(dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
     }
 
     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,

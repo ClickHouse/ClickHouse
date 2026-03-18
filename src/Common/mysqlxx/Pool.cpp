@@ -367,7 +367,7 @@ void Pool::initialize()
 
 Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
-    auto conn_ptr = std::make_unique<Connection>();
+    std::unique_ptr conn_ptr = std::make_unique<Connection>();
 
     try
     {

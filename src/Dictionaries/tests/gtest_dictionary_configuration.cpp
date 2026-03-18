@@ -1,6 +1,8 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/DumpASTNode.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -27,7 +29,7 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
 {
     if (!registered)
     {
-        registerDictionaries();
+        registerDictionaries(false);
         registered = true;
     }
 
@@ -100,7 +102,7 @@ TEST(ConvertDictionaryAST, TrickyAttributes)
 {
     if (!registered)
     {
-        registerDictionaries();
+        registerDictionaries(false);
         registered = true;
     }
 
@@ -144,7 +146,7 @@ TEST(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
 {
     if (!registered)
     {
-        registerDictionaries();
+        registerDictionaries(false);
         registered = true;
     }
 
@@ -195,7 +197,7 @@ TEST(ConvertDictionaryAST, ComplexSource)
 {
     if (!registered)
     {
-        registerDictionaries();
+        registerDictionaries(false);
         registered = true;
     }
 

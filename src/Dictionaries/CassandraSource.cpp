@@ -8,7 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/ExternalResultDescription.h>
 #include <IO/ReadHelpers.h>
-#include <Dictionaries/CassandraSource.h>
+#include "CassandraSource.h"
 
 
 namespace DB
@@ -23,7 +23,7 @@ namespace ErrorCodes
 CassandraSource::CassandraSource(
     const CassSessionShared & session_,
     const String & query_str,
-    SharedHeader & sample_block,
+    const Block & sample_block,
     size_t max_block_size_)
     : ISource(sample_block)
     , session(session_)
@@ -31,7 +31,7 @@ CassandraSource::CassandraSource(
     , max_block_size(max_block_size_)
     , has_more_pages(cass_true)
 {
-    description.init(*sample_block);
+    description.init(sample_block);
     cassandraCheck(cass_statement_set_paging_size(statement, static_cast<int>(max_block_size)));
 }
 
@@ -188,7 +188,7 @@ Chunk CassandraSource::generate()
             {
                 ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[col_idx]);
                 insertValue(column_nullable.getNestedColumn(), description.types[col_idx].first, val);
-                column_nullable.getNullMapData().emplace_back(false);
+                column_nullable.getNullMapData().emplace_back(0);
             }
             else
                 insertValue(*columns[col_idx], description.types[col_idx].first, val);

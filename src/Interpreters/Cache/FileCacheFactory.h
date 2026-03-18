@@ -5,7 +5,6 @@
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
-#include <unordered_set>
 #include <mutex>
 
 namespace DB
@@ -37,7 +36,6 @@ public:
 
     using FileCacheDataPtr = std::shared_ptr<FileCacheData>;
     using CacheByName = std::unordered_map<std::string, FileCacheDataPtr>;
-    using Caches = std::unordered_set<FileCacheDataPtr>;
 
     static FileCacheFactory & instance();
 
@@ -54,11 +52,10 @@ public:
         const std::string & config_path);
 
     CacheByName getAll();
-    Caches getUniqueInstances();
 
     FileCacheDataPtr getByName(const std::string & cache_name);
 
-    void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config, ContextPtr context);
+    void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config);
 
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -70,9 +67,5 @@ private:
     std::mutex mutex;
     CacheByName caches_by_name;
 };
-
-/// Get default path prefix for non-disk caches.
-/// For disk we have a similar method in registerDiskCache.
-std::string getPathPrefixForRelativeCachePath(ContextPtr context);
 
 }

@@ -18,11 +18,11 @@
 (defrecord RegisterClient [conn]
   client/Client
   (open! [this test node]
-    (assoc this :conn (zk-connect node 9181 30000 (:with-auth test))))
+    (assoc this :conn (zk-connect node 9181 30000)))
 
   (setup! [this test]
     (chu/exec-with-retries 30 (fn []
-                        (zk-create-range conn 300 :with-acl (:with-auth test)))))
+                        (zk-create-range conn 300))))
 
   (invoke! [_ test op]
     (let [[k v] (:value op)

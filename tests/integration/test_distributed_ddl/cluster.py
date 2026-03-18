@@ -50,7 +50,6 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
                     user_configs=user_configs,
                     macros={"layer": 0, "shard": i // 2 + 1, "replica": i % 2 + 1},
                     with_zookeeper=True,
-                    with_remote_database_disk=False,  # Disable `with_remote_database_disk` because Keeper might reject connections from the instance.
                 )
 
             self.start()
@@ -62,24 +61,20 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             # Select sacrifice instance to test CONNECTION_LOSS and server fail on it
             sacrifice = self.instances["ch4"]
             self.pm_random_drops = PartitionManager()
-            self.pm_random_drops.add_rule(
+            self.pm_random_drops._add_rule(
                 {
-                    "instance": sacrifice,
                     "probability": 0.01,
                     "destination": sacrifice.ip_address,
                     "source_port": 2181,
                     "action": "REJECT --reject-with tcp-reset",
-                    "protocol": "tcp",
                 }
             )
-            self.pm_random_drops.add_rule(
+            self.pm_random_drops._add_rule(
                 {
-                    "instance": sacrifice,
                     "probability": 0.01,
                     "source": sacrifice.ip_address,
                     "destination_port": 2181,
                     "action": "REJECT --reject-with tcp-reset",
-                    "protocol": "tcp",
                 }
             )
 
@@ -96,10 +91,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             )
 
             self.ddl_check_query(
-                instance, "DROP DATABASE IF EXISTS test ON CLUSTER 'cluster' SYNC"
-            )
-            self.ddl_check_query(
-                instance, "CREATE DATABASE test ON CLUSTER 'cluster'"
+                instance, "CREATE DATABASE IF NOT EXISTS test ON CLUSTER 'cluster'"
             )
 
         except Exception as e:

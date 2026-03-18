@@ -51,7 +51,7 @@ class BSONEachRowRowInputFormat final : public IRowInputFormat
 {
 public:
     BSONEachRowRowInputFormat(
-        ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
+        ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "BSONEachRowRowInputFormat"; }
     void resetParser() override;
@@ -64,9 +64,9 @@ private:
     bool supportsCountRows() const override { return true; }
     size_t countRows(size_t max_block_size) override;
 
-    size_t columnIndex(std::string_view name, size_t key_index);
+    size_t columnIndex(const StringRef & name, size_t key_index);
 
-    using ColumnReader = std::function<void(std::string_view name, BSONType type)>;
+    using ColumnReader = std::function<void(StringRef name, BSONType type)>;
 
     bool readField(IColumn & column, const DataTypePtr & data_type, BSONType bson_type);
     void skipUnknownField(BSONType type, const String & key_name);

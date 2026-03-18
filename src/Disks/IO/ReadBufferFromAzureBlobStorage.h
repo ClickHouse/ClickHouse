@@ -1,16 +1,14 @@
 #pragma once
 
-#include <memory>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Common/MultiVersion.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
 namespace DB
 {
@@ -52,13 +50,9 @@ public:
 
     bool supportsReadAt() override { return true; }
 
-    /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
-    /// This method returns metadata from the last request. If there were no requests, it will throw exception.
-    ObjectMetadata getObjectMetadataFromTheLastRequest() const;
-
 private:
-    void initialize(size_t attempt);
-    void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
+
+    void initialize();
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
@@ -76,6 +70,7 @@ private:
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
 
+
     off_t read_until_position = 0;
 
     off_t offset = 0;
@@ -85,8 +80,6 @@ private:
     size_t data_capacity;
 
     LoggerPtr log = getLogger("ReadBufferFromAzureBlobStorage");
-    /// No-way to make metadata non-mutable, because readBig method is const.
-    mutable MultiVersion<std::optional<ObjectMetadata>> last_object_metadata;
 };
 
 }

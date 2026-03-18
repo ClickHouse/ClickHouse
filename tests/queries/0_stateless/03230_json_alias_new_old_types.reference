@@ -1,0 +1,3 @@
+{"a":"42"}	JSON
+{"a":42}	Object(\'json\')
+{"a":"42"}	JSON

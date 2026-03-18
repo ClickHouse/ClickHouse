@@ -16,7 +16,7 @@ class TemplateBlockOutputFormat : public IOutputFormat
 {
     using EscapingRule = FormatSettings::EscapingRule;
 public:
-    TemplateBlockOutputFormat(SharedHeader header_, WriteBuffer & out_, const FormatSettings & settings_,
+    TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
                               ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                               std::string row_between_delimiter_);
 

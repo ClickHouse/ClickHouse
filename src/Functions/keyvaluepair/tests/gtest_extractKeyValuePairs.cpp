@@ -32,7 +32,7 @@ auto ToColumnMap(const auto & keys, const auto & values, const ColumnPtr offsets
 std::string PrintMap(const auto & keys, const auto & values)
 {
     auto map_column = ToColumnMap(keys, values);
-    auto serialization = DataTypeFactory::instance().get("Map(String, String)")->getDefaultSerialization();
+    auto serialization = DataTypeFactory::instance().get("Map(String, String)")->getSerialization(ISerialization::Kind::DEFAULT);
 
     WriteBufferFromOwnString buff;
     serialization->serializeTextJSON(*map_column, 0, buff, FormatSettings{});
@@ -47,7 +47,6 @@ struct KeyValuePairExtractorTestParam
     KeyValuePairExtractorBuilder builder;
     std::string input;
     std::vector<std::pair<std::string, std::string>> expected;
-    bool use_escaping = false;
 };
 
 struct extractKVPairKeyValuePairExtractorTest : public ::testing::TestWithParam<KeyValuePairExtractorTestParam>
@@ -55,29 +54,16 @@ struct extractKVPairKeyValuePairExtractorTest : public ::testing::TestWithParam<
 
 TEST_P(extractKVPairKeyValuePairExtractorTest, Match)
 {
-    const auto & [builder, input, expected, use_escaping] = GetParam();
+    const auto & [builder, input, expected] = GetParam();
     SCOPED_TRACE(input);
+
+    auto kv_parser = builder.build();
+    SCOPED_TRACE(typeid(kv_parser).name());
 
     auto keys = ColumnString::create();
     auto values = ColumnString::create();
 
-    std::size_t pairs_found = 0;
-
-    if (use_escaping)
-    {
-        auto kv_parser = builder.buildWithEscaping();
-        SCOPED_TRACE(typeid(kv_parser).name());
-
-        pairs_found = kv_parser.extract(input, keys, values);
-    }
-    else
-    {
-        auto kv_parser = builder.buildWithoutEscaping();
-        SCOPED_TRACE(typeid(kv_parser).name());
-
-        pairs_found = kv_parser.extract(input, keys, values);
-    }
-
+    auto pairs_found = kv_parser->extract(input, keys, values);
     ASSERT_EQ(expected.size(), pairs_found);
 
     size_t i = 0;
@@ -116,10 +102,9 @@ INSTANTIATE_TEST_SUITE_P(Simple, extractKVPairKeyValuePairExtractorTest,
             },
             {
                 // same as case 1, but with another handler
-                KeyValuePairExtractorBuilder().withQuotingCharacter('\''),
+                KeyValuePairExtractorBuilder().withQuotingCharacter('\'').withEscaping(),
                 R"in(name:'neymar';'age':31;team:psg;nationality:brazil,last_key:last_value)in",
-                neymar_expected,
-                true
+                neymar_expected
             }
         }
     )
@@ -131,13 +116,12 @@ INSTANTIATE_TEST_SUITE_P(InvalidEscapeSeqInValue, extractKVPairKeyValuePairExtra
         {
             {
                 // Special case when invalid seq is the last symbol
-                KeyValuePairExtractorBuilder(),
+                KeyValuePairExtractorBuilder().withEscaping(),
                 R"in(valid_key:valid_value key:invalid_val\)in",
                 ExpectedValues{
                     {"valid_key", "valid_value"},
                     {"key", "invalid_val"}
-                },
-                true
+                }
             },
             // Not handling escape sequences == do not care of broken one, `invalid_val\` must be present
             {

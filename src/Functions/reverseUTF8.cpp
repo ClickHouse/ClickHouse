@@ -4,7 +4,7 @@
 #include <Functions/FunctionStringToString.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <Functions/reverse.h>
+#include "reverse.h"
 
 
 namespace DB
@@ -44,35 +44,31 @@ struct ReverseUTF8Impl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset j = prev_offset;
-            while (j < offsets[i])
+            while (j < offsets[i] - 1)
             {
-                size_t remaining = offsets[i] - j;
-
-                unsigned int char_len;
                 if (data[j] < 0xC0)
-                    char_len = 1;
+                {
+                    res_data[offsets[i] + prev_offset - 2 - j] = data[j];
+                    j += 1;
+                }
                 else if (data[j] < 0xE0)
-                    char_len = 2;
+                {
+                    memcpy(&res_data[offsets[i] + prev_offset - 2 - j - 1], &data[j], 2);
+                    j += 2;
+                }
                 else if (data[j] < 0xF0)
-                    char_len = 3;
-                else
-                    char_len = 4;
-
-                /// If not enough bytes remaining, treat as single byte (invalid UTF-8).
-                if (char_len > remaining)
-                    char_len = 1;
-
-                if (char_len == 1)
                 {
-                    res_data[offsets[i] + prev_offset - 1 - j] = data[j];
+                    memcpy(&res_data[offsets[i] + prev_offset - 2 - j - 2], &data[j], 3);
+                    j += 3;
                 }
                 else
                 {
-                    memcpy(&res_data[offsets[i] + prev_offset - j - char_len], &data[j], char_len);
+                    memcpy(&res_data[offsets[i] + prev_offset - 2 - j - 3], &data[j], 4);
+                    j += 4;
                 }
-                j += char_len;
             }
 
+            res_data[offsets[i] - 1] = 0;
             prev_offset = offsets[i];
         }
     }
@@ -93,28 +89,7 @@ using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl, NameReverseU
 
 REGISTER_FUNCTION(ReverseUTF8)
 {
-    FunctionDocumentation::Description description = R"(
-Reverses a sequence of Unicode code points in a string.
-Assumes that the string contains valid UTF-8 encoded text.
-If this assumption is violated, no exception is thrown and the result is undefined.
-)";
-    FunctionDocumentation::Syntax syntax = "reverseUTF8(s)";
-    FunctionDocumentation::Arguments arguments = {
-        {"s", "String containing valid UTF-8 encoded text.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with the sequence of Unicode code points reversed.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        "SELECT reverseUTF8('ClickHouse')",
-        "esuoHkcilC"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionReverseUTF8>(documentation);
+    factory.registerFunction<FunctionReverseUTF8>();
 }
 
 }

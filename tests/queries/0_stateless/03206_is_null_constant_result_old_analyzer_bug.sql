@@ -2,7 +2,7 @@ CREATE TABLE left (x UUID) ORDER BY tuple();
 
 CREATE TABLE right (x UUID) ORDER BY tuple();
 
-SET enable_analyzer=0;
+set allow_experimental_analyzer=0;
 
 SELECT left.x, (right.x IS NULL)::Boolean FROM left LEFT OUTER JOIN right ON left.x = right.x GROUP BY ALL;
 
@@ -12,7 +12,7 @@ SELECT isNull(number)::Boolean, now() FROM numbers(2) GROUP BY isNull(number)::B
 
 SELECT (number IS NULL)::Boolean, now() FROM numbers(2) GROUP BY (number IS NULL)::Boolean, now() FORMAT Null;
 
-SET enable_analyzer=1;
+set allow_experimental_analyzer=1;
 
 SELECT left.x, (right.x IS NULL)::Boolean FROM left LEFT OUTER JOIN right ON left.x = right.x GROUP BY ALL;
 

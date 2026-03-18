@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include "ReplicatedMergeTreeAddress.h"
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>

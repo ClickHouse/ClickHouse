@@ -1,11 +1,10 @@
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include "ReadWriteBufferFromHTTP.h"
+#include <sstream>
+#include <string_view>
 
 #include <IO/HTTPCommon.h>
-#include <IO/WriteHelpers.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
-#include <Common/ProxyConfigurationResolverProvider.h>
-#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -33,12 +32,12 @@ bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noe
         non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
 }
 
-Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response, bool enable_url_encoding)
+Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response)
 {
     chassert(DB::isRedirect(response.getStatus()));
 
     auto location = response.get("Location");
-    auto location_uri = Poco::URI(location, enable_url_encoding);
+    auto location_uri = Poco::URI(location);
     if (!location_uri.isRelative())
         return location_uri;
     /// Location header contains relative path. So we need to concatenate it
@@ -99,10 +98,7 @@ size_t ReadWriteBufferFromHTTP::getOffset() const
 
 void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const
 {
-    if (current_uri.getPort())
-        request.setHost(current_uri.getHost(), current_uri.getPort());
-    else
-        request.setHost(current_uri.getHost());
+    request.setHost(current_uri.getHost());
 
     if (out_stream_callback)
         request.setChunkedTransferEncoding(true);
@@ -196,7 +192,6 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     const RemoteHostFilter * remote_host_filter_,
     size_t buffer_size_,
     size_t max_redirects_,
-    bool enable_url_encoding_,
     OutStreamCallback out_stream_callback_,
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
@@ -214,7 +209,6 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , remote_host_filter(remote_host_filter_)
     , buffer_size(buffer_size_)
     , max_redirects(max_redirects_)
-    , enable_url_encoding(enable_url_encoding_)
     , use_external_buffer(use_external_buffer_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , out_stream_callback(std::move(out_stream_callback_))
@@ -292,7 +286,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
 
     while (isRedirect(response.getStatus()))
     {
-        Poco::URI uri_redirect = getUriAfterRedirect(current_uri, response, enable_url_encoding);
+        Poco::URI uri_redirect = getUriAfterRedirect(current_uri, response);
         ++redirects;
         if (redirects > max_redirects)
             throw Exception(
@@ -418,12 +412,12 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
         /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
         if (getOffset() != 0)
         {
-            /// Retry 200 OK
+            /// Retry 200OK
             if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
             {
                 String explanation = fmt::format(
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
-                    getOffset(), read_range.end ? toString(*read_range.end) : "-",
+                    *read_range.begin, read_range.end ? toString(*read_range.end) : "-",
                     toString(response.getStatus()), response.getReason());
 
                 /// it is retriable error
@@ -437,7 +431,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
             throw Exception(
                 ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                 "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
-                getOffset(),
+                *read_range.begin,
                 read_range.end ? toString(*read_range.end) : "-",
                 toString(response.getStatus()),
                 response.getReason());
@@ -806,38 +800,6 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     }
 
     return res;
-}
-
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTPBasicCredentials & credentials_)
-{
-    ProxyConfiguration proxy_configuration;
-
-    if (!bypass_proxy)
-    {
-        auto proxy_protocol = ProxyConfiguration::protocolFromString(uri.getScheme());
-        proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
-    }
-
-    // todo it could be a problem if ReadWriteBufferFromHTTP throws
-    std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(
-        connection_group,
-        uri,
-        method,
-        proxy_configuration,
-        read_settings,
-        timeouts,
-        credentials_,
-        remote_host_filter,
-        buffer_size,
-        max_redirects,
-        enable_url_encoding,
-        out_stream_callback,
-        use_external_buffer,
-        http_skip_not_found_url,
-        http_header_entries,
-        delay_initialization,
-        /*file_info_=*/ std::nullopt));
-    return ptr;
 }
 
 }

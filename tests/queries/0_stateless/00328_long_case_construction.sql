@@ -1,7 +1,4 @@
--- Tags: long, no-msan
-
--- Too slow for targeted tests
-SET compile_aggregate_expressions=0, compile_expressions=0;
+-- Tags: long
 
 /* Trivial case */
 

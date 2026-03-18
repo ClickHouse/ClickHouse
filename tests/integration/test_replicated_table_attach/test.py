@@ -13,7 +13,6 @@ node = cluster.add_instance(
     main_configs=["configs/config.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    with_remote_database_disk=False,  # Disable with_remote_database_disk as test_startup_with_small_bg_pool_partitioned drops Keeper connection
 )
 
 
@@ -52,7 +51,7 @@ def test_startup_with_small_bg_pool(started_cluster):
         assert node.query("SELECT * FROM replicated_table") == "20\t30\n"
 
     assert_values()
-    node.restart_clickhouse(stop_start_wait_sec=15)
+    node.restart_clickhouse(stop_start_wait_sec=10)
     assert_values()
 
 

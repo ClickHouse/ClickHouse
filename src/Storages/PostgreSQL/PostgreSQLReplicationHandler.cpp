@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -15,8 +16,9 @@
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/getTableOverride.h>
+#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
 
@@ -74,14 +76,7 @@ public:
 
     ~TemporaryReplicationSlot()
     {
-        try
-        {
-            handler->dropReplicationSlot(*tx, /* temporary */true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException("TemporaryReplicationSlot");
-        }
+        handler->dropReplicationSlot(*tx, /* temporary */true);
     }
 
 private:
@@ -192,9 +187,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
-    startup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
-    consumer_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
-    cleanup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
+    startup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
+    consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
+    cleanup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
 }
 
 
@@ -480,8 +475,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /// We should not use columns list from getTableAllowedColumns because it may have broken columns order
         Strings allowed_columns;
         for (const auto & column : table_structure->physical_columns->columns)
-            allowed_columns.push_back(doubleQuoteString(column.name));
-
+            allowed_columns.push_back(column.name);
         query_str = fmt::format("SELECT {} FROM ONLY {}", boost::algorithm::join(allowed_columns, ","), quoted_name);
     }
 
@@ -491,7 +485,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
 
-    auto insert = make_intrusive<ASTInsertQuery>();
+    auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = nested_storage->getStorageID();
 
     auto insert_context = materialized_storage->getNestedTableContext();
@@ -506,7 +500,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     auto block_io = interpreter.execute();
 
     const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
-    auto sample_block = std::make_shared<const Block>(storage_metadata.getSampleBlockNonMaterialized());
+    auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
     assertBlocksHaveEqualStructure(input->getPort().getHeader(), block_io.pipeline.getHeader(), "postgresql replica load from snapshot");
@@ -811,14 +805,11 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     {
         shutdown();
 
-        /// Do not use fault injection during cleanup: leaked replication slots
-        /// can exhaust PostgreSQL's max_replication_slots and break subsequent
-        /// MaterializedPostgreSQL databases.
         postgres::Connection connection(connection_info);
-        connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx){ dropPublication(tx); });
         String last_committed_lsn;
 
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
                 dropReplicationSlot(tx, /* temporary */true);
@@ -827,7 +818,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         if (user_managed_slot)
             return;
 
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
                 dropReplicationSlot(tx, /* temporary */false);

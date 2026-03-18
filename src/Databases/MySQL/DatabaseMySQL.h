@@ -19,12 +19,10 @@
 #include <unordered_set>
 #include <vector>
 
-
 namespace DB
 {
 
 class Context;
-struct AlterCommand;
 struct MySQLSettings;
 enum class MySQLDataTypesSupport : uint8_t;
 
@@ -32,7 +30,7 @@ enum class MySQLDataTypesSupport : uint8_t;
  *  It doesn't make any manipulations with filesystem.
  *  All tables are created by calling code after real-time pull-out structure from remote MySQL
  */
-class DatabaseMySQL final : public DatabaseWithAltersOnDiskBase, WithContext
+class DatabaseMySQL final : public IDatabase, WithContext
 {
 public:
     ~DatabaseMySQL() override;
@@ -45,17 +43,21 @@ public:
         const String & database_name_in_mysql,
         std::unique_ptr<MySQLSettings> settings_,
         mysqlxx::PoolWithFailover && pool,
-        bool attach,
-        UUID uuid);
+        bool attach);
 
     String getEngineName() const override { return "MySQL"; }
-    UUID getUUID() const override { return db_uuid; }
+
+    bool canContainMergeTreeTables() const override { return false; }
+
+    bool canContainDistributedTables() const override { return false; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool empty() const override;
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_nam, bool skip_not_loaded) const override;
+
+    ASTPtr getCreateDatabaseQuery() const override;
 
     bool isTableExist(const String & name, ContextPtr context) const override;
 
@@ -81,10 +83,7 @@ public:
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
-    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
-
 protected:
-    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
 
 private:
@@ -103,6 +102,8 @@ private:
     mutable std::vector<StoragePtr> outdated_tables;
     mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
 
+    std::shared_ptr<IDisk> db_disk;
+
     std::unordered_set<String> remove_or_detach_tables;
 
     void cleanOutdatedTables();
@@ -118,9 +119,6 @@ private:
     void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextPtr context) const TSA_REQUIRES(mutex);
 
     ThreadFromGlobalPool thread;
-
-    bool persistent = true;
-    const UUID db_uuid;
 };
 
 }

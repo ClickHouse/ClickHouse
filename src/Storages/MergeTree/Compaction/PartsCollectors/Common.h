@@ -36,7 +36,7 @@ std::vector<std::vector<Part>> splitRangeByPredicate(std::vector<Part> && parts,
         return range;
     };
 
-    std::vector<std::vector<Part>> ranges;
+    std::vector<MergeTreeDataPartsVector> ranges;
     for (auto part_it = parts.begin(); part_it != parts.end();)
         if (auto next_range = build_next_range(part_it); !next_range.empty())
             ranges.push_back(std::move(next_range));
@@ -55,10 +55,7 @@ std::expected<void, PreformattedMessage> checkAllPartsSatisfyPredicate(const std
 }
 
 PartsRanges constructPartsRanges(
-    std::vector<MergeTreeDataPartsVector> && ranges,
-    const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    const time_t & current_time);
+    std::vector<MergeTreeDataPartsVector> && ranges, const StorageMetadataPtr & metadata_snapshot, const time_t & current_time);
 
 MergeTreeDataPartsVector filterByPartitions(
     MergeTreeDataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_to_keep);

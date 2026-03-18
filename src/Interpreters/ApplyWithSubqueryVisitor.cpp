@@ -11,7 +11,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
-#include <Parsers/ASTLiteral.h>
 #include <Common/checkStackSize.h>
 
 
@@ -63,16 +62,11 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         for (auto & child : with->children)
         {
             visit(child, new_data ? *new_data : data);
-            auto * ast_with_elem = child->as<ASTWithElement>();
-            auto * ast_literal = child->as<ASTLiteral>();
-            if (ast_with_elem || ast_literal)
+            if (auto * ast_with_elem = child->as<ASTWithElement>())
             {
                 if (!new_data)
                     new_data = data;
-                if (ast_with_elem)
-                    new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
-                else
-                    new_data->literals[ast_literal->alias] = child;
+                new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
             }
         }
     }
@@ -116,6 +110,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
 void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
 {
     /// Special CTE case, where the right argument of IN is alias (ASTIdentifier) from WITH clause.
+
     if (checkFunctionIsInOrGlobalInOperator(func))
     {
         auto & ast = func.arguments->children.at(1);
@@ -125,45 +120,15 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
             {
                 /// Clang-tidy is wrong on this line, because `func.arguments->children.at(1)` gets replaced before last use of `name`.
                 auto name = identifier->shortName();  // NOLINT
-
                 auto subquery_it = data.subqueries.find(name);
                 if (subquery_it != data.subqueries.end())
                 {
                     auto old_alias = func.arguments->children[1]->tryGetAlias();
                     func.arguments->children[1] = subquery_it->second->clone();
-                    func.arguments->children[1]->as<ASTSubquery>()->cte_name = name;
+                    func.arguments->children[1]->as<ASTSubquery &>().cte_name = name;
                     if (!old_alias.empty())
                         func.arguments->children[1]->setAlias(old_alias);
                 }
-                else
-                {
-                    auto literal_it = data.literals.find(name);
-                    if (literal_it != data.literals.end())
-                    {
-                        auto old_alias = func.arguments->children[1]->tryGetAlias();
-                        func.arguments->children[1] = literal_it->second->clone();
-                        if (!old_alias.empty())
-                            func.arguments->children[1]->setAlias(old_alias);
-                    }
-                }
-            }
-        }
-    }
-    /// Rewrite dictionary name in dictGet*()
-    else if (functionIsDictGet(func.name) && !func.arguments->children.empty())
-    {
-        auto & dict_name_arg = func.arguments->children.at(0);
-        if (const auto * identifier = dict_name_arg->as<ASTIdentifier>(); identifier && identifier->isShort())
-        {
-            auto name = identifier->shortName();
-
-            auto literal_it = data.literals.find(name);
-            if (literal_it != data.literals.end())
-            {
-                auto old_alias = dict_name_arg->tryGetAlias();
-                dict_name_arg = literal_it->second->clone();
-                /// Always reset the alias name, otherwise the aliases will not match after AddDefaultDatabaseVisitor
-                dict_name_arg->setAlias(old_alias);
             }
         }
     }

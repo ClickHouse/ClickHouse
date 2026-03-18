@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <serialize_query_plan>1</serialize_query_plan>
-        </default>
-    </profiles>
-</clickhouse>

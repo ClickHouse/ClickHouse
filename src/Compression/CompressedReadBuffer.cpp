@@ -1,4 +1,6 @@
-#include <Compression/CompressedReadBuffer.h>
+#include "CompressedReadBuffer.h"
+#include <Compression/LZ4_decompress_faster.h>
+
 
 namespace DB
 {

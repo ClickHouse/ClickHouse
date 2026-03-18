@@ -45,6 +45,11 @@ function select1()
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS async_inserts_race"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE async_inserts_race (id UInt32, s String) ENGINE = MergeTree ORDER BY id"
 
+export -f insert1
+export -f insert2
+export -f insert3
+export -f select1
+
 TIMEOUT=10
 
 for _ in {1..3}; do

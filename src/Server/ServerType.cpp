@@ -58,7 +58,6 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
             case Type::PROMETHEUS:
             case Type::INTERSERVER_HTTP:
             case Type::INTERSERVER_HTTPS:
-            case Type::ARROW_FLIGHT:
                 return true;
             default:
                 return false;
@@ -123,9 +122,6 @@ bool ServerType::shouldStop(const std::string & port_name) const
 
     else if (port_name == "mysql_port")
         port_type = Type::MYSQL;
-
-    else if (port_name == "arrowflight_port")
-        port_type = Type::ARROW_FLIGHT;
 
     else if (port_name == "postgresql_port")
         port_type = Type::POSTGRESQL;

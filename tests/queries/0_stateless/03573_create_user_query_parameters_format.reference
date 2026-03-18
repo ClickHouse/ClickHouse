@@ -1,5 +1,0 @@
-CREATE USER {username:Identifier} IDENTIFIED WITH no_password
-CREATE USER {username:Identifier}@'clickhouse.com' IDENTIFIED WITH no_password HOST LIKE 'clickhouse.com'
-CREATE USER {username:Identifier}@'127.0.0.1' IDENTIFIED WITH no_password HOST LOCAL
-CREATE USER {username:Identifier}@'192.168.0.1' IDENTIFIED WITH no_password HOST LIKE '192.168.0.1'
-CREATE USER foo@'127.0.0.1' IDENTIFIED WITH no_password HOST LOCAL

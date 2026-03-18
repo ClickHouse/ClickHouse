@@ -6,7 +6,6 @@ keywords: ['RowBinaryWithNamesAndTypes']
 output_format: true
 slug: /interfaces/formats/RowBinaryWithNamesAndTypes
 title: 'RowBinaryWithNamesAndTypes'
-doc_type: 'reference'
 ---
 
 import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
@@ -23,9 +22,9 @@ Similar to the [RowBinary](./RowBinary.md) format, but with added header:
 - N `String`s specifying column names.
 - N `String`s specifying column types.
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
 
 <RowBinaryFormatSettings/>
 

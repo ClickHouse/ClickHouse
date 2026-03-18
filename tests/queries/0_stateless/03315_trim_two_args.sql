@@ -106,6 +106,3 @@ INSERT INTO tab VALUES ('abc');
 SELECT trim(trailing char(0) from col) FROM tab;
 SELECT trim(both 'ac' from col) FROM tab;
 DROP TABLE tab;
-
--- Bug 78796
-SELECT isConstant(trimBoth(''));

@@ -21,9 +21,9 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <base/defines.h>
 #include <base/range.h>
 #include <IO/Operators.h>
-#include <Common/Exception.h>
 #include <Common/re2.h>
 
 #include <Poco/AccessExpireCache.h>
@@ -39,7 +39,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
-    extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
@@ -76,13 +75,17 @@ public:
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params)
     {
-        if (auto cached_access = cache.get(params))
+        std::lock_guard lock{mutex};
+        auto x = cache.get(params);
+        if (x)
         {
-            /// Check that the user hasn't been dropped while it was in the cache.
-            if (!(*cached_access)->getUserID() || (*cached_access)->tryGetUser())
-                return *cached_access;
+            if ((*x)->getUserID() && !(*x)->tryGetUser())
+                cache.remove(params); /// The user has been dropped while it was in the cache.
+            else
+                return *x;
         }
 
+        /// TODO: There is no need to keep the `ContextAccessCache::mutex` locked while we're calculating access rights.
         auto res = std::make_shared<ContextAccess>(access_control, params);
         res->initialize();
         cache.add(params, res);
@@ -92,6 +95,7 @@ public:
 private:
     const AccessControl & access_control;
     Poco::AccessExpireCache<ContextAccess::Params, std::shared_ptr<const ContextAccess>> cache;
+    std::mutex mutex;
 };
 
 
@@ -295,22 +299,16 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setBcryptWorkfactor(config_.getInt("bcrypt_workfactor", 12));
 
     /// Optional improvements in access control system.
+    /// The default values are false because we need to be compatible with earlier access configurations
     setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
     setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
     setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
-    setImpersonateUserAllowed(config_.getBool("access_control_improvements.allow_impersonate_user", config_.getBool("allow_impersonate_user", true)));
-
-    /// The default values of the following improvements are false because we need to be compatible with earlier access configurations
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
-    setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
-    setThrowOnUnmatchedRowPolicies(config_.getBool("access_control_improvements.throw_on_unmatched_row_policies", false));
 
     /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
-
-    setThrowOnInvalidReplicatedAccessEntities(config_.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
@@ -377,13 +375,7 @@ void AccessControl::addReplicatedStorage(
         if (auto replicated_storage = typeid_cast<std::shared_ptr<ReplicatedAccessStorage>>(storage))
             return;
     }
-    auto new_storage = std::make_shared<ReplicatedAccessStorage>(
-        storage_name_,
-        zookeeper_path_,
-        get_zookeeper_function_,
-        *changes_notifier,
-        allow_backup_,
-        throw_on_invalid_replicated_access_entities);
+    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_, *changes_notifier, allow_backup_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
@@ -499,10 +491,6 @@ void AccessControl::addStoragesFromMainConfig(
     const String & config_path,
     const zkutil::GetZooKeeper & get_zookeeper_function)
 {
-    String disk_storage_dir = config.getString("access_control_path", "");
-    if (!disk_storage_dir.empty())
-        addDiskStorage(DiskAccessStorage::STORAGE_TYPE, disk_storage_dir, /* readonly= */ false, /* allow_backup= */ true);
-
     String config_dir = std::filesystem::path{config_path}.remove_filename().string();
     String dbms_dir = config.getString("path", DBMS_DEFAULT_PATH);
     String include_from_path = config.getString("include_from", "/etc/metrika.xml");
@@ -532,6 +520,10 @@ void AccessControl::addStoragesFromMainConfig(
             get_zookeeper_function,
             /* allow_backup= */ false);
     }
+
+    String disk_storage_dir = config.getString("access_control_path", "");
+    if (!disk_storage_dir.empty())
+        addDiskStorage(DiskAccessStorage::STORAGE_TYPE, disk_storage_dir, /* readonly= */ false, /* allow_backup= */ true);
 
     if (has_user_directories)
         addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);
@@ -626,7 +618,7 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         int error_code = ErrorCodes::AUTHENTICATION_FAILED;
 
         WriteBufferFromOwnString message;
-        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name";
+        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
 
         /// Better exception message for usability.
         /// It is typical when users install ClickHouse, type some password and instantly forget it.
@@ -647,10 +639,6 @@ See also /etc/clickhouse-server/users.xml on the server where ClickHouse is inst
 
 )";
         }
-
-        /// Preserve the second factor authentication error code.
-        if (getCurrentExceptionCode() == ErrorCodes::REQUIRED_SECOND_FACTOR)
-            error_code = ErrorCodes::REQUIRED_SECOND_FACTOR;
 
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.
         /// Only the log ((*), above) will show the exact reason. Note that (*) logs at information level instead of the default error level as
@@ -795,16 +783,6 @@ void AccessControl::setEnableUserNameAccessType(bool enable_user_name_access_typ
 bool AccessControl::isEnabledUserNameAccessType() const
 {
     return enable_user_name_access_type;
-}
-
-void AccessControl::setEnableReadWriteGrants(bool enable_read_write_grants_)
-{
-    enable_read_write_grants = enable_read_write_grants_;
-}
-
-bool AccessControl::isEnabledReadWriteGrants() const
-{
-    return enable_read_write_grants;
 }
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const

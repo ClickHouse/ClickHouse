@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_LIBPQXX
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 
 namespace Poco
@@ -20,7 +20,6 @@ using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
 namespace DB
 {
 class NamedCollection;
-struct StorageID;
 
 class StoragePostgreSQL final : public IStorage
 {
@@ -37,8 +36,6 @@ public:
         const String & on_conflict = "");
 
     String getName() const override { return "PostgreSQL"; }
-
-    bool isExternalDatabase() const override { return true; }
 
     void read(
         QueryPlan & query_plan,
@@ -67,7 +64,7 @@ public:
         String addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, const StorageID * table_id = nullptr);
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
 

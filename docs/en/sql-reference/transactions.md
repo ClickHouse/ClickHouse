@@ -2,7 +2,6 @@
 description: 'Page describing transactional (ACID) support in ClickHouse'
 slug: /guides/developer/transactional
 title: 'Transactional (ACID) support'
-doc_type: 'guide'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -23,6 +22,7 @@ This is transactional (ACID) if the inserted rows are packed and inserted as a s
 
 Same as Case 1 above, with this detail:
 - If table has many partitions and INSERT covers many partitions, then insertion into every partition is transactional on its own
+
 
 ## Case 3: INSERT into one distributed table of the MergeTree* family {#case-3-insert-into-one-distributed-table-of-the-mergetree-family}
 
@@ -305,3 +305,4 @@ state:       RUNNING
 ## More Details {#more-details}
 
 See this [meta issue](https://github.com/ClickHouse/ClickHouse/issues/48794) to find much more extensive tests and to keep up to date with the progress.
+

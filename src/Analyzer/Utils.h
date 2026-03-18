@@ -6,18 +6,10 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 
-#include <Core/Field.h>
-#include <Core/Names.h>
-
-#include <Columns/IColumn_fwd.h>
-
 namespace DB
 {
 
 class FunctionNode;
-class ColumnNode;
-using ColumnNodePtr = std::shared_ptr<ColumnNode>;
-
 struct IdentifierResolveScope;
 
 struct NameAndTypePair;
@@ -62,18 +54,10 @@ bool isQueryOrUnionNode(const IQueryTreeNode * node);
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
 
-/// Returns true, if node has type QUERY or UNION and uses any columns from outer scope
-bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
-
-/* Checks, if column source is not registered in scopes that appear
+/* Returns true, if column source is not registered in scopes that appear
  * before nearest query scope.
- * If column appears to be correlated in the scope than it be registered
- * in corresponding QueryNode or UnionNode.
  */
-bool checkCorrelatedColumn(
-    const IdentifierResolveScope * scope_to_check,
-    const QueryTreeNodePtr & column
-);
+bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source);
 
 DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
 
@@ -157,10 +141,8 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 /// Arguments and parameters are taken from the node.
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
 
-/// Returns single source of expression node.
-/// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
-/// Second element of pair is true if there is at most one source, false if there are multiple sources.
-std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
+/// Checks that node has only one source and returns it
+QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node);
 
 /// Update mutable context for subquery execution
 void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);

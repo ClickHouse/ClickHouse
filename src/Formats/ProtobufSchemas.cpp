@@ -87,16 +87,11 @@ public:
 
 private:
     // Overrides google::protobuf::compiler::MultiFileErrorCollector:
-    void RecordError(absl::string_view filename, int line, int column, absl::string_view message) override
+    void AddError(const String & filename, int line, int column, const String & message) override
     {
         /// Protobuf library code is not exception safe, we should
         /// remember the error and throw it later from our side.
-        error = ErrorInfo{
-            std::string(filename),
-            line,
-            column,
-            std::string(message),
-        };
+        error = ErrorInfo{filename, line, column, message};
     }
 
     google::protobuf::compiler::DiskSourceTree disk_source_tree;
@@ -118,16 +113,6 @@ private:
 ProtobufSchemas::DescriptorHolder
 ProtobufSchemas::getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope, const String & google_protos_path)
 {
-    /// Auto-generated schema should not be stored in the import cache. Generated schemas are typically temporary and
-    /// may throw exceptions during type inference (e.g., protobufSchemaToCHSchema). Caching them could pollute the
-    /// global cache with invalid importers, leading to failures in subsequent schema inference. Instead, we create and
-    /// return a local importer without caching.
-    if (info.isGenerated())
-    {
-        auto import = std::make_shared<ImporterWithSourceTree>(info.schemaDirectory(), google_protos_path, with_envelope);
-        return DescriptorHolder(import, import->import(info.schemaPath(), info.messageName()));
-    }
-
     std::lock_guard lock(mutex);
     auto it = importers.find(info.schemaDirectory());
     if (it == importers.end())

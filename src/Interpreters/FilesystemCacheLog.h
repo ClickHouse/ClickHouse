@@ -35,7 +35,7 @@ struct FilesystemCacheLogElement
     size_t file_segment_size = 0;
     bool read_from_cache_attempted;
     String read_buffer_id{};
-    String user_id{};
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters = nullptr;
 
     static std::string name() { return "FilesystemCacheLog"; }
 

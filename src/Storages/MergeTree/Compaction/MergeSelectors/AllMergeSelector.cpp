@@ -1,19 +1,23 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/AllMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 namespace DB
 {
 
-PartsRanges AllMergeSelector::select(
-    const PartsRanges & parts_ranges,
-    const MergeConstraints & merge_constraints,
-    const RangeFilter & range_filter) const
+void registerAllMergeSelector(MergeSelectorFactory & factory)
 {
-    chassert(merge_constraints.size() == 1, "Multi Select is not supported for AllMergeSelector");
-    const size_t max_total_size_to_merge = merge_constraints[0].max_size_bytes;
-    const size_t max_rows_in_part = merge_constraints[0].max_size_rows;
+    factory.registerPrivateSelector("All", [](const std::any &)
+    {
+        return std::make_shared<AllMergeSelector>();
+    });
+}
 
+PartsRange AllMergeSelector::select(
+    const PartsRanges & parts_ranges,
+    size_t max_total_size_to_merge,
+    RangeFilter range_filter) const
+{
     size_t min_partition_size = 0;
-    size_t min_partition_rows = 0;
     PartsRanges::const_iterator best_partition;
 
     for (auto it = parts_ranges.begin(); it != parts_ranges.end(); ++it)
@@ -25,27 +29,18 @@ PartsRanges AllMergeSelector::select(
             continue;
 
         size_t sum_size = 0;
-        size_t sum_rows = 0;
-
         for (const auto & part : *it)
-        {
             sum_size += part.size;
-            sum_rows += part.rows;
-        }
 
         if (!min_partition_size || sum_size < min_partition_size)
         {
             min_partition_size = sum_size;
-            min_partition_rows = sum_rows;
             best_partition = it;
         }
     }
 
-    if (min_partition_size
-        && min_partition_rows
-        && min_partition_size <= max_total_size_to_merge
-        && min_partition_rows <= max_rows_in_part)
-        return {*best_partition};
+    if (min_partition_size && min_partition_size <= max_total_size_to_merge)
+        return *best_partition;
 
     return {};
 }

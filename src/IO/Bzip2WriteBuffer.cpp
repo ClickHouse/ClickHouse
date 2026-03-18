@@ -4,6 +4,7 @@
 #    include <IO/Bzip2WriteBuffer.h>
 #    include <bzlib.h>
 
+#include <Common/MemoryTracker.h>
 
 namespace DB
 {
@@ -59,7 +60,7 @@ void Bzip2WriteBuffer::nextImpl()
     }
 }
 
-void Bzip2WriteBuffer::finalFlushBefore()
+void Bzip2WriteBuffer::finalizeBefore()
 {
     next();
 

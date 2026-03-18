@@ -1,6 +1,5 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemResources.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
@@ -17,7 +16,6 @@ ColumnsDescription StorageSystemResources::getColumnsDescription()
         {"name", std::make_shared<DataTypeString>(), "The name of the resource."},
         {"read_disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of disk names that uses this resource for read operations."},
         {"write_disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of disk names that uses this resource for write operations."},
-        {"unit", std::make_shared<DataTypeString>(), "Resource unit used for cost measurements."},
         {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the resource."},
     };
 }
@@ -25,38 +23,38 @@ ColumnsDescription StorageSystemResources::getColumnsDescription()
 void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & storage = context->getWorkloadEntityStorage();
-    const auto & entities = storage.getAllEntities();
-    for (const auto & [name, ast] : entities)
+    const auto & resource_names = storage.getAllEntityNames(WorkloadEntityType::Resource);
+    for (const auto & resource_name : resource_names)
     {
-        if (auto * resource = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
+        auto ast = storage.tryGet(resource_name);
+        if (!ast)
+            /// It might be modified in the meantime, but it's ok to not show those removed resources
+            continue;
+        auto & resource = typeid_cast<ASTCreateResourceQuery &>(*ast);
+        res_columns[0]->insert(resource_name);
         {
-            res_columns[0]->insert(name);
+            Array read_disks;
+            Array write_disks;
+            for (const auto & [mode, disk] : resource.operations)
             {
-                Array read_disks;
-                Array write_disks;
-                for (const auto & [mode, disk] : resource->operations)
+                switch (mode)
                 {
-                    switch (mode)
+                    case DB::ASTCreateResourceQuery::AccessMode::Read:
                     {
-                        case DB::ResourceAccessMode::DiskRead:
-                        {
-                            read_disks.emplace_back(disk ? *disk : "ANY");
-                            break;
-                        }
-                        case DB::ResourceAccessMode::DiskWrite:
-                        {
-                            write_disks.emplace_back(disk ? *disk : "ANY");
-                            break;
-                        }
-                        default: // Ignore
+                        read_disks.emplace_back(disk ? *disk : "ANY");
+                        break;
+                    }
+                    case DB::ASTCreateResourceQuery::AccessMode::Write:
+                    {
+                        write_disks.emplace_back(disk ? *disk : "ANY");
+                        break;
                     }
                 }
-                res_columns[1]->insert(read_disks);
-                res_columns[2]->insert(write_disks);
             }
-            res_columns[3]->insert(DB::costUnitToString(resource->unit));
-            res_columns[4]->insert(ast->formatForLogging());
+            res_columns[1]->insert(read_disks);
+            res_columns[2]->insert(write_disks);
         }
+        res_columns[3]->insert(ast->formatForLogging());
     }
 }
 

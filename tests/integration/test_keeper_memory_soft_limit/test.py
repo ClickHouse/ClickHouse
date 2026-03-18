@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-import logging
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+import random
+import string
 
 import pytest
 from kazoo.client import KazooClient
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__, keeper_config_dir="configs/")
@@ -14,16 +13,18 @@ node = cluster.add_instance(
     "node",
     stay_alive=True,
     with_zookeeper=True,
-    with_remote_database_disk=False,  # Disable `with_remote_database_disk` as the test does not use the default Keeper.
     main_configs=["configs/setting.xml"],
-    mem_limit='14g'
 )
+
+
+def random_string(length):
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
 
 def get_connection_zk(nodename, timeout=30.0):
     # NOTE: here we need KazooClient without implicit retries! (KazooClientWithImplicitRetries)
     _fake_zk_instance = KazooClient(
-        hosts=f"{cluster.get_instance_ip(nodename)}:2181", timeout=timeout
+        hosts=cluster.get_instance_ip(nodename) + ":2181", timeout=timeout
     )
     _fake_zk_instance.start()
     return _fake_zk_instance
@@ -33,7 +34,9 @@ def get_connection_zk(nodename, timeout=30.0):
 def started_cluster():
     try:
         cluster.start()
+
         yield cluster
+
     finally:
         cluster.shutdown()
 
@@ -43,64 +46,24 @@ def test_soft_limit_create(started_cluster):
         pytest.skip("Disabled for sanitizers")
     started_cluster.wait_zookeeper_to_start()
     node_zk = get_connection_zk("zoo1")
-    test_path = "/test_soft_limit"
-
-    # Retry logic for initial znode creation
-    # node_zk.create can occasionally hang on CI, so we add a retry loop with timeout to ensure it doesn't block indefinitely (900s).
-    max_attempts = 5
-    for attempt in range(max_attempts):
-        try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(
-                    # Normally, this is expected to succeed on the first try.
-                    node_zk.create,
-                    test_path,
-                    b"abc",
-                    ephemeral=False,
-                    makepath=True,
-                    sequence=False,
-                )
-                # Wait up to 30 seconds
-                future.result(timeout=30)
-            break  # success, exit loop
-        except TimeoutError:
-            logging.error(f"Attempt {attempt+1} timed out")
-        except Exception as e:
-            logging.error(f"Attempt {attempt+1} failed: {e}")
-    else:
-        raise RuntimeError(
-            f"Failed to create znode {test_path} after {max_attempts} attempts"
-        )
-
     try:
         loop_time = 100000
-        batch_size = 10000
+        node_zk.create("/test_soft_limit", b"abc")
+        path = "/test_soft_limit"
 
-        for i in range(0, loop_time, batch_size):
-            node.query(
-                f"""INSERT INTO system.zookeeper (name, path, value)
-                SELECT 'node_' || number::String, '{test_path}', repeat('a', 3000)
-                FROM numbers({i}, {batch_size})
-            """
-            )
+        for i in range(loop_time):
+            name = "node_" + str(i)
+            node.query(f"INSERT INTO system.zookeeper (name, path, value) values ('{name}', '{path}', repeat('a', 3000))")
     except Exception as e:
         # the message contains out of memory so the users will not be confused.
-        assert "out of memory" in str(e).lower()
-
+        assert 'out of memory' in str(e).lower()
         txn = node_zk.transaction()
         for i in range(10):
-            txn.delete(f"{test_path}/node_{i}")
+            txn.delete("/test_soft_limit/node_" + str(i))
 
-        txn.create(f"{test_path}/node_1000001_{i}", b"abcde")
+        txn.create("/test_soft_limit/node_1000001" + str(i), b"abcde")
         txn.commit()
-
-        node.query_with_retry(
-            "SYSTEM FLUSH LOGS metric_log; SELECT sum(ProfileEvent_ZooKeeperHardwareExceptions) FROM system.metric_log",
-            check_callback=lambda res: int(res.strip()) > 0,
-            retry_count=5,
-            sleep_time=1,
-        )
-
+        assert "0\n"  == node.query("select sum(ProfileEvent_ZooKeeperHardwareExceptions) from system.metric_log")
         return
 
     raise Exception("all records are inserted but no error occurs")

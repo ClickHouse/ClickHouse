@@ -32,7 +32,7 @@ namespace DB
 class DataTypeDateTime final : public DataTypeNumberBase<UInt32>, public TimezoneMixin
 {
 public:
-    explicit DataTypeDateTime(std::string_view time_zone_name = "");
+    explicit DataTypeDateTime(const String & time_zone_name = "");
     explicit DataTypeDateTime(const TimezoneMixin & time_zone);
 
     static constexpr auto family_name = "DateTime";
@@ -47,7 +47,7 @@ public:
 
     bool equals(const IDataType & rhs) const override;
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 }

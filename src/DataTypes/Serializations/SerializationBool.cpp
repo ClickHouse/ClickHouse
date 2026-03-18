@@ -189,7 +189,7 @@ ReturnType deserializeImpl(
     }
 
     buf.rollbackToCheckpoint();
-    if (settings.allow_special_bool_values && tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
+    if (tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
     {
         buf.dropCheckpoint();
         if (buf.hasUnreadData())

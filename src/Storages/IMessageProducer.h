@@ -1,7 +1,9 @@
 #pragma once
 
+#pragma once
+
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 namespace Poco { class Logger; }

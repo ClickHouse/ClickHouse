@@ -4,11 +4,10 @@ description: 'This engine allows you to use Keeper/ZooKeeper cluster as consiste
 sidebar_label: 'KeeperMap'
 sidebar_position: 150
 slug: /engines/table-engines/special/keeper-map
-title: 'KeeperMap table engine'
-doc_type: 'reference'
+title: 'KeeperMap'
 ---
 
-# KeeperMap table engine
+# KeeperMap {#keepermap}
 
 This engine allows you to use Keeper/ZooKeeper cluster as consistent key-value store with linearizable writes and sequentially consistent reads.
 
@@ -24,7 +23,7 @@ For example:
 
 where path can be any other valid ZooKeeper path.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -69,6 +68,7 @@ with
     <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
 </clickhouse>
 ```
+
 
 Each value, which is binary serialization of `(v1, v2, v3)`, will be stored inside `/keeper_map_tables/keeper_map_table/data/serialized_key` in `Keeper`.
 Additionally, number of keys will have a soft limit of 4 for the number of keys.

@@ -3,7 +3,6 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Core/Types.h>
-#include <Core/Names.h>
 #include <Common/Exception.h>
 #include "delta_kernel_ffi.hpp"
 
@@ -14,8 +13,6 @@ namespace DB::ErrorCodes
 
 namespace DeltaLake
 {
-
-std::string generateWritePath(const std::string & prefix, const std::string & format);
 
 /**
  * Helper methods for use with delta-kernel-rs.
@@ -57,9 +54,6 @@ namespace KernelUtils
             "Invalid error ExternResult tag found!");
     }
 };
-
-std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map);
-std::optional<std::string> tryGetPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map);
 
 }
 

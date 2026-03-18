@@ -290,15 +290,9 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
     }
 
     if (!intervals)
-    {
-        enabled.empty = true;
-        enabled.intervals = boost::make_shared<Intervals>(); /// No quota == no limits.
-    }
-    else
-    {
-        enabled.intervals.store(intervals);
-        enabled.empty = false;
-    }
+        intervals = boost::make_shared<Intervals>(); /// No quota == no limits.
+
+    enabled.intervals.store(intervals);
 }
 
 

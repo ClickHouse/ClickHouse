@@ -25,8 +25,6 @@ void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
 
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
-void registerInputFormatBuffers(FormatFactory & factory);
-void registerOutputFormatBuffers(FormatFactory & factory);
 
 void registerInputFormatRowBinary(FormatFactory & factory);
 void registerOutputFormatRowBinary(FormatFactory & factory);
@@ -96,7 +94,6 @@ void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory);
 void registerOutputFormatSQLInsert(FormatFactory & factory);
-void registerOutputFormatHash(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -176,8 +173,6 @@ void registerFormats()
 
     registerInputFormatNative(factory);
     registerOutputFormatNative(factory);
-    registerInputFormatBuffers(factory);
-    registerOutputFormatBuffers(factory);
 
     registerInputFormatRowBinary(factory);
     registerOutputFormatRowBinary(factory);
@@ -245,7 +240,6 @@ void registerFormats()
     registerOutputFormatCapnProto(factory);
     registerOutputFormatPrometheus(factory);
     registerOutputFormatSQLInsert(factory);
-    registerOutputFormatHash(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);

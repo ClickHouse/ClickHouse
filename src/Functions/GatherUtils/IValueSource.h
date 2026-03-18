@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/GatherUtils/ValueSourceVisitor.h>
+#include "ValueSourceVisitor.h"
 #include <Common/Exception.h>
 
 namespace DB

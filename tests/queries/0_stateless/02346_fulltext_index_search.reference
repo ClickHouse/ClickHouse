@@ -1,0 +1,51 @@
+Test full_text(2)
+af	full_text
+1
+101	Alick a01
+1
+101	Alick a01
+111	Alick b01
+1
+103	Click a03
+108	Click a08
+113	Click b03
+118	Click b08
+1
+Test full_text()
+af	full_text
+101	x Alick a01 y
+106	x Alick a06 y
+111	x Alick b01 y
+116	x Alick b06 y
+101	x Alick a01 y
+106	x Alick a06 y
+1
+101	x Alick a01 y
+111	x Alick b01 y
+1
+Test on array columns
+af	full_text
+3	['x Click a03 y','x Click b03 y']
+1
+Test on map columns
+af	full_text
+103	{'Click':'Click a03'}
+108	{'Click':'Click a08'}
+113	{'Click':'Click b03'}
+118	{'Click':'Click b08'}
+1
+103	{'Click':'Click a03'}
+1
+Test full_text(2) on a column with two parts
+af	full_text
+101	Alick a01
+111	Alick b01
+201	rick c01
+1
+Test full_text(2) on UTF-8 data
+af	full_text
+102	clickhouse你好
+1
+AST Fuzzer crash, issue #54541
+Test max_rows_per_postings_list
+1

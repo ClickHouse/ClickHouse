@@ -274,6 +274,25 @@ TEST(AccessRights, Union)
 
     lhs = {};
     rhs = {};
+    lhs.grant(AccessType::INSERT);
+    rhs.grant(AccessType::ALL, "db1");
+    lhs.makeUnion(rhs);
+    ASSERT_EQ(lhs.toString(),
+              "GRANT INSERT ON *.*, "
+              "GRANT CHECK, SHOW, SELECT, ALTER, CREATE DATABASE, CREATE TABLE, CREATE VIEW, "
+              "CREATE DICTIONARY, DROP DATABASE, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, "
+              "TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, "
+              "SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, "
+              "SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, "
+              "SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, "
+              "SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, "
+              "SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM SYNC DATABASE REPLICA, SYSTEM FLUSH DISTRIBUTED, "
+              "SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON db1.*, GRANT TABLE ENGINE ON db1, "
+              "GRANT CREATE USER, ALTER USER, DROP USER, CREATE ROLE, ALTER ROLE, DROP ROLE, SET DEFINER ON db1, "
+              "GRANT NAMED COLLECTION ADMIN ON db1");
+
+    lhs = {};
+    rhs = {};
     lhs.grant(AccessType::SELECT, "db1", "tb1", Strings{"col1", "col2", "test"});
     rhs.grant(AccessType::SELECT, "db1", "tb1");
     lhs.makeUnion(rhs);
@@ -524,63 +543,6 @@ TEST(AccessRights, Iterator)
     ASSERT_EQ(res[1], "team");
     ASSERT_EQ(res[2], "toast");
     ASSERT_EQ(res[3], "toaster");
-}
-
-TEST(AccessRights, Filter)
-{
-    AccessRights root;
-    root.grant(AccessType::READ, "S3", "s3://url1.*");
-    root.grant(AccessType::READ, "S3", "s3://url2.*");
-    root.grant(AccessType::READ, "URL", "https://url3.*");
-
-    auto res = root.getFilters("S3");
-    ASSERT_EQ(res.size(), 2);
-    ASSERT_EQ(res[0].path, "s3://url1.*");
-    ASSERT_EQ(res[1].path, "s3://url2.*");
-
-    res = root.getFilters("URL");
-    ASSERT_EQ(res.size(), 1);
-    ASSERT_EQ(res[0].path, "https://url3.*");
-
-    root.revoke(AccessType::READ, "URL");
-    res = root.getFilters("URL");
-    ASSERT_EQ(res.size(), 0);
-}
-
-TEST(AccessRights, RevokeWithParameters)
-{
-    AccessRights root;
-    root.grantWithGrantOption(AccessType::SELECT);
-    root.grantWithGrantOption(AccessType::CREATE_USER);
-    root.revokeWildcard(AccessType::SELECT, "default", "zoo");
-    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE SELECT ON default.zoo*");
-
-    root = {};
-    root.grantWithGrantOption(AccessType::SELECT);
-    root.grantWithGrantOption(AccessType::CREATE_USER);
-    root.revokeWildcard(AccessType::SELECT, "default", "foo", "bar");
-    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE SELECT(bar*) ON default.foo");
-}
-
-TEST(AccessRights, RevokeWithParametersWithGrantOption)
-{
-    AccessRights root;
-    root.grantWithGrantOption(AccessType::ALL);
-    root.revokeWildcard(AccessType::INTROSPECTION, "system");  // global grant, do nothing for database revoke
-    ASSERT_EQ(root.toString(), "GRANT ALL ON *.* WITH GRANT OPTION");
-
-    root = {};
-    root.grant(AccessType::SELECT);
-    root.grant(AccessType::INTROSPECTION);
-    root.grant(AccessType::CREATE_USER);
-    root.revokeWildcard(AccessType::CREATE_USER, "system");
-    ASSERT_EQ(root.toString(), "GRANT SELECT, INTROSPECTION ON *.*, GRANT CREATE USER ON *, REVOKE CREATE USER ON system*");
-
-    root.grantWithGrantOption(AccessType::SELECT);
-    root.grantWithGrantOption(AccessType::INTROSPECTION);
-    root.grantWithGrantOption(AccessType::CREATE_USER);
-    root.revokeWildcard(AccessType::CREATE_USER, "system");
-    ASSERT_EQ(root.toString(), "GRANT SELECT, INTROSPECTION ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE CREATE USER ON system*");
 }
 
 TEST(AccessRights, ParialRevokeWithGrantOption)

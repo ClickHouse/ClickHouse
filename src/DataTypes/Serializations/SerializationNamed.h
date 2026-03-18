@@ -48,7 +48,6 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -75,7 +74,5 @@ private:
 
     void addToPath(SubstreamPath & path) const;
 };
-
-SerializationPtr removeNamedSerialization(const SerializationPtr & serialization);
 
 }

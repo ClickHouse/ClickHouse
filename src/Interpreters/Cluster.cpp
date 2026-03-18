@@ -1,8 +1,6 @@
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Cluster.h>
 #include <base/range.h>
 #include <base/sort.h>
@@ -120,7 +118,6 @@ Cluster::Address::Address(
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-    bind_host = config.getString(config_prefix + ".bind_host", "");
     priority = Priority{config.getInt(config_prefix + ".priority", 1)};
 
     proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked");
@@ -133,7 +130,7 @@ Cluster::Address::Address(
     if (!port)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
-    is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
+    is_local = isLocal(config.getInt(port_type, 0));
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
@@ -166,7 +163,7 @@ Cluster::Address::Address(
             parsed_host_port = parseAddress(info.hostname, 0);
             can_be_local = false;
         }
-        catch (const Exception &)
+        catch (...)
         {
             parsed_host_port = parseAddress(info.hostname, params.clickhouse_port);
         }
@@ -176,12 +173,8 @@ Cluster::Address::Address(
     database_replica_name = info.replica_name;
     port = parsed_host_port.second;
     secure = params.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-    bind_host = params.bind_host;
     priority = params.priority;
-    if (info.is_local.has_value())
-        is_local = *info.is_local;
-    else
-        is_local = can_be_local && isLocal(params.clickhouse_port);
+    is_local = can_be_local && isLocal(params.clickhouse_port);
     shard_index = shard_index_;
     replica_index = replica_index_;
     cluster = params.cluster_name;
@@ -291,7 +284,7 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
         secure = Protocol::Secure::Enable;
     }
 
-    const char * colon = strchr(full_string.data(), ':'); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    const char * colon = strchr(full_string.data(), ':');  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     if (!user_pw_end || !colon)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
 
@@ -300,7 +293,7 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
     if (!host_end)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
 
-    const char * has_db = strchr(full_string.data(), '#'); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    const char * has_db = strchr(full_string.data(), '#');  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     const char * port_end = has_db ? has_db : address_end;
 
     Address address;
@@ -328,16 +321,7 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
     std::lock_guard lock(mutex);
 
-    std::string expanded_cluster_name;
-    try
-    {
-        expanded_cluster_name = macros_->expand(cluster_name);
-    }
-    catch (Exception & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to expand macros in cluster name: {}", e.message());
-    }
-
+    auto expanded_cluster_name = macros_->expand(cluster_name);
     auto it = impl.find(expanded_cluster_name);
     return (it != impl.end()) ? it->second : nullptr;
 }
@@ -419,9 +403,9 @@ Clusters::Impl Clusters::getContainer() const
 /// Implementation of `Cluster` class
 
 Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
-    const Settings & settings,
-    const String & config_prefix_,
-    const String & cluster_name) : name(cluster_name)
+                 const Settings & settings,
+                 const String & config_prefix_,
+                 const String & cluster_name) : name(cluster_name)
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -501,12 +485,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 "server",
                 address.compression,
                 address.secure,
-                address.bind_host,
                 address.priority);
 
             info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
             info.per_replica_pools = {std::move(pool)};
-            info.default_database = address.default_database;
 
             if (weight)
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -526,6 +508,11 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             bool internal_replication = config.getBool(prefix + ".internal_replication", false);
 
+            ShardInfoInsertPathForInternalReplication insert_paths;
+            /// "_all_replicas" is a marker that will be replaced with all replicas
+            /// (for creating connections in the Distributed engine)
+            insert_paths.compact = fmt::format("shard{}_all_replicas", current_shard_num);
+
             for (const auto & replica_key : replica_keys)
             {
                 if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication") || startsWith(replica_key, "name"))
@@ -540,6 +527,14 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                         current_shard_num,
                         current_replica_num);
                     ++current_replica_num;
+
+                    if (internal_replication)
+                    {
+                        auto dir_name = replica_addresses.back().toFullString(/* use_compact_format= */ false);
+                        if (!replica_addresses.back().is_local)
+                            concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
+                        concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
+                    }
                 }
                 else
                     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
@@ -552,6 +547,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 current_shard_num,
                 std::move(shard_name),
                 weight,
+                std::move(insert_paths),
                 internal_replication);
         }
 
@@ -564,6 +560,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     initMisc();
 }
 
+
 Cluster::Cluster(
     const Settings & settings,
     const std::vector<std::vector<String>> & names,
@@ -575,13 +572,10 @@ Cluster::Cluster(
 
     for (const auto & shard : names)
     {
-        if (shard.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard contains zero number of replicas");
-
         Addresses current;
         for (const auto & replica : shard)
             current.emplace_back(
-                DatabaseReplicaInfo{replica, "", "", {}},
+                DatabaseReplicaInfo{replica, "", ""},
                 params,
                 current_shard_num,
                 current.size() + 1);
@@ -598,8 +592,7 @@ Cluster::Cluster(
 Cluster::Cluster(
     const Settings & settings,
     const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
-    const ClusterConnectionParameters & params,
-    bool internal_replication)
+    const ClusterConnectionParameters & params)
 {
     UInt32 current_shard_num = 1;
 
@@ -617,7 +610,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, "", 1, internal_replication);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num);
         ++current_shard_num;
     }
 
@@ -631,18 +624,13 @@ void Cluster::addShard(
     UInt32 current_shard_num,
     String current_shard_name,
     UInt32 weight,
+    ShardInfoInsertPathForInternalReplication insert_paths,
     bool internal_replication)
 {
     Addresses shard_local_addresses;
 
     ConnectionPoolPtrs all_replicas_pools;
     all_replicas_pools.reserve(addresses.size());
-
-    ShardInfoInsertPathForInternalReplication insert_paths;
-    if (internal_replication)
-        /// "_all_replicas" is a marker that will be replaced with all replicas
-        /// (for creating connections in the Distributed engine)
-        insert_paths.compact = fmt::format("shard{}_all_replicas", current_shard_num);
 
     for (const auto & replica : addresses)
     {
@@ -661,22 +649,12 @@ void Cluster::addShard(
             "server",
             replica.compression,
             replica.secure,
-            replica.bind_host,
             replica.priority);
 
         all_replicas_pools.emplace_back(replica_pool);
         if (replica.is_local && !treat_local_as_remote)
             shard_local_addresses.push_back(replica);
-
-        if (internal_replication)
-        {
-            auto dir_name = replica.toFullString(/* use_compact_format= */ false);
-            if (!replica.is_local)
-                concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
-            concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
-        }
     }
-
     ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
         all_replicas_pools,
         settings[Setting::load_balancing],
@@ -686,7 +664,7 @@ void Cluster::addShard(
     if (weight)
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 
-    shards_info.emplace_back(
+    shards_info.push_back({
         std::move(insert_paths),
         current_shard_num,
         std::move(current_shard_name),
@@ -694,9 +672,8 @@ void Cluster::addShard(
         std::move(shard_local_addresses),
         std::move(shard_pool),
         std::move(all_replicas_pools),
-        internal_replication,
-        addresses.at(0).default_database
-    );
+        internal_replication
+    });
 }
 
 
@@ -829,12 +806,10 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                     "server",
                     address.compression,
                     address.secure,
-                    address.bind_host,
                     address.priority);
 
                 info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
                 info.per_replica_pools = {std::move(pool)};
-                info.default_database = address.default_database;
 
                 addresses_with_failover.emplace_back(Addresses{address});
 

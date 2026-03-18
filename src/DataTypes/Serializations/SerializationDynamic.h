@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnDynamic.h>
 
@@ -13,15 +12,11 @@ class SerializationDynamicElement;
 class SerializationDynamic : public ISerialization
 {
 public:
-    explicit SerializationDynamic(
-        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
-        const SerializationInfoSettings & serialization_info_settings_ = {})
-        : max_dynamic_types(max_dynamic_types_)
-        , serialization_info_settings(serialization_info_settings_)
+    explicit SerializationDynamic(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES) : max_dynamic_types(max_dynamic_types_)
     {
     }
 
-    struct SerializationVersion
+    struct DynamicSerializationVersion
     {
         enum Value
         {
@@ -36,26 +31,13 @@ public:
             V1 = 1,
             /// V2 serialization: the same as V1 but without max_dynamic_types parameter in DynamicStructure stream.
             V2 = 2,
-            /// V3 serialization: the same as V2 but variant type names are serialized in binary format and statistics can be empty.
-            V3 = 4,
-            /// FLATTENED serialization:
-            /// - DynamicStructure stream:
-            ///     <list of all types stored in Dynamic column>
-            /// - DynamicData stream:
-            ///     <indexes of types stored in each row, have type UInt(8|16|32|64) depending on the total number of types>
-            ///     <data for each type in order from the types list>
-            ///
-            /// This serialization is used in Native format only for easier support for Dynamic type in clients.
-            FLATTENED = 3,
         };
 
         Value value;
 
         static void checkVersion(UInt64 version);
 
-        explicit SerializationVersion(UInt64 version);
-        explicit SerializationVersion(MergeTreeDynamicSerializationVersion version);
-        explicit SerializationVersion(Value value_) : value(value_) {}
+        explicit DynamicSerializationVersion(UInt64 version);
     };
 
     void enumerateStreams(
@@ -98,7 +80,6 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -108,12 +89,7 @@ public:
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void serializeBinary(const ColumnDynamic & dynamic_column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void deserializeBinary(ColumnDynamic & dynamic_column, ReadBuffer & istr, const FormatSettings & settings) const;
-
-    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    static void serializeVariantForHashCalculation(const IColumn & column, const SerializationPtr & serialization, const DataTypePtr & type, size_t row_num, WriteBuffer & ostr);
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -142,21 +118,15 @@ public:
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
-    SerializationPtr createSerializationForType(const DataTypePtr & type) const;
-
 private:
     friend SerializationDynamicElement;
 
     struct DeserializeBinaryBulkStateDynamicStructure : public ISerialization::DeserializeBinaryBulkState
     {
-        SerializationVersion structure_version;
+        DynamicSerializationVersion structure_version;
         DataTypePtr variant_type;
         size_t num_dynamic_types;
         ColumnDynamic::StatisticsPtr statistics;
-
-        /// For flattened serialization only.
-        DataTypes flattened_data_types;
-        DataTypePtr flattened_indexes_type;
 
         explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_)
             : structure_version(structure_version_)
@@ -170,7 +140,6 @@ private:
     };
 
     size_t max_dynamic_types;
-    const SerializationInfoSettings serialization_info_settings;
 };
 
 }

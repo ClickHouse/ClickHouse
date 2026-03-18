@@ -53,20 +53,15 @@ inline char * writeVarUInt(UInt64 x, char * ostr)
     return ostr;
 }
 
-inline UInt64 encodeZigZag(Int64 value)
-{
-    return (static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63);
-}
-
 template <typename OutBuf>
 inline void writeVarInt(Int64 x, OutBuf & ostr)
 {
-    writeVarUInt(encodeZigZag(x), ostr);
+    writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
 }
 
 inline char * writeVarInt(Int64 x, char * ostr)
 {
-    return writeVarUInt(encodeZigZag(x), ostr);
+    return writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
 }
 
 namespace varint_impl
@@ -91,23 +86,6 @@ inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
     }
 }
 
-template <bool check_eof>
-inline void ALWAYS_INLINE ignoreVarUInt(ReadBuffer & istr)
-{
-    for (size_t i = 0; i < 10; ++i)
-    {
-        if constexpr (check_eof)
-            if (istr.eof()) [[unlikely]]
-                throwReadAfterEOF();
-
-        UInt64 byte = static_cast<unsigned char>(*istr.position());
-        ++istr.position();
-
-        if (!(byte & 0x80))
-            return;
-    }
-}
-
 }
 
 inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
@@ -116,15 +94,6 @@ inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
         varint_impl::readVarUInt<false>(x, istr);
     else
         varint_impl::readVarUInt<true>(x, istr);
-}
-
-/// Advances past a VarUInt without decoding it.
-inline void ALWAYS_INLINE ignoreVarUInt(ReadBuffer & istr)
-{
-    if (istr.buffer().end() - istr.position() >= 10)
-        varint_impl::ignoreVarUInt<false>(istr);
-    else
-        varint_impl::ignoreVarUInt<true>(istr);
 }
 
 inline const char * ALWAYS_INLINE readVarUInt(UInt64 & x, const char * istr, size_t size)
@@ -148,22 +117,17 @@ inline const char * ALWAYS_INLINE readVarUInt(UInt64 & x, const char * istr, siz
     return istr;
 }
 
-inline Int64 decodeZigZag(UInt64 n)
-{
-    return static_cast<Int64>((n >> 1) ^ -(n & 1));
-}
-
 template <typename InBuf>
 inline void ALWAYS_INLINE readVarInt(Int64 & x, InBuf & istr)
 {
     readVarUInt(*reinterpret_cast<UInt64*>(&x), istr);
-    x = decodeZigZag(static_cast<UInt64>(x));
+    x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);
 }
 
 inline const char * ALWAYS_INLINE readVarInt(Int64 & x, const char * istr, size_t size)
 {
     const char * res = readVarUInt(*reinterpret_cast<UInt64*>(&x), istr, size);
-    x = decodeZigZag(static_cast<UInt64>(x));
+    x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);
     return res;
 }
 
@@ -185,14 +149,14 @@ inline void ALWAYS_INLINE readVarUInt(UInt16 & x, ReadBuffer & istr)
 {
     UInt64 tmp;
     readVarUInt(tmp, istr);
-    x = static_cast<UInt16>(tmp);
+    x = tmp;
 }
 
 inline void ALWAYS_INLINE readVarInt(Int16 & x, ReadBuffer & istr)
 {
     Int64 tmp;
     readVarInt(tmp, istr);
-    x = static_cast<Int16>(tmp);
+    x = tmp;
 }
 
 template <typename T>
@@ -201,7 +165,7 @@ inline void ALWAYS_INLINE readVarUInt(T & x, ReadBuffer & istr)
 {
     UInt64 tmp;
     readVarUInt(tmp, istr);
-    x = static_cast<T>(tmp);
+    x = tmp;
 }
 
 inline size_t getLengthOfVarUInt(UInt64 x)
@@ -221,7 +185,7 @@ inline size_t getLengthOfVarUInt(UInt64 x)
 
 inline size_t getLengthOfVarInt(Int64 x)
 {
-    return getLengthOfVarUInt(encodeZigZag(x));
+    return getLengthOfVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)));
 }
 
 }

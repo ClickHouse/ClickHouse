@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-shared-merge-tree
+# Tags: long, no-replicated-database
 # Tag no-replicated-database: Fails due to additional replicas or shards
-# Tag no-shared-merge-tree: Quorum inserts unsupported for smt
 
 set -e
 

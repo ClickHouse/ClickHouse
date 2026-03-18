@@ -1,3 +1,4 @@
+#include <sys/stat.h>
 #include <sys/types.h>
 
 #include <optional>
@@ -23,9 +24,10 @@
 
 #include <Interpreters/Context.h>
 
+#include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageStripeLog.h>
-#include <Storages/StorageLogSettings.h>
+#include "StorageLogSettings.h"
 #include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -38,9 +40,7 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
-
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Disks/IDiskTransaction.h>
 
 #include <base/insertAtEnd.h>
 
@@ -99,7 +99,7 @@ public:
     }
 
     StripeLogSource(
-        std::shared_ptr<const StorageStripeLog> storage_,
+        const StorageStripeLog & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         const Names & column_names,
         ReadSettings read_settings_,
@@ -107,8 +107,8 @@ public:
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_,
         size_t file_size_)
-        : ISource(std::make_shared<const Block>(getHeader(storage_snapshot_, column_names, index_begin_, index_end_)))
-        , storage(std::move(storage_))
+        : ISource(getHeader(storage_snapshot_, column_names, index_begin_, index_end_))
+        , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , read_settings(std::move(read_settings_))
         , indices(indices_)
@@ -131,7 +131,7 @@ protected:
             res = block_in->read();
 
             /// Freeing memory before destroying the object.
-            if (res.empty())
+            if (!res)
             {
                 block_in.reset();
                 data_in.reset();
@@ -143,7 +143,7 @@ protected:
     }
 
 private:
-    const std::shared_ptr<const StorageStripeLog> storage;
+    const StorageStripeLog & storage;
     StorageSnapshotPtr storage_snapshot;
     ReadSettings read_settings;
 
@@ -168,8 +168,8 @@ private:
         {
             started = true;
 
-            String data_file_path = storage->table_path + "data.bin";
-            data_in.emplace(storage->disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)));
+            String data_file_path = storage.table_path + "data.bin";
+            data_in.emplace(storage.disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)));
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
@@ -183,7 +183,7 @@ public:
     using WriteLock = std::unique_lock<std::shared_timed_mutex>;
 
     explicit StripeLogSink(StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
-        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
@@ -201,7 +201,7 @@ public:
         storage.saveFileSizes(lock);
 
         size_t initial_data_size = storage.file_checker.getFileSize(storage.data_file_path);
-        block_out = std::make_unique<NativeWriter>(*data_out, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), std::nullopt, false, &storage.indices, initial_data_size);
+        block_out = std::make_unique<NativeWriter>(*data_out, 0, metadata_snapshot->getSampleBlock(), std::nullopt, false, &storage.indices, initial_data_size);
     }
 
     String getName() const override { return "StripeLogSink"; }
@@ -386,7 +386,7 @@ Pipe StorageStripeLog::read(
 
     size_t data_file_size = file_checker.getFileSize(data_file_path);
     if (!data_file_size)
-        return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
+        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
 
     auto indices_for_selected_columns
         = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{column_names.begin(), column_names.end()}));
@@ -406,7 +406,7 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            std::static_pointer_cast<const StorageStripeLog>(shared_from_this()), storage_snapshot, column_names, read_settings, indices_for_selected_columns, begin, end, data_file_size));
+            *this, storage_snapshot, column_names, read_settings, indices_for_selected_columns, begin, end, data_file_size));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -441,18 +441,9 @@ std::optional<CheckResult> StorageStripeLog::checkDataNext(DataValidationTasksPt
     return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
 }
 
-void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
+void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
-    WriteLock lock{rwlock, getLockTimeout(local_context)};
-    if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-
-    /// We need to remove files here instead of doing truncate because truncate can break hardlinks used by concurrent backups
-    auto clear_tx = disk->createTransaction();
-    clear_tx->removeFileIfExists(data_file_path);
-    clear_tx->removeFileIfExists(index_file_path);
-    clear_tx->removeFileIfExists(file_checker.getPath());
-    clear_tx->commit();
+    disk->clearDirectory(table_path);
 
     indices.clear();
     file_checker.setEmpty(data_file_path);
@@ -547,7 +538,7 @@ void StorageStripeLog::updateTotalRows(const WriteLock &)
     total_rows = new_total_rows;
 }
 
-std::optional<UInt64> StorageStripeLog::totalRows(ContextPtr) const
+std::optional<UInt64> StorageStripeLog::totalRows(const Settings &) const
 {
     if (indices_loaded)
         return total_rows;
@@ -558,7 +549,7 @@ std::optional<UInt64> StorageStripeLog::totalRows(ContextPtr) const
     return {};
 }
 
-std::optional<UInt64> StorageStripeLog::totalBytes(ContextPtr) const
+std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
 {
     return total_bytes;
 }

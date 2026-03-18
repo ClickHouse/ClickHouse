@@ -1,4 +1,4 @@
-#include<Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include "ReadFromMemoryStorageStep.h"
 
 #include <atomic>
 #include <functional>
@@ -29,14 +29,14 @@ public:
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
-        : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
+        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
         , requested_column_names_and_types(storage_snapshot->getColumnsByNames(
-              GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
+              GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
     {
-        auto all_column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+        auto all_column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects());
         for (const auto & [name, type] : all_column_names_and_types)
             all_names_to_types[name] = type;
     }
@@ -110,7 +110,7 @@ ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
     const size_t num_streams_,
     const bool delay_read_for_global_sub_queries_)
     : SourceStepWithFilter(
-        std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)),
+        storage_snapshot_->getSampleBlockForColumns(columns_to_read_),
         columns_to_read_,
         query_info_,
         storage_snapshot_,
@@ -128,15 +128,11 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        pipe = Pipe(std::make_shared<NullSource>(output_header));
+        assert(output_header != std::nullopt);
+        pipe = Pipe(std::make_shared<NullSource>(*output_header));
     }
 
     pipeline.init(std::move(pipe));
-}
-
-QueryPlanStepPtr ReadFromMemoryStorageStep::clone() const
-{
-    return std::make_unique<ReadFromMemoryStorageStep>(*this);
 }
 
 Pipe ReadFromMemoryStorageStep::makePipe()

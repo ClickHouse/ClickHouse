@@ -29,16 +29,11 @@ def test_old_dirs_cleanup(start_cluster):
         CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table', 'node1')
         PARTITION BY date ORDER BY id
-        SETTINGS cleanup_delay_period=3600, max_cleanup_delay_period=3600
         """
     )
 
     node1.query("INSERT INTO test_table VALUES (toDate('2020-01-01'), 1, 10)")
     assert node1.query("SELECT count() FROM test_table") == "1\n"
-
-    data_path = node1.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='test_table'"
-    ).strip()
 
     node1.stop_clickhouse()
 
@@ -46,22 +41,23 @@ def test_old_dirs_cleanup(start_cluster):
         [
             "bash",
             "-c",
-            f"mv {data_path}/20200101_0_0_0 {data_path}/delete_tmp_20200101_0_0_0",
+            "mv /var/lib/clickhouse/data/default/test_table/20200101_0_0_0 /var/lib/clickhouse/data/default/test_table/delete_tmp_20200101_0_0_0",
         ],
         privileged=True,
     )
 
     node1.start_clickhouse()
 
-    assert_logs_contain_with_retry(node1, "Removing temporary directory .*delete_tmp_20200101_0_0_0")
-
-    assert_logs_contain_with_retry(node1, "Created empty part 20200101_0_0_0 instead of lost part")
-    # Replaced empty part
     result = node1.exec_in_container(
-        ["bash", "-c", f"ls {data_path}/"],
+        ["bash", "-c", "ls /var/lib/clickhouse/data/default/test_table/"],
         privileged=True,
     )
+
+    # Replaced empty part
     assert "20200101_0_0_0" in result
     assert node1.query("SELECT count() FROM test_table") == "0\n"
+
+    assert_logs_contain_with_retry(node1, "Removing temporary directory")
+    assert_logs_contain_with_retry(node1, "delete_tmp_20200101_0_0_0")
 
     node1.query("DROP TABLE test_table SYNC")

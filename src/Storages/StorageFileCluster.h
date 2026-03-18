@@ -27,13 +27,7 @@ public:
         const ConstraintsDescription & constraints_);
 
     std::string getName() const override { return "FileCluster"; }
-
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(
-        const ActionsDAG::Node * predicate,
-        const ActionsDAG * /* filter */,
-        const ContextPtr & context,
-        ClusterPtr,
-        StorageMetadataPtr) const override;
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
 private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
@@ -41,7 +35,6 @@ private:
     Strings paths;
     String filename;
     String format_name;
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
 }

@@ -1,6 +1,6 @@
-#include <Dictionaries/CacheDictionary.h>
-#include <Dictionaries/CacheDictionaryStorage.h>
-#include <Dictionaries/SSDCacheDictionaryStorage.h>
+#include "CacheDictionary.h"
+#include "CacheDictionaryStorage.h"
+#include "SSDCacheDictionaryStorage.h"
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
 

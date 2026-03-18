@@ -127,7 +127,7 @@ void HTTPSClientSession::abort()
 }
 
 
-X509 * HTTPSClientSession::serverCertificate()
+X509Certificate HTTPSClientSession::serverCertificate()
 {
 	SecureStreamSocket sss(socket());
 	return sss.peerCertificate();
@@ -157,7 +157,7 @@ void HTTPSClientSession::proxyAuthenticate(HTTPRequest& request)
 void HTTPSClientSession::connect(const SocketAddress& address)
 {
 	bool useProxy = !getProxyHost().empty() && !bypassProxy();
-
+	
 	if (useProxy && isProxyTunnel())
 	{
 		StreamSocket proxySocket(proxyConnect());

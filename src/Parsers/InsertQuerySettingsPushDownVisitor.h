@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {

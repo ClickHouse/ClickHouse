@@ -1,11 +1,15 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Common/typeid_cast.h>
+#include "Parsers/ASTExpressionList.h"
+#include "Parsers/ASTIdentifier.h"
+#include "Parsers/ASTSelectQuery.h"
+#include "Parsers/ASTSubquery.h"
+#include "Parsers/ASTTablesInSelectQuery.h"
+#include <Parsers/Lexer.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
@@ -38,7 +42,7 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
     expr_list->children[0] = makeASTFunction("count");
 
     table_expr->children.clear();
-    table_expr->children.emplace_back(make_intrusive<ASTSubquery>());
+    table_expr->children.emplace_back(std::make_shared<ASTSubquery>());
     table_expr->database_and_table_name = nullptr;
     table_expr->table_function = nullptr;
     table_expr->subquery = table_expr->children[0];
@@ -48,14 +52,14 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
     {
         auto * select_ptr = cloned_select_query->as<ASTSelectQuery>();
         select_ptr->refSelect()->children.clear();
-        select_ptr->refSelect()->children.emplace_back(make_intrusive<ASTIdentifier>(column_name));
-        auto exprlist = make_intrusive<ASTExpressionList>();
-        exprlist->children.emplace_back(make_intrusive<ASTIdentifier>(column_name));
+        select_ptr->refSelect()->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+        auto exprlist = std::make_shared<ASTExpressionList>();
+        exprlist->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
         cloned_select_query->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::GROUP_BY, exprlist);
 
-        auto expr = make_intrusive<ASTExpressionList>();
+        auto expr = std::make_shared<ASTExpressionList>();
         expr->children.emplace_back(cloned_select_query);
-        auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+        auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
         select_with_union->union_mode = SelectUnionMode::UNION_DEFAULT;
         select_with_union->is_normalized = false;
         select_with_union->list_of_modes.clear();
