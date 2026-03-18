@@ -190,6 +190,10 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
         return;
     }
 
+    if (settings.float_precision > 60)
+        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+            "Too high precision requested for Float, must not be more than 60, got {}", settings.float_precision);
+
     DoubleConverter<false>::BufferType buffer;
     double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
     const auto result = DoubleConverter<false>::instance()
