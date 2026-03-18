@@ -21,6 +21,10 @@ b	b
 c	c
 0
 1	one
+a	a
+b	b
+1	one
+2	two
 Test 3: DROP + re-ADD same name -- old data invisible
 a	a
 b	1

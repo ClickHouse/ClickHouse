@@ -78,6 +78,10 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
+:::note
+When [physical column names](/engines/table-engines/mergetree-family/mergetree#physical-column-names) are active, `DROP COLUMN` is a metadata-only operation — no mutation is created and no data files are rewritten. The physical files of the dropped column remain in existing parts until those parts are merged. To reclaim disk space immediately, run `OPTIMIZE TABLE ... FINAL`.
+:::
+
 :::tip
 You can't delete a column if it is referenced by [materialized view](/sql-reference/statements/create/view). Otherwise, it returns an error.
 :::
@@ -95,6 +99,10 @@ RENAME COLUMN [IF EXISTS] name to new_name
 ```
 
 Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
+
+:::note
+By default, `RENAME COLUMN` on MergeTree tables creates a mutation that rewrites every data part to update file names. When [physical column names](/engines/table-engines/mergetree-family/mergetree#physical-column-names) are active, `RENAME COLUMN` is a metadata-only operation — no mutation is created and no data files are rewritten.
+:::
 
 **NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`.
 

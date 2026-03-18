@@ -61,9 +61,18 @@ SETTINGS
 INSERT INTO t_instant_drop VALUES (1, 'one', 10);
 ALTER TABLE t_instant_drop DROP COLUMN c;
 
+-- Part still lists dropped column (metadata-only drop, files remain)
 SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_instant_drop' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
 
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_instant_drop' AND NOT is_done;
+SELECT * FROM t_instant_drop ORDER BY a;
+
+-- After merge, dropped column files are cleaned up
+INSERT INTO t_instant_drop VALUES (2, 'two');
+OPTIMIZE TABLE t_instant_drop FINAL;
+
+SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_instant_drop' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+
 SELECT * FROM t_instant_drop ORDER BY a;
 
 DROP TABLE t_instant_drop;

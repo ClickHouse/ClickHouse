@@ -1245,3 +1245,68 @@ ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 
 ```sql
 ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
 ```
+
+## Physical column names {#physical-column-names}
+
+By default, MergeTree stores each column's data in files named after the column itself (e.g. `name.bin`, `name.mrk2`).
+This means that schema changes such as `RENAME COLUMN` or `DROP COLUMN` require rewriting every data part on disk through a mutation, which can be expensive for large tables.
+
+When the `serialization_info_version` setting is set to `with_physical_names`, each column is assigned a stable, counter-allocated physical name (e.g. `0`, `1`, `2`) that is used for on-disk file names.
+A persistent mapping from logical column names to physical names is stored in a `physical_names.json` file alongside the table metadata.
+This decouples file names from logical column names and enables metadata-only `RENAME COLUMN` and `DROP COLUMN` operations.
+
+### Enabling physical names
+
+For new tables, set the `serialization_info_version` table setting:
+
+```sql
+CREATE TABLE example
+(
+    id UInt64,
+    name String,
+    value Float64
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS serialization_info_version = 'with_physical_names';
+```
+
+For existing tables, also enable `activate_physical_names_for_existing_tables`.
+Physical names are activated on the first compatible `ALTER` (`ADD COLUMN`, `DROP COLUMN`, or `RENAME COLUMN`):
+
+```sql
+ALTER TABLE example MODIFY SETTING
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+
+-- This ALTER activates physical names and is already metadata-only:
+ALTER TABLE example RENAME COLUMN name TO title;
+```
+
+### Behavior changes
+
+Once physical names are active:
+
+- **`RENAME COLUMN`** is instant and metadata-only.
+  No mutation is created, and no data files are rewritten.
+  The mapping is updated to point the new logical name to the same physical name.
+
+- **`DROP COLUMN`** is instant and metadata-only.
+  No mutation is created.
+  The column's entry is removed from the mapping, but the physical data files remain in existing parts until those parts are merged.
+  To reclaim disk space immediately, run `OPTIMIZE TABLE ... FINAL`.
+
+- **`MODIFY COLUMN`** (type change) still creates a mutation as before, since the data must be rewritten.
+
+- **`ADD COLUMN`** allocates a new counter-based physical name for the column.
+
+### Checking physical names
+
+The `physical_name` column in [`system.parts_columns`](/operations/system-tables/parts_columns) shows the physical name for each column in each part:
+
+```sql
+SELECT column, physical_name
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'example' AND active
+ORDER BY column;
+```

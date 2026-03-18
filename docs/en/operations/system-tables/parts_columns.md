@@ -42,6 +42,7 @@ Each row describes one data part.
 | `disk_name` | String | Name of a disk that stores the data part. |
 | `path` | String | Absolute path to the folder with data part files. |
 | `column` | String | Name of the column. |
+| `physical_name` | String | Physical name of the column on disk. Differs from the logical column name when [physical name mapping](/engines/table-engines/mergetree-family/mergetree#physical-column-names) is active (e.g. `0`, `1`, `2`). Empty when physical names are not enabled. |
 | `type` | String | Column type. |
 | `statistics` | String | Statistics created for the column. |
 | `estimates.min` | String | Estimated minimum value of the column. |
