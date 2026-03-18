@@ -1,4 +1,5 @@
 # Python >= 3.13 required
+legacy-cgi==2.6.4
 Jinja2==3.1.6
 MarkupSafe==3.0.3
 PyHDFS==0.4.0
