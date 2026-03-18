@@ -42,8 +42,6 @@ public:
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
-        size_t temporary_files_buffer_size = 0;
-        String temporary_files_codec = {};
 
         explicit Settings(const DB::Settings & settings);
         explicit Settings(size_t max_block_size_);
@@ -123,7 +121,7 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
 
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }

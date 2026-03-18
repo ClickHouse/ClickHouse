@@ -2,10 +2,9 @@
 
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTColumnDeclaration.h>
 
 #include <base/types.h>
-
-#include <map>
 
 namespace DB
 {
@@ -71,6 +70,5 @@ struct ColumnStatisticsDescription
 };
 
 StatisticsType stringToStatisticsType(String type);
-String statisticsTypeToString(StatisticsType type);
 
 }

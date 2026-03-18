@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -6,6 +6,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
+#include <base/range.h>
+
+#include <h3api.h>
+
 
 namespace DB
 {
@@ -23,11 +28,7 @@ class FunctionH3IsResClassIII : public IFunction
 public:
     static constexpr auto name = "h3IsResClassIII";
 
-    H3Validator validator;
-
-    explicit FunctionH3IsResClassIII(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3IsResClassIII>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3IsResClassIII>(); }
 
     std::string getName() const override { return name; }
 
@@ -75,9 +76,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            UInt8 res = 0;
-            if (validator.validateCell(data[row]))
-                res = static_cast<UInt8>(isResClassIII(data[row]));
+            UInt8 res = isResClassIII(data[row]);
             dst_data[row] = res;
         }
         return dst;

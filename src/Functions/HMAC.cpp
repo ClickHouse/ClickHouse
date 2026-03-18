@@ -12,6 +12,7 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 
+#include <Poco/String.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 

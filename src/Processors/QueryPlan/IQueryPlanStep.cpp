@@ -37,13 +37,6 @@ void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
     updateOutputHeader();
 }
 
-void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater)
-{
-    if (!supportsDataflowStatisticsCollection())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step {} doesn't support dataflow statistics collection", getName());
-    dataflow_cache_updater = std::move(updater);
-}
-
 IQueryPlanStep::RemovedUnusedColumns IQueryPlanStep::removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
@@ -175,7 +168,7 @@ static void doDescribeProcessor(const IProcessor & processor, size_t count, IQue
     if (!processor.getDescription().empty())
         settings.out << String(settings.offset, settings.indent_char) << "Description: " << processor.getDescription() << '\n';
 
-    settings.offset += settings.base_indent;
+    settings.offset += settings.indent;
 }
 
 void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)

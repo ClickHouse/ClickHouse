@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/MsgPackRowOutputFormat.h>
-#include <Processors/Port.h>
 
 #if USE_MSGPACK
 
@@ -29,6 +28,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/MsgPackExtensionTypes.h>
 
+#include <Processors/Port.h>
 
 namespace DB
 {

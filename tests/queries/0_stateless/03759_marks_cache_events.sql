@@ -1,5 +1,4 @@
--- Tags: no-parallel-replicas, no-parallel
--- Test depends on mark cache, don't run with others in parallel
+-- Tags: no-parallel-replicas
 
 drop table if exists data;
 create table data (key Int) engine=MergeTree() order by () settings prewarm_mark_cache=0;
@@ -21,7 +20,7 @@ select * from data format Null settings load_marks_asynchronously=1;
 system flush logs query_log;
 select query_kind, Settings['load_marks_asynchronously'] load_marks_asynchronously, ProfileEvents['MarkCacheHits'] hits, ProfileEvents['MarkCacheMisses'] misses
   from system.query_log
-  where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() and query_kind in ('Select', 'Insert') and type != 'QueryStart'
+  where current_database = currentDatabase() and query_kind in ('Select', 'Insert') and type != 'QueryStart'
   order by event_time_microseconds
   format CSVWithNames;
 
@@ -38,6 +37,6 @@ optimize table data final;
 system flush logs part_log;
 select part_name, ProfileEvents['MarkCacheHits'] hits, ProfileEvents['MarkCacheMisses'] misses
   from system.part_log
-  where event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() and event_type = 'MergeParts'
+  where database = currentDatabase() and event_type = 'MergeParts'
   order by event_time_microseconds
   format CSVWithNames;

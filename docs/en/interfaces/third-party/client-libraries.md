@@ -72,8 +72,6 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn't done 
 - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 ### Kotlin {#kotlin}
 - [AORM](https://github.com/TanVD/AORM)
-### C++ {#cpp}
-- [ClickHouse driver for userver framework](https://userver.tech/dd/ddb/clickhouse_driver.html)
 ### C# {#c}
 - [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
 - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)

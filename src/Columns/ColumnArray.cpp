@@ -1,3 +1,5 @@
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
@@ -147,25 +149,27 @@ void ColumnArray::get(size_t n, Field & res) const
         res_arr.push_back(getData()[offset + i]);
 }
 
-void ColumnArray::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
 
     if (options.notFull(name_buf))
         name_buf << "[";
+    DataTypes element_types;
+    element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        getData().getValueNameImpl(name_buf, offset + i, options);
-        if (!options.notFull(name_buf))
-            break;
+        const auto & type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+        element_types.push_back(type);
     }
-
     if (options.notFull(name_buf))
         name_buf << "]";
+
+    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }
 
 std::string_view ColumnArray::getDataAt(size_t n) const
@@ -394,9 +398,6 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::popBack(size_t n)
 {
-    if (n > size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
     auto & offsets_data = getOffsets();
     size_t nested_n = offsets_data.back() - offsetAt(offsets_data.size() - n);
     if (nested_n)
@@ -589,18 +590,20 @@ ColumnPtr ColumnArray::convertToFullColumnIfConst() const
     return ColumnArray::create(data->convertToFullColumnIfConst(), offsets);
 }
 
-void ColumnArray::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnArray::getExtremes(Field & min, Field & max) const
 {
     min = Array();
     max = Array();
 
-    if (start >= end)
+    size_t col_size = size();
+
+    if (col_size == 0)
         return;
 
-    size_t min_idx = start;
-    size_t max_idx = start;
+    size_t min_idx = 0;
+    size_t max_idx = 0;
 
-    for (size_t i = start + 1; i < end; ++i)
+    for (size_t i = 1; i < col_size; ++i)
     {
         if (compareAt(i, min_idx, *this, /* nan_direction_hint = */ 1) < 0)
             min_idx = i;
@@ -1345,7 +1348,7 @@ ColumnPtr ColumnArray::compress(bool force_compression) const
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
-    if (replicate_offsets.empty() || replicate_offsets.back() == 0)
+    if (replicate_offsets.empty())
         return cloneEmpty();
 
     if (typeid_cast<const ColumnUInt8 *>(data.get()))

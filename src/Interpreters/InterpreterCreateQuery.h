@@ -100,7 +100,7 @@ private:
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
-    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
+    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
     void setEngine(ASTCreateQuery & create) const;
@@ -122,10 +122,6 @@ private:
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
-
-    /// Remove transaction metadata files (txn_version.txt) from all parts for a table.
-    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
-
     void throwIfTooManyEntities(ASTCreateQuery & create) const;
 
     ASTPtr query_ptr;
@@ -139,7 +135,7 @@ private:
     bool need_ddl_guard = true;
     bool is_restore_from_backup = false;
 
-    String as_database_saved;
-    String as_table_saved;
+    mutable String as_database_saved;
+    mutable String as_table_saved;
 };
 }

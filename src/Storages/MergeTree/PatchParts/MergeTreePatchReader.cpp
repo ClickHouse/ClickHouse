@@ -33,7 +33,7 @@ namespace ErrorCodes
 MergeTreePatchReader::MergeTreePatchReader(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_)
     : patch_part(std::move(patch_part_))
     , reader(std::move(reader_))
-    , range_reader(reader.get(), {}, nullptr, std::make_shared<ReadStepPerformanceCounters>(), false, reader->canReadIncompleteGranules())
+    , range_reader(reader.get(), {}, nullptr, std::make_shared<ReadStepPerformanceCounters>(), false)
 {
 }
 
@@ -159,7 +159,7 @@ static MinMaxStat getResultBlockStat(const Block & result_block, const String & 
     Field min_value;
     Field max_value;
 
-    column->getExtremes(min_value, max_value, 0, column->size());
+    column->getExtremes(min_value, max_value);
     return {min_value.safeGet<UInt64>(), max_value.safeGet<UInt64>()};
 }
 

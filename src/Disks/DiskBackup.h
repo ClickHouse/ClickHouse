@@ -42,8 +42,6 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
-
     std::optional<UInt64> getTotalSpace() const override;
     std::optional<UInt64> getAvailableSpace() const override;
     std::optional<UInt64> getUnreservedSpace() const override;
@@ -123,6 +121,8 @@ public:
     bool isBroken() const override { return false; }
 
     bool isReadOnly() const override { return true; }
+
+    void shutdown() override;
 
 private:
     const std::shared_ptr<IBackup> backup;

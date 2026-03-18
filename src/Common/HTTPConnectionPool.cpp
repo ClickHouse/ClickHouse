@@ -8,7 +8,6 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProxyConfiguration.h>
-#include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
 #include <Common/Scheduler/ResourceGuard.h>
@@ -422,7 +421,7 @@ private:
                 Session::setSendThrottler(throttler);
 
             std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
-            chassert(result.exceptions() & std::ios::badbit);
+            result.exceptions(std::ios::badbit);
 
             request_stream = &result;
             request_stream_completed = false;
@@ -436,7 +435,7 @@ private:
         std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
         {
             std::istream & result = Session::receiveResponse(response);
-            chassert(result.exceptions() & std::ios::badbit);
+            result.exceptions(std::ios::badbit);
 
             response_stream = &result;
             response_stream_completed = false;

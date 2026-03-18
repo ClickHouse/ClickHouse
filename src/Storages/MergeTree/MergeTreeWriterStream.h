@@ -18,6 +18,7 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 /// Helper class, which holds chain of buffers to write data file with marks.
 /// It is used to write: one column, skip index or all columns (in compact format).
+template<bool only_plain_file>
 struct MergeTreeWriterStream
 {
     MergeTreeWriterStream(
@@ -31,6 +32,15 @@ struct MergeTreeWriterStream
         size_t max_compress_block_size_,
         const CompressionCodecPtr & marks_compression_codec_,
         size_t marks_compress_block_size_,
+        const WriteSettings & query_write_settings);
+
+    MergeTreeWriterStream(
+        const String & escaped_column_name_,
+        const MutableDataPartStoragePtr & data_part_storage,
+        const String & data_path_,
+        const std::string & data_file_extension_,
+        const CompressionCodecPtr & compression_codec_,
+        size_t max_compress_block_size_,
         const WriteSettings & query_write_settings);
 
     ~MergeTreeWriterStream()
@@ -51,9 +61,9 @@ struct MergeTreeWriterStream
 
     /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
-    HashingWriteBuffer marks_hashing;
-    CompressedWriteBuffer marks_compressor;
-    HashingWriteBuffer marks_compressed_hashing;
+    std::conditional_t<!only_plain_file, HashingWriteBuffer, void*> marks_hashing;
+    std::conditional_t<!only_plain_file, CompressedWriteBuffer, void*> marks_compressor;
+    std::conditional_t<!only_plain_file, HashingWriteBuffer, void*> marks_compressed_hashing;
     bool compress_marks;
 
     bool is_prefinalized = false;

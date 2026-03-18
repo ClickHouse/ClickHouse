@@ -5,7 +5,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseS3.h>
 
-#include <Common/Logger.h>
 #include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -118,20 +117,20 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
     auto url = getFullUrl(name);
     checkUrl(url, context_, /* throw_on_error */true);
 
-    auto function = make_intrusive<ASTFunction>();
+    auto function = std::make_shared<ASTFunction>();
     function->name = "s3";
-    function->arguments = make_intrusive<ASTExpressionList>();
+    function->arguments = std::make_shared<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
-    function->arguments->children.push_back(make_intrusive<ASTLiteral>(url));
+    function->arguments->children.push_back(std::make_shared<ASTLiteral>(url));
     if (config.no_sign_request)
     {
-        function->arguments->children.push_back(make_intrusive<ASTLiteral>("NOSIGN"));
+        function->arguments->children.push_back(std::make_shared<ASTLiteral>("NOSIGN"));
     }
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
     {
-        function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.access_key_id.value()));
-        function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.secret_access_key.value()));
+        function->arguments->children.push_back(std::make_shared<ASTLiteral>(config.access_key_id.value()));
+        function->arguments->children.push_back(std::make_shared<ASTLiteral>(config.secret_access_key.value()));
     }
 
     auto table_function = TableFunctionFactory::instance().get(function, context_);
@@ -205,7 +204,7 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
     if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
     }
 
     return ast;

@@ -271,20 +271,6 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                         {"move", ObjectStorageQueueAction::MOVE},
                         {"tag", ObjectStorageQueueAction::TAG}})
 
-IMPLEMENT_SETTING_ENUM(ObjectStorageQueuePartitioningMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"none", ObjectStorageQueuePartitioningMode::NONE},
-     {"NONE", ObjectStorageQueuePartitioningMode::NONE},
-     {"hive", ObjectStorageQueuePartitioningMode::HIVE},
-     {"HIVE", ObjectStorageQueuePartitioningMode::HIVE},
-     {"regex", ObjectStorageQueuePartitioningMode::REGEX},
-     {"REGEX", ObjectStorageQueuePartitioningMode::REGEX}})
-
-IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"path", ObjectStorageQueueBucketingMode::PATH},
-     {"PATH", ObjectStorageQueueBucketingMode::PATH},
-     {"partition", ObjectStorageQueueBucketingMode::PARTITION},
-     {"PARTITION", ObjectStorageQueueBucketingMode::PARTITION}})
-
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
@@ -339,9 +325,7 @@ IMPLEMENT_SETTING_ENUM(
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
-     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
-     {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
-     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
+     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -349,11 +333,7 @@ IMPLEMENT_SETTING_ENUM(
     {{"lru", FileCachePolicy::LRU},
      {"LRU", FileCachePolicy::LRU},
      {"slru", FileCachePolicy::SLRU},
-     {"SLRU", FileCachePolicy::SLRU},
-     {"lru_overcommit", FileCachePolicy::LRU_OVERCOMMIT},
-     {"LRU_OVERCOMMIT", FileCachePolicy::LRU_OVERCOMMIT},
-     {"slru_overcommit", FileCachePolicy::SLRU_OVERCOMMIT},
-     {"SLRU_OVERCOMMIT", FileCachePolicy::SLRU_OVERCOMMIT}})
+     {"SLRU", FileCachePolicy::SLRU}})
 
 IMPLEMENT_SETTING_ENUM(
     VectorSearchFilterStrategy,
@@ -441,24 +421,8 @@ IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
      {"command", ArrowFlightDescriptorType::Command}})
 
 IMPLEMENT_SETTING_ENUM(DeduplicateInsertSelectMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"enable_when_possible", DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE},
+    {{"enable_when_possible", DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE},
      {"force_enable", DeduplicateInsertSelectMode::FORCE_ENABLE},
      {"disable", DeduplicateInsertSelectMode::DISABLE},
      {"enable_even_for_bad_queries", DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES}})
-
-IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"backward_compatible_choice", DeduplicateInsertMode::BACKWARD_COMPATIBLE_CHOICE},
-     {"enable", DeduplicateInsertMode::ENABLE},
-     {"disable", DeduplicateInsertMode::DISABLE}})
-
-IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
-    {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
-     {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
-     {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
-
-IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"raw", JemallocProfileFormat::Raw},
-     {"symbolized", JemallocProfileFormat::Symbolized},
-     {"collapsed", JemallocProfileFormat::Collapsed}})
-
 }

@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -11,6 +11,10 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
+
+#include <constants.h>
+#include <h3api.h>
+
 
 namespace DB
 {
@@ -28,11 +32,7 @@ namespace
     public:
         static constexpr auto name = "h3ToCenterChild";
 
-        H3Validator validator;
-
-        explicit FunctionH3ToCenterChild(const ContextPtr & context) : validator(context) {}
-
-        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToCenterChild>(context); }
+        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToCenterChild>(); }
 
         std::string getName() const override { return name; }
 
@@ -104,9 +104,7 @@ namespace
                     getName(),
                     toString(MAX_H3_RES));
 
-            UInt64 res = 0;
-            if (validator.validateCell(data_hindex[row]))
-                res = cellToCenterChild(data_hindex[row], data_resolution[row]);
+            UInt64 res = cellToCenterChild(data_hindex[row], data_resolution[row]);
 
             dst_data[row] = res;
         }

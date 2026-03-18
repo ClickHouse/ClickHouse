@@ -440,12 +440,8 @@ zkutil::ZooKeeper::FutureGet ZooKeeperWithFaultInjection::asyncTryGet(std::strin
     return future;
 }
 
-zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(const Coordination::Requests & ops)
-{
-    return asyncTryMultiNoThrow(std::span(ops));
-}
 
-zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops)
+zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(const Coordination::Requests & ops)
 {
 #ifndef NDEBUG
     /// asyncTryMultiNoThrow is not setup to handle faults with ephemeral nodes

@@ -69,7 +69,6 @@ Name of the data part. The part naming structure can be used to determine many a
         {"active",                                      std::make_shared<DataTypeUInt8>(),     "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
         {"marks",                                       std::make_shared<DataTypeUInt64>(),    "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                        std::make_shared<DataTypeUInt64>(),    "The number of rows."},
-        {"files",                                       std::make_shared<DataTypeUInt64>(),    "The number of files in the data part."},
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>(),    "Total size of all the data part files in bytes."},
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>(),    "Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
@@ -191,18 +190,13 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->rows_count);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->checksums.files.size());
-        if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getBytesOnDisk());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_columns_size().data_compressed);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_columns_size().data_uncompressed);
         if (columns_mask[src_index++])
-        {
-            auto index_size = part->getIndexSizeFromFile();
-            columns[res_index++]->insert(index_size.data_compressed > 0 ? index_size.data_compressed : index_size.data_uncompressed);
-        }
+            columns[res_index++]->insert(part->getIndexSizeFromFile());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_columns_size().marks);
         if (columns_mask[src_index++])

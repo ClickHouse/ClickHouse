@@ -281,7 +281,12 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
             continue;
         if (database->isExternal())
             continue;
-        column->insert(database_name);
+
+        /// Lazy database can contain only very primitive tables,
+        /// it cannot contain tables with data skipping indices.
+        /// Skip it to avoid unnecessary tables loading in the Lazy database.
+        if (database->getEngineName() != "Lazy")
+            column->insert(database_name);
     }
 
     /// Condition on "database" in a query acts like an index.

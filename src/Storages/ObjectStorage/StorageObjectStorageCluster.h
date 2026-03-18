@@ -18,8 +18,7 @@ public:
         const ColumnsDescription & columns_in_table_or_function_definition,
         const ConstraintsDescription & constraints_,
         const ASTPtr & partition_by,
-        ContextPtr context_,
-        bool is_table_function_ = false);
+        ContextPtr context_);
 
     std::string getName() const override;
 

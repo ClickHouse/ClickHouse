@@ -33,7 +33,6 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_STORAGE_READONLY;
     extern const int ACCESS_STORAGE_DOESNT_ALLOW_BACKUP;
-    extern const int REQUIRED_SECOND_FACTOR;
     extern const int WRONG_PASSWORD;
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
@@ -529,13 +528,6 @@ std::optional<AuthResult> IAccessStorage::authenticate(
     return authenticateImpl(credentials, address, external_authenticators, client_info, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
 }
 
-Authentication::CredentialsCheckResult areCredentialsValid(
-    const std::string & user_name,
-    const AuthenticationData & authentication_method,
-    const Credentials & credentials,
-    const ExternalAuthenticators & external_authenticators,
-    const ClientInfo & client_info,
-    SettingsChanges & settings);
 
 std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
@@ -556,7 +548,6 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
 
             bool skipped_not_allowed_authentication_methods = false;
 
-            bool need_second_factor = false;
             for (const auto & auth_method : user->authentication_methods)
             {
                 auto auth_type = auth_method.getType();
@@ -567,14 +558,11 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                     continue;
                 }
 
-                auto cred_check_result = areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings);
-                if (cred_check_result == Authentication::CredentialsCheckResult::Success)
+                if (areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings))
                 {
                     auth_result.authentication_data = auth_method;
                     return auth_result;
                 }
-                if (cred_check_result == Authentication::CredentialsCheckResult::NeedSecondFactor)
-                    need_second_factor = true;
             }
 
             if (skipped_not_allowed_authentication_methods)
@@ -583,9 +571,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                               "check allow_no_password and allow_plaintext_password settings in the server configuration");
             }
 
-            if (need_second_factor)
-                throw Exception(ErrorCodes::REQUIRED_SECOND_FACTOR, "Authentication requires second factor");
-            throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
+            throwInvalidCredentials();
         }
     }
 
@@ -595,19 +581,19 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
         return std::nullopt;
 }
 
-Authentication::CredentialsCheckResult areCredentialsValid(
+bool IAccessStorage::areCredentialsValid(
     const std::string & user_name,
     const AuthenticationData & authentication_method,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
-    SettingsChanges & settings)
+    SettingsChanges & settings) const
 {
     if (!credentials.isReady())
-        return Authentication::CredentialsCheckResult::Fail;
+        return false;
 
     if (credentials.getUserName() != user_name)
-        return Authentication::CredentialsCheckResult::Fail;
+        return false;
 
     auto valid_until = authentication_method.getValidUntil();
     if (valid_until)
@@ -615,7 +601,7 @@ Authentication::CredentialsCheckResult areCredentialsValid(
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         if (now > valid_until)
-            return Authentication::CredentialsCheckResult::Fail;
+            return false;
     }
 
     return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, client_info, settings);
@@ -824,6 +810,11 @@ void IAccessStorage::throwReadonlyCannotRemove(AccessEntityType type, const Stri
 void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
 {
     throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", address.toString());
+}
+
+void IAccessStorage::throwInvalidCredentials()
+{
+    throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
 }
 
 void IAccessStorage::throwBackupNotAllowed() const
