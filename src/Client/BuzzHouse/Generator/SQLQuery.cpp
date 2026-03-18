@@ -19,6 +19,7 @@ void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery *
     const bool prev_allow_subqueries = this->allow_subqueries;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_engine_udf = this->allow_engine_udf;
+    const PeerQuery prev_peer_query = this->peer_query;
 
     /// Backup everything
     for (const auto & [key, val] : this->levels)
@@ -99,11 +100,13 @@ void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery *
     this->allow_subqueries = prev_allow_subqueries;
     this->enforce_final = prev_enforce_final;
     this->allow_engine_udf = prev_allow_engine_udf;
+    this->peer_query = prev_peer_query;
 
     /// Don't let superfluous entries stay
     this->staged_databases.clear();
     this->staged_tables.clear();
     this->staged_views.clear();
+    this->staged_dictionaries.clear();
     this->staged_functions.clear();
 }
 
@@ -530,11 +533,7 @@ auto StatementGenerator::getQueryTableLambda()
             /* May require MergeTree table */
             && (req != TableRequirement::RequireMergeTree || tt.isMergeTreeFamily())
             /* May by replaced by a table engine */
-            && (req != TableRequirement::RequireReplaceable || tt.isEngineReplaceable())
-            /* May require a projection */
-            && (req != TableRequirement::RequireProjection || !tt.projs.empty())
-            /* May require an index */
-            && (req != TableRequirement::RequireIndex || !tt.idxs.empty());
+            && (req != TableRequirement::RequireReplaceable || tt.isEngineReplaceable());
     };
 }
 
@@ -613,7 +612,7 @@ String StatementGenerator::getNextTestingAddress(RandomGenerator & rg, const boo
     if (this->allow_not_deterministic && rg.nextSmallNumber() < 5)
     {
         /// Use 127.0.0.{1,2,..N} to test sharding logic in remote table functions
-        const uint32_t nshards = rg.nextBool() ? 2 : rg.randomInt<uint32_t>(1, 4);
+        const uint32_t nshards = rg.nextBool() ? 2 : rg.randomInt<uint32_t>(2, 4);
 
         res += "127.0.0.{";
         for (uint32_t i = 0; i < nshards; i++)
@@ -622,7 +621,7 @@ String StatementGenerator::getNextTestingAddress(RandomGenerator & rg, const boo
             {
                 res += ",";
             }
-            res += std::to_string(i);
+            res += std::to_string(i + 1);
         }
         res += "}";
     }
@@ -676,8 +675,6 @@ bool StatementGenerator::joinedTableOrFunction(
     const auto has_table_lambda = getQueryTableLambda<TableRequirement::NoRequirement>();
     const auto has_mergetree_table_lambda = getQueryTableLambda<TableRequirement::RequireMergeTree>();
     const auto has_replaceable_table_lambda = getQueryTableLambda<TableRequirement::RequireReplaceable>();
-    const auto has_projection_table_lambda = getQueryTableLambda<TableRequirement::RequireProjection>();
-    const auto has_idx_table_lambda = getQueryTableLambda<TableRequirement::RequireIndex>();
     const auto has_view_lambda
         = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const auto has_dictionary_lambda
@@ -686,8 +683,6 @@ bool StatementGenerator::joinedTableOrFunction(
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
     const bool has_mergetree_table = collectionHas<SQLTable>(has_mergetree_table_lambda);
     const bool has_replaceable_table = collectionHas<SQLTable>(has_replaceable_table_lambda);
-    const bool has_projection_table = collectionHas<SQLTable>(has_projection_table_lambda);
-    const bool has_idx_table = collectionHas<SQLTable>(has_idx_table_lambda);
     const bool has_view = collectionHas<SQLView>(has_view_lambda);
     const bool has_dictionary = collectionHas<SQLDictionary>(has_dictionary_lambda);
     const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
@@ -709,13 +704,15 @@ bool StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::TableEngineUDF)] = has_replaceable_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::RandomTableUDF)] = this->allow_not_deterministic && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
-    queryMask[static_cast<size_t>(QueryOp::MergeProjectionUDF)] = has_projection_table && this->allow_engine_udf;
-    queryMask[static_cast<size_t>(QueryOp::MergeTextIndexUDF)] = has_idx_table && this->allow_engine_udf;
+    queryMask[static_cast<size_t>(QueryOp::MergeProjectionUDF)] = has_mergetree_table && this->allow_engine_udf;
+    queryMask[static_cast<size_t>(QueryOp::MergeTextIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF)] = has_mergetree_table && this->allow_engine_udf;
 
     queryGen.setEnabled(queryMask);
     /// If MV chaining is requested, force the next source to be a view (clears flag after use)
-    const auto nopt = (this->chain_views && queryMask[static_cast<size_t>(QueryOp::View)] && rg.nextBool())
+    const bool chain_views_now = this->chain_views;
+    this->chain_views = false;
+    const auto nopt = (chain_views_now && queryMask[static_cast<size_t>(QueryOp::View)] && rg.nextBool())
         ? QueryOp::View
         : static_cast<QueryOp>(queryGen.nextOp()); /// drifts over time
 
@@ -959,7 +956,7 @@ bool StatementGenerator::joinedTableOrFunction(
         case QueryOp::LoopUDF: {
             /// Here don't care about the returned result
             this->depth++;
-            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, tof->mutable_tfunc()->mutable_loop());
+            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, false, tof->mutable_tfunc()->mutable_loop());
             UNUSED(u);
             this->depth--;
         }
@@ -1147,10 +1144,13 @@ bool StatementGenerator::joinedTableOrFunction(
         case QueryOp::MergeProjectionUDF: {
             std::vector<SQLRelationCol> parents;
             MergeTreeProjectionFunc * mtudf = tof->mutable_tfunc()->mutable_mtproj();
-            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_projection_table_lambda));
+            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
+            const String dname = tt.getDatabaseName();
+            const String tname = tt.getTableName();
 
             tt.setName(mtudf->mutable_est(), true);
-            mtudf->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomly(tt.projs)));
+            mtudf->mutable_proj()->set_projection(
+                fc.tableCountProjections(dname, tname) > 0 ? fc.tableGetRandomProjection(rg.nextInFullRange(), dname, tname) : "p0");
             addTableRelation(rg, true, rel_name, tt);
             SQLRelation & rel = this->levels.at(this->current_level).rels.back();
 
@@ -1167,11 +1167,13 @@ bool StatementGenerator::joinedTableOrFunction(
         case QueryOp::MergeTextIndexUDF: {
             SQLRelation rel(rel_name);
             MergeTreeTextIndexFunc * mtudf = tof->mutable_tfunc()->mutable_mttxtidx();
-            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_idx_table_lambda));
+            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
+            const String dname = tt.getDatabaseName();
+            const String tname = tt.getTableName();
 
             tt.setName(mtudf->mutable_est(), true);
-            mtudf->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(tt.idxs)));
-
+            mtudf->mutable_idx()->set_index(
+                fc.tableCountIndexes(dname, tname) > 0 ? fc.tableGetRandomIndex(rg.nextInFullRange(), dname, tname) : "i0");
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"token"}, string_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"dictionary_compression"}, string_tp.get()));
@@ -1197,9 +1199,14 @@ bool StatementGenerator::joinedTableOrFunction(
                 std::optional<SQLRelation> trel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", tt));
 
                 generateTableExpression(rg, trel, rg.nextMediumNumber() < 16, rg.nextMediumNumber() < 81, mtudf->mutable_pred());
-                if (rg.nextSmallNumber() < 4 && fc.tableHasPartitions(false, dname, tname))
+                if (rg.nextSmallNumber() < 4)
                 {
-                    mtudf->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
+                    PartsList * pl = mtudf->mutable_plist();
+
+                    if (rg.nextSmallNumber() < 9 && fc.tableHasPartitions(false, dname, tname))
+                    {
+                        pl->add_parts(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
+                    }
                 }
             }
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
@@ -1541,7 +1548,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto & nullFuncs
+                static const auto nullFuncs
                     = {SQLFunc::FUNCisNull, SQLFunc::FUNCisNullable, SQLFunc::FUNCisNotNull, SQLFunc::FUNCisZeroOrNull};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nullFuncs));
@@ -1569,7 +1576,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto & likeFuncs
+                static const auto likeFuncs
                     = {SQLFunc::FUNClike, SQLFunc::FUNCnotLike, SQLFunc::FUNCilike, SQLFunc::FUNCnotILike, SQLFunc::FUNCmatch};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(likeFuncs));
@@ -1627,7 +1634,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto & inFuncs = {SQLFunc::FUNCin, SQLFunc::FUNCnotIn, SQLFunc::FUNCglobalIn, SQLFunc::FUNCglobalNotIn};
+                static const auto inFuncs = {SQLFunc::FUNCin, SQLFunc::FUNCnotIn, SQLFunc::FUNCglobalIn, SQLFunc::FUNCglobalNotIn};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(inFuncs));
                 expr1 = sfc->add_args()->mutable_expr();
@@ -2076,7 +2083,7 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
 
         if (rg.nextSmallNumber() < 8)
         {
-            static const std::vector<uint32_t> & limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
+            static const std::vector<uint32_t> limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
             buf += std::to_string(rg.nextSmallNumber() < 9 ? rg.pickRandomly(limitValues) : rg.nextRandomUInt32());
         }
         else
@@ -2132,17 +2139,25 @@ void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_orde
     lim->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.nextBool()));
 }
 
-void StatementGenerator::generateOffset(RandomGenerator & rg, const bool has_order_by, OffsetStatement * off)
+void StatementGenerator::generateOffset(RandomGenerator & rg, const bool has_order_by, const bool has_limit, OffsetStatement * off)
 {
     off->set_comma(rg.nextBool());
     generateLimitExpr(rg, off->mutable_row_count());
-    if (has_order_by && (!this->allow_not_deterministic || rg.nextBool()))
+    /// FETCH is only valid in the SQL-standard OFFSET ... FETCH form, which requires no LIMIT clause.
+    /// When paired with LIMIT n OFFSET m the parser never sets offset_clause_has_sql_standard_row_or_rows,
+    /// so FETCH would not be consumed and any trailing ROWS/FETCH token causes a parse error.
+    if (!has_limit && has_order_by && (!this->allow_not_deterministic || rg.nextBool()))
     {
         FetchStatement * fst = off->mutable_fetch();
 
         generateLimitExpr(rg, fst->mutable_row_count());
         fst->set_rows(rg.nextBool() ? RowsKeyword::OFF_ROW : RowsKeyword::OFF_ROWS);
         fst->set_first(rg.nextBool());
+    }
+    if (!off->has_fetch() && rg.nextSmallNumber() < 4)
+    {
+        /// Generate standalone OFFSET n ROW/ROWS (without FETCH) to exercise that syntax variant.
+        off->set_rows(rg.nextBool() ? RowsKeyword::OFF_ROW : RowsKeyword::OFF_ROWS);
     }
     if (has_order_by && (!this->allow_not_deterministic || rg.nextBool()))
     {
@@ -2444,7 +2459,7 @@ void StatementGenerator::generateSelect(
         }
         if ((allowed_clauses & allow_offset) && order_safe && rg.nextMediumNumber() < 23)
         {
-            generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
+            generateOffset(rg, ssc->has_orderby(), ssc->has_limit(), ssc->mutable_offset());
         }
     }
     /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
@@ -2459,15 +2474,56 @@ void StatementGenerator::generateSelect(
 void StatementGenerator::generateTopSelect(
     RandomGenerator & rg, const bool force_global_agg, const uint32_t allowed_clauses, TopSelect * ts)
 {
-    const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
+    /// ~10% of the time emit a plain `SELECT * FROM <entity>` (table, view, or dictionary) to
+    /// exercise full-scan paths without the overhead of the full query generator.
+    const bool has_t = collectionHas<SQLTable>(attached_tables);
+    const bool has_v = collectionHas<SQLView>(attached_views);
+    const bool has_d = collectionHas<SQLDictionary>(attached_dictionaries);
 
-    this->levels[this->current_level] = QueryLevel(this->current_level);
-    generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
-    this->levels.clear();
+    if (!force_global_agg && (has_t || has_v || has_d) && rg.nextSmallNumber() < 2)
+    {
+        static const std::vector<uint32_t> limit_choices = {1, 10, 100, 1000, 10000};
+        SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
+        JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+        ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
+        /// Collect which entity types are available and pick one uniformly
+        bool supports_final = false;
+        const uint32_t n_choices = static_cast<uint32_t>(has_t) + static_cast<uint32_t>(has_v) + static_cast<uint32_t>(has_d);
+        uint32_t choice = rg.randomInt<uint32_t>(0, n_choices - 1);
+
+        if (has_t && choice-- == 0)
+        {
+            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables)).get();
+            t.setName(est, false);
+            supports_final = t.supportsFinal();
+        }
+        else if (has_v && choice-- == 0)
+        {
+            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views)).get();
+            v.setName(est, false);
+            supports_final = v.supportsFinal();
+        }
+        else
+        {
+            rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries)).get().setName(est, false);
+        }
+        jtf->set_final(supports_final && rg.nextSmallNumber() < 5);
+
+        /// Add a random LIMIT so we don't drag huge result sets
+        ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.pickRandomly(limit_choices));
+    }
+    else
+    {
+        const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
+
+        this->levels[this->current_level] = QueryLevel(this->current_level);
+        generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
+        this->levels.clear();
+    }
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
         SelectIntoFile * sif = ts->mutable_intofile();
-        const std::filesystem::path & qfile = fc.client_file_path / "file.data";
+        const std::filesystem::path qfile = std::filesystem::temp_directory_path() / "file.data";
 
         sif->set_path(qfile.generic_string());
         if (fc.truncate_output)

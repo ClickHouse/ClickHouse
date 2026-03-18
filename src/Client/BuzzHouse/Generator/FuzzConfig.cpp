@@ -317,7 +317,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"datalakecatalog", allow_datalakecatalog},
            {"arrowflight", allow_arrowflight},
            {"alias", allow_alias},
-           {"kafka", allow_kafka}};
+           {"kafka", allow_kafka},
+           {"backup", allow_backup}};
 
     const SettingEntries configEntries = {
         {"client_file_path", [&](const JSONObjectType & value) { client_file_path = std::filesystem::path(String(value.getString())); }},
@@ -477,7 +478,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
         }
         res &= this->cb->processTextAsSingleQuery(query);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         LOG_ERROR(log, "Error on processing query '{}': {}\n", query, DB::getCurrentExceptionMessage(false));
         res = false;
@@ -493,8 +494,8 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
     return res;
 }
 
-template <typename T>
-void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, const String & query)
+template <typename T, typename ParseFunc>
+void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, const String & query, ParseFunc parse)
 {
     String buf;
     uint64_t found = 0;
@@ -504,9 +505,13 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
     {
         std::ifstream infile(fuzzer_out_file);
         out.clear();
-        while (std::getline(infile, buf) && !buf.empty())
+        while (std::getline(infile, buf))
         {
-            out.push_back(buf);
+            if (!buf.empty() && buf.back() == '\r')
+                buf.pop_back();
+            if (buf.empty())
+                break;
+            out.push_back(parse(buf));
             buf.resize(0);
             found++;
         }
@@ -519,9 +524,35 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
     loadServerSettings<String>(
         this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
-    loadServerSettings<String>(this->disks, "disks", R"(SELECT DISTINCT "name" FROM "system"."disks")");
     loadServerSettings<String>(
         this->keeper_disks, "keeper disks", R"(SELECT DISTINCT "name" FROM "system"."disks" WHERE metadata_type = 'Keeper')");
+    loadServerSettings<DiskInfo>(
+        this->disks,
+        "disks",
+        R"(SELECT "name", "type", "path", "object_storage_type", "metadata_type", "is_encrypted", "cache_path" != '' FROM "system"."disks")",
+        [](const String & buf) -> DiskInfo
+        {
+            const auto tab1 = buf.find('\t');
+            chassert(tab1 != String::npos);
+            const auto tab2 = buf.find('\t', tab1 + 1);
+            chassert(tab2 != String::npos);
+            const auto tab3 = buf.find('\t', tab2 + 1);
+            chassert(tab3 != String::npos);
+            const auto tab4 = buf.find('\t', tab3 + 1);
+            chassert(tab4 != String::npos);
+            const auto tab5 = buf.find('\t', tab4 + 1);
+            chassert(tab5 != String::npos);
+            const auto tab6 = buf.find('\t', tab5 + 1);
+            chassert(tab6 != String::npos);
+            return {
+                buf.substr(0, tab1),
+                buf.substr(tab1 + 1, tab2 - tab1 - 1),
+                buf.substr(tab2 + 1, tab3 - tab2 - 1),
+                buf.substr(tab3 + 1, tab4 - tab3 - 1),
+                buf.substr(tab4 + 1, tab5 - tab4 - 1),
+                buf.substr(tab5 + 1, tab6 - tab5 - 1) == "1",
+                buf.substr(tab6 + 1) == "1"};
+        });
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
@@ -571,8 +602,10 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
                 buf.pop_back();
             }
             const size_t pos1 = buf.find('\t');
+            chassert(pos1 != String::npos);
             const String nschema = buf.substr(0, pos1);
             const size_t pos2 = buf.find('\t', pos1 + 1);
+            chassert(pos2 != String::npos);
             const String ntable = buf.substr(pos1 + 1, pos2 - pos1 - 1);
             const String ncol = buf.substr(pos2 + 1);
 
@@ -660,6 +693,8 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
     {
         std::ifstream infile(fuzzer_out_file, std::ios::in);
         std::getline(infile, res);
+        if (!res.empty() && res.back() == '\r')
+            res.pop_back();
     }
     return res;
 }
@@ -678,6 +713,8 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
     {
         std::ifstream infile(fuzzer_out_file, std::ios::in);
         std::getline(infile, res);
+        if (!res.empty() && res.back() == '\r')
+            res.pop_back();
     }
     return res.empty() ? "-1" : res;
 }
@@ -695,6 +732,8 @@ String FuzzConfig::getRandomFileSystemCacheValue()
     {
         std::ifstream infile(fuzzer_out_file, std::ios::in);
         std::getline(infile, res);
+        if (!res.empty() && res.back() == '\r')
+            res.pop_back();
     }
     return res;
 }
@@ -725,8 +764,83 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
     {
         std::ifstream infile(fuzzer_out_file, std::ios::in);
         std::getline(infile, res);
+        if (!res.empty() && res.back() == '\r')
+            res.pop_back();
     }
     return res;
+}
+
+uint32_t FuzzConfig::tableCountSystemRows(const String & system_table, const String & database, const String & table)
+{
+    String buf;
+    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
+
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                system_table,
+                db_clause,
+                table,
+                fuzzer_out_file.generic_string())))
+    {
+        std::ifstream infile(fuzzer_out_file);
+        if (std::getline(infile, buf) && !buf.empty())
+        {
+            return static_cast<uint32_t>(std::stoul(buf));
+        }
+    }
+    return 0;
+}
+
+String
+FuzzConfig::tableGetRandomSystemName(const uint64_t rand_val, const String & system_table, const String & database, const String & table)
+{
+    String res;
+    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
+
+    /// These system tables don't support sampling, so pick a random row with a window function
+    if (processServerQuery(
+            false,
+            fmt::format(
+                "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"name\" AS y FROM \"system\".\"{}\" WHERE "
+                "{} \"table\" = '{}') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"{}\" WHERE "
+                "{} \"table\" = '{}') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                system_table,
+                db_clause,
+                table,
+                rand_val,
+                system_table,
+                db_clause,
+                table,
+                fuzzer_out_file.generic_string())))
+    {
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
+        std::getline(infile, res);
+        if (!res.empty() && res.back() == '\r')
+            res.pop_back();
+    }
+    return res;
+}
+
+uint32_t FuzzConfig::tableCountIndexes(const String & database, const String & table)
+{
+    return tableCountSystemRows("data_skipping_indices", database, table);
+}
+
+String FuzzConfig::tableGetRandomIndex(const uint64_t rand_val, const String & database, const String & table)
+{
+    return tableGetRandomSystemName(rand_val, "data_skipping_indices", database, table);
+}
+
+uint32_t FuzzConfig::tableCountProjections(const String & database, const String & table)
+{
+    return tableCountSystemRows("projections", database, table);
+}
+
+String FuzzConfig::tableGetRandomProjection(const uint64_t rand_val, const String & database, const String & table)
+{
+    return tableGetRandomSystemName(rand_val, "projections", database, table);
 }
 
 void FuzzConfig::validateClickHouseHealth()
@@ -763,7 +877,8 @@ void FuzzConfig::validateClickHouseHealth()
                 " UNION ALL "
                 "(SELECT count() x, 11 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
                 "concat('%', 'CORRUPTED', '_DATA', '%'))"
-                ") tx ORDER BY y INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
+                "TabSeparated;",
                 fuzzer_out_file.generic_string())))
     {
         String buf;

@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3588 
+personal_ws-1.1 en 3591
 AArch
 ABIs
 ACLs
@@ -735,6 +735,7 @@ NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
 NFKC
+NFKCCasefold
 NFKD
 NOAA
 NULLIF
@@ -1132,6 +1133,8 @@ Subcolumns
 Subexpression
 Submodules
 Subqueries
+Subrequest
+Subrequests
 Substrings
 SummingMergeTree
 SuperSet
@@ -1605,6 +1608,7 @@ capnproto
 cardinalities
 cardinality
 cartesian
+caseFoldUTF
 caseWithExpression
 cashflow
 cashflows
@@ -1850,6 +1854,7 @@ dereference
 deserialization
 deserialize
 deserialized
+deserializer
 deserializing
 dest
 destructor
@@ -1858,7 +1863,6 @@ detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
-detectProgrammingLanguage
 detectTonality
 determinator
 deterministically
@@ -2803,6 +2807,7 @@ protocol
 protos
 proxied
 prql
+pseudocode
 pseudorandom
 pseudorandomize
 pseudoterminal
@@ -2936,6 +2941,7 @@ reinterpretAsString
 reinterpretAsUInt
 reinterpretAsUUID
 remerge
+removeDiacriticsUTF
 remoteSecure
 repivot
 replaceAll
@@ -3167,6 +3173,7 @@ subqueries
 subquery
 subranges
 subreddits
+subrequest
 subsecond
 subseconds
 subsequence
@@ -3377,6 +3384,7 @@ tokenizer
 tokenizers
 tokenizes
 tokenizing
+tokensForLikePattern
 toml
 toolchain
 toolset
@@ -3519,6 +3527,7 @@ varpop
 varpopstable
 varsamp
 varsampstable
+VarUInt
 vectorized
 vectorscan
 vendoring

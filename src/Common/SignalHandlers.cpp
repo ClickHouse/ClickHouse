@@ -183,7 +183,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
             for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
                 terminate_current_exception_trace[i] = stack_trace_frames[i];
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort in terminate handler
     }
     else
     {
@@ -599,7 +599,7 @@ try
     /// List changed settings.
     if (!query_id.empty())
     {
-        ContextPtr query_context = thread_ptr->getQueryContext();
+        ContextPtr query_context = thread_ptr->tryGetQueryContext();
         if (query_context)
         {
             String changed_settings = query_context->getSettingsRef().toString();

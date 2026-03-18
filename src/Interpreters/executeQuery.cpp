@@ -1,4 +1,5 @@
 #include <Common/DateLUTImpl.h>
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -96,6 +97,7 @@
 namespace ProfileEvents
 {
     extern const Event Query;
+    extern const Event InsertQuery;
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
@@ -1120,8 +1122,8 @@ static BlockIO executeQueryImpl(
         context->setInitialQueryStartTime(query_start_time);
     }
 
-    assert(internal || CurrentThread::get().getQueryContext());
-    assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+    assert(internal || CurrentThread::get().tryGetQueryContext());
+    assert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1176,7 +1178,7 @@ static BlockIO executeQueryImpl(
             try
             {
                 /// Verify that AST formatting is consistent:
-                /// If you format AST, parse it back, and format it again, you get the same string.
+                /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
                 std::string_view original_query{begin, static_cast<size_t>(end - begin)};
 
                 auto format_ast = [](ASTPtr ast)
@@ -1225,6 +1227,18 @@ static BlockIO executeQueryImpl(
                 }
 
                 chassert(ast2);
+
+                if (out_ast->getTreeHash(false) != ast2->getTreeHash(false))
+                {
+                    WriteBufferFromOwnString ast_tree1;
+                    WriteBufferFromOwnString ast_tree2;
+                    out_ast->dumpTree(ast_tree1);
+                    ast2->dumpTree(ast_tree2);
+
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
+                        ast_tree1.str(), ast_tree2.str());
+                }
 
                 String formatted2 = format_ast(ast2);
 
@@ -1296,7 +1310,7 @@ static BlockIO executeQueryImpl(
             }
             catch (const Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under debug build.
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under the debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
@@ -1568,6 +1582,9 @@ static BlockIO executeQueryImpl(
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
             {
+                // Increment InsertQuery for async insert with inline data
+                ProfileEvents::increment(ProfileEvents::InsertQuery);
+
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
@@ -2247,7 +2264,7 @@ void executeQuery(
         {
             set_result_details(result_details);
         }
-        catch (...)
+        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
             /// This exception can be ignored.
             /// because if the code goes here, it means there's already an exception raised during query execution,
