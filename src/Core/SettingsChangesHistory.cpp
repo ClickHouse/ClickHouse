@@ -65,6 +65,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
+            {"query_cache_for_subqueries", false, false, "A new setting to control query cache propagation to subqueries"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -502,7 +503,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"merge_tree_use_deserialization_prefixes_cache", true, true, "A new setting to control the usage of deserialization prefixes cache in MergeTree"},
             {"merge_tree_use_prefixes_deserialization_thread_pool", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"},
             {"optimize_and_compare_chain", true, false, "A new setting"},
-            {"query_cache_for_subqueries", false, false, "A new setting to control query cache propagation to subqueries"},
             {"optimize_and_compare_chain", false, true, "A new setting"},
             {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
             {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
