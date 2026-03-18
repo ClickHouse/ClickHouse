@@ -9,14 +9,30 @@
 namespace DB
 {
 
+/// Weights for combining cost components into a single scalar:
+///   total = cpu * cpu_weight + memory * memory_weight + network * network_weight
+///         + io * io_weight + sequential * sequential_weight
+///
+/// The `sequential` component represents single-threaded work (hash table builds in
+/// joins, merge phases) that cannot be parallelized within a node.  Its weight relative
+/// to `cpu_weight` should approximate the number of parallel threads per node, since
+/// sequential work is T× slower in wall-clock than parallel work on T threads.
+/// In a distributed setting it also controls broadcast-vs-shuffle: broadcast joins have
+/// `sequential = right_rows × 2` (full hash table on every node), while shuffle joins
+/// have `sequential = right_rows × 2 / N` (1/N per node).  For shuffle to win over
+/// broadcast on the sequential term alone: `sequential_weight > bytes_per_row × (N-1) / 2`.
+/// With typical TPC-H rows (~100 bytes) on a 20-node cluster, the threshold is ~950.
+///
+/// Configurable at query time via `SET param__internal_cascades_cost_config = '<json>'`.
 struct CostConfig
 {
-    Float64 cpu_weight = 1.0;
-    Float64 memory_weight = 0.1;
-    Float64 network_weight = 1.0;
-    Float64 io_weight = 1.0;
-    Float64 sequential_weight = 1.0;
-    Float64 exchange_fixed_overhead = 100.0;
+    Float64 cpu_weight = 1.0;             /// Parallelizable CPU work (scans, expression eval). Reference = 1.0.
+    Float64 memory_weight = 1.0;          /// Memory consumption (hash tables, buffers). ~0.1-1.0 depending on pressure.
+    Float64 network_weight = 1.0;         /// Per-byte network transfer. ~1.0 if bandwidth ≈ disk; higher for slow networks.
+    Float64 io_weight = 1.0;              /// Per-byte I/O (S3/disk reads). ~1.0 for S3; lower for fast NVMe.
+    Float64 sequential_weight = 1000.0;   /// Single-threaded phases (hash build, merge). ~threads_per_node for single-node
+                                          /// decisions; ~bytes_per_row × N / 2 for broadcast-vs-shuffle threshold.
+    Float64 exchange_fixed_overhead = 100.0; /// Fixed per-exchange latency (connection setup, metadata).
 
     String dump() const;
 };
