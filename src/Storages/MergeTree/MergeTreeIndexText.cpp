@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int CORRUPTED_DATA;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
@@ -1594,7 +1595,21 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     /// For very strict validation of the expression we fully parse it here.
     /// However it will be parsed again for index construction, generally immediately after this call.
     /// This is a bit redundant but that doesn't impact performance anyhow because the expression is intended to be simple enough.
-    MergeTreeIndexTextPreprocessor preprocessor(preprocessor_ast, index);
+    try
+    {
+        MergeTreeIndexTextPreprocessor preprocessor(preprocessor_ast, index);
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_IDENTIFIER && preprocessor_ast)
+        {
+            e.addMessage(
+                "The preprocessor expression '{}' must use the index column expression '{}' as its input, not the underlying table column",
+                preprocessor_ast->formatForErrorMessage(),
+                index.column_names.front());
+        }
+        throw;
+    }
 }
 
 }
