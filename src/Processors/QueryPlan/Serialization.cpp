@@ -220,7 +220,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         for (const auto & child : frame.children)
             input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, context, input_headers, output_header, settings};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())
@@ -235,6 +235,9 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
         frame.to_fill = &node;
+
+        for (const auto & storage : ctx.storage_holders)
+            plan.addStorageHolder(storage);
 
         stack.pop();
     }

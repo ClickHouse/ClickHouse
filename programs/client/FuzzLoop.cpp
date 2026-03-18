@@ -1,4 +1,5 @@
 #include <Client.h>
+#include <Common/CurrentThread.h>
 #include <base/scope_guard.h>
 
 #include <Core/Settings.h>

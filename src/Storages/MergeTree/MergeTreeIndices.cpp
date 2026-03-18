@@ -77,6 +77,15 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
 }
 
+std::vector<String> MergeTreeIndexFactory::getAllRegisteredNames() const
+{
+    std::vector<String> result;
+    result.reserve(creators.size());
+    for (const auto & pair : creators)
+        result.push_back(pair.first);
+    return result;
+}
+
 void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
 {
     auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);

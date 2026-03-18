@@ -309,6 +309,7 @@ public:
         std::string create_engine_name;
         const IAST * current_select = nullptr;
         const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
+        bool parent_has_trailing_settings = false; /// A parent ASTQueryWithOutput will append SETTINGS after this node's output.
     };
 
     void format(WriteBuffer & ostr, const FormatSettings & settings) const

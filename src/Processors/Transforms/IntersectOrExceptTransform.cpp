@@ -10,15 +10,11 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Ope
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
 {
-    const Names & columns = header_->getNames();
-    size_t num_columns = columns.empty() ? header_->columns() : columns.size();
+    size_t num_columns = header_->columns();
 
-    key_columns_pos.reserve(columns.size());
+    key_columns_pos.reserve(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-    {
-        auto pos = columns.empty() ? i : header_->getPositionByName(columns[i]);
-        key_columns_pos.emplace_back(pos);
-    }
+        key_columns_pos.emplace_back(i);
 }
 
 
