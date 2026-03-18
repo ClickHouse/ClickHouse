@@ -22,7 +22,8 @@ SELECT '= 127.0.0.1', ipv4_ FROM ipv4_test
     WHERE ipv4_ = toIPv4('127.0.0.1')
     ORDER BY ipv4_;
 
--- TODO: Assert that invalid values can't be inserted into IPv4 column.
+-- Assert that invalid values can't be inserted into IPv4 column.
+INSERT INTO ipv4_test VALUES ('hello'), ('300.0.0.1'), ('1.1.1.1'), (''); -- { clientError CANNOT_PARSE_IPV4 }
 
 DROP TABLE IF EXISTS ipv4_test;
 
@@ -54,7 +55,8 @@ SELECT '= 127.0.0.1', ipv6_ FROM ipv6_test
     WHERE ipv6_ = IPv4ToIPv6(toIPv4('127.0.0.1'))
     ORDER BY ipv6_;
 
--- TODO: Assert that invalid values can't be inserted into IPv6 column.
+-- Assert that invalid values can't be inserted into IPv6 column.
+INSERT INTO ipv6_test VALUES ('hello:world'), ('0:0:0:0:0:0:0:0:0'), ('fe80::9801:43ff:fe1f:7690'), ('1.1.1.1'), (''); -- { clientError CANNOT_PARSE_IPV6 }
 
 DROP TABLE IF EXISTS ipv6_test;
 
