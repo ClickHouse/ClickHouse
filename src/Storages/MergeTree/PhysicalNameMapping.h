@@ -67,12 +67,35 @@ public:
     void removeColumn(const String & logical_name);
     void renameColumn(const String & old_logical_name, const String & new_logical_name);
 
-    /// Two-phase rename for crash safety.  `beginRename` adds the new logical
-    /// name while keeping the old one — both map to the same physical name.
-    /// The mapping is persisted in this state.  After the metadata commit
-    /// succeeds, `finishRename` removes the old entry.  If we crash between
-    /// the two persists, reconciliation at startup sees the old logical name
-    /// in metadata and keeps that entry, removing the new one.
+    /// Two-phase rename for crash safety.
+    ///
+    /// RENAME COLUMN b TO name must update two persisted artifacts that cannot
+    /// be written atomically: `physical_names.json` (the mapping) and the table
+    /// metadata in the database catalog.  A naive single-step rename that
+    /// changes the mapping key from "b" to "name" in one write would lose the
+    /// physical name "b" if the server crashes before metadata commits — on
+    /// restart, metadata still has column "b", but the mapping no longer has
+    /// an entry for it, and `reconcilePhysicalNameMappingWithMetadata` would
+    /// remove the dangling "name" entry.
+    ///
+    /// Phase 1 (`beginRename`): add the NEW logical name while keeping the OLD
+    /// one — both point to the same physical name.  Persist the mapping.
+    ///   mapping on disk:  { "b":"b", "name":"b" }    (both present)
+    ///   metadata:         column "b"                  (not yet committed)
+    ///
+    /// Then commit the metadata (column "b" becomes "name").
+    ///
+    /// Phase 2 (`finishRename`): remove the OLD logical name and persist.
+    ///   mapping on disk:  { "name":"b" }
+    ///   metadata:         column "name"
+    ///
+    /// Crash scenarios (reconciliation removes mapping entries absent from
+    /// metadata):
+    ///  - Crash before metadata commit: metadata has "b", reconciliation
+    ///    keeps "b"->"b" and removes "name"->"b".  Correct original state.
+    ///  - Crash after metadata commit but before phase 2: metadata has "name",
+    ///    reconciliation keeps "name"->"b" and removes "b"->"b".  Correct
+    ///    renamed state.
     void beginRename(const String & old_logical_name, const String & new_logical_name);
     void finishRename(const String & old_logical_name);
 
