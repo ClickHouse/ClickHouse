@@ -36,6 +36,16 @@ void Group::setOptimizedFor(const ExpressionProperties & required_properties)
     optimized_properties.insert(required_properties.dump());
 }
 
+bool Group::isEnforcedFor(const ExpressionProperties & required_properties) const
+{
+    return enforced_properties.contains(required_properties.dump());
+}
+
+void Group::setEnforcedFor(const ExpressionProperties & required_properties)
+{
+    enforced_properties.insert(required_properties.dump());
+}
+
 bool Group::isFullyDoneFor(const ExpressionProperties & required_properties) const
 {
     return fully_done_properties.contains(required_properties.dump());

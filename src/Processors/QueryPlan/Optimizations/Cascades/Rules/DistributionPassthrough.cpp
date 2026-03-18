@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
@@ -120,60 +119,6 @@ protected:
             {
                 memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
                 result.push_back(implementation_expression);
-            }
-        }
-
-        /// For multi-node clusters: create GatherExchange alternatives that bridge
-        /// {N nodes} -> {1 node} directly, competing with the local {1 node} passthrough.
-        /// This bypasses Stage 3 (enforcer) which can't run when a {1 node} best already exists.
-        if (required_properties.distribution.node_count <= 1)
-        {
-            const auto & input_header = expression->getQueryPlanStep()->getOutputHeader();
-
-            for (size_t candidate : candidates)
-            {
-                /// Regular gather: sorting NOT preserved.
-                {
-                    auto gather_step = std::make_unique<GatherExchangeStep>(input_header, candidate);
-
-                    auto gather_expr = std::make_shared<GroupExpression>(std::move(gather_step));
-                    gather_expr->group_id = expression->group_id;
-
-                    ExpressionProperties input_required;
-                    input_required.distribution.node_count = candidate;
-
-                    gather_expr->inputs.push_back({expression->group_id, input_required});
-                    gather_expr->properties.distribution.node_count = 1;
-
-                    gather_expr->setApplied(*this, required_properties);
-                    memo.getGroup(expression->group_id)->addPhysicalExpression(gather_expr);
-                    result.push_back(gather_expr);
-                }
-
-                /// Sorted-merge gather: sorting PRESERVED.
-                /// Only useful when the parent requires sorting — the sorted gather
-                /// can consume per-node sorted streams and produce a globally sorted result.
-                if (!required_properties.sorting.empty())
-                {
-                    auto gather_step = std::make_unique<GatherExchangeStep>(
-                        input_header, candidate, required_properties.sorting);
-
-                    auto gather_expr = std::make_shared<GroupExpression>(std::move(gather_step));
-                    gather_expr->group_id = expression->group_id;
-
-                    ExpressionProperties input_required;
-                    input_required.distribution.node_count = candidate;
-                    input_required.sorting = required_properties.sorting;
-                    input_required.sort_limit = required_properties.sort_limit;
-
-                    gather_expr->inputs.push_back({expression->group_id, input_required});
-                    gather_expr->properties.distribution.node_count = 1;
-                    gather_expr->properties.sorting = required_properties.sorting;
-
-                    gather_expr->setApplied(*this, required_properties);
-                    memo.getGroup(expression->group_id)->addPhysicalExpression(gather_expr);
-                    result.push_back(gather_expr);
-                }
             }
         }
 

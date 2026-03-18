@@ -40,6 +40,8 @@ public:
     void setExplored() { is_explored = true; }
     bool isOptimizedFor(const ExpressionProperties & required_properties) const;
     void setOptimizedFor(const ExpressionProperties & required_properties);
+    bool isEnforcedFor(const ExpressionProperties & required_properties) const;
+    void setEnforcedFor(const ExpressionProperties & required_properties);
 
     /// Tracks whether optimization for a given property set is fully complete
     /// (all stages: explore, implement, enforce — have finished).
@@ -69,6 +71,7 @@ private:
     const GroupId group_id;
     bool is_explored = false;
     std::set<String> optimized_properties;  /// Tracks which required properties have had implementation rules applied
+    std::set<String> enforced_properties;   /// Tracks which required properties have had enforcer rules applied
     std::set<String> fully_done_properties; /// Tracks which required properties are fully optimized (all stages complete)
     std::unordered_set<String> physical_fingerprints;  /// Deduplicates identical physical expressions
 };

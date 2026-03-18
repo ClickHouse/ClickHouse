@@ -56,47 +56,78 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
 
         group->setOptimizedFor(required_properties);
     }
-    else if (!group->getBestImplementation(required_properties, optimizer_context.getMemo().getCostConfig()).expression)
+    else if (!group->isEnforcedFor(required_properties))
     {
         /// Stage 3: Apply enforcers to physical expressions that don't satisfy the
         /// required properties.  Enforcers produce self-referential expressions whose
-        /// inputs point back to the same group with relaxed requirements.  After their
-        /// inputs are optimized (via OptimizeInputsTask), the re-pushed self-task
-        /// re-enters Stage 3 to try further enforcers on the newly created expressions,
-        /// enabling natural composition (e.g. Sort + Gather -> Strategy A).
+        /// inputs point back to the same group with relaxed requirements.
+        ///
+        /// The gate uses `isEnforcedFor` instead of `!getBestImplementation` so that
+        /// enforcers always run exactly once per (group, properties) pair.  This lets
+        /// enforcer-created plans (e.g. GatherExchange on a distributed subtree) compete
+        /// on cost with passthrough implementations that already satisfy the properties.
+        ///
+        /// A fixed-point loop handles enforcer composition within a single invocation:
+        /// e.g. SortingEnforcer creates Sort({N nodes, sorted}), then DistributionEnforcer
+        /// creates GatherExchange(sorted) from it — all in the same Stage 3 pass.
+
+        group->setEnforcedFor(required_properties);
 
         /// Collect enforcer expressions first, then push tasks in the right order.
         std::vector<GroupExpressionPtr> enforcer_expressions;
 
         /// Deduplicate enforcers: different source expressions with the same
-        /// (node_count, is_replicated) produce physically identical exchange steps.
+        /// (node_count, is_replicated, has_sorting) produce physically identical exchange steps.
         /// Track which (enforcer, source_distribution_shape) combos we've already applied.
         std::unordered_set<String> seen_enforcer_keys;
 
-        /// Copy the list because enforcers add new physical expressions to the group.
-        auto existing_implementations = group->physical_expressions;
-        for (auto & expression : existing_implementations)
+        /// Fixed-point loop: iterate over newly-added physical expressions until no
+        /// new enforcers are produced.  Each iteration may create expressions that
+        /// enable further enforcers (e.g. Sort enables sorted GatherExchange).
+        size_t enforced_up_to = 0;
+        bool new_enforcers_created = true;
+        while (new_enforcers_created)
         {
-            if (required_properties.isSatisfiedBy(expression->properties))
+            new_enforcers_created = false;
+
+            /// Copy the list because enforcers add new physical expressions to the group.
+            auto physical_expressions = group->physical_expressions;
+            for (size_t i = enforced_up_to; i < physical_expressions.size(); ++i)
             {
-                optimizer_context.updateBestPlan(expression);
-                continue;
-            }
+                auto & expression = physical_expressions[i];
 
-            for (const auto & enforcer : optimizer_context.getEnforcerRules())
-            {
-                if (!enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
+                if (required_properties.isSatisfiedBy(expression->properties))
+                {
+                    optimizer_context.updateBestPlan(expression);
                     continue;
+                }
 
-                String enforcer_key = enforcer->getName()
-                    + ":" + std::to_string(expression->properties.distribution.node_count)
-                    + ":" + std::to_string(expression->properties.distribution.is_replicated);
-                if (!seen_enforcer_keys.insert(enforcer_key).second)
-                    continue;
+                for (const auto & enforcer : optimizer_context.getEnforcerRules())
+                {
+                    if (!enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
+                        continue;
 
-                auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
-                enforcer_expressions.insert(enforcer_expressions.end(), new_expressions.begin(), new_expressions.end());
+                    /// Include sorting state in the key so that DistributionEnforcer
+                    /// fires separately for sorted expressions (producing sorted gather)
+                    /// and unsorted expressions (producing regular gather).
+                    String enforcer_key = enforcer->getName()
+                        + ":" + std::to_string(expression->properties.distribution.node_count)
+                        + ":" + std::to_string(expression->properties.distribution.is_replicated)
+                        + ":" + std::to_string(!expression->properties.sorting.empty());
+                    if (!seen_enforcer_keys.insert(enforcer_key).second)
+                        continue;
+
+                    auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
+                    for (const auto & new_expression : new_expressions)
+                    {
+                        LOG_TEST(optimizer_context.log, "Enforcer '{}' on group #{} expression '{}' -> '{}'",
+                            enforcer->getName(), group_id, expression->getDescription(), new_expression->getDescription());
+                    }
+                    enforcer_expressions.insert(enforcer_expressions.end(), new_expressions.begin(), new_expressions.end());
+                    new_enforcers_created = true;
+                }
             }
+            enforced_up_to = physical_expressions.size();
         }
 
         if (!enforcer_expressions.empty())
