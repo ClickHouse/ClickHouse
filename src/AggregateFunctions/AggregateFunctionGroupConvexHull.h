@@ -42,6 +42,7 @@ struct AggregateFunctionGroupConvexHullData
 {
     MultiPolygon<Point> accumulated;
     bool has_value = false;
+    size_t add_count = 0;
 };
 
 /// WKBGeometry extension constants for types not in the WKB standard.
@@ -56,6 +57,23 @@ private:
     using Data = AggregateFunctionGroupConvexHullData<Point>;
     WKBGeometry input_type;
     bool correct_geometry = true;
+
+    /// Every kPruneInterval additions, recompute the convex hull and discard
+    /// interior points to cap memory growth.
+    static constexpr size_t kPruneInterval = 3000;
+
+    static void pruneAccumulated(Data & state)
+    {
+        if (!state.has_value || state.accumulated.empty())
+            return;
+
+        Polygon<Point> hull;
+        boost::geometry::convex_hull(state.accumulated, hull);
+
+        state.accumulated.clear();
+        state.accumulated.emplace_back(std::move(hull));
+        state.add_count = 0;
+    }
 
     static WKBGeometry resolveInputType(const DataTypePtr & type)
     {
@@ -258,6 +276,10 @@ public:
                     break; /// Already handled above
             }
         }
+
+        /// Periodically prune interior points to bound memory.
+        if (++state.add_count >= kPruneInterval)
+            pruneAccumulated(state);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -278,6 +300,11 @@ public:
             /// Append all polygons from rhs into our accumulator.
             state.accumulated.insert(state.accumulated.end(), rhs_state.accumulated.begin(), rhs_state.accumulated.end());
         }
+
+        /// Prune after merge if the combined state is large.
+        state.add_count += rhs_state.add_count;
+        if (state.add_count >= kPruneInterval)
+            pruneAccumulated(state);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
