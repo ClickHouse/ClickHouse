@@ -842,7 +842,10 @@ void TCPHandler::runImpl()
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
             if (connection_handle)
+            {
                 connection_handle->setActive(query_state->query_id);
+                SCOPE_EXIT(connection_handle->setIdle());
+            }
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
@@ -904,9 +907,6 @@ void TCPHandler::runImpl()
                     sendSelectProfileEvents(*query_state);
                 }
             }
-
-            if (connection_handle)
-                connection_handle->setIdle();
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();

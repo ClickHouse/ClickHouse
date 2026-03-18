@@ -246,6 +246,64 @@ def test_tcp_idle_after_exception(started_cluster):
         proc.wait(timeout=5)
 
 
+def test_tcp_active_then_exception_returns_to_idle(started_cluster):
+    """
+    Regression test for missing SCOPE_EXIT in TCPHandler.
+
+    Without the fix, calling setActive() before executeQuery() and only calling
+    setIdle() on the happy path meant that an exception thrown during execution
+    left the connection permanently stuck in status='active'.
+
+    The fix wraps setActive() with SCOPE_EXIT(setIdle()) so the status is
+    always reset, even when executeQuery() or the pipeline throws.
+
+    We verify the full transition: idle -> active (observable while the query
+    runs) -> idle (after the exception).
+    """
+    unique_id = f"test_exc_scope_{int(time.time() * 1000)}"
+    error_holder = []
+
+    def run_failing_query():
+        try:
+            # sleep(1) gives us a window to observe the 'active' state before
+            # throwIf triggers an exception during execution.
+            node.query(
+                "SELECT sleep(1), throwIf(1, 'intentional test exception')",
+                query_id=unique_id,
+            )
+        except Exception as e:
+            error_holder.append(str(e))
+
+    t = threading.Thread(target=run_failing_query)
+    t.start()
+    try:
+        # Let the query start and be marked active.
+        time.sleep(0.5)
+
+        rows = connections(f"query_id = '{unique_id}'")
+        assert len(rows) == 1, (
+            f"Expected connection to be visible as active, got {rows}"
+        )
+        assert rows[0]["status"] == "active", (
+            f"Expected status='active' while query runs, got {rows[0]['status']!r}"
+        )
+    finally:
+        t.join(timeout=10)
+
+    assert error_holder, "Expected query to fail with an exception"
+
+    # After the exception the connection must be back to idle with no query_id.
+    time.sleep(0.3)
+    rows = connections(f"query_id = '{unique_id}'")
+    assert rows == [], (
+        f"Connection must not show the old query_id after exception, got {rows}"
+    )
+    idle_rows = connections("status = 'idle' AND protocol = 'TCP'")
+    assert len(idle_rows) >= 1, (
+        "TCP connection must return to idle after exception"
+    )
+
+
 def test_http_active_during_request(started_cluster):
     """
     An HTTP request that is currently executing must appear in
