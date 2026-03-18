@@ -447,7 +447,7 @@ enum SQLFunc {
     FUNCdetectLanguage = 442;
     FUNCdetectLanguageMixed = 443;
     FUNCdetectLanguageUnknown = 444;
-    FUNCdetectProgrammingLanguage = 445;
+    reserved 445;
     FUNCdetectTonality = 446;
     FUNCdictGet = 447;
     FUNCdictGetAll = 448;
