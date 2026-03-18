@@ -1912,6 +1912,20 @@ namespace ErrorCodes
     - `true`
     - `false`
     )", EXPERIMENTAL) \
+    DECLARE(UInt64, replacing_merge_cleanup_period_seconds, 0, R"(
+    When set to a non-zero value and `allow_experimental_replacing_merge_with_cleanup`
+    is enabled, the background merge thread will periodically schedule a
+    `FINAL CLEANUP` merge for each partition of a `ReplacingMergeTree` table with
+    an `is_deleted` column. The cleanup merge runs at most once per
+    `replacing_merge_cleanup_period_seconds` seconds per partition, removing rows
+    where `is_deleted = 1` and keeping only the latest version of each key.
+
+    This setting is intended for tables with continuous inserts where
+    `min_age_to_force_merge_on_partition_only` cannot trigger because fresh parts
+    are always present. Set to 0 (default) to disable.
+
+    Requires `allow_experimental_replacing_merge_with_cleanup = 1`.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_reverse_key, false, R"(
     Enables support for descending sort order in MergeTree sorting keys. This
     setting is particularly useful for time series analysis and Top-N queries,

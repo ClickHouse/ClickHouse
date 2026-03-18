@@ -201,6 +201,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool disable_fetch_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
     extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
+    extern const MergeTreeSettingsUInt64 replacing_merge_cleanup_period_seconds;
     extern const MergeTreeSettingsBool enable_the_endpoint_id_with_zookeeper_name_prefix;
     extern const MergeTreeSettingsFloat fault_probability_after_part_commit;
     extern const MergeTreeSettingsFloat fault_probability_before_part_commit;
@@ -4337,9 +4338,13 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
                 bool cleanup = future_merged_part->final
                     && (*storage_settings_ptr)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
-                    && (*storage_settings_ptr)[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
-                    && (*storage_settings_ptr)[MergeTreeSetting::min_age_to_force_merge_seconds]
-                    && (*storage_settings_ptr)[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
+                    && (
+                        ((*storage_settings_ptr)[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
+                            && (*storage_settings_ptr)[MergeTreeSetting::min_age_to_force_merge_seconds]
+                            && (*storage_settings_ptr)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
+                        || (select_merge_result.value()[0].is_periodic_cleanup
+                            && (*storage_settings_ptr)[MergeTreeSetting::replacing_merge_cleanup_period_seconds])
+                    );
 
                 create_result = createLogEntryToMergeParts(
                     zookeeper,
