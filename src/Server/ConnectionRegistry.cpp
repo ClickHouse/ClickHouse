@@ -1,6 +1,8 @@
 #include <Server/ConnectionRegistry.h>
 
 #include <ctime>
+#include <mutex>
+#include <shared_mutex>
 
 
 namespace DB
