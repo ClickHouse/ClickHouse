@@ -1,0 +1,21 @@
+Setting value:
+true
+Setting value with explicit override:
+true
+max_threads value:
+8
+Full pipeline:
+(Expression)
+ExpressionTransform × 8
+  (Aggregating)
+  ShardedAggregatingTransform × 8
+    Resize × 8
+      ScatterByHashTransform 1 → 8
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+Check ScatterByHashTransform:
+1
+Check ShardedAggregatingTransform:
+1
