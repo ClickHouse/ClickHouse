@@ -714,7 +714,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     QueryStatusPtr process_list_element;
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context)
             process_list_element = query_context->getProcessListElement();
     }
@@ -4283,11 +4283,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
             future_merged_part->uuid = UUIDHelpers::generateV4();
 
-        /// Skip merge selection when merges are stopped (e.g. SYSTEM STOP MERGES).
-        /// Without this check, merge entries are created in ZooKeeper even though they cannot be executed,
-        /// and the source parts become "virtual" in the queue, which blocks TTL moves.
-        bool can_assign_merge = max_source_parts_bytes_for_merge > 0
-            && !merger_mutator.merges_blocker.isCancelled();
+        bool can_assign_merge = max_source_parts_bytes_for_merge > 0;
         PartitionIdsHint partitions_to_merge_in;
         if (can_assign_merge)
         {
@@ -4909,7 +4905,7 @@ void StorageReplicatedMergeTree::addLastSentPart(const MergeTreePartInfo & info)
 void StorageReplicatedMergeTree::waitForUniquePartsToBeFetchedByOtherReplicas(StorageReplicatedMergeTree::ShutdownDeadline shutdown_deadline_)
 {
     /// Will be true in case in case of query
-    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr)
+    if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext() != nullptr)
     {
         LOG_TRACE(log, "Will not wait for unique parts to be fetched by other replicas because shutdown called from DROP/DETACH query");
         return;
@@ -7894,7 +7890,10 @@ void StorageReplicatedMergeTree::fetchPartition(
 
     if (fetch_part)
     {
-        String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+        const auto * literal = partition->as<ASTLiteral>();
+        if (!literal)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a string literal for part name, got: {}", partition->formatForErrorMessage());
+        String part_name = literal->value.safeGet<String>();
         auto part_path = findReplicaHavingPart(part_name, from, zookeeper);
 
         if (part_path.empty())
@@ -9446,7 +9445,10 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
     auto zookeeper = getZooKeeperAndAssertNotReadonly();
 
-    String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+    const auto * literal = partition->as<ASTLiteral>();
+    if (!literal)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a string literal for part name, got: {}", partition->formatForErrorMessage());
+    String part_name = literal->value.safeGet<String>();
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
     auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});

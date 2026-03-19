@@ -1,4 +1,5 @@
 #include <memory>
+#include <Common/CurrentThread.h>
 #include <optional>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>

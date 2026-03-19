@@ -1356,6 +1356,9 @@ namespace ErrorCodes
     Stop merges assignment for shared merge tree. Only available in ClickHouse
     Cloud
     )", 0) \
+    DECLARE(Bool, shared_merge_tree_use_zookeeper_connection_pool, false, R"(
+    If enabled, SharedMergeTree uses one of server-level pooled ZooKeeper sessions.
+    )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_outdated_parts_check, true, R"(
     Enable outdated parts check. Only available in ClickHouse Cloud
     )", 0) \

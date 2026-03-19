@@ -1,4 +1,4 @@
-from praktika import Artifact, Docker, Job, Secret
+from praktika import Artifact, Docker, Secret
 from praktika.utils import MetaClasses, Utils
 
 # i.e. "ClickHouse/ci/tmp"
@@ -327,6 +327,8 @@ class JobNames:
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
     PR_BODY = "PR formatter"
+    CODE_REVIEW = "Code Review"
+    CI_RESULTS_REVIEW = "CI Results Review"
     FAST_TEST = "Fast test"
     SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"

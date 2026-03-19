@@ -5,7 +5,6 @@ from ci.defs.defs import (
     DOCKERS,
     SECRETS,
     ArtifactConfigs,
-    ArtifactNames,
     JobNames,
 )
 from ci.defs.job_configs import JobConfigs
@@ -46,6 +45,7 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
+        JobConfigs.code_review,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_arm_jobs,
@@ -137,6 +137,12 @@ workflow = Workflow.Config(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         *JobConfigs.toolchain_build_jobs,
+        # TODO: uncomment when praktika supports depends-on-all-jobs;
+        # currently set_dependency requires an explicit list, but CI Results Review
+        # should only run after every other job has finished.
+        # JobConfigs.ci_results_review.set_dependency(
+        #     FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        # ),
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
