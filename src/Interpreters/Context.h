@@ -1093,10 +1093,15 @@ private:
 public:
     /// Returns the database_namespace_separator server setting value.
     String getDatabaseNamespaceSeparator() const;
-    /// Returns the set of shared databases from the shared_databases_across_namespaces setting.
-    /// These databases are visible to all tenants and excluded from namespace prefixing.
-    /// Reads from live config — supports SYSTEM RELOAD CONFIG.
+    /// Returns the cached set of shared databases from the `shared_databases_across_namespaces`
+    /// config setting.  The cache is populated at startup and refreshed on config reload.
     std::unordered_set<String> getSharedDatabasesAcrossNamespaces() const;
+    /// Parse a comma-separated list of database names into an unordered set,
+    /// trimming whitespace around each entry.
+    static std::unordered_set<String> parseSharedDatabasesConfig(const String & value);
+    /// Reload the cached set of shared databases from the given config.
+    /// Called at startup and on `SYSTEM RELOAD CONFIG`.
+    void reloadSharedDatabasesAcrossNamespaces(const Poco::Util::AbstractConfiguration & config);
     /// Validate that a database name does not contain the namespace separator.
     /// Only checked when database_namespace_separator is configured.
     void validateDatabaseNameNoSeparator(const String & database_name) const;

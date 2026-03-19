@@ -629,6 +629,11 @@ struct ContextSharedPart : boost::noncopyable
 
     ServerSettings server_settings;
 
+    /// Cached set of shared databases parsed from the `shared_databases_across_namespaces`
+    /// config setting.  Updated atomically on config reload via `MultiVersion` so that
+    /// readers on the hot path (`applyDatabaseNamespace`) never block.
+    MultiVersion<std::unordered_set<String>> shared_databases_across_namespaces;
+
     std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
     std::optional<DatabaseReplicatedSettings> database_replicated_settings TSA_GUARDED_BY(mutex); /// Settings of DatabaseReplicated engine.
@@ -3372,10 +3377,9 @@ String Context::getDatabaseNamespaceSeparator() const
     return getServerSettings()[ServerSetting::database_namespace_separator].toString();
 }
 
-std::unordered_set<String> Context::getSharedDatabasesAcrossNamespaces() const
+std::unordered_set<String> Context::parseSharedDatabasesConfig(const String & value)
 {
     std::unordered_set<String> result;
-    String value = getConfigRef().getString("shared_databases_across_namespaces", "");
     if (value.empty())
         return result;
 
@@ -3401,6 +3405,24 @@ std::unordered_set<String> Context::getSharedDatabasesAcrossNamespaces() const
         start = end + 1;
     }
     return result;
+}
+
+std::unordered_set<String> Context::getSharedDatabasesAcrossNamespaces() const
+{
+    auto ptr = shared->shared_databases_across_namespaces.get();
+    if (ptr)
+        return *ptr;
+    /// Fallback for the case where the cache has not been initialized yet
+    /// (e.g., during early startup before `reloadSharedDatabasesAcrossNamespaces`
+    /// is called).  Parse directly from the live config.
+    return parseSharedDatabasesConfig(getConfigRef().getString("shared_databases_across_namespaces", ""));
+}
+
+void Context::reloadSharedDatabasesAcrossNamespaces(const Poco::Util::AbstractConfiguration & config)
+{
+    auto parsed = std::make_unique<std::unordered_set<String>>(
+        parseSharedDatabasesConfig(config.getString("shared_databases_across_namespaces", "")));
+    shared->shared_databases_across_namespaces.set(std::move(parsed));
 }
 
 /// Rejects CREATE DATABASE when the name contains the configured separator.
