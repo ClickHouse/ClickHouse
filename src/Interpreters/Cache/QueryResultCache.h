@@ -21,7 +21,10 @@ struct Settings;
 /// Checks that query cache can be used for query.
 /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
 /// Throws if ast contains non-deterministic functions or system tables and appropriate handling setting is set to throw.
-bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context);
+/// When skip_context_check is true, the context's canUseQueryResultCache flag is not checked.
+/// This is used for explicit per-subquery opt-in where the subquery has SETTINGS use_query_cache = true
+/// but the outer query context may not have the flag set.
+bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;

@@ -1859,13 +1859,9 @@ void Planner::buildPlanForQueryNode()
     if (should_cache && !query_result_cache)
         should_cache = false;
 
-    /// For explicit per-subquery opt-in (SETTINGS `use_query_cache = true` on the subquery),
-    /// ensure the context flag is set so that `checkCanWriteQueryResultCache` works.
-    if (should_cache && !can_use_query_result_cache)
-    {
-        planner_context->getMutableQueryContext()->setCanUseQueryResultCache(true);
-        can_use_query_result_cache = true;
-    }
+    /// For explicit per-subquery opt-in, we track cache eligibility locally
+    /// without mutating the shared query context (which would leak to the outer query).
+    bool local_can_use_cache = can_use_query_result_cache || should_cache;
 
     /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
     /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
@@ -1873,7 +1869,7 @@ void Planner::buildPlanForQueryNode()
     /// modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes no longer
     /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
     std::optional<Settings> settings_copy;
-    if (can_use_query_result_cache || should_cache)
+    if (local_can_use_cache)
         settings_copy = settings;
 
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
@@ -2369,7 +2365,10 @@ void Planner::buildPlanForQueryNode()
 
     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled,
     /// then add a step which stores the result in the query cache.
-    if (should_cache && checkCanWriteQueryResultCache(ast, query_context))
+    /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in),
+    /// skip the context flag check in checkCanWriteQueryResultCache while still respecting safety checks.
+    bool skip_context_check = should_cache && !can_use_query_result_cache;
+    if (should_cache && checkCanWriteQueryResultCache(ast, query_context, skip_context_check))
     {
         auto created_at = std::chrono::system_clock::now();
         auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());

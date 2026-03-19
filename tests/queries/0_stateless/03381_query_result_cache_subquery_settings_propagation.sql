@@ -107,3 +107,14 @@ SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
 -- Expected: 1 (written but never read from cache)
 
 SYSTEM DROP QUERY CACHE;
+
+-- Test 14: Explicit subquery opt-in does NOT leak to outer query (regression test)
+-- When inner subquery has use_query_cache=true but outer does not, only the subquery
+-- should be cached, not the outer query (no context mutation leakage)
+SELECT number FROM (SELECT number FROM numbers(5) SETTINGS use_query_cache = true);
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 0;
+-- Expected: 0 (outer query should NOT be cached)
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+-- Expected: 1 (only subquery cached)
+
+SYSTEM DROP QUERY CACHE;

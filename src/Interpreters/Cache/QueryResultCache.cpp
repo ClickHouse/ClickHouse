@@ -205,11 +205,11 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     return finder_data.has_system_tables;
 }
 
-bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context)
+bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
 {
     const Settings & settings = context->getSettingsRef();
 
-    if (context->getCanUseQueryResultCache() && settings[Setting::enable_writes_to_query_cache])
+    if ((skip_context_check || context->getCanUseQueryResultCache()) && settings[Setting::enable_writes_to_query_cache])
     {
         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
         const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
