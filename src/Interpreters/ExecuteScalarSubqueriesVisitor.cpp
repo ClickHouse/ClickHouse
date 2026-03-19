@@ -35,18 +35,8 @@ namespace Setting
     extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_rows;
-    extern const SettingsBool query_cache_for_subqueries;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsString implicit_table_at_top_level;
-}
-
-/// Returns true if caching should be finalized for this scalar subquery.
-/// Scalar subqueries use ExecuteScalarSubqueriesVisitor (old code path); with the new analyzer,
-/// scalar subquery caching is handled by the Planner via `shouldUseQueryCacheForSubquery`.
-static bool shouldCacheScalarSubquery(const ContextPtr & context)
-{
-    const auto & settings = context->getSettingsRef();
-    return settings[Setting::query_cache_for_subqueries] && context->getCanUseQueryResultCache();
 }
 
 namespace ErrorCodes
@@ -271,9 +261,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             logProcessorProfile(data.getContext(), io.pipeline.getProcessors());
 
-            /// Finalize write in query cache to save scalar subquery result
-            if (shouldCacheScalarSubquery(data.getContext()))
-                io.pipeline.finalizeWriteInQueryResultCache();
+            /// Finalize write in query cache to save scalar subquery result (no-op if no cache writers exist in the pipeline)
+            io.pipeline.finalizeWriteInQueryResultCache();
         }
 
         block = materializeBlock(block);
