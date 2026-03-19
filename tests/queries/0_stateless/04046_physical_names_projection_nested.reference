@@ -8,8 +8,34 @@ c	c
 d	b
 1	30
 2	30
-Test 2: flattened Nested guard
-Test 3: non-flattened Nested with physical names
+Test 2: ADD flattened Nested with physical names
+1	one	[]	[]
+2	two	[10,20]	['a','b']
+3	three	[30]	['c']
+n.x	1.x
+n.x	1.x
+n.y	1.y
+n.y	1.y
+1	one	[]	[]
+2	two	[10,20]	['a','b']
+3	three	[30]	['c']
+Test 3: RENAME field within Nested group
+1	hello	[10,20]	['a','b']
+2	world	[30]	['c']
+1	hello	[10,20]	['a','b']
+2	world	[30]	['c']
+n.y	1.y
+n.z	1.x
+Test 4: existing flattened Nested with identity mapping
+n.x	n.x
+n.x	n.x
+n.y	n.y
+n.y	n.y
+1	[10,20]	['a','b']	0
+2	[30]	['c']	0
+1	[10,20]	['a','b']	0
+2	[30]	['c']	0
+Test 5: non-flattened Nested with physical names
 1	hello	[10,20]	['a','b']
 2	world	[30]	['c']
 1	hello	[10,20]	['a','b']

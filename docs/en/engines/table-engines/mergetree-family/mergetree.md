@@ -1309,10 +1309,7 @@ Once physical names are active:
 - **`MODIFY COLUMN`** (type change) still creates a mutation as before, since the data must be rewritten.
 
 - **`ADD COLUMN`** allocates a new counter-based physical name for the column.
-
-### Limitations {#physical-names-limitations}
-
-- **Flattened `Nested` columns are not supported.** Adding a `Nested` column when `flatten_nested = 1` (the default) is rejected with a `NOT_IMPLEMENTED` error because flattened nested columns share array offset streams, which conflicts with counter-based physical names. Set `flatten_nested = 0` before adding `Nested` columns to a table with physical names.
+  For flattened `Nested` columns (when `flatten_nested = 1`, the default), sibling subcolumns receive compound physical names that share a common prefix (e.g. `3.x`, `3.y`) to preserve the shared array offset stream.
 
 ### Checking physical names {#checking-physical-names}
 

@@ -434,9 +434,28 @@ String ISerialization::getFileNameForStreamPhysical(
     const StreamFileNameSettings & settings)
 {
     String stream_name;
-    auto nested_storage_name = Nested::extractTableName(logical_name_in_storage);
-    if (logical_name_in_storage != nested_storage_name && isPossibleOffsetsOfNested(path))
-        stream_name = escapeForFileName(nested_storage_name);
+
+    if (isPossibleOffsetsOfNested(path))
+    {
+        /// For flattened Nested siblings (e.g. n.x, n.y), the array offset
+        /// stream is shared under the Nested parent prefix.  Prefer the
+        /// PHYSICAL name's prefix because it is stable across metadata-only
+        /// renames.  For identity-mapped columns (physical = "n.x") this
+        /// gives "n"; for compound-allocated columns (physical = "5.x")
+        /// this gives "5".  Fall back to the logical name for columns
+        /// whose physical name has no dot (plain counter like "5").
+        auto nested_from_physical = Nested::extractTableName(physical_name_in_storage);
+        auto nested_from_logical = Nested::extractTableName(logical_name_in_storage);
+        bool physical_is_nested = (physical_name_in_storage != nested_from_physical);
+        bool logical_is_nested = (logical_name_in_storage != nested_from_logical);
+
+        if (physical_is_nested)
+            stream_name = escapeForFileName(nested_from_physical);
+        else if (logical_is_nested)
+            stream_name = escapeForFileName(nested_from_logical);
+        else
+            stream_name = escapeForFileName(physical_name_in_storage);
+    }
     else
         stream_name = escapeForFileName(physical_name_in_storage);
 

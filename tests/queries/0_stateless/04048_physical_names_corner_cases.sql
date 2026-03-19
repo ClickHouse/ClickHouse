@@ -319,15 +319,17 @@ SELECT a, val, c FROM t_phys_defaults ORDER BY a;
 
 DROP TABLE t_phys_defaults;
 
--- Test 11: Flattened Nested ADD is blocked with a clear error.
-SELECT 'Test 11: flattened Nested guard';
+-- Test 11: Flattened Nested ADD works with compound physical names.
+SELECT 'Test 11: flattened Nested with compound names';
 DROP TABLE IF EXISTS t_phys_flat_nested;
 CREATE TABLE t_phys_flat_nested (a UInt64) ENGINE = MergeTree ORDER BY a
     SETTINGS min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
     activate_physical_names_for_existing_tables = 1;
 INSERT INTO t_phys_flat_nested VALUES (1);
-ALTER TABLE t_phys_flat_nested ADD COLUMN n Nested(x UInt64, y String); -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_phys_flat_nested ADD COLUMN n Nested(x UInt64, y String);
+INSERT INTO t_phys_flat_nested VALUES (2, [10, 20], ['a', 'b']);
+SELECT a, `n.x`, `n.y` FROM t_phys_flat_nested ORDER BY a;
 DROP TABLE t_phys_flat_nested;
 
 -- Test 12: DROP + re-ADD same column in a single ALTER gets a fresh physical name

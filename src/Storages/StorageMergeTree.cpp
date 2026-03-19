@@ -58,6 +58,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include <DataTypes/NestedUtils.h>
 
 
 namespace ProfileEvents
@@ -467,6 +468,28 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
         {
             if (local_mapping.hasLogicalName(command.column_name))
             {
+                /// For flattened Nested siblings, the shared offset stream
+                /// name is derived from the Nested prefix of the physical
+                /// name.  If the physical name has a dot (identity like
+                /// "n.x" or compound like "5.x"), the prefix is stable and
+                /// metadata-only rename is safe.  If the physical name is a
+                /// plain counter ("5") and the logical Nested prefix changes,
+                /// the offset stream name would change and old parts would
+                /// become unreadable — force a mutation in that case.
+                auto physical = local_mapping.getPhysicalName(command.column_name);
+                auto [phys_parent, phys_child] = Nested::splitName(physical);
+                auto [old_parent, old_child] = Nested::splitName(command.column_name);
+                auto [new_parent, new_child] = Nested::splitName(command.rename_to);
+                bool is_nested = !old_child.empty();
+                bool changes_prefix = (old_parent != new_parent);
+                bool physical_has_dot = !phys_child.empty();
+
+                if (is_nested && changes_prefix && !physical_has_dot)
+                {
+                    plan.force_mutation_columns.insert(command.column_name);
+                    continue;
+                }
+
                 local_mapping.beginRename(command.column_name, command.rename_to);
                 plan.rename_old_names.push_back(command.column_name);
             }
@@ -482,55 +505,76 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
     for (const auto & col : new_metadata.getColumns().getAllPhysical())
         new_col_names.insert(col.name);
 
-    /// Guard: adding flattened Nested subcolumns with physical names active
-    /// is not yet supported (SubstreamsCache key collision in the reader
-    /// produces wrong results for siblings sharing offset streams).
-    std::map<String, size_t> nested_parent_counts;
+    /// Detect DROP + re-ADD of the same column in a single ALTER.
+    /// Cannot be made crash-safe as metadata-only (atomically swapping
+    /// the physical name is impossible), so force a mutation for these.
+    std::set<String> explicitly_dropped;
+    for (const auto & command : commands)
+    {
+        if (command.ignore)
+            continue;
+        if (command.type == AlterCommand::DROP_COLUMN)
+            explicitly_dropped.insert(command.column_name);
+    }
+    for (const auto & dropped_name : explicitly_dropped)
+    {
+        if (new_col_names.contains(dropped_name))
+            plan.force_mutation_columns.insert(dropped_name);
+    }
+
+    /// Group newly added columns by Nested parent so flattened siblings
+    /// (e.g. n.x, n.y from `ADD COLUMN n Nested(...)`) share a compound
+    /// physical name prefix: "{counter}.x", "{counter}.y".  This keeps the
+    /// shared offset stream (e.g. "5.size0") stable across renames while
+    /// giving each sibling its own data stream.
+    std::map<String, std::vector<std::pair<String, String>>> nested_groups;
+    std::vector<String> plain_new_columns;
+
     for (const auto & col : new_metadata.getColumns().getAllPhysical())
     {
-        if (!old_col_names.contains(col.name))
-        {
-            auto dot_pos = col.name.find('.');
-            if (dot_pos != String::npos)
-                nested_parent_counts[col.name.substr(0, dot_pos)]++;
-        }
-    }
-        for (const auto & [parent, count] : nested_parent_counts)
-        {
-            if (count > 1)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Adding flattened Nested column '{}' with physical names active is not yet supported. "
-                    "Use `SET flatten_nested = 0` before adding Nested columns, or disable physical names",
-                    parent);
-        }
+        if (old_col_names.contains(col.name) || local_mapping.hasLogicalName(col.name)
+            || plan.force_mutation_columns.contains(col.name))
+            continue;
 
-        /// Detect DROP + re-ADD of the same column in a single ALTER.
-        /// Cannot be made crash-safe as metadata-only (atomically swapping
-        /// the physical name is impossible), so force a mutation for these.
-        std::set<String> explicitly_dropped;
-        for (const auto & command : commands)
+        auto [parent, child] = Nested::splitName(col.name);
+        if (!child.empty())
         {
-            if (command.ignore)
-                continue;
-            if (command.type == AlterCommand::DROP_COLUMN)
-                explicitly_dropped.insert(command.column_name);
-        }
-        for (const auto & dropped_name : explicitly_dropped)
-        {
-            if (new_col_names.contains(dropped_name))
-                plan.force_mutation_columns.insert(dropped_name);
-        }
-
-        /// Allocate counter-based physical names for newly added columns.
-        for (const auto & col : new_metadata.getColumns().getAllPhysical())
-        {
-            if (!old_col_names.contains(col.name) && !local_mapping.hasLogicalName(col.name)
-                && !plan.force_mutation_columns.contains(col.name))
+            bool has_sibling = false;
+            for (const auto & other : new_metadata.getColumns().getAllPhysical())
             {
-                auto new_physical = local_mapping.allocatePhysicalName();
-                local_mapping.addColumn(col.name, new_physical);
+                if (other.name == col.name)
+                    continue;
+                auto [other_parent, other_child] = Nested::splitName(other.name);
+                if (!other_child.empty() && other_parent == parent
+                    && !old_col_names.contains(other.name))
+                {
+                    has_sibling = true;
+                    break;
+                }
+            }
+            if (has_sibling)
+            {
+                nested_groups[parent].emplace_back(col.name, child);
+                continue;
             }
         }
+        plain_new_columns.push_back(col.name);
+    }
+
+    /// Allocate compound physical names for flattened Nested groups.
+    for (const auto & [parent, siblings] : nested_groups)
+    {
+        auto base = local_mapping.allocatePhysicalName();
+        for (const auto & [logical_name, child_name] : siblings)
+            local_mapping.addColumn(logical_name, base + "." + child_name);
+    }
+
+    /// Allocate plain counter-based physical names for non-Nested columns.
+    for (const auto & col_name : plain_new_columns)
+    {
+        auto new_physical = local_mapping.allocatePhysicalName();
+        local_mapping.addColumn(col_name, new_physical);
+    }
 
         /// Two-phase drop for crash safety: do NOT remove dropped columns
         /// from the mapping before metadata commit.  Collect them for
