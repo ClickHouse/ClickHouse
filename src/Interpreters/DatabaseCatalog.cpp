@@ -19,6 +19,7 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -1019,6 +1020,35 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
 {
     std::lock_guard lock{databases_mutex};
     return view_dependencies.getDependencies(source_table_id);
+}
+
+std::vector<StorageID> DatabaseCatalog::getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const
+{
+    /// During server startup, not all dependent views may be registered yet.
+    /// Return empty to prevent streaming engines from processing with a
+    /// partial dependency graph, which would permanently lose data for
+    /// views not yet loaded.
+    auto global_context = Context::getGlobalContextInstance();
+    if (global_context->getApplicationType() == Context::ApplicationType::SERVER
+        && !global_context->isServerCompletelyStarted())
+        return {};
+
+    auto view_ids = getDependentViews(source_table_id);
+    if (view_ids.empty())
+        return {};
+
+    for (const auto & view_id : view_ids)
+    {
+        auto view = tryGetTable(view_id, query_context);
+        if (!view)
+            return {};
+
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return {};
+    }
+
+    return view_ids;
 }
 
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table, const IDatabase * expected_database)

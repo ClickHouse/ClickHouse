@@ -31,6 +31,7 @@ private:
 
     size_t size_of_data;
     bool inner_nullable;
+    bool result_is_nullable;
 
 public:
     AggregateFunctionOrFill(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
@@ -38,6 +39,7 @@ public:
         , nested_function{nested_function_}
         , size_of_data{nested_function->sizeOfData()}
         , inner_nullable{nested_function->getResultType()->isNullable()}
+        , result_is_nullable{createResultType(nested_function_->getResultType())->isNullable()}
     {
         // nothing
     }
@@ -255,6 +257,9 @@ public:
             if (inner_type_->isNullable())
                 return inner_type_;
 
+            if (!inner_type_->canBeInsideNullable())
+                return inner_type_;
+
             return std::make_shared<DataTypeNullable>(inner_type_);
         }
         else
@@ -277,7 +282,7 @@ public:
             {
                 // -OrNull
 
-                if (inner_nullable)
+                if (!result_is_nullable || inner_nullable)
                 {
                     if constexpr (merge)
                         nested_function->insertMergeResultInto(place, to, arena);
@@ -289,7 +294,10 @@ public:
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
 
                     col.getNullMapColumn().insertDefault();
-                    nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    if constexpr (merge)
+                        nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
+                    else
+                        nested_function->insertResultInto(place, col.getNestedColumn(), arena);
                 }
             }
             else

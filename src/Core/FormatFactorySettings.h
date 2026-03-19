@@ -1237,6 +1237,8 @@ Disabled by default.
     DECLARE(UInt64, output_format_float_precision, 0, R"(
 Number of decimal digits after the decimal point for floating-point output (`Float32`, `Float64`, `BFloat16`).
 If set to 0 (the default), uses the shortest round-trip representation.
+    DECLARE(Bool, output_format_trim_fixed_string, false, R"(
+Trim trailing null bytes from FixedString values in text output formats. E.g. `toFixedString('John', 8)` is printed as `John` instead of `John\0\0\0\0`.
 )", 0) \
     \
     DECLARE(UInt64, input_format_allow_errors_num, 0, R"(

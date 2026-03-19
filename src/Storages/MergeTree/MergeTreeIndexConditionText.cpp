@@ -50,7 +50,10 @@ SipHash TextSearchQuery::getHash() const
     hash.update(tokens.size());
 
     for (const auto & token : tokens)
+    {
+        hash.update(token.size());
         hash.update(token);
+    }
 
     return hash;
 }
@@ -848,8 +851,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return false;
         }
 
+        const String value = preprocessor->processConstant(String(ref));
         std::vector<String> tokens;
-        tokenizer->stringToTokens(ref.data(), ref.size(), tokens);
+        tokenizer->stringToTokens(value.data(), value.size(), tokens);
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
     }
 

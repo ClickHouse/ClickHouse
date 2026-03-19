@@ -76,6 +76,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 snapshot_distance;
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
+    extern const CoordinationSettingsBool nuraft_test_mode;
 }
 
 namespace ErrorCodes
@@ -576,6 +577,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     init_options.skip_initial_election_timeout_ = state_manager->shouldStartAsFollower();
     init_options.start_server_in_constructor_ = false;
     init_options.raft_callback_ = [this](nuraft::cb_func::Type type, nuraft::cb_func::Param * param) { return callbackFunc(type, param); };
+    init_options.test_mode_flag_ = coordination_settings[CoordinationSetting::nuraft_test_mode];
 
     nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings[CoordinationSetting::raft_logs_level]);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);

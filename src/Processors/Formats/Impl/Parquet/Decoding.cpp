@@ -509,7 +509,24 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
 
         miniblock_values_remaining = values_per_block / miniblocks_per_block;
         size_t bytes = (miniblock_values_remaining * miniblock_bit_widths[miniblock_idx] + 7) / 8;
-        requireRemainingBytes(bytes);
+
+        /// Tolerate missing padding at the end of the last block.
+        /// The Parquet spec requires zero-padding the last block to the full block size,
+        /// but some writers (e.g. parquet-go) only write bytes for the actual values.
+        /// The missing bytes correspond to padding values beyond total_values_remaining
+        /// that would never be read by decodeImpl, so we reduce the miniblock's readable
+        /// value count to match the available data.
+        size_t available = size_t(end - data);
+        if (bytes > available)
+        {
+            bytes = available;
+            if (miniblock_bit_widths[miniblock_idx] > 0)
+                miniblock_values_remaining = (available * 8) / miniblock_bit_widths[miniblock_idx];
+
+            if (!miniblock_values_remaining)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data in DELTA_BINARY_PACKED miniblock");
+        }
+
         bit_reader.Reset(reinterpret_cast<const uint8_t *>(data), int(bytes));
         data += bytes;
     }
