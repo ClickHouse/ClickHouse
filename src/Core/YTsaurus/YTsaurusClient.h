@@ -61,7 +61,7 @@ public:
 
     ReadBufferPtr readTable(const String & cypress_path, const std::pair<size_t, size_t> & rows_range);
 
-    ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input);
+    ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input, ThrottlerPtr lookup_throttler = nullptr);
 
     ReadBufferPtr selectRows(const String & cypress_path, const String& column_names_str);
 

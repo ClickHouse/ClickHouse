@@ -137,8 +137,11 @@ ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const Colu
 }
 
 
-ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input)
+ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input, ThrottlerPtr lookup_throttler)
 {
+    if (lookup_throttler)
+        lookup_throttler->throttle(lookup_block_input.rows());
+
     YTsaurusQueryPtr lookup_rows_query(new YTsaurusLookupRows(cypress_path));
     auto out_callback = [lookup_block_input, this](std::ostream & ostr)
     {

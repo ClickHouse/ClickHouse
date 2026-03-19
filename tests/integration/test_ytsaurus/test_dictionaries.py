@@ -6,7 +6,6 @@ from .yt_helpers import YtsaurusURIHelper, YTsaurusCLI
 
 from helpers.cluster import is_arm
 
-
 if is_arm():
     # skip due to no arm support for ytsaurus-backend docker image
     # https://github.com/ytsaurus/ytsaurus/blob/main/BUILD.md
@@ -130,9 +129,21 @@ def test_yt_dictionary_cache_id(started_cluster, dynamic_table, replicated_table
             schema={"id": "uint64", "value": "int32"},
         )
 
-    instance.query(
-        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}')) LAYOUT(CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
-    )
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id UInt64, value Int32)
+        PRIMARY KEY id
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_throttler_max_requests_per_second '2'
+                lookup_max_rows_per_query '1'
+                )
+            )
+        LAYOUT(gACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
     if dynamic_table:
         assert (
             instance.query(
@@ -173,9 +184,19 @@ def test_yt_dictionary_cache_complex_key(started_cluster, dynamic_table):
         dynamic=dynamic_table,
     )
 
-    instance.query(
-        f"CREATE DICTIONARY yt_dict(id1 UInt64, id2 UInt64, value Int32) PRIMARY KEY id1, id2 SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}')) LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
-    )
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id1 UInt64, id2 UInt64, value Int32)
+        PRIMARY KEY id1, id2
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+            )
+        )
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
     if dynamic_table:
         assert (
             instance.query(
@@ -273,16 +294,14 @@ def test_yt_range_hashed(started_cluster, primary_key_value, layout, dict_key):
         dynamic=False,
     )
 
-    instance.query(
-        f"""
+    instance.query(f"""
         CREATE DICTIONARY yt_dict(id UInt64, id2 UInt64, range_start Date, range_end Date, value Int32) 
         PRIMARY KEY {primary_key_value} 
         SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}' check_table_schema 0))
         LAYOUT({layout}(range_lookup_strategy 'max'))
         LIFETIME(MIN 0 MAX 1000)
         RANGE(MIN range_start MAX range_end)
-        """
-    )
+        """)
     assert (
         instance.query(
             f"SELECT dictGet('yt_dict', 'value', {dict_key}, toDate('1970-01-02'))"
@@ -352,8 +371,7 @@ def test_yt_dictionary_with_query(started_cluster):
         schema={"id": "uint64", "value": "string"},
         dynamic=True,
     )
-    instance.query(
-        f"""
+    instance.query(f"""
         CREATE DICTIONARY yt_dict(id UInt64, len Int32)
         PRIMARY KEY id SOURCE(YTSAURUS(
         http_proxy_urls '{yt_uri_helper.uri}'
@@ -363,8 +381,7 @@ def test_yt_dictionary_with_query(started_cluster):
         ytsaurus_columns_description 'id, length(value) as len'
         ))
         LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 1000)
-        """
-    )
+        """)
     assert (
         instance.query("SELECT dictGet('yt_dict', 'len', number + 1) FROM numbers(3)")
         == "4\n3\n2\n"
@@ -386,22 +403,18 @@ def test_yt_dictionary_with_named_collection(started_cluster):
         schema={"id": "uint64", "value": "string"},
         dynamic=True,
     )
-    instance.query(
-        f"""
+    instance.query(f"""
         CREATE NAMED COLLECTION ytsaurus_nc AS
             http_proxy_urls = '{yt_uri_helper.uri}',
             cypress_path = '{path}',
             oauth_token = '{yt_uri_helper.token}',
             check_table_schema = 0,
             ytsaurus_columns_description = 'id, length(value) as len'
-        """
-    )
+        """)
 
-    instance.query(
-        f"""
+    instance.query(f"""
         CREATE DICTIONARY yt_dict(id UInt64, len Int32) PRIMARY KEY id SOURCE(YTSAURUS(NAME ytsaurus_nc)) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 1000)
-        """
-    )
+        """)
     assert (
         instance.query("SELECT dictGet('yt_dict', 'len', number + 1) FROM numbers(3)")
         == "4\n3\n2\n"

@@ -11,10 +11,17 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Core/Settings.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Throttler.h>
 
 #include <boost/algorithm/string/split.hpp>
 
 #endif
+
+namespace ProfileEvents
+{
+    extern const Event YTsaurusLookupThrottled;
+}
 
 namespace DB
 {
@@ -30,10 +37,13 @@ namespace ErrorCodes
     #endif
 }
 
+
 namespace YTsaurusSetting
 {
     extern const YTsaurusSettingsBool encode_utf8;
     extern const YTsaurusSettingsBool enable_heavy_proxy_redirection;
+    extern const YTsaurusSettingsUInt64 lookup_throttler_max_requests_per_second;
+    extern const YTsaurusSettingsUInt64 lookup_max_rows_per_query;
 }
 
 
@@ -42,6 +52,18 @@ namespace Setting
     extern const SettingsBool allow_experimental_ytsaurus_dictionary_source;
 }
 
+template<typename T>
+VectorWithMemoryTracking<VectorWithMemoryTracking<T>> divideVectorByChunkSize(const VectorWithMemoryTracking<T>& vec, size_t chunk_size)
+{
+    VectorWithMemoryTracking<VectorWithMemoryTracking<T>> result;
+    for (size_t i = 0; i < vec.size(); i += chunk_size)
+    {
+        auto start = vec.begin() + i;
+        auto end = (i + chunk_size < vec.size()) ? start + chunk_size : vec.end();
+        result.emplace_back(start, end);
+    }
+    return result;
+}
 
 void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 {
@@ -166,13 +188,22 @@ BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64
     if (!supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
 
-    auto block = blockForIds(dict_struct, ids);
-
+    initilizeLookupThrottlerIfNeeded();
     BlockIO io;
+    auto ids_vectors = divideVectorByChunkSize(ids, configuration->settings[YTsaurusSetting::lookup_max_rows_per_query]);
+    VectorWithMemoryTracking<Block> lookup_blocks;
+    for (const auto & ids_chunk : ids_vectors)
+    {
+        lookup_blocks.push_back(blockForIds(dict_struct, ids_chunk));
+    }
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
         client
         , configuration->cypress_path
-        , {.settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}
+        , {
+              .settings = configuration->settings
+            , .lookup_input_blocks = std::move(lookup_blocks)
+            , .check_types_allow_nullable = true
+            }
         , sample_block
         , max_block_size
         // Parallel reads supported only for static tables
@@ -191,14 +222,23 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const V
 
     if (key_columns.size() != dict_struct.key->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
-
-    auto block = blockForKeys(dict_struct, key_columns, requested_rows);
+    initilizeLookupThrottlerIfNeeded();
+    auto rows_vectors = divideVectorByChunkSize(requested_rows, configuration->settings[YTsaurusSetting::lookup_max_rows_per_query]);
+    VectorWithMemoryTracking<Block> lookup_blocks;
+    for (const auto & row_chunk : rows_vectors)
+    {
+        lookup_blocks.push_back(blockForKeys(dict_struct, key_columns, row_chunk));
+    }
 
     BlockIO io;
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
           client
         , configuration->cypress_path
-        , {.settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}
+        , {
+              .settings = configuration->settings
+            , .lookup_input_blocks = std::move(lookup_blocks)
+            , .check_types_allow_nullable = true
+        }
          , sample_block
          , max_block_size
          // Parallel reads supported only for static tables
@@ -216,6 +256,22 @@ bool YTsarususDictionarySource::supportsSelectiveLoad() const
 std::string YTsarususDictionarySource::toString() const
 {
     return fmt::format("YTsaurus: {}", configuration->cypress_path);
+}
+
+void YTsarususDictionarySource::initilizeLookupThrottlerIfNeeded()
+{
+    if (throttler_initialized)
+        return;
+    throttler_initialized = true;
+    auto max_lookups_per_sec = configuration->settings[YTsaurusSetting::lookup_throttler_max_requests_per_second];
+    if (!supportsSelectiveLoad() || max_lookups_per_sec)
+        return;
+    lookup_throttler = std::make_shared<Throttler>(
+        max_lookups_per_sec,
+        0,
+        ProfileEvents::YTsaurusLookupThrottled,
+        ::ProfileEvents::end()      /// No sleep time tracking for now
+    );
 }
 #endif
 
