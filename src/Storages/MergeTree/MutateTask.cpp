@@ -1509,6 +1509,7 @@ private:
     void prepare();
     bool mutateOriginalPartAndPrepareProjections();
     void createBuildTextIndexesTask();
+    void calculateProjection(size_t projection_idx, Block block, UInt64 starting_offset);
     void writeTempProjectionPart(size_t projection_idx, Chunk chunk);
     void finalizeTempProjectionsAndIndexes();
     bool iterateThroughAllMergeSubtasks();
@@ -1531,6 +1532,14 @@ private:
     using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
     ProjectionNameToItsBlocks projection_parts;
 
+    /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
+    /// This produces larger blocks for projection calculation, reducing the number of
+    /// temporary projection parts and merge rounds.
+    std::vector<Squashing> pre_calculate_squashes;
+    std::vector<UInt64> pre_calculate_starting_offsets;
+
+    /// Post-calculate squash: accumulates calculated projection blocks before writing
+    /// temporary projection parts.
     std::vector<Squashing> projection_squashes;
     const ProjectionsDescription & projections;
 
@@ -1548,10 +1557,24 @@ void PartMergerWriter::prepare()
 {
     const auto & settings = ctx->context->getSettingsRef();
 
-    for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
+    /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
+    /// projection calculation. This drastically reduces the number of temporary
+    /// projection parts (e.g., from ~3500 to ~30 for a 28M-row part), cutting the
+    /// tree merge overhead from 4 levels / 390 merge rounds to 1 level / 3 rounds.
+    for (size_t i = 0; i < ctx->projections_to_build.size(); ++i)
     {
-        // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
+        pre_calculate_squashes.emplace_back(
+            std::make_shared<const Block>(ctx->updated_header),
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes]);
+        pre_calculate_starting_offsets.push_back(0);
+
+        /// Post-calculate squash: accumulates calculated projection blocks before
+        /// writing temporary projection parts.
+        projection_squashes.emplace_back(
+            std::make_shared<const Block>(ctx->updated_header),
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes]);
     }
 
     {
@@ -1600,23 +1623,27 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         UInt64 starting_offset = (*ctx->mutate_entry)->rows_written;
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
-            Chunk squashed_chunk;
+            ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
 
+            auto & pre_squash = pre_calculate_squashes[i];
+            pre_squash.setHeader(cur_block.cloneEmpty());
+
+            /// Record the starting offset when the accumulator is empty (new batch starts).
+            if (pre_squash.empty())
+                pre_calculate_starting_offsets[i] = starting_offset;
+
+            Chunk squashed = Squashing::squash(
+                pre_squash.add({cur_block.getColumns(), cur_block.rows()}),
+                pre_squash.getHeader());
+            if (squashed)
             {
-                ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                Block block_to_squash = ctx->projections_to_build[i]->calculate(cur_block, starting_offset, ctx->context);
-
-                /// Everything is deleted by lighweight delete
-                if (block_to_squash.rows() == 0)
-                    continue;
-
-                projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-                projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
-                squashed_chunk = Squashing::squash(projection_squashes[i].generate(), projection_squashes[i].getHeader());
+                Block big_block = pre_squash.getHeader()->cloneWithColumns(squashed.detachColumns());
+                calculateProjection(i, std::move(big_block), pre_calculate_starting_offsets[i]);
+                /// If the accumulator still has data (current block was excluded from the
+                /// flush and started a new batch), record its offset now.
+                if (!pre_squash.empty())
+                    pre_calculate_starting_offsets[i] = starting_offset;
             }
-
-            if (squashed_chunk)
-                writeTempProjectionPart(i, std::move(squashed_chunk));
         }
 
         if (build_text_index_transform)
@@ -1653,6 +1680,23 @@ void PartMergerWriter::createBuildTextIndexesTask()
         ctx->mrk_extension);
 }
 
+void PartMergerWriter::calculateProjection(size_t projection_idx, Block block, UInt64 starting_offset)
+{
+    Block block_to_squash = ctx->projections_to_build[projection_idx]->calculate(block, starting_offset, ctx->context);
+
+    /// Everything is deleted by lightweight delete
+    if (block_to_squash.rows() == 0)
+        return;
+
+    projection_squashes[projection_idx].setHeader(block_to_squash.cloneEmpty());
+    Chunk squashed_chunk = Squashing::squash(
+        projection_squashes[projection_idx].add({block_to_squash.getColumns(), block_to_squash.rows()}),
+        projection_squashes[projection_idx].getHeader());
+
+    if (squashed_chunk)
+        writeTempProjectionPart(projection_idx, std::move(squashed_chunk));
+}
+
 void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chunk)
 {
     const auto & projection = *ctx->projections_to_build[projection_idx];
@@ -1676,7 +1720,21 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
 
 void PartMergerWriter::finalizeTempProjectionsAndIndexes()
 {
-    // Write the last block
+    /// First, flush any remaining pre-calculate squash buffers.
+    /// This sends the last accumulated source blocks through calculate().
+    for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
+    {
+        Chunk remaining = Squashing::squash(
+            pre_calculate_squashes[i].flush(),
+            pre_calculate_squashes[i].getHeader());
+        if (remaining)
+        {
+            Block big_block = pre_calculate_squashes[i].getHeader()->cloneWithColumns(remaining.detachColumns());
+            calculateProjection(i, std::move(big_block), pre_calculate_starting_offsets[i]);
+        }
+    }
+
+    /// Then, flush any remaining post-calculate squash buffers.
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         auto squashed_chunk = Squashing::squash(

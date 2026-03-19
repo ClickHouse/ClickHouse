@@ -315,6 +315,12 @@ private:
         using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
         ProjectionNameToItsBlocks projection_parts;
         std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
+
+        /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
+        std::vector<Squashing> pre_calculate_squashes;
+        std::vector<UInt64> pre_calculate_starting_offsets;
+
+        /// Post-calculate squash: accumulates calculated projection blocks before writing.
         std::vector<Squashing> projection_squashes;
         size_t projection_block_num = 0;
         std::map<String, UInt64> projections_rebuild_elapsed_ns;
@@ -365,6 +371,7 @@ private:
 
         void prepareProjectionsToMergeAndRebuild() const;
         void calculateProjections(const Block & block, UInt64 starting_offset) const;
+        void calculateProjectionForBlock(size_t projection_idx, Block block, UInt64 starting_offset) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
         bool executeMergeProjections() const;
