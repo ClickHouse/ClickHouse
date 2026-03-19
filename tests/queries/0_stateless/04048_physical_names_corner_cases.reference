@@ -79,3 +79,14 @@ Test 12: drop and re-add in single ALTER
 b	b
 1	new_default
 2	inserted
+Test 13: compact Variant with escape setting change across rename
+1	hello	String
+2	42	UInt64
+1	hello	String
+2	42	UInt64
+3	world	String
+4	99	UInt64
+1	hello	String
+2	42	UInt64
+3	world	String
+4	99	UInt64

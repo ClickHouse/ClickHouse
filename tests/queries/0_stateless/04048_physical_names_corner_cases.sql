@@ -345,3 +345,34 @@ SELECT column, physical_name FROM system.parts_columns
 OPTIMIZE TABLE t_phys_drop_readd FINAL;
 SELECT a, b FROM t_phys_drop_readd ORDER BY a;
 DROP TABLE t_phys_drop_readd;
+
+-- Test 13: compact Variant column with escape_variant_subcolumn_filenames change across rename
+-- Regression: ColumnsSubstreams.cpp missed the physical-name retry after toggling
+-- escape_variant_substreams, making valid compact parts unreadable.
+SELECT 'Test 13: compact Variant with escape setting change across rename';
+DROP TABLE IF EXISTS t_phys_variant_compact;
+CREATE TABLE t_phys_variant_compact
+(
+    a UInt64,
+    v Variant(String, UInt64)
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS
+    min_bytes_for_wide_part = 1000000000,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1,
+    escape_variant_subcolumn_filenames = 0;
+
+INSERT INTO t_phys_variant_compact VALUES (1, 'hello'), (2, 42);
+SELECT a, v, variantType(v) FROM t_phys_variant_compact ORDER BY a;
+
+ALTER TABLE t_phys_variant_compact MODIFY SETTING escape_variant_subcolumn_filenames = 1;
+ALTER TABLE t_phys_variant_compact RENAME COLUMN v TO w;
+
+INSERT INTO t_phys_variant_compact VALUES (3, 'world'), (4, 99);
+SELECT a, w, variantType(w) FROM t_phys_variant_compact ORDER BY a;
+
+OPTIMIZE TABLE t_phys_variant_compact FINAL;
+SELECT a, w, variantType(w) FROM t_phys_variant_compact ORDER BY a;
+
+DROP TABLE t_phys_variant_compact;
