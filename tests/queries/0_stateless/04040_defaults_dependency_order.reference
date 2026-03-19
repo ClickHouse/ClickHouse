@@ -1,0 +1,19 @@
+test_diamond
+1	7	100	107
+1	10	100	110
+5	50	500	550
+test_array
+3	[0,1,2]	0
+3	[10,20]	10
+5	[0,1,2,3,4]	0
+test_wide
+1	2	3	4	5	6	7	8	9	10
+100	101	102	103	500	501	502	503	504	505
+test_tuple_elem
+(1,2)	(10,20)
+(5,6)	(50,60)
+test_tuple_elem2: Bug, expected to have same result as test_tuple_elem, but missed dependency of b on a subcolumn:
+(1,2)	(10,20)
+(5,6)	(10,20)
+test_circ_regular
+test_circ_tuple

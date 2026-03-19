@@ -1,0 +1,27 @@
+-- Tags: long
+
+DROP TABLE IF EXISTS test_long_chain;
+CREATE TABLE test_long_chain (
+    c0 UInt64 DEFAULT 1
+{%- for i in range(1, 32) %},
+    c{{ i }} UInt64 DEFAULT c{{ i - 1 }} + 1
+{%- endfor %}
+) ENGINE = Memory;
+
+INSERT INTO test_long_chain FORMAT JSONEachRow
+{};
+
+INSERT INTO test_long_chain(c0) VALUES (10);
+
+SELECT * FROM test_long_chain ORDER BY c0;
+
+DROP TABLE IF EXISTS test_very_long_chain;
+CREATE TABLE test_very_long_chain (
+    c0 UInt64 DEFAULT 1
+{%- for i in range(1, 1000) %},
+    c{{ i }} UInt64 DEFAULT c{{ i - 1 }} + 1
+{%- endfor %}
+) ENGINE = Memory; -- { serverError TOO_DEEP_RECURSION }
+
+DROP TABLE IF EXISTS test_very_long_chain;
+DROP TABLE IF EXISTS test_long_chain;
