@@ -188,6 +188,7 @@ private:
     uint32_t current_level = 0;
     uint32_t backup_counter = 0;
     uint32_t cache_counter = 0;
+    uint32_t policy_counter = 0;
     uint32_t aliases_counter = 0;
     uint32_t id_counter = 0;
     uint32_t freeze_counter = 0;
@@ -203,6 +204,8 @@ private:
     std::unordered_map<uint32_t, SQLFunction> staged_functions;
     std::unordered_map<uint32_t, SQLFunction> functions;
     std::unordered_map<uint32_t, CatalogBackup> backups;
+    std::unordered_map<uint32_t, SQLPolicy> staged_policies;
+    std::unordered_map<uint32_t, SQLPolicy> policies;
 
     DB::Strings enum_values
         = {"'-1'",    "'0'",       "'1'",    "'10'",   "'1000'", "'is'",     "'was'",      "'are'",  "'be'",       "'have'", "'had'",
@@ -232,6 +235,7 @@ private:
     std::vector<std::reference_wrapper<SQLDictionary>> filtered_dictionaries;
     std::vector<std::reference_wrapper<std::shared_ptr<SQLDatabase>>> filtered_databases;
     std::vector<std::reference_wrapper<SQLFunction>> filtered_functions;
+    std::vector<std::reference_wrapper<SQLPolicy>> filtered_policies;
     std::vector<std::reference_wrapper<const SQLRelation>> filtered_relations;
 
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes;
@@ -268,7 +272,8 @@ private:
         LightUpdate,
         SelectQuery,
         Kill,
-        ShowStatement
+        ShowStatement,
+        CreatePolicy
     };
 
     enum class LitOp
@@ -391,6 +396,10 @@ private:
         {
             return functions;
         }
+        else if constexpr (std::is_same_v<T, SQLPolicy>)
+        {
+            return policies;
+        }
         else
         {
             return databases;
@@ -445,6 +454,10 @@ private:
         else if constexpr (std::is_same_v<T, SQLFunction>)
         {
             return filtered_functions;
+        }
+        else if constexpr (std::is_same_v<T, SQLPolicy>)
+        {
+            return filtered_policies;
         }
         else
         {
@@ -534,6 +547,9 @@ private:
     void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * rv);
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
+    void generateNextCreatePolicy(RandomGenerator & rg, bool row, CreatePolicy * crp);
+    bool hasTable(uint32_t table_id) const { return tables.contains(table_id); }
+    const SQLTable & lookupTable(uint32_t table_id) const { return tables.at(table_id); }
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
     void generateInsertToTable(RandomGenerator & rg, const SQLTable & t, bool in_parallel, std::optional<uint64_t> rows, Insert * ins);
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
@@ -553,6 +569,7 @@ private:
     void generateNextExchange(RandomGenerator & rg, Exchange * exc);
     void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
+    void generateUpdateSets(RandomGenerator & rg, const SQLTable & t, UpdateSet * first, std::function<UpdateSet *()> add_next);
     std::optional<String>
     alterSingleTable(RandomGenerator & rg, SQLTable & t, uint32_t nalters, bool no_oracle, bool can_update, bool in_parallel, Alter * at);
     void generateAlter(RandomGenerator & rg, bool in_parallel, Alter * at);
@@ -836,6 +853,8 @@ public:
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_external_call
         = [](const SQLTable & t) { return t.isAttached() && t.integration == IntegrationCall::Dolor; };
+    const std::function<bool(const SQLPolicy &)> row_policies_for_oracle
+        = [](const SQLPolicy & p) -> bool { return p.is_row && p.where_expr.has_value() && p.targets_oracle_role; };
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->isDettached(); };

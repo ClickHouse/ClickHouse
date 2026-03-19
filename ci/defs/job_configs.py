@@ -47,6 +47,7 @@ build_digest_config = Job.CacheDigestConfig(
 fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./ci/jobs/fast_test.py",
+        "./ci/jobs/scripts/clickhouse_proc.py",
         "./tests/queries/0_stateless/",
         "./tests/config/",
         "./tests/clickhouse-test",
@@ -116,6 +117,7 @@ common_stress_job_config = Job.Config(
         include_paths=[
             "./tests/queries/0_stateless/",
             "./ci/jobs/stress_job.py",
+            "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
             "./tests/config",
@@ -182,6 +184,20 @@ class JobConfigs:
         run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
+    )
+    darwin_fast_test_jobs = Job.Config(
+        name="Darwin fast test",
+        runs_on=None,  # from parametrize()
+        command="python3 ./ci/jobs/fast_test.py --set-status-success",
+        digest_config=fast_test_digest_config,
+        result_name_for_cidb="Darwin tests",
+        allow_merge_on_failure=True,
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_DARWIN,
+            runs_on=RunnerLabels.MACOS_AMD_SMALL,
+            requires=[ArtifactNames.CH_AMD_DARWIN_BIN],
+        ),
     )
     smoke_tests_macos = Job.Config(
         name=JobNames.SMOKE_TEST_MACOS,

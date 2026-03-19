@@ -5243,6 +5243,9 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
+If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
+)", 0) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 
@@ -5251,7 +5254,6 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
 and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
@@ -7002,7 +7004,7 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
 )", 0, enable_parallel_replicas) \
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
-Enable automatic switching to execution with parallel replicas based on collected statistics. Requires enabling `parallel_replicas_local_plan` and providing `cluster_for_parallel_replicas`.
+Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_analyzer = 1`, `enable_parallel_replicas != 0`, `parallel_replicas_local_plan = 1` and providing `cluster_for_parallel_replicas`.
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", EXPERIMENTAL) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
@@ -7616,6 +7618,12 @@ Enable Kusto Query Language (KQL) - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
+Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
+)", EXPERIMENTAL) \
+    DECLARE(String, polyglot_dialect, "", R"(
+Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.

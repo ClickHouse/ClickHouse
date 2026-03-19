@@ -64,7 +64,24 @@ For more information about format parsers, see the [Formats](../interfaces/forma
 ClickHouse supports both SQL-style and C-style comments:
 
 - SQL-style comments begin with `--`, `#!` or `# ` and continue to the end of the line. A space after `--` and `#!` can be omitted.
-- C-style comments span from `/*` to `*/` and can be multiline. Spaces are not required either.
+- C-style comments:
+  - `//` (or more than 2 `/` characters) followed by text until the end of the line. Spaces after `/` are not required.
+  - Can span from `/*` to `*/` for multiline comments. Spaces are not required either.
+  - C-style comments can be nested.
+ 
+For example:
+
+```sql
+/*
+ * Compute the number of days between two dates.
+ * /* Returns NULL if either argument is NULL */
+ */
+SELECT
+    dateDiff('day', toDate('2024-01-01'), toDate('2024-12-31')) AS days_in_year, -- 365
+    dateDiff('day', toDate('2020-01-01'), today()) AS days_since  #! since 2020
+    ///////////////////////////////////////////////////////////////////
+    # TODO: add hour/minute variants
+```
 
 ## Keywords {#keywords}
 

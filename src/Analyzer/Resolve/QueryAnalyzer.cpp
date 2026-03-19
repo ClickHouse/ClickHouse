@@ -162,8 +162,13 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             {
                 scope.expression_join_tree_node = table_expression;
                 scope.registered_table_expression_nodes.insert(table_expression);
+                /// Mark table expression as being in resolve process to prevent
+                /// premature access during ALIAS column resolution in
+                /// initializeTableExpressionData (e.g. dictGet ALIAS columns).
+                scope.table_expressions_in_resolve_process.insert(table_expression.get());
                 validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
                 initializeTableExpressionData(scope.expression_join_tree_node, scope);
+                scope.table_expressions_in_resolve_process.erase(table_expression.get());
             }
 
             if (node_type == QueryTreeNodeType::LIST)
@@ -213,8 +218,13 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     {
         scope.expression_join_tree_node = table_expression;
         scope.registered_table_expression_nodes.insert(table_expression);
+        /// Mark table expression as being in resolve process to prevent
+        /// premature access during ALIAS column resolution in
+        /// initializeTableExpressionData (e.g. dictGet ALIAS columns).
+        scope.table_expressions_in_resolve_process.insert(table_expression.get());
         validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
+        scope.table_expressions_in_resolve_process.erase(table_expression.get());
     }
 
     if (node_type == QueryTreeNodeType::LIST)
