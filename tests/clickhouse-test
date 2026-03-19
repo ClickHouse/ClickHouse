@@ -961,23 +961,61 @@ def get_stacktraces_from_clickhouse(args):
         return None
 
 
+def get_all_server_pids():
+    """Get PIDs of clickhouse-server processes belonging to the current process group.
+
+    Scoping to the process group avoids attaching gdb to unrelated servers on
+    shared runners where multiple test jobs may run concurrently.
+    """
+    try:
+        pgid = os.getpgrp()
+        output = subprocess.check_output(
+            f"pgrep -g {pgid} -x clickhouse-server",
+            shell=True,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+        ).strip()
+        if output:
+            return [int(p) for p in output.split()]
+    except Exception:
+        pass
+    return []
+
+
+def is_asan_build():
+    """Check if the server is an ASan build — gdb disables LeakSanitizer detections."""
+    try:
+        result = clickhouse_execute(
+            args,
+            "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)",
+        )
+        return result != b"0"
+    except Exception:
+        # If we can't query the server, check environment variable as fallback.
+        return bool(os.environ.get("ASAN_OPTIONS"))
+
+
 def print_stacktraces() -> None:
     server_pid = get_server_pid()
 
     bt = None
 
-    if server_pid and not args.replicated_database and not args.shared_catalog:
-        print("")
-        print(
-            f"Located ClickHouse server process {server_pid} listening at TCP port {args.tcp_port}"
-        )
-        print("Collecting stacktraces from all running threads with gdb:")
-
-        bt = get_stacktraces_from_gdb(server_pid)
-
-        if len(bt) < 1000:
-            print("Got suspiciously small stacktraces: ", bt)
-            bt = None
+    # Collect gdb stacktraces from all server processes (main + replicas).
+    # Skip gdb under ASan — it disables LeakSanitizer detections.
+    if not is_asan_build():
+        all_pids = get_all_server_pids()
+        if all_pids:
+            parts = []
+            for pid in all_pids:
+                label = "main server" if pid == server_pid else "replica"
+                print(f"\nCollecting stacktraces from {label} process {pid} with gdb:")
+                one_bt = get_stacktraces_from_gdb(pid)
+                if one_bt and len(one_bt) >= 1000:
+                    parts.append(f"=== PID {pid} ({label}) ===\n{one_bt}")
+                else:
+                    print(f"Got suspiciously small stacktraces from {pid}: {one_bt}")
+            if parts:
+                bt = "\n\n".join(parts)
 
     if bt is None:
         print("\nCollecting stacktraces from system.stacktraces table:")
