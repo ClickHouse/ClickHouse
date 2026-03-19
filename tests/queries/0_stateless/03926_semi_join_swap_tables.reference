@@ -1,0 +1,12 @@
+  Type: RIGHT
+  Strictness: SEMI
+    Type: LEFT
+    Strictness: SEMI
+    Type: LEFT
+    Strictness: SEMI
+    Type: LEFT
+    Strictness: SEMI
+3
+  Type: LEFT
+  Strictness: SEMI
+3

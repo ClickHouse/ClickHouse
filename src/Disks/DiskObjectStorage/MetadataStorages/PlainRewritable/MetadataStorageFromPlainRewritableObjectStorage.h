@@ -3,8 +3,9 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/FlatDirectoryStructureKeyGenerator.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <memory>
 
@@ -79,11 +80,10 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
     const std::string storage_path_prefix;
     const std::string storage_path_full;
-    const std::string metadata_key_prefix;
 
     std::mutex metadata_mutex;
     std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
+    std::shared_ptr<PlainRewritableLayout> layout;
 
     std::mutex load_mutex;
     AtomicStopwatch previous_refresh;
@@ -93,7 +93,13 @@ class MetadataStorageFromPlainRewritableObjectStorageTransaction : public IMetad
 {
 protected:
     MetadataStorageFromPlainRewritableObjectStorage & metadata_storage;
+
+    /// Plain rewritable disks extract key names for files from generated directory keys. Here we will
+    /// maintain uncommitted directory tree that was populated during metadata transaction filling to be able
+    /// to extrace remote path of directory during nested file creation in the same transaction.
+    std::shared_ptr<InMemoryDirectoryTree> uncommitted_fs_tree;
     MetadataOperationsHolder operations;
+    StoredObjects removed_objects;
 
 public:
     explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);
@@ -103,25 +109,24 @@ public:
     void setReadOnly(const std::string & /*path*/) override { /* Noop */ }
 
     void commit(const TransactionCommitOptionsVariant & options) override;
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
 
     void createMetadataFile(const std::string & /* path */, const StoredObjects & /* objects */) override;
     void createDirectory(const std::string & path) override;
     void createDirectoryRecursive(const std::string & path) override;
     void moveDirectory(const std::string & path_from, const std::string & path_to) override;
 
-    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
+    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override;
     void removeDirectory(const std::string & path) override;
-    void removeRecursive(const std::string &) override;
+    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override;
 
     /// Hard links are simulated using server-side copying.
     void createHardLink(const std::string & path_from, const std::string & path_to) override;
     void moveFile(const std::string & path_from, const std::string & path_to) override;
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
-    const IMetadataStorage & getStorageForNonTransactionalReads() const override;
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
-
-    ObjectStorageKey generateObjectKeyForPath(const std::string &path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
+    StoredObjects getSubmittedForRemovalBlobs() override;
 };
 
 }

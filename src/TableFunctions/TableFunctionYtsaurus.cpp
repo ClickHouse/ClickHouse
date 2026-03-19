@@ -101,7 +101,24 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
 
     yt_settings[YTsaurusSetting::check_table_schema] = settings[Setting::ytsaurus_check_table_schema];
 
-    if (args.size() == 4)
+    for (auto it = args.begin(); it != args.end(); ++it)
+    {
+        const ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
+        if (settings_ast)
+        {
+            yt_settings.loadFromQuery(*settings_ast);
+            args.erase(it);
+            break;
+        }
+    }
+    if (args.size() == 2)
+    {
+        // With Named Collection
+        ASTs main_arguments(args.begin(), args.begin() + 1);
+        configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::getConfiguration(main_arguments, yt_settings, context));
+        structure = checkAndGetLiteralArgument<String>(args[1], "structure");
+    }
+    else if (args.size() == 4)
     {
         ASTs main_arguments(args.begin(), args.begin() + 3);
         configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::getConfiguration(main_arguments, yt_settings, context));
@@ -112,7 +129,9 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function 'ytsaurus' 4 parameters: "
-            "ytsaurus('http_proxy_url', cypress_path, oauth_token, structure).");
+            "ytsaurus('http_proxy_url', cypress_path, oauth_token, structure) "
+            "or with 2 parameters: ytsaurus(named_collections, structure)."
+        );
     }
 }
 
@@ -122,14 +141,11 @@ void registerTableFunctionYTsaurus(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionYTsaurus>(
     {
-            .documentation =
-            {
-                    .description = "Allows get data from YTsaurus.",
-                    .examples = {
-                        {"Fetch collection by URI", "SELECT * FROM ytsaurus('localhost:80', '//tmp/test', 'auth_token', 'key UInt64, data String')", ""},
-                    },
-                    .category = FunctionDocumentation::Category::TableFunction
+            .description = "Allows get data from YTsaurus.",
+            .examples = {
+                {"Fetch collection by URI", "SELECT * FROM ytsaurus('localhost:80', '//tmp/test', 'auth_token', 'key UInt64, data String')", ""},
             },
+            .category = FunctionDocumentation::Category::TableFunction
     });
 }
 

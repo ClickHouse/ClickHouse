@@ -25,7 +25,7 @@ struct AggregateFunctionDistinctSingleNumericData
     Set history;
 
     /// Returns true if the value did not exist in the history before
-    bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena *)
+    bool add(const IColumn ** __restrict columns, size_t /* columns_num */, size_t row_num, Arena *)
     {
         const auto & vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
         const T value = vec[row_num];
@@ -116,7 +116,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
         std::string_view value;
         for (size_t i = 0; i < columns_num; ++i)
         {
-            auto cur_ref = columns[i]->serializeAggregationStateValueIntoArena(row_num, *arena, begin);
+            auto settings = IColumn::SerializationSettings::createForAggregationState();
+            auto cur_ref = columns[i]->serializeValueIntoArena(row_num, *arena, begin, &settings);
             value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
         }
 
@@ -139,8 +140,9 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
                 history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
                 ReadBufferFromString in(it->getValue());
                 /// Multiple columns are serialized one by one
+                auto settings = IColumn::SerializationSettings::createForAggregationState();
                 for (auto & column : argument_columns)
-                    column->deserializeAndInsertAggregationStateValueFromArena(in);
+                    column->deserializeAndInsertFromArena(in, &settings);
             }
         }
     }

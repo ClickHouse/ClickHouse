@@ -8,6 +8,7 @@
 #include <memory>
 
 #include <boost/noncopyable.hpp>
+#include <fmt/format.h>
 
 class SipHash;
 
@@ -18,12 +19,6 @@ struct DataTypeCustomDesc;
 using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
 class IDataTypeCustomName;
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 
 class ReadBuffer;
 class WriteBuffer;
@@ -106,13 +101,13 @@ public:
     void updateHash(SipHash & hash) const;
     virtual void updateHashImpl(SipHash & hash) const = 0;
 
-    bool hasSubcolumn(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    bool hasSubcolumn(std::string_view subcolumn_name) const;
 
-    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
-    DataTypePtr getSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
+    DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
 
-    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
-    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
+    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
+    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
@@ -142,15 +137,14 @@ public:
 
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
-    SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
-
-    /// Chooses serialization according to serialization kind stack.
-    SerializationPtr getSerialization(ISerialization::KindStack kind_stack, SerializationPtr override_default = {}) const;
+    SerializationPtr getDefaultSerialization() const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 
     SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
+
+    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const;
 
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
@@ -162,7 +156,7 @@ public:
 
 protected:
     virtual String doGetName() const { return getFamilyName(); }
-    virtual SerializationPtr doGetDefaultSerialization() const = 0;
+    virtual SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const = 0;
 
     virtual String doGetPrettyName(size_t /*indent*/) const { return doGetName(); }
 
@@ -366,17 +360,14 @@ protected:
     static std::unique_ptr<SubstreamData> getSubcolumnData(
         std::string_view subcolumn_name,
         const SubstreamData & data,
+        size_t initial_array_level,
         bool throw_if_null);
 
     virtual std::unique_ptr<SubstreamData> getDynamicSubcolumnData(
-        std::string_view /*subcolumn_name*/,
-        const SubstreamData & /*data*/,
-        bool throw_if_null) const
-    {
-        if (throw_if_null)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData is not implemented for type {}", getName());
-        return nullptr;
-    }
+        std::string_view subcolumn_name,
+        const SubstreamData & data,
+        size_t initial_array_level,
+        bool throw_if_null) const;
 };
 
 
@@ -503,8 +494,10 @@ bool isInteger(TYPE data_type); \
 bool isNativeInteger(TYPE data_type); \
 \
 bool isDecimal(TYPE data_type); \
+bool isDecimal64(TYPE data_type); \
 \
 bool isFloat(TYPE data_type); \
+bool isNativeFloat(TYPE data_type); \
 \
 bool isIntegerOrDecimal(TYPE data_type); \
 bool isNativeNumber(TYPE data_type); \

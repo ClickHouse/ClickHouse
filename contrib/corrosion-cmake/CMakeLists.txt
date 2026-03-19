@@ -99,7 +99,7 @@ if (USE_MUSL)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
 endif ()
 
-if(CCACHE_EXECUTABLE MATCHES "/chcache$")
+if(CCACHE_EXECUTABLE MATCHES "/chcache$" OR CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
     set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
 else()
@@ -146,11 +146,20 @@ else()
     list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()
 
+# Use v0 symbol mangling for shorter symbol names.
+# The legacy mangling produces extremely long symbols (up to 165 KB) from deeply nested
+# generic types in parser combinator libraries like chumsky (used by prqlc).
+# v0 mangling uses backreference compression for repeated type paths.
+list(APPEND RUSTFLAGS "-C" "symbol-mangling-version=v0")
+
+# Suppress warnings
 list(APPEND RUSTFLAGS
-    # Suppress warnings in delta-kernel-rs
+    # delta-kernel-rs
     "-Adead_code"
-    # Suppress warnings in skim
+    # skim
     "-Amismatched_lifetime_syntaxes"
+    # wasmtime
+    "-Aunused_parens -Aunused_imports"
 )
 
 list(JOIN RUSTFLAGS " " RUSTFLAGS)

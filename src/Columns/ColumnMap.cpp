@@ -1,5 +1,3 @@
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -88,7 +86,7 @@ void ColumnMap::get(size_t n, Field & res) const
         map.push_back(getNestedData()[offset + i]);
 }
 
-DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnMap::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t offset = offsets[n - 1];
@@ -96,20 +94,18 @@ DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_b
 
     if (options.notFull(name_buf))
         name_buf << "[";
-    DataTypes element_types;
-    element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        const auto & type = getNestedData().getValueNameAndTypeImpl(name_buf, offset + i, options);
-        element_types.push_back(type);
+        getNestedData().getValueNameImpl(name_buf, offset + i, options);
+        if (!options.notFull(name_buf))
+            break;
     }
+
     if (options.notFull(name_buf))
         name_buf << "]";
-
-    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
@@ -151,34 +147,24 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-std::string_view ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeValueIntoArena(n, arena, begin);
+    return nested->serializeValueIntoArena(n, arena, begin, settings);
 }
 
-std::string_view ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeAggregationStateValueIntoArena(n, arena, begin);
+    return nested->serializeValueIntoMemory(n, memory, settings);
 }
 
-char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeValueIntoMemory(n, memory);
+    return nested->getSerializedValueSize(n, settings);
 }
 
-std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
+void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return nested->getSerializedValueSize(n);
-}
-
-void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in)
-{
-    nested->deserializeAndInsertFromArena(in);
-}
-
-void ColumnMap::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    nested->deserializeAndInsertAggregationStateValueFromArena(in);
+    nested->deserializeAndInsertFromArena(in, settings);
 }
 
 void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
@@ -234,6 +220,11 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     auto filtered = nested->filter(filt, result_size_hint);
     return ColumnMap::create(filtered);
+}
+
+void ColumnMap::filter(const Filter & filt)
+{
+    nested->filter(filt);
 }
 
 void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
@@ -341,12 +332,12 @@ void ColumnMap::protect()
     nested->protect();
 }
 
-void ColumnMap::getExtremes(Field & min, Field & max) const
+void ColumnMap::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     Field nested_min;
     Field nested_max;
 
-    nested->getExtremes(nested_min, nested_max);
+    nested->getExtremes(nested_min, nested_max, start, end);
 
     /// Convert result Array fields to Map fields because client expect min and max field to have type Map
 

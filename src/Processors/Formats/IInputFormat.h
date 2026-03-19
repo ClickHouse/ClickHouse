@@ -6,13 +6,13 @@
 #include <Common/PODArray.h>
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
-#include <Core/BlockMissingValues.h>
 #include <Processors/ISource.h>
 
 
 namespace DB
 {
 
+class BlockMissingValues;
 struct SelectQueryInfo;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;

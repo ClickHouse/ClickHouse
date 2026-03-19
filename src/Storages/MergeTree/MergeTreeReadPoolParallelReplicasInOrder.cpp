@@ -186,18 +186,31 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     if (no_more_tasks)
         return nullptr;
 
-    std::optional<ParallelReadResponse> response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
-    if (response)
+    if (failed_to_get_task)
+        return nullptr;
+
+    std::optional<ParallelReadResponse> response;
+    try
     {
-        LOG_DEBUG(log, "Got response: {}", response->describe());
-        if (response->description.empty() || response->finish)
+        response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
+        if (response)
+        {
+            LOG_DEBUG(log, "Got response: {}", response->describe());
+            if (response->description.empty() || response->finish)
+                no_more_tasks = true;
+        }
+        else
+        {
+            LOG_DEBUG(log, "Got no response");
             no_more_tasks = true;
+        }
     }
-    else
+    catch (...)
     {
-        LOG_DEBUG(log, "Got no response");
-        no_more_tasks = true;
+        failed_to_get_task = true;
+        throw;
     }
+
     if (no_more_tasks)
         return nullptr;
 

@@ -106,20 +106,7 @@ private:
                     bool observer_mode,
                     bool invisible,
                     size_t zk_root_index_ = 0
-                    )
-            : name(name_)
-            , zk_name(zk_name_)
-            , zk_root(zk_root_)
-            , current_node(host_name + ":" + toString(port), secure, shard_id)
-            , current_node_is_observer(observer_mode)
-            , current_cluster_is_invisible(invisible)
-            , is_secure_connection(secure)
-            , username(username_)
-            , password(password_)
-            , cluster_secret(cluster_secret_)
-            , zk_root_index(zk_root_index_)
-        {
-        }
+                    );
     };
 
     void initialUpdate();

@@ -407,7 +407,7 @@ Returns:
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCompareSubstrings>(documentation);
 }

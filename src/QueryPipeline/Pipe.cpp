@@ -168,9 +168,6 @@ Pipe::Pipe(ProcessorPtr source)
 {
     checkSource(*source);
 
-    if (collected_processors)
-        collected_processors->emplace_back(source);
-
     output_ports.push_back(&source->getOutputs().front());
     header = output_ports.front()->getSharedHeader();
     processors->emplace_back(std::move(source));
@@ -670,7 +667,7 @@ void Pipe::addChains(std::vector<Chain> chains)
         connect(*output_ports[i], chains[i].getInputPort());
         output_ports[i] = &chains[i].getOutputPort();
 
-        auto added_processors = Chain::getProcessors(std::move(chains[i]));
+        auto added_processors = std::move(chains[i].getProcessors());
         for (auto & transform : added_processors)
         {
             if (collected_processors)

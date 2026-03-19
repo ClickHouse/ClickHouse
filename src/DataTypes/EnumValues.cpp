@@ -140,7 +140,7 @@ bool EnumValues<T>::containsAll(const TValues & rhs_values) const
         /// If we don't have this name, than we have to be sure,
         /// that this value exists in enum
         if (it == name_to_value_map->end())
-            return value_to_name_map.count(value.second) > 0;
+            return value_to_name_map.contains(static_cast<T>(value.second));
 
         /// If we have this name, than it should have the same value
         return it->value.second == value.second;

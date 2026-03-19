@@ -61,6 +61,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
@@ -130,7 +131,8 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
 
         if (actions.getOutputs().size() != 1)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsDAG contains more than 1 output for expression: {}", ast->formatForLogging());
+            // Expression can return more than one column using untuple()
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Constant expression returns more than 1 column: {}", ast->formatForLogging());
         }
 
         const auto & output = actions.getOutputs()[0];
@@ -138,6 +140,12 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         {
             result_column = output->column;
             result_type = output->result_type;
+
+            /// All constant (literal) columns in block are added with size 1.
+            /// But if there was no columns in block before executing a function, the result has size 0.
+            /// Change the size to 1.
+            if (result_column->empty() && isColumnConst(*result_column))
+                result_column = result_column->cloneResized(1);
         }
     }
     else
@@ -210,13 +218,13 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
-    return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
+    return make_intrusive<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const ContextPtr & context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
-        return std::make_shared<ASTLiteral>(id->name());
+        return make_intrusive<ASTLiteral>(id->name());
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }
@@ -574,11 +582,12 @@ namespace
         if (!col_set || !col_set->getData())
             return {};
 
-        auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get());
-        if (!set_from_tuple)
-            return {};
+        SetPtr set = nullptr;
+        if (auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get()))
+            set = set_from_tuple->buildOrderedSetInplace(context);
+        else
+            set = col_set->getData().get()->get();
 
-        SetPtr set = set_from_tuple->buildOrderedSetInplace(context);
         if (!set || !set->hasExplicitSetElements())
             return {};
 
@@ -612,7 +621,7 @@ namespace
 
         if (!type->equals(*node->result_type))
         {
-            cast_col = tryCastColumn(column, value->result_type, node->result_type);
+            cast_col = tryCastColumn(column, type, node->result_type);
             if (!cast_col)
                 return {};
             const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);

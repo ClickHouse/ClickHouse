@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -191,10 +192,10 @@ ColumnPtr fillColumnWithRandomData(
                 {
                     UInt64 rand = rng();
 
-                    UInt16 rand1 = rand;
-                    UInt16 rand2 = rand >> 16;
-                    UInt16 rand3 = rand >> 32;
-                    UInt16 rand4 = rand >> 48;
+                    UInt16 rand1 = static_cast<UInt16>(rand);
+                    UInt16 rand2 = static_cast<UInt16>(rand >> 16);
+                    UInt16 rand3 = static_cast<UInt16>(rand >> 32);
+                    UInt16 rand4 = static_cast<UInt16>(rand >> 48);
 
                     /// Printable characters are from range [32; 126].
                     /// https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
@@ -220,7 +221,7 @@ ColumnPtr fillColumnWithRandomData(
             auto & data = column->getData();
             data.resize(limit);
 
-            UInt8 size = values.size();
+            UInt8 size = static_cast<UInt8>(values.size());
             UInt8 off;
             for (UInt64 i = 0; i < limit; ++i)
             {
@@ -238,11 +239,11 @@ ColumnPtr fillColumnWithRandomData(
             auto & data = column->getData();
             data.resize(limit);
 
-            UInt16 size = values.size();
+            UInt16 size = static_cast<UInt16>(values.size());
             UInt8 off;
             for (UInt64 i = 0; i < limit; ++i)
             {
-                off = static_cast<UInt16>(rng()) % size;
+                off = static_cast<UInt8>(static_cast<UInt16>(rng()) % size);
                 data[i] = values[off].second;
             }
 
@@ -660,16 +661,21 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         if (!engine_args.empty())
         {
-            const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
-            if (!ast_literal.value.isNull())
-                random_seed = checkAndGetLiteralArgument<UInt64>(ast_literal, "random_seed");
+            engine_args[0] = evaluateConstantExpressionAsLiteral(engine_args[0], args.getLocalContext());
+            random_seed = checkAndGetLiteralArgument<UInt64>(engine_args[0], "random_seed");
         }
 
         if (engine_args.size() >= 2)
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+        {
+            engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
+            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[0], "max_string_length");
+        }
 
         if (engine_args.size() == 3)
+        {
+            engine_args[2] = evaluateConstantExpressionAsLiteral(engine_args[2], args.getLocalContext());
             max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
+        }
 
         return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });
@@ -707,7 +713,7 @@ Pipe StorageGenerateRandom::read(
 
         if (estimated_block_size_bytes > preferred_block_size_bytes)
         {
-            max_block_size = static_cast<size_t>(max_block_size * (static_cast<double>(preferred_block_size_bytes) / estimated_block_size_bytes));
+            max_block_size = static_cast<size_t>(static_cast<double>(max_block_size) * (static_cast<double>(preferred_block_size_bytes) / static_cast<double>(estimated_block_size_bytes)));
             if (max_block_size == 0)
                 max_block_size = 1;
         }

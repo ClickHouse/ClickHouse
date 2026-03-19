@@ -108,6 +108,7 @@ const char * errorMessage(Error code)
         case Error::ZNOTHING:                 return "(not error) no server responses to process";
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
         case Error::ZNOTREADONLY:             return "State-changing request is passed to read-only server";
+        case Error::ZNOWATCHER:               return "No watcher was found";
     }
 }
 
@@ -132,7 +133,6 @@ bool isUserError(Error zk_return_code)
         || zk_return_code == Error::ZNODEEXISTS
         || zk_return_code == Error::ZNOTEMPTY;
 }
-
 
 void CreateRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }

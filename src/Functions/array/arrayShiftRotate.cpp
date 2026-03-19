@@ -275,15 +275,7 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     };
     FunctionDocumentation::IntroducedIn introduced_in_rotateleft = {23, 8};
     FunctionDocumentation::Category category_rotateleft = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_rotateleft = {
-        description_rotateleft,
-        syntax_rotateleft,
-        arguments_rotateleft,
-        returned_value_rotateleft,
-        examples_rotateleft,
-        introduced_in_rotateleft,
-        category_rotateleft
-    };
+    FunctionDocumentation documentation_rotateleft = {description_rotateleft, syntax_rotateleft, arguments_rotateleft, {}, returned_value_rotateleft, examples_rotateleft, introduced_in_rotateleft, category_rotateleft};
 
     factory.registerFunction<FunctionArrayRotateLeft>(documentation_rotateleft);
 
@@ -306,6 +298,7 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
         description_rotateright,
         syntax_rotateright,
         arguments_rotateright,
+        {},
         returned_value_rotateright,
         examples_rotateright,
         introduced_in_rotateright,
@@ -340,6 +333,7 @@ If the number of elements is negative, the array is shifted to the right.
         description_shiftleft,
         syntax_shiftleft,
         arguments_shiftleft,
+        {},
         returned_value_shiftleft,
         examples_shiftleft,
         introduced_in_shiftleft,
@@ -372,7 +366,7 @@ If the number of elements is negative, the array is shifted to the left.
     };
     FunctionDocumentation::IntroducedIn introduced_in_shiftright = {23, 8};
     FunctionDocumentation::Category category_shiftright = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_shiftright = {description_shiftright, syntax_shiftright, arguments_shiftright, returned_value_shiftright, examples_shiftright, introduced_in_shiftright, category_shiftright};
+    FunctionDocumentation documentation_shiftright = {description_shiftright, syntax_shiftright, arguments_shiftright, {}, returned_value_shiftright, examples_shiftright, introduced_in_shiftright, category_shiftright};
 
     factory.registerFunction<FunctionArrayShiftRight>(documentation_shiftright);
 }

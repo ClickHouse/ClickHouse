@@ -10,6 +10,7 @@
 #include <Common/JSONBuilder.h>
 #include <Interpreters/ActionsDAG.h>
 
+
 namespace DB
 {
 
@@ -34,6 +35,34 @@ static ITransformingStep::Traits getTraits(const ActionsDAG & actions)
     };
 }
 
+static bool containsCompiledFunction(const ActionsDAG::Node * node)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->is_function_compiled)
+        return true;
+
+    const auto & children = node->children;
+    if (children.empty())
+        return false;
+
+    bool result = false;
+    for (const auto & child : children)
+        result |= containsCompiledFunction(child);
+    return result;
+}
+
+static NameSet getColumnsContainCompiledFunction(const ActionsDAG & actions_dag)
+{
+    NameSet result;
+    for (const auto * node : actions_dag.getOutputs())
+    {
+        if (containsCompiledFunction(node))
+        {
+            result.insert(node->result_name);
+        }
+    }
+    return result;
+}
+
 ExpressionStep::ExpressionStep(SharedHeader input_header_, ActionsDAG actions_dag_)
     : ITransformingStep(
         input_header_,
@@ -48,17 +77,17 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
     pipeline.addSimpleTransform([&](const SharedHeader & header)
-    {
-        return std::make_shared<ExpressionTransform>(header, expression);
-    });
+                                { return std::make_shared<ExpressionTransform>(header, expression, dataflow_cache_updater); });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
+        auto columns_contain_compiled_function = getColumnsContainCompiledFunction(expression->getActionsDAG());
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                pipeline.getHeader().getColumnsWithTypeAndName(),
-                output_header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name,
-                nullptr);
+            pipeline.getHeader().getColumnsWithTypeAndName(),
+            output_header->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            nullptr, false, false, nullptr,
+            &columns_contain_compiled_function);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const SharedHeader & header)
@@ -70,9 +99,10 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
 void ExpressionStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, settings.indent_char);
+    const String & prefix = settings.detail_prefix;
     auto expression = std::make_shared<ExpressionActions>(actions_dag.clone());
-    expression->describeActions(settings.out, prefix);
+    if (!settings.compact)
+        expression->describeActions(settings.out, prefix);
 }
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -91,7 +121,7 @@ void ExpressionStep::serialize(Serialization & ctx) const
     actions_dag.serialize(ctx.out, ctx.registry);
 }
 
-std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
 {
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     if (ctx.input_headers.size() != 1)
@@ -110,6 +140,11 @@ IQueryPlanStep::RemovedUnusedColumns ExpressionStep::removeUnusedColumns(NameMul
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
+
+    /// When extra columns were absorbed from a child step that cannot reduce its output,
+    /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
+    if (prevent_input_removal)
+        remove_inputs = false;
 
     const auto required_output_count = required_outputs.size();
     auto split_results = actions_dag.splitPossibleOutputNames(std::move(required_outputs));

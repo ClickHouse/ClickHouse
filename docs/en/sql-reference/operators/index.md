@@ -320,7 +320,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 **See Also**
 
 - [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
-- [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions
+- [toInterval](/sql-reference/functions/type-conversion-functions#toIntervalYear) type conversion functions
 
 ## Logical AND Operator {#logical-and-operator}
 

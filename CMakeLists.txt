@@ -91,6 +91,7 @@ if (ENABLE_FUZZING)
     set (ENABLE_CHECK_HEAVY_BUILDS 1)
     set (GLIBC_COMPATIBILITY OFF)
     set (ENABLE_BENCHMARKS 0)
+    set (ENABLE_CLICKHOUSE_KEEPER 0)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
@@ -101,6 +102,18 @@ if (ENABLE_BUZZHOUSE)
     set (ENABLE_PROTOBUF 1)
 endif()
 
+option (ENABLE_XRAY "Enable LLVM XRay" ON)
+
+if (NOT ENABLE_XRAY)
+    message (STATUS "Not using LLVM XRay because it's disabled")
+    set (ENABLE_XRAY 0)
+endif()
+
+if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE OR USE_MUSL)
+    message (STATUS "Not using LLVM XRay, only Linux on amd64 and aarch64 is supported without sanitizers")
+    set (ENABLE_XRAY 0)
+endif()
+
 # Global libraries
 # See:
 # - default_libs.cmake
@@ -108,8 +121,6 @@ endif()
 add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
-
-include (cmake/xray_instrumentation.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
@@ -126,19 +137,6 @@ endif ()
 
 include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
-
-# generate ranges for fast "addr2line" search
-if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-    # NOTE: that clang has a bug because of it does not emit .debug_aranges
-    # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
-endif ()
-
-# See https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
-endif()
 
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
@@ -197,7 +195,7 @@ endif ()
 # Add a section with the hash of the compiled machine code for integrity checks.
 # Only for official builds, because adding a section can be time consuming (rewrite of several GB).
 # And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
-if (CLICKHOUSE_OFFICIAL_BUILD AND NOT CMAKE_CROSSCOMPILING AND NOT ENABLE_CLANG_TIDY)
+if (CLICKHOUSE_OFFICIAL_BUILD AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
 else ()
@@ -278,10 +276,6 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-# Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
-# See https://reviews.llvm.org/D112921
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
-
 # falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
 set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
 
@@ -299,6 +293,18 @@ set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
 endif()
+
+if (OS_DARWIN)
+    # On Darwin the optimizatiosns to reduce the debug size are off by default. `-fno-standalone-debug` enables them
+    set (DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -fno-standalone-debug")
+endif()
+
+# generate ranges for fast "addr2line" search
+if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+    # NOTE: that clang has a bug because of it does not emit .debug_aranges
+    # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
+    set(DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -gdwarf-aranges")
+endif ()
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
 option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
@@ -351,6 +357,10 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+
+    if(LINKER_NAME MATCHES "lld")
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
+    endif()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
@@ -361,6 +371,11 @@ else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
 set(MAX_LINKER_MEMORY 5000)
+if (ENABLE_FUZZING)
+    # Fuzzer builds produce many large ASan-instrumented binaries.
+    # Each linker instance needs significantly more memory than the default.
+    set(MAX_LINKER_MEMORY 16000)
+endif()
 include(cmake/limit_jobs.cmake)
 
 
@@ -368,7 +383,7 @@ include(cmake/limit_jobs.cmake)
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
 # Don't use the system compiler-rt library even if it is available. Instead build it directly
-option(USE_SYSTEM_COMPILER_RT "Use the system compiler-rt if available. If disabled it will be built from sources (supported for Linux and FreeBSD)" ON)
+option(USE_SYSTEM_COMPILER_RT "Use the system compiler-rt if available. If disabled it will be built from sources (supported for Linux and FreeBSD)" OFF)
 
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)
@@ -384,6 +399,8 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+elseif (OS_SUNOS)
+    include(cmake/sunos/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
@@ -477,6 +494,11 @@ endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
+# We can only include XRay flags and defines once we know that we're building LLVM
+if (ENABLE_XRAY)
+    include (cmake/xray_instrumentation.cmake)
+endif()
+
 # Sets dummy launchers to suppress linking. Used for clang-tidy builds.
 enable_dummy_launchers_if_needed()
 
@@ -493,29 +515,6 @@ macro (clickhouse_add_executable target)
     else ()
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
-
-    # Wrap the malloc/free and other C-style functions with our own ones
-    # to inject memory tracking mechanism into them.
-    # Sanitizers have their own way of intercepting the
-    # allocations and deallocations, so we skip this step for them.
-    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD))
-        target_link_options(${target} PRIVATE
-            "LINKER:--wrap=malloc"
-            "LINKER:--wrap=free"
-            "LINKER:--wrap=calloc"
-            "LINKER:--wrap=realloc"
-            "LINKER:--wrap=aligned_alloc"
-            "LINKER:--wrap=posix_memalign"
-            "LINKER:--wrap=valloc"
-            "LINKER:--wrap=memalign"
-            "LINKER:--wrap=reallocarray"
-        )
-        if (NOT USE_MUSL)
-            target_link_options(${target} PRIVATE
-                "LINKER:--wrap=pvalloc"
-            )
-        endif()
-    endif()
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
@@ -608,12 +607,6 @@ if (FUZZER)
                 get_target_property(target_bin_dir ${target} BINARY_DIR)
                 add_custom_command(TARGET fuzzers POST_BUILD COMMAND mv "${target_bin_dir}/${target_bin_name}" "${CMAKE_CURRENT_BINARY_DIR}/programs/" VERBATIM)
             endif()
-            if (target STREQUAL "clickhouse")
-                message(STATUS "${target} instrumented with fuzzer")
-                target_link_libraries(${target} PUBLIC ch_contrib::fuzzer_no_main)
-                # Add to fuzzers bundle
-                add_dependencies(fuzzers ${target})
-            endif()
         endif()
     endforeach()
     add_custom_command(TARGET fuzzers POST_BUILD COMMAND SRC=${CMAKE_SOURCE_DIR} BIN=${CMAKE_BINARY_DIR} OUT=${CMAKE_BINARY_DIR}/programs ${CMAKE_SOURCE_DIR}/tests/fuzz/build.sh VERBATIM)
@@ -667,6 +660,7 @@ if (NATIVE_BUILD_TARGETS
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
+            "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT

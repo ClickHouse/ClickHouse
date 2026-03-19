@@ -547,6 +547,42 @@ TEST(AccessRights, Filter)
     ASSERT_EQ(res.size(), 0);
 }
 
+TEST(AccessRights, RevokeWithParameters)
+{
+    AccessRights root;
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.grantWithGrantOption(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::SELECT, "default", "zoo");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE SELECT ON default.zoo*");
+
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.grantWithGrantOption(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::SELECT, "default", "foo", "bar");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE SELECT(bar*) ON default.foo");
+}
+
+TEST(AccessRights, RevokeWithParametersWithGrantOption)
+{
+    AccessRights root;
+    root.grantWithGrantOption(AccessType::ALL);
+    root.revokeWildcard(AccessType::INTROSPECTION, "system");  // global grant, do nothing for database revoke
+    ASSERT_EQ(root.toString(), "GRANT ALL ON *.* WITH GRANT OPTION");
+
+    root = {};
+    root.grant(AccessType::SELECT);
+    root.grant(AccessType::INTROSPECTION);
+    root.grant(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::CREATE_USER, "system");
+    ASSERT_EQ(root.toString(), "GRANT SELECT, INTROSPECTION ON *.*, GRANT CREATE USER ON *, REVOKE CREATE USER ON system*");
+
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.grantWithGrantOption(AccessType::INTROSPECTION);
+    root.grantWithGrantOption(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::CREATE_USER, "system");
+    ASSERT_EQ(root.toString(), "GRANT SELECT, INTROSPECTION ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE CREATE USER ON system*");
+}
+
 TEST(AccessRights, ParialRevokeWithGrantOption)
 {
     AccessRights root;
@@ -888,6 +924,59 @@ TEST(AccessRights, ContainsWithWildcardsAndPartialRevokes)
     lhs.grantWildcard(AccessType::SELECT, "testing");
     rhs.grantWildcard(AccessType::SELECT, "test");
     ASSERT_FALSE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-3");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-3");
+    ASSERT_FALSE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::CREATE_ROLE);
+    lhs.grant(AccessType::ROLE_ADMIN);
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-3");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    lhs.revoke(AccessType::SELECT, "secret_db1");
+    rhs.grant(AccessType::SELECT);
+    rhs.revoke(AccessType::SELECT, "secret_db1");
+    rhs.revoke(AccessType::SELECT, "secret_db2");
+    rhs.revoke(AccessType::SELECT, "secret_db3");
+    ASSERT_TRUE(lhs.contains(rhs));
+    ASSERT_FALSE(rhs.contains(lhs));
 }
 
 TEST(AccessRights, ColumnLevelWildcardOperations)
@@ -1014,4 +1103,96 @@ TEST(AccessRights, PartialRevokePropagation)
     ASSERT_TRUE(root.isGranted(AccessType::INSERT, "readonly"));
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "writeonly"));
     ASSERT_FALSE(root.isGranted(AccessType::INSERT, "writeonly"));
+}
+
+TEST(AccessRights, PartialRevokeIsGrantedWildcard)
+{
+    AccessRights root;
+    root.grant(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "system", "zookeeper");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "normal"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "system", "query_log"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "system", "zookeeper"));
+    ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "system", "zookeeper"));
+
+    // system.zookeeper is revoked, but system.zookeeper2 is not
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "system", "zookeeper2"));
+    ASSERT_TRUE(root.isGrantedWildcard(AccessType::SELECT, "system", "zookeeper2"));
+    ASSERT_TRUE(root.isGrantedWildcard(AccessType::SELECT, "system", "query_log"));
+
+    root = {};
+    root.grant(AccessType::SELECT);
+    root.revokeWildcard(AccessType::SELECT, "system", "zookeeper");
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "system", "zookeeper"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "system", "zookeeper2"));
+    ASSERT_TRUE(root.isGrantedWildcard(AccessType::SELECT, "system", "query_log"));
+}
+
+TEST(AccessRights, SamePrefixDifferentLevels)
+{
+    AccessRights root;
+    root.grant(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "test");
+    root.revoke(AccessType::SELECT, "prod", "test");
+    root.revoke(AccessType::SELECT, "dev", "data", "test");
+
+    // "test" is revoked
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "test"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "test", "anytable"));
+
+    // "prod.test" is revoked
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "prod"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "prod", "test"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "prod", "foo"));
+
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "prod", "other"));
+
+    // "dev.data.test" is revoked
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "dev", "data", "other"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "dev", "data", "test"));
+}
+
+TEST(AccessRights, IsGrantedWildcardDatabaseLevel)
+{
+    AccessRights root;
+    root.grant(AccessType::SELECT, "mydb");
+
+    ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "mydb"));
+    ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "mydb2"));
+    ASSERT_TRUE(root.isGrantedWildcard(AccessType::SELECT, "mydb", "anytable"));
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "test");
+
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "test"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "testing"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "test123"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "tes"));
+
+    ASSERT_TRUE(root.isGrantedWildcard(AccessType::SELECT, "test"));
+    ASSERT_TRUE(root.isGrantedWildcard(AccessType::SELECT, "testing"));
+    ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "te"));
+}
+
+TEST(AccessRights, MultipleAccessTypesPartialRevoke)
+{
+    AccessRights root;
+    root.grant(AccessType::SELECT);
+    root.grant(AccessType::INSERT);
+    root.revoke(AccessType::SELECT, "readonly");
+    root.revoke(AccessType::INSERT, "readwrite");
+
+    // SELECT
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "normal"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "readonly"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "readwrite"));
+
+    // INSERT
+    ASSERT_TRUE(root.isGranted(AccessType::INSERT, "normal"));
+    ASSERT_TRUE(root.isGranted(AccessType::INSERT, "readonly"));
+    ASSERT_FALSE(root.isGranted(AccessType::INSERT, "readwrite"));
+
+    // Wildcard checks
+    ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "readonl"));
+    ASSERT_TRUE(root.isGrantedWildcard(AccessType::INSERT, "readonl"));
 }

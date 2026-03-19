@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/WeakHash.h>
@@ -20,6 +21,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+}
+
+void throwUnexpectedLowCardinalityIndexType(size_t size)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column: {}", size);
 }
 
 namespace
@@ -276,22 +282,23 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.insertIndex(getDictionary().uniqueInsertData(pos, length));
 }
 
-std::string_view ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnLowCardinality::serializeValueIntoArena(
+    size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
+    return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin, settings);
 }
 
-std::string_view ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return getDictionary().serializeAggregationStateValueIntoArena(getIndexes().getUInt(n), arena, begin);
+    return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory, settings);
 }
 
-char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnLowCardinality::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory);
+    return getDictionary().getSerializedValueSize(getIndexes().getUInt(n), settings);
 }
 
-void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     /// nullable is handled internally.
     chassert(is_null == nullptr);
@@ -305,20 +312,14 @@ void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
 
     PaddedPODArray<UInt64> dict_sizes;
-    getDictionary().collectSerializedValueSizes(dict_sizes, nullptr);
+    getDictionary().collectSerializedValueSizes(dict_sizes, nullptr, settings);
     idx.collectSerializedValueSizes(sizes, dict_sizes);
 }
 
-void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     compactIfSharedDictionary();
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in));
-}
-
-void ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    compactIfSharedDictionary();
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertAggregationStateValueFromArena(in));
+    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in, settings));
 }
 
 void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
@@ -349,13 +350,11 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
 {
+    if (nestedIsNullable())
+        return cloneFinalized();
+
     auto res = cloneFinalized();
-    /* Compact required not to share dictionary.
-     * If `shared` flag is not set `cloneFinalized` will return shallow copy
-     * and `nestedToNullable` will mutate source column.
-     */
-    assert_cast<ColumnLowCardinality &>(*res).compactInplace();
-    assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
+    assert_cast<ColumnLowCardinality &>(*res).compactInplaceToNullable();
     return res;
 }
 
@@ -609,6 +608,13 @@ void ColumnLowCardinality::compactInplace()
     idx.attachIndexes(std::move(indexes));
 }
 
+void ColumnLowCardinality::compactInplaceToNullable()
+{
+    auto indexes = idx.detachIndexes();
+    dictionary.compactToNullable(indexes);
+    idx.attachIndexes(std::move(indexes));
+}
+
 void ColumnLowCardinality::compactIfSharedDictionary()
 {
     if (dictionary.isShared())
@@ -666,9 +672,28 @@ void ColumnLowCardinality::Dictionary::compact(MutableColumnPtr & indexes)
     shared = false;
 }
 
+void ColumnLowCardinality::Dictionary::compactToNullable(MutableColumnPtr & indexes)
+{
+    column_unique = compactToNullable(getColumnUnique(), indexes);
+    shared = false;
+}
+
 MutableColumnPtr ColumnLowCardinality::Dictionary::compact(const IColumnUnique & unique, MutableColumnPtr & indexes)
 {
     auto new_column_unique = unique.cloneEmpty();
+    auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
+
+    auto unique_indexes = mapUniqueIndex(*indexes);
+    auto sub_keys = unique.getNestedColumn()->index(*unique_indexes, 0);
+    auto new_indexes = new_unique.uniqueInsertRangeFrom(*sub_keys, 0, sub_keys->size());
+
+    indexes = IColumn::mutate(new_indexes->index(*indexes, 0));
+    return new_column_unique;
+}
+
+MutableColumnPtr ColumnLowCardinality::Dictionary::compactToNullable(const IColumnUnique & unique, MutableColumnPtr & indexes)
+{
+    auto new_column_unique = unique.cloneEmptyNullable();
     auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
 
     auto unique_indexes = mapUniqueIndex(*indexes);

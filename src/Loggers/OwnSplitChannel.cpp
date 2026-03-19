@@ -336,7 +336,7 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
 
     if (unlikely(dropped_messages))
     {
-        String log = "We've dropped " + toString(dropped_messages) + " log messages in this channel due to queue overflow";
+        String log = fmt::format("We've dropped {} log messages in this channel due to queue overflow", dropped_messages);
         auto async_message = std::make_shared<AsyncLogMessage>(Poco::Message("AsyncLogMessageQueue", log, Poco::Message::PRIO_WARNING));
         async_message->msg_ext.query_id.clear();
         message_queue.push_back(async_message);

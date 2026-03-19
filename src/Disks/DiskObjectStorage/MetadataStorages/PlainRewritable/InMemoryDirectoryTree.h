@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
+
 #include <Common/CurrentMetrics.h>
 
 #include <base/defines.h>
@@ -9,7 +11,6 @@
 #include <string>
 #include <vector>
 #include <mutex>
-#include <filesystem>
 
 namespace DB
 {
@@ -39,15 +40,15 @@ class InMemoryDirectoryTree
     struct INode;
 
     /// Resolves inode starting from the root reachable by path.
-    std::shared_ptr<INode> walk(const std::filesystem::path & path, bool create_missing = false) const TSA_REQUIRES(mutex);
+    std::shared_ptr<INode> walk(const NormalizedPath & path, bool create_missing = false) const TSA_REQUIRES(mutex);
 
     /// For each inode in path subtree (including the inode related to path) will call observe.
     /// Order of traverse is not guaranteed.
     using ObserveFunction = std::function<void(const std::string & /*path*/, const std::shared_ptr<const INode> & /*inode*/)>;
-    void traverseSubtree(const std::filesystem::path & path, const ObserveFunction & observe) const TSA_REQUIRES(mutex);
+    void traverseSubtree(const NormalizedPath & path, const ObserveFunction & observe) const TSA_REQUIRES(mutex);
 
     /// Constructs path which can be resolved (walked) to node.
-    std::filesystem::path determineNodePath(std::shared_ptr<INode> node) const TSA_REQUIRES(mutex);
+    NormalizedPath determineNodePath(std::shared_ptr<INode> node) const TSA_REQUIRES(mutex);
 
     /// Removes all parents of node while the parent should not exist. Node should exist if some physical node exists in it's subtree.
     std::shared_ptr<INode> trimDanglingVirtualPath(std::shared_ptr<INode> node) TSA_REQUIRES(mutex);
@@ -64,6 +65,7 @@ public:
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> getSubtreeRemoteInfo(const std::string & path) const;
 
     /// Returns remote info of file if it exists.
+    std::optional<DirectoryRemoteInfo> getDirectoryRemoteInfo(const std::string & path) const;
     std::optional<FileRemoteInfo> getFileRemoteInfo(const std::string & path) const;
 
     /// Creates virtual path in tree according to the path. Only leaf of this path will be physical (will have remote info).
@@ -76,6 +78,8 @@ public:
     void moveDirectory(const std::string & from, const std::string & to);
     std::vector<std::string> listDirectory(const std::string & path) const;
     std::pair<bool, std::optional<DirectoryRemoteInfo>> existsDirectory(const std::string & path) const;
+    /// Returns whether a directory exists only in the virtual filesystem tree.
+    bool existsVirtualDirectory(const std::string & path) const;
 
     bool existsFile(const std::string & path) const;
     void removeFile(const std::string & path);

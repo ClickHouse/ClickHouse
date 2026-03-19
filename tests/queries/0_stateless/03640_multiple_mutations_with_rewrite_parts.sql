@@ -16,3 +16,5 @@ alter table test_materialize delete where (key % 2) == 0 settings mutations_sync
 select partition_id, rows, index_granularity_bytes_in_memory_allocated>25 from system.parts where database = currentDatabase() and table = 'test_materialize' and active order by 1;
 
 select * from system.mutations where database = currentDatabase() and not is_done format Vertical;
+
+alter table test_materialize (APPLY DELETED MASK), (REWRITE PARTS);

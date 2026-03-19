@@ -53,6 +53,9 @@
 #include <Interpreters/JoinOperator.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/DirectJoinMergeTreeEntity.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
+
 
 #include <memory>
 #include <stack>

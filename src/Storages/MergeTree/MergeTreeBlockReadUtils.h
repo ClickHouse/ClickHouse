@@ -49,7 +49,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block);
+    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -75,8 +75,8 @@ struct MergeTreeBlockSizePredictor
 
         double max_size_per_row
             = std::max<double>({max_size_per_row_fixed, static_cast<double>(static_cast<UInt64>(1)), max_size_per_row_dynamic});
-        return (bytes_quota > block_size_rows * max_size_per_row)
-            ? static_cast<size_t>(bytes_quota / max_size_per_row) - block_size_rows
+        return (static_cast<double>(bytes_quota) > static_cast<double>(block_size_rows) * max_size_per_row)
+            ? static_cast<size_t>(static_cast<double>(bytes_quota) / max_size_per_row) - block_size_rows
             : 0;
     }
 
@@ -91,7 +91,7 @@ struct MergeTreeBlockSizePredictor
     void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = calculateDecay())
     {
         double alpha = std::pow(1. - decay, rows_was_read);
-        double current_ration = rows_was_filtered / std::max(1.0, static_cast<double>(rows_was_read));
+        double current_ration = static_cast<double>(rows_was_filtered) / std::max(1.0, static_cast<double>(rows_was_read));
         filtered_rows_ratio = current_ration < filtered_rows_ratio
             ? current_ration
             : alpha * filtered_rows_ratio + (1.0 - alpha) * current_ration;
@@ -123,6 +123,7 @@ protected:
     size_t number_of_rows_in_part;
 
     bool is_initialized_in_update = false;
+    bool allow_subcolumns_sizes_calculation = false;
 
     void initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update = false);
 

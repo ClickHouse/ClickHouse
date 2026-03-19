@@ -29,6 +29,7 @@ from helpers.s3_queue_common import (
 )
 
 AVAILABLE_MODES = ["unordered", "ordered"]
+AUXILIARY_ZOOKEEPER_NAME = "zookeeper2"
 
 
 @pytest.fixture(autouse=True)
@@ -63,6 +64,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_azurite=True,
@@ -151,9 +153,9 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
     node.query("system flush logs")
 
     if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue"]
+        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
     else:
-        system_tables = ["azure_queue_log", "azure_queue"]
+        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
 
     for table in system_tables:
         if table.endswith("_log"):
@@ -240,9 +242,9 @@ def test_tag_after_processing(started_cluster, engine_name):
     node.query("system flush logs")
 
     if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue"]
+        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
     else:
-        system_tables = ["azure_queue_log", "azure_queue"]
+        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
 
     for table in system_tables:
         if table.endswith("_log"):
@@ -360,9 +362,9 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
     node.query("system flush logs")
 
     if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue"]
+        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
     else:
-        system_tables = ["azure_queue_log", "azure_queue"]
+        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
 
     for table in system_tables:
         if table.endswith("_log"):
@@ -400,6 +402,83 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
 
         blob_count = count_azurite_blobs(started_cluster, src_container, files_path)
         assert blob_count == 0, f"blobs left: {blob_count}"
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+def test_auxiliary_zookeeper_keeper_path(started_cluster, engine_name):
+    node = started_cluster.instances["instance"]
+    table_name = f"aux_keeper_{engine_name.lower()}_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    files_num = 3
+    row_num = 2
+    keeper_suffix = f"/clickhouse/test_{table_name}"
+    keeper_path_with_aux = f"{AUXILIARY_ZOOKEEPER_NAME}:{keeper_suffix}"
+
+    storage = "s3" if engine_name == "S3Queue" else "azure"
+    total_values = generate_random_files(
+        started_cluster, files_path, files_num, row_num=row_num, storage=storage
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path_with_aux},
+        engine_name=engine_name,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    expected_count = files_num * row_num
+    for _ in range(60):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count:
+            break
+        time.sleep(1)
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
+
+    show_create = node.query(f"SHOW CREATE TABLE {table_name}")
+    assert keeper_path_with_aux in show_create
+
+    settings_table = (
+        "system.s3_queue_settings"
+        if engine_name == "S3Queue"
+        else "system.azure_queue_settings"
+    )
+    keeper_setting = node.query(
+        f"SELECT value FROM {settings_table} WHERE table = '{table_name}' AND name = 'keeper_path'"
+    ).strip()
+    assert keeper_setting == keeper_path_with_aux
+
+    assert int(node.query(f"SELECT uniq(_path) FROM {dst_table_name}")) == files_num
+    assert sorted(
+        [
+            list(map(int, l.split()))
+            for l in node.query(
+                f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3"
+            ).splitlines()
+        ]
+    ) == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
+
+
+def test_auxiliary_zookeeper_missing_configuration(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"aux_keeper_missing_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    keeper_path = f"unknown_keeper:/clickhouse/test_{table_name}"
+
+    error = create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        expect_error=True,
+    )
+
+    assert "Unknown auxiliary ZooKeeper name" in error
 
 
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
@@ -508,6 +587,14 @@ def test_direct_select_file(started_cluster, mode):
         for l in node.query(f"SELECT * FROM {table_name}_1").splitlines()
     ] == values
 
+    for i in range(3):
+        node.query(f"ALTER TABLE {table_name}_{i + 1} MODIFY SETTING commit_on_select=true")
+
+    assert [
+        list(map(int, l.split()))
+        for l in node.query(f"SELECT * FROM {table_name}_1").splitlines()
+    ] == values
+
     assert [
         list(map(int, l.split()))
         for l in node.query(f"SELECT * FROM {table_name}_2").splitlines()
@@ -528,6 +615,7 @@ def test_direct_select_file(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1
         },
     )
 
@@ -547,6 +635,7 @@ def test_direct_select_file(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1
         },
     )
 
@@ -593,7 +682,7 @@ def test_direct_select_multiple_files(started_cluster, mode):
         table_name,
         mode,
         files_path,
-        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3},
+        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3, "commit_on_select": 1},
     )
     for i in range(5):
         rand_values = [[random.randint(0, 50) for _ in range(3)] for _ in range(10)]

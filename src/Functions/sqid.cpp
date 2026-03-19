@@ -164,7 +164,7 @@ Transforms numbers into a [sqid](https://sqids.org/), a Youtube-like ID string.
     };
     FunctionDocumentation::IntroducedIn introduced_in_sqidEncode = {24, 1};
     FunctionDocumentation::Category category_sqidEncode = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation_sqidEncode = {description_sqidEncode, syntax_sqidEncode, arguments_sqidEncode, returned_value_sqidEncode, examples_sqidEncode, introduced_in_sqidEncode, category_sqidEncode};
+    FunctionDocumentation documentation_sqidEncode = {description_sqidEncode, syntax_sqidEncode, arguments_sqidEncode, {}, returned_value_sqidEncode, examples_sqidEncode, introduced_in_sqidEncode, category_sqidEncode};
 
     factory.registerFunction<FunctionSqidEncode>(documentation_sqidEncode);
     factory.registerAlias("sqid", FunctionSqidEncode::name);
@@ -188,7 +188,7 @@ Transforms a [sqid](https://sqids.org/) back into an array of numbers.
     };
     FunctionDocumentation::IntroducedIn introduced_in_sqidDecode = {24, 1};
     FunctionDocumentation::Category category_sqidDecode = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation_sqidDecode = {description_sqidDecode, syntax_sqidDecode, arguments_sqidDecode, returned_value_sqidDecode, examples_sqidDecode, introduced_in_sqidDecode, category_sqidDecode};
+    FunctionDocumentation documentation_sqidDecode = {description_sqidDecode, syntax_sqidDecode, arguments_sqidDecode, {}, returned_value_sqidDecode, examples_sqidDecode, introduced_in_sqidDecode, category_sqidDecode};
 
     factory.registerFunction<FunctionSqidDecode>(documentation_sqidDecode);
 }

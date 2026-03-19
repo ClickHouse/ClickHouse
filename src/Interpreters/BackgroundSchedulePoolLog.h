@@ -39,6 +39,11 @@ struct BackgroundSchedulePoolLogElement
 class BackgroundSchedulePoolLog : public SystemLog<BackgroundSchedulePoolLogElement>
 {
     using SystemLog<BackgroundSchedulePoolLogElement>::SystemLog;
+    size_t duration_milliseconds_threshold = 0;
+
+public:
+    void setDurationMillisecondsThreshold(size_t duration_milliseconds_threshold_) { duration_milliseconds_threshold = duration_milliseconds_threshold_; }
+    size_t getDurationMillisecondsThreshold() const { return duration_milliseconds_threshold; }
 };
 
 }
