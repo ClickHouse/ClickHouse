@@ -70,18 +70,7 @@ namespace
             {"days_in_month",
              {
                  /// Returned values should be from 28 to 31.
-                 [](ASTPtr t) -> ASTPtr
-                 {
-                     /// TODO: Consider adding function toDaysInMonth() to ClickHouse.
-                     return makeASTFunction(
-                         "plus",
-                         makeASTFunction(
-                             "dateDiff",
-                             make_intrusive<ASTLiteral>("days"),
-                             makeASTFunction("toStartOfMonth", t),
-                             makeASTFunction("toLastDayOfMonth", t->clone())),
-                         make_intrusive<ASTLiteral>(1u));
-                 },
+                 [](ASTPtr t) -> ASTPtr { return makeASTFunction("toDaysInMonth", std::move(t)); },
              }},
 
             {"day_of_year",

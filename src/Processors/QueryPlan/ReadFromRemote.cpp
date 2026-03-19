@@ -198,7 +198,8 @@ ReadFromRemote::ReadFromRemote(
     LoggerPtr log_,
     UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
-    const String & cluster_name_)
+    const String & cluster_name_,
+    UnavailableShardTrackerPtr unavailable_shard_tracker_)
     : SourceStepWithFilterBase(std::move(header_))
     , shards(std::move(shards_))
     , stage(stage_)
@@ -212,6 +213,7 @@ ReadFromRemote::ReadFromRemote(
     , log(log_)
     , shard_count(shard_count_)
     , cluster_name(cluster_name_)
+    , unavailable_shard_tracker(std::move(unavailable_shard_tracker_))
 {
 }
 
@@ -722,6 +724,7 @@ void ReadFromRemote::addPipe(
                 priority_func);
             remote_query_executor->setLogger(log);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+            remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
@@ -750,6 +753,7 @@ void ReadFromRemote::addPipe(
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
         if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
         {
@@ -819,7 +823,7 @@ static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
 
 static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes)
 {
-    String prefix(settings.offset + settings.indent, settings.indent_char);
+    String prefix(settings.offset + settings.base_indent, settings.indent_char);
     for (auto & pipe : pipes)
     {
         QueryPipeline pipeline(std::move(pipe));
@@ -849,7 +853,7 @@ void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const Ex
     {
         if (shard.query_plan)
         {
-            shard.query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.indent, 1) + 1);
+            shard.query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.base_indent, 1) + 1);
         }
         else
         {
@@ -1062,7 +1066,7 @@ void ReadFromParallelRemoteReplicasStep::describeDistributedPlan(FormatSettings 
 
     if (query_plan)
     {
-        query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.indent, 1) + 1);
+        query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.base_indent, 1) + 1);
     }
     else
     {

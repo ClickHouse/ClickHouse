@@ -217,6 +217,10 @@ public:
 
     DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
 
+    const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
+    const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
+    const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
+
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).
     const std::string google_project_id;

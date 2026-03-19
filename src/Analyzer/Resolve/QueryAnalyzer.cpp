@@ -81,6 +81,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool parallel_replicas_for_cluster_engines;
 }
 
 
@@ -161,8 +162,13 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             {
                 scope.expression_join_tree_node = table_expression;
                 scope.registered_table_expression_nodes.insert(table_expression);
+                /// Mark table expression as being in resolve process to prevent
+                /// premature access during ALIAS column resolution in
+                /// initializeTableExpressionData (e.g. dictGet ALIAS columns).
+                scope.table_expressions_in_resolve_process.insert(table_expression.get());
                 validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
                 initializeTableExpressionData(scope.expression_join_tree_node, scope);
+                scope.table_expressions_in_resolve_process.erase(table_expression.get());
             }
 
             if (node_type == QueryTreeNodeType::LIST)
@@ -212,8 +218,13 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     {
         scope.expression_join_tree_node = table_expression;
         scope.registered_table_expression_nodes.insert(table_expression);
+        /// Mark table expression as being in resolve process to prevent
+        /// premature access during ALIAS column resolution in
+        /// initializeTableExpressionData (e.g. dictGet ALIAS columns).
+        scope.table_expressions_in_resolve_process.insert(table_expression.get());
         validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
+        scope.table_expressions_in_resolve_process.erase(table_expression.get());
     }
 
     if (node_type == QueryTreeNodeType::LIST)
@@ -3957,6 +3968,16 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         {
             if (exception.code() == ErrorCodes::UNKNOWN_IDENTIFIER)
             {
+                /** If resolution failed, the argument's subexpressions (e.g. scalar subqueries)
+                  * may be in an unresolved state. Mark the argument as unresolved so that
+                  * query tree passes (via traverseQueryTree) do not traverse into it and
+                  * encounter unresolved nodes like IDENTIFIER in join trees.
+                  *
+                  * Example: SELECT * FROM remote('localhost', view(SELECT 2 AS x), concat(x, (SELECT 1)))
+                  * Here concat(x, (SELECT 1)) fails on 'x', but the inner (SELECT 1) subquery
+                  * may not have been resolved yet, leaving its join tree as IdentifierNode("system.one").
+                  */
+                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
                 result_table_function_arguments.push_back(table_function_argument);
                 continue;
             }
@@ -4146,6 +4167,30 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 break;
             }
             scope_to_check = scope_to_check->parent_scope;
+        }
+    }
+
+    /// The `parallel_replicas_for_cluster_engines` setting may have been disabled on
+    /// a query node's local context (in resolveQuery, when cluster alternatives are
+    /// not applicable). We must propagate this override to the execution context.
+    /// We cannot set it on the shared query context because that would be a data race
+    /// when multiple views are processed in parallel from the same INSERT.
+    /// Walk up all ancestor query scopes because the decision may have been made by
+    /// an outer query (e.g. when a table function is inside a subquery in a JOIN).
+    if (execution_context->getSettingsRef()[Setting::parallel_replicas_for_cluster_engines])
+    {
+        const IdentifierResolveScope * scope_to_check = scope.getNearestQueryScope();
+        while (scope_to_check)
+        {
+            const auto & qn_context = scope_to_check->scope_node->as<QueryNode &>().getMutableContext();
+            if (!qn_context->getSettingsRef()[Setting::parallel_replicas_for_cluster_engines])
+            {
+                auto overridden_context = Context::createCopy(execution_context);
+                overridden_context->setSetting("parallel_replicas_for_cluster_engines", false);
+                execution_context = overridden_context;
+                break;
+            }
+            scope_to_check = scope_to_check->parent_scope ? scope_to_check->parent_scope->getNearestQueryScope() : nullptr;
         }
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
@@ -4914,8 +4959,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
     table_function_visitor.visit(query_node);
-    if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
-        scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
+    if (!table_function_visitor.shouldReplaceWithClusterAlternatives())
+        query_node_typed.getMutableContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);

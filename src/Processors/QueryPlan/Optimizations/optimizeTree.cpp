@@ -106,6 +106,18 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
             }
         }
 
+        /// An optimization applied to a child node may have changed a grandchild's
+        /// output header (e.g., filter push-down modifies a filter step's DAG, which
+        /// changes its output constness). The intermediate child step's cached input
+        /// header becomes stale. Refresh it before running optimizations on this node,
+        /// so that steps like mergeExpressions see consistent headers.
+        for (size_t i = 0; i < frame.node->children.size(); ++i)
+        {
+            auto child_output = frame.node->children[i]->step->getOutputHeader();
+            if (!blocksHaveEqualStructure(*frame.node->step->getInputHeaders()[i], *child_output))
+                frame.node->step->updateInputHeader(std::move(child_output), i);
+        }
+
         size_t max_update_depth = 0;
 
         /// Apply all optimizations.

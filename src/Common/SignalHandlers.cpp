@@ -296,7 +296,7 @@ void SignalListener::run()
     else
     {
         /// This is the case of clickhouse-client and clickhouse-local.
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
         /// This operation is heavy (0.5 sec under TSan) - we don't do it in constructor to not slow-down clickhouse-client,
         /// Do it lazily to not slow-down the termination of clickhouse-client.
         build_id = []{ return SymbolIndex::instance().getBuildIDHex(); };
@@ -599,7 +599,7 @@ try
     /// List changed settings.
     if (!query_id.empty())
     {
-        ContextPtr query_context = thread_ptr->getQueryContext();
+        ContextPtr query_context = thread_ptr->tryGetQueryContext();
         if (query_context)
         {
             String changed_settings = query_context->getSettingsRef().toString();

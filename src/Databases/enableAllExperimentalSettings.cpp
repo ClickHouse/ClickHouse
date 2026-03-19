@@ -58,6 +58,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_lightweight_update", 1);
     context->setSetting("allow_insert_into_iceberg", 1);
     context->setSetting("allow_experimental_iceberg_compaction", 1);
+    context->setSetting("allow_experimental_expire_snapshots", 1);
     context->setSetting("allow_experimental_delta_lake_writes", 1);
     context->setSetting("allow_dynamic_type_in_join_keys", 1);
     context->setSetting("allow_experimental_alias_table_engine", 1);

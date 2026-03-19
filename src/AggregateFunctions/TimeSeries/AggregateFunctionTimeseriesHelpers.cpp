@@ -40,15 +40,15 @@ Decimal64 normalizeParameter(const std::string & function_name, const std::strin
     {
         auto value = parameter_field.safeGet<DecimalField<Decimal32>>();
         auto value_scale_multiplier = value.getScaleMultiplier();
-        return Decimal64(value.getValue()) / value_scale_multiplier * target_scale_multiplier;
+        return (Decimal128(value.getValue()) / Decimal128(value_scale_multiplier)) * Decimal128(target_scale_multiplier);
     }
     else if (Int64 int_value = 0; parameter_field.tryGet(int_value))
     {
-        return Decimal64(int_value) * target_scale_multiplier;
+        return Decimal128(int_value) * Decimal128(target_scale_multiplier);
     }
     else if (UInt64 uint_value = 0; parameter_field.tryGet(uint_value))
     {
-        return Decimal64(uint_value) * target_scale_multiplier;
+        return Decimal128(uint_value) * Decimal128(target_scale_multiplier);
     }
     else if (String string_value; parameter_field.tryGet(string_value))
     {
@@ -56,7 +56,7 @@ Decimal64 normalizeParameter(const std::string & function_name, const std::strin
         UInt32 scale = target_scale;
         ReadBufferFromString buf(string_value);
         if (tryReadDecimalText(buf, value, 20, scale))
-            return value * DecimalUtils::scaleMultiplier<Decimal64>(scale);
+            return Decimal128(value) * Decimal128(DecimalUtils::scaleMultiplier<Decimal64>(scale));
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot parse {} parameter for aggregate function {}", parameter_name, function_name);
