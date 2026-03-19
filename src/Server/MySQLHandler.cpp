@@ -289,7 +289,8 @@ void MySQLHandler::run()
             session->makeSessionContext();
             session->sessionContext()->setDefaultFormat("MySQLWire");
             if (!handshake_response.database.empty())
-                session->sessionContext()->setCurrentDatabase(handshake_response.database);
+                session->sessionContext()->setCurrentDatabase(
+                    session->sessionContext()->applyDatabaseNamespace(handshake_response.database));
         }
         catch (const Exception & exc)
         {
@@ -449,7 +450,8 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
-    session->sessionContext()->setCurrentDatabase(database);
+    session->sessionContext()->setCurrentDatabase(
+        session->sessionContext()->applyDatabaseNamespace(database));
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }
 

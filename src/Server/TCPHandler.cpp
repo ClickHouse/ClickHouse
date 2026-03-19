@@ -436,7 +436,8 @@ void TCPHandler::runImpl()
 
             /// When connecting, the default database could be specified.
             if (!default_database.empty())
-                session->sessionContext()->setCurrentDatabase(default_database);
+                session->sessionContext()->setCurrentDatabase(
+                    session->sessionContext()->applyDatabaseNamespace(default_database));
         }
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.

@@ -241,7 +241,7 @@ void HTTPHandler::processQuery(
 
     std::string database = request.get("X-ClickHouse-Database", params.get("database", ""));
     if (!database.empty())
-        context->setCurrentDatabase(database);
+        context->setCurrentDatabase(context->applyDatabaseNamespace(database));
 
     std::string default_format = request.get("X-ClickHouse-Format", params.get("default_format", ""));
     if (!default_format.empty())

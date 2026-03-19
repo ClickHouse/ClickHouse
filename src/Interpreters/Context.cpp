@@ -3260,13 +3260,14 @@ void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_gu
 
 void Context::setCurrentDatabase(const String & name)
 {
-    /// Read namespace/separator/shared before acquiring the exclusive lock —
-    /// `applyDatabaseNamespaceImpl` is static, so no instance state is accessed inside it.
-    String ns = getDatabaseNamespace();
-    String separator = getDatabaseNamespaceSeparator();
-    auto shared = getSharedDatabasesAcrossNamespaces();
+    /// This method accepts a physical (already-namespaced) database name.
+    /// Namespace application must happen at user-facing entry points
+    /// (InterpreterUseQuery, TCPHandler, MySQLHandler, PostgreSQLHandler,
+    /// HTTPHandler, GRPCServer) BEFORE calling this method.
+    /// Internal callers (StorageMaterializedView, DatabaseReplicated,
+    /// BackupsWorker, DDLTask, etc.) pass already-physical names.
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(applyDatabaseNamespaceImpl(name, ns, separator, shared), lock);
+    setCurrentDatabaseWithLock(name, lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
