@@ -83,7 +83,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     std::string_view getDataAt(size_t n) const override { return tuple->getDataAt(n); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }
@@ -102,12 +102,13 @@ public:
 #endif
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t, size_t, const IColumn &, int) const override
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif
     {
-        return 0;
+        const auto & rhs = assert_cast<const ColumnQBit &>(rhs_);
+        return tuple->compareAt(n, m, rhs.getTupleColumn(), nan_direction_hint);
     }
 
     void insertDefault() override { tuple->insertDefault(); }
@@ -137,7 +138,7 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr compress(bool force_compression) const override;
 
-    void getExtremes(Field & min, Field & max) const override { tuple->getExtremes(min, max); }
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override { tuple->getExtremes(min, max, start, end); }
     void getPermutation(
         PermutationSortDirection direction,
         PermutationSortStability stability,

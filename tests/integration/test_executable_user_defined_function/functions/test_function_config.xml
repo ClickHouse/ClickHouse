@@ -397,6 +397,44 @@
         <!-- <check_exit_code>1</check_exit_code> -->
     </function>
 
+    <function>
+        <type>executable</type>
+        <name>test_function_python_exception_default</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_python_exception.py</command>
+        <stderr_reaction>throw</stderr_reaction>
+    </function>
+
+    <!-- log_last mode: stderr should appear in exception when exit code != 0 -->
+    <function>
+        <type>executable</type>
+        <name>test_function_python_exception_log_last</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_python_exception.py</command>
+        <stderr_reaction>log_last</stderr_reaction>
+    </function>
+
+    <!-- default stderr_reaction (log_last): stderr with exit 0 should not throw -->
+    <function>
+        <type>executable</type>
+        <name>test_function_stderr_default_reaction</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_always_error.py</command>
+        <!-- no stderr_reaction: relies on default (log_last) -->
+    </function>
+
     <!-- The next two UDFs have an explicit 'deterministic' tag defined -->
     <function>
         <type>executable</type>

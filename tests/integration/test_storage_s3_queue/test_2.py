@@ -104,7 +104,7 @@ def get_processed_files(node, table_name):
         node.query(
             f"""
 select splitByChar('/', file_name)[-1] as file
-from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed' order by file
+from system.s3queue_metadata_cache where zookeeper_path ilike '%{table_name}%' and status = 'Processed' order by file
         """
         )
         .strip()
@@ -117,7 +117,7 @@ def get_unprocessed_files(node, table_name):
         f"""
         select concat('test_',  toString(number), '.csv') as file from numbers(300)
         where file not
-        in (select splitByChar('/', file_name)[-1] from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed')
+        in (select splitByChar('/', file_name)[-1] from system.s3queue_metadata_cache where zookeeper_path ilike '%{table_name}%' and status = 'Processed')
         """
     )
 
@@ -244,7 +244,7 @@ def test_shards(started_cluster, mode, processing_threads):
         processed_files = (
             node.query(
                 f"""
-select splitByChar('/', file_name)[-1] as file from system.s3queue
+select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cache
 where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
                 """
             )
@@ -265,7 +265,7 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
         info = node.query(
             f"""
             select concat('test_',  toString(number), '.csv') as file from numbers(300)
-            where file not in (select splitByChar('/', file_name)[-1] from system.s3queue
+            where file not in (select splitByChar('/', file_name)[-1] from system.s3queue_metadata_cache
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0)
             """
         )
@@ -387,7 +387,7 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
         processed_files = (
             node.query(
                 f"""
-select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
+select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cache where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
             """
             )
             .strip()
@@ -399,7 +399,7 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
         processed_files = (
             node_2.query(
                 f"""
-select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
+select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cache where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
             """
             )
             .strip()
@@ -415,7 +415,7 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
         info = node.query(
             f"""
             select concat('test_',  toString(number), '.csv') as file from numbers(300)
-            where file not in (select splitByChar('/', file_name)[-1] from clusterAllReplicas(cluster, system.s3queue)
+            where file not in (select splitByChar('/', file_name)[-1] from clusterAllReplicas(cluster, system.s3queue_metadata_cache)
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0)
             """
         )
@@ -424,7 +424,7 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
         files1 = (
             node.query(
                 f"""
-            select splitByChar('/', file_name)[-1] from system.s3queue
+            select splitByChar('/', file_name)[-1] from system.s3queue_metadata_cache
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0
             """
             )
@@ -434,7 +434,7 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
         files2 = (
             node_2.query(
                 f"""
-            select splitByChar('/', file_name)[-1] from system.s3queue
+            select splitByChar('/', file_name)[-1] from system.s3queue_metadata_cache
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0
             """
             )

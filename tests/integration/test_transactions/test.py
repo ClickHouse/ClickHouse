@@ -6,6 +6,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/transactions.xml"],
+    user_configs=["configs/users.xml"],
     stay_alive=True,
     with_zookeeper=True,
 )

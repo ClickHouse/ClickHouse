@@ -67,16 +67,11 @@ public:
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
-    static bool canProcessNonJoinedBlocks(const TableJoin & table_join_)
-    {
-        return isRight(table_join_.kind());
-    }
+    bool supportParallelNonJoinedBlocksProcessing() const override;
 
-    static bool needUsedFlagsForPerLeftTableRow(const std::shared_ptr<TableJoin> & table_join)
-    {
-        // For RIGHT JOIN, if the strictness is not Semi or Asof, we must track which left rows were matched.
-        return table_join->strictness() != JoinStrictness::Semi && table_join->strictness() != JoinStrictness::Asof;
-    }
+    IBlocksStreamPtr getNonJoinedBlocks(
+        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
+        size_t stream_idx, size_t num_streams) const override;
 
     bool isCloneSupported() const override
     {
@@ -105,8 +100,6 @@ public:
     friend class NotJoinedHash;
 
 private:
-    void finalizeSlots();
-
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
     bool any_take_last_row;

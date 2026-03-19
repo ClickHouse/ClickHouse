@@ -60,7 +60,7 @@ void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const C
     if (total_bytes && num_bytes && total_chunks > 1)
     {
         const auto & reference_columns = chunk.getColumns();
-        size_t factor = static_cast<size_t>(std::ceil(static_cast<double>(total_bytes) / num_bytes));
+        size_t factor = static_cast<size_t>(std::ceil(static_cast<double>(total_bytes) / static_cast<double>(num_bytes)));
 
         /// assuming that all chunks have the same nature, specifically
         /// similar raw data size/number of rows ratio,
@@ -131,7 +131,7 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
         auto exception = Exception(Exception::CreateFromSTDTag{}, e);
         return on_error(result_columns, checkpoints, exception);
     }
-    catch (...)
+    catch (...) // Ok: wrap unknown exception and pass to on_error callback
     {
         format->resetParser();
         auto exception = Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception while executing StreamingFormatExecutor with format {}", format->getName());

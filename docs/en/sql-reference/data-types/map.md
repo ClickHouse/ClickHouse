@@ -48,7 +48,7 @@ Result:
 ```
 
 If the requested key `k` is not contained in the map, `m[k]` returns the value type's default value, e.g. `0` for integer types and `''` for string types.
-To check whether a key exists in a map, you can use function [mapContains](../../sql-reference/functions/tuple-map-functions#mapcontains).
+To check whether a key exists in a map, you can use function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey).
 
 ```sql
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;

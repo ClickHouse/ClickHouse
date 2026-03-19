@@ -84,7 +84,7 @@ public:
         return sort_description_for_merging.empty() && !explicit_sorting_required_for_aggregation_in_order;
     }
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;
 
@@ -106,7 +106,6 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override
     {
-        // TODO(nickitat): support aggregation in order?
         return sort_description_for_merging.empty() && grouping_sets_params.empty();
     }
 

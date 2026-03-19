@@ -8,6 +8,8 @@
 #include <Core/Block.h>
 #include <Core/BlockMissingValues.h>
 
+#include <map>
+
 namespace DB
 {
 

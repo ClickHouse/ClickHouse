@@ -64,7 +64,24 @@ For more information about format parsers, see the [Formats](../interfaces/forma
 ClickHouse supports both SQL-style and C-style comments:
 
 - SQL-style comments begin with `--`, `#!` or `# ` and continue to the end of the line. A space after `--` and `#!` can be omitted.
-- C-style comments span from `/*` to `*/` and can be multiline. Spaces are not required either.
+- C-style comments:
+  - `//` (or more than 2 `/` characters) followed by text until the end of the line. Spaces after `/` are not required.
+  - Can span from `/*` to `*/` for multiline comments. Spaces are not required either.
+  - C-style comments can be nested.
+ 
+For example:
+
+```sql
+/*
+ * Compute the number of days between two dates.
+ * /* Returns NULL if either argument is NULL */
+ */
+SELECT
+    dateDiff('day', toDate('2024-01-01'), toDate('2024-12-31')) AS days_in_year, -- 365
+    dateDiff('day', toDate('2020-01-01'), today()) AS days_since  #! since 2020
+    ///////////////////////////////////////////////////////////////////
+    # TODO: add hour/minute variants
+```
 
 ## Keywords {#keywords}
 
@@ -113,6 +130,13 @@ If you want to use identifiers the same as keywords or you want to use other sym
 
 :::note
 The same rules that apply for escaping in quoted identifiers also apply for string literals. See [String](#string) for more details.
+:::
+
+:::tip[Avoid using dots in column names]
+Column names containing dots, columns sharing a common dot-prefix, and columns with the `Array` type can each be interpreted as part of a flattened Nested structure when `flatten_nested = 1` (the default). This can cause unexpected array-length validation on inserts and renaming restrictions. 
+
+Avoid using dots in column names if possible.
+Use underscores (`_`) or another separator instead of dots in column names unless you intentionally need `Nested` semantics.
 :::
 
 ## Literals {#literals}

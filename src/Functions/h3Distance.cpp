@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,10 +11,6 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -32,7 +28,11 @@ class FunctionH3Distance : public IFunction
 public:
     static constexpr auto name = "h3Distance";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3Distance>(); }
+    H3Validator validator;
+
+    explicit FunctionH3Distance(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3Distance>(context); }
 
     std::string getName() const override { return name; }
 
@@ -101,9 +101,12 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
+            Int64 res = 0;
 
-            auto size = gridPathCellsSize(start, end);
-            dst_data[row] = size;
+            if (validator.validateCell(start) && validator.validateCell(end))
+                res = gridPathCellsSize(start, end);
+
+            dst_data[row] = res;
         }
 
         return dst;

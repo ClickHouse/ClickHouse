@@ -1,5 +1,6 @@
-#include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObject.h>
+#include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 
 

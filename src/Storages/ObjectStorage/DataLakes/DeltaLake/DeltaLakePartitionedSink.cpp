@@ -49,7 +49,7 @@ namespace
     {
         ASTs partition_columns_asts;
         for (const auto & column : partition_columns)
-            partition_columns_asts.push_back(std::make_shared<ASTIdentifier>(column));
+            partition_columns_asts.push_back(make_intrusive<ASTIdentifier>(column));
 
         ASTPtr partition_by = makeASTFunction("tuple", partition_columns_asts);
         auto key_description = KeyDescription::getKeyFromAST(

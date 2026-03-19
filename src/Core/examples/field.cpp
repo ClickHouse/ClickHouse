@@ -61,8 +61,8 @@ int main(int argc, char ** argv)
 
                 watch.stop();
                 std::cerr << std::fixed << std::setprecision(2)
-                    << "Set " << n << " fields (" << n * sizeof(array[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-                    << n / watch.elapsedSeconds() << " elem/sec. (" << n * sizeof(array[0]) / watch.elapsedSeconds() / 1000000 << " MB/s.)"
+                    << "Set " << n << " fields (" << static_cast<double>(n) * sizeof(array[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                    << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec. (" << static_cast<double>(n) * sizeof(array[0]) / watch.elapsedSeconds() / 1000000 << " MB/s.)"
                     << std::endl;
             }
 
@@ -75,8 +75,8 @@ int main(int argc, char ** argv)
 
                 watch.stop();
                 std::cerr << std::fixed << std::setprecision(2)
-                    << "Got " << n << " fields (" << n * sizeof(array[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-                    << n / watch.elapsedSeconds() << " elem/sec. (" << n * sizeof(array[0]) / watch.elapsedSeconds() / 1000000 << " MB/s.)"
+                    << "Got " << n << " fields (" << static_cast<double>(n) * sizeof(array[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                    << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec. (" << static_cast<double>(n) * sizeof(array[0]) / watch.elapsedSeconds() / 1000000 << " MB/s.)"
                     << std::endl;
 
                 std::cerr << sum << std::endl;
@@ -88,8 +88,8 @@ int main(int argc, char ** argv)
         watch.stop();
 
         std::cerr << std::fixed << std::setprecision(2)
-            << "Destroyed " << n << " fields (" << n * sizeof(Array::value_type) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-            << n / watch.elapsedSeconds() << " elem/sec. (" << n * sizeof(Array::value_type) / watch.elapsedSeconds() / 1000000 << " MB/s.)"
+            << "Destroyed " << n << " fields (" << static_cast<double>(n) * sizeof(Array::value_type) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+            << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec. (" << static_cast<double>(n) * sizeof(Array::value_type) / watch.elapsedSeconds() / 1000000 << " MB/s.)"
             << std::endl;
     }
     catch (const Exception & e)

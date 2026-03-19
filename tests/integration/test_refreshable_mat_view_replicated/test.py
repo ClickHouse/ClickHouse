@@ -153,7 +153,7 @@ def module_setup_tables(started_cluster):
     # default is Atomic by default
     node.query(f"DROP DATABASE IF EXISTS default ON CLUSTER default SYNC")
     node.query(
-        "CREATE DATABASE IF NOT EXISTS default ON CLUSTER default ENGINE=Replicated('/clickhouse/default/','{shard}','{replica}')"
+        "CREATE DATABASE default ON CLUSTER default ENGINE=Replicated('/clickhouse/default/','{shard}','{replica}')"
     )
 
     assert (

@@ -1,17 +1,18 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
+#include <Core/Settings.h>
 #include <Common/Exception.h>
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_S3.h>
 #include <Backups/BackupImpl.h>
+#include <Backups/BackupInfo.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <filesystem>
-
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <filesystem>
 
 namespace DB::S3AuthSetting
 {
@@ -29,6 +30,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace Setting
+{
+extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 }
 
 #if USE_AWS_S3
@@ -54,7 +60,6 @@ void registerBackupEngineS3(BackupFactory & factory)
     auto creator_fn = []([[maybe_unused]] const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
     {
 #if USE_AWS_S3
-        const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
         String s3_uri;
@@ -63,22 +68,16 @@ void registerBackupEngineS3(BackupFactory & factory)
         String role_arn;
         String role_session_name;
 
-        if (!id_arg.empty())
+        if (auto collection = params.backup_info.getNamedCollection(params.context))
         {
-            const auto & config = params.context->getConfigRef();
-            auto config_prefix = "named_collections." + id_arg;
+            s3_uri = collection->get<String>("url");
+            access_key_id = collection->getOrDefault<String>("access_key_id", "");
+            secret_access_key = collection->getOrDefault<String>("secret_access_key", "");
+            role_arn = collection->getOrDefault<String>("role_arn", "");
+            role_session_name = collection->getOrDefault<String>("role_session_name", "");
 
-            if (!config.has(config_prefix))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", id_arg);
-
-            s3_uri = config.getString(config_prefix + ".url");
-            access_key_id = config.getString(config_prefix + ".access_key_id", "");
-            secret_access_key = config.getString(config_prefix + ".secret_access_key", "");
-            role_arn = config.getString(config_prefix + ".role_arn", "");
-            role_session_name = config.getString(config_prefix + ".role_session_name", "");
-
-            if (config.has(config_prefix + ".filename"))
-                s3_uri = std::filesystem::path(s3_uri) / config.getString(config_prefix + ".filename");
+            if (collection->has("filename"))
+                s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
 
             if (args.size() > 1)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
@@ -121,6 +120,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
+            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
         }
         else
         {

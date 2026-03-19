@@ -1338,7 +1338,7 @@ public:
             }
             else
             {
-                prefix.push_back(std::toupper(query[i]));
+                prefix.push_back(static_cast<char>(std::toupper(query[i])));
                 prev_was_space = false;
             }
         }
