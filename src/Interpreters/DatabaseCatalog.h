@@ -186,6 +186,12 @@ public:
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
 
+    /// Check that all dependent views of a streaming source table are ready.
+    /// Returns the list of ready views, or empty if not all are ready yet.
+    /// During server startup, returns empty to prevent streaming engines from
+    /// processing data before all MV dependencies are registered.
+    std::vector<StorageID> getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const;
+
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
     /// removeUUIDMapping(...) must be called when it detached,
     /// and removeUUIDMappingFinally(...) must be called when table is dropped and its data removed from disk.

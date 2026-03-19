@@ -229,6 +229,19 @@ class ClickHouseProc:
             "10000"
         )
 
+    @staticmethod
+    def set_memory_ratio(ratio):
+        config = f"""<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>{ratio}</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
+"""
+        file_path = "/etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml"
+        with open(file_path, "w") as f:
+            f.write(config)
+        print(
+            f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
+        )
+
     def _install_light(self):
         """
         Installs ClickHouse config into ci temporary directory, this way of installation does not require mounting /etc|var/clickhouse-server into docker container.
@@ -695,7 +708,6 @@ MAX_EXECUTION_TIME=1800
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < ./tests/docker_scripts/create.sql
-bash ./tests/docker_scripts/create_tpcds.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
 clickhouse-client --query "CREATE DATABASE test"
