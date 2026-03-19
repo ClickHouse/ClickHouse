@@ -260,8 +260,10 @@ Pipe ReadFromSystemPrimesStep::makePipe()
                     index_span *= primes_storage.step;
             }
 
-            if (total_primes_to_generate > std::numeric_limits<UInt64>::max() - index_span - 1)
-                total_primes_to_generate = std::numeric_limits<UInt64>::max(); /// overflow
+            /// If index_span already saturated, or adding it would overflow, saturate the total.
+            if (index_span == std::numeric_limits<UInt64>::max()
+                || total_primes_to_generate > std::numeric_limits<UInt64>::max() - index_span - 1)
+                total_primes_to_generate = std::numeric_limits<UInt64>::max();
             else
                 total_primes_to_generate += index_span + 1;
         }
