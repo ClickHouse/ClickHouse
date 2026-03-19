@@ -1,131 +1,273 @@
 # Cascades Optimizer — Architecture
 
-## Overview
+## What Problem Does This Solve?
 
-The Cascades optimizer handles distributed query planning: given a logical query plan
-(with a fixed join order), it decides distribution strategies (broadcast, shuffle, local),
-exchange placement, sort enforcement, and parallel read strategies. It uses a
-cost-based search with the classic memo/group/expression structure from the Cascades
-framework (Graefe 1995).
+ClickHouse can execute a query on a single node using its standard pipeline: plan the
+query, read from MergeTree, apply filters/expressions/joins/aggregations, return results.
+But when data is spread across multiple nodes (shared storage like S3, or a multi-node
+cluster), we need to decide HOW to distribute the work:
 
-Join ordering is done by a separate pre-Cascades pass (`optimizeJoin.cpp`) using
-dpsize or greedy algorithms. The Cascades optimizer receives the fixed join tree and
-optimizes only the physical execution strategy.
+- Should a join shuffle both sides by the join key, or broadcast the smaller table to
+  all nodes?
+- Should an aggregation happen on each node first (partial agg) and then merge results,
+  or gather all data to one node and aggregate there?
+- Should a table scan be split across N nodes (parallel read), or should each node read
+  the full table (replicated read for small dimension tables)?
+- Where should exchanges (network data transfers between nodes) be placed?
 
-## Architecture
+These choices interact — the best join strategy depends on how the data will be
+aggregated later, and the best aggregation strategy depends on the join output
+distribution. A cost-based optimizer explores many combinations and picks the cheapest.
 
-### Memo and Groups
+The Cascades framework uses **top-down, goal-directed search with memoization** — not
+bottom-up dynamic programming like the `dpsize` join ordering algorithm. The optimizer
+starts from the root goal (deliver results to the coordinator at `{1 node}`) and
+recursively decomposes it into subgoals (e.g., "produce this join result at `{4 nodes,
+shuffled by custkey}`"). Results are cached in the **memo** so each (group, properties)
+pair is computed at most once. Branch-and-bound pruning skips subtrees that can't beat
+the current best, avoiding exhaustive exploration.
 
-Standard Cascades memo. Each group contains logical expressions (representing equivalent
-relational subexpressions) and physical expressions (with specific implementations and
-properties). Statistics are shared per group.
+**Without Cascades**: ClickHouse's existing distributed query execution (via the
+`Distributed` table engine or parallel replicas) uses fixed strategies — typically gather
+all data to the coordinator, or use two-phase aggregation with a fixed distribution.
+There's no cost-based comparison of broadcast vs shuffle vs local strategies.
 
-**Key files**: `Memo.h/cpp`, `Group.h/cpp`, `GroupExpression.h/cpp`
+**With Cascades**: The optimizer takes the logical query plan (already with a fixed join
+order) and explores all valid physical execution strategies, estimates their cost, and
+picks the cheapest. This is the same framework used by GPORCA (Greenplum), CockroachDB,
+and StarRocks for distributed query planning.
+
+## Where It Fits in the Query Processing Pipeline
+
+```
+SQL string
+  ↓
+Parser → AST
+  ↓
+Planner (PlannerCorrelatedSubqueries, PlannerJoinTree, etc.)
+  → Logical query plan with JoinStepLogical, AggregatingStep, ExpressionStep, etc.
+  ↓
+Pre-Cascades optimizations:
+  - optimizeJoin.cpp → fixes join order (dpsize/greedy) using column statistics
+  - filterPushDown.cpp → pushes filters below joins
+  - joinRuntimeFilter.cpp → adds bloom filter steps
+  - other rule-based passes (convertOuterJoinToInner, etc.)
+  ↓
+Cascades optimizer (this code)                          ← NEW
+  → Input: logical plan with fixed join order, no distribution info
+  → Output: physical plan with exchanges, parallel reads, distribution strategies
+  ↓
+Post-Cascades: buildQueryPipeline
+  → Converts plan steps to executable pipeline (Processors)
+  → Exchanges become actual network communication
+```
+
+The Cascades optimizer is **only active** when both `enable_cascades_optimizer = 1` and
+`make_distributed_plan = 1` are set. Without these settings, the existing pipeline
+runs as before.
+
+## Key Concepts
+
+### The Memo
+
+The memo is a data structure that compactly represents many alternative query plans
+simultaneously. It consists of **groups**, each representing a set of logically equivalent
+subexpressions.
+
+For example, `customer ⋈ orders` and `orders ⋈ customer` (swapped) produce the same
+logical result — they belong to the same group. Each group can have multiple **physical
+expressions** with different execution strategies and properties:
+
+```
+Group #5 (customer ⋈ orders, ~5.3M rows):
+  Logical:
+    Join(customer, orders)
+    Join(orders, customer)  [swapped by JoinCommutativity rule]
+  Physical:
+    Shuffle HashJoin by custkey  at {4 nodes}    cost: 2.93B
+    Shuffle HashJoin by custkey  at {2 nodes}    cost: 5.57B
+    Local HashJoin               at {1 node}     cost: 10.8B
+    Broadcast HashJoin           at {4 nodes}    cost: (pruned)
+```
+
+The optimizer explores alternatives by applying rules that generate new expressions in
+each group, then picks the cheapest physical expression that satisfies the parent's
+required properties.
 
 ### Physical Properties
 
-Two property dimensions:
+Each physical expression has **properties** describing what it produces:
 
-- **Distribution**: `node_count`, `is_replicated`, `columns` (with equivalence sets
-  for join-key aliasing). Describes how data is partitioned across nodes.
-- **Sorting**: `SortDescription` + `sort_limit`. Stripped from the memo at construction
-  time (`SortingStep::Full` becomes a property on the input link, not a group member).
+- **Distribution**: How many nodes the data is spread across, whether it's replicated,
+  and which columns it's partitioned by.
+  - `{1 node}` — all data on the coordinator
+  - `{4 nodes}` — data split across 4 nodes (any partitioning)
+  - `{4 nodes, by custkey}` — data hash-partitioned by `custkey` across 4 nodes
+  - `{4 nodes, replicated}` — full copy on every node
 
-Classic Cascades treats sorting similarly (as a physical property, not a logical step).
-The distribution column equivalence sets are an extension beyond basic Cascades, needed
-to avoid unnecessary reshuffles when join keys create column aliases.
+- **Sorting**: Whether the output is sorted and by which columns.
 
-**Key files**: `Properties.h/cpp`
+A parent step **requires** specific properties from its child. For example, a
+`ShuffleHashJoin` on `custkey` requires both inputs to be distributed `{4 nodes, by custkey}`.
+If the child doesn't naturally produce that distribution, an **enforcer** (exchange step)
+is added to bridge the gap.
+
+### Exchange Steps (New Step Types)
+
+These are the network data transfer operators that Cascades adds to the plan:
+
+| Step | What it does | Example use |
+|---|---|---|
+| `ShuffleExchange` | Hash-partition data by specified columns and send to N nodes | Redistribute for shuffle join |
+| `GatherExchange` | Collect data from N nodes to 1 node | Gather partial aggregation results |
+| `GatherExchange(sorted)` | Merge-sorted gather preserving sort order | Gather pre-sorted data |
+| `BroadcastExchange` | Replicate full data from 1 node to all N nodes (each node gets a complete copy) | Small dimension table needed on every node |
+| `ScatterExchange` | Distribute data from 1 node across N nodes (each node gets a disjoint slice) | 1-to-N redistribution without specific partitioning |
+
+### Read Strategies
+
+| Strategy | What it does | When used |
+|---|---|---|
+| `ReadFromMergeTree` (local) | Standard single-node read | Default for `{1 node}` |
+| `ParallelRead` | Split the table's parts across N nodes, each reads 1/N | Large tables, `{N nodes}` |
+| `ReplicatedRead` | Each node reads the full table from shared storage (S3) | Small dimension tables — avoids network exchange overhead |
+
+`ReplicatedRead` is a key optimization for shared-storage deployments. Instead of reading
+a small table on one node and broadcasting it via `BroadcastExchange`, every node reads
+it directly from S3. For a 25-row nation table, this eliminates network overhead entirely.
+
+### Enforcers
+
+An enforcer is a physical expression that bridges a **property gap**. When a parent
+requires `{1 node}` but the cheapest child produces `{4 nodes}`, the `DistributionEnforcer`
+creates a `GatherExchange` that collects data from 4 nodes to 1.
+
+Enforcers are **self-referential**: a `GatherExchange` in Group G has its input pointing
+back to Group G itself, but with different required properties. This is not a cycle —
+the input asks for `{4 nodes}` while the output provides `{1 node}`. The optimizer
+resolves the `{4 nodes}` requirement by finding the cheapest `{4 nodes}` expression
+already in the group (e.g., a `ParallelRead` or a `ShuffleHashJoin`).
+
+### Two-Phase Aggregation
+
+This is similar to ClickHouse's existing `MergingAggregated` pattern but chosen by
+cost. Given `GROUP BY n_name` with 25 distinct values:
+
+- **Single-phase**: Gather 5.3M rows to 1 node, aggregate there → expensive network
+- **Two-phase**: Aggregate on each of 4 nodes first (5.3M → 25 rows per node),
+  gather 100 rows, merge → cheap network
+- **Shuffle**: Shuffle 5.3M rows by `n_name` to N nodes, aggregate per-partition →
+  expensive network, no reduction before shuffle
+
+The optimizer creates all three as alternatives and compares their costs. Two-phase
+wins when the GROUP BY has few distinct values (high aggregation factor).
+
+## Architecture Details
+
+### Task-Based Optimization
+
+The optimizer uses a LIFO task stack. For each group, optimization proceeds through
+four stages:
+
+- **Stage 1 — Explore**: Fire transformation rules (`JoinCommutativity`,
+  `TwoPhaseAggregation`) to generate logically equivalent expressions.
+- **Stage 2 — Implement**: Fire implementation rules (`HashJoinImplementation`,
+  `AggregationImplementation`, `ParallelReadImplementation`, `DefaultImplementation`,
+  `DistributionPassthrough`) to generate physical expressions with concrete properties.
+- **Stage 3 — Enforce**: Apply enforcer rules (`DistributionEnforcer`, `SortingEnforcer`)
+  to bridge property gaps. Uses a fixed-point loop for enforcer composition (e.g.,
+  `SortingEnforcer` creates `Sort({N, sorted})`, then `DistributionEnforcer` creates
+  `GatherExchange(sorted)` from it).
+- **Stage 4 — Done**: Group is fully optimized for the requested properties.
+
+The root group is optimized for `{1 node}` (the coordinator must return the final result).
+Each child group is optimized for whatever properties its parent requires. The optimizer
+works top-down, recursively optimizing each group, with **branch-and-bound pruning**:
+if a partial plan already exceeds the cost of the best known plan, the subtree is skipped.
+
+**Key files**: `Task.h/cpp`, `OptimizerContext.h/cpp`, `Optimizer.cpp`
+
+### Enforcer Scheduling
+
+Stage 3 is gated by `!isEnforcedFor(required_properties)`, ensuring enforcers run exactly
+once per (group, properties) pair even when a satisfying implementation already exists.
+This lets enforcer-created plans (e.g., `GatherExchange` on a distributed subtree)
+compete on cost with direct implementations.
+
+The fixed-point loop within Stage 3 handles **enforcer composition**: iterates over
+newly-added physical expressions until no new enforcers are produced. The dedup key
+includes sorting state so that `DistributionEnforcer` fires separately for sorted vs
+unsorted source expressions.
+
+**Pruning** at the top of `OptimizeGroupTask` uses `isExplored() && isOptimizedFor()`
+to prevent re-entry loops from self-referential enforcers.
 
 ### Cost Model
 
 Multi-component cost with `cpu`, `memory`, `network`, `io`, and `sequential` dimensions,
-combined via configurable weights. This is more expressive than classic Cascades' single
-scalar cost — necessary for distributed planning where network and sequential bottlenecks
-matter independently of CPU cost.
+combined via configurable weights:
+
+```
+total_cost = cpu * cpu_weight + memory * memory_weight + network * network_weight
+           + io * io_weight + sequential * sequential_weight
+```
+
+The `sequential` component captures operations that cannot be parallelized (e.g., final
+merge on coordinator). With a high `sequential_weight`, the optimizer prefers plans that
+minimize single-node bottlenecks.
+
+Cost weights are configurable at query time via:
+```sql
+SET param__internal_cascades_cost_config = '{"cpu_weight":1,"network_weight":1,"sequential_weight":1000,...}';
+```
+
+The cluster size (number of nodes) is set via:
+```sql
+SET param__internal_cascades_cluster_node_count = 20;
+```
 
 **Key files**: `Cost.h/cpp`
 
-### Task-Based Optimization
-
-The optimizer uses a LIFO task stack (standard Cascades pattern):
-
-- **Stage 1 — Explore**: `ExploreGroupTask` / `ExploreExpressionTask` fire transformation
-  rules (`JoinCommutativity`, `TwoPhaseAggregation`) to generate logically equivalent
-  expressions.
-- **Stage 2 — Implement**: `OptimizeExpressionTask` / `ApplyRuleTask` fire implementation
-  rules (`HashJoinImplementation`, `AggregationImplementation`, `ParallelReadImplementation`,
-  `DefaultImplementation`, `DistributionPassthrough`) to generate physical expressions with
-  concrete properties.
-- **Stage 3 — Enforce**: `OptimizeGroupTask` applies enforcer rules (`DistributionEnforcer`,
-  `SortingEnforcer`) to bridge property gaps between what implementations produce and what
-  parents require.
-- **Stage 4 — Done**: Group is fully optimized for the requested properties.
-
-**Key files**: `Task.h/cpp`, `OptimizerContext.h/cpp`
-
-### Enforcer Scheduling
-
-The Stage 3 gate uses `!isEnforcedFor(required_properties)`, ensuring enforcers run exactly
-once per (group, properties) pair regardless of whether a satisfying implementation already
-exists. This lets enforcer-created plans compete on cost with existing implementations.
-
-A fixed-point loop within Stage 3 handles **enforcer composition**: the loop iterates over
-newly-added physical expressions until no new enforcers are produced. This enables
-compositions like `SortingEnforcer` creating `Sort({N nodes, sorted})` followed by
-`DistributionEnforcer` creating `GatherExchange(sorted)` — producing the distributed sort
-pattern `GatherExchange(sorted) → Sort({N nodes}) → subtree({N nodes})` which competes
-on cost with the local alternative.
-
-The dedup key includes sorting state so that `DistributionEnforcer` fires separately for
-sorted vs unsorted source expressions.
-
-**Pruning** at the top of `OptimizeGroupTask` uses `isExplored() && isOptimizedFor()` to
-prevent re-entry loops from self-referential enforcers.
-
-### Branch-and-Bound
-
-Cost limits are propagated through tasks. `OptimizeInputsTask` computes child cost limits
-by subtracting already-optimized sibling costs from the parent's budget. Standard technique,
-aligned with classic Cascades.
-
 ### `best_implementations` Index
 
-Best implementations per group are stored in an `unordered_map<UInt64, vector<GroupExpressionPtr>>`
-keyed by distribution shape `(node_count, is_replicated)`. This gives O(1) bucket lookup
-followed by a small linear scan within the bucket (typically 2-5 entries with different
-column distributions or sorting variants).
+Best implementations per group are stored in an
+`unordered_map<UInt64, vector<GroupExpressionPtr>>` keyed by distribution shape
+`(node_count, is_replicated)`. This gives O(1) bucket lookup followed by a small linear
+scan (typically 2-5 entries per bucket).
 
-The Pareto frontier is maintained: when a new implementation is added, dominated entries
+A Pareto frontier is maintained: when a new implementation is added, dominated entries
 (same or broader properties at higher cost) are removed.
 
 ### Rules
 
 **Transformation rules** (generate logically equivalent expressions):
-- `JoinCommutativity` — swaps join sides
-- `TwoPhaseAggregation` — splits aggregation into partial + merge for distributed execution
+- `JoinCommutativity` — swaps join sides (left ↔ right)
+- `TwoPhaseAggregation` — splits aggregation into partial + merge
 
 **Implementation rules** (generate physical expressions with properties):
-- `HashJoinImplementation` — local, broadcast, and shuffle join strategies
-- `AggregationImplementation` — single-node and distributed aggregation
-- `ParallelReadImplementation` — parallel read across N nodes
+- `HashJoinImplementation` — creates local, broadcast, and shuffle join strategies
+  at each candidate node count
+- `AggregationImplementation` — creates aggregation at required distribution
+- `ParallelReadImplementation` — parallel N-way read from MergeTree
 - `ReplicatedReadImplementation` — full table read on each node (shared storage)
-- `DefaultImplementation` — default single-node implementation for any step
-- `DistributionPassthrough` — passthrough distribution for stateless per-row steps
+- `DefaultImplementation` — wraps any step at `{1 node}` as fallback
+- `DistributionPassthrough` — propagates distribution through stateless per-row steps
   (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`)
 
 **Enforcer rules** (bridge property gaps):
-- `DistributionEnforcer` — adds `GatherExchange`, `BroadcastExchange`, `ShuffleExchange`,
-  `ScatterExchange` steps. Produces both regular and sorted-merge gather variants.
-- `SortingEnforcer` — adds `SortingStep` with the required sort description.
+- `DistributionEnforcer` — adds `GatherExchange`, `BroadcastExchange`,
+  `ShuffleExchange`, `ScatterExchange`. Produces both regular and sorted-merge
+  gather variants.
+- `SortingEnforcer` — adds `SortingStep` with required sort description.
 
 **Key files**: `Rules/*.cpp`
 
 ### Statistics
 
-Statistics are derived on-demand during rule application and cached on groups. Each group
-has an `ExpressionStatistics` with `estimated_row_count`. Statistics derivation walks
-the expression tree bottom-up using `StatisticsDerivation.cpp`.
+Statistics are derived on-demand during rule application and cached on groups. Each
+group has `estimated_row_count` used for cost estimation. Statistics for leaf groups
+(table scans) come from MergeTree column statistics; join/aggregation statistics are
+derived by `StatisticsDerivation.cpp`.
 
 **Key files**: `Statistics.h/cpp`, `StatisticsDerivation.cpp`
 
@@ -144,40 +286,25 @@ the expression tree bottom-up using `StatisticsDerivation.cpp`.
 | Branch-and-bound | Aligned | Cost limits propagated through tasks |
 | Enforcer scheduling | Aligned | `isEnforcedFor` gate + fixed-point composition |
 | Sorting as property | Aligned | Stripped from memo, enforced via composition |
-| `best_implementations` lookup | Aligned | Indexed by distribution shape for O(1) bucket lookup |
+| `best_implementations` lookup | Aligned | Indexed by distribution shape |
 
 ### Differences from classic Cascades
 
-**Join ordering outside Cascades**: The most significant architectural difference. In
-classic Cascades (Columbia, GPORCA, CockroachDB, StarRocks), join ordering IS the
-Cascades optimization — join associativity, commutativity, and reordering are transformation
-rules that generate alternative join trees in the memo. The cost model picks the best
-join order AND distribution simultaneously.
+**Join ordering outside Cascades**: The most significant difference. In classic Cascades
+(Columbia, GPORCA, CockroachDB, StarRocks), join ordering IS the Cascades optimization.
+ClickHouse uses a two-phase architecture: `optimizeJoin.cpp` fixes the join order first,
+then Cascades optimizes only the distribution strategy. This means join order is optimized
+for local cost, not distributed cost. This is an intentional tradeoff — integrating join
+ordering would significantly increase the search space.
 
-ClickHouse uses a two-phase architecture: dpsize/greedy fixes the join order, then
-Cascades optimizes distribution. This means:
-- Join order is optimized for local cost, not distributed cost
-- Distribution-aware join reordering (e.g., prefer joins that avoid shuffles) is impossible
-- The two cost models (dpsize and Cascades) use different statistics
+**String-based property tracking**: `isOptimizedFor`, `isEnforcedFor` use string
+serialization as set keys. Classic Cascades uses structural hashing.
 
-This is an intentional design tradeoff. Integrating join ordering into Cascades would
-require implementing join associativity/commutativity as transformation rules and ensuring
-the search space doesn't explode.
+**Statistics dependency**: `estimateReadRowsCount` calls back into pre-Cascades code,
+creating a dependency cycle.
 
-**String-based property tracking**: `isOptimizedFor`, `isEnforcedFor`, `isFullyDoneFor`
-use `required_properties.dump()` (string serialization) as set keys. This involves string
-allocation, hashing, and comparison on every `OptimizeGroupTask` entry (thousands of times).
-Classic Cascades uses structural comparison or hashing of the property struct directly.
-
-**Statistics dependency on pre-Cascades code**: `estimateReadRowsCount` in `Statistics.cpp`
-calls back into `optimizeJoin.cpp` code, creating a dependency cycle between the two
-frameworks. Classic Cascades derives all statistics within its own framework.
-
-**Task count safety valve**: A hard limit of 100,000 tasks serves as the primary safety
-valve. It doesn't distinguish between "converged optimally" and "ran out of budget."
-Classic Cascades relies on branch-and-bound cost pruning to bound exploration, with task
-limits only as a fallback. Better convergence detection (e.g., tracking whether new best
-plans are still being discovered) would improve reliability.
+**Task count safety valve**: A hard limit of 100,000 tasks. Classic Cascades relies on
+branch-and-bound pruning as the primary bound.
 
 ---
 
@@ -186,43 +313,26 @@ plans are still being discovered) would improve reliability.
 ### Performance
 
 1. **Replace string-based property keys** with structural hashing of `ExpressionProperties`.
-   Eliminates string allocation on every task entry.
-
-2. **Decouple statistics** from pre-Cascades code. Remove `estimateReadRowsCount` callback
-   into `optimizeJoin.cpp`; derive all statistics within the Cascades framework.
-
-3. **Convergence detection** instead of hard task count limit. Track whether new best plans
-   are being discovered; stop early when the search has converged.
+2. **Decouple statistics** from pre-Cascades code.
+3. **Convergence detection** instead of hard task count limit.
 
 ### Optimizer Features
 
-4. **Join ordering in Cascades**: Move join order exploration into the Cascades framework
-   using transformation rules (associativity, commutativity). This would enable
-   distribution-aware join reordering. DPHyp is available for inner joins in
+4. **Join ordering in Cascades**: DPHyp for inner joins in
    [PR #98798](https://github.com/ClickHouse/ClickHouse/pull/98798); outer/semi/anti
-   support is the next step.
-
-5. **Predicate ordering by selectivity**: Reorder conjunctive predicates in filter steps
-   by estimated selectivity. Dreseler (VLDB 2020) measured 4.2x overall TPC-H improvement
-   from predicate placement. The selectivity estimation infrastructure exists
-   (`ConditionSelectivityEstimator`); needs to be applied to filter ordering and PREWHERE
-   selection.
-
-6. **Constant/value propagation through joins**: Extend the transitive predicate
-   infrastructure ([PR #98479](https://github.com/ClickHouse/ClickHouse/pull/98479)) to
-   propagate constant and range constraints through join equivalence classes
-   (e.g., `A.key=50 AND A.key=B.key` → `B.key=50`).
-
-7. **Dependent group-by key elimination**: Detect functional dependencies from MergeTree
-   ordering keys and remove redundant columns from aggregation hash tables. Affects 7
-   TPC-H queries (Q3, Q4, Q10, Q13, Q18, Q20, Q21).
+   support needed.
+5. **Predicate ordering by selectivity**: 4.2x overall TPC-H improvement (Dreseler 2020).
+6. **Constant/value propagation through joins**: Extend
+   [PR #98479](https://github.com/ClickHouse/ClickHouse/pull/98479) to propagate constants.
+7. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
+   functional dependencies from MergeTree keys.
 
 ---
 
 ## Worked Example
 
-This section traces the optimizer through a concrete query to show how memo construction,
-implementation rules, enforcer composition, and cost-based selection work together.
+This section traces the optimizer through a concrete query to show how all the
+pieces work together.
 
 ### Query
 
@@ -251,9 +361,12 @@ Database: `tpch100_auto_statistics` (SF100).
 Tables: orders 150M rows, customer 12.6M rows, nation 25 rows.
 After date filter: orders ~5.3M rows.
 
+This query exercises: shuffle join (customer ⋈ orders), broadcast join with
+`ReplicatedRead` (nation), two-phase aggregation, and sorting enforcement.
+
 ### Input from join order optimizer
 
-Before the Cascades optimizer runs, `optimizeJoin.cpp` fixes the join order:
+Before Cascades runs, `optimizeJoin.cpp` fixes the join order using column statistics:
 
 ```
 Expression (Project names)
@@ -271,8 +384,8 @@ Expression (Project names)
               ReadFromMergeTree (nation)                -- 25 rows
 ```
 
-At this point: no distribution properties, no exchanges, no cost estimates.
-`SortingStep` is present as a logical step — the Cascades optimizer will strip it.
+No distribution properties, no exchanges, no costs. `SortingStep` is still a logical
+step — Cascades will strip it into a property.
 
 ### Memo construction
 
@@ -345,7 +458,8 @@ For **join#5 result ⋈ nation** (Group #4):
 | Local HashJoin | `{1 node}` | 10,847,220,977 | |
 
 Broadcast wins — nation has 25 rows. The build side uses `ReplicatedRead` (cost 1,700)
-instead of `BroadcastExchange` — each node reads the full nation table from shared storage.
+instead of `BroadcastExchange` — each node reads the full nation table from shared
+storage, avoiding network overhead entirely.
 
 ### Implementation rules: aggregation
 
