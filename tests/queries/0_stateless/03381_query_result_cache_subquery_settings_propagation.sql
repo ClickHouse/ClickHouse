@@ -35,3 +35,26 @@ SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
 -- Expected: 1 (outer node cached, inner subquery explicitly opted out)
 
 SYSTEM DROP QUERY CACHE;
+
+-- Test 5: Cache hit on second run (verifies read path works)
+SELECT number FROM (SELECT number FROM numbers(5) SETTINGS use_query_cache = true);
+SELECT number FROM (SELECT number FROM numbers(5) SETTINGS use_query_cache = true);
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+-- Expected: 1 (single cache entry, second run is a hit)
+
+SYSTEM DROP QUERY CACHE;
+
+-- Test 6: Subquery with custom TTL
+SELECT number FROM (SELECT number FROM numbers(5) SETTINGS use_query_cache = true, query_cache_ttl = 300);
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+-- Expected: 1
+
+SYSTEM DROP QUERY CACHE;
+
+-- Test 7: Multiple subqueries with query_cache_for_subqueries
+SELECT * FROM (SELECT number FROM numbers(3)) AS a, (SELECT number FROM numbers(3)) AS b
+SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+-- Expected: >= 1
+
+SYSTEM DROP QUERY CACHE;
