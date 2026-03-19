@@ -259,6 +259,11 @@
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
+    M(KeeperDeferredReads) \
+    M(KeeperDeferredReadsReleased) \
+    M(KeeperDeferredReadsFailed) \
+    M(KeeperImmediateReads) \
+    M(KeeperWriteRollbacks) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
@@ -397,6 +402,8 @@ extern const std::vector<Event> keeper_profile_events
     M(S3Requests) \
     M(KeeperAliveConnections) \
     M(KeeperOutstandingRequests) \
+    M(KeeperPendingSessionWrites) \
+    M(KeeperDeferredSessionReads) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \
@@ -423,6 +430,7 @@ extern const std::vector<Metric> keeper_metrics
     M(KeeperDispatcherResponsesQueueTimeMetricFamily) \
     M(KeeperSendResponseTimeMetricFamily) \
     M(KeeperReadWaitForWriteTimeMetricFamily) \
+    M(KeeperDeferredReadWaitMicrosecondsMetricFamily) \
     M(KeeperReadProcessTimeMetricFamily) \
     M(KeeperBatchSizeBytesMetricFamily) \
 

@@ -987,6 +987,11 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
     M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session was already finished", ValueType::Number) \
     M(KeeperFinishedSessionsCacheFull, "Number of times a finished session could not be tracked because the cache reached its size limit", ValueType::Number) \
+    M(KeeperDeferredReads, "Number of read requests deferred waiting for session writes in per-session read barrier mode", ValueType::Number) \
+    M(KeeperDeferredReadsReleased, "Number of deferred reads released after write commit in per-session read barrier mode", ValueType::Number) \
+    M(KeeperDeferredReadsFailed, "Number of deferred reads failed due to write failure or session close in per-session read barrier mode", ValueType::Number) \
+    M(KeeperImmediateReads, "Number of read requests executed immediately without deferral in per-session read barrier mode", ValueType::Number) \
+    M(KeeperWriteRollbacks, "Number of write requests rolled back due to Raft rejection in per-session read barrier mode", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \

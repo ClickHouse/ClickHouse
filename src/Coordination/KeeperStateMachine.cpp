@@ -77,8 +77,10 @@ IKeeperStateMachine::IKeeperStateMachine(
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     CommitCallback commit_callback_,
+    RollbackCallback rollback_callback_,
     const std::string & superdigest_)
     : commit_callback(commit_callback_)
+    , rollback_callback(rollback_callback_)
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , min_request_size_to_cache(keeper_context_->getCoordinationSettings()[CoordinationSetting::min_request_size_for_cache])
@@ -98,6 +100,7 @@ KeeperStateMachine<Storage>::KeeperStateMachine(
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     IKeeperStateMachine::CommitCallback commit_callback_,
+    IKeeperStateMachine::RollbackCallback rollback_callback_,
     const std::string & superdigest_)
     : IKeeperStateMachine(
         responses_queue_,
@@ -106,6 +109,7 @@ KeeperStateMachine<Storage>::KeeperStateMachine(
         keeper_context_,
         snapshot_manager_s3_,
         commit_callback_,
+        rollback_callback_,
         superdigest_),
         snapshot_manager(
           keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshots_to_keep],
@@ -810,8 +814,13 @@ void KeeperStateMachine<Storage>::rollbackRequest(const KeeperRequestForSession 
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
 
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    storage->rollbackRequest(request_for_session.zxid, allow_missing);
+    {
+        KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+        storage->rollbackRequest(request_for_session.zxid, allow_missing);
+    }
+
+    if (rollback_callback)
+        rollback_callback(request_for_session);
 }
 
 nuraft::ptr<nuraft::snapshot> IKeeperStateMachine::last_snapshot()

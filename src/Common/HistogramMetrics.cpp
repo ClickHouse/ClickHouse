@@ -135,6 +135,14 @@ namespace HistogramMetrics
     );
     Metric & KeeperReadWaitForWriteTime = KeeperReadWaitForWriteTimeMetricFamily.withLabels({});
 
+    MetricFamily & KeeperDeferredReadWaitMicrosecondsMetricFamily = Factory::instance().registerMetric(
+        "keeper_deferred_read_wait_microseconds",
+        "Time deferred read request waits in per-session read barrier before release or failure, in microseconds",
+        {100, 1000, 10000, 50000, 100000, 250000, 500000, 1000000, 5000000, 10000000, 30000000},
+        {}
+    );
+    Metric & KeeperDeferredReadWaitMicroseconds = KeeperDeferredReadWaitMicrosecondsMetricFamily.withLabels({});
+
     MetricFamily & KeeperReadProcessTimeMetricFamily = Factory::instance().registerMetric(
         "keeper_read_process_time_milliseconds",
         "Time to process read request",

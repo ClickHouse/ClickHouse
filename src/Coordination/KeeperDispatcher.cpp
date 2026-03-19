@@ -32,6 +32,7 @@
 #include <atomic>
 #include <future>
 #include <chrono>
+#include <algorithm>
 #include <limits>
 #include <string>
 
@@ -59,12 +60,16 @@ namespace ProfileEvents
     extern const Event KeeperSessionCallbackLockHoldMicroseconds;
     extern const Event KeeperReadRequestQueueLockWaitMicroseconds;
     extern const Event KeeperReadRequestQueueLockHoldMicroseconds;
+    extern const Event KeeperDeferredReadsReleased;
+    extern const Event KeeperDeferredReadsFailed;
+    extern const Event KeeperWriteRollbacks;
 }
 
 namespace HistogramMetrics
 {
     extern Metric & KeeperCurrentBatchSizeElements;
     extern Metric & KeeperCurrentBatchSizeBytes;
+    extern Metric & KeeperDeferredReadWaitMicroseconds;
 }
 
 using namespace std::chrono_literals;
@@ -81,6 +86,9 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
+    extern const CoordinationSettingsBool per_session_read_barrier;
+    extern const CoordinationSettingsUInt64 max_deferred_reads_per_session;
+    extern const CoordinationSettingsUInt64 max_pending_writes_per_session;
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
     extern const CoordinationSettingsMilliseconds sleep_before_leader_change_ms;
 }
@@ -96,6 +104,19 @@ namespace ErrorCodes
 
 namespace
 {
+
+uint64_t monotonicMicroseconds()
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void observeDeferredReadWaitMicroseconds(uint64_t deferred_wait_start_us)
+{
+    const uint64_t now_us = monotonicMicroseconds();
+    const uint64_t wait_us = now_us >= deferred_wait_start_us ? (now_us - deferred_wait_start_us) : 0;
+    HistogramMetrics::observe(HistogramMetrics::KeeperDeferredReadWaitMicroseconds, static_cast<HistogramMetrics::Value>(wait_us));
+}
 
 bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
 {
@@ -159,6 +180,15 @@ KeeperDispatcher::KeeperDispatcher()
     , log(getLogger("KeeperDispatcher"))
 {}
 
+namespace
+{
+bool isPerSessionReadBarrierEnabled(const CoordinationSettings & coordination_settings)
+{
+    return coordination_settings[CoordinationSetting::per_session_read_barrier]
+        && !coordination_settings[CoordinationSetting::quorum_reads];
+}
+}
+
 void KeeperDispatcher::requestThread()
 {
     DB::setThreadName(ThreadName::KEEPER_REQUEST);
@@ -194,16 +224,31 @@ void KeeperDispatcher::requestThread()
         uint64_t max_wait = coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
         uint64_t max_batch_bytes_size = coordination_settings[CoordinationSetting::max_requests_batch_bytes_size];
         size_t max_batch_size = coordination_settings[CoordinationSetting::max_requests_batch_size];
+        const auto prev_result_done = [&]
+        {
+            return !prev_result || prev_result->has_result();
+        };
 
-        /// The code below do a very simple thing: batch all write (quorum) requests into vector until
-        /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
-        /// the ability to process read requests without quorum (from local state). So when we are collecting
-        /// requests into a batch we must check that the new request is not read request. Otherwise we have to
-        /// process all already accumulated write requests, wait them synchronously and only after that process
-        /// read request. So reads are some kind of "separator" for writes.
-        /// Also there is a special reconfig request also being a separator.
+        const auto drain_prev_result_if_ready = [&]
+        {
+            if (!session_read_barrier)
+                return false;
+
+            if (!prev_result || !prev_result_done())
+                return false;
+
+            (void)forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/true);
+            prev_batch.clear();
+            return true;
+        };
+
+        /// The code below batches all write requests for Raft append.
+        /// Without `per_session_read_barrier`, local reads are global separators for write batches.
+        /// In per-session read barrier mode local reads only wait for pending writes of their own session.
+        /// Reconfig requests always work as global separators.
         try
         {
+            bool drained_prev_result = drain_prev_result_if_ready();
             if (requests_queue->tryPop(request, max_wait))
             {
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
@@ -250,6 +295,8 @@ void KeeperDispatcher::requestThread()
                     continue;
 
                 handle_opentelemetery_spans(request.request, request.session_id);
+                if (!drained_prev_result)
+                    (void)drain_prev_result_if_ready();
 
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
@@ -267,7 +314,26 @@ void KeeperDispatcher::requestThread()
                     continue;
                 }
 
+                if (session_read_barrier && request.request->isReadRequest())
+                {
+                    auto defer_result = session_read_barrier->tryDeferRead(request);
+                    if (defer_result == DeferReadResult::Rejected)
+                    {
+                        ProfileEvents::increment(ProfileEvents::KeeperDeferredReadsFailed);
+                        addErrorResponses({request}, Coordination::Error::ZOPERATIONTIMEOUT);
+                    }
+                    else if (defer_result == DeferReadResult::Immediate)
+                    {
+                        if (!isLeaderAliveForRead())
+                            addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
+                        else
+                            putLocalReadRequestForSession(request);
+                    }
+                    continue;
+                }
+
                 KeeperRequestsForSessions current_batch;
+                KeeperRequestsForSessions writes_to_register;
                 size_t current_batch_bytes_size = 0;
 
                 bool has_read_request = false;
@@ -281,6 +347,8 @@ void KeeperDispatcher::requestThread()
                 {
                     current_batch_bytes_size += request.request->bytesSize();
                     current_batch.emplace_back(request);
+                    if (session_read_barrier)
+                        writes_to_register.emplace_back(request);
 
                     const auto try_get_request = [&]
                     {
@@ -298,10 +366,40 @@ void KeeperDispatcher::requestThread()
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
                             {
-                                const auto & last_request = current_batch.back();
-                                ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
-                                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
-                                read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
+                                if (session_read_barrier)
+                                {
+                                    if (!writes_to_register.empty())
+                                    {
+                                        session_read_barrier->registerPendingWrites(writes_to_register);
+                                        writes_to_register.clear();
+                                    }
+
+                                    auto defer_result = session_read_barrier->tryDeferRead(request);
+                                    if (defer_result == DeferReadResult::Rejected)
+                                    {
+                                        ProfileEvents::increment(ProfileEvents::KeeperDeferredReadsFailed);
+                                        addErrorResponses({request}, Coordination::Error::ZOPERATIONTIMEOUT);
+                                    }
+                                    else if (defer_result == DeferReadResult::Immediate)
+                                    {
+                                        if (!isLeaderAliveForRead())
+                                            addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
+                                        else
+                                            putLocalReadRequestForSession(request);
+                                    }
+                                }
+                                else
+                                {
+                                    const auto & last_request = current_batch.back();
+                                    ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
+                                    ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
+                                    read_request_queue[last_request.session_id]
+                                        [last_request.request->xid]
+                                        .push_back(DeferredReadRequest{
+                                            .deferred_wait_start_us = monotonicMicroseconds(),
+                                            .request_for_session = request,
+                                        });
+                                }
                             }
                             else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
                             {
@@ -312,6 +410,8 @@ void KeeperDispatcher::requestThread()
                             {
                                 current_batch_bytes_size += request.request->bytesSize();
                                 current_batch.emplace_back(request);
+                                if (session_read_barrier)
+                                    writes_to_register.emplace_back(request);
                             }
 
                             return true;
@@ -323,11 +423,6 @@ void KeeperDispatcher::requestThread()
                     while (!shutdown_called && current_batch.size() < max_batch_size && !has_reconfig_request
                            && current_batch_bytes_size < max_batch_bytes_size && try_get_request())
                         ;
-
-                    const auto prev_result_done = [&]
-                    {
-                        return !prev_result || prev_result->has_result();
-                    };
 
                     /// Waiting until previous append will be successful, or batch is big enough
                     while (!shutdown_called && !has_reconfig_request &&
@@ -342,6 +437,12 @@ void KeeperDispatcher::requestThread()
 
                 if (shutdown_called)
                     break;
+
+                if (session_read_barrier && !writes_to_register.empty())
+                {
+                    session_read_barrier->registerPendingWrites(writes_to_register);
+                    writes_to_register.clear();
+                }
 
                 bool execute_requests_after_write = has_read_request || has_reconfig_request;
 
@@ -370,6 +471,11 @@ void KeeperDispatcher::requestThread()
                     if (!result)
                     {
                         addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
+                        if (session_read_barrier)
+                            failCollectedReads(
+                                session_read_barrier->failBatch(current_batch),
+                                Coordination::Error::ZCONNECTIONLOSS,
+                                "deferred read failed after write batch failure");
                         current_batch.clear();
                         current_batch_bytes_size = 0;
                     }
@@ -399,7 +505,11 @@ void KeeperDispatcher::requestThread()
 
                         /// if timeout happened set error responses for the requests
                         if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+                        {
+                            /// Append is accepted here (we have `log_idx`), so commit/rollback callbacks own
+                            /// deferred-read resolution. We only send write errors on this timeout path.
                             addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
+                        }
 
                         if (shutdown_called)
                             return;
@@ -652,7 +762,23 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     keeper_context->initialize(config, this);
 
+    const auto & coordination_settings = configuration_and_settings->coordination_settings;
+    if (isPerSessionReadBarrierEnabled(coordination_settings))
+    {
+        session_read_barrier.emplace(
+            KeeperSessionReadBarrier::Settings{
+                .max_pending_writes_per_session = coordination_settings[CoordinationSetting::max_pending_writes_per_session],
+                .max_deferred_reads_per_session = coordination_settings[CoordinationSetting::max_deferred_reads_per_session],
+            },
+            log);
+        LOG_WARNING(
+            log,
+            "`per_session_read_barrier` is enabled (with `quorum_reads` disabled). "
+            "Local reads will wait only for pending writes in the same session, not globally across sessions.");
+    }
+
     requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size]);
+
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
@@ -666,83 +792,15 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshots_queue,
         keeper_context,
         snapshot_s3,
+        /// Commit callback: called after a write is committed to state machine
         [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session)
         {
-            KeeperRequestsForSessions pending_reads;
-            {
-                /// check if we have queue of read requests depending on this request to be committed
-                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
-                if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
-                {
-                    auto & xid_to_request_queue = it->second;
-
-                    if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid);
-                        request_queue_it != xid_to_request_queue.end())
-                    {
-                        pending_reads = std::move(request_queue_it->second);
-                        xid_to_request_queue.erase(request_queue_it);
-                    }
-                }
-            }
-
-            /// Dispatch reads outside the lock — putLocalReadRequest and addErrorResponses
-            /// push to thread-safe queues, so no lock is needed here.
-            for (const auto & read_request : pending_reads)
-            {
-                /// Skip reads whose session has been finished
-                {
-                    std::lock_guard finished_lock(finished_sessions_mutex);
-                    if (finished_sessions.contains(read_request.session_id))
-                    {
-                        ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-
-                        ZooKeeperOpentelemetrySpans::maybeFinalize(
-                            read_request.request->spans.read_wait_for_write,
-                            [&]
-                            {
-                                return std::vector<OpenTelemetry::SpanAttribute>{
-                                    {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                                    {"keeper.session_id", read_request.session_id},
-                                    {"keeper.xid", read_request.request->xid},
-                                    {"keeper.stale", true},
-                                };
-                            },
-                            OpenTelemetry::SpanStatus::ERROR,
-                            "Session finished before read could execute");
-
-                        continue;
-                    }
-                }
-
-                if (!server->isLeaderAlive())
-                {
-                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
-                    continue;
-                }
-
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    read_request.request->spans.read_wait_for_write,
-                    [&]
-                    {
-                        return std::vector<OpenTelemetry::SpanAttribute>{
-                            {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                            {"keeper.session_id", read_request.session_id},
-                            {"keeper.xid", read_request.request->xid},
-                        };
-                    });
-
-                server->putLocalReadRequest(read_request);
-            }
-
-            /// When Close commits, all prior requests for this session have been processed.
-            /// Remove from finished_sessions to reclaim memory.
-            /// Done after the pending-read loop so reads queued for the closing session
-            /// are still filtered by the stale check above.
-            if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
-            {
-                std::lock_guard lock(finished_sessions_mutex);
-                finished_sessions.erase(request_for_session.session_id);
-            }
+            onCommittedWrite(request_for_session);
+        },
+        /// Rollback callback: called when a write is rolled back (failed to commit)
+        [this](const KeeperRequestForSession & request_for_session)
+        {
+            onRollbackWrite(request_for_session);
         });
 
     try
@@ -797,6 +855,10 @@ void KeeperDispatcher::shutdown()
                 if (request_thread.joinable())
                     request_thread.join();
             }
+
+            /// Fail all deferred reads while session callbacks are still registered.
+            if (session_read_barrier)
+                failCollectedReads(session_read_barrier->shutdown(), Coordination::Error::ZSESSIONEXPIRED, "deferred read failed during shutdown");
 
             responses_queue.finish();
             if (responses_thread.joinable())
@@ -1020,10 +1082,205 @@ void KeeperDispatcher::finishSession(int64_t session_id)
         callback(close_response, nullptr);
     }
 
+    /// Discard any deferred reads for this session. The session callback is already removed,
+    /// so error responses would be undeliverable — but we still finalize OTel spans and
+    /// observe the histogram for observability.
+    if (session_read_barrier)
+    {
+        for (const auto & read : session_read_barrier->closeSession(session_id))
+        {
+            observeDeferredReadWaitMicroseconds(read.deferred_wait_start_us);
+            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                read.request_for_session.request->spans.read_wait_for_write,
+                [&] { return makeKeeperSpanAttributes(read.request_for_session); },
+                OpenTelemetry::SpanStatus::ERROR,
+                "deferred read discarded after session finish");
+            ProfileEvents::increment(ProfileEvents::KeeperDeferredReadsFailed);
+        }
+    }
+    else
     {
         ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
         read_request_queue.erase(session_id);
     }
+}
+
+std::vector<OpenTelemetry::SpanAttribute> KeeperDispatcher::makeKeeperSpanAttributes(const KeeperRequestForSession & req)
+{
+    return {
+        {"keeper.operation", Coordination::opNumToString(req.request->getOpNum())},
+        {"keeper.session_id", req.session_id},
+        {"keeper.xid", req.request->xid},
+    };
+}
+
+void KeeperDispatcher::executeCollectedReads(const DeferredReadRequests & reads)
+{
+    for (const auto & read : reads)
+    {
+        observeDeferredReadWaitMicroseconds(read.deferred_wait_start_us);
+
+        /// Skip reads whose session has been finished.
+        {
+            std::lock_guard finished_lock(finished_sessions_mutex);
+            if (finished_sessions.contains(read.request_for_session.session_id))
+            {
+                ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
+                ZooKeeperOpentelemetrySpans::maybeFinalize(
+                    read.request_for_session.request->spans.read_wait_for_write,
+                    [&]
+                    {
+                        auto attrs = makeKeeperSpanAttributes(read.request_for_session);
+                        attrs.push_back({"keeper.stale", true});
+                        return attrs;
+                    },
+                    OpenTelemetry::SpanStatus::ERROR,
+                    "Session finished before read could execute");
+                continue;
+            }
+        }
+
+        if (!isLeaderAliveForRead())
+        {
+            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                read.request_for_session.request->spans.read_wait_for_write,
+                [&] { return makeKeeperSpanAttributes(read.request_for_session); },
+                OpenTelemetry::SpanStatus::ERROR,
+                "keeper leader is not alive");
+            ProfileEvents::increment(ProfileEvents::KeeperDeferredReadsFailed);
+            addErrorResponses({read.request_for_session}, Coordination::Error::ZCONNECTIONLOSS);
+            continue;
+        }
+
+        ZooKeeperOpentelemetrySpans::maybeFinalize(
+            read.request_for_session.request->spans.read_wait_for_write,
+            [&] { return makeKeeperSpanAttributes(read.request_for_session); });
+
+        ProfileEvents::increment(ProfileEvents::KeeperDeferredReadsReleased);
+        putLocalReadRequestForSession(read.request_for_session);
+    }
+}
+
+void KeeperDispatcher::failCollectedReads(const DeferredReadRequests & reads, Coordination::Error error, const char * span_error)
+{
+    if (reads.empty())
+        return;
+
+    KeeperRequestsForSessions requests;
+    requests.reserve(reads.size());
+    for (const auto & read : reads)
+    {
+        observeDeferredReadWaitMicroseconds(read.deferred_wait_start_us);
+        ZooKeeperOpentelemetrySpans::maybeFinalize(
+            read.request_for_session.request->spans.read_wait_for_write,
+            [&] { return makeKeeperSpanAttributes(read.request_for_session); },
+            OpenTelemetry::SpanStatus::ERROR,
+            span_error);
+        requests.push_back(read.request_for_session);
+    }
+
+    ProfileEvents::increment(ProfileEvents::KeeperDeferredReadsFailed, reads.size());
+    addErrorResponses(requests, error);
+}
+
+bool KeeperDispatcher::isLeaderAliveForRead() const
+{
+    return server->isLeaderAlive();
+}
+
+void KeeperDispatcher::putLocalReadRequestForSession(const KeeperRequestForSession & request_for_session)
+{
+    server->putLocalReadRequest(request_for_session);
+}
+
+void KeeperDispatcher::onCommittedWrite(const KeeperRequestForSession & request_for_session)
+{
+    if (session_read_barrier)
+    {
+        auto result = session_read_barrier->resolveCommit(
+            request_for_session.session_id,
+            request_for_session.request->getOpNum(),
+            request_for_session.request->xid);
+
+        failCollectedReads(result.reads_to_fail, Coordination::Error::ZOPERATIONTIMEOUT, "deferred read failed after degraded mode");
+        executeCollectedReads(result.reads_to_execute);
+
+        /// On Close commit, clean up barrier state for this session. The graceful close path
+        /// in `KeeperTCPHandler` does not call `finishSession`, so without this the
+        /// `SessionState` would leak in the map until `sessionCleanerTask` reaps it.
+        /// Any orphaned deferred reads (from writes that never committed) are failed here —
+        /// the session callback is still alive at this point (removed later by `setResponse`).
+        if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
+            failCollectedReads(session_read_barrier->closeSession(request_for_session.session_id),
+                Coordination::Error::ZSESSIONEXPIRED, "deferred read failed after session close");
+    }
+    else
+    {
+        /// Without `per_session_read_barrier`: execute reads that were waiting for this write to commit.
+        DeferredReadRequests reads;
+        {
+            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
+            if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
+            {
+                auto & xid_to_request_queue = it->second;
+                if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid);
+                    request_queue_it != xid_to_request_queue.end())
+                {
+                    reads.assign(
+                        std::make_move_iterator(request_queue_it->second.begin()),
+                        std::make_move_iterator(request_queue_it->second.end()));
+                    xid_to_request_queue.erase(request_queue_it);
+                }
+            }
+        }
+        executeCollectedReads(reads);
+    }
+
+    /// When Close commits, all prior requests for this session have been processed.
+    /// Remove from `finished_sessions` to reclaim memory.
+    if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
+    {
+        std::lock_guard lock(finished_sessions_mutex);
+        finished_sessions.erase(request_for_session.session_id);
+    }
+}
+
+void KeeperDispatcher::onRollbackWrite(const KeeperRequestForSession & request_for_session)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperWriteRollbacks);
+
+    if (session_read_barrier)
+    {
+        failCollectedReads(
+            session_read_barrier->resolveRollback(
+                request_for_session.session_id,
+                request_for_session.request->getOpNum(),
+                request_for_session.request->xid),
+            Coordination::Error::ZOPERATIONTIMEOUT,
+            "deferred read failed after write rollback");
+        return;
+    }
+
+    /// Without `per_session_read_barrier`: fail reads that were waiting for this write.
+    /// Before the `RollbackCallback` was introduced, these reads would hang indefinitely
+    /// until `finishSession` silently discarded them. Now clients get explicit errors.
+    DeferredReadRequests reads;
+    {
+        ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
+        if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
+        {
+            auto & xid_to_request_queue = it->second;
+            if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid);
+                request_queue_it != xid_to_request_queue.end())
+            {
+                reads.assign(
+                    std::make_move_iterator(request_queue_it->second.begin()),
+                    std::make_move_iterator(request_queue_it->second.end()));
+                xid_to_request_queue.erase(request_queue_it);
+            }
+        }
+    }
+    failCollectedReads(reads, Coordination::Error::ZOPERATIONTIMEOUT, "deferred read failed after write rollback");
 }
 
 void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error)
@@ -1051,11 +1308,24 @@ nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(
     if (!result->has_result())
         result->get();
 
+    /// `get_accepted() == false` means append was rejected before callback ownership starts.
+    const bool append_rejected_before_callbacks = !result->get_accepted();
+    Coordination::Error error = Coordination::Error::ZOK;
     /// If we get some errors, than send them to clients
     if (!result->get_accepted() || result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
-        addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
+    {
+        error = Coordination::Error::ZOPERATIONTIMEOUT;
+        addErrorResponses(requests_for_sessions, error);
+    }
     else if (result->get_result_code() != nuraft::cmd_result_code::OK)
-        addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+    {
+        error = Coordination::Error::ZCONNECTIONLOSS;
+        addErrorResponses(requests_for_sessions, error);
+    }
+
+    /// Deferred reads are failed here only when append was rejected before callback ownership starts.
+    if (error != Coordination::Error::ZOK && session_read_barrier && append_rejected_before_callbacks)
+        failCollectedReads(session_read_barrier->failBatch(requests_for_sessions), error, "deferred read failed after write failure");
 
     auto result_buf = result->get();
 

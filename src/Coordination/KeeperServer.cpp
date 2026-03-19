@@ -247,7 +247,8 @@ KeeperServer::KeeperServer(
     SnapshotsQueue & snapshots_queue_,
     KeeperContextPtr keeper_context_,
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
-    IKeeperStateMachine::CommitCallback commit_callback)
+    IKeeperStateMachine::CommitCallback commit_callback,
+    IKeeperStateMachine::RollbackCallback rollback_callback)
     : server_id(configuration_and_settings_->server_id)
     , log(getLogger("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
@@ -268,6 +269,7 @@ KeeperServer::KeeperServer(
             keeper_context,
             config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
             commit_callback,
+            rollback_callback,
             checkAndGetSuperdigest(configuration_and_settings_->super_digest));
         LOG_WARNING(log, "Use RocksDB as Keeper backend storage.");
     }
@@ -279,6 +281,7 @@ KeeperServer::KeeperServer(
             keeper_context,
             config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
             commit_callback,
+            rollback_callback,
             checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(

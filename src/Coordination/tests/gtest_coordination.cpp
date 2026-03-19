@@ -8,6 +8,7 @@
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperSessionReadBarrier.h>
 #include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/Types.h>
@@ -948,6 +949,555 @@ TYPED_TEST(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA));
+}
+
+
+// ---------------------------------------------------------------------------
+// KeeperSessionReadBarrier unit tests
+// ---------------------------------------------------------------------------
+
+namespace CurrentMetrics
+{
+    extern const Metric KeeperPendingSessionWrites;
+    extern const Metric KeeperDeferredSessionReads;
+}
+
+class KeeperSessionReadBarrierTest : public ::testing::Test
+{
+protected:
+    LoggerPtr log = getLogger("KeeperSessionReadBarrierTest");
+
+    DB::KeeperSessionReadBarrier makeBarrier(uint64_t max_pending = 1000, uint64_t max_deferred = 1000)
+    {
+        return DB::KeeperSessionReadBarrier(
+            {.max_pending_writes_per_session = max_pending,
+             .max_deferred_reads_per_session = max_deferred}, log);
+    }
+
+    static DB::KeeperRequestForSession makeWrite(int64_t session, Coordination::XID xid,
+                                                  Coordination::OpNum op = Coordination::OpNum::Set)
+    {
+        Coordination::ZooKeeperRequestPtr req;
+        switch (op)
+        {
+            case Coordination::OpNum::Create:
+            {
+                auto r = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+                r->path = "/test";
+                req = r;
+                break;
+            }
+            default:
+            {
+                auto r = std::make_shared<Coordination::ZooKeeperSetRequest>();
+                r->path = "/test";
+                req = r;
+                break;
+            }
+        }
+        req->xid = xid;
+        DB::KeeperRequestForSession result;
+        result.session_id = session;
+        result.request = std::move(req);
+        return result;
+    }
+
+    static DB::KeeperRequestForSession makeRead(int64_t session, Coordination::XID xid)
+    {
+        auto req = std::make_shared<Coordination::ZooKeeperGetRequest>();
+        req->path = "/test";
+        req->xid = xid;
+        DB::KeeperRequestForSession result;
+        result.session_id = session;
+        result.request = std::move(req);
+        return result;
+    }
+
+    static DB::KeeperRequestForSession makeAuth(int64_t session)
+    {
+        auto req = std::make_shared<Coordination::ZooKeeperAuthRequest>();
+        req->xid = Coordination::AUTH_XID;
+        DB::KeeperRequestForSession result;
+        result.session_id = session;
+        result.request = std::move(req);
+        return result;
+    }
+
+    static DB::KeeperRequestForSession makeClose(int64_t session)
+    {
+        auto req = std::make_shared<Coordination::ZooKeeperCloseRequest>();
+        req->xid = Coordination::CLOSE_XID;
+        DB::KeeperRequestForSession result;
+        result.session_id = session;
+        result.request = std::move(req);
+        return result;
+    }
+
+    static DB::KeeperRequestForSession makeHeartbeat(int64_t session)
+    {
+        auto req = std::make_shared<Coordination::ZooKeeperHeartbeatRequest>();
+        req->xid = 0;
+        DB::KeeperRequestForSession result;
+        result.session_id = session;
+        result.request = std::move(req);
+        return result;
+    }
+
+    static DB::KeeperRequestForSession makeSessionID()
+    {
+        auto req = std::make_shared<Coordination::ZooKeeperSessionIDRequest>();
+        req->xid = 0;
+        DB::KeeperRequestForSession result;
+        result.session_id = -1;
+        result.request = std::move(req);
+        return result;
+    }
+
+    /// Snapshot metric gauge values before a test. Call assertMetricsBalanced() at the end.
+    void snapshotMetrics()
+    {
+        pending_writes_before_ = CurrentMetrics::values[CurrentMetrics::KeeperPendingSessionWrites].load();
+        deferred_reads_before_ = CurrentMetrics::values[CurrentMetrics::KeeperDeferredSessionReads].load();
+    }
+
+    void assertMetricsBalanced()
+    {
+        EXPECT_EQ(CurrentMetrics::values[CurrentMetrics::KeeperPendingSessionWrites].load(), pending_writes_before_)
+            << "KeeperPendingSessionWrites gauge leaked";
+        EXPECT_EQ(CurrentMetrics::values[CurrentMetrics::KeeperDeferredSessionReads].load(), deferred_reads_before_)
+            << "KeeperDeferredSessionReads gauge leaked";
+    }
+
+private:
+    int64_t pending_writes_before_ = 0;
+    int64_t deferred_reads_before_ = 0;
+};
+
+
+TEST_F(KeeperSessionReadBarrierTest, HappyPath_SingleWriteSingleReadCommit)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    auto result = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_EQ(result.reads_to_execute.size(), 1);
+    EXPECT_TRUE(result.reads_to_fail.empty());
+    EXPECT_EQ(result.reads_to_execute[0].request_for_session.request->xid, 100);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, ReadWithNoPendingWrites_Immediate)
+{
+    auto barrier = makeBarrier();
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Immediate);
+}
+
+TEST_F(KeeperSessionReadBarrierTest, ReadAfterAllWritesCommitted_Immediate)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+    auto result = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_TRUE(result.reads_to_execute.empty());
+
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Immediate);
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, MultipleWrites_ReadWaitsForLatest)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1), makeWrite(1, 2)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    auto r1 = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_TRUE(r1.reads_to_execute.empty()) << "R1 keyed to W2, not W1";
+
+    auto r2 = barrier.resolveCommit(1, Coordination::OpNum::Set, 2);
+    EXPECT_EQ(r2.reads_to_execute.size(), 1);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, ReadsDeferredToDifferentWrites)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    barrier.registerPendingWrites({makeWrite(1, 2)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 101)), DB::DeferReadResult::Deferred);
+
+    auto r1 = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_EQ(r1.reads_to_execute.size(), 1);
+    EXPECT_EQ(r1.reads_to_execute[0].request_for_session.request->xid, 100);
+
+    auto r2 = barrier.resolveCommit(1, Coordination::OpNum::Set, 2);
+    EXPECT_EQ(r2.reads_to_execute.size(), 1);
+    EXPECT_EQ(r2.reads_to_execute[0].request_for_session.request->xid, 101);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, MultipleReadsDeferredToSameWrite)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 101)), DB::DeferReadResult::Deferred);
+
+    auto result = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_EQ(result.reads_to_execute.size(), 2);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, RollbackReleasesReadsForFailure)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    auto reads = barrier.resolveRollback(1, Coordination::OpNum::Set, 1);
+    EXPECT_EQ(reads.size(), 1);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, RollbackReverseScanOrder_DuplicateXid)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    /// Two writes with the same (op_num, xid) — different write_seq
+    barrier.registerPendingWrites({makeWrite(1, 10)});
+    barrier.registerPendingWrites({makeWrite(1, 10)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    /// Rollback scans from back → matches the second write (which has reads keyed to it)
+    auto rolled = barrier.resolveRollback(1, Coordination::OpNum::Set, 10);
+    EXPECT_EQ(rolled.size(), 1);
+
+    /// Commit matches the first write (forward scan) → no reads keyed to it
+    auto committed = barrier.resolveCommit(1, Coordination::OpNum::Set, 10);
+    EXPECT_TRUE(committed.reads_to_execute.empty());
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, CommitForwardScanOrder_DuplicateXid)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 10)});
+    barrier.registerPendingWrites({makeWrite(1, 10)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    /// First commit matches W1 (forward scan) → no reads keyed to W1
+    auto c1 = barrier.resolveCommit(1, Coordination::OpNum::Set, 10);
+    EXPECT_TRUE(c1.reads_to_execute.empty());
+
+    /// Second commit matches W2 → reads keyed to W2
+    auto c2 = barrier.resolveCommit(1, Coordination::OpNum::Set, 10);
+    EXPECT_EQ(c2.reads_to_execute.size(), 1);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, DegradedMode_CommitUnknownWrite)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    /// Commit for an unknown write triggers degraded mode
+    auto result = barrier.resolveCommit(1, Coordination::OpNum::Set, 999);
+    EXPECT_TRUE(result.reads_to_execute.empty());
+    EXPECT_EQ(result.reads_to_fail.size(), 1) << "Degraded mode should drain all deferred reads";
+
+    /// After degraded mode: reads are rejected, writes are skipped, resolves are no-ops
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 101)), DB::DeferReadResult::Rejected);
+    barrier.registerPendingWrites({makeWrite(1, 2)});
+    auto r2 = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_TRUE(r2.reads_to_execute.empty());
+    EXPECT_TRUE(r2.reads_to_fail.empty());
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, DegradedMode_RollbackUnknownWrite)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    auto reads = barrier.resolveRollback(1, Coordination::OpNum::Set, 999);
+    EXPECT_EQ(reads.size(), 1) << "Degraded mode should drain all deferred reads";
+
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 101)), DB::DeferReadResult::Rejected);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, FailBatch)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    auto w1 = makeWrite(1, 1);
+    auto w2 = makeWrite(1, 2);
+    barrier.registerPendingWrites({w1, w2});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    auto reads = barrier.failBatch({w1, w2});
+    EXPECT_EQ(reads.size(), 1);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, FailBatch_SkipsReadsAndHeartbeats)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    auto w1 = makeWrite(1, 1);
+    barrier.registerPendingWrites({w1});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    /// failBatch should ignore read requests and heartbeats, only process W1
+    auto reads = barrier.failBatch({makeRead(1, 200), makeHeartbeat(1), w1});
+    EXPECT_EQ(reads.size(), 1);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, CloseSession_DrainsEverything)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1), makeWrite(1, 2)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 101)), DB::DeferReadResult::Deferred);
+
+    auto reads = barrier.closeSession(1);
+    EXPECT_EQ(reads.size(), 2);
+
+    /// After close, session is gone
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 102)), DB::DeferReadResult::Immediate);
+    auto r = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_TRUE(r.reads_to_execute.empty());
+    EXPECT_TRUE(r.reads_to_fail.empty());
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, Shutdown_DrainsAllSessions)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    barrier.registerPendingWrites({makeWrite(2, 1)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(2, 200)), DB::DeferReadResult::Deferred);
+
+    auto reads = barrier.shutdown();
+    EXPECT_EQ(reads.size(), 2);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, MaxDeferredReadsLimit)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier(/*max_pending=*/1000, /*max_deferred=*/2);
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 101)), DB::DeferReadResult::Deferred);
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 102)), DB::DeferReadResult::Rejected);
+
+    /// After resolving, limit resets
+    auto result = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_EQ(result.reads_to_execute.size(), 2);
+
+    barrier.registerPendingWrites({makeWrite(1, 2)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 103)), DB::DeferReadResult::Deferred);
+
+    barrier.closeSession(1);
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, MaxPendingWritesSoftLimit)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier(/*max_pending=*/2, /*max_deferred=*/1000);
+
+    /// W3 exceeds the limit but is still registered (soft limit, only warns)
+    barrier.registerPendingWrites({makeWrite(1, 1), makeWrite(1, 2), makeWrite(1, 3)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    barrier.resolveCommit(1, Coordination::OpNum::Set, 2);
+    auto r3 = barrier.resolveCommit(1, Coordination::OpNum::Set, 3);
+    EXPECT_EQ(r3.reads_to_execute.size(), 1);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, AuthRequestCallbackKey)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    /// Auth uses (OpNum::Auth, AUTH_XID=-4). A regular write with xid=-4 uses (OpNum::Set, -4).
+    barrier.registerPendingWrites({makeAuth(1)});
+    barrier.registerPendingWrites({makeWrite(1, Coordination::AUTH_XID)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    /// Resolve auth — no reads keyed to it
+    auto ra = barrier.resolveCommit(1, Coordination::OpNum::Auth, Coordination::AUTH_XID);
+    EXPECT_TRUE(ra.reads_to_execute.empty());
+
+    /// Resolve the regular write — reads keyed to it
+    auto rw = barrier.resolveCommit(1, Coordination::OpNum::Set, Coordination::AUTH_XID);
+    EXPECT_EQ(rw.reads_to_execute.size(), 1);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, NonBarrierOpsIgnored)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    /// Heartbeat and SessionID should be ignored by registerPendingWrites
+    barrier.registerPendingWrites({makeHeartbeat(1), makeSessionID(), makeWrite(1, 1)});
+
+    /// Only W1 was registered — resolving heartbeat/sessionid is a no-op
+    auto rh = barrier.resolveCommit(1, Coordination::OpNum::Heartbeat, 0);
+    EXPECT_TRUE(rh.reads_to_execute.empty());
+    EXPECT_TRUE(rh.reads_to_fail.empty());
+
+    auto rs = barrier.resolveCommit(1, Coordination::OpNum::SessionID, 0);
+    EXPECT_TRUE(rs.reads_to_execute.empty());
+
+    barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, CrossSessionIsolation)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+
+    /// Session 2 has no pending writes — read is immediate
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(2, 200)), DB::DeferReadResult::Immediate);
+
+    /// Session 1 has pending writes — read is deferred
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    auto result = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_EQ(result.reads_to_execute.size(), 1);
+    EXPECT_EQ(result.reads_to_execute[0].request_for_session.request->xid, 100);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, CloseSessionUnknown_Noop)
+{
+    auto barrier = makeBarrier();
+    auto reads = barrier.closeSession(999);
+    EXPECT_TRUE(reads.empty());
+}
+
+TEST_F(KeeperSessionReadBarrierTest, ResolveUnknownSession_Noop)
+{
+    auto barrier = makeBarrier();
+    auto rc = barrier.resolveCommit(999, Coordination::OpNum::Set, 1);
+    EXPECT_TRUE(rc.reads_to_execute.empty());
+    EXPECT_TRUE(rc.reads_to_fail.empty());
+
+    auto rr = barrier.resolveRollback(999, Coordination::OpNum::Set, 1);
+    EXPECT_TRUE(rr.empty());
+}
+
+TEST_F(KeeperSessionReadBarrierTest, WriteCommittedWithNoReads_EmptyResult)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1)});
+    auto result = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_TRUE(result.reads_to_execute.empty());
+
+    /// Session state exists but pending_writes is empty — immediate
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Immediate);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, CloseRequestAsWrite)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1), makeClose(1)});
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+
+    auto r1 = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_TRUE(r1.reads_to_execute.empty());
+
+    auto r2 = barrier.resolveCommit(1, Coordination::OpNum::Close, Coordination::CLOSE_XID);
+    EXPECT_EQ(r2.reads_to_execute.size(), 1);
+
+    assertMetricsBalanced();
+}
+
+TEST_F(KeeperSessionReadBarrierTest, MixedBatchMultipleSessions)
+{
+    snapshotMetrics();
+    auto barrier = makeBarrier();
+
+    barrier.registerPendingWrites({makeWrite(1, 1), makeWrite(2, 1), makeWrite(1, 2)});
+
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Deferred);
+    EXPECT_EQ(barrier.tryDeferRead(makeRead(2, 200)), DB::DeferReadResult::Deferred);
+
+    auto r_s2 = barrier.resolveCommit(2, Coordination::OpNum::Set, 1);
+    EXPECT_EQ(r_s2.reads_to_execute.size(), 1);
+    EXPECT_EQ(r_s2.reads_to_execute[0].request_for_session.request->xid, 200);
+
+    auto r_s1_w2 = barrier.resolveCommit(1, Coordination::OpNum::Set, 2);
+    EXPECT_EQ(r_s1_w2.reads_to_execute.size(), 1);
+    EXPECT_EQ(r_s1_w2.reads_to_execute[0].request_for_session.request->xid, 100);
+
+    auto r_s1_w1 = barrier.resolveCommit(1, Coordination::OpNum::Set, 1);
+    EXPECT_TRUE(r_s1_w1.reads_to_execute.empty());
+
+    assertMetricsBalanced();
 }
 
 #endif

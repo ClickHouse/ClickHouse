@@ -25,6 +25,7 @@ class IKeeperStateMachine : public nuraft::state_machine
 {
 public:
     using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &)>;
+    using RollbackCallback = std::function<void(const KeeperRequestForSession &)>;
 
     IKeeperStateMachine(
         ResponsesQueue & responses_queue_,
@@ -32,6 +33,7 @@ public:
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
         CommitCallback commit_callback_,
+        RollbackCallback rollback_callback_,
         const std::string & superdigest_);
 
     /// Read state from the latest snapshot
@@ -123,6 +125,7 @@ public:
 
 protected:
     CommitCallback commit_callback;
+    RollbackCallback rollback_callback;
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta TSA_GUARDED_BY(snapshots_lock) = nullptr;
@@ -199,6 +202,7 @@ public:
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
         CommitCallback commit_callback_ = {},
+        RollbackCallback rollback_callback_ = {},
         const std::string & superdigest_ = "");
 
     /// Read state from the latest snapshot

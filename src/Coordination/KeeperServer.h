@@ -86,7 +86,8 @@ public:
         SnapshotsQueue & snapshots_queue_,
         KeeperContextPtr keeper_context_,
         KeeperSnapshotManagerS3 & snapshot_manager_s3,
-        IKeeperStateMachine::CommitCallback commit_callback);
+        IKeeperStateMachine::CommitCallback commit_callback,
+        IKeeperStateMachine::RollbackCallback rollback_callback);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);

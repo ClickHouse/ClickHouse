@@ -9,10 +9,12 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <functional>
+#include <optional>
 #include <unordered_set>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
+#include <Coordination/KeeperSessionReadBarrier.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
@@ -122,12 +124,26 @@ private:
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
-public:
+    /// Per-session read barrier. Constructed only when `per_session_read_barrier` setting is enabled.
+    std::optional<KeeperSessionReadBarrier> session_read_barrier;
+
+    /// Execute collected deferred reads: observe histogram, finalize OTel span, put local read.
+    void executeCollectedReads(const DeferredReadRequests & reads);
+    /// Fail collected deferred reads: observe histogram, finalize OTel span with error, send error response.
+    void failCollectedReads(const DeferredReadRequests & reads, Coordination::Error error, const char * span_error);
+    /// Build common OTel span attributes for a keeper request.
+    static std::vector<OpenTelemetry::SpanAttribute> makeKeeperSpanAttributes(const KeeperRequestForSession & req);
+
+    bool isLeaderAliveForRead() const;
+    void putLocalReadRequestForSession(const KeeperRequestForSession & request_for_session);
+    void onCommittedWrite(const KeeperRequestForSession & request_for_session);
+    void onRollbackWrite(const KeeperRequestForSession & request_for_session);
+
+    /// Without `per_session_read_barrier`: deferred reads keyed by session and `xid`.
     std::mutex read_request_queue_mutex;
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::deque<DeferredReadRequest>>> read_request_queue;
 
-    /// queue of read requests that can be processed after a request with specific session ID and XID is committed
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
-
+public:
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
 
