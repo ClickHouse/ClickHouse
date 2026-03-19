@@ -1951,9 +1951,9 @@ Aggregator::prepareColumnsForSharding(const Columns & columns, size_t row_count,
 
         /// TODO: If multiple aggregates share the same argument column, we materialize it
         /// multiple times. Could deduplicate by caching materialized columns by position.
-        for (const auto & argument_name : params.aggregates[i].argument_names)
+        for (size_t j = 0; j < aggregates_positions[i].size(); ++j)
         {
-            const auto pos = header.getPositionByName(argument_name);
+            const auto pos = aggregates_positions[i][j];
             /// TODO: `addBatchForRows` reads columns by original row index and cannot
             /// handle sparse encoding. Materializing here until we add sparse-aware execution.
             auto argument_column = removeSpecialRepresentations(columns.at(pos)->convertToFullColumnIfConst());
@@ -1977,15 +1977,16 @@ Block Aggregator::getShardedPayloadHeader() const
     for (size_t i = 0; i < params.keys_size; ++i)
     {
         payload_header.insert(
-            {recursiveRemoveLowCardinality(header.getByPosition(keys_positions[i]).type), "__sharded_key_" + toString(i)});
+            {recursiveRemoveLowCardinality(key_types[i]), "__sharded_key_" + toString(i)});
     }
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         for (size_t j = 0; j < params.aggregates[i].argument_names.size(); ++j)
         {
-            const auto & argument = header.getByName(params.aggregates[i].argument_names[j]);
-            payload_header.insert({recursiveRemoveLowCardinality(argument.type), "__sharded_agg_" + toString(i) + "_arg_" + toString(j)});
+            payload_header.insert({
+                recursiveRemoveLowCardinality(aggregate_functions[i]->getArgumentTypes()[j]),
+                "__sharded_agg_" + toString(i) + "_arg_" + toString(j)});
         }
     }
 

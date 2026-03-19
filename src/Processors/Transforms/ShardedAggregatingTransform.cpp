@@ -113,20 +113,19 @@ void ShardedAggregatingTransform::initGenerate()
     if (variants.empty())
         return;
 
-    auto blocks = params->aggregator.convertToBlocks(variants, params->final);
+    auto agg_chunks = params->aggregator.convertToChunks(variants, params->final);
 
-    for (auto & block : blocks)
+    for (auto & agg_chunk : agg_chunks)
     {
-        if (block.rows() == 0)
+        if (agg_chunk.chunk.getNumRows() == 0)
             continue;
 
         auto info = std::make_shared<AggregatedChunkInfo>();
-        info->bucket_num = block.info.bucket_num;
-        info->is_overflows = block.info.is_overflows;
+        info->bucket_num = agg_chunk.bucket_num;
+        info->is_overflows = agg_chunk.is_overflows;
 
-        Chunk chunk(block.getColumns(), block.rows());
-        chunk.getChunkInfos().add(std::move(info));
-        output_chunks.push_back(std::move(chunk));
+        agg_chunk.chunk.getChunkInfos().add(std::move(info));
+        output_chunks.push_back(std::move(agg_chunk.chunk));
     }
 }
 
