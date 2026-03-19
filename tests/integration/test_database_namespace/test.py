@@ -773,3 +773,29 @@ def test_preexisting_separator_db_writable():
     # Cleanup
     q("DROP TABLE `tenant1__writable_test`.admin_table")
     q("DROP DATABASE writable_test", user="tenant1_user")
+
+
+# ============================================================
+# Test 39: Materialized view works under namespace
+# ============================================================
+def test_materialized_view_under_namespace():
+    """
+    Verify that CREATE MATERIALIZED VIEW works for a namespaced user.
+    This exercises the StorageMaterializedView path which internally calls
+    setCurrentDatabase(table_id_.database_name) with an already-physical name.
+    If setCurrentDatabase double-prefixes, the MV creation or insertion will fail
+    because it tries to resolve the SELECT in a non-existent database.
+    """
+    ensure_testns_t1()
+    # Create a target table and a materialized view
+    q1("CREATE TABLE testns.mv_target (x UInt32) ENGINE = MergeTree() ORDER BY x")
+    q1("CREATE MATERIALIZED VIEW testns.mv_test TO testns.mv_target AS SELECT x FROM testns.t1")
+
+    # Insert into the source — should propagate through the MV
+    q1("INSERT INTO testns.t1 VALUES (100)")
+    result = q1("SELECT x FROM testns.mv_target ORDER BY x")
+    assert "100" in result
+
+    # Cleanup
+    q1("DROP VIEW testns.mv_test")
+    q1("DROP TABLE testns.mv_target")
