@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
+
 #include <Common/ThreadPool.h>
 #include <Server/GRPCServer.h>
 #include <arrow/flight/server.h>
@@ -11,12 +12,12 @@
 namespace DB
 {
 
-class ArrowFlightHandler : public IGRPCServer, public arrow::flight::FlightServerBase
+class ArrowFlightServer : public IGRPCServer, public arrow::flight::FlightServerBase
 {
 public:
-    explicit ArrowFlightHandler(IServer & server_, const Poco::Net::SocketAddress & address_to_listen_);
+    explicit ArrowFlightServer(IServer & server_, const Poco::Net::SocketAddress & address_to_listen_);
 
-    ~ArrowFlightHandler() override;
+    ~ArrowFlightServer() override;
 
     void start() override;
 
