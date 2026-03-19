@@ -52,3 +52,8 @@ d	b
 Test 12: system.projection_parts_columns exposes physical_name
 a	a
 sum(c)	sum(c)
+Test 13: CHECK TABLE after rename with SerializationInfo
+1
+0	0
+10	10
+20	20

@@ -86,6 +86,13 @@ size_t ColumnsSubstreams::getSubstreamPosition(
 
     if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
     {
+        if (!name_and_type.physical_name.empty())
+        {
+            substream = ISerialization::getFileNameForStreamPhysical(name_and_type, substream_path, stream_file_name_settings);
+            if (auto position = tryGetSubstreamPosition(column_position, substream))
+                return *position;
+        }
+
         substream = ISerialization::getFileNameForStream(name_and_type, substream_path, stream_file_name_settings);
         if (auto position = tryGetSubstreamPosition(column_position, substream))
             return *position;

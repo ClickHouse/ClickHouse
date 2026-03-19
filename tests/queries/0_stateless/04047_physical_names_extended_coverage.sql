@@ -371,3 +371,21 @@ WHERE database = currentDatabase() AND table = 't_phys_proj_sys' AND active AND 
 ORDER BY column;
 
 DROP TABLE t_phys_proj_sys;
+
+-- Test 13: CHECK TABLE after metadata-only rename preserves SerializationInfo
+-- Regression: checkDataPart used raw columns.txt names to build the type map,
+-- but readJSONWithPhysicalNames translates entries to new logical names.
+-- If the type map has old names, serialization info entries are silently dropped,
+-- causing valid parts to be reported as corrupted.
+SELECT 'Test 13: CHECK TABLE after rename with SerializationInfo';
+DROP TABLE IF EXISTS t_check_rename_ser;
+CREATE TABLE t_check_rename_ser (a UInt64, b Nullable(String))
+ENGINE = MergeTree ORDER BY a
+SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+INSERT INTO t_check_rename_ser SELECT number, if(number % 10 = 0, toString(number), NULL) FROM numbers(1000);
+ALTER TABLE t_check_rename_ser RENAME COLUMN b TO d;
+CHECK TABLE t_check_rename_ser SETTINGS check_query_single_value_result = 1;
+SELECT a, d FROM t_check_rename_ser WHERE d IS NOT NULL ORDER BY a LIMIT 3;
+DROP TABLE t_check_rename_ser;

@@ -20,7 +20,9 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
@@ -78,6 +80,7 @@ namespace FailPoints
     extern const char storage_merge_tree_background_schedule_merge_fail[];
     extern const char physical_names_pause_after_metadata_alter[];
     extern const char physical_names_throw_before_mapping_persist[];
+    extern const char physical_names_throw_after_mapping_persist[];
 }
 
 namespace Setting
@@ -500,9 +503,9 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
                     parent);
         }
 
-        /// Handle same-ALTER DROP + re-ADD for the same column: the column
-        /// exists in both old and new metadata so the set-diff below would
-        /// miss it. Force a fresh physical name to avoid exposing stale data.
+        /// Detect DROP + re-ADD of the same column in a single ALTER.
+        /// Cannot be made crash-safe as metadata-only (atomically swapping
+        /// the physical name is impossible), so force a mutation for these.
         std::set<String> explicitly_dropped;
         for (const auto & command : commands)
         {
@@ -513,31 +516,34 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
         }
         for (const auto & dropped_name : explicitly_dropped)
         {
-            if (new_col_names.contains(dropped_name) && local_mapping.hasLogicalName(dropped_name))
-            {
-                local_mapping.removeColumn(dropped_name);
-                local_mapping.addColumn(dropped_name, local_mapping.allocatePhysicalName());
-            }
+            if (new_col_names.contains(dropped_name))
+                plan.force_mutation_columns.insert(dropped_name);
         }
 
         /// Allocate counter-based physical names for newly added columns.
         for (const auto & col : new_metadata.getColumns().getAllPhysical())
         {
-            if (!old_col_names.contains(col.name) && !local_mapping.hasLogicalName(col.name))
+            if (!old_col_names.contains(col.name) && !local_mapping.hasLogicalName(col.name)
+                && !plan.force_mutation_columns.contains(col.name))
             {
                 auto new_physical = local_mapping.allocatePhysicalName();
                 local_mapping.addColumn(col.name, new_physical);
             }
         }
 
-        /// Remove mapping entries for dropped columns (but not for the old
-        /// side of a two-phase rename — those are cleaned up after commit).
+        /// Two-phase drop for crash safety: do NOT remove dropped columns
+        /// from the mapping before metadata commit.  Collect them for
+        /// removal in the post-commit phase (`finalizePhysicalNameDrops`).
+        /// On crash before commit the mapping still has the entry, so reads
+        /// find the correct physical files.  On crash after commit,
+        /// `reconcilePhysicalNameMappingWithMetadata` removes the stale
+        /// entry because the column is no longer in metadata.
         std::set<String> rename_old_set(plan.rename_old_names.begin(), plan.rename_old_names.end());
         for (const auto & col : old_metadata.getColumns().getAllPhysical())
         {
             if (!new_col_names.contains(col.name) && local_mapping.hasLogicalName(col.name)
                 && !rename_old_set.contains(col.name))
-                local_mapping.removeColumn(col.name);
+                plan.drop_names.push_back(col.name);
         }
 
     plan.new_mapping.emplace(std::move(local_mapping));
@@ -556,6 +562,25 @@ void StorageMergeTree::finalizePhysicalNameRenames(const std::vector<String> & o
     PhysicalNameMapping finalized = *current;
     for (const auto & old_name : old_names)
         finalized.finishRename(old_name);
+    setPhysicalNameMapping(std::move(finalized));
+    writePhysicalNameMappingToDisk();
+}
+
+void StorageMergeTree::finalizePhysicalNameDrops(const std::vector<String> & drop_names)
+{
+    if (drop_names.empty())
+        return;
+
+    auto current = getPhysicalNameMapping();
+    if (!current)
+        return;
+
+    PhysicalNameMapping finalized = *current;
+    for (const auto & name : drop_names)
+    {
+        if (finalized.hasLogicalName(name))
+            finalized.removeColumn(name);
+    }
     setPhysicalNameMapping(std::move(finalized));
     writePhysicalNameMappingToDisk();
 }
@@ -594,6 +619,25 @@ void StorageMergeTree::alter(
     auto maybe_mutation_commands = commands.getMutationCommands(
         old_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context,
         /*with_alters=*/false, /*physical_names_active=*/pn_plan.physical_names_active);
+
+    /// DROP + re-ADD same column cannot be made crash-safe as metadata-only,
+    /// so force a DROP mutation for those columns even when physical names
+    /// are active.  The mutation rewrites parts without the old column data,
+    /// and the re-ADD side provides defaults via the normal ADD path.
+    for (const auto & col_name : pn_plan.force_mutation_columns)
+    {
+        MutationCommand cmd;
+        cmd.type = MutationCommand::Type::DROP_COLUMN;
+        cmd.column_name = col_name;
+
+        auto ast_cmd = make_intrusive<ASTAlterCommand>();
+        ast_cmd->type = ASTAlterCommand::DROP_COLUMN;
+        ast_cmd->column = ast_cmd->children.emplace_back(make_intrusive<ASTIdentifier>(col_name)).get();
+        cmd.ast = std::move(ast_cmd);
+
+        maybe_mutation_commands.push_back(std::move(cmd));
+    }
+
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 
@@ -670,6 +714,11 @@ void StorageMergeTree::alter(
                     setPhysicalNameMapping(std::move(*pn_plan.new_mapping));
                     writePhysicalNameMappingToDisk();
                     mapping_was_changed = true;
+
+                    fiu_do_on(FailPoints::physical_names_throw_after_mapping_persist,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after physical name mapping persist");
+                    });
                 }
 
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
@@ -691,6 +740,7 @@ void StorageMergeTree::alter(
             }
 
             finalizePhysicalNameRenames(pn_plan.rename_old_names);
+            finalizePhysicalNameDrops(pn_plan.drop_names);
 
             FailPointInjection::pauseFailPoint(FailPoints::physical_names_pause_after_metadata_alter);
 

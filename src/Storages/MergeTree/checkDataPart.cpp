@@ -210,7 +210,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
             if (physical_names_active)
-                serialization_infos = SerializationInfoByName::readJSONWithPhysicalNames(columns_txt, *pn_mapping, *serialization_file);
+                serialization_infos = SerializationInfoByName::readJSONWithPhysicalNames(columns_list, *pn_mapping, *serialization_file);
             else
                 serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }

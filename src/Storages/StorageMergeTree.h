@@ -1,5 +1,6 @@
 #pragma once
 
+#include <set>
 #include <string>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
@@ -198,6 +199,12 @@ private:
     {
         std::optional<PhysicalNameMapping> new_mapping;
         std::vector<String> rename_old_names;
+        /// Columns whose mapping entries should be removed post-commit
+        /// (two-phase drop for crash safety).
+        std::vector<String> drop_names;
+        /// DROP + re-ADD same column: forces a mutation for crash safety
+        /// because we cannot atomically swap the physical name.
+        std::set<String> force_mutation_columns;
         bool physical_names_active = false;
     };
 
@@ -209,9 +216,10 @@ private:
         const StorageInMemoryMetadata & old_metadata,
         const StorageInMemoryMetadata & new_metadata) const;
 
-    /// Finalize two-phase renames after metadata commit: remove old logical
-    /// names from the mapping and persist.
+    /// Finalize two-phase renames and deferred drops after metadata commit:
+    /// remove old logical names from the mapping and persist.
     void finalizePhysicalNameRenames(const std::vector<String> & old_names);
+    void finalizePhysicalNameDrops(const std::vector<String> & drop_names);
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
