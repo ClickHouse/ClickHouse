@@ -51,36 +51,36 @@ bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     PrometheusQueryTree promql_query{std::string_view{begin, end}};
 
     /// Build a query.
-    auto select_query = std::make_shared<ASTSelectQuery>();
+    auto select_query = make_intrusive<ASTSelectQuery>();
 
-    auto select_list_exp = std::make_shared<ASTExpressionList>();
-    select_list_exp->children.push_back(std::make_shared<ASTAsterisk>());
+    auto select_list_exp = make_intrusive<ASTExpressionList>();
+    select_list_exp->children.push_back(make_intrusive<ASTAsterisk>());
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
 
     ASTs arguments;
     if (!database_name.empty())
-        arguments.push_back(std::make_shared<ASTLiteral>(Field{database_name}));
-    arguments.push_back(std::make_shared<ASTLiteral>(Field{table_name}));
-    arguments.push_back(std::make_shared<ASTLiteral>(Field{promql_query.toString()}));
+        arguments.push_back(make_intrusive<ASTLiteral>(Field{database_name}));
+    arguments.push_back(make_intrusive<ASTLiteral>(Field{table_name}));
+    arguments.push_back(make_intrusive<ASTLiteral>(Field{promql_query.toString()}));
     ASTPtr evaluation_time_ast;
     if (evaluation_time == Field("auto"))
         evaluation_time_ast = makeASTFunction("now");
     else
-        evaluation_time_ast = std::make_shared<ASTLiteral>(evaluation_time);
+        evaluation_time_ast = make_intrusive<ASTLiteral>(evaluation_time);
     arguments.push_back(evaluation_time_ast);
     auto table_function = makeASTFunction("prometheusQuery", std::move(arguments));
 
-    auto tables = std::make_shared<ASTTablesInSelectQuery>();
-    auto table = std::make_shared<ASTTablesInSelectQueryElement>();
-    auto table_exp = std::make_shared<ASTTableExpression>();
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto table_exp = make_intrusive<ASTTableExpression>();
     table_exp->table_function = table_function;
     table_exp->children.emplace_back(table_exp->table_function);
     table->table_expression = table_exp;
     tables->children.push_back(table);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
-    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-    auto list_of_selects = std::make_shared<ASTExpressionList>();
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
     list_of_selects->children.push_back(std::move(select_query));
     select_with_union_query->list_of_selects = list_of_selects;
     select_with_union_query->children.push_back(list_of_selects);

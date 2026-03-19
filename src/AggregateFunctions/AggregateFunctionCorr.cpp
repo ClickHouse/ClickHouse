@@ -16,6 +16,8 @@ $$
 \frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{\sqrt{\Sigma{(x - \bar{x})^2} * \Sigma{(y - \bar{y})^2}}}
 $$
 
+<br/>
+
 :::note
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`corrStable`](../reference/corrStable.md) function. It is slower but provides a more accurate result.
 :::
@@ -54,7 +56,7 @@ FROM series
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("corr", {createAggregateFunctionStatisticsBinary<AggregateFunctionCorr, StatisticsFunctionKind::corr>, AggregateFunctionProperties{}, documentation }, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("corr", {createAggregateFunctionStatisticsBinary<AggregateFunctionCorr, StatisticsFunctionKind::corr>, documentation }, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

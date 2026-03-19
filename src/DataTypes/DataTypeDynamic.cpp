@@ -3,9 +3,11 @@
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnDynamic.h>
@@ -25,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
 }
@@ -55,8 +58,10 @@ Field DataTypeDynamic::getDefault() const
     return Field(Null());
 }
 
-SerializationPtr DataTypeDynamic::doGetDefaultSerialization() const
+SerializationPtr DataTypeDynamic::doGetSerialization(const SerializationInfoSettings & settings) const
 {
+    if (settings.propagate_types_serialization_versions_to_nested_types)
+        return std::make_shared<SerializationDynamic>(max_dynamic_types, settings);
     return std::make_shared<SerializationDynamic>(max_dynamic_types);
 }
 
@@ -139,7 +144,7 @@ std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_vie
 
 }
 
-std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
+std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto [type_subcolumn_name, subcolumn_nested_name] = splitSubcolumnName(subcolumn_name);
     /// Check if requested subcolumn is a valid data type.
@@ -151,7 +156,9 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         return nullptr;
     }
 
-    std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(subcolumn_type->getDefaultSerialization());
+    const auto & dynamic_serialization = assert_cast<const SerializationDynamic &>(*removeNamedSerialization(data.serialization));
+    auto subcolumn_serialization = dynamic_serialization.createSerializationForType(subcolumn_type);
+    std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(subcolumn_serialization);
     res->type = subcolumn_type;
     std::optional<ColumnVariant::Discriminator> discriminator;
     ColumnPtr null_map_for_variant_from_shared_variant;
@@ -191,17 +198,17 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                     auto type = decodeDataType(buf);
                     if (type->getName() == subcolumn_type_name)
                     {
-                        subcolumn_type->getDefaultSerialization()->deserializeBinary(*subcolumn, buf, format_settings);
-                        null_map.push_back(0);
+                        subcolumn_serialization->deserializeBinary(*subcolumn, buf, format_settings);
+                        null_map.push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
-                        null_map.push_back(1);
+                        null_map.push_back(static_cast<UInt8>(1));
                     }
                 }
                 else
                 {
-                    null_map.push_back(1);
+                    null_map.push_back(static_cast<UInt8>(1));
                 }
             }
 
@@ -215,20 +222,37 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     bool is_null_map_subcolumn = subcolumn_nested_name == "null";
     if (is_null_map_subcolumn)
     {
-        if (!subcolumn_type->canBeInsideNullable())
+        if (!canExtractedSubcolumnsBeInsideNullable(subcolumn_type))
+        {
+            if (throw_if_null)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Dynamic type doesn't have subcolumn '{}'", subcolumn_name);
             return nullptr;
+        }
         res->type = std::make_shared<DataTypeUInt8>();
     }
     else if (!subcolumn_nested_name.empty())
     {
-        res = getSubcolumnData(subcolumn_nested_name, *res, throw_if_null);
+        res = getSubcolumnData(subcolumn_nested_name, *res, initial_array_level, throw_if_null);
         if (!res)
+        {
+            if (throw_if_null)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected getSubcolumnData() to throw for subcolumn '{}' in throw_if_null mode",
+                    subcolumn_name);
             return nullptr;
+        }
     }
 
-    res->serialization = std::make_shared<SerializationDynamicElement>(res->serialization, subcolumn_type->getName(), String(subcolumn_nested_name), is_null_map_subcolumn);
+    res->serialization = std::make_shared<SerializationDynamicElement>(
+        res->serialization,
+        dynamic_serialization.createSerializationForType(ColumnDynamic::getSharedVariantDataType()),
+        subcolumn_type->getName(),
+        String(subcolumn_nested_name),
+        is_null_map_subcolumn);
+
     /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
-    bool make_subcolumn_nullable = subcolumn_type->canBeInsideNullable() || subcolumn_type->lowCardinality();
+    bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
     if (!is_null_map_subcolumn && make_subcolumn_nullable)
         res->type = makeNullableOrLowCardinalityNullableSafe(res->type);
 

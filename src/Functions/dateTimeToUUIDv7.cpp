@@ -26,7 +26,7 @@ uint64_t dateTimeToMillisecond(UInt32 date_time)
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
-DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
+DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_SEVERAL_IMPLEMENTATIONS(
 
@@ -110,8 +110,8 @@ public:
         selector.registerImplementation<TargetArch::Default, Parent>();
 
 #if USE_MULTITARGET_CODE
-        using ParentAVX2 = TargetSpecific::AVX2::FunctionDateTimeToUUIDv7Base;
-        selector.registerImplementation<TargetArch::AVX2, ParentAVX2>();
+        using ParentAVX2 = TargetSpecific::x86_64_v3::FunctionDateTimeToUUIDv7Base;
+        selector.registerImplementation<TargetArch::x86_64_v3, ParentAVX2>();
 #endif
     }
 
@@ -133,7 +133,7 @@ private:
 REGISTER_FUNCTION(DateTimeToUUIDv7)
 {
     /// dateTimeToUUIDv7 documentation
-    FunctionDocumentation::Description description_dateTimeToUUIDv7 = R"(
+    FunctionDocumentation::Description description = R"(
 Converts a [DateTime](../data-types/datetime.md) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
@@ -142,12 +142,12 @@ See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID struct
 As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
 :::
     )";
-    FunctionDocumentation::Syntax syntax_dateTimeToUUIDv7 = "dateTimeToUUIDv7(value)";
-    FunctionDocumentation::Arguments arguments_dateTimeToUUIDv7 = {
+    FunctionDocumentation::Syntax syntax = "dateTimeToUUIDv7(value)";
+    FunctionDocumentation::Arguments arguments = {
         {"value", "Date with time.", {"DateTime"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dateTimeToUUIDv7 = {"Returns a UUIDv7.", {"UUID"}};
-    FunctionDocumentation::Examples examples_dateTimeToUUIDv7 = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a UUIDv7.", {"UUID"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -175,11 +175,11 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
        )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_dateTimeToUUIDv7 = {25, 9};
-    FunctionDocumentation::Category category_dateTimeToUUIDv7 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_dateTimeToUUIDv7 = {description_dateTimeToUUIDv7, syntax_dateTimeToUUIDv7, arguments_dateTimeToUUIDv7, {}, returned_value_dateTimeToUUIDv7, examples_dateTimeToUUIDv7, introduced_in_dateTimeToUUIDv7, category_dateTimeToUUIDv7};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDateTimeToUUIDv7>(documentation_dateTimeToUUIDv7);
+    factory.registerFunction<FunctionDateTimeToUUIDv7>(documentation);
 
 }
 }

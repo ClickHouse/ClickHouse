@@ -84,10 +84,10 @@ def test_cluster_discovery_with_auxiliary_keeper_startup_and_stop(start_cluster)
         == 3
     )
 
-    # Query SYSTEM DROP DNS CACHE may reload cluster configuration
+    # Query SYSTEM CLEAR DNS CACHE may reload cluster configuration
     # check that it does not affect cluster discovery
-    nodes["node1"].query("SYSTEM DROP DNS CACHE")
-    nodes["node0"].query("SYSTEM DROP DNS CACHE")
+    nodes["node1"].query("SYSTEM CLEAR DNS CACHE")
+    nodes["node0"].query("SYSTEM CLEAR DNS CACHE")
 
     check_shard_num(
         [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_shards

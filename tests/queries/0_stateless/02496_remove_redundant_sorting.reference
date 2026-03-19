@@ -393,11 +393,11 @@ Expression ((Projection + Before ORDER BY))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
 -- execute
 Float64	9007199254740994
 -- sum() with Nullable(Floats) depends on order, -> sorting is not removed here
@@ -425,11 +425,11 @@ Expression ((Projection + Before ORDER BY))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
 -- execute
 Nullable(Float64)	9007199254740994
 -- sumIf() with Floats depends on order, -> sorting is not removed here
@@ -457,11 +457,11 @@ Expression ((Projection + Before ORDER BY))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
 -- execute
 Float64	9007199254740994
 -- presence of an inner OFFSET retains the ORDER BY

@@ -235,6 +235,7 @@ def test_backup_table_AzureBlobStorage():
 
 def test_create_table():
     password = new_password()
+    has_delta_lake = int(node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) > 0
     azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     azure_sas_conn_string = f"{azure_conn_string};SharedAccessSignature={password}"
     account_key_pattern = re.compile("AccountKey=.*?(;|$)")
@@ -264,7 +265,7 @@ def test_create_table():
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
         f"S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+        f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_STORAGE"),
         f"S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV') settings mode = 'ordered'",
@@ -298,6 +299,8 @@ def test_create_table():
         f"S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '{password}', compression_method = 'gzip')",
         f"ArrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '{password}')",
         f"ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
+        f"URL('https://username:{password}@domain.com/path', 'CSV')",
+        f"Redis('localhost', 0, '{password}') PRIMARY KEY x;",
     ]
 
     def make_test_case(i):
@@ -389,6 +392,8 @@ def test_create_table():
             generate_create_table_numbered("(`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '[HIDDEN]', compression_method = 'gzip')"),
             generate_create_table_numbered("(`x` int) ENGINE = ArrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')"),
             generate_create_table_numbered("(`x` int) ENGINE = ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')"),
+            generate_create_table_numbered("(`x` int) ENGINE = URL('https://username:[HIDDEN]@domain.com/path', 'CSV')"),
+            generate_create_table_numbered("(`x` int) ENGINE = Redis('localhost', 0, '[HIDDEN]') PRIMARY KEY x"),
         ],
         must_not_contain=[password],
     )
@@ -458,6 +463,7 @@ def test_create_database():
 
 def test_table_functions():
     password = new_password()
+    has_delta_lake = int(node.query("SELECT count() FROM system.table_functions WHERE name = 'deltaLake'").strip()) > 0
     azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     account_key_pattern = re.compile("AccountKey=.*?(;|$)")
     masked_azure_conn_string = re.sub(
@@ -497,7 +503,7 @@ def test_table_functions():
         f"remoteSecure(named_collection_6, addresses_expr = '127.{{2..11}}', database = 'default', table = 'remote_table', user = 'remote_user', password = '{password}')",
         f"s3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV')",
         f"s3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+        f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_2.csv', 'CSV', 'none', 'auto')",
@@ -511,11 +517,13 @@ def test_table_functions():
         f"gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
-        f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
+        f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')" if has_delta_lake else (f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')", "UNKNOWN_FUNCTION"),
         f"hudi('http://minio1:9001/root/data/test7.csv', 'minio', '{password}')",
         f"arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '{password}')",
         f"arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
         f"arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
+        f"url('https://username:{password}@domain.com/path', 'CSV')",
+        f"redis('localhost', 'key', 'key Int64', 0, '{password}')"
     ]
 
     def make_test_case(i):
@@ -607,6 +615,8 @@ def test_table_functions():
             "CREATE TABLE tablefunc45 (`x` int) AS arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')",
             "CREATE TABLE tablefunc46 (`x` int) AS arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
             "CREATE TABLE tablefunc47 (`x` int) AS arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
+            "CREATE TABLE tablefunc48 (`x` int) AS url('https://username:[HIDDEN]@domain.com/path', 'CSV')",
+            "CREATE TABLE tablefunc49 (`x` int) AS redis('localhost', 'key', 'key Int64', 0, '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
@@ -621,6 +631,9 @@ def test_table_functions():
     secrets = [password, azure_account_key]
     for toggle in range(2):
         for table_function in table_functions:
+            # Skip entries that are tuples (have expected errors, e.g. DeltaLake under MSan)
+            if isinstance(table_function, tuple):
+                continue
             # check only table functions containing secrets
             if any(word in table_function for word in secrets):
                 output = node.query(
@@ -637,6 +650,7 @@ def test_table_functions():
 def test_table_functions_object_storage_cluster():
     ch_cluster = "test_shard_localhost"
     named_collection = 'named_collection_1'
+    has_delta_lake = int(node.query("SELECT count() FROM system.table_functions WHERE name = 'deltaLake'").strip()) > 0
 
     s3_url = "http://minio1:9001/root/data/test"
     s3_access_key_id = "minio"
@@ -656,10 +670,6 @@ def test_table_functions_object_storage_cluster():
         f"s3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
         f"s3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
         f"hudiCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
-        f"deltaLakeCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
-        f"deltaLakeCluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
-        f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
-        f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
         f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
         f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
@@ -670,39 +680,54 @@ def test_table_functions_object_storage_cluster():
         f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
         f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
-        f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-        f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
-        f"deltaLakeAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-        f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
     ]
+
+    # DeltaLake table functions are not available under Memory Sanitizer (Rust code is not instrumented)
+    if has_delta_lake:
+        table_functions += [
+            f"deltaLakeCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
+            f"deltaLakeCluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
+            f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
+            f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
+            f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+            f"deltaLakeAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        ]
 
     for table_function in table_functions:
         node.query_and_get_answer_with_error(f"SELECT * FROM {table_function}")
 
-    check_logs(
-        must_contain=[
-            f"s3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
-            f"s3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
-            f"hudiCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
+    must_contain = [
+        f"s3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
+        f"s3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
+        f"hudiCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
+        f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
+        f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
+        f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+        f"azureBlobStorageCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"icebergAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+        f"icebergAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+    ]
+
+    if has_delta_lake:
+        must_contain += [
             f"deltaLakeCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
             f"deltaLakeCluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
             f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
             f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
-            f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
-            f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
-            f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-            f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
-            f"azureBlobStorageCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-            f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
-            f"icebergAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-            f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
-            f"icebergAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-            f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
             f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
             f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
-        ],
+        ]
+
+    check_logs(
+        must_contain=must_contain,
         must_not_contain=[s3_secret_access_key, azure_account_key, azure_connection_string],
     )
 
@@ -828,6 +853,151 @@ def test_backup_to_s3():
 
     node.query("DROP TABLE IF EXISTS temptbl")
     node.query("DROP TABLE IF EXISTS temptbl2")
+
+
+def test_backup_table_s3_named_collection():
+    """Test that secrets in S3 named collection backups are masked in system.backups and logs."""
+    password = new_password()
+
+    setup_queries = [
+        "CREATE TABLE backup_test_s3_nc (x int) ENGINE = MergeTree ORDER BY x",
+        "INSERT INTO backup_test_s3_nc SELECT * FROM numbers(10)",
+    ]
+
+    for query in setup_queries:
+        node.query_and_get_answer_with_error(query)
+
+    # Create named collection for S3 backup
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS s3_backup_nc AS "
+        f"url = 'http://minio1:9001/root/data/backups/nc_backup_test_base', "
+        f"access_key_id = 'minio', "
+        f"secret_access_key = '{password}'"
+    )
+
+    # Test 1: Using named collection directly
+    base_backup = "S3(s3_backup_nc)"
+    inc_backup = "S3(s3_backup_nc, 'nc_backup_test_incremental')"
+
+    node.query_and_get_answer_with_error(f"BACKUP TABLE backup_test_s3_nc TO {base_backup} ASYNC")[0]
+
+    inc_backup_query_output = node.query_and_get_answer_with_error(
+        f"BACKUP TABLE backup_test_s3_nc TO {inc_backup} SETTINGS async=1, base_backup={base_backup}"
+    )[0]
+    inc_backup_id = TSV.toMat(inc_backup_query_output)[0][0]
+    names_in_system_backups_output, _ = node.query_and_get_answer_with_error(
+        f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id}'"
+    )
+
+    base_backup_name, name = TSV.toMat(names_in_system_backups_output)[0]
+
+    assert password not in base_backup_name
+    assert password not in name
+
+    # Test 2: Using named collection with secret_access_key override
+    password2 = new_password()
+    base_backup2 = f"S3(s3_backup_nc, 'nc_backup_test_base2', secret_access_key = '{password2}')"
+    inc_backup2 = f"S3(s3_backup_nc, 'nc_backup_test_incremental2', secret_access_key = '{password2}')"
+
+    node.query_and_get_answer_with_error(f"BACKUP TABLE backup_test_s3_nc TO {base_backup2} ASYNC")[0]
+
+    inc_backup_query_output2 = node.query_and_get_answer_with_error(
+        f"BACKUP TABLE backup_test_s3_nc TO {inc_backup2} SETTINGS async=1, base_backup={base_backup2}"
+    )[0]
+    inc_backup_id2 = TSV.toMat(inc_backup_query_output2)[0][0]
+    names_in_system_backups_output2, _ = node.query_and_get_answer_with_error(
+        f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id2}'"
+    )
+
+    base_backup_name2, name2 = TSV.toMat(names_in_system_backups_output2)[0]
+
+    assert password2 not in base_backup_name2
+    assert password2 not in name2
+
+    # Check logs don't contain secrets and key-value args are masked
+    check_logs(
+        must_contain=[
+            "BACKUP TABLE backup_test_s3_nc TO S3(s3_backup_nc, 'nc_backup_test_base2', secret_access_key = '[HIDDEN]')",
+        ],
+        must_not_contain=[password, password2],
+    )
+
+    node.query("DROP TABLE IF EXISTS backup_test_s3_nc")
+    node.query("DROP NAMED COLLECTION IF EXISTS s3_backup_nc")
+
+
+def test_backup_table_azure_named_collection():
+    """Test that secrets in Azure named collection backups are masked in system.backups and logs."""
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    setup_queries = [
+        "CREATE TABLE backup_test_az_nc (x int) ENGINE = MergeTree ORDER BY x",
+        "INSERT INTO backup_test_az_nc SELECT * FROM numbers(10)",
+    ]
+
+    for query in setup_queries:
+        node.query_and_get_answer_with_error(query)
+
+    # Create named collection for Azure backup (using storage_account_url variant)
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS azure_backup_nc AS "
+        f"storage_account_url = '{azure_storage_account_url}', "
+        f"container = 'cont', "
+        f"account_name = '{azure_account_name}', "
+        f"account_key = '{azure_account_key}'"
+    )
+
+    # Test 1: Using named collection directly
+    base_backup = "AzureBlobStorage(azure_backup_nc, 'az_nc_backup_test_base')"
+    inc_backup = "AzureBlobStorage(azure_backup_nc, 'az_nc_backup_test_incremental')"
+
+    node.query_and_get_answer_with_error(f"BACKUP TABLE backup_test_az_nc TO {base_backup} ASYNC")[0]
+
+    inc_backup_query_output = node.query_and_get_answer_with_error(
+        f"BACKUP TABLE backup_test_az_nc TO {inc_backup} SETTINGS async=1, base_backup={base_backup}"
+    )[0]
+    inc_backup_id = TSV.toMat(inc_backup_query_output)[0][0]
+    names_in_system_backups_output, _ = node.query_and_get_answer_with_error(
+        f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id}'"
+    )
+
+    base_backup_name, name = TSV.toMat(names_in_system_backups_output)[0]
+
+    assert azure_account_key not in base_backup_name
+    assert azure_account_key not in name
+
+    # Test 2: Using named collection with account_key override
+    password2 = new_password()
+    base_backup2 = f"AzureBlobStorage(azure_backup_nc, 'az_nc_backup_test_base2', account_key = '{password2}')"
+    inc_backup2 = f"AzureBlobStorage(azure_backup_nc, 'az_nc_backup_test_incremental2', account_key = '{password2}')"
+
+    node.query_and_get_answer_with_error(f"BACKUP TABLE backup_test_az_nc TO {base_backup2} ASYNC")[0]
+
+    inc_backup_query_output2 = node.query_and_get_answer_with_error(
+        f"BACKUP TABLE backup_test_az_nc TO {inc_backup2} SETTINGS async=1, base_backup={base_backup2}"
+    )[0]
+    inc_backup_id2 = TSV.toMat(inc_backup_query_output2)[0][0]
+    names_in_system_backups_output2, _ = node.query_and_get_answer_with_error(
+        f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id2}'"
+    )
+
+    base_backup_name2, name2 = TSV.toMat(names_in_system_backups_output2)[0]
+
+    assert password2 not in base_backup_name2
+    assert password2 not in name2
+
+    # Check logs don't contain secrets and key-value args are masked
+    check_logs(
+        must_contain=[
+            "BACKUP TABLE backup_test_az_nc TO AzureBlobStorage(azure_backup_nc, 'az_nc_backup_test_base2', account_key = '[HIDDEN]')",
+        ],
+        must_not_contain=[azure_account_key, password2],
+    )
+
+    node.query("DROP TABLE IF EXISTS backup_test_az_nc")
+    node.query("DROP NAMED COLLECTION IF EXISTS azure_backup_nc")
 
 
 def test_on_cluster():

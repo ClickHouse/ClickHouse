@@ -13,6 +13,7 @@ env:
   PYTHONUNBUFFERED: 1
   CHECKOUT_REF: ""
 
+
 jobs:
 
   config_workflow:
@@ -21,10 +22,10 @@ jobs:
     name: "Config Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -46,14 +47,11 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Config Workflow' --workflow "NightlyFuzzers" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Config Workflow' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyFuzzers" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   dockers_build_amd:
     runs-on: [self-hosted, style-checker]
@@ -62,10 +60,10 @@ jobs:
     name: "Dockers Build (amd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -87,14 +85,11 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyFuzzers" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyFuzzers" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -103,10 +98,10 @@ jobs:
     name: "Dockers Build (arm)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -128,14 +123,11 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyFuzzers" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyFuzzers" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_arm_fuzzers:
     runs-on: [self-hosted, arm-large]
@@ -144,10 +136,10 @@ jobs:
     name: "Build (arm_fuzzers)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -169,26 +161,23 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_fuzzers)' --workflow "NightlyFuzzers" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (arm_fuzzers)' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_fuzzers)' --workflow "NightlyFuzzers" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   libfuzzer_tests:
     runs-on: [self-hosted, arm-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_fuzzers]
+    needs: [build_arm_fuzzers, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'bGliRnV6emVyIHRlc3Rz') }}
     name: "libFuzzer tests"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -210,26 +199,23 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'libFuzzer tests' --workflow "NightlyFuzzers" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'libFuzzer tests' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'libFuzzer tests' --workflow "NightlyFuzzers" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_fuzzers, libfuzzer_tests]
-    if: ${{ !cancelled() }}
+    needs: [build_arm_fuzzers, config_workflow, dockers_build_amd, dockers_build_arm, libfuzzer_tests]
+    if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -251,11 +237,8 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Finish Workflow' --workflow "NightlyFuzzers" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Finish Workflow' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "NightlyFuzzers" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log

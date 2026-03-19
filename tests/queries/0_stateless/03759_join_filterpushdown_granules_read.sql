@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS t_mem;
 DROP TABLE IF EXISTS t_mt;
 
 CREATE TABLE t_mem (a Int32, b Int32) ENGINE = Memory;
-CREATE TABLE t_mt (a Int32, b Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1024;
+CREATE TABLE t_mt (a Int32, b Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi';
 
 INSERT INTO t_mem SELECT number, sipHash64(number, 1) FROM numbers(5_000);
 INSERT INTO t_mt SELECT number, sipHash64(number, 2) FROM numbers(5_000);
@@ -17,6 +17,7 @@ SET query_plan_join_swap_table = false;
 SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 SET join_use_nulls = 1;
+SET enable_join_runtime_filters = 0;
 
 SELECT * FROM t_view AS t1
 LEFT JOIN t_mem AS t2
@@ -68,7 +69,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 2000, 'ok', format('error: {} @ {}', ProfileEvents['JoinResultRowCount'], query_id)),
 FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase()
-    AND event_date >= yesterday() AND query_kind = 'Select'
+    AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select'
     AND event_time >= (SELECT ts FROM start_ts)
     AND log_comment IN ('left_join', 'left_join_view')
 ;
@@ -81,7 +82,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 2000, 'ok', format('error: {} @ {}', ProfileEvents['JoinResultRowCount'], query_id)),
 FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase()
-    AND event_date >= yesterday() AND query_kind = 'Select'
+    AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select'
     AND event_time >= (SELECT ts FROM start_ts)
     AND log_comment IN ('right_join', 'right_join_view')
 ;

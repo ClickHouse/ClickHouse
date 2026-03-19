@@ -94,7 +94,7 @@ std::string rsaSHA256Sign(EVP_PKEY * pkey, const std::string & data)
     return signature;
 }
 
-bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
+bool genericSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
 {
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
 
@@ -112,9 +112,20 @@ bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::strin
         reinterpret_cast<const unsigned char*>(signature.data()),
         static_cast<int>(signature.size())
     );
+
     EVP_MD_CTX_free(ctx);
 
     return result == 1;
+}
+
+bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
+{
+    return genericSHA256Verify(pkey, data, signature);
+}
+
+bool ecdsaP256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
+{
+    return genericSHA256Verify(pkey, data, signature);
 }
 
 std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::string & data)
@@ -246,12 +257,12 @@ std::string generateCSR(const std::vector<std::string> domain_names, EVP_PKEY * 
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in i2d_X509_REQ_bio: {}", getOpenSSLErrors());
 
     /// Convert CSR to string
-    int csr_len = BIO_ctrl_pending(req_bio.get());
-    if (csr_len <= 0)
+    size_t csr_len = BIO_ctrl_pending(req_bio.get());
+    if (csr_len == 0)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in BIO_ctrl_pending: {}", getOpenSSLErrors());
 
     std::string csr(csr_len, '\0');
-    if (BIO_read(req_bio.get(), csr.data(), csr_len) != csr_len)
+    if (BIO_read(req_bio.get(), csr.data(), static_cast<int>(csr_len)) != static_cast<int>(csr_len))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in BIO_read: {}", getOpenSSLErrors());
 
     csr = base64Encode(csr, /*url_encoding*/ true, /*no_padding*/ true);

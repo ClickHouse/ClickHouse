@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Dictionaries/DictionarySourceFactory.h>
@@ -19,7 +18,6 @@
 #include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Formats/IInputFormat.h>
-#include "config.h"
 
 
 namespace DB
@@ -147,7 +145,7 @@ BlockIO XDBCDictionarySource::loadUpdatedAll()
 }
 
 
-BlockIO XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO XDBCDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
     BlockIO io;
@@ -156,7 +154,7 @@ BlockIO XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
 }
 
 
-BlockIO XDBCDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO XDBCDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     BlockIO io;
