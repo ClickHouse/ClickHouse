@@ -1,4 +1,4 @@
-from praktika import Artifact, Docker, Job, Secret
+from praktika import Artifact, Docker, Secret
 from praktika.utils import MetaClasses, Utils
 
 # i.e. "ClickHouse/ci/tmp"
@@ -29,7 +29,7 @@ class RunnerLabels:
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
-    MACOS_ARM_SMALL = ["self-hosted", "arm_macos_small"]
+    MACOS_ARM_SMALL = ["self-hosted", "macos_m2"]
     MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]

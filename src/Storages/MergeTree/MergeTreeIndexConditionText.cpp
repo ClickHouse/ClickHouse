@@ -7,7 +7,6 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
@@ -50,7 +49,10 @@ SipHash TextSearchQuery::getHash() const
     hash.update(tokens.size());
 
     for (const auto & token : tokens)
+    {
+        hash.update(token.size());
         hash.update(token);
+    }
 
     return hash;
 }
@@ -125,8 +127,6 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
     {
         case RPNElement::FUNCTION_OR:
         case RPNElement::FUNCTION_NOT:
-        case RPNElement::FUNCTION_NOT_IN:
-        case RPNElement::FUNCTION_NOT_EQUALS:
         case RPNElement::FUNCTION_HAS_ANY_TOKENS:
         {
             return true;
@@ -154,14 +154,12 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
         || function_name == "equals"
-        || function_name == "notEquals"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsKeyLike"
         || function_name == "mapContainsValue"
         || function_name == "mapContainsValueLike"
         || function_name == "has"
         || function_name == "like"
-        || function_name == "notLike"
         || function_name == "hasTokenOrNull"
         || function_name == "startsWith"
         || function_name == "endsWith"
@@ -256,11 +254,9 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
         {RPNElement::FUNCTION_EQUALS,
-         RPNElement::FUNCTION_NOT_EQUALS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
          RPNElement::FUNCTION_IN,
-         RPNElement::FUNCTION_NOT_IN,
          RPNElement::FUNCTION_MATCH});
 }
 
@@ -293,19 +289,15 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
-        else if (element.function == RPNElement::FUNCTION_EQUALS || element.function == RPNElement::FUNCTION_NOT_EQUALS)
+        else if (element.function == RPNElement::FUNCTION_EQUALS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             bool exists_in_granule = granule->hasAllQueryTokensOrEmpty(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
 
-            if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
-                rpn_stack.back() = !rpn_stack.back();
         }
-        else if (element.function == RPNElement::FUNCTION_MATCH
-            || element.function == RPNElement::FUNCTION_IN
-            || element.function == RPNElement::FUNCTION_NOT_IN)
+        else if (element.function == RPNElement::FUNCTION_MATCH || element.function == RPNElement::FUNCTION_IN)
         {
             bool exists_in_granule = false;
 
@@ -319,8 +311,6 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             }
 
             rpn_stack.emplace_back(exists_in_granule, true);
-            if (element.function == RPNElement::FUNCTION_NOT_IN)
-                rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
@@ -433,21 +423,11 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if (functionIsInOrGlobalInOperator(function_name))
+        if ((function_name == "in" || function_name == "globalIn")
+            && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
-            if (tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
-            {
-                if (function_name == "notIn")
-                {
-                    out.function = RPNElement::FUNCTION_NOT_IN;
-                    return true;
-                }
-                else if (function_name == "in")
-                {
-                    out.function = RPNElement::FUNCTION_IN;
-                    return true;
-                }
-            }
+            out.function = RPNElement::FUNCTION_IN;
+            return true;
         }
         else if (isSupportedFunction(function_name))
         {
@@ -459,7 +439,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
                 if (traverseFunctionNode(function, lhs_argument, const_type, const_value, out))
                     return true;
             }
-            else if (lhs_argument.tryGetConstant(const_value, const_type) && (function_name == "equals" || function_name == "notEquals"))
+            else if (lhs_argument.tryGetConstant(const_value, const_type) && function_name == "equals")
             {
                 if (traverseFunctionNode(function, rhs_argument, const_type, const_value, out))
                     return true;
@@ -557,13 +537,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         return false;
     }
-    if (function_name == "notEquals")
-    {
-        auto tokens = stringToTokens(value_field);
-        out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-        return true;
-    }
     if (function_name == "equals")
     {
         auto tokens = stringToTokens(value_field);
@@ -634,14 +607,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         std::vector<String> tokens = stringLikeToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-        return true;
-    }
-    if (function_name == "notLike" && tokenizer->supportsStringLike())
-    {
-        std::vector<String> tokens = stringLikeToTokens(value_field);
-
-        out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
@@ -848,8 +813,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return false;
         }
 
+        const String value = preprocessor->processConstant(String(ref));
         std::vector<String> tokens;
-        tokenizer->stringToTokens(ref.data(), ref.size(), tokens);
+        tokenizer->stringToTokens(value.data(), value.size(), tokens);
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
     }
 
