@@ -141,7 +141,7 @@ def test_yt_dictionary_cache_id(started_cluster, dynamic_table, replicated_table
                 lookup_max_rows_per_query '1'
                 )
             )
-        LAYOUT(gACHE(SIZE_IN_CELLS 10))
+        LAYOUT(CACHE(SIZE_IN_CELLS 10))
         LIFETIME(MIN 0 MAX 1000)
         """)
     if dynamic_table:

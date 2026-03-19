@@ -55,6 +55,9 @@ namespace Setting
 template<typename T>
 VectorWithMemoryTracking<VectorWithMemoryTracking<T>> divideVectorByChunkSize(const VectorWithMemoryTracking<T>& vec, size_t chunk_size)
 {
+    if (!chunk_size)
+        return {vec};
+
     VectorWithMemoryTracking<VectorWithMemoryTracking<T>> result;
     for (size_t i = 0; i < vec.size(); i += chunk_size)
     {
@@ -264,7 +267,7 @@ void YTsarususDictionarySource::initilizeLookupThrottlerIfNeeded()
         return;
     throttler_initialized = true;
     auto max_lookups_per_sec = configuration->settings[YTsaurusSetting::lookup_throttler_max_requests_per_second];
-    if (!supportsSelectiveLoad() || max_lookups_per_sec)
+    if (!supportsSelectiveLoad() || !max_lookups_per_sec)
         return;
     lookup_throttler = std::make_shared<Throttler>(
         max_lookups_per_sec,
