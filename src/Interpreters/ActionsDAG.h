@@ -111,6 +111,7 @@ public:
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
         void updateHash(SipHash & hash_state) const;
+        DataTypesWithConstInfo getArgumentTypesWithConstInfo() const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -306,6 +307,7 @@ public:
     bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
+    bool hasThrowingFunctions() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});

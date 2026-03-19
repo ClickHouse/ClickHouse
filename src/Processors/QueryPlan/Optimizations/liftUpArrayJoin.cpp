@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -41,6 +42,39 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     child_node->children.emplace_back(&node);
     /// Expression/Filter -> ArrayJoin -> node -> Something
 
+    bool needs_filter = !array_join_step->isLeft() && split_actions.first.hasThrowingFunctions();
+    if (needs_filter)
+    {
+        /// Insert filter for empty arrays below the expression
+        /// Expression/Filter -> ArrayJoin -> node -> Something
+        auto & filter_node = nodes.emplace_back();
+        filter_node.children.swap(node.children);
+        node.children.emplace_back(&filter_node);
+        /// Expression/Filter -> ArrayJoin -> node -> filter_node -> Something
+
+        const auto & source_header = filter_node.children.at(0)->step->getOutputHeader();
+        ActionsDAG filter_dag(source_header->getColumnsWithTypeAndName());
+        auto not_empty_func = FunctionFactory::instance().get("notEmpty", nullptr);
+
+        auto it = array_join_columns.begin();
+        const auto * filter_condition = &filter_dag.addFunction(not_empty_func, {&filter_dag.findInOutputs(*it)}, "__array_not_empty" + *it);
+
+        // In unaligned case any non-empty array keeps the row
+        if (array_join_step->isUnaligned())
+        {
+            auto or_func = FunctionFactory::instance().get("or", nullptr);
+            for (++it; it != array_join_columns.end(); ++it)
+            {
+                const auto * not_empty
+                    = &filter_dag.addFunction(not_empty_func, {&filter_dag.findInOutputs(*it)}, "__array_not_empty" + *it);
+                filter_condition = &filter_dag.addFunction(or_func, {filter_condition, not_empty}, "__array_not_empty");
+            }
+        }
+
+        filter_dag.addOrReplaceInOutputs(*filter_condition);
+        filter_node.step = std::make_unique<FilterStep>(source_header, std::move(filter_dag), filter_condition->result_name, true);
+    }
+
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputHeader(),
                                                  std::move(split_actions.first));
     node.step->setStepDescription(*parent);
@@ -55,7 +89,7 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     new_step->setStepDescription(fmt::format("{} [split]", parent->getStepDescription()), settings.max_step_description_length);
     parent = std::move(new_step);
-    return 3;
+    return needs_filter ? 4 : 3;
 }
 
 }
