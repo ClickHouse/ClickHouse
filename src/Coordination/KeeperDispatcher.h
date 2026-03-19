@@ -9,12 +9,12 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <functional>
-#include <optional>
+#include <memory>
 #include <unordered_set>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
-#include <Coordination/KeeperSessionReadBarrier.h>
+#include <Coordination/KeeperSessionReadBarrier_fwd.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
@@ -125,7 +125,7 @@ private:
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
     /// Per-session read barrier. Constructed only when `per_session_read_barrier` setting is enabled.
-    std::optional<KeeperSessionReadBarrier> session_read_barrier;
+    std::unique_ptr<KeeperSessionReadBarrier> session_read_barrier;
 
     /// Execute collected deferred reads: observe histogram, finalize OTel span, put local read.
     void executeCollectedReads(const DeferredReadRequests & reads);

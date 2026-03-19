@@ -1,4 +1,5 @@
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperSessionReadBarrier.h>
 #include <Common/ProfiledLocks.h>
 #include <libnuraft/async.hxx>
 
@@ -779,7 +780,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     const auto & coordination_settings = configuration_and_settings->coordination_settings;
     if (isPerSessionReadBarrierEnabled(coordination_settings))
     {
-        session_read_barrier.emplace(
+        session_read_barrier = std::make_unique<KeeperSessionReadBarrier>(
             KeeperSessionReadBarrier::Settings{
                 .max_pending_writes_per_session = coordination_settings[CoordinationSetting::max_pending_writes_per_session],
                 .max_deferred_reads_per_session = coordination_settings[CoordinationSetting::max_deferred_reads_per_session],
