@@ -1,0 +1,194 @@
+IN with constant tuple - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\', \'blue\')
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with constant tuple
+1	a
+2	b
+3	c
+notIn with constant tuple - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id NOT IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT IN (\'red\', \'blue\')
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+notIn with constant tuple
+1	a
+2	b
+3	c
+IN with numeric attribute - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.n IN (5, 7)
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with numeric attribute
+1	a
+2	b
+IN with single value - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\')
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with single value
+1	a
+3	c
+IN combined with AND - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE (__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\', \'blue\')
+)) AND (__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.n < 10
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN combined with AND
+1	a
+2	b
+IN combined with OR - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE (__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\', \'blue\')
+)) OR (__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'green\'
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN combined with OR
+1	a
+2	b
+3	c
+4	d
+Negative: IN with subquery - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE dictGetString(\'colors\', \'name\', __table1.color_id) IN (
+    SELECT \'red\' AS `\'red\'`
+    FROM system.one AS __table1
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Negative: IN with subquery
+1	a
+3	c
+Negative: IN with table column - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE if(_CAST(0, \'UInt8\'), _CAST(NULL, \'Nullable(UInt8)\'), has(array(CAST(__table1.payload, \'Nullable(String)\')), dictGetString(\'colors\', \'name\', __table1.color_id)))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Negative: IN with table column
+IN with composite key - plan
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE (__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.tag IN (\'pro\', \'basic\')
+)
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+IN with composite key
+1	a	x
+1	b	y
+notIn with composite key - plan
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE (__table1.k1, __table1.k2) NOT IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.tag NOT IN (\'pro\', \'basic\')
+)
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+notIn with composite key
+1	a	x
+1	b	y
+2	b	w
+IN with composite key, numeric attribute - plan
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE (__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.price IN (100, 75)
+)
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+IN with composite key, numeric attribute
+1	a	x
+2	a	z

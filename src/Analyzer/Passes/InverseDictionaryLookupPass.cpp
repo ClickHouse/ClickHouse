@@ -15,8 +15,8 @@
 
 #include <Functions/FunctionsExternalDictionaries.h>
 
-#include <Access/ContextAccess.h>
 #include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 
@@ -147,57 +147,111 @@ public:
         if (!node_function)
             return;
 
+        const String function_name = node_function->getFunctionName();
+
+        static std::unordered_set<String> allowed_in_functions = {"in", "notIn"};
         static std::unordered_set<String> allowed_comparison_functions = {
             "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "like", "notLike", "ilike", "notILike", "match"};
 
-        const String attr_comparison_function_name = node_function->getFunctionName();
-        if (!allowed_comparison_functions.contains(attr_comparison_function_name))
+        bool is_in_function = allowed_in_functions.contains(function_name);
+        bool is_comparison_function = allowed_comparison_functions.contains(function_name);
+
+        if (!is_in_function && !is_comparison_function)
             return;
 
+        auto ctx = prepareTransformContext(node_function, is_in_function);
+        if (!ctx)
+            return;
+
+        auto where_condition = buildWhereCondition(*ctx, node_function, function_name, is_in_function);
+        auto subquery = buildSubquery(*ctx, where_condition);
+
+        /// For comparison predicates, always use "in" as the final function
+        /// For IN predicates, preserve the original function name (in/notIn)
+        const String result_function_name = is_in_function ? function_name : "in";
+        auto final_in_expr = buildFinalInExpression(*ctx, subquery, result_function_name);
+
+        DataTypePtr original_result_type = node_function->getResultType();
+        QueryTreeNodePtr replacement_node = final_in_expr;
+        if (original_result_type && !final_in_expr->getResultType()->equals(*original_result_type))
+            replacement_node = createCastFunction(final_in_expr, original_result_type, getContext());
+
+        node = std::move(replacement_node);
+    }
+
+private:
+    enum class DictSide
+    {
+        NONE,
+        LHS,
+        RHS,
+    };
+
+    struct TransformContext
+    {
+        DictGetFunctionInfo dictget_info;
+        DictSide side;
+        QueryTreeNodePtr constant_arg; ///< The constant argument (RHS for IN, side-dependent for comparison)
+        std::vector<NameAndTypePair> key_cols;
+        QueryTreeNodePtr dict_table_function;
+        QueryTreeNodePtr attr_col_node_casted;
+    };
+
+    /// Validates the function arguments and extracts dictionary/attribute information.
+    /// Returns nullopt if the pattern doesn't match or dictionary is not suitable.
+    std::optional<TransformContext> prepareTransformContext(FunctionNode * node_function, bool is_in_function)
+    {
         auto & arguments = node_function->getArguments().getNodes();
         if (arguments.size() != 2)
-            return;
+            return std::nullopt;
 
-        enum class Side
-        {
-            LHS,
-            RHS,
-            NONE
-        };
+        DictSide side;
+        DictGetFunctionInfo dictget_info;
+        QueryTreeNodePtr constant_arg;
 
-        Side dict_side = Side::NONE;
-        DictGetFunctionInfo dictget_function_info;
-
-        if (auto info_lhs = tryParseDictFunctionCall(arguments[0]); info_lhs && arguments[1]->as<ConstantNode>())
+        if (is_in_function)
         {
-            dict_side = Side::LHS;
-            dictget_function_info = std::move(*info_lhs);
-        }
-        else if (auto info_rhs = tryParseDictFunctionCall(arguments[1]); info_rhs && arguments[0]->as<ConstantNode>())
-        {
-            dict_side = Side::RHS;
-            dictget_function_info = std::move(*info_rhs);
+            auto info = tryParseDictFunctionCall(arguments[0]);
+            if (!info)
+                return std::nullopt;
+            if (!arguments[1]->as<ConstantNode>())
+                return std::nullopt;
+            side = DictSide::LHS;
+            dictget_info = std::move(*info);
+            constant_arg = arguments[1];
         }
         else
         {
-            return;
+            if (auto info_lhs = tryParseDictFunctionCall(arguments[0]); info_lhs && arguments[1]->as<ConstantNode>())
+            {
+                side = DictSide::LHS;
+                dictget_info = std::move(*info_lhs);
+                constant_arg = arguments[1];
+            }
+            else if (auto info_rhs = tryParseDictFunctionCall(arguments[1]); info_rhs && arguments[0]->as<ConstantNode>())
+            {
+                side = DictSide::RHS;
+                dictget_info = std::move(*info_rhs);
+                constant_arg = arguments[0];
+            }
+            else
+            {
+                return std::nullopt;
+            }
         }
 
-        /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
-        const String dict_name = dictget_function_info.dict_name_node->getValue().safeGet<String>();
+        const String dict_name = dictget_info.dict_name_node->getValue().safeGet<String>();
         const auto dict = helper.getDictionary(dict_name);
         if (!dict)
-            return;
+            return std::nullopt;
 
         const String dict_type_name = dict->getTypeName();
-
         if (!isInMemoryLayout(dict_type_name))
-            return;
+            return std::nullopt;
 
 
         std::vector<NameAndTypePair> key_cols;
-
         const auto & dict_structure = dict->getStructure();
 
         if (dict_structure.id)
@@ -223,71 +277,87 @@ public:
         }
         else
         {
-            return;
+            return std::nullopt;
         }
 
-        const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
-
+        const String attr_col_name = dictget_info.attr_col_name_node->getValue().safeGet<String>();
         if (!dict_structure.hasAttribute(attr_col_name))
-            return;
+            return std::nullopt;
 
         DataTypePtr dict_attr_col_type = dict_structure.getAttribute(attr_col_name).type;
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
-        dict_table_function->getArguments().getNodes().push_back(dictget_function_info.dict_name_node);
+        dict_table_function->getArguments().getNodes().push_back(dictget_info.dict_name_node);
         resolveNode(dict_table_function, getContext());
 
         NameAndTypePair attr_col{attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
 
-        /// Needed for dictGet functions like `dictGetString`, `dictGetInt32`, etc.
         QueryTreeNodePtr attr_col_node_casted = attr_col_node;
-        if (!attr_col_node->getResultType()->equals(*dictget_function_info.return_type))
+        if (!attr_col_node->getResultType()->equals(*dictget_info.return_type))
         {
-            attr_col_node_casted = createCastFunction(attr_col_node, dictget_function_info.return_type, getContext());
+            attr_col_node_casted = createCastFunction(attr_col_node, dictget_info.return_type, getContext());
         }
 
-        auto attr_comparison_function_node = std::static_pointer_cast<FunctionNode>(node_function->clone());
-        attr_comparison_function_node->markAsOperator();
+        return TransformContext{
+            .dictget_info = std::move(dictget_info),
+            .side = side,
+            .constant_arg = std::move(constant_arg),
+            .key_cols = std::move(key_cols),
+            .dict_table_function = std::move(dict_table_function),
+            .attr_col_node_casted = std::move(attr_col_node_casted),
+        };
+    }
 
-        if (dict_side == Side::LHS)
+    /// Builds the WHERE condition for the subquery.
+    /// For IN: builds attr_col IN (consts)
+    /// For comparison: builds attr_col op const (respecting side for argument order)
+    QueryTreeNodePtr
+    buildWhereCondition(const TransformContext & ctx, FunctionNode * original_function, const String & function_name, bool is_in_function)
+    {
+        auto where_function_node = std::static_pointer_cast<FunctionNode>(original_function->clone());
+        where_function_node->markAsOperator();
+
+        if (is_in_function)
         {
-            attr_comparison_function_node->getArguments().getNodes() = { attr_col_node_casted, arguments[1] };
+            where_function_node->getArguments().getNodes() = {ctx.attr_col_node_casted, ctx.constant_arg};
         }
         else
         {
-            attr_comparison_function_node->getArguments().getNodes() = { arguments[0], attr_col_node_casted };
+            if (ctx.side == DictSide::LHS)
+                where_function_node->getArguments().getNodes() = {ctx.attr_col_node_casted, ctx.constant_arg};
+            else
+                where_function_node->getArguments().getNodes() = {ctx.constant_arg, ctx.attr_col_node_casted};
         }
-        resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
-        /// SELECT key_col FROM dictionary(dict_name) WHERE attr_name = const_value
+        resolveOrdinaryFunctionNodeByName(*where_function_node, function_name, getContext());
+        return where_function_node;
+    }
+
+    QueryTreeNodePtr buildSubquery(const TransformContext & ctx, const QueryTreeNodePtr & where_condition)
+    {
         auto subquery_node = std::make_shared<QueryNode>(Context::createCopy(getContext()));
         subquery_node->setIsSubquery(true);
-        subquery_node->getJoinTree() = dict_table_function;
-        subquery_node->getWhere() = attr_comparison_function_node;
+        subquery_node->getJoinTree() = ctx.dict_table_function;
+        subquery_node->getWhere() = where_condition;
 
-        for (const auto & key_col_node : key_cols)
+        for (const auto & key_col : ctx.key_cols)
         {
-            subquery_node->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(key_col_node, dict_table_function));
+            subquery_node->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(key_col, ctx.dict_table_function));
         }
-        subquery_node->resolveProjectionColumns(key_cols);
+        subquery_node->resolveProjectionColumns(ctx.key_cols);
 
-        auto in_function_node = std::make_shared<FunctionNode>("in");
+        return subquery_node;
+    }
+
+    QueryTreeNodePtr
+    buildFinalInExpression(const TransformContext & ctx, const QueryTreeNodePtr & subquery, const String & result_function_name)
+    {
+        auto in_function_node = std::make_shared<FunctionNode>(result_function_name);
         in_function_node->markAsOperator();
-        QueryTreeNodePtr querytree_subquery_node = subquery_node;
-        in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, querytree_subquery_node};
-        resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
-
-        /// Preserve the original result type of the comparison node.
-        /// For example, original "equals(...)" might have result type Nullable(UInt8),
-        /// while "IN" might return UInt8.
-        DataTypePtr original_result_type = node_function->getResultType();
-
-        QueryTreeNodePtr replacement_node = in_function_node;
-        if (original_result_type && !in_function_node->getResultType()->equals(*original_result_type))
-            replacement_node = createCastFunction(in_function_node, original_result_type, getContext());
-
-        node = std::move(replacement_node);
+        in_function_node->getArguments().getNodes() = {ctx.dictget_info.key_expr_node, subquery};
+        resolveOrdinaryFunctionNodeByName(*in_function_node, result_function_name, getContext());
+        return in_function_node;
     }
 };
 
