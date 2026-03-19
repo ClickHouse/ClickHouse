@@ -1,0 +1,20 @@
+<clickhouse>
+    <users>
+        <default>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+            <access_management>1</access_management>
+        </default>
+    </users>
+    <profiles><default/></profiles>
+    <quotas><default/></quotas>
+    <listen_host>::</listen_host>
+    <path>tmp/test-server/data/</path>
+    <tmp_path>tmp/test-server/data/tmp/</tmp_path>
+    <user_files_path>tmp/test-server/data/user_files/</user_files_path>
+    <format_schema_path>tmp/test-server/data/format_schemas/</format_schema_path>
+    <tcp_port>19000</tcp_port>
+    <http_port>18123</http_port>
+    <interserver_http_port>19009</interserver_http_port>
+</clickhouse>

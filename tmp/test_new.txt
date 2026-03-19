@@ -1,0 +1,51 @@
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+0
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+1
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+2
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+1
+49.5
+0
+Received exception from server (version 26.3.1):
+Code: 719. DB::Exception: Received from localhost:29000. DB::Exception: The query result was not cached because the query contains a system table. Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching. (QUERY_CACHE_USED_WITH_SYSTEM_TABLE)
+(query: -- Test 6: Scalar subquery with query_cache_for_subqueries
+SELECT (SELECT avg(number) FROM numbers(100)) AS avg_val
+SETTINGS use_query_cache = true, query_cache_for_subqueries = true;)

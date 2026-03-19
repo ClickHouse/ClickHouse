@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
-
+            {"query_cache_for_subqueries", false, false, "A new setting to control query cache propagation to subqueries"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -73,7 +73,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
-            {"query_cache_for_subqueries", false, false, "A new setting to control query cache propagation to subqueries"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
