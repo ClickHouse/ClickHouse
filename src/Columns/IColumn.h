@@ -189,8 +189,8 @@ public:
         bool notFull(WriteBufferFromOwnString & buf) const;
     };
 
-    virtual DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const Options & options) const;
+    virtual void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
+    String getValueName(size_t n, const Options & options) const;
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
@@ -433,6 +433,15 @@ public:
         return doCompareAt(n, m, rhs, nan_direction_hint);
     }
 #endif
+
+    /** Compares and returns inequal track. It extends compareAt() to return how many values are not equal.
+      * Returns -N if current N left values are less then the right comparing value.
+      * Returns N if current N right values are less then the left comparing value.
+      * Returns 0 if current left and right values are equal.
+      *
+      * The main reason for the function is compareAt() devirtualization.
+      */
+    [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
 
 #if USE_EMBEDDED_COMPILER
 

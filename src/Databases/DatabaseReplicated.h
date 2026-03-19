@@ -69,7 +69,8 @@ public:
     };
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
-                       const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
+                       const String & zookeeper_name_, const String & zookeeper_path_,
+                       const String & shard_name_, const String & replica_name_,
                        DatabaseReplicatedSettings db_settings_,
                        ContextPtr context);
 
@@ -116,6 +117,7 @@ public:
     static String getFullReplicaName(const String & shard, const String & replica);
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
+    const String & getZooKeeperName() const { return zookeeper_name; }
     const String & getZooKeeperPath() const { return zookeeper_path; }
 
     void getStatus(ReplicatedStatus& response, bool with_zk_fields) const;
@@ -137,7 +139,13 @@ public:
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
 
-    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop);
+    static void dropReplica(
+        DatabaseReplicated * database,
+        const String & zookeeper_name,
+        const String & database_zookeeper_path,
+        const String & shard,
+        const String & replica,
+        bool throw_if_noop);
 
     void restoreDatabaseInKeeper(ContextPtr ctx);
 
@@ -177,7 +185,7 @@ private:
         bool cluster_secure_connection{false};
     } cluster_auth_info;
 
-    void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
+    void fillClusterAuthInfo(String collection_name);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
@@ -226,9 +234,15 @@ private:
     void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper);
     void reinitializeDDLWorker();
 
-    static BlockIO
-    getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait, DDLGuardPtr && database_guard);
+    static BlockIO getQueryStatus(
+        const String & zookeeper_name,
+        const String & node_path,
+        const String & replicas_path,
+        ContextPtr context,
+        const Strings & hosts_to_wait,
+        DDLGuardPtr && database_guard);
 
+    const String zookeeper_name;
     const String zookeeper_path;
     const String shard_name;
     const String replica_name;

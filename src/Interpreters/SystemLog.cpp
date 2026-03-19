@@ -582,6 +582,7 @@ void SystemLog<LogElement>::savingThreadFunction()
 template <typename LogElement>
 void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end)
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemLog::flushImpl");
     Stopwatch stopwatch;
     UInt64 prepare_table_time = 0;
     UInt64 prepare_insert_data_to_block = 0;

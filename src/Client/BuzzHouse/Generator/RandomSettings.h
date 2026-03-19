@@ -79,6 +79,8 @@ extern std::unique_ptr<SQLType> null_tp;
 
 extern std::unique_ptr<SQLType> string_tp;
 
+extern std::unique_ptr<SQLType> uint8_tp;
+
 extern std::vector<SystemTable> systemTables;
 
 extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;

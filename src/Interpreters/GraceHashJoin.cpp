@@ -460,8 +460,14 @@ JoinResultPtr GraceHashJoin::joinBlock(Block block)
 
 void GraceHashJoin::setTotals(const Block & block)
 {
-    if (block.rows() > 0)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Totals are not supported for GraceHashJoin, got '{}'", block.dumpStructure());
+    std::lock_guard lock(totals_mutex);
+    IJoin::setTotals(block);
+}
+
+const Block & GraceHashJoin::getTotals() const
+{
+    std::lock_guard lock(totals_mutex);
+    return IJoin::getTotals();
 }
 
 size_t GraceHashJoin::getTotalRowCount() const

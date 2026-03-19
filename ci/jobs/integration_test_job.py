@@ -42,16 +42,28 @@ INFRASTRUCTURE_ERROR_PATTERNS = [
     "OCI runtime create failed",
     "toomanyrequests",
     "pull access denied",
+    "Got exception pulling images:",  # docker pull failure during cluster.start()
 ]
 
 
 def _is_infrastructure_error(result: Result) -> bool:
-    """Returns True if the result is an ERROR caused by infrastructure issues."""
-    if result.status not in (Result.Status.ERROR, Result.StatusExtended.ERROR):
-        return False
+    """Returns True if the result is a failure caused by infrastructure issues."""
     if not result.info:
         return False
-    return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+    if result.status in (Result.Status.ERROR, Result.StatusExtended.ERROR):
+        return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+    # Docker compose/pull infrastructure failures may appear with FAIL status
+    # when pytest reports fixture (setup phase) errors as test failures.
+    # Require both docker context and an infrastructure pattern to avoid
+    # false positives on genuine test failures.
+    if result.status in (Result.Status.FAILED, Result.StatusExtended.FAIL):
+        has_docker_context = (
+            "'docker'" in result.info or "images_pull_cmd" in result.info
+        )
+        return has_docker_context and any(
+            p in result.info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        )
+    return False
 
 
 def _mark_infrastructure_errors(results: list) -> int:
@@ -149,12 +161,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
+def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
     """Merge all profraw files into final profdata file.
 
     Args:
         llvm_profdata_cmd: Path to llvm-profdata tool
-        batch_num: Batch number for naming output file
+        job_params: List of job parameters for naming output file
     """
     import subprocess
     from pathlib import Path
@@ -166,7 +178,9 @@ def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
         print("No profraw files found", flush=True)
         return
 
-    final_file = f"./it-{batch_num}.profdata"
+    joined_job_params = "_".join(job_params) if job_params else "all"
+    joined_job_params = joined_job_params.replace(" ", "_").replace("/", "_")
+    final_file = f"./it-{joined_job_params}.profdata"
     print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
 
     result = subprocess.run(
@@ -213,10 +227,12 @@ def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
             except Exception as e:
                 print(f"  WARNING: Failed to delete {profraw_file}: {e}", flush=True)
         print(f"  Deleted {deleted_count} profraw files", flush=True)
+        return final_file
     else:
         print(f"ERROR: Failed to create final coverage file", flush=True)
         if result.stderr:
             print(result.stderr, flush=True)
+        return None
 
 
 FLAKY_CHECK_TEST_REPEAT_COUNT = 3
@@ -280,8 +296,28 @@ def get_parallel_sequential_tests_to_run(
             return f"{test_arg}/" in test_file
         if test_arg.endswith(".py"):
             return test_file == test_arg
-        test_arg = test_arg.split("::", maxsplit=1)[0]
-        return test_file.removesuffix(".py") == test_arg.removesuffix(".py")
+        parts = test_arg.split("::", maxsplit=1)
+        test_module = parts[0]
+        if test_file.removesuffix(".py") != test_module.removesuffix(".py"):
+            return False
+        # When a specific test function is requested, verify it exists in the
+        # file.  Targeted CI runs pull test names from CIDB, but the test may
+        # have been moved or removed since the record was written.  Passing a
+        # stale nodeID to pytest causes the entire collection to fail with
+        # exit-code 5 ("no tests collected"), aborting all other tests too.
+        if len(parts) > 1:
+            test_func = parts[1].split("[")[0]  # strip parametrization
+            file_path = Path("./tests/integration/") / test_file
+            try:
+                content = file_path.read_text()
+                if f"def {test_func}(" not in content:
+                    print(
+                        f"WARNING: test function '{test_func}' not found in {test_file}, skipping stale target"
+                    )
+                    return False
+            except OSError:
+                return False
+        return True
 
     parallel_tests = []
     sequential_tests = []
@@ -632,6 +668,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     failed_test_cases = []
 
+    # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host.
+    # Do this only in CI (non-local runs) and via a non-interactive privileged helper.
+    if not info.is_local_run:
+        try:
+            Utils.clear_dmesg()
+        except Exception as ex:
+            print(f"Failed to clear dmesg before integration tests: {ex}")
+
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
@@ -829,7 +873,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print("Collecting and merging LLVM coverage files...")
 
         # Merge all profraw files into final profdata file
-        merge_profraw_files(llvm_profdata_cmd, batch_num)
+        merged_profdata = merge_profraw_files(llvm_profdata_cmd, job_params)
+
+        # Attach profdata file to the result report so it is uploaded
+        # unconditionally (even when tests fail) and visible in the CI report.
+        if merged_profdata and os.path.exists(merged_profdata):
+            R.files.append(merged_profdata)
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")

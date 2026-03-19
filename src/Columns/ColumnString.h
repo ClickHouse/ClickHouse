@@ -2,7 +2,6 @@
 
 #include <cstring>
 
-#include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
@@ -11,6 +10,7 @@
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <base/defines.h>
 
@@ -110,12 +110,10 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
     {
-
         if (options.notFull(name_buf))
             writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
-        return std::make_shared<DataTypeString>();
     }
 
     std::string_view getDataAt(size_t n) const override

@@ -89,6 +89,24 @@ CONV_FN(Function, func)
     ret += func.function();
 }
 
+CONV_FN(Policy, rowp)
+{
+    ret += rowp.policy();
+}
+
+CONV_FN(Role, r)
+{
+    ret += "`";
+    for (const char & c : r.role())
+    {
+        if (c == '`')
+            ret += "``";
+        else
+            ret += c;
+    }
+    ret += "`";
+}
+
 void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
     if (cl.has_cluster())
@@ -1822,9 +1840,9 @@ CONV_FN(Expr, expr)
     {
         ret += "1";
     }
-    if (expr.has_field())
+    for (int i = 0; i < expr.fields_size(); i++)
     {
-        FieldAccessToString(ret, expr.field());
+        FieldAccessToString(ret, expr.fields(i));
     }
 }
 
@@ -2365,6 +2383,15 @@ CONV_FN(MergeTreeProjectionFunc, mfunc)
     ret += "')";
 }
 
+CONV_FN(MergeTreeTextIndexFunc, mttxtidx)
+{
+    ret += "mergeTreeTextIndex(";
+    FlatExprSchemaTableToString(ret, mttxtidx.est(), "', '");
+    ret += ", '";
+    IndexToString(ret, mttxtidx.idx());
+    ret += "')";
+}
+
 CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
 {
     ret += "mergeTreeAnalyzeIndexes(";
@@ -2374,11 +2401,20 @@ CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
         ret += ", ";
         ExprToString(ret, mfunc.pred());
     }
-    if (mfunc.has_part())
+    if (mfunc.has_plist())
     {
-        ret += ", '";
-        ret += mfunc.part();
-        ret += "'";
+        ret += ", [";
+        for (int i = 0; i < mfunc.plist().parts_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ret += "'";
+            ret += mfunc.plist().parts(i);
+            ret += "'";
+        }
+        ret += "]";
     }
     ret += ")";
 }
@@ -2465,9 +2501,6 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kCluster:
             ClusterFuncToString(ret, tf.cluster());
             break;
-        case TableFunctionType::kMtindex:
-            MergeTreeIndexFuncToString(ret, tf.mtindex());
-            break;
         case TableFunctionType::kLoop:
             ret += "loop(";
             TableOrFunctionToString(ret, true, tf.loop());
@@ -2493,9 +2526,6 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kMongodb:
             MongoDBFuncToString(ret, tf.mongodb());
             break;
-        case TableFunctionType::kMtproj:
-            MergeTreeProjectionFuncToString(ret, tf.mtproj());
-            break;
         case TableFunctionType::kNullf:
             ret += "`null`(";
             ExprToString(ret, tf.nullf());
@@ -2503,6 +2533,15 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kFlight:
             ArrowFlightFuncToString(ret, tf.flight());
+            break;
+        case TableFunctionType::kMtindex:
+            MergeTreeIndexFuncToString(ret, tf.mtindex());
+            break;
+        case TableFunctionType::kMtproj:
+            MergeTreeProjectionFuncToString(ret, tf.mtproj());
+            break;
+        case TableFunctionType::kMttxtidx:
+            MergeTreeTextIndexFuncToString(ret, tf.mttxtidx());
             break;
         case TableFunctionType::kMtanindex:
             MergeTreeAnalyzeIndexesFuncToString(ret, tf.mtanindex());
@@ -2974,6 +3013,44 @@ CONV_FN(IndexParam, ip)
     }
 }
 
+CONV_FN(BackupParam, bp)
+{
+    using BackupParamType = BackupParam::BackupParamOneofCase;
+    switch (bp.backup_param_oneof_case())
+    {
+        case BackupParamType::kSvalue:
+            ret += "'";
+            ret += bp.svalue();
+            ret += "'";
+            break;
+        case BackupParamType::kRvalue:
+            ret += bp.rvalue();
+            break;
+        default:
+            ret += "backup.data";
+    }
+}
+
+CONV_FN(BackupOut, bout)
+{
+    const BackupOut_BackupOutput & output = bout.out();
+
+    ret += BackupOut_BackupOutput_Name(output);
+    if (output != BackupOut_BackupOutput_Null)
+    {
+        ret += "(";
+        for (int i = 0; i < bout.out_params_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            BackupParamToString(ret, bout.out_params(i));
+        }
+        ret += ")";
+    }
+}
+
 CONV_FN(DatabaseEngineParam, dep)
 {
     using DatabaseEngineParamType = DatabaseEngineParam::DatabaseEngineParamOneofCase;
@@ -2984,20 +3061,11 @@ CONV_FN(DatabaseEngineParam, dep)
             ret += dep.svalue();
             ret += "'";
             break;
-        case DatabaseEngineParamType::kDatabase:
-            ret += "'";
-            DatabaseToString(ret, dep.database());
-            ret += "'";
-            break;
-        case DatabaseEngineParamType::kDisk:
-            ret += "Disk('";
-            ret += dep.disk().disk();
-            ret += "', '";
-            DatabaseToString(ret, dep.disk().database());
-            ret += "')";
-            break;
         case DatabaseEngineParamType::kExpr:
             ExprToString(ret, dep.expr());
+            break;
+        case DatabaseEngineParamType::kBackupOut:
+            BackupOutToString(ret, dep.backup_out());
             break;
         default:
             ret += "d0";
@@ -3571,9 +3639,21 @@ CONV_FN(SQLObjectName, son)
         case SQLObjectNameType::kFunction:
             FunctionToString(ret, son.function());
             break;
+        case SQLObjectNameType::kPolicy:
+            PolicyToString(ret, son.policy());
+            break;
         default:
             ret += "t0";
     }
+}
+
+static String SQLObjectToString(const SQLObject obj)
+{
+    if (obj == SQLObject::ROW_POLICY)
+        return "ROW POLICY";
+    if (obj == SQLObject::MASKING_POLICY)
+        return "MASKING POLICY";
+    return SQLObject_Name(obj);
 }
 
 CONV_FN(Drop, dt)
@@ -3585,7 +3665,7 @@ CONV_FN(Drop, dt)
     {
         ret += "TEMPORARY ";
     }
-    ret += SQLObject_Name(dt.sobject());
+    ret += SQLObjectToString(dt.sobject());
     if (dt.if_exists())
     {
         ret += " IF EXISTS";
@@ -3604,6 +3684,11 @@ CONV_FN(Drop, dt)
     if (dt.has_cluster())
     {
         ClusterToString(ret, true, dt.cluster());
+    }
+    if ((dt.sobject() == SQLObject::ROW_POLICY || dt.sobject() == SQLObject::MASKING_POLICY) && dt.has_target())
+    {
+        ret += " ON ";
+        ExprSchemaTableToString(ret, dt.target());
     }
     if (dt.sync())
     {
@@ -3986,6 +4071,12 @@ CONV_FN(Exchange, et)
         case SQLObject::FUNCTION:
             ret += "FUNCTIONS";
             break;
+        case SQLObject::ROW_POLICY:
+            ret += "ROW POLICIES";
+            break;
+        case SQLObject::MASKING_POLICY:
+            ret += "MASKING POLICIES";
+            break;
     }
     ret += " ";
     SQLObjectNameToString(ret, et.object1());
@@ -4020,8 +4111,11 @@ CONV_FN(RefreshableView, rv)
         ret += " OFFSET ";
         RefreshIntervalToString(ret, rv.offset());
     }
-    ret += " RANDOMIZE FOR ";
-    RefreshIntervalToString(ret, rv.randomize());
+    if (rv.has_randomize())
+    {
+        ret += " RANDOMIZE FOR ";
+        RefreshIntervalToString(ret, rv.randomize());
+    }
     if (rv.has_depends())
     {
         ret += " DEPENDS ON ";
@@ -4416,6 +4510,65 @@ CONV_FN(RemoveColumnSetting, rcp)
     SettingListToString(ret, rcp.setting_values());
 }
 
+static void RowPolicyClausesToString(
+    String & ret,
+    const CreateRowPolicy & crp,
+    const bool has_where_expr,
+    const WhereStatement & where_expr,
+    const Role * role,
+    const bool create)
+{
+    if (crp.has_is_restrictive())
+    {
+        ret += " AS ";
+        ret += crp.is_restrictive() ? "RESTRICTIVE" : "PERMISSIVE";
+    }
+    if (create && crp.for_select())
+    {
+        ret += " FOR SELECT";
+    }
+    if (has_where_expr)
+    {
+        ret += " USING ";
+        WhereStatementToString(ret, where_expr);
+    }
+    if (role)
+    {
+        ret += " TO ";
+        RoleToString(ret, *role);
+    }
+}
+
+static void MaskingPolicyClausesToString(
+    String & ret, const CreateMaskingPolicy & cmp, const bool has_where_expr, const WhereStatement & where_expr, const Role * role)
+{
+    if (cmp.has_first_update())
+    {
+        ret += " UPDATE ";
+        UpdateSetToString(ret, cmp.first_update());
+        for (int i = 0; i < cmp.other_updates_size(); i++)
+        {
+            ret += ", ";
+            UpdateSetToString(ret, cmp.other_updates(i));
+        }
+    }
+    if (has_where_expr)
+    {
+        ret += " WHERE ";
+        WhereStatementToString(ret, where_expr);
+    }
+    if (role)
+    {
+        ret += " TO ";
+        RoleToString(ret, *role);
+    }
+    if (cmp.has_priority())
+    {
+        ret += " PRIORITY ";
+        ret += std::to_string(cmp.priority());
+    }
+}
+
 CONV_FN(AlterItem, alter)
 {
     ret += alter.paren() ? "(" : "";
@@ -4688,6 +4841,14 @@ CONV_FN(AlterItem, alter)
                 SinglePartitionExprToString(ret, alter.rewrite_parts().single_partition());
             }
             break;
+        case AlterType::kApplyPatches:
+            ret += "APPLY PATCHES";
+            if (alter.apply_patches().has_single_partition())
+            {
+                ret += " IN ";
+                SinglePartitionExprToString(ret, alter.apply_patches().single_partition());
+            }
+            break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
             SelectParenToString(ret, alter.modify_query());
@@ -4696,6 +4857,27 @@ CONV_FN(AlterItem, alter)
             ret += "MODIFY ";
             RefreshableViewToString(ret, alter.refresh());
             break;
+        case AlterType::kAlterPolicy: {
+            const AlterPolicyContent & apc = alter.alter_policy();
+            const Role * role = apc.has_role() ? &apc.role() : nullptr;
+
+            ret += "ON ";
+            ExprSchemaTableToString(ret, apc.target());
+            if (apc.has_rename_to())
+            {
+                ret += " RENAME TO ";
+                PolicyToString(ret, apc.rename_to());
+            }
+            if (apc.has_masking())
+            {
+                MaskingPolicyClausesToString(ret, apc.masking(), apc.has_where_expr(), apc.where_expr(), role);
+            }
+            else
+            {
+                RowPolicyClausesToString(ret, apc.row(), apc.has_where_expr(), apc.where_expr(), role, false);
+            }
+        }
+        break;
         default:
             ret += "DELETE WHERE TRUE";
     }
@@ -4709,7 +4891,7 @@ CONV_FN(Alter, alter)
     {
         ret += "TEMPORARY ";
     }
-    ret += SQLObject_Name(alter.sobject());
+    ret += SQLObjectToString(alter.sobject());
     ret += " ";
     SQLObjectNameToString(ret, alter.object());
     if (alter.has_cluster())
@@ -4733,7 +4915,7 @@ CONV_FN(Alter, alter)
 CONV_FN(Attach, at)
 {
     ret += "ATTACH ";
-    ret += SQLObject_Name(at.sobject());
+    ret += SQLObjectToString(at.sobject());
     ret += " ";
     SQLObjectNameToString(ret, at.object());
     if (at.has_cluster())
@@ -4756,7 +4938,7 @@ CONV_FN(Attach, at)
 CONV_FN(Detach, dt)
 {
     ret += "DETACH ";
-    ret += SQLObject_Name(dt.sobject());
+    ret += SQLObjectToString(dt.sobject());
     ret += " ";
     SQLObjectNameToString(ret, dt.object());
     if (dt.has_cluster())
@@ -5133,8 +5315,8 @@ CONV_FN(SystemCommand, cmd)
             ret += "RECONNECT ZOOKEEPER";
             can_set_cluster = true;
             break;
-        case CmdType::kDropTextIndexDictionaryCache:
-            ret += "DROP TEXT INDEX DICTIONARY CACHE";
+        case CmdType::kDropTextIndexTokensCache:
+            ret += "DROP TEXT INDEX TOKENS CACHE";
             can_set_cluster = true;
             break;
         case CmdType::kDropTextIndexHeaderCache:
@@ -5218,6 +5400,60 @@ CONV_FN(SystemCommand, cmd)
                 DatabaseToString(ret, cmd.drop_database_replica().database());
             }
             break;
+        case CmdType::kStopCleanup:
+            SystemCommandOnCluster(ret, "STOP CLEANUP", cmd, cmd.stop_cleanup());
+            break;
+        case CmdType::kStartCleanup:
+            SystemCommandOnCluster(ret, "START CLEANUP", cmd, cmd.start_cleanup());
+            break;
+        case CmdType::kStopReplicatedDdlQueries:
+            ret += "STOP REPLICATED DDL QUERIES";
+            can_set_cluster = true;
+            break;
+        case CmdType::kStartReplicatedDdlQueries:
+            ret += "START REPLICATED DDL QUERIES";
+            can_set_cluster = true;
+            break;
+        case CmdType::kJemallocPurge:
+            ret += "JEMALLOC PURGE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kJemallocEnableProfile:
+            ret += "JEMALLOC ENABLE PROFILE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kJemallocDisableProfile:
+            ret += "JEMALLOC DISABLE PROFILE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kJemallocFlushProfile:
+            ret += "JEMALLOC FLUSH PROFILE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kSyncTransactionLog:
+            ret += "SYNC TRANSACTION LOG";
+            can_set_cluster = true;
+            break;
+        case CmdType::kStartThreadFuzzer:
+            ret += "START THREAD FUZZER";
+            can_set_cluster = true;
+            break;
+        case CmdType::kStopThreadFuzzer:
+            ret += "STOP THREAD FUZZER";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropParquetMetadataCache:
+            ret += "DROP PARQUET METADATA CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropDistributedCache:
+            ret += "DROP DISTRIBUTED CACHE";
+            break;
+        case CmdType::kUnlockSnapshot:
+            ret += "UNLOCK SNAPSHOT '";
+            ret += cmd.unlock_snapshot();
+            ret += "'";
+            break;
         default:
             ret += "FLUSH LOGS";
     }
@@ -5235,7 +5471,7 @@ CONV_FN(BackupRestoreObject, bobject)
     {
         ret += "TEMPORARY ";
     }
-    ret += SQLObject_Name(bobject.sobject());
+    ret += SQLObjectToString(bobject.sobject());
     ret += " ";
     SQLObjectNameToString(ret, bobject.object());
     if (bobject.has_alias())
@@ -5285,42 +5521,9 @@ CONV_FN(BackupRestoreElement, backup)
     }
 }
 
-CONV_FN(BackupParam, bp)
-{
-    using BackupParamType = BackupParam::BackupParamOneofCase;
-    switch (bp.backup_param_oneof_case())
-    {
-        case BackupParamType::kSvalue:
-            ret += "'";
-            ret += bp.svalue();
-            ret += "'";
-            break;
-        case BackupParamType::kRvalue:
-            ret += bp.rvalue();
-            break;
-        default:
-            ret += "backup.data";
-    }
-}
-
-CONV_FN(BackupParams, bparams)
-{
-    ret += "(";
-    for (int i = 0; i < bparams.out_params_size(); i++)
-    {
-        if (i != 0)
-        {
-            ret += ", ";
-        }
-        BackupParamToString(ret, bparams.out_params(i));
-    }
-    ret += ")";
-}
-
 CONV_FN(BackupRestore, backup)
 {
     const BackupRestore_BackupCommand & command = backup.command();
-    const BackupRestore_BackupOutput & output = backup.out();
 
     ret += BackupRestore_BackupCommand_Name(command);
     ret += " ";
@@ -5337,11 +5540,7 @@ CONV_FN(BackupRestore, backup)
     ret += " ";
     ret += command == BackupRestore_BackupCommand_BACKUP ? "TO" : "FROM";
     ret += " ";
-    ret += BackupRestore_BackupOutput_Name(output);
-    if (output != BackupRestore_BackupOutput_Null)
-    {
-        BackupParamsToString(ret, backup.params());
-    }
+    BackupOutToString(ret, backup.out());
     if (backup.has_setting_values())
     {
         ret += " SETTINGS ";
@@ -5367,7 +5566,7 @@ CONV_FN(BackupRestore, backup)
 CONV_FN(Rename, ren)
 {
     ret += "RENAME ";
-    ret += SQLObject_Name(ren.sobject());
+    ret += SQLObjectToString(ren.sobject());
     ret += " ";
     SQLObjectNameToString(ret, ren.old_object());
     ret += " TO ";
@@ -5425,7 +5624,7 @@ CONV_FN(ShowObject, sh)
     {
         ret += "TEMPORARY ";
     }
-    ret += SQLObject_Name(sh.sobject());
+    ret += SQLObjectToString(sh.sobject());
     ret += " ";
     SQLObjectNameToString(ret, sh.object());
 }
@@ -5591,6 +5790,39 @@ CONV_FN(ShowStatement, sh)
     }
 }
 
+CONV_FN(CreatePolicy, cp)
+{
+    const bool is_masking = cp.has_masking();
+    const Role * role = cp.has_role() ? &cp.role() : nullptr;
+
+    ret += "CREATE ";
+    ret += is_masking ? "MASKING" : "ROW";
+    ret += " POLICY ";
+    if (cp.create_opt() == CreateReplaceOption::Create && cp.if_not_exists())
+    {
+        ret += "IF NOT EXISTS ";
+    }
+    else if (cp.create_opt() != CreateReplaceOption::Create)
+    {
+        ret += "OR REPLACE ";
+    }
+    PolicyToString(ret, cp.policy());
+    if (cp.has_cluster())
+    {
+        ClusterToString(ret, true, cp.cluster());
+    }
+    ret += " ON ";
+    ExprSchemaTableToString(ret, cp.target());
+    if (is_masking)
+    {
+        MaskingPolicyClausesToString(ret, cp.masking(), cp.has_where_expr(), cp.where_expr(), role);
+    }
+    else if (cp.has_row())
+    {
+        RowPolicyClausesToString(ret, cp.row(), cp.has_where_expr(), cp.where_expr(), role, true);
+    }
+}
+
 CONV_FN(SQLQueryInner, query)
 {
     using QueryType = SQLQueryInner::QueryInnerOneofCase;
@@ -5669,6 +5901,9 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kShow:
             ShowStatementToString(ret, query.show());
             break;
+        case QueryType::kCreatePolicy:
+            CreatePolicyToString(ret, query.create_policy());
+            break;
         default:
             ret += "SELECT 1";
     }
@@ -5676,6 +5911,12 @@ CONV_FN(SQLQueryInner, query)
 
 CONV_FN(ExplainQuery, explain)
 {
+    if (explain.has_execute_as())
+    {
+        ret += "EXECUTE AS '";
+        ret += explain.execute_as();
+        ret += "' ";
+    }
     if (explain.is_explain())
     {
         ret += "EXPLAIN ";

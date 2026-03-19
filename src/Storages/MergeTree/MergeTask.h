@@ -163,6 +163,13 @@ public:
         return res;
     }
 
+    PlainMarksByName releaseCachedIndexMarks() const
+    {
+        PlainMarksByName res;
+        std::swap(global_ctx->cached_index_marks, res);
+        return res;
+    }
+
     bool execute();
 
     void cancel() noexcept;
@@ -215,6 +222,7 @@ private:
         Names deduplicate_by_columns{};
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
+        bool vertical_ttl_delete{false};
         CompressionCodecPtr compression_codec{nullptr};
 
         NamesAndTypesList gathering_columns{};
@@ -258,6 +266,7 @@ private:
 
         WrittenOffsetSubstreams written_offset_substreams{};
         PlainMarksByName cached_marks;
+        PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
         bool need_prefix;
@@ -563,6 +572,8 @@ private:
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
+    static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
+    static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
     static void mergeBuiltStatistics(BuildStatisticsTransformMap && build_statistics_transforms, const GlobalRuntimeContextPtr & global_ctx);

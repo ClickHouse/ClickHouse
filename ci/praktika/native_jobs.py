@@ -334,7 +334,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         report_url_current_sha = info.get_report_url(latest=False)
         body = f"Workflow [[{workflow.name}]({report_url_latest_sha})], commit [{env.SHA[:8]}]"
         res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
-            comment_tags_and_bodies={"report": body, "summary": ""},
+            comment_tags_and_bodies={"report": body, "summary": "", "review": ""},
         )
         res1 = GH.post_commit_status(
             name=workflow.name,
@@ -851,9 +851,13 @@ def _finish_workflow(workflow, job_name):
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
     if results:
-        return Result.create_from(results=results, stopwatch=stop_watch)
+        return Result.create_from(
+            name=job_name, results=results, stopwatch=stop_watch
+        )
     else:
-        return Result.create_from(status=Result.Status.SUCCESS, stopwatch=stop_watch)
+        return Result.create_from(
+            name=job_name, status=Result.Status.SUCCESS, stopwatch=stop_watch
+        )
 
 
 if __name__ == "__main__":

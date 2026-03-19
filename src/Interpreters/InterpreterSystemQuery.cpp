@@ -14,6 +14,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/enableAllExperimentalSettings.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
@@ -139,7 +140,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
-    extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
@@ -416,6 +416,14 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
+#if USE_PARQUET
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
+            system_context->clearParquetMetadataCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
+#endif
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -436,9 +444,9 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             system_context->clearVectorSimilarityIndexCache();
             break;
-        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_DICTIONARY_CACHE);
-            system_context->clearTextIndexDictionaryBlockCache();
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
+            system_context->clearTextIndexTokensCache();
             break;
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
@@ -450,7 +458,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::CLEAR_TEXT_INDEX_CACHES:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
-            system_context->clearTextIndexDictionaryBlockCache();
+            system_context->clearTextIndexTokensCache();
             system_context->clearTextIndexHeaderCache();
             system_context->clearTextIndexPostingsCache();
             break;
@@ -661,7 +669,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
             executeCommandsAndThrowIfError({
-                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
+                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
             });
             ExternalDictionariesLoader::resetAll();
@@ -882,8 +890,22 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
-        case Type::RESTART_DISK:
-            restartDisk(query.disk);
+        case Type::WAIT_BLOBS_CLEANUP:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_WAIT_BLOBS_CLEANUP);
+
+            auto disk_ptr = getContext()->getDisk(query.disk);
+            auto * object_disk = dynamic_cast<DiskObjectStorage *>(disk_ptr.get());
+            if (!object_disk)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not an object storage disk", query.disk);
+
+            /// We wait 2 times here because a background blob cleanup round may already be running
+            /// and this query must guarantee that after it returns, all expected blobs have been cleaned up.
+            object_disk->waitBlobsCleanup();
+            object_disk->waitBlobsCleanup();
+
+            break;
+        }
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -1479,10 +1501,10 @@ void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & quer
 }
 
 DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
-    const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
+    const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
 {
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::restoreDatabaseFromKeeperPath");
-    auto zookeeper = getContext()->getZooKeeper();
+    auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 
     String metadata_path = zookeeper_path + "/metadata";
     if (!zookeeper->exists(metadata_path))
@@ -1730,7 +1752,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
+            DatabaseReplicated::dropReplica(
+                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -1757,7 +1780,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
+            DatabaseReplicated::dropReplica(
+                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -1794,6 +1818,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 executeQuery(drop_query, drop_ctx);
             });
             auto database = restoreDatabaseFromKeeperPath(
+                /*zookeeper_name=*/query.zk_name,
                 /*zookeeper_path=*/query.replica_zk_path,
                 /*full_replica_name=*/full_replica_name,
                 /*restoring_database_name=*/restoring_database_name);
@@ -1804,8 +1829,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
         }
 
-        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
-        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
+        DatabaseReplicated::dropReplica(nullptr, query.zk_name, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
+        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.full_replica_zk_path);
     }
 }
 
@@ -2050,12 +2075,6 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
 
-[[noreturn]] void InterpreterSystemQuery::restartDisk(String &)
-{
-    getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
-}
-
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
@@ -2079,17 +2098,16 @@ void InterpreterSystemQuery::prewarmMarkCache()
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 
-    auto mark_cache = getContext()->getMarkCache();
-    if (!mark_cache)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mark cache is not configured");
-
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
         CurrentMetrics::MergeTreePartsLoaderThreadsActive,
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, std::move(mark_cache), nullptr);
+    MergeTreeData::CachesToPrewarm caches;
+    caches.mark_cache = getContext()->getMarkCache();
+    caches.index_mark_cache = getContext()->getIndexMarkCache();
+    merge_tree->prewarmCaches(pool, caches);
 }
 
 void InterpreterSystemQuery::prewarmPrimaryIndexCache()
@@ -2114,7 +2132,9 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, nullptr, std::move(index_cache));
+    MergeTreeData::CachesToPrewarm caches;
+    caches.primary_index_cache = index_cache;
+    merge_tree->prewarmCaches(pool, caches);
 }
 
 
@@ -2137,6 +2157,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
@@ -2146,7 +2167,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_INDEX_MARK_CACHE:
         case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
         case Type::CLEAR_TEXT_INDEX_CACHES:
@@ -2409,8 +2430,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::RESTART_DISK:
+        case Type::WAIT_BLOBS_CLEANUP:
         {
-            required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
+            required_access.emplace_back(AccessType::SYSTEM_WAIT_BLOBS_CLEANUP);
             break;
         }
         case Type::UNFREEZE:

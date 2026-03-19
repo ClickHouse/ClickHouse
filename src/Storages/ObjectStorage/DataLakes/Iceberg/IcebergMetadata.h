@@ -47,6 +47,8 @@ public:
         const ContextPtr & context_,
         IcebergMetadataFilesCachePtr cache_ptr);
 
+    ~IcebergMetadata() override;
+
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 
@@ -124,6 +126,15 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
 
+    Pipe executeCommand(
+        const String & command_name,
+        const ASTPtr & args,
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        ContextPtr context,
+        const StorageID & storage_id) override;
+
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
@@ -147,14 +158,18 @@ private:
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context) const;
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
     DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
+    BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
+
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
+
+    void backgroundMetadataPrefetcherThread();
 };
 }
 

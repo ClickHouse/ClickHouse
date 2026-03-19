@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnNullable.h>
@@ -94,8 +95,10 @@ ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) 
     return ColumnConst::create(std::move(res), size);
 }
 
-SerializationPtr DataTypeNullable::doGetDefaultSerialization() const
+SerializationPtr DataTypeNullable::doGetSerialization(const SerializationInfoSettings & settings) const
 {
+    if (settings.propagate_types_serialization_versions_to_nested_types)
+        return std::make_shared<SerializationNullable>(nested_data_type->getSerialization(settings));
     return std::make_shared<SerializationNullable>(nested_data_type->getDefaultSerialization());
 }
 
@@ -109,7 +112,8 @@ void DataTypeNullable::forEachChild(const ChildCallback & callback) const
 std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeNullable &>(*data.type).nested_data_type;
-    ISerialization::SubstreamData nested_data(nested_type->getDefaultSerialization());
+    const auto & nullable_serialization = assert_cast<const SerializationNullable &>(*removeNamedSerialization(data.serialization));
+    ISerialization::SubstreamData nested_data(nullable_serialization.getNested());
     nested_data.type = nested_type;
     nested_data.column = data.column ? assert_cast<const ColumnNullable &>(*data.column).getNestedColumnPtr() : nullptr;
 

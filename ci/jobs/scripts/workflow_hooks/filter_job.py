@@ -68,6 +68,15 @@ def should_skip_job(job_name):
         _info_cache = Info()
         print(f"INFO: PR labels: {_info_cache.pr_labels}")
 
+    # There is no way to prevent GitHub Actions from running the PR workflow on
+    # release branches, so we skip all jobs here. The ReleaseCI workflow is used
+    # for testing on release branches instead.
+    if (
+        Labels.RELEASE in _info_cache.pr_labels
+        or Labels.RELEASE_LTS in _info_cache.pr_labels
+    ):
+        return True, "Skipped for release PR"
+
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
@@ -203,12 +212,13 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, no integration tests updates"
 
-    # skip ARM perf tests for non-performance update
+    # skip AMD perf tests for non-performance update (ARM runs by default)
     if (
-        "- Performance Improvement" not in _info_cache.pr_body
+        " Performance Improvement" not in _info_cache.pr_body
         and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
+        and Labels.PR_PERFORMANCE not in _info_cache.pr_labels
         and JobNames.PERFORMANCE in job_name
-        and "arm" in job_name
+        and "amd" in job_name
         and _info_cache.pr_number  # run all performance jobs on master
     ):
         return True, "Skipped, not labeled with 'pr-performance'"

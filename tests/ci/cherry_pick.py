@@ -43,6 +43,7 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
+from github.GithubException import GithubException
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from pr_info import Labels
 from report import GITHUB_JOB_URL
@@ -308,12 +309,34 @@ close it.
             f"{GIT_PREFIX} push -f {self.REMOTE} "
             f"{self.backport_branch}:{self.backport_branch}"
         )
-        self.backport_pr = self.repo.create_pull(
-            title=title,
-            body=self.body_header() + self.BACKPORT_DESCRIPTION + self.pr_source,
-            base=self.name,
-            head=self.backport_branch,
-        )
+        try:
+            self.backport_pr = self.repo.create_pull(
+                title=title,
+                body=self.body_header() + self.BACKPORT_DESCRIPTION + self.pr_source,
+                base=self.name,
+                head=self.backport_branch,
+            )
+        except GithubException as e:
+            if e.status != 422 or "already exists" not in str(e):
+                raise
+            # The backport PR was created in a previous run but left without the
+            # `pr-backport` label (e.g. the run was interrupted after `create_pull`
+            # but before `add_to_labels`). Find and reuse it.
+            existing = list(
+                self.repo.get_pulls(
+                    head=f"{self.repo.owner.login}:{self.backport_branch}",
+                    base=self.name,
+                    state="open",
+                )
+            )
+            if not existing:
+                raise
+            self.backport_pr = existing[0]
+            logging.warning(
+                "Backport PR #%s for PR #%s already exists without label, reusing it",
+                self.backport_pr.number,
+                self.pr.number,
+            )
         self.backport_pr.add_to_labels(Labels.PR_BACKPORT)
         if Labels.PR_CRITICAL_BUGFIX in [label.name for label in self.pr.labels]:
             self.backport_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
@@ -641,6 +664,53 @@ class BackportPRs:
             if Labels.ROLLING_OUT in {label.name for label in release_pr.labels}
         ]
 
+    def _close_prs_for_rolling_out_branch(
+        self, pr: PullRequest, branch: str
+    ) -> None:
+        """
+        Close any open cherry-pick or backport PRs that were previously created
+        for a release branch that is now marked `rolling-out`.
+        """
+        cp_branch = ReleaseBranch.cp_branch(branch, pr.number)
+        bp_branch = ReleaseBranch.bp_branch(branch, pr.number)
+        # Search separately: label:A,B in GitHub search is AND (must have both),
+        # so we issue two queries — one per label — to find either type.
+        open_prs = []
+        for head_branch, label in (
+            (cp_branch, Labels.PR_CHERRYPICK),
+            (bp_branch, Labels.PR_BACKPORT),
+        ):
+            open_prs += self.gh.get_pulls_from_search(
+                query=f"type:pr repo:{self._repo_name} head:{head_branch}",
+                state="open",
+                label=label,
+            )
+        for open_pr in open_prs:
+            logging.info(
+                "PR #%s: closing PR #%s because release branch %s is rolling-out",
+                pr.number,
+                open_pr.number,
+                branch,
+            )
+            if self.dry_run:
+                logging.info(
+                    "DRY RUN: would close PR #%s for rolling-out branch %s",
+                    open_pr.number,
+                    branch,
+                )
+                continue
+            version = branch.replace("release/", "")
+            open_pr.create_issue_comment(
+                f"Closing this PR because the target release branch `{branch}` "
+                "is currently being rolled out. Backporting is skipped for "
+                "rolling-out branches when the original PR carries only the "
+                "generic `pr-must-backport` or `pr-critical-bugfix` label.\n\n"
+                f"If you still want to backport this change, add the "
+                f"`v{version}-must-backport` label to the original PR "
+                f"#{pr.number} — that overrides the rolling-out skip."
+            )
+            open_pr.edit(state="closed")
+
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
@@ -672,6 +742,8 @@ class BackportPRs:
                     pr.number,
                     ", ".join(skipped),
                 )
+                for br in skipped:
+                    self._close_prs_for_rolling_out_branch(pr, br)
             branches = [
                 ReleaseBranch(br, pr, self.repo)
                 for br in self.release_branches

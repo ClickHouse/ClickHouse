@@ -932,6 +932,14 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             auto key = arguments.at(0);
+            if (!key.column)
+                break;
+
+            /// arrayJoin changes the number of rows, which would break partial evaluation
+            /// where other columns maintain input_rows_count. Skip it for non-header evaluation.
+            if (input_rows_count > 0)
+                break;
+
             key.column = key.column->convertToFullColumnIfConst();
 
             const auto * array = getArrayJoinColumnRawPtr(key.column);
@@ -1267,7 +1275,13 @@ ActionsDAG ActionsDAG::foldActionsByProjection(const std::unordered_map<const No
                         {
                             bool should_rename = new_input->result_name != rename->result_name;
                             const auto & input_name = should_rename ? rename->result_name : new_input->result_name;
-                            mapped_input = &dag.addInput(input_name, new_input->result_type);
+                            /// Use the projection node's type for the INPUT since the actual data
+                            /// comes from the projection and has projection types. Using the query
+                            /// node's type would create a mismatch between the header and the data.
+                            /// For example, removeTrivialWrappers may strip materialize() from the
+                            /// query, causing a match with a projection column that has different
+                            /// LowCardinality wrapping.
+                            mapped_input = &dag.addInput(input_name, rename->result_type);
                             if (should_rename)
                                 mapped_input = &dag.addAlias(*mapped_input, new_input->result_name);
                         }
@@ -1720,6 +1734,26 @@ const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool mat
 {
     const auto & func = materializeNodeWithoutRename(node, materialize_sparse);
     return addAlias(func, node.result_name);
+}
+
+void ActionsDAG::removeTrivialWrappers()
+{
+    auto is_trivial_wrapper = [](const Node * node)
+    {
+        return node->type == ActionType::FUNCTION && node->children.size() == 1
+            && (node->function_base->getName() == "materialize" || node->function_base->getName() == "identity");
+    };
+
+    for (auto & node : nodes)
+        for (auto & child : node.children)
+            while (is_trivial_wrapper(child))
+                child = child->children[0];
+
+    for (auto *& output : outputs)
+        while (is_trivial_wrapper(output))
+            output = output->children[0];
+
+    removeUnusedActions();
 }
 
 ActionsDAG ActionsDAG::makeConvertingActions(
@@ -2496,8 +2530,17 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
     if (value.isNull())
         return true;
 
-    auto predicate_value = value.safeGet<UInt8>();
-    return predicate_value == 0;
+    /// The filter expression may evaluate to any numeric type, not just UInt8,
+    /// e.g. when WHERE uses a Float64 expression like sin(col) or radians(col).
+    if (value.getType() == Field::Types::UInt64)
+        return value.safeGet<UInt64>() == 0;
+    if (value.getType() == Field::Types::Int64)
+        return value.safeGet<Int64>() == 0;
+    if (value.getType() == Field::Types::Float64)
+        return value.safeGet<Float64>() == 0;
+
+    /// For any other type, conservatively assume the filter is not always false.
+    return false;
 }
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
@@ -3049,26 +3092,11 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         }
         else
         {
-            /// Replace predicate result to constant 1.
-            Node node;
-            node.type = ActionType::COLUMN;
-            node.result_name = predicate->result_name;
-            node.result_type = predicate->result_type;
-            node.column = node.result_type->createColumnConst(0, 1);
-
-            if (predicate->type != ActionType::INPUT)
-                *predicate = std::move(node);
-            else
-            {
-                /// Special case. We cannot replace input to constant inplace.
-                /// Because we cannot affect inputs list for actions.
-                /// So we just add a new constant and update outputs.
-                const auto * new_predicate = &addNode(node);
-                for (auto & output_node : outputs)
-                    if (output_node == predicate)
-                        output_node = new_predicate;
-            }
-
+            /// The whole predicate was pushed down, but the filter column is still
+            /// needed in the output (e.g. it appears in SELECT). Keep the original
+            /// expression so the output values are correct.  The caller will convert
+            /// the FilterStep into an ExpressionStep, which still evaluates the
+            /// expression but no longer filters.
             is_filter_const = true;
         }
     }
