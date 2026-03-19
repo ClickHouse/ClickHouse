@@ -58,3 +58,52 @@ SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
 -- Expected: >= 1
 
 SYSTEM DROP QUERY CACHE;
+
+-- Test 8: IN subquery with query_cache_for_subqueries (exercises PreparedSets path)
+SELECT number FROM numbers(10) WHERE number IN (SELECT number FROM numbers(5))
+SETTINGS use_query_cache = true, query_cache_for_subqueries = true, query_cache_system_table_handling = 'save';
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+-- Expected: >= 1
+
+SYSTEM DROP QUERY CACHE;
+
+-- Test 9: Scalar subquery with query_cache_for_subqueries (exercises scalar subquery path)
+SELECT (SELECT avg(number) FROM numbers(100)) AS avg_val
+SETTINGS use_query_cache = true, query_cache_for_subqueries = true, query_cache_system_table_handling = 'save';
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+-- Expected: >= 1
+
+SYSTEM DROP QUERY CACHE;
+
+-- Test 10: Nested subqueries with mixed explicit settings
+SELECT number FROM (
+    SELECT number FROM (
+        SELECT number FROM numbers(5) SETTINGS use_query_cache = true
+    )
+);
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+-- Expected: 1
+
+SYSTEM DROP QUERY CACHE;
+
+-- Test 11: Verify no caching when use_query_cache is not set at all (baseline)
+SELECT number FROM (SELECT number FROM numbers(5));
+SELECT count(*) FROM system.query_cache;
+-- Expected: 0
+
+SYSTEM DROP QUERY CACHE;
+
+-- Test 12: Subquery with enable_writes_to_query_cache = false (write disabled, read only)
+SELECT number FROM (SELECT number FROM numbers(5) SETTINGS use_query_cache = true, enable_writes_to_query_cache = false);
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+-- Expected: 0 (writes disabled)
+
+SYSTEM DROP QUERY CACHE;
+
+-- Test 13: Subquery with enable_reads_from_query_cache = false (write only, no read)
+SELECT number FROM (SELECT number FROM numbers(5) SETTINGS use_query_cache = true, enable_reads_from_query_cache = false);
+SELECT number FROM (SELECT number FROM numbers(5) SETTINGS use_query_cache = true, enable_reads_from_query_cache = false);
+SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+-- Expected: 1 (written but never read from cache)
+
+SYSTEM DROP QUERY CACHE;
