@@ -384,6 +384,7 @@ if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
     set_source_files_properties(
             Common/Elf.cpp
             Common/Dwarf.cpp
+            Common/MachO.cpp
             Common/SymbolIndex.cpp
             Common/ThreadFuzzer.cpp
             PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")

@@ -275,7 +275,13 @@ Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_c
                 header.erase(column.name);
         }
 
-        headers.push_back(std::move(header));
+        /// Sort columns by name so that assertCompatibleHeader below compares
+        /// matching columns at the same positions. Patch blocks may arrive with
+        /// different column orderings because addPatchPartsColumns collects names
+        /// from a NameSet (unordered_set) whose iteration order is non-deterministic.
+        /// Downstream consumers use name-based lookups, so order does not matter
+        /// for correctness — only for this positional compatibility check.
+        headers.push_back(header.sortColumns());
     }
 
     for (size_t i = 1; i < headers.size(); ++i)

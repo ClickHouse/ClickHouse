@@ -3,7 +3,7 @@
 -- add_minmax_index_for_numeric_columns=0: Would use the index instead (used before the QueryConditionCache)
 
 -- Does additional QCC lookups that the test doesn't expect
-set automatic_parallel_replicas_mode=0;
+set automatic_parallel_replicas_mode=0, enable_parallel_replicas=0;
 
 -- w/o local plan for parallel replicas the test will fail in ParallelReplicas CI run since filter steps will be executed as part of remote queries
 set parallel_replicas_local_plan=1;

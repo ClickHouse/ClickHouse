@@ -14,6 +14,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -81,7 +82,11 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
     {
         if (which.isDate() || which.isDate32())
         {
-            Int64 avg_seconds = step.safeGet<Int64>() * step_kind->toAvgSeconds();
+            Int64 step_value = step.safeGet<Int64>();
+            Int64 avg_seconds = 0;
+            if (common::mulOverflow(step_value, static_cast<Int64>(step_kind->toAvgSeconds()), avg_seconds))
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                                "Overflow in WITH FILL step value");
             if (std::abs(avg_seconds) < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                                 "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
