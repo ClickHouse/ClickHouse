@@ -1776,6 +1776,13 @@ public:
                 && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
     }
 
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
+            || (IsOperation<Op>::div_floating
+                && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return getReturnTypeImplStatic(arguments, context);

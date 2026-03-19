@@ -166,6 +166,8 @@ namespace DB
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPAddressContainedIn>(); }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+        bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
         template <IPKind kind>
         static inline IPAddressVariant parseIP(const IPTrait<kind>::ColumnType * col_addr, size_t n)
         {

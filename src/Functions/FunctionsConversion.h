@@ -2930,6 +2930,11 @@ public:
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
     }
 
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return !IsDataTypeStringOrFixedString<ToDataType> && isStringOrFixedString(*arguments[0].type);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         NullPresence null_presence = getNullPresense(arguments);
@@ -3422,6 +3427,7 @@ public:
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return exception_mode == ConvertFromStringExceptionMode::Throw; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -4414,6 +4420,7 @@ public:
     String getName() const override { return cast_name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return cast_type != CastType::accurateOrNull; }
 
     bool hasInformationAboutMonotonicity() const override
     {

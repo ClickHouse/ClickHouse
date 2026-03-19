@@ -1430,6 +1430,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return array_function->canThrow(arguments); } 
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Since transposed distance functions are variadic, we check the number of arguments, as we won't do it later like with others

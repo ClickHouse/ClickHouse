@@ -24,6 +24,7 @@ template <typename Traits, typename Name>
 struct BaseXXEncode
 {
     static constexpr auto name = Name::name;
+    static constexpr bool can_throw = false;
 
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
     {
@@ -91,6 +92,7 @@ template <typename Traits, typename Name, BaseXXDecodeErrorHandling ErrorHandlin
 struct BaseXXDecode
 {
     static constexpr auto name = Name::name;
+    static constexpr bool can_throw = (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException);
 
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
     {
@@ -178,6 +180,7 @@ public:
     String getName() const override { return Func::name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return Func::can_throw; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
