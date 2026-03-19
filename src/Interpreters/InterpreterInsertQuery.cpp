@@ -90,6 +90,7 @@ namespace MergeTreeSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ErrorCodes
@@ -431,7 +432,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     if (select_streams != 1)
         pipeline.resize(1);
 
-    auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(select_query_sorted, context->getSettingsRef(), logger);
+    auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(
+        select_query_sorted, context->getSettingsRef(),
+        context->getSettingsRef()[Setting::insert_deduplication_token].value, logger);
 
     if (deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef()))
     {
@@ -451,6 +454,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             insert_dependencies,
             insert_dependencies->getRootViewID(),
             context->getSettingsRef()[Setting::insert_deduplication_token].value,
+            context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
             in_header);
     });
 
@@ -741,6 +745,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             insert_dependencies,
             insert_dependencies->getRootViewID(),
             settings[Setting::insert_deduplication_token].value,
+            context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
             chain.getInputSharedHeader()));
 
     auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota());
@@ -921,6 +926,9 @@ BlockIO InterpreterInsertQuery::execute()
     {
         if (settings[Setting::parallel_distributed_insert_select])
         {
+            /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
+            auto saved_select = query.select->clone();
+
             auto distributed = table->distributedWrite(query, context);
             if (distributed)
             {
@@ -937,6 +945,8 @@ BlockIO InterpreterInsertQuery::execute()
                 if (pipeline)
                     res.pipeline = std::move(*pipeline);
             }
+
+            query.select = std::move(saved_select);
         }
         if (!res.pipeline.initialized())
             res.pipeline = buildInsertSelectPipeline(query, table);
@@ -995,7 +1005,7 @@ void InterpreterInsertQuery::setInsertContextValues(StoragePtr table)
         insert_columns = std::move(names);
     }
 
-    getContext()->setInsertionTable(insert_query.table_id, insert_columns, table->getInMemoryMetadataPtr()->columns);
+    getContext()->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(table->getInMemoryMetadataPtr()->columns));
 }
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory)

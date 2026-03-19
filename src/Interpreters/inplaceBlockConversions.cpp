@@ -310,6 +310,7 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
+
     return createExpressions(header, expr_list, save_unneeded_columns, context);
 }
 
@@ -385,17 +386,16 @@ static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const
     return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
 }
 
-static bool hasDefault(const StorageMetadataPtr & metadata_snapshot, const NameAndTypePair & column)
+static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
 {
-    if (!metadata_snapshot)
+    if (!storage_snapshot)
         return false;
 
-    const auto & columns = metadata_snapshot->getColumns();
-    if (columns.has(column.name))
-        return columns.hasDefault(column.name);
+    if (storage_snapshot->getDefault(column.name).has_value())
+        return true;
 
     auto name_in_storage = column.getNameInStorage();
-    return columns.hasDefault(name_in_storage);
+    return storage_snapshot->getDefault(name_in_storage).has_value();
 }
 
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
@@ -421,7 +421,7 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageMetadataPtr metadata_snapshot)
+    StorageSnapshotPtr storage_snapshot)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -443,8 +443,8 @@ void fillMissingColumns(
         if (res_columns[i] && partially_read_columns.contains(requested_column->name))
             res_columns[i] = nullptr;
 
-        /// Nothing to fill or default should be filled in evaluateMissingDefaults
-        if (res_columns[i] || hasDefault(metadata_snapshot, *requested_column))
+        /// Nothing to fill or default should be filled in evaluateMissingDefaults.
+        if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
             continue;
 
         std::vector<ColumnPtr> current_offsets;

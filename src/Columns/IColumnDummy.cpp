@@ -26,9 +26,9 @@ void IColumnDummy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
 }
 
-DataTypePtr IColumnDummy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
+void IColumnDummy::getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name and type from {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name from {}", getName());
 }
 
 void IColumnDummy::insert(const Field &)
@@ -112,9 +112,7 @@ MutableColumns IColumnDummy::scatter(size_t num_columns, const Selector & select
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column.");
 
-    std::vector<size_t> counts(num_columns);
-    for (auto idx : selector)
-        ++counts[idx];
+    std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 
     MutableColumns res(num_columns);
     for (size_t i = 0; i < num_columns; ++i)

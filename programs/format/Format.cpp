@@ -22,6 +22,7 @@
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -34,6 +35,11 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
+#include <Compression/CompressionFactory.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -183,6 +189,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             registerDatabases();
             registerStorages();
             registerFormats();
+            registerDictionaries();
 
             std::unordered_set<std::string> additional_names;
 
@@ -190,11 +197,21 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             auto all_known_data_type_names = DataTypeFactory::instance().getAllRegisteredNames();
             auto all_known_settings = Settings().getAllRegisteredNames();
             auto all_known_merge_tree_settings = MergeTreeSettings().getAllRegisteredNames();
+            auto all_known_index_types = MergeTreeIndexFactory::instance().getAllRegisteredNames();
+            auto all_known_codecs = CompressionCodecFactory::instance().getAllRegisteredNames();
+            auto all_known_database_engines = DatabaseFactory::instance().getAllRegisteredNames();
+            auto all_known_dict_layouts = DictionaryFactory::instance().getAllRegisteredNames();
+            auto all_known_dict_sources = DictionarySourceFactory::instance().getAllRegisteredNames();
 
             additional_names.insert(all_known_storage_names.begin(), all_known_storage_names.end());
             additional_names.insert(all_known_data_type_names.begin(), all_known_data_type_names.end());
             additional_names.insert(all_known_settings.begin(), all_known_settings.end());
             additional_names.insert(all_known_merge_tree_settings.begin(), all_known_merge_tree_settings.end());
+            additional_names.insert(all_known_index_types.begin(), all_known_index_types.end());
+            additional_names.insert(all_known_codecs.begin(), all_known_codecs.end());
+            additional_names.insert(all_known_database_engines.begin(), all_known_database_engines.end());
+            additional_names.insert(all_known_dict_layouts.begin(), all_known_dict_layouts.end());
+            additional_names.insert(all_known_dict_sources.begin(), all_known_dict_sources.end());
 
             for (auto * it = auto_time_zones; *it; ++it)
             {
@@ -208,16 +225,25 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         additional_names.insert(word);
             }
 
+            /// Add lowercased versions of all additional names for case-insensitive matching.
+            std::unordered_set<std::string> additional_names_lowercase;
+            for (const auto & name : additional_names)
+                additional_names_lowercase.insert(Poco::toLower(name));
+
             KnownIdentifierFunc is_known_identifier = [&](std::string_view name)
             {
                 std::string what(name);
 
-                return FunctionFactory::instance().has(what)
+                if (FunctionFactory::instance().has(what)
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || FormatFactory::instance().isOutputFormat(what)
                     || FormatFactory::instance().isInputFormat(what)
-                    || additional_names.contains(what);
+                    || additional_names.contains(what))
+                    return true;
+
+                /// Case-insensitive fallback for additional names (storage names, data types, settings, etc.)
+                return additional_names_lowercase.contains(Poco::toLower(what));
             };
 
             WriteBufferFromFileDescriptor out(STDOUT_FILENO);

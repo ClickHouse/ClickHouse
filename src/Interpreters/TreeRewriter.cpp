@@ -37,6 +37,7 @@
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -183,7 +184,7 @@ struct CustomizeAggregateFunctionsSuffixData
         const auto & instance = AggregateFunctionFactory::instance();
         if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix) && !endsWith(func.name, customized_func_suffix + "If"))
         {
-            auto properties = instance.tryGetProperties(func.name, func.nulls_action);
+            auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
             if (properties && !properties->returns_default_when_only_null)
             {
                 func.name += customized_func_suffix;
@@ -227,7 +228,7 @@ struct CustomizeAggregateFunctionsMoveSuffixData
         {
             if (endsWith(func.name, customized_func_suffix))
             {
-                auto properties = instance.tryGetProperties(func.name, func.nulls_action);
+                auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
                 if (properties && !properties->returns_default_when_only_null)
                 {
                     func.name = moveSuffixAhead(func.name);
@@ -304,7 +305,7 @@ struct ReplacePositionalArgumentsData
             for (auto & expr : select_query.groupBy()->children)
                 replaceForPositionalArguments(expr, &select_query, ASTSelectQuery::Expression::GROUP_BY);
         }
-        if (select_query.orderBy())
+        if (select_query.orderBy() && !select_query.order_by_all)
         {
             for (auto & expr : select_query.orderBy()->children)
             {
@@ -920,7 +921,7 @@ public:
     static void visitLiteral(ASTLiteral & literal, ASTPtr &)
     {
         if (literal.value.getType() == Field::Types::Tuple)
-            literal.use_legacy_column_name_of_tuple = true;
+            literal.setUseLegacyColumnNameOfTuple(true);
     }
     static void visitFunction(ASTFunction & func, ASTPtr &ast)
     {
@@ -1173,10 +1174,19 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 source_columns.push_back(*column);
                 it = unknown_required_source_columns.erase(it);
             }
-            else if (auto common_column = common_virtual_columns.tryGet(*it))
+            else if (const auto * common_column_desc = common_virtual_columns.tryGetDescription(*it))
             {
-                source_columns.push_back(*common_column);
-                it = unknown_required_source_columns.erase(it);
+                /// Ephemeral common virtual columns (e.g. `_table`) are only supported
+                /// by the analyzer which fills them via ExpressionStep.
+                /// The old analyzer has no mechanism to fill them, so skip them here
+                /// to avoid a type mismatch between the header and the actual data.
+                if (!common_column_desc->isEphemeral())
+                {
+                    source_columns.emplace_back(common_column_desc->name, common_column_desc->type);
+                    it = unknown_required_source_columns.erase(it);
+                }
+                else
+                    ++it;
             }
             else
             {
@@ -1328,7 +1338,14 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         result.analyzed_join = std::make_shared<TableJoin>();
 
     if (remove_duplicates)
+    {
+        Aliases aliases;
+        NameSet name_set;
+
+        normalize(query, aliases, name_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext(), select_options.is_create_parameterized_view);
         renameDuplicatedColumns(select_query);
+    }
+
 
     /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some logic inside JOINs
     if (settings[Setting::optimize_normalize_count_variants])
@@ -1367,8 +1384,23 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         expandGroupByAll(select_query);
 
     // expand ORDER BY ALL
-    if (settings[Setting::enable_order_by_all] && select_query->order_by_all)
-        expandOrderByAll(select_query, tables_with_columns);
+    if (select_query->order_by_all)
+    {
+        if (settings[Setting::enable_order_by_all])
+        {
+            expandOrderByAll(select_query, tables_with_columns);
+        }
+        else
+        {
+            /// When `enable_order_by_all` is disabled, revert the ORDER BY ALL keyword
+            /// back to an ordinary ORDER BY with `all` as a column reference.
+            /// Replace the child with a fresh identifier AFTER normalization so that it
+            /// refers to the table column named "all", not to any alias.
+            auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
+            all_elem->children[0] = make_intrusive<ASTIdentifier>("all");
+            select_query->order_by_all = false;
+        }
+    }
 
     if (select_query->limit_by_all)
     {

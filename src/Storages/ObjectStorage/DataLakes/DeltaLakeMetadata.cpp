@@ -498,12 +498,10 @@ struct DeltaLakeMetadataImpl
 
         std::atomic<int> is_stopped{0};
 
-        std::unique_ptr<parquet::arrow::FileReader> reader;
-        THROW_ARROW_NOT_OK(
-            parquet::arrow::OpenFile(
-                asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES),
-                arrow::default_memory_pool(),
-                &reader));
+        auto open_file_res = parquet::arrow::OpenFile(
+            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool());
+        THROW_ARROW_NOT_OK(open_file_res.status());
+        auto reader = *std::move(open_file_res);
 
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
@@ -620,29 +618,34 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
              data_files.size(), partition_columns.size(), schema.toString());
 }
 
+static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)
+{
+    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
+    return supports_delta_kernel && context->getSettingsRef()[Setting::allow_experimental_delta_kernel_rs] ;
+}
+
+bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
+{
+    return isDeltaKernelEnabled(context, storage_type);
+}
+
+bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type)
+{
+    return isDeltaKernelEnabled(context, storage_type);
+}
+
 DataLakeMetadataPtr DeltaLakeMetadata::create(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationWeakPtr configuration,
     ContextPtr local_context)
 {
 #if USE_DELTA_KERNEL_RS
-    auto configuration_ptr = configuration.lock();
-
-    const auto & query_settings_ref = local_context->getSettingsRef();
-
-    const auto storage_type = configuration_ptr->getType();
-    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
-
-    bool enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
-    if (supports_delta_kernel && enable_delta_kernel)
+    if (isDeltaKernelEnabled(local_context, configuration.lock()->getType()))
     {
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
+        return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration);
     }
-    else
-        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-#else
-    return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 #endif
+    return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 }
 
 DataTypePtr DeltaLakeMetadata::getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable)

@@ -1,4 +1,3 @@
-SET enable_full_text_index = 1;
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Must not have no arguments.';
@@ -495,9 +494,7 @@ CREATE TABLE tab
     INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'invalid_codec')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- TODO: this should throw an exception but it doesn't
-
-DROP TABLE tab;
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Types are incorrect.';
 
@@ -684,14 +681,17 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY key; -- { serverError BAD_ARGUMENTS }
 
-CREATE TABLE tab
-(
-    key UInt64,
-    n_str Nullable(String),
-    INDEX idx n_str TYPE text(tokenizer = 'splitByNonAlpha')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab (
+    id UInt32,
+    n Nullable(Int32),
+    INDEX idx(n) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab (
+    id UInt32,
+    arr Array(Nullable(Int32)),
+    INDEX idx(arr) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
 SET allow_suspicious_low_cardinality_types = 1;
 

@@ -2,8 +2,11 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation-html"
 
+#include <Common/Exception.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
+
+#include <map>
 
 namespace DB
 {
@@ -71,7 +74,11 @@ public:
     };
 
 
-    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_);
+    SerializationObjectSharedData(
+        SerializationVersion serialization_version_,
+        const DataTypePtr & dynamic_type_,
+        const SerializationPtr & dynamic_serialization_,
+        size_t buckets_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

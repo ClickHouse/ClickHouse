@@ -20,6 +20,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Field.h>
@@ -29,6 +30,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Interpreters/RowRefs.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 
 using Hash = CityHash_v1_0_2::uint128;
@@ -45,17 +47,32 @@ extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 }
 
-std::pair<String, DataTypePtr> IColumn::getValueNameAndType(size_t n, const Options & options) const
+void throwCannotPopBack(size_t n, const std::string & column_name, size_t column_size)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, column_name, column_size);
+}
+
+void throwColumnConvertNotSupported(std::string_view type_name, const char * as_type)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as {}", type_name, as_type);
+}
+
+bool IColumn::Options::notFull(WriteBufferFromOwnString & buf) const
+{
+    return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
+}
+
+String IColumn::getValueName(size_t n, const Options & options) const
 {
     WriteBufferFromOwnString name_buf;
-    const auto & type = getValueNameAndTypeImpl(name_buf, n, options);
+    getValueNameImpl(name_buf, n, options);
     if (options.notFull(name_buf))
-        return {name_buf.str(), type};
+        return name_buf.str();
 
     HashState h;
     updateHashWithValue(n, h);
     auto p = getSipHash128AsPair(h);
-    return {fmt::format("{}_{}", p.high64, p.low64), type};
+    return fmt::format("{}_{}", p.high64, p.low64);
 }
 
 String IColumn::dumpStructure() const
@@ -215,6 +232,37 @@ void IColumn::updateAt(const IColumn &, size_t, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());
 }
 
+Int64 IColumn::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+{
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    #define compareAt doCompareAt
+#endif
+    Int64 res = compareAt(n, m, rhs, nan_direction_hint);
+
+    if (res < 0)
+    {
+        ++n;
+        while (n < size() && (compareAt(n, m, rhs, nan_direction_hint) < 0))
+        {
+            --res;
+            ++n;
+        }
+    }
+    else if (res > 0)
+    {
+        ++m;
+        while (m < rhs.size() && (compareAt(n, m, rhs, nan_direction_hint) > 0))
+        {
+            ++res;
+            ++m;
+        }
+    }
+    return res;
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    #undef compareAt
+#endif
+}
+
 #if USE_EMBEDDED_COMPILER
 llvm::Value * IColumn::compileComparator(
     llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
@@ -308,12 +356,11 @@ MutableColumns IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const
     for (auto & column : columns)
         column = self.cloneEmpty();
 
+    const auto counts = countColumnsSizeInSelector(num_columns, selector);
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) * 1.1 / static_cast<double>(num_columns));    /// 1.1 is just a guess. Better to use n-sigma rule.
-
-        if (reserve_size > 1)
-            for (auto & column : columns)
-                column->reserve(reserve_size);
+        if (counts[i] > 1)
+            columns[i]->reserve(counts[i]);
     }
 
     for (size_t i = 0; i < num_rows; ++i)
@@ -854,6 +901,7 @@ void IColumnHelper<Derived, Parent>::updateInplaceFrom(const IColumn::Patch & pa
     else
         updateInplaceFrom<false>(dst, patch);
 }
+
 
 template class IColumnHelper<ColumnVector<UInt8>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UInt16>, ColumnFixedSizeHelper>;

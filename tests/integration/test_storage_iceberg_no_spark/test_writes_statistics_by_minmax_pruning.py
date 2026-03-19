@@ -29,7 +29,7 @@ def test_writes_statistics_by_minmax_pruning(started_cluster_iceberg_no_spark, f
         '2024-02-20 10:00:00',
         'vasya', 5);
     """,
-    settings={"allow_experimental_insert_into_iceberg": 1}
+    settings={"allow_insert_into_iceberg": 1}
     )
 
     instance.query(
@@ -39,7 +39,7 @@ def test_writes_statistics_by_minmax_pruning(started_cluster_iceberg_no_spark, f
         '2024-03-20 15:00:00',
         'vasilisa', 6);
     """,
-    settings={"allow_experimental_insert_into_iceberg": 1}
+    settings={"allow_insert_into_iceberg": 1}
     )
 
     instance.query(
@@ -49,7 +49,7 @@ def test_writes_statistics_by_minmax_pruning(started_cluster_iceberg_no_spark, f
         '2024-04-30 14:00:00',
         'icebreaker', 7);
     """,
-    settings={"allow_experimental_insert_into_iceberg": 1}
+    settings={"allow_insert_into_iceberg": 1}
     )
 
     instance.query(
@@ -59,7 +59,7 @@ def test_writes_statistics_by_minmax_pruning(started_cluster_iceberg_no_spark, f
         '2024-05-30 14:00:00',
         'iceberg', 8);
     """,
-    settings={"allow_experimental_insert_into_iceberg": 1}
+    settings={"allow_insert_into_iceberg": 1}
     )
 
 

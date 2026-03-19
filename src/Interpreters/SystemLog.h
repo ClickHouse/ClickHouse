@@ -4,7 +4,11 @@
 
 #include <Interpreters/StorageID.h>
 #include <Common/SystemLogBase.h>
+#include <Common/Exception.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IParserBase.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/CommonParsers.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -47,6 +51,61 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
+class StorageWithComment : public IAST
+{
+public:
+    ASTPtr storage;
+    ASTPtr comment;
+
+    String getID(char) const override { return "Storage with comment definition"; }
+
+    ASTPtr clone() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
+    }
+
+protected:
+    void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
+    }
+};
+
+class ParserStorageWithComment : public IParserBase
+{
+protected:
+    const char * getName() const override { return "storage definition with comment"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
+        ASTPtr storage;
+
+        if (!storage_p.parse(pos, storage, expected))
+            return false;
+
+        ParserKeyword s_comment(Keyword::COMMENT);
+        ParserStringLiteral string_literal_parser;
+        ASTPtr comment;
+
+        if (s_comment.ignore(pos, expected))
+            string_literal_parser.parse(pos, comment, expected);
+
+        auto storage_with_comment = make_intrusive<StorageWithComment>();
+        storage_with_comment->storage = std::move(storage);
+        storage_with_comment->comment = std::move(comment);
+
+        node = storage_with_comment;
+        return true;
+    }
+};
 
 /** Allow to store structured log in system table.
   *

@@ -39,11 +39,66 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.3",
+        {
+            {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
+            {"optimize_syntax_fuse_functions", false, true, "The optimization is production-ready"},
+            {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
+            {"use_parquet_metadata_cache", false, true, "Enables cache of parquet file metadata."},
+            {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
+            {"use_text_index_tokens_cache", false, false, "New setting"},
+            {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
+            {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
+            {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
+            {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, true, "Allow duplicated paths in JSON type with literal and nested object by default"},
+            {"iceberg_metadata_staleness_ms", 0, 0, "New setting allowing using cached metadata version at READ operations to prevent fetching from remote catalog"},
+            {"webassembly_udf_max_fuel", 100'000, 100'000, "New setting to limit CPU instructions (fuel) per WebAssembly UDF instance execution."},
+            {"webassembly_udf_max_memory", 128_MiB, 128_MiB, "New setting to limit memory per WebAssembly UDF instance."},
+            {"webassembly_udf_max_input_block_size", 0, 0, "New setting to limit input block size for WebAssembly UDFs."},
+            {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
+            {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
+            {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
+            {"allow_statistics", false, true, "Column statistics are now GA"},
+            {"allow_experimental_statistics", false, true, "Column statistics are now GA"},
+            {"allow_experimental_expire_snapshots", false, false, "New setting."},
+            {"iceberg_expire_default_min_snapshots_to_keep", 1, 1, "New setting."},
+            {"iceberg_expire_default_max_snapshot_age_ms", 432000000, 432000000, "New setting."},
+            {"iceberg_expire_default_max_ref_age_ms", 9223372036854775807, 9223372036854775807, "New setting."},
+            {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
+            {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
+            {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
+        });
         addSettingsChanges(settings_changes_history, "26.2",
         {
-            {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
-            {"default_dictionary_database", "", "", "New setting"},
+            {"allow_fuzz_query_functions", false, false, "New setting to enable the fuzzQuery function."},
+            {"ast_fuzzer_runs", 0, 0, "New setting to enable server-side AST fuzzer."},
+            {"ast_fuzzer_any_query", false, false, "New setting to allow fuzzing all query types, not just read-only."},
+            {"check_named_collection_dependencies", true, true, "New setting to check if dropping a named collection would break dependent tables."},
+            {"async_insert", false, true, "Enable async inserts by default."},
+            {"deduplicate_blocks_in_dependent_materialized_views", false, true, "Enable deduplication for dependent materialized views by default."},
+            {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
+            {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
+            {"optimize_dry_run_check_part", true, true, "New setting"},
+            {"parallel_non_joined_rows_processing", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."},
+            {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
+            {"enable_full_text_index", false, true, "The text index is now GA"},
+            {"allow_experimental_full_text_index", false, true, "The text index is now GA"},
+            {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
+            {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
+            {"use_statistics_cache", false, true, "Enable statistics cache"},
+            {"apply_row_policy_after_final", false, true, "Enabling apply_row_policy_after_final by default, as if was in 25.8 before #87303"},
+            {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
+            {"input_format_connection_handling", false, false, "New setting to allow parsing and processing remaining data in the buffer if the connection closes unexpectedly"},
+            {"input_format_max_block_wait_ms", 0, 0, "New setting to limit maximum wait time in milliseconds before a block is emitted by input format"},
+            {"allow_insert_into_iceberg", false, false, "Insert into iceberg was moved to Beta"},
+            {"allow_experimental_insert_into_iceberg", false, false, "Insert into iceberg was moved to Beta"},
+            {"output_format_arrow_date_as_uint16", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."},
+            {"jemalloc_profile_text_output_format", "collapsed", "collapsed", "New setting to control output format for system.jemalloc_profile_text table. Possible values: 'raw', 'symbolized', 'collapsed'"},
+            {"jemalloc_profile_text_symbolize_with_inline", true, true, "New setting to control whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included at the cost of slower symbolization; when disabled, they are skipped for faster output"},
+            {"jemalloc_profile_text_collapsed_use_count", false, false, "New setting to aggregate by allocation count instead of bytes in the collapsed jemalloc heap profile format"},
+            {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
+            {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -129,6 +184,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
+
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -313,7 +369,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
-            {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
+            {"allow_insert_into_iceberg", false, false, "New setting."},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.6",
@@ -539,7 +595,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
             {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
-            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
+            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with the analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
             {"merge_tree_use_v1_object_and_dynamic_serialization", true, false, "Add new serialization V2 version for JSON and Dynamic types"},
             {"min_joined_block_size_bytes", 524288, 524288, "New setting."},
@@ -1036,11 +1092,24 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.3",
+        {
+            {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
+            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
+            {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
+            {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
+            {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
+            {"clone_replica_zookeeper_create_get_part_batch_size", 1, 100, "New setting"},
             {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
             {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
-            {"distributed_index_analysis_min_indexes_size_to_activate", 1_GiB, 1_GiB, "New setting"},
+            {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
+            {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
+            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
+            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {

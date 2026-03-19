@@ -89,7 +89,7 @@ def cluster():
 @pytest.fixture(scope="module")
 def cluster_with_node3():
     try:
-        cluster = ClickHouseCluster(__file__)
+        cluster = ClickHouseCluster(__file__, name="with_node3")
         for name in ["node1", "node2", "node3"]:
             cluster.add_instance(
                 name,

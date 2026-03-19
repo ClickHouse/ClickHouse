@@ -173,8 +173,8 @@ ExecutorTasks::SpawnStatus ExecutorTasks::pushTasks(Queue & queue, Queue & async
 #if defined(OS_LINUX)
         while (!async_queue.empty() && !finished)
         {
-            int fd = async_queue.front()->processor->schedule();
-            async_task_queue.addTask(context.thread_number, async_queue.front(), fd);
+            auto [fd, events] = async_queue.front()->processor->scheduleForEvent();
+            async_task_queue.addTask(context.thread_number, async_queue.front(), fd, events);
             async_queue.pop();
         }
 #endif
@@ -224,8 +224,8 @@ void ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
 #if defined(OS_LINUX)
     while (!async_queue.empty())
     {
-        int fd = async_queue.front()->processor->schedule();
-        async_task_queue.addTask(next_thread, async_queue.front(), fd);
+        auto [fd, events] = async_queue.front()->processor->scheduleForEvent();
+        async_task_queue.addTask(next_thread, async_queue.front(), fd, events);
         async_queue.pop();
 
         ++next_thread;

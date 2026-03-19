@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -86,7 +87,7 @@ public:
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = CurrentThread::getGroup()]()
+                auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
 
@@ -148,6 +149,8 @@ public:
             }
             else
             {
+
+                /// Usage of lhs and rhs is fine. The references belong to *this and will outlive `runner`, so the order of destruction is ok
                 ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::UNIQ_EXACT_MERGER);
                 try
                 {

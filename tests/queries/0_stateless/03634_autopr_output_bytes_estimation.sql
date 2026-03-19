@@ -6,6 +6,9 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2, parallel_rep
 -- External aggregation is not supported as of now
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
+-- Override randomized max_threads to avoid timeout on slow builds (ASan)
+SET max_threads=0;
+
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
 -- Unsupported at the moment, refer to comments in `RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes`

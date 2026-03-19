@@ -66,6 +66,16 @@ bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
     return false;
 }
 
+void IRuntimeFilter::finishInsert()
+{
+    if (filters_to_merge != 0)
+        return;
+
+    inserts_are_finished = true;
+
+    finishInsertImpl();
+}
+
 ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
     if (!inserts_are_finished)
@@ -107,9 +117,9 @@ void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
     --filters_to_merge;
 }
 
-void ExactContainsRuntimeFilter::finishInsert()
+void ExactContainsRuntimeFilter::finishInsertImpl()
 {
-    Base::finishInsert();
+    Base::finishInsertImpl();
 
     if (isFull())
     {
@@ -175,20 +185,15 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
     }
 }
 
-void ApproximateRuntimeFilter::finishInsert()
+void ApproximateRuntimeFilter::finishInsertImpl()
 {
-    if (filters_to_merge != 0)
-        return;
-
-    inserts_are_finished = true;
-
     if (bloom_filter)
     {
         checkBloomFilterWorthiness();
         return;
     }
 
-    Base::finishInsert();
+    Base::finishInsertImpl();
 }
 
 /// Add all keys from one filter to the other so that destination filter contains the union of both filters.

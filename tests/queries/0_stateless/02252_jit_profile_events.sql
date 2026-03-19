@@ -9,7 +9,7 @@ SELECT number + number + number FROM numbers(1);
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE
+SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query == 'SELECT number + number + number FROM numbers(1);'
@@ -23,7 +23,7 @@ SELECT avg(number), avg(number + 1), avg(number + 2) FROM numbers(1) GROUP BY nu
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE
+SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query == 'SELECT avg(number), avg(number + 1), avg(number + 2) FROM numbers(1) GROUP BY number;'

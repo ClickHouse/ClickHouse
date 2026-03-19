@@ -480,9 +480,9 @@ void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & facto
 {
     /// varSampStable documentation
     FunctionDocumentation::Description description_varSampStable = R"(
-Calculate the sample variance of a data set. Unlike [`varSamp`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varsamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm. It works slower but provides a lower computational error.
+Calculate the sample variance of a data set. Unlike [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm. It works slower but provides a lower computational error.
 
-The sample variance is calculated using the same formula as [`varSamp`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varsamp):
+The sample variance is calculated using the same formula as [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp):
 
 $$
 \frac{\Sigma{(x - \bar{x})^2}}{n-1}
@@ -536,14 +536,13 @@ SELECT round(varSampStable(x),3) AS var_samp_stable FROM test_data;
             assertUnary(name, argument_types);
             return std::make_shared<AggregateFunctionVariance>(VarKind::varSampStable, argument_types[0]);
         },
-        {},
         documentation_varSampStable
     });
 
     /// varPopStable documentation
     FunctionDocumentation::Description description_varPopStable = R"(
 Returns the population variance.
-Unlike [`varPop`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varpop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm.
+Unlike [`varPop`](/sql-reference/aggregate-functions/reference/varPop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm.
 It works slower but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax syntax_varPopStable = R"(
@@ -589,7 +588,6 @@ FROM test_data;
             assertUnary(name, argument_types);
             return std::make_shared<AggregateFunctionVariance>(VarKind::varPopStable, argument_types[0]);
         },
-        {},
         documentation_varPopStable
     });
 
@@ -637,7 +635,7 @@ FROM test_data;
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevSampStable, argument_types[0]);
-    }, {}, documentation_stddevSampStable});
+    }, documentation_stddevSampStable});
 
     FunctionDocumentation::Description description_stddevPopStable = R"(
 The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varPop.md). Unlike [stddevPop](../reference/stddevPop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
@@ -683,7 +681,7 @@ FROM test_data;
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevPopStable, argument_types[0]);
-    }, {}, documentation_stddevPopStable});
+    }, documentation_stddevPopStable});
 
     FunctionDocumentation::Description covarSampStable_description = R"(
 Calculates the sample covariance:
@@ -694,7 +692,7 @@ $$
 
 <br/>
 
-It is similar to [`covarSamp`](../reference/covarsamp.md) but uses a numerically stable algorithm.
+It is similar to [`covarSamp`](/sql-reference/aggregate-functions/reference/covarsamp) but uses a numerically stable algorithm.
 As a result, `covarSampStable` is slower than `covarSamp` but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax covarSampStable_syntax = "covarSampStable(x, y)";
@@ -757,7 +755,6 @@ FROM
             assertBinary(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarSampStable, argument_types);
         },
-        {},
         covarSampStable_documentation
     });
 
@@ -770,7 +767,7 @@ $$
 
 <br/>
 
-It is similar to the [`covarPop`](../reference/covarpop.md) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
+It is similar to the [`covarPop`](/sql-reference/aggregate-functions/reference/covarpop) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
     )";
     FunctionDocumentation::Syntax covarPopStable_syntax = "covarPopStable(x, y)";
     FunctionDocumentation::Arguments covarPopStable_arguments = {
@@ -808,7 +805,6 @@ FROM series
             assertBinary(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarPopStable, argument_types);
         },
-        {},
         covarPopStable_documentation
     });
 
@@ -867,7 +863,6 @@ FROM series
             assertBinary(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
         },
-        AggregateFunctionProperties{},
         corrStable_documentation
     });
 }

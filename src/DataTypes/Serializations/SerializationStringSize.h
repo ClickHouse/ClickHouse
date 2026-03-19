@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 
