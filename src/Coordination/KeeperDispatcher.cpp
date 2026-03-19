@@ -324,7 +324,14 @@ void KeeperDispatcher::requestThread()
                     }
                     else if (defer_result == DeferReadResult::Immediate)
                     {
-                        if (!isLeaderAliveForRead())
+                        bool finished = false;
+                        {
+                            std::lock_guard finished_lock(finished_sessions_mutex);
+                            finished = finished_sessions.contains(request.session_id);
+                        }
+                        if (finished)
+                            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
+                        else if (!isLeaderAliveForRead())
                             addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
                         else
                             putLocalReadRequestForSession(request);
@@ -382,7 +389,14 @@ void KeeperDispatcher::requestThread()
                                     }
                                     else if (defer_result == DeferReadResult::Immediate)
                                     {
-                                        if (!isLeaderAliveForRead())
+                                        bool finished = false;
+                                        {
+                                            std::lock_guard finished_lock(finished_sessions_mutex);
+                                            finished = finished_sessions.contains(request.session_id);
+                                        }
+                                        if (finished)
+                                            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
+                                        else if (!isLeaderAliveForRead())
                                             addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
                                         else
                                             putLocalReadRequestForSession(request);
