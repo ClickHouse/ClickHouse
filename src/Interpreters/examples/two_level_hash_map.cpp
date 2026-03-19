@@ -48,7 +48,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -75,7 +75,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
 
         size_t sum_counts = 0;
@@ -111,7 +111,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
 
         size_t sum_counts = 0;

@@ -143,7 +143,7 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
 
 ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto table_function_ast = std::make_shared<ASTFunction>();
+    auto table_function_ast = make_intrusive<ASTFunction>();
 
     table_function_ast->name = table_function_name;
 
@@ -153,7 +153,7 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (!settings_changes.empty())
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->changes = settings_changes;
         settings_ast->is_standalone = false;
         table_function_ast->arguments->children.push_back(std::move(settings_ast));

@@ -15,6 +15,8 @@
 
 #include <Functions/FunctionsExternalDictionaries.h>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessType.h>
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 
@@ -200,7 +202,16 @@ public:
 
         if (dict_structure.id)
         {
-            key_cols.emplace_back(dict_structure.id->name, dict_structure.id->type);
+            /// `dict_structure.id->type` is the declared key type, but for simple-key dictionaries the effective lookup key type
+            /// (and `dictionary()` table function schema) is always UInt64. Use `getKeyTypes().front()` to match that.
+            ///
+            /// This is important for distributed queries: we derive distributed set names from QueryTree hashes (see `PlannerContext::createSetKey()`),
+            /// and QueryTree hashing includes resolved types (e.g. `ColumnNode::updateTreeHashImpl()` hashes the column type).
+            /// For simple-key dictionaries, `dict_structure.id->type` is the declared type (can be Int64), but shards can re-resolve the key
+            /// as UInt64. If we use the declared type here, initiator/shards can hash
+            /// different trees -> different `__set_<hash>` names -> remote header mismatch ("Cannot find column ... __set_...").
+            chassert(dict_structure.getKeyTypes().size() == 1);
+            key_cols.emplace_back(dict_structure.id->name, dict_structure.getKeyTypes().front());
         }
         else if (dict_structure.key) /// composite key
         {
@@ -251,6 +262,7 @@ public:
 
         /// SELECT key_col FROM dictionary(dict_name) WHERE attr_name = const_value
         auto subquery_node = std::make_shared<QueryNode>(Context::createCopy(getContext()));
+        subquery_node->setIsSubquery(true);
         subquery_node->getJoinTree() = dict_table_function;
         subquery_node->getWhere() = attr_comparison_function_node;
 
@@ -283,6 +295,12 @@ public:
 
 void InverseDictionaryLookupPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    /// This rewrite turns `dictGet(...)` predicates into `IN (SELECT ... FROM dictionary(...))`.
+    /// The `dictionary()` table function requires `CREATE TEMPORARY TABLE`; if that grant is missing,
+    /// skip the optimization to avoid `ACCESS_DENIED`.
+    if (!context->getAccess()->isGranted(AccessType::CREATE_TEMPORARY_TABLE))
+        return;
+
     InverseDictionaryLookupVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }

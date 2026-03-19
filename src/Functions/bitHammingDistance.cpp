@@ -27,7 +27,7 @@ struct BitHammingDistanceImpl
         if constexpr (sizeof(A) <= sizeof(UInt64) && sizeof(B) <= sizeof(UInt64))
         {
             UInt64 res = static_cast<UInt64>(a) ^ static_cast<UInt64>(b);
-            return std::popcount(res);
+            return static_cast<ResultType>(std::popcount(res));
         }
         else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         {

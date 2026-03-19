@@ -30,28 +30,28 @@ ALTER TABLE t_lightweight_mut_1 DELETE WHERE v = 'd';
 ALTER TABLE t_lightweight_mut_1 UPDATE v = 'e' WHERE id = 2;
 ALTER TABLE t_lightweight_mut_1 DELETE WHERE v = 'e';
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT id FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT v FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT id, v, s FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT id FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT query, ProfileEvents['FileOpen'] FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase()
     AND query ILIKE 'SELECT%FROM t_lightweight_mut_1%'
     AND type = 'QueryFinish'

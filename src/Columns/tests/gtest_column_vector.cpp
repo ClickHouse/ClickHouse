@@ -3,6 +3,7 @@
 #include <typeinfo>
 #include <vector>
 #include <Columns/ColumnsNumber.h>
+#include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/thread_local_rng.h>
 #include <gtest/gtest.h>
@@ -111,7 +112,7 @@ static MutableColumnPtr createIndexColumn(size_t limit, size_t rows)
 
     for (size_t i = 0; i < rows; ++i)
     {
-        T val = rng() % limit;
+        T val = static_cast<T>(rng() % limit);
         values.push_back(val);
     }
 
@@ -154,7 +155,7 @@ static void testIndex()
             size_t index_rows = rng() % MAX_ROWS + 1;
 
             test_case(rows, index_rows, 0);
-            test_case(rows, index_rows, static_cast<size_t>(0.5 * index_rows));
+            test_case(rows, index_rows, static_cast<size_t>(0.5 * static_cast<double>(index_rows)));
         }
     }
     catch (const Exception & e)

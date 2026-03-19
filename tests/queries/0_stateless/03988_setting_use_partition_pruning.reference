@@ -1,0 +1,167 @@
+-- { echo }
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test
+(
+    d Date,
+    x UInt8
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d);
+INSERT INTO test VALUES
+    ('2026-01-01', 1),
+    ('2026-02-01', 2);
+SELECT *
+FROM test
+WHERE d = '2026-01-01'
+SETTINGS use_partition_pruning = 1;
+2026-01-01	1
+EXPLAIN indexes = 1
+SELECT *
+FROM test
+WHERE d = '2026-01-01'
+SETTINGS use_partition_pruning = 1;
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test)
+    Indexes:
+      MinMax
+        Keys:
+          d
+        Condition: (d in [20454, 20454])
+        Parts: 1/2
+        Granules: 1/2
+      Partition
+        Keys:
+          toYYYYMM(d)
+        Condition: (toYYYYMM(d) in [202601, 202601])
+        Parts: 1/1
+        Granules: 1/1
+      Ranges: 1
+SELECT *
+FROM test
+WHERE d = '2026-01-01'
+SETTINGS use_partition_pruning = 0;
+2026-01-01	1
+EXPLAIN indexes = 1
+SELECT *
+FROM test
+WHERE d = '2026-01-01'
+SETTINGS use_partition_pruning = 0;
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test)
+    Indexes:
+      MinMax
+        Keys:
+          d
+        Condition: (d in [20454, 20454])
+        Parts: 1/2
+        Granules: 1/2
+      Partition
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Ranges: 1
+DROP TABLE IF EXISTS test;
+CREATE TABLE test
+(
+    p DateTime,
+    k Int32
+)
+ENGINE = MergeTree
+PARTITION BY toDate(p)
+SETTINGS index_granularity = 1;
+INSERT INTO test VALUES
+    ('2020-09-01 00:01:02', 1),
+    ('2020-09-01 20:01:03', 2),
+    ('2021-09-02 00:01:03', 3);
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_pruning = 1;
+2
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_pruning = 1;
+Expression ((Projection + Before ORDER BY))
+  MergingAggregated
+    ReadFromPreparedSource (Optimized trivial count)
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_pruning = 0;
+2
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_pruning = 0;
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter (WHERE)
+        ReadFromMergeTree (default.test)
+        Indexes:
+          MinMax
+            Keys:
+              p
+            Condition: (toYear(toDate(p)) in [2020, 2020])
+            Parts: 1/2
+            Granules: 2/3
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 2/2
+          Ranges: 1
+-- `use_partition_key` is an alias
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_key = 1;
+Expression ((Projection + Before ORDER BY))
+  MergingAggregated
+    ReadFromPreparedSource (Optimized trivial count)
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_key = 0;
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter (WHERE)
+        ReadFromMergeTree (default.test)
+        Indexes:
+          MinMax
+            Keys:
+              p
+            Condition: (toYear(toDate(p)) in [2020, 2020])
+            Parts: 1/2
+            Granules: 2/3
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 2/2
+          Ranges: 1

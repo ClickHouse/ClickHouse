@@ -53,7 +53,7 @@ struct Dictionary
 struct PageDecoder
 {
     virtual void skip(size_t num_values) = 0;
-    virtual void decode(size_t num_values, IColumn &) = 0;
+    virtual void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) = 0;
 
     explicit PageDecoder(std::span<const char> data_) : data(data_.data()), end(data_.data() + data_.size()) {}
     virtual ~PageDecoder() = default;

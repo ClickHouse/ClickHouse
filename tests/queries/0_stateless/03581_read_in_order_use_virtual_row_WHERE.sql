@@ -15,7 +15,7 @@ WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND query like 'select x from tab%' AND event_date >= (today() - 1)
+        WHERE current_database = currentDatabase() AND query like 'select x from tab%' AND event_date >= (today() - 1) AND event_time >= now() - 600
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id

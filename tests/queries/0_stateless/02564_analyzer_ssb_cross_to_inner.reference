@@ -131,13 +131,13 @@ QUERY id: 0
   ORDER BY
     LIST id: 80, nodes: 3
       SORT id: 81, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION D_YEARMONTHNUM
           COLUMN id: 82, column_name: D_YEARMONTHNUM, result_type: UInt32, source_id: 3
       SORT id: 83, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION S_CITY
           COLUMN id: 84, column_name: S_CITY, result_type: LowCardinality(String), source_id: 5
       SORT id: 85, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION P_BRAND
           COLUMN id: 86, column_name: P_BRAND, result_type: LowCardinality(String), source_id: 7
 
 SELECT

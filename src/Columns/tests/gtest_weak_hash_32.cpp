@@ -80,7 +80,7 @@ TEST(WeakHash32, ColumnVectorU8)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (size_t i = 0; i < 265; ++i)
-            data.push_back(i);
+            data.push_back(static_cast<UInt8>(i));
     }
 
     WeakHash32 hash = col->getWeakHash32();
@@ -96,7 +96,7 @@ TEST(WeakHash32, ColumnVectorI8)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int i = -128; i < 128; ++i)
-            data.push_back(i);
+            data.push_back(static_cast<Int8>(i));
     }
 
     WeakHash32 hash = col->getWeakHash32();
@@ -112,7 +112,7 @@ TEST(WeakHash32, ColumnVectorU16)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (size_t i = 0; i < 65536; ++i)
-            data.push_back(i);
+            data.push_back(static_cast<UInt16>(i));
     }
 
     WeakHash32 hash = col->getWeakHash32();
@@ -128,7 +128,7 @@ TEST(WeakHash32, ColumnVectorI16)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int i = -32768; i < 32768; ++i)
-            data.push_back(i);
+            data.push_back(static_cast<Int16>(i));
     }
 
     WeakHash32 hash = col->getWeakHash32();
@@ -554,7 +554,7 @@ TEST(WeakHash32, ColumnConst)
     auto & data = cls->getData();
 
     for (size_t i = 0; i < 256; ++i)
-        data.push_back(0);
+        data.push_back(static_cast<UInt8>(0));
 
     auto col_const = ColumnConst::create(std::move(inner_col), 256);
 
@@ -573,7 +573,7 @@ TEST(WeakHash32, ColumnLowcardinality)
     {
         for (size_t i = 0; i < 65536; ++i)
         {
-            data.push_back(i);
+            data.push_back(static_cast<UInt8>(i));
             col->insert(i);
         }
     }
@@ -596,7 +596,7 @@ TEST(WeakHash32, ColumnNullable)
         for (uint64_t i = 0; i < 65536; ++i)
         {
             data.push_back(i << 32u);
-            mask_data.push_back(i % 7 == 0 ? 1 : 0);
+            mask_data.push_back(static_cast<UInt8>(i % 7 == 0 ? 1 : 0));
             eq.push_back(i % 7 == 0 ? -1 : (i << 32u));
         }
     }

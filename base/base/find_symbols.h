@@ -149,7 +149,7 @@ constexpr uint16_t maybe_negate(uint16_t x)
     if constexpr (positive)
         return x;
     else
-        return ~x;
+        return static_cast<uint16_t>(~x);
 }
 
 enum class ReturnMode : uint8_t

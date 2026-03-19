@@ -3,7 +3,11 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/CustomWeekTransforms.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
@@ -14,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 template <typename Transform>
@@ -29,25 +32,47 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        /// String default is empty (not parseable as DateTime), so avoid executing on LC default dictionary key
+        if constexpr (Transform::value_may_be_string)
+            return false;
+
+        return true;
+    }
+
     bool hasInformationAboutMonotonicity() const override { return true; }
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
+        const IDataType * type_ptr = &type;
+
+        if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
+            type_ptr = lc_type->getDictionaryType().get();
+
+        if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
+            type_ptr = nullable_type->getNestedType().get();
+
+        const IFunction::Monotonicity is_not_monotonic;
+
+        /// Parsing of String arguments is not monotonic w.r.t. String ordering
+        if (checkAndGetDataType<DataTypeString>(type_ptr))
+            return is_not_monotonic;
+
         if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
             return {.is_monotonic = true, .is_always_monotonic = true};
 
+        if (left.isNull() || right.isNull())
+            return is_not_monotonic;
+
         const IFunction::Monotonicity is_monotonic = {.is_monotonic = true};
-        const IFunction::Monotonicity is_not_monotonic;
 
         /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
         const DateLUTImpl & date_lut = DateLUT::instance();
 
-        if (left.isNull() || right.isNull())
-            return {};
-
         /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 
-        if (checkAndGetDataType<DataTypeDate>(&type))
+        if (checkAndGetDataType<DataTypeDate>(type_ptr))
         {
             return Transform::FactorTransform::execute(UInt16(left.safeGet<UInt64>()), date_lut)
                     == Transform::FactorTransform::execute(UInt16(right.safeGet<UInt64>()), date_lut)
@@ -55,9 +80,16 @@ public:
                 : is_not_monotonic;
         }
 
-        if (checkAndGetDataType<DataTypeDateTime64>(&type))
+        if (checkAndGetDataType<DataTypeDate32>(type_ptr))
         {
+            return Transform::FactorTransform::execute(Int32(left.safeGet<Int32>()), date_lut)
+                    == Transform::FactorTransform::execute(Int32(right.safeGet<Int32>()), date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
+        }
 
+        if (checkAndGetDataType<DataTypeDateTime64>(type_ptr))
+        {
             const auto & left_date_time = left.safeGet<DateTime64>();
             TransformDateTime64<typename Transform::FactorTransform> transformer_left(left_date_time.getScale());
 
@@ -70,62 +102,39 @@ public:
                 : is_not_monotonic;
         }
 
-        return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
-                == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
-            ? is_monotonic
-            : is_not_monotonic;
+        if (checkAndGetDataType<DataTypeDateTime>(type_ptr))
+        {
+            return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
+                    == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
+        }
+
+        return is_not_monotonic;
     }
 
 protected:
     void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32, bool value_may_be_string) const
     {
-        if (arguments.size() == 1)
+        auto is_date_or_date_time_or_string = [](const IDataType & type)
         {
-            auto type0 = arguments[0].type;
-            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0) && !(value_may_be_string && isString(type0)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}. Must be Date, Date32, DateTime or DateTime64.",
-                    type0->getName(), getName());
-        }
-        else if (arguments.size() == 2)
-        {
-            auto type0 = arguments[0].type;
-            auto type1 = arguments[1].type;
-            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0) && !(value_may_be_string && isString(type0)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 1st argument of function {}. Must be Date, Date32, DateTime or DateTime64.",
-                    type0->getName(), getName());
-            if (!isUInt8(type1))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 2nd (optional) argument of function {}. Must be constant UInt8 (week mode).",
-                    type1->getName(), getName());
-        }
-        else if (arguments.size() == 3)
-        {
-            auto type0 = arguments[0].type;
-            auto type1 = arguments[1].type;
-            auto type2 = arguments[2].type;
-            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0) && !(value_may_be_string && isString(type0)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}. Must be Date, Date32, DateTime or DateTime64",
-                    type0->getName(), getName());
-            if (!isUInt8(type1))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 2nd (optional) argument of function {}. Must be constant UInt8 (week mode).",
-                    type1->getName(), getName());
-            if (!isString(type2))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 3rd (optional) argument of function {}. Must be constant string (timezone name).",
-                    type2->getName(), getName());
-            if (is_result_type_date_or_date32 && (isDate(type0) || isDate32(type0)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The timezone argument of function {} is allowed only when the 1st argument is DateTime or DateTime64.",
-                    getName());
-        }
-        else
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, expected 1, 2 or 3.",
-                getName(), arguments.size());
+            return isDateOrDate32OrDateTimeOrDateTime64(type) || isString(type);
+        };
+
+        FunctionArgumentDescriptors mandatory_args = value_may_be_string ?
+            FunctionArgumentDescriptors{{"date_or_datetime", is_date_or_date_time_or_string, nullptr, "Date, Date32, DateTime, DateTime64 or String"}} :
+            FunctionArgumentDescriptors{{"date_or_datetime", &isDateOrDate32OrDateTimeOrDateTime64, nullptr, "Date, Date32, DateTime or DateTime64"}};
+
+        FunctionArgumentDescriptors optional_args{
+            {"week_mode", &isUInt8, nullptr, "UInt8"},
+            {"timezone", &isString, nullptr, "String"}};
+
+        validateFunctionArguments(getName(), arguments, mandatory_args, optional_args);
+
+        if (arguments.size() == 3 && is_result_type_date_or_date32 && (isDate(arguments[0].type) || isDate32(arguments[0].type)))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The timezone argument of function {} is allowed only when the 1st argument is DateTime or DateTime64.",
+                getName());
     }
 
 };

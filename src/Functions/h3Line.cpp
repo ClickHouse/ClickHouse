@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -10,10 +10,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
 
 
 namespace DB
@@ -33,7 +29,11 @@ class FunctionH3Line : public IFunction
 public:
     static constexpr auto name = "h3Line";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3Line>(); }
+    H3Validator validator;
+
+    explicit FunctionH3Line(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3Line>(context); }
 
     std::string getName() const override { return name; }
 
@@ -100,6 +100,13 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
+            const bool start_valid = validator.validateCell(start);
+            const bool end_valid = validator.validateCell(end);
+            if (!start_valid || !end_valid)
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
 
             auto size = gridPathCellsSize(start, end);
             if (size < 0)
@@ -123,6 +130,10 @@ public:
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
             const auto size = dst_offsets[row] - current_offset;
+            if (size == 0)
+            {
+                continue;
+            }
             gridPathCells(start, end, ptr + current_offset);
             current_offset += size;
         }

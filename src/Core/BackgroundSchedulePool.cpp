@@ -114,12 +114,7 @@ bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
     return scheduleImpl(lock);
 }
 
-std::unique_lock<std::mutex> BackgroundSchedulePoolTaskInfo::getExecLock()
-{
-    return std::unique_lock{exec_mutex};
-}
-
-void BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
+bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
 {
     CurrentMetrics::Increment metric_increment(pool.tasks_metric);
 
@@ -133,7 +128,7 @@ void BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
         std::lock_guard lock_schedule(schedule_mutex);
 
         if (deactivated)
-            return;
+            return false;
 
         scheduled = false;
         executing = true;
@@ -157,7 +152,7 @@ void BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
     }
     catch (...)
     {
-        error_code = getCurrentExceptionCode();
+        error_code = static_cast<UInt16>(getCurrentExceptionCode());
         exception_message = getCurrentExceptionMessage(false);
         tryLogCurrentException(__PRETTY_FUNCTION__);
         chassert(false && "Tasks in BackgroundSchedulePool cannot throw");
@@ -213,28 +208,40 @@ void BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
         /// In case was scheduled while executing (including a scheduleAfter which expired) we schedule the task
         /// on the queue. We don't call the function again here because this way all tasks
         /// will have their chance to execute
-
         if (scheduled)
+        {
             pool.scheduleTask(*this);
+            return true;
+        }
+        else
+            return false;
     }
 }
 
 bool BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock) TSA_REQUIRES(schedule_mutex)
 {
+    if (scheduled)
+        return true;
+
     scheduled = true;
 
     auto pool_ptr = pool_ref.lock();
     if (!pool_ptr)
         return false;
 
-    if (delayed)
-        pool_ptr->cancelDelayedTask(*this, schedule_mutex_lock);
-
     /// If the task is not executing at the moment, enqueue it for immediate execution.
     /// But if it is currently executing, do nothing because it will be enqueued
     /// at the end of the execute() method.
+    ///
+    /// NOTE: scheduleTask must be called before cancelDelayedTask to ensure the task
+    /// is always present in at least one of the pool's collections (task_groups,
+    /// running_tasks, delayed_tasks). This prevents getTasks() from missing the task
+    /// during the transition.
     if (!executing)
         pool_ptr->scheduleTask(*this);
+
+    if (delayed)
+        pool_ptr->cancelDelayedTask(*this, schedule_mutex_lock);
 
     return true;
 }
@@ -324,8 +331,14 @@ void BackgroundSchedulePool::join()
         shutdown = true;
 
         /// Unlock threads
-        tasks_cond_var.notify_all();
-        delayed_tasks_cond_var.notify_all();
+        {
+            std::lock_guard tasks_lock(tasks_mutex);
+            tasks_cond_var.notify_all();
+        }
+        {
+            std::lock_guard tasks_lock(delayed_tasks_mutex);
+            delayed_tasks_cond_var.notify_all();
+        }
 
         /// Join all worker threads to avoid any recursive calls to schedule()/scheduleAfter() from the task callbacks
         {
@@ -381,12 +394,14 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
         /// Get a pointer to the task function and use it as an identifier of the task type
         UInt64 task_type = getFunctionID(task_info.function);
         auto & group = task_groups[task_type];
-        group.tasks.emplace_back(task_info.shared_from_this());
+        auto task_ptr = task_info.shared_from_this();
+        group.tasks.emplace_back(task_ptr);
         if (!group.runnable_list_pos && group.num_running < max_parallel_tasks_per_type)
         {
             group.runnable_list_pos = runnable_task_types.size();
             runnable_task_types.push_back(task_type);
         }
+        running_tasks.erase(task_ptr);
     }
 
     tasks_cond_var.notify_one();
@@ -455,6 +470,7 @@ void BackgroundSchedulePool::threadFunction()
             chassert(group.num_running < max_parallel_tasks_per_type);
 
             task = group.tasks.front();
+            running_tasks.insert(task);
             group.tasks.pop_front();
             ++group.num_running;
 
@@ -473,9 +489,12 @@ void BackgroundSchedulePool::threadFunction()
 
         if (task)
         {
-            task->execute(*this);
+            bool scheduled = task->execute(*this);
 
             UniqueLock tasks_lock(tasks_mutex);
+            /// In case it was scheduled, the task will be removed in scheduleTask() from running_tasks
+            if (!scheduled)
+                running_tasks.erase(task);
             auto & group = task_groups[task_type_to_run];
             chassert(group.num_running);
             --group.num_running;
@@ -551,7 +570,14 @@ std::vector<BackgroundSchedulePool::TaskInfoSnapshot> BackgroundSchedulePool::ge
     std::unordered_set<TaskInfoPtr> unique_tasks;
 
     {
-        std::lock_guard lock(tasks_mutex);
+        /// Hold both locks simultaneously to get a consistent snapshot.
+        /// In scheduleImpl, a task is first added to task_groups (under tasks_mutex)
+        /// and then removed from delayed_tasks (under delayed_tasks_mutex).
+        /// By holding both locks, we guarantee that we see the task in at least one
+        /// of the collections during such a transition.
+        std::lock_guard lock1(tasks_mutex);
+        std::lock_guard lock2(delayed_tasks_mutex);
+
         for (const auto & [task_type, group] : task_groups)
         {
             for (const auto & task : group.tasks)
@@ -559,10 +585,12 @@ std::vector<BackgroundSchedulePool::TaskInfoSnapshot> BackgroundSchedulePool::ge
                 unique_tasks.insert(task);
             }
         }
-    }
 
-    {
-        std::lock_guard lock(delayed_tasks_mutex);
+        for (const auto & task : running_tasks)
+        {
+            unique_tasks.insert(task);
+        }
+
         for (const auto & [timestamp, task] : delayed_tasks)
         {
             unique_tasks.insert(task);

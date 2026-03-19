@@ -122,7 +122,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;
@@ -170,7 +170,7 @@ public:
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
 #endif
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     void reserve(size_t n) override;
     size_t capacity() const override;
@@ -289,6 +289,8 @@ public:
     /// and value from shared data and keeping only dynamic path containing non-Null value.
     /// offset argument - is the offset from which we should check for duplicates.
     void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
+
+    void validateDynamicPathsSizes() const;
 
     /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
     class SortedPathsIterator

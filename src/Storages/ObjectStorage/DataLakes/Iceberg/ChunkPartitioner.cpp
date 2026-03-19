@@ -91,6 +91,8 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     }
 
     std::vector<ChunkPartitioner::PartitionKey> transform_results(chunk.getNumRows());
+    ColumnRawPtrs raw_columns;
+    Columns functions_columns;
     for (size_t transform_ind = 0; transform_ind < functions.size(); ++transform_ind)
     {
         ColumnsWithTypeAndName arguments;
@@ -105,6 +107,8 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
         arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
         auto result
             = functions[transform_ind]->build(arguments)->execute(arguments, std::make_shared<DataTypeString>(), chunk.getNumRows(), false);
+        functions_columns.push_back(result);
+        raw_columns.push_back(result.get());
         for (size_t i = 0; i < chunk.getNumRows(); ++i)
         {
             Field field;
@@ -117,12 +121,9 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     {
         return transform_results[row_num];
     };
-
+    std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
-    ColumnRawPtrs raw_columns;
-    for (const auto & column : chunk.getColumns())
-        raw_columns.push_back(column.get());
 
     buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
 
@@ -154,9 +155,6 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
             result_columns[0].second[col] = chunk.getColumns()[col]->cloneFinalized();
         }
     }
-
-    std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
-    result.reserve(result_columns.size());
     for (auto && [key, partition_columns] : result_columns)
     {
         size_t column_size = partition_columns[0]->size();

@@ -148,7 +148,7 @@ private:
             {
                 const auto pos = pos_col_const->getUInt(0);
                 if (pos < 8 * sizeof(ValueType))
-                    mask = mask | (ValueType(1) << pos);
+                    mask = static_cast<ValueType>(mask | (static_cast<ValueType>(1) << pos));
                 else
                     throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
                                    "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos));
@@ -191,7 +191,7 @@ private:
 
             for (size_t i = 0; i < mask.size(); ++i)
                 if (pos[i] < 8 * sizeof(ValueType))
-                    mask[i] = mask[i] | (ValueType(1) << pos[i]);
+                    mask[i] = static_cast<ValueType>(mask[i] | (static_cast<ValueType>(1) << pos[i]));
                 else
                     throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
                                     "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos[i]));
@@ -210,7 +210,7 @@ private:
             const auto new_mask = ValueType(1) << pos;
 
             for (size_t i = 0; i < mask.size(); ++i)
-                mask[i] = mask[i] | new_mask;
+                mask[i] = static_cast<ValueType>(mask[i] | new_mask);
 
             return true;
         }
