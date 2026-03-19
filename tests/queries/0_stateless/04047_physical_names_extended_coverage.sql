@@ -1,3 +1,4 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- Test 1: serialization.json is keyed by physical name, not logical name
 SET allow_experimental_physical_column_names = 1;
 

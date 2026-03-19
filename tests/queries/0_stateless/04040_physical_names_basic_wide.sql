@@ -1,3 +1,4 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
 SET allow_experimental_physical_column_names = 1;
 
 SELECT 'Test 1: basic wide part with ADD COLUMN';

@@ -1,3 +1,4 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- Test 1: Projection parts survive rename and reload
 SET allow_experimental_physical_column_names = 1;
 
