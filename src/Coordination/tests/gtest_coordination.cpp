@@ -1060,7 +1060,7 @@ protected:
         deferred_reads_before_ = CurrentMetrics::values[CurrentMetrics::KeeperDeferredSessionReads].load();
     }
 
-    void assertMetricsBalanced()
+    void assertMetricsBalanced() const
     {
         EXPECT_EQ(CurrentMetrics::values[CurrentMetrics::KeeperPendingSessionWrites].load(), pending_writes_before_)
             << "KeeperPendingSessionWrites gauge leaked";
@@ -1074,7 +1074,7 @@ private:
 };
 
 
-TEST_F(KeeperSessionReadBarrierTest, HappyPath_SingleWriteSingleReadCommit)
+TEST_F(KeeperSessionReadBarrierTest, HappyPathSingleWriteSingleReadCommit)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
@@ -1090,13 +1090,13 @@ TEST_F(KeeperSessionReadBarrierTest, HappyPath_SingleWriteSingleReadCommit)
     assertMetricsBalanced();
 }
 
-TEST_F(KeeperSessionReadBarrierTest, ReadWithNoPendingWrites_Immediate)
+TEST_F(KeeperSessionReadBarrierTest, ReadWithNoPendingWritesImmediate)
 {
     auto barrier = makeBarrier();
     EXPECT_EQ(barrier.tryDeferRead(makeRead(1, 100)), DB::DeferReadResult::Immediate);
 }
 
-TEST_F(KeeperSessionReadBarrierTest, ReadAfterAllWritesCommitted_Immediate)
+TEST_F(KeeperSessionReadBarrierTest, ReadAfterAllWritesCommittedImmediate)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
@@ -1109,7 +1109,7 @@ TEST_F(KeeperSessionReadBarrierTest, ReadAfterAllWritesCommitted_Immediate)
     assertMetricsBalanced();
 }
 
-TEST_F(KeeperSessionReadBarrierTest, MultipleWrites_ReadWaitsForLatest)
+TEST_F(KeeperSessionReadBarrierTest, MultipleWritesReadWaitsForLatest)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
@@ -1177,7 +1177,7 @@ TEST_F(KeeperSessionReadBarrierTest, RollbackReleasesReadsForFailure)
     assertMetricsBalanced();
 }
 
-TEST_F(KeeperSessionReadBarrierTest, RollbackReverseScanOrder_DuplicateXid)
+TEST_F(KeeperSessionReadBarrierTest, RollbackReverseScanOrderDuplicateXid)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
@@ -1198,7 +1198,7 @@ TEST_F(KeeperSessionReadBarrierTest, RollbackReverseScanOrder_DuplicateXid)
     assertMetricsBalanced();
 }
 
-TEST_F(KeeperSessionReadBarrierTest, CommitForwardScanOrder_DuplicateXid)
+TEST_F(KeeperSessionReadBarrierTest, CommitForwardScanOrderDuplicateXid)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
@@ -1218,7 +1218,7 @@ TEST_F(KeeperSessionReadBarrierTest, CommitForwardScanOrder_DuplicateXid)
     assertMetricsBalanced();
 }
 
-TEST_F(KeeperSessionReadBarrierTest, DegradedMode_CommitUnknownWrite)
+TEST_F(KeeperSessionReadBarrierTest, DegradedModeCommitUnknownWrite)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
@@ -1241,7 +1241,7 @@ TEST_F(KeeperSessionReadBarrierTest, DegradedMode_CommitUnknownWrite)
     assertMetricsBalanced();
 }
 
-TEST_F(KeeperSessionReadBarrierTest, DegradedMode_RollbackUnknownWrite)
+TEST_F(KeeperSessionReadBarrierTest, DegradedModeRollbackUnknownWrite)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
@@ -1273,7 +1273,7 @@ TEST_F(KeeperSessionReadBarrierTest, FailBatch)
     assertMetricsBalanced();
 }
 
-TEST_F(KeeperSessionReadBarrierTest, FailBatch_SkipsReadsAndHeartbeats)
+TEST_F(KeeperSessionReadBarrierTest, FailBatchSkipsReadsAndHeartbeats)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
@@ -1289,7 +1289,7 @@ TEST_F(KeeperSessionReadBarrierTest, FailBatch_SkipsReadsAndHeartbeats)
     assertMetricsBalanced();
 }
 
-TEST_F(KeeperSessionReadBarrierTest, CloseSession_DrainsEverything)
+TEST_F(KeeperSessionReadBarrierTest, CloseSessionDrainsEverything)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
@@ -1310,7 +1310,7 @@ TEST_F(KeeperSessionReadBarrierTest, CloseSession_DrainsEverything)
     assertMetricsBalanced();
 }
 
-TEST_F(KeeperSessionReadBarrierTest, Shutdown_DrainsAllSessions)
+TEST_F(KeeperSessionReadBarrierTest, ShutdownDrainsAllSessions)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
@@ -1426,14 +1426,14 @@ TEST_F(KeeperSessionReadBarrierTest, CrossSessionIsolation)
     assertMetricsBalanced();
 }
 
-TEST_F(KeeperSessionReadBarrierTest, CloseSessionUnknown_Noop)
+TEST_F(KeeperSessionReadBarrierTest, CloseSessionUnknownNoop)
 {
     auto barrier = makeBarrier();
     auto reads = barrier.closeSession(999);
     EXPECT_TRUE(reads.empty());
 }
 
-TEST_F(KeeperSessionReadBarrierTest, ResolveUnknownSession_Noop)
+TEST_F(KeeperSessionReadBarrierTest, ResolveUnknownSessionNoop)
 {
     auto barrier = makeBarrier();
     auto rc = barrier.resolveCommit(999, Coordination::OpNum::Set, 1);
@@ -1444,7 +1444,7 @@ TEST_F(KeeperSessionReadBarrierTest, ResolveUnknownSession_Noop)
     EXPECT_TRUE(rr.empty());
 }
 
-TEST_F(KeeperSessionReadBarrierTest, WriteCommittedWithNoReads_EmptyResult)
+TEST_F(KeeperSessionReadBarrierTest, WriteCommittedWithNoReadsEmptyResult)
 {
     snapshotMetrics();
     auto barrier = makeBarrier();
