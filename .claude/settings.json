@@ -10,5 +10,18 @@
       "Bash(gh search:*)",
       "WebFetch(domain:github.com)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx block-no-verify@1.1.2"
+          }
+        ]
+      }
+    ]
   }
 }
