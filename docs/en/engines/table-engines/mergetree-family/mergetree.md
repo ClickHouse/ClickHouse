@@ -284,6 +284,50 @@ To check whether ClickHouse can use the index when running a query, use the sett
 
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
+### Use of index for deterministic expressions in primary keys {#use-of-index-for-deterministic-expressions-in-primary-keys}
+
+The primary key can contain expressions, not only column names. These expressions are not limited to simple function chains: they can be arbitrary expression trees (for example, nested functions and composite expressions), as long as they are deterministic.
+
+An expression is **deterministic** if it always returns the same result for the same input values (for example: `length()`, `toDate()`, `lower()`, `left()`, `cityHash64()`, `toUUID()`; unlike `now()` or `rand()`). If the primary key contains deterministic expressions, ClickHouse can apply them to constant values from the query and use the result to build conditions on the primary key index. This enables data skipping for predicates like `=`, `IN`, and `has`.
+
+A common use case is to keep the primary key compact (e.g. store a hash instead of a long `String`), while still allowing predicates on the original column to use the index.
+
+Example of a deterministic (but non-injective) primary key:
+```sql
+ENGINE = MergeTree()
+ORDER BY length(user_id)
+```
+
+Example predicates that can use the index:
+```sql
+SELECT * FROM table WHERE user_id = 'alice';
+SELECT * FROM table WHERE user_id IN ('alice', 'bob');
+SELECT * FROM table WHERE has(['alice', 'bob'], user_id);
+```
+
+In these cases, ClickHouse computes `length('alice')` (and other constants) once and uses the length values to narrow the ranges in the primary key index. Since length of a string is **not injective**, different `user_id` strings can share the same length, so the index may read extra granules (false positives). The result remains correct because the original predicate (`user_id = ...`, `IN`, etc.) is still applied after reading.
+
+If the deterministic expression is also **injective** (different inputs cannot produce the same output for the argument types used), additionally ClickHouse can effectively use the index for the negated forms: `!=`, `NOT IN`, and `NOT has(...)`. For example, `reverse(p)` and `hex(p)` are injective for `String`.
+
+Example of an injective primary key:
+```sql
+ENGINE = MergeTree()
+ORDER BY hex(p)
+```
+
+More complex injective expressions are also supported, for example:
+```sql
+ENGINE = MergeTree()
+ORDER BY reverse(tuple(reverse(p), hex(p)))
+```
+
+Example predicates that can use the index:
+```sql
+SELECT * FROM table WHERE p != 'abc';
+SELECT * FROM table WHERE p NOT IN ('abc', '12345');
+SELECT * FROM table WHERE NOT has(['abc', '12345'], p);
+```
+
 ### Use of index for partially-monotonic primary keys {#use-of-index-for-partially-monotonic-primary-keys}
 
 Consider, for example, the days of the month. They form a [monotonic sequence](https://en.wikipedia.org/wiki/Monotonic_function) for one month, but not monotonic for more extended periods. This is a partially-monotonic sequence. If a user creates the table with partially-monotonic primary key, ClickHouse creates a sparse index as usual. When a user selects data from this kind of table, ClickHouse analyzes the query conditions. If the user wants to get data between two marks of the index and both these marks fall within one month, ClickHouse can use the index in this particular case because it can calculate the distance between the parameters of a query and index marks.
@@ -355,8 +399,10 @@ see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexe
 - [`MinMax`](#minmax) index
 - [`Set`](#set) index
 - [`bloom_filter`](#bloom-filter) index
-- [`ngrambf_v1`](#n-gram-bloom-filter) index
-- [`tokenbf_v1`](#token-bloom-filter) index
+- [`ngrambf_v1`](#n-gram-bloom-filter) index *(Deprecated)*
+- [`tokenbf_v1`](#token-bloom-filter) index *(Deprecated)*
+- [`text`](#text) index
+- [`vector_similarity`](#vector-similarity) index
 
 #### MinMax skip index {#minmax}
 
@@ -404,7 +450,13 @@ The following data types are supported:
 For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
 :::
 
-#### N-gram bloom filter {#n-gram-bloom-filter}
+#### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
+
+:::note
+With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `ngrambf_v1` index is no longer recommended for full text search.
+
+See page ["Full-text search with text indexes"](./textindexes.md) for details.
+:::
 
 For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
 
@@ -472,7 +524,11 @@ The functions above refer to the bloom filter calculator [here](https://hur.st/b
 
 #### Token bloom filter {#token-bloom-filter}
 
-The token bloom filter is the same as `ngrambf_v1`, but stores tokens (sequences separated by non-alphanumeric characters) instead of ngrams.
+:::note
+With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `tokenbf_v1` index is no longer recommended for full text search.
+
+See page ["Full-text search with text indexes"](./textindexes.md) for details.
+:::
 
 ```text title="Syntax"
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
@@ -488,7 +544,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Supports full-text search, see [here](textindexes.md) for details.
+Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](textindexes.md) for details.
 
 #### Vector similarity {#vector-similarity}
 
@@ -527,6 +583,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
 | [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [pointInPolygon](/sql-reference/functions/geo/coordinates.md#pointinpolygon)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            |  ✗    |
 | [mapContains (mapContainsKey)](/sql-reference/functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
@@ -1058,6 +1115,8 @@ Configuration markup:
 
 Also see [configuring external storage options](/operations/storing-data.md/#configuring-external-storage).
 
+It is possible to set up non-replicated MergeTree tables with a one-writer, many-readers scenario on shared storage. This is provided by the automatic refresh of the parts list, which can be set up on readers. Note that this requires shared filesystem metadata across replicas (or `table_disk = true` with a table-local disk). See [refresh_parts_interval and table_disk](/operations/storing-data.md/#refresh-parts-interval-and-table-disk).
+
 :::note cache configuration
 ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/operations/storing-data.md/#using-local-cache) if you are using one of those versions.
 :::
@@ -1080,10 +1139,9 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Column statistics {#column-statistics}
 
-<ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
+The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family:
 
 ```sql
 CREATE TABLE tab
@@ -1095,7 +1153,7 @@ ENGINE = MergeTree
 ORDER BY a
 ```
 
-We can also manipulate statistics with `ALTER` statements.
+We can also manipulate statistics with `ALTER` statements:
 
 ```sql
 ALTER TABLE tab ADD STATISTICS b TYPE TDigest, Uniq;
@@ -1103,7 +1161,7 @@ ALTER TABLE tab DROP STATISTICS a;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
-They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
+They can be used for prewhere optimization only if we enable `set use_statistics = 1`.
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 

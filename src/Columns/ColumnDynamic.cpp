@@ -3,21 +3,22 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/Arena.h>
-#include <Common/SipHash.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <IO/WriteBufferFromVector.h>
+#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/Serializations/SerializationString.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <Formats/FormatSettings.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Common/Arena.h>
+#include <Common/SipHash.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -236,7 +237,7 @@ void ColumnDynamic::insert(const Field & x)
     auto & variant_col = getVariantColumn();
     auto shared_variant_discr = getSharedVariantDiscriminator();
     /// Check if we can insert field into existing variants and avoid Variant extension.
-    for (size_t i = 0; i != variant_col.getNumVariants(); ++i)
+    for (ColumnVariant::Discriminator i = 0; i != variant_col.getNumVariants(); ++i)
     {
         if (i != shared_variant_discr && variant_col.getVariantByGlobalDiscriminator(i).tryInsert(x))
         {
@@ -309,12 +310,15 @@ void ColumnDynamic::get(size_t n, Field & res) const
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
-DataTypePtr ColumnDynamic::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
-        return variant_col.getValueNameAndTypeImpl(name_buf, n, options);
+    {
+        variant_col.getValueNameImpl(name_buf, n, options);
+        return;
+    }
 
     /// We should deserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
@@ -323,7 +327,7 @@ DataTypePtr ColumnDynamic::getValueNameAndTypeImpl(WriteBufferFromOwnString & na
     auto type = decodeDataType(buf);
     const auto col = type->createColumn();
     type->getDefaultSerialization()->deserializeBinary(*col, buf, getFormatSettings());
-    return col->getValueNameAndTypeImpl(name_buf, 0, options);
+    col->getValueNameImpl(name_buf, 0, options);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -1097,7 +1101,7 @@ DataTypePtr ColumnDynamic::getTypeAt(size_t row_num) const
     return assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants()[discr];
 }
 
-void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) const
+void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> & names) const
 {
     auto shared_variant_discr = getSharedVariantDiscriminator();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)

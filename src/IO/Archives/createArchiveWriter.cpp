@@ -1,5 +1,4 @@
 #include <IO/Archives/ArchiveUtils.h>
-#include <IO/Archives/LibArchiveWriter.h>
 #include <IO/Archives/TarArchiveWriter.h>
 #include <IO/Archives/ZipArchiveWriter.h>
 #include <IO/Archives/createArchiveWriter.h>

@@ -103,36 +103,22 @@ public:
     void updateAggregationState();
     void writeOutCurrentRow();
 
-    Columns & inputAt(const RowNumber & x)
-    {
-        assert(x.block >= first_block_number);
-        assert(x.block - first_block_number < blocks.size());
-        return blocks[x.block - first_block_number].input_columns;
-    }
-
+    Columns & inputAt(const RowNumber & x);
     const Columns & inputAt(const RowNumber & x) const
     {
         return const_cast<WindowTransform *>(this)->inputAt(x);
     }
 
-    auto & blockAt(const UInt64 block_number)
-    {
-        assert(block_number >= first_block_number);
-        assert(block_number - first_block_number < blocks.size());
-        return blocks[block_number - first_block_number];
-    }
-
-    const auto & blockAt(const UInt64 block_number) const
+    WindowTransformBlock & blockAt(UInt64 block_number);
+    const WindowTransformBlock & blockAt(UInt64 block_number) const
     {
         return const_cast<WindowTransform *>(this)->blockAt(block_number);
     }
-
-    auto & blockAt(const RowNumber & x)
+    WindowTransformBlock & blockAt(const RowNumber & x)
     {
         return blockAt(x.block);
     }
-
-    const auto & blockAt(const RowNumber & x) const
+    const WindowTransformBlock & blockAt(const RowNumber & x) const
     {
         return const_cast<WindowTransform *>(this)->blockAt(x);
     }
@@ -141,13 +127,7 @@ public:
     {
         return blockAt(x).rows;
     }
-
-    MutableColumns & outputAt(const RowNumber & x)
-    {
-        assert(x.block >= first_block_number);
-        assert(x.block - first_block_number < blocks.size());
-        return blocks[x.block - first_block_number].output_columns;
-    }
+    MutableColumns & outputAt(const RowNumber & x);
 
     void advanceRowNumber(RowNumber & x) const
     {
@@ -166,7 +146,6 @@ public:
         x.row = 0;
         ++x.block;
     }
-
     RowNumber nextRowNumber(const RowNumber & x) const
     {
         RowNumber result = x;
@@ -198,7 +177,6 @@ public:
         assert(advanced_retreated_x == original_x);
 #endif
     }
-
     RowNumber prevRowNumber(const RowNumber & x) const
     {
         RowNumber result = x;
@@ -217,12 +195,10 @@ public:
         else
             assert(x.row < blockRowsNumber(x));
     }
-
     RowNumber blocksEnd() const
     {
         return RowNumber{first_block_number + blocks.size(), 0};
     }
-
     RowNumber blocksBegin() const
     {
         return RowNumber{first_block_number, 0};

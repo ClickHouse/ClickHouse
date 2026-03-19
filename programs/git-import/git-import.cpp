@@ -334,7 +334,7 @@ struct LineChange
       */
     void setLineInfo(std::string full_line)
     {
-        uint32_t num_spaces = 0;
+        UInt8 num_spaces = 0;
 
         const char * pos = full_line.data();
         const char * end = pos + full_line.size();
@@ -350,7 +350,7 @@ struct LineChange
             ++pos;
         }
 
-        indent = std::min(255U, num_spaces);
+        indent = std::min<UInt8>(255U, num_spaces);
         line.assign(pos, end);
 
         if (pos == end)

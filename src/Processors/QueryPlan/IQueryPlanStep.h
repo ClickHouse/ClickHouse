@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <string_view>
 #include <variant>
 
 namespace DB
@@ -81,10 +81,14 @@ public:
     struct FormatSettings
     {
         WriteBuffer & out;
+        std::string header_prefix;
+        std::string detail_prefix;
         size_t offset = 0;
-        const size_t indent = 2;
+        const size_t base_indent = 2;
         const char indent_char = ' ';
         const bool write_header = false;
+        bool compact = false;
+        bool pretty = false;
     };
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
@@ -123,10 +127,7 @@ public:
 
     virtual bool supportsDataflowStatisticsCollection() const { return false; }
 
-    void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater)
-    {
-        dataflow_cache_updater = std::move(updater);
-    }
+    void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
 
     /// Returns true if the step has implemented removeUnusedColumns.
     virtual bool canRemoveUnusedColumns() const { return false; }

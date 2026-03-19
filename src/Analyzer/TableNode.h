@@ -106,7 +106,7 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    std::shared_ptr<ASTTableIdentifier> toASTIdentifier() const;
+    boost::intrusive_ptr<ASTTableIdentifier> toASTIdentifier() const;
 
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;

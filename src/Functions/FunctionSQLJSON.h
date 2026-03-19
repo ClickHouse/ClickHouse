@@ -367,7 +367,7 @@ public:
         if (isColumnNullable(dest))
         {
             ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
-            col_null.getNullMapData().push_back(0);
+            col_null.getNullMapData().push_back(false);
             col_str = assert_cast<ColumnString *>(&col_null.getNestedColumn());
         }
         else

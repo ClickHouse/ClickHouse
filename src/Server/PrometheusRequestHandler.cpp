@@ -15,6 +15,7 @@
 
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/StringUtils.h>
 #include <IO/SnappyReadBuffer.h>
 #include <IO/SnappyWriteBuffer.h>
@@ -193,9 +194,9 @@ protected:
                     /// and `request_credentials` must be preserved until the next request or until any exception.
 
         /// Initialize query scope.
-        std::optional<CurrentThread::QueryScope> query_scope;
+        QueryScope query_scope;
         if (context)
-            query_scope.emplace(context);
+            query_scope = QueryScope::create(context);
 
         handlingRequestWithContext(request, response);
     }

@@ -61,6 +61,12 @@
     <!-- Do not send clickhouse-client to background on C-z -->
     <!-- <ignore_shell_suspend>true</ignore_shell_suspend> -->
 
+    <!-- Disable showing warnings from `system.warnings` when the client connects to the server. -->
+    <!-- <warnings>false</warnings> -->
+
+    <!-- Suppress server-client version mismatch message when the client connects to the server. -->
+    <!-- <server_client_version_message>false</server_client_version_message> -->
+
     <!-- Fall back CLI client to Ctrl+R for regular search like before, while Ctrl+T does fuzzy search. -->
     <!-- <interactive_history_legacy_keymap>true</interactive_history_legacy_keymap> -->
 

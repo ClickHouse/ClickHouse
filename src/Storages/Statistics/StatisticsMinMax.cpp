@@ -22,7 +22,7 @@ void StatisticsMinMax::build(const ColumnPtr & column)
     Field min_field;
     Field max_field;
 
-    column->getExtremes(min_field, max_field);
+    column->getExtremes(min_field, max_field, 0, column->size());
 
     if (!min_field.isNull())
     {
@@ -73,12 +73,12 @@ Float64 StatisticsMinMax::estimateLess(const Field & val) const
         return 0;
 
     if (val_as_float > max)
-        return row_count;
+        return static_cast<Float64>(row_count);
 
     if (min == max)
-        return (val_as_float != max) ? 0 : row_count;
+        return (val_as_float != max) ? 0 : static_cast<Float64>(row_count);
 
-    return ((*val_as_float - min) / (max - min)) * row_count;
+    return ((*val_as_float - min) / (max - min)) * static_cast<Float64>(row_count);
 }
 
 String StatisticsMinMax::getNameForLogs() const

@@ -26,7 +26,7 @@ Header: number UInt64
                 __table1.e UInt64
           ReadFromSystemNumbers
           Header: number UInt64
-        BuildRuntimeFilter (Build runtime join filter on __table3.number (_runtime_filter_UNIQ_ID_0))
+        BuildRuntimeFilter (Build runtime join filter on __table3.number)
         Header: __table3.number UInt64
                 __table3.k UInt64
                 __table3.k UInt64

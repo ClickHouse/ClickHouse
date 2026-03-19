@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -11,11 +10,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/assert_cast.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/FactoryHelpers.h>
-#include <map>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 
 
 namespace DB
@@ -37,7 +37,7 @@ namespace
 struct AggregateFunctionMapData
 {
     // Map needs to be ordered to maintain function properties
-    std::map<Field, Array> merged_maps;
+    MapWithMemoryTracking<Field, Array> merged_maps;
 };
 
 /** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of at least 2 arrays -
@@ -508,7 +508,7 @@ private:
     using Self = AggregateFunctionSumMapFiltered<overflow, tuple_argument>;
     using Base = AggregateFunctionMapBase<Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
-    using ContainerT = std::set<Field>;
+    using ContainerT = SetWithMemoryTracking<Field>;
     ContainerT keys_to_keep;
 
 public:
@@ -854,7 +854,7 @@ FROM multi_metrics;
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMap<false, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMap<false, false>>(keys_type, values_types, arguments, params);
-    }, {}, sumMappedArrays_documentation});
+    }, sumMappedArrays_documentation});
 
     FunctionDocumentation::Description minMappedArrays_description = R"(
 Calculates the minimum from `value` array according to the keys specified in the `key` array.
@@ -897,7 +897,7 @@ FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1])
         if (tuple_argument)
             return std::make_shared<AggregateFunctionMinMap<true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionMinMap<false>>(keys_type, values_types, arguments, params);
-    }, {}, minMappedArrays_documentation});
+    }, minMappedArrays_documentation, {}});
 
     FunctionDocumentation::Description maxMappedArrays_description = R"(
 Calculates the maximum from `value` array according to the keys specified in the `key` array.
@@ -940,7 +940,7 @@ FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], 
         if (tuple_argument)
             return std::make_shared<AggregateFunctionMaxMap<true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionMaxMap<false>>(keys_type, values_types, arguments, params);
-    }, {}, maxMappedArrays_documentation});
+    }, maxMappedArrays_documentation});
 
     // these functions could be renamed to *MappedArrays too, but it would
     // break backward compatibility
@@ -1024,23 +1024,23 @@ GROUP BY timeslot;
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMap<true, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMap<true, false>>(keys_type, values_types, arguments, params);
-    }, {}, sumMapWithOverflow_documentation});
+    }, sumMapWithOverflow_documentation});
 
-    factory.registerFunction("sumMapFiltered", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    factory.registerFunction("sumMapFiltered", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<false, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<false, false>>(keys_type, values_types, arguments, params);
-    });
+    }, {}});
 
-    factory.registerFunction("sumMapFilteredWithOverflow", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    factory.registerFunction("sumMapFilteredWithOverflow", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<true, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<true, false>>(keys_type, values_types, arguments, params);
-    });
+    }, {}});
 }
 
 }

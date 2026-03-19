@@ -59,7 +59,7 @@ void AggregationMethodStringNoCache<TData, nullable>::insertKeyIntoColumns(
     {
         ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*key_columns[0]);
         assert_cast<ColumnString &>(column_nullable.getNestedColumn()).insertData(key.data(), key.size());
-        column_nullable.getNullMapData().push_back(0);
+        column_nullable.getNullMapData().push_back(false);
     }
     else
     {

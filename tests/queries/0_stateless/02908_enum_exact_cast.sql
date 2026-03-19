@@ -25,7 +25,7 @@ INSERT INTO enum_table SETTINGS input_format_null_as_default = 0, async_insert =
 
 SELECT 'Non-null values';
 
-SET check_conversion_from_numbers_to_enum = 0; -- current behavior
+SET check_conversion_from_numbers_to_enum = 0; -- legacy behavior
 
 INSERT INTO enum_table VALUES (0, 'first');
 INSERT INTO enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
@@ -35,7 +35,7 @@ INSERT INTO enum_table SELECT 0, 'first';
 INSERT INTO enum_table SELECT 0, 'fifth'; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 INSERT INTO enum_table SELECT 0, 0;
 
-SET check_conversion_from_numbers_to_enum = 1;
+SET check_conversion_from_numbers_to_enum = 1; -- default behavior
 
 INSERT INTO enum_table VALUES (0, 'first');
 INSERT INTO enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
@@ -64,14 +64,14 @@ SELECT val FROM nullable_enum_table;
 
 SELECT 'Non-null values';
 
-SET check_conversion_from_numbers_to_enum = 0; -- current behavior
+SET check_conversion_from_numbers_to_enum = 0; -- legacy behavior
 
 INSERT INTO nullable_enum_table VALUES (0, 'first');
 INSERT INTO nullable_enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 INSERT INTO nullable_enum_table VALUES (0, NULL);
 INSERT INTO nullable_enum_table VALUES (0, 0);
 
-SET check_conversion_from_numbers_to_enum = 1;
+SET check_conversion_from_numbers_to_enum = 1; -- default behavior
 
 INSERT INTO nullable_enum_table VALUES (0, 'first');
 INSERT INTO nullable_enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
@@ -82,8 +82,8 @@ DROP TABLE nullable_enum_table;
 
 SELECT 'CAST';
 
-SELECT '-- current behaviour';
-SET check_conversion_from_numbers_to_enum = 0;
+SELECT '-- legacy behaviour';
+SET check_conversion_from_numbers_to_enum = 0; -- legacy behavior
 
 SELECT (('first'::String)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
 SELECT (('second'::String)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
@@ -105,8 +105,8 @@ SELECT ((4::UInt64)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
 SELECT ((4::Float32)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
 SELECT ((4::Float64)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
 
-SELECT '-- new behaviour';
-SET check_conversion_from_numbers_to_enum = 1;
+SELECT '-- default behaviour';
+SET check_conversion_from_numbers_to_enum = 1; -- default behavior
 
 SELECT (('first'::String)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
 SELECT (('second'::String)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;

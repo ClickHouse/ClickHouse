@@ -1,6 +1,5 @@
 #include <Server/TLSHandler.h>
 
-#include <Poco/SharedPtr.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 

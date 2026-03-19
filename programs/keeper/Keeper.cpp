@@ -102,6 +102,13 @@ namespace ServerSetting
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+    extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
+    extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
+    extern const ServerSettingsDouble memory_worker_purge_total_memory_threshold_ratio;
+    extern const ServerSettingsBool memory_worker_correct_memory_tracker;
+    extern const ServerSettingsBool memory_worker_use_cgroup;
+    extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
 }
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
@@ -122,7 +129,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
     auto port = config().getInt(port_name);
     try
     {
-        func(port);
+        func(static_cast<UInt16>(port));
     }
     catch (const Poco::Exception &)
     {
@@ -314,14 +321,15 @@ String getKeeperPath(Poco::Util::LayeredConfiguration & config)
 int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
-#if USE_JEMALLOC
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
-    Jemalloc::setup(
+#if USE_JEMALLOC
+    Jemalloc::verifySetup(
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
+        server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
 #endif
     Poco::Logger * log = &logger();
 
@@ -344,7 +352,7 @@ try
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
 
-    auto updateMemorySoftLimitInConfig = [&](Poco::Util::AbstractConfiguration & config)
+    auto update_memory_soft_limit_in_config = [&](Poco::Util::AbstractConfiguration & config)
     {
         UInt64 memory_soft_limit = 0;
         if (config.has("keeper_server.max_memory_usage_soft_limit"))
@@ -362,14 +370,14 @@ try
             size_t physical_server_memory = getMemoryAmount();
             if (ratio > 0 && physical_server_memory > 0)
             {
-                memory_soft_limit = static_cast<UInt64>(physical_server_memory * ratio);
+                memory_soft_limit = static_cast<UInt64>(static_cast<double>(physical_server_memory) * ratio);
                 config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
             }
         }
         LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
     };
 
-    updateMemorySoftLimitInConfig(config());
+    update_memory_soft_limit_in_config(config());
 
     std::string path = getKeeperPath(config());
     std::filesystem::create_directories(path);
@@ -397,12 +405,16 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(
-        config().getUInt64("memory_worker_period_ms", 0),
-        /*purge_dirty_pages_threshold_ratio_=*/ 0,
-        config().getBool("memory_worker_correct_memory_tracker", false),
-        /*use_cgroup=*/ true,
-        /*page_cache_=*/ nullptr);
+    MemoryWorkerConfig memory_worker_config{
+        .rss_update_period_ms = server_settings[ServerSetting::memory_worker_period_ms],
+        .purge_dirty_pages_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
+        .purge_total_memory_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_total_memory_threshold_ratio],
+        .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
+        .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
+        .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+    };
+
+    MemoryWorker memory_worker(memory_worker_config, /*page_cache_=*/nullptr);
     memory_worker.start();
 
     static ServerErrorHandler error_handler;
@@ -625,18 +637,19 @@ try
         getKeeperPath(config()),
         /* zk_node_cache_= */ nullptr,
         unused_event,
-        [&](ConfigurationPtr config, bool /* initial_loading */)
+        [&](ConfigurationPtr loaded_config, bool /* initial_loading */)
         {
-            updateLevels(*config, logger());
+            config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
-            updateMemorySoftLimitInConfig(*config);
+            updateLevels(config(), logger());
+            update_memory_soft_limit_in_config(config());
 
-            if (config->has("keeper_server"))
-                global_context->updateKeeperConfiguration(*config);
+            if (config().has("keeper_server"))
+                global_context->updateKeeperConfiguration(config());
 
 #if USE_SSL
-            CertificateReloader::instance().tryLoad(*config);
-            CertificateReloader::instance().tryLoadClient(*config);
+            CertificateReloader::instance().tryLoad(config());
+            CertificateReloader::instance().tryLoadClient(config());
 #endif
         });
 
@@ -645,6 +658,10 @@ try
         main_config_reloader.reset();
 
         async_metrics.stop();
+
+        /// Signal Keeper TCP handlers to close before waiting for connections,
+        /// otherwise they keep running indefinitely and block shutdown.
+        global_context->signalKeeperDispatcherShutdown();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         size_t current_connections = 0;
