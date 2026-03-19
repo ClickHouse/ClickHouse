@@ -1855,6 +1855,10 @@ void Planner::buildPlanForQueryNode()
     bool should_cache = shouldUseQueryCacheForSubquery(query_node, can_use_query_result_cache, settings,
         select_query_options.is_subquery);
 
+    /// Query result cache must actually exist
+    if (should_cache && !query_result_cache)
+        should_cache = false;
+
     /// For explicit per-subquery opt-in (SETTINGS `use_query_cache = true` on the subquery),
     /// ensure the context flag is set so that `checkCanWriteQueryResultCache` works.
     if (should_cache && !can_use_query_result_cache)
