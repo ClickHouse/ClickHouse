@@ -820,7 +820,16 @@ void KeeperStateMachine<Storage>::rollbackRequest(const KeeperRequestForSession 
     }
 
     if (rollback_callback)
-        rollback_callback(request_for_session);
+    {
+        try
+        {
+            rollback_callback(request_for_session);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to execute rollback callback");
+        }
+    }
 }
 
 nuraft::ptr<nuraft::snapshot> IKeeperStateMachine::last_snapshot()
