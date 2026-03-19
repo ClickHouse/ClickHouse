@@ -374,9 +374,9 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-#### `=` and `!=` {#functions-example-equals-notequals}
+#### `=` {#functions-example-equals}
 
-`=` ([equals](/sql-reference/functions/comparison-functions.md/#equals)) and `!=` ([notEquals](/sql-reference/functions/comparison-functions.md/#notEquals)) match the entire given search term.
+`=` ([equals](/sql-reference/functions/comparison-functions.md/#equals)) matches the entire given search term.
 
 Example:
 
@@ -384,11 +384,9 @@ Example:
 SELECT * from table WHERE str = 'Hello';
 ```
 
-The text index supports `=` and `!=`, yet equality and inequality search only make sense with the `array` tokenizer (it causes the index to store entire row values).
+#### `IN` {#functions-example-in}
 
-#### `IN` and `NOT IN` {#functions-example-in-notin}
-
-`IN` ([in](/sql-reference/functions/in-functions)) and `NOT IN` ([notIn](/sql-reference/functions/in-functions)) are similar to functions `equals` and `notEquals` but they match all (`IN`) or no (`NOT IN`) search terms.
+`IN` ([in](/sql-reference/functions/in-functions)) is similar to `equals` but matches all search terms.
 
 Example:
 
@@ -396,15 +394,21 @@ Example:
 SELECT * from table WHERE str IN ('Hello', 'World');
 ```
 
-The same restrictions as for `=` and `!=` apply, i.e. `IN` and `NOT IN` only make sense in conjunction with the `array` tokenizer.
+:::note
+`NOT IN` (`notIn`) is not supported by the text index.
+:::
 
-#### `LIKE`, `NOT LIKE` and `match` {#functions-example-like-notlike-match}
+#### `LIKE` and `match` {#functions-example-like-match}
 
 :::note
 These functions currently use the text index for filtering only if the index tokenizer is either `splitByNonAlpha`, `ngrams` or `sparseGrams`.
 :::
 
-In order to use `LIKE` ([like](/sql-reference/functions/string-search-functions.md/#like)), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notLike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
+:::note
+`NOT LIKE` (`notLike`) is not supported by the text index.
+:::
+
+In order to use `LIKE` ([like](/sql-reference/functions/string-search-functions.md/#like)) and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
 For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
 
 Example for the text index with `splitByNonAlpha` tokenizer:

@@ -47,12 +47,23 @@ INFRASTRUCTURE_ERROR_PATTERNS = [
 
 
 def _is_infrastructure_error(result: Result) -> bool:
-    """Returns True if the result is an ERROR caused by infrastructure issues."""
-    if result.status not in (Result.Status.ERROR, Result.StatusExtended.ERROR):
-        return False
+    """Returns True if the result is a failure caused by infrastructure issues."""
     if not result.info:
         return False
-    return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+    if result.status in (Result.Status.ERROR, Result.StatusExtended.ERROR):
+        return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+    # Docker compose/pull infrastructure failures may appear with FAIL status
+    # when pytest reports fixture (setup phase) errors as test failures.
+    # Require both docker context and an infrastructure pattern to avoid
+    # false positives on genuine test failures.
+    if result.status in (Result.Status.FAILED, Result.StatusExtended.FAIL):
+        has_docker_context = (
+            "'docker'" in result.info or "images_pull_cmd" in result.info
+        )
+        return has_docker_context and any(
+            p in result.info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        )
+    return False
 
 
 def _mark_infrastructure_errors(results: list) -> int:

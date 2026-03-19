@@ -956,7 +956,7 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
     return false;
 }
 
-bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 

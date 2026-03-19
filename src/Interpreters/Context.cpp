@@ -270,6 +270,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -7493,7 +7494,8 @@ bool Context::canUseTaskBasedParallelReplicas() const
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
-        && settings_ref[Setting::max_parallel_replicas] > 1;
+        && settings_ref[Setting::max_parallel_replicas] > 1
+        && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const

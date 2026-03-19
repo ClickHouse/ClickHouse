@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"min_rows_per_stream_for_gradual_resize", 0, 1000, "Enable gradual resize processor to limit effective parallelism for GROUP BY, reducing merge overhead for small result sets"},
             {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting to control gradual resize processor activation by byte count"},
+            {"allow_experimental_polyglot_dialect", false, false, "New setting to enable the polyglot SQL transpiler dialect."},
+            {"polyglot_dialect", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."},
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
             {"optimize_syntax_fuse_functions", false, true, "The optimization is production-ready"},
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
