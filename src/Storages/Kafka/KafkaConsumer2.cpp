@@ -13,7 +13,6 @@
 #include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
 

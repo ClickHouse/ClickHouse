@@ -34,7 +34,6 @@ private:
     ColumnNullable(const ColumnNullable &) = default;
 
 public:
-    static constexpr UInt8 IS_NULL_MASK = 1;
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
@@ -56,7 +55,7 @@ public:
     bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
     Float64 getFloat64(size_t n) const override;
@@ -95,7 +94,7 @@ public:
     void insertDefault() override
     {
         getNestedColumn().insertDefault();
-        getNullMapData().push_back(true);
+        getNullMapData().push_back(1);
     }
 
     void popBack(size_t n) override;
@@ -141,9 +140,9 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
+    void getExtremes(Field & min, Field & max) const override;
     // Special function for nullable minmax index
-    void getExtremesNullLast(Field & min, Field & max, size_t start, size_t end) const;
+    void getExtremesNullLast(Field & min, Field & max) const;
 
     ColumnPtr compress(bool force_compression) const override;
 

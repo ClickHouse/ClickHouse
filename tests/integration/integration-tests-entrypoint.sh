@@ -19,7 +19,7 @@ function handle_term()
 }
 trap handle_term TERM
 
-echo "Running: $*"
+echo "Runnig: $*"
 "$@" &
 PID=$!
 # This will be interrupted by SIGTERM that is received by this script

@@ -5,7 +5,6 @@
 #    pragma clang diagnostic ignored "-Wshadow"
 #    pragma clang diagnostic ignored "-Wextra-semi-stmt"
 #    pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#    pragma clang diagnostic ignored "-Wimplicit-int-float-conversion"
 
 #    include <pocketfft_hdronly.h>
 
@@ -159,8 +158,8 @@ public:
             return true;
         }
 
-        double step = 0.5 / static_cast<double>(spec_len - 1);
-        auto freq = static_cast<double>(idx) * step;
+        double step = 0.5 / (spec_len - 1);
+        auto freq = idx * step;
 
         period = std::round(1 / freq);
         return true;

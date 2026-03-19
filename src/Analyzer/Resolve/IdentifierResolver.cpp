@@ -60,54 +60,17 @@ QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
     std::optional<JoinTableSide> resolved_side,
     IdentifierResolveScope & scope)
 {
-    bool need_nullable = scope.join_use_nulls
-        && JoinCommon::canBecomeNullable(resolved_identifier->getResultType())
-        && (isFull(join_kind)
-            || (isLeft(join_kind) && resolved_side == JoinTableSide::Right)
-            || (isRight(join_kind) && resolved_side == JoinTableSide::Left));
-
-    if (resolved_identifier->getNodeType() == QueryTreeNodeType::FUNCTION)
-    {
-        if (!need_nullable)
-            return resolved_identifier;
-
-        /// For function nodes (e.g., `getSubcolumn` wrapping a column from a storage
-        /// that doesn't support direct subcolumn access), we need to wrap inner column
-        /// arguments in Nullable and re-resolve the function to get the correct result type.
-        auto function_clone = resolved_identifier->clone();
-        auto & function_node = function_clone->as<FunctionNode &>();
-        auto & arguments = function_node.getArguments().getNodes();
-
-        bool any_changed = false;
-        for (auto & arg : arguments)
-        {
-            if (arg->getNodeType() == QueryTreeNodeType::COLUMN)
-            {
-                auto nullable_arg = convertJoinedColumnTypeToNullIfNeeded(
-                    arg, arg->getResultType(), join_kind, resolved_side, scope);
-                if (nullable_arg && !nullable_arg->isEqual(*arg))
-                {
-                    arg = nullable_arg;
-                    any_changed = true;
-                }
-            }
-        }
-
-        if (any_changed)
-        {
-            auto function_resolver = FunctionFactory::instance().tryGet(function_node.getFunctionName(), scope.context);
-            if (function_resolver)
-                function_node.resolveAsFunction(function_resolver->build(function_node.getArgumentColumns()));
-        }
-
-        return function_clone;
-    }
-
     if (resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
         return resolved_identifier;
 
-    if (need_nullable)
+    if (scope.join_use_nulls &&
+        JoinCommon::canBecomeNullable(resolved_identifier->getResultType()) &&
+        (isFull(join_kind) ||
+        (isLeft(join_kind) && resolved_side == JoinTableSide::Right) ||
+        (isRight(join_kind) && resolved_side == JoinTableSide::Left)))
+    {
         result_type = makeNullableOrLowCardinalityNullable(result_type);
+    }
 
     if (result_type)
     {
@@ -403,10 +366,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(identifier_full_name))
     {
-        /// Don't read subcolumn of aliases directly, only using getSubcolumn,
-        /// because aliases don't have real subcolumns, they should be extracted
-        /// after alias expression evaluation.
-        if (scope.table_expression_data_for_alias_resolution->supports_subcolumns && !subcolumn_info->column_node->hasExpression())
+        if (scope.table_expression_data_for_alias_resolution->supports_subcolumns)
             return std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
 
         return wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
@@ -547,10 +507,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_full_name))
         {
-            /// Don't read subcolumn of aliases directly, only using getSubcolumn,
-            /// because aliases don't have real subcolumns, they should be extracted
-            /// after alias expression evaluation.
-            if (table_expression_data.supports_subcolumns && !subcolumn_info->column_node->hasExpression())
+            if (table_expression_data.supports_subcolumns)
                 result_expression = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
             else
                 result_expression = wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
@@ -1113,24 +1070,19 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         if (std::ranges::none_of(using_column_list.getNodes(), matches_using_column))
             return;
 
-        auto current_type = resolved_column.getColumnType();
-        auto result_type = using_column_node_it->second->getColumnType();
+        if (using_column_node_it != using_column_name_to_column_node.end() &&
+            !using_column_node_it->second->getColumnType()->equals(*resolved_column.getColumnType()))
 
-        /// If current column is Nullable because it comes from previous OUTER JOIN, keep nullability,
-        /// even if USING column itself is not Nullable (for LEFT/RIGHT JOIN).
-        if (isNullableOrLowCardinalityNullable(current_type) && !isNullableOrLowCardinalityNullable(result_type))
-            result_type = makeNullableOrLowCardinalityNullable(current_type);
-
-        if (!result_type->equals(*current_type))
         {
+            // std::cerr << "... fixing type for " << resolved_column.dumpTree() << std::endl;
             auto resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
-
-            resolved_column_clone->setColumnType(result_type);
+            resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
 
             auto projection_name_it = projection_name_mapping.find(resolved_identifier_candidate);
             if (projection_name_it != projection_name_mapping.end())
             {
                 projection_name_mapping[resolved_column_clone] = projection_name_it->second;
+                // std::cerr << ".. upd name " << projection_name_it->second << " for col " << resolved_column_clone->dumpTree() << std::endl;
             }
 
             resolve_result = std::move(resolved_column_clone);

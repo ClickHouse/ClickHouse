@@ -9,4 +9,3 @@ services:
         source: "${NATS_CERT_DIR:-}/nats"
         target: /etc/certs
     stop_grace_period: 5s
-    cpus: 3

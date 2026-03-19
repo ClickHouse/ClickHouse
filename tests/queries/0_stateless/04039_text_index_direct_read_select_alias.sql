@@ -2,6 +2,7 @@
 -- Bug: the optimization renamed the filter column to a virtual column name, but the
 -- downstream ExpressionStep still expected the original column name.
 
+SET allow_experimental_full_text_index = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 

@@ -92,13 +92,13 @@ static QueryTreeNodePtr resolveTableFunction(const ASTPtr & table_function, cons
 
 static ASTPtr makeASTForReadingColumns(const Names & names, ASTPtr table_expression)
 {
-    auto select = make_intrusive<ASTSelectQuery>();
-    auto columns = make_intrusive<ASTExpressionList>();
+    auto select = std::make_shared<ASTSelectQuery>();
+    auto columns = std::make_shared<ASTExpressionList>();
     for (const auto & name : names)
-        columns->children.push_back(make_intrusive<ASTIdentifier>(name));
+        columns->children.push_back(std::make_shared<ASTIdentifier>(name));
 
-    auto tables = make_intrusive<ASTTablesInSelectQuery>();
-    auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto tables = std::make_shared<ASTTablesInSelectQuery>();
+    auto table_element = std::make_shared<ASTTablesInSelectQueryElement>();
     table_element->children.push_back(table_expression);
     table_element->table_expression = std::move(table_expression);
     tables->children.push_back(std::move(table_element));
@@ -111,8 +111,8 @@ static ASTPtr makeASTForReadingColumns(const Names & names, ASTPtr table_express
 
 static ASTPtr wrapWithUnion(ASTPtr select)
 {
-    auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
-    auto selects = make_intrusive<ASTExpressionList>();
+    auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
+    auto selects = std::make_shared<ASTExpressionList>();
     selects->children.push_back(select);
     select_with_union->list_of_selects = selects;
     select_with_union->children.push_back(select_with_union->list_of_selects);
@@ -193,7 +193,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
     if (storage->isRemote() || is_storage_merge)
     {
-        auto table_expression = make_intrusive<ASTTableExpression>();
+        auto table_expression = std::make_shared<ASTTableExpression>();
         if (table_function_ast)
         {
             table_expression->children.push_back(table_function_ast);
@@ -202,7 +202,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         else
         {
             const auto & table_id = storage->getStorageID();
-            auto table_identifier = make_intrusive<ASTTableIdentifier>(table_id.database_name, table_id.table_name);
+            auto table_identifier = std::make_shared<ASTTableIdentifier>(table_id.database_name, table_id.table_name);
             table_expression->children.push_back(table_identifier);
             table_identifier->uuid = table_id.uuid;
             table_expression->database_and_table_name = std::move(table_identifier);
@@ -219,7 +219,6 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         options.ignore_rename_columns = true;
         InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
-        reading_plan.addInterpreterContext(context);
     }
     else
     {
@@ -229,27 +228,16 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.storage_limits = std::move(storage_limits);
         select_query_info.query = std::move(query);
 
-        bool use_parallel_replicas = false;
-        if (reading_from_table)
-            use_parallel_replicas = reading_from_table->useParallelReplicas();
-
-        auto mutable_context = Context::createCopy(context);
-        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
-
         storage->read(
             reading_plan,
             column_names,
             snapshot,
             select_query_info,
-            mutable_context,
+            context,
             QueryProcessingStage::FetchColumns,
             context->getSettingsRef()[Setting::max_block_size],
             context->getSettingsRef()[Setting::max_threads]
         );
-
-        /// Preserve the mutable_context for the lifetime of query execution
-        /// because source processors (e.g., StorageKeeperMapSource) may hold weak_ptr to it
-        reading_plan.addInterpreterContext(mutable_context);
     }
 
     if (!reading_plan.isInitialized())
@@ -271,6 +259,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentHeader(), std::move(converting_actions));
     node.children = {reading_plan.getRootNode()};
 
+    reading_plan.addInterpreterContext(context);
     reading_plan.addStorageHolder(std::move(storage));
     reading_plan.addTableLock(std::move(table_lock));
 

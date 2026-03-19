@@ -79,8 +79,6 @@ public:
         return !stream->isCanceled() && stream->eof();
     }
 
-    std::string toStringForLogging() const;
-
 private:
     /// Limits for basic sanity checks when reading a header
     enum Limits

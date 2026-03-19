@@ -237,25 +237,11 @@
     M(KeeperPacketsSent) \
     M(KeeperPacketsReceived) \
     M(KeeperRequestTotal) \
-    M(KeeperRequestTotalWithSubrequests) \
     M(KeeperLatency) \
     M(KeeperTotalElapsedMicroseconds) \
     M(KeeperProcessElapsedMicroseconds) \
     M(KeeperPreprocessElapsedMicroseconds) \
     M(KeeperStorageLockWaitMicroseconds) \
-    M(KeeperStorageLockHoldMicroseconds) \
-    M(KeeperStorageSharedLockWaitMicroseconds) \
-    M(KeeperStorageSharedLockHoldMicroseconds) \
-    M(KeeperChangelogLockWaitMicroseconds) \
-    M(KeeperChangelogLockHoldMicroseconds) \
-    M(KeeperServerWriteLockWaitMicroseconds) \
-    M(KeeperServerWriteLockHoldMicroseconds) \
-    M(KeeperSessionCallbackLockWaitMicroseconds) \
-    M(KeeperSessionCallbackLockHoldMicroseconds) \
-    M(KeeperReadRequestQueueLockWaitMicroseconds) \
-    M(KeeperReadRequestQueueLockHoldMicroseconds) \
-    M(KeeperProcessAndResponsesLockWaitMicroseconds) \
-    M(KeeperProcessAndResponsesLockHoldMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
@@ -281,10 +267,6 @@
     M(KeeperCheckWatchRequest) \
     M(KeeperAddWatchRequest) \
     M(KeeperRemoveWatchRequest) \
-    M(KeeperChangelogWrittenBytes) \
-    M(KeeperChangelogFileSyncMicroseconds) \
-    M(KeeperSnapshotWrittenBytes) \
-    M(KeeperSnapshotFileSyncMicroseconds) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
@@ -323,8 +305,6 @@
     M(JemallocFailedDeallocationSampleTracking) \
 \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
-    M(KeeperStaleRequestsSkipped) \
-    M(KeeperFinishedSessionsCacheFull) \
 
 namespace ProfileEvents
 {
@@ -416,15 +396,10 @@ extern const std::vector<Metric> keeper_metrics
 }
 
 #define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
-    M(KeeperReceiveRequestTimeMetricFamily) \
-    M(KeeperDispatcherRequestsQueueTimeMetricFamily) \
-    M(KeeperWritePreCommitTimeMetricFamily) \
-    M(KeeperWriteCommitTimeMetricFamily) \
-    M(KeeperDispatcherResponsesQueueTimeMetricFamily) \
-    M(KeeperSendResponseTimeMetricFamily) \
-    M(KeeperReadWaitForWriteTimeMetricFamily) \
-    M(KeeperReadProcessTimeMetricFamily) \
-    M(KeeperBatchSizeBytesMetricFamily) \
+    M(KeeperServerPreprocessRequestDurationMetricFamily) \
+    M(KeeperServerProcessRequestDuration) \
+    M(KeeperServerQueueDurationMetricFamily) \
+    M(KeeperServerSendDurationMetricFamily) \
 
 
 namespace HistogramMetrics

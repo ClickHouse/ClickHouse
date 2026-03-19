@@ -20,7 +20,6 @@ namespace DB
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
 }
@@ -559,7 +558,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         }
 
         if (skip_indices_changed)
-            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, new_metadata.escape_index_filenames, context);
+            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, context);
 
         if (constraints_changed)
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
@@ -613,26 +612,9 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
     if (!skip_indices_changed) /// otherwise already updated
     {
-        /// Remove implicitly created indices and recalculate explicit ones
-        IndicesDescription new_indices;
         for (auto & index : new_metadata.secondary_indices)
-        {
-            if (!index.isImplicitlyCreated())
-            {
-                index.recalculateWithNewColumns(new_metadata.columns, context);
-                new_indices.push_back(index);
-            }
-        }
-        new_metadata.secondary_indices = std::move(new_indices);
+            index.recalculateWithNewColumns(new_metadata.columns, context);
     }
-
-    /// Regenerate implicit indices for the new columns regardless of whether indices were explicitly changed.
-    /// Implicit indices are not stored in ZooKeeper, so they must be recreated locally based on the current
-    /// columns and table settings.
-    /// Note: addImplicitIndicesForColumn checks for existing minmax indices on each column and won't create
-    /// duplicates if an explicit index already exists.
-    for (const auto & column : new_metadata.columns)
-        new_metadata.addImplicitIndicesForColumn(column, context);
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(

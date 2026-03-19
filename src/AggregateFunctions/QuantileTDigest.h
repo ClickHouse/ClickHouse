@@ -441,12 +441,7 @@ public:
         if (centroids.empty())
         {
             for (size_t result_num = 0; result_num < size; ++result_num)
-            {
-                if constexpr (std::is_floating_point_v<ResultType>)
-                    result[result_num] = NAN;
-                else
-                    result[result_num] = 0;
-            }
+                result[result_num] = std::is_floating_point_v<ResultType> ? NAN : 0;
             return;
         }
 

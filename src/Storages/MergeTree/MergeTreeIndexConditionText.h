@@ -1,13 +1,13 @@
 #pragma once
-
+#include <memory>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
 {
 
-class TextIndexTokensCache;
-using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
+class TextIndexDictionaryBlockCache;
+using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
 
 class TextIndexHeaderCache;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
@@ -15,8 +15,8 @@ using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 class TextIndexPostingsCache;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
 
-struct ITokenizer;
-using TokenizerPtr = const ITokenizer *;
+struct ITokenExtractor;
+using TokenExtractorPtr = const ITokenExtractor *;
 
 enum class TextSearchMode : uint8_t
 {
@@ -62,7 +62,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
         const Block & index_sample_block,
-        TokenizerPtr tokenizer_,
+        TokenExtractorPtr token_extractor_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_);
 
     ~MergeTreeIndexConditionText() override = default;
@@ -71,7 +71,6 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-    std::string getDescription() const override;
 
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
@@ -83,12 +82,9 @@ public:
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
-    TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
+    TextIndexDictionaryBlockCachePtr dictionaryBlockCache() const { return dictionary_block_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
-
-    TokenizerPtr getTokenizer() const { return tokenizer; }
-    MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -98,7 +94,9 @@ private:
         {
             /// Atoms
             FUNCTION_EQUALS,
+            FUNCTION_NOT_EQUALS,
             FUNCTION_IN,
+            FUNCTION_NOT_IN,
             FUNCTION_MATCH,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
@@ -132,10 +130,6 @@ private:
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
 
-    /// Returns true if the node represents `arrayElement(map_col, 'key')`
-    /// and there is a text index built on `mapValues(map_col)`.
-    bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
-
     std::vector<String> stringToTokens(const Field & field) const;
     std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     std::vector<String> stringLikeToTokens(const Field & field) const;
@@ -148,7 +142,7 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
-    TokenizerPtr tokenizer;
+    TokenExtractorPtr token_extractor;
     RPN rpn;
     PreparedSetsPtr prepared_sets;
 
@@ -162,11 +156,11 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
-    /// Cache for tokens and their infos (cardinality, etc.)
-    TextIndexTokensCachePtr tokens_cache;
-    /// Cache for headers of the text index
+    /// Instance of the text index dictionary block cache
+    TextIndexDictionaryBlockCachePtr dictionary_block_cache;
+    /// Instance of the text index dictionary block cache
     TextIndexHeaderCachePtr header_cache;
-    /// Cache for posting lists of tokens.
+    /// Instance of the text index dictionary block cache
     TextIndexPostingsCachePtr postings_cache;
 };
 

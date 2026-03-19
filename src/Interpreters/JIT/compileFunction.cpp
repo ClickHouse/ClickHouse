@@ -134,12 +134,9 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
         arguments.emplace_back(nullable_value, type);
     }
 
-    /// Compile values for column rows and store compiled value
-    // std::cerr << "before compile:" << std::endl;
-    // module.print(llvm::errs(), nullptr);
+    /// Compile values for column rows and store compiled value in result column
+
     auto * result = function.compile(b, arguments);
-    // std::cerr << "after compile:" << std::endl;
-    // module.print(llvm::errs(), nullptr);
     auto * result_column_element_ptr = b.CreateInBoundsGEP(columns.back().data_element_type, columns.back().data_ptr, counter_phi);
 
     if (columns.back().null_data_ptr)
@@ -201,8 +198,7 @@ static void compileCreateAggregateStatesFunctions(llvm::Module & module, const s
     auto * create_aggregate_states_function = llvm::Function::Create(create_aggregate_states_function_type, llvm::Function::ExternalLinkage, name, module);
 
     auto * arguments = create_aggregate_states_function->args().begin();
-    llvm::Value * aggregate_data_place_arg = arguments;
-    ++arguments;
+    llvm::Value * aggregate_data_place_arg = arguments++;
 
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", create_aggregate_states_function);
     b.SetInsertPoint(entry);
@@ -252,7 +248,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
     llvm::Value * columns_arg = arguments++;
     llvm::Value * places_arg = arguments++;
 
-    /// Initialize ColumnDataPlaceholder LLVM representation of ColumnData
+    /// Initialize ColumnDataPlaceholder llvm representation of ColumnData
 
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", add_into_aggregate_states_func);
     b.SetInsertPoint(entry);
@@ -685,6 +681,7 @@ CompiledSortDescriptionFunction compileSortDescription(
     CompiledSortDescriptionFunction compiled_sort_descriptor_function
     {
         .comparator_function = comparator_function,
+
         .compiled_module = std::move(compiled_module)
     };
 

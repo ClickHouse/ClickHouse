@@ -10,6 +10,7 @@
 #pragma clang diagnostic ignored "-Wnewline-eof"
 #include <ada/idna/to_ascii.h>
 #include <ada/idna/to_unicode.h>
+#include <ada/idna/unicode_transcoding.h>
 #pragma clang diagnostic pop
 
 namespace DB

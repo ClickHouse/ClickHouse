@@ -17,7 +17,7 @@ bool DataTypeNothing::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
-SerializationPtr DataTypeNothing::doGetSerialization(const SerializationInfoSettings &) const
+SerializationPtr DataTypeNothing::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationNothing>();
 }

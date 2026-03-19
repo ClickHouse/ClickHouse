@@ -7,7 +7,7 @@
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3RequestSettings.h>
-#include <Common/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
@@ -287,12 +287,11 @@ namespace
 
                     multipart_tags.push_back({});
                     chassert(part_number == multipart_tags.size());
-                    auto & part_tag = multipart_tags.back();
 
-                    task_tracker.add([this, part_number, position, part_size, &part_tag]()
+                    task_tracker.add([this, part_number, position, part_size]()
                     {
                         UploadPartTask task = {part_number, position, part_size};
-                        this->processUploadTask(task, part_tag);
+                        this->processUploadTask(task);
                     });
 
                     position = next_position;
@@ -374,7 +373,7 @@ namespace
             normal_part_size = part_size;
         }
 
-        void processUploadTask(UploadPartTask & task, String & part_tag)
+        void processUploadTask(UploadPartTask & task)
         {
             if (has_failed)
                 return;
@@ -390,7 +389,7 @@ namespace
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, task.part_size);
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
-                part_tag = tag;
+                multipart_tags[task.part_number - 1] = tag;
                 auto finished_count = ++num_finished_parts;
 
                 LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",

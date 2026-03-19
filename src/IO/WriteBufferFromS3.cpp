@@ -1,5 +1,4 @@
 #include "config.h"
-#include <Common/CurrentThread.h>
 
 #if USE_AWS_S3
 
@@ -17,7 +16,7 @@
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
-#include <Common/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 
 #include <utility>
 
@@ -530,10 +529,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         return;
     }
 
-    /// all iterators are invalidated after push_back,
-    /// so we create part_tag reference after push_back as the reference will not be invalidated
     multipart_tags.push_back({});
-    auto & part_tag = multipart_tags.back();
     size_t part_number = multipart_tags.size();
     LOG_TEST(limited_log, "writePart {}, part size {}, part number {}", getShortLogDetails(), data.data_size, part_number);
 
@@ -605,10 +601,10 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
             throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
         }
 
-        part_tag = outcome.GetResult().GetETag();
+        multipart_tags[part_number-1] = outcome.GetResult().GetETag();
 
         LOG_TEST(limited_log, "Write part succeeded {}, part size {}, part number {}, etag {}",
-                 getShortLogDetails(), data_size, part_number, part_tag);
+                 getShortLogDetails(), data_size, part_number, multipart_tags[part_number-1]);
     };
 
     task_tracker->add(std::move(upload_worker));
@@ -781,14 +777,8 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             }
             else
             {
-                /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
-                /// not a genuine error — the caller handles it.
-                if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
-                    LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
-                              outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
-                else
-                    LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
-                              outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
+                LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
+                          outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, bucket {}, key {}, object size {}",

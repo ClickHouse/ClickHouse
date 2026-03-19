@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --use_skip_indexes_on_data_read 1"
+MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --allow_experimental_full_text_index 1 --use_skip_indexes_on_data_read 1"
 
 $MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS tab;
@@ -169,7 +169,15 @@ function run()
         (
             EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1
         )
-        WHERE explain LIKE '%INPUT%\_\_text_index%' OR explain ILIKE '%name: inv_idx%'
+        WHERE explain ILIKE '%name: inv_idx%'
+        ORDER BY explain
+    "
+    $MY_CLICKHOUSE_CLIENT --query "
+        SELECT count() > 0 FROM
+        (
+            EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1
+        )
+        WHERE explain LIKE '%\_\_text_index%'
     "
 }
 
