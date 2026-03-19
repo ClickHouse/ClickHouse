@@ -1,9 +1,0 @@
-Code: 516. DB::Exception: Received from localhost:19000. DB::Exception: default: Authentication failed: password is incorrect, or there is no user with such name.
-
-If you have installed ClickHouse and forgot password you can reset it in the configuration file.
-The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml
-and deleting this file will reset the password.
-See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.
-
-. (AUTHENTICATION_FAILED)
-
