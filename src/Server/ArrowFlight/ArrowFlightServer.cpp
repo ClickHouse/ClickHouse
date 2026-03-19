@@ -1922,15 +1922,15 @@ arrow::Status ArrowFlightServer::DoAction(
 
             if (!query_id.empty())
             {
-                auto poll_descriptors = calls_data->collectPollDescriptorsForQueryId(query_id);
-
                 auto & process_list = server.context()->getProcessList();
                 auto cancel_result = process_list.sendCancelToQuery(query_id, auth.getUsername());
                 if (cancel_result == CancellationCode::CancelSent)
+                {
                     result = arrow::flight::CancelFlightInfoResult{arrow::flight::CancelStatus::kCancelled};
 
-                for (const auto & pd : poll_descriptors)
-                    calls_data->cancelPollDescriptor(pd);
+                    for (const auto & pd : calls_data->collectPollDescriptorsForQueryId(query_id))
+                        calls_data->cancelPollDescriptor(pd);
+                }
             }
 
             ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
