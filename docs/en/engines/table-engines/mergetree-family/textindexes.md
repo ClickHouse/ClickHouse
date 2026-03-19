@@ -170,6 +170,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/sql-reference/functions/array-functions.md/#array)).
+- `unicode_word` splits strings into tokens using Unicode word boundary rules (similar to UAX #29). ASCII alphanumeric characters and underscores form tokens with connectors (`:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters become single-character tokens. Stop words (configurable, defaults to common CJK punctuation) are skipped. An optional parameter `stop_words` can be specified as an array of strings, for example, `tokenizer = unicode_word(['，', '。'])`.
 
 All available tokenizers are listed in [system.tokenizers](../../../operations/system-tables/tokenizers.md).
 

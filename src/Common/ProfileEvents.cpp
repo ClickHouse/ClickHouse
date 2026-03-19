@@ -97,6 +97,7 @@
     M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(IcebergMetadataFilesCacheHits, "Number of times iceberg metadata files have been found in the cache.", ValueType::Number) \
     M(IcebergMetadataFilesCacheMisses, "Number of times iceberg metadata files have not been found in the iceberg metadata cache and had to be read from (remote) disk.", ValueType::Number) \
+    M(IcebergMetadataFilesCacheStaleMisses, "Number of times iceberg metadata files have been found in the cache, but were considered stale and had to be read from (remote) disk.", ValueType::Number) \
     M(IcebergMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the iceberg metadata cache.", ValueType::Number) \
     M(IcebergMetadataReadWaitTimeMicroseconds, "Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.", ValueType::Microseconds) \
     M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
@@ -969,6 +970,8 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperRemoveWatchRequest, "Number of remove watches requests", ValueType::Number) \
     M(KeeperCheckWatchRequest, "Number of remove watches requests", ValueType::Number) \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
+    M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session was already finished", ValueType::Number) \
+    M(KeeperFinishedSessionsCacheFull, "Number of times a finished session could not be tracked because the cache reached its size limit", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \
