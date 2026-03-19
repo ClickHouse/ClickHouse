@@ -1,10 +1,12 @@
-#include <Common/Exception.h>
+#include <Storages/System/StorageSystemOne.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/Exception.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Storages/System/StorageSystemOne.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -22,30 +24,40 @@ StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
 }
 
 
-Pipe StorageSystemOne::read(
+void StorageSystemOne::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo &,
+    SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+    size_t /*max_block_size*/,
+    size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 
-    Block header{ColumnWithTypeAndName(
-            DataTypeUInt8().createColumn(),
-            std::make_shared<DataTypeUInt8>(),
-            "dummy")};
+    query_plan.addStep(std::make_unique<ReadFromSystemOneStep>(column_names, storage_snapshot));
+}
 
+
+ReadFromSystemOneStep::ReadFromSystemOneStep(
+    const Names & column_names_,
+    const StorageSnapshotPtr & storage_snapshot_
+)
+    : ISourceStep(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)))
+{
+}
+
+
+void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
     auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
     Chunk chunk({ std::move(column) }, 1);
 
-    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(header)), std::move(chunk));
+    auto source = std::make_shared<SourceFromSingleChunk>(getOutputHeader(), std::move(chunk));
     source->addTotalRowsApprox(1);
 
-    return Pipe(source);
+    pipeline.init(Pipe(source));
 }
-
 
 }

@@ -72,7 +72,7 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
     FlattenedDynamicColumn flattened_dynamic_column;
     /// Mapping from the discriminator of a variant to an index of this type in flattened list.
     std::unordered_map<ColumnVariant::Discriminator, size_t> discriminator_to_index;
-    for (size_t i = 0; i != variant_types.size(); ++i)
+    for (ColumnVariant::Discriminator i = 0; i != variant_types.size(); ++i)
     {
         /// SharedVariant will be processed later.
         if (i == shared_variant_discr)

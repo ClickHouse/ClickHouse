@@ -1,7 +1,6 @@
 #include <memory>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -32,7 +31,7 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
             /*input_rows_count=*/1,
             { .skip_materialize = true });
     }
-    catch (...)
+    catch (const Exception &)
     {
         /// If we cannot evaluate the filter expression, return UNKNOWN
         return FilterResult::UNKNOWN;

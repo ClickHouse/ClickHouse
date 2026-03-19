@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/types.h>
+#include <limits>
 namespace DB::Iceberg
 {
 /// This file define the field name appearing in Iceberg files.
@@ -61,6 +63,7 @@ DEFINE_ICEBERG_FIELD(file_format);
 DEFINE_ICEBERG_FIELD(file_size_in_bytes);
 DEFINE_ICEBERG_FIELD(refs);
 DEFINE_ICEBERG_FIELD(branch);
+DEFINE_ICEBERG_FIELD(tag);
 DEFINE_ICEBERG_FIELD(main);
 DEFINE_ICEBERG_FIELD(operation);
 DEFINE_ICEBERG_FIELD(append);
@@ -125,6 +128,13 @@ DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
+DEFINE_ICEBERG_FIELD_ALIAS(min_snapshots_to_keep, history.expire.min-snapshots-to-keep);
+DEFINE_ICEBERG_FIELD_ALIAS(max_snapshot_age_ms, history.expire.max-snapshot-age-ms);
+DEFINE_ICEBERG_FIELD_ALIAS(max_ref_age_ms, history.expire.max-ref-age-ms);
+/// Ref-level override fields (short names inside the "refs" map per Iceberg spec).
+DEFINE_ICEBERG_FIELD_ALIAS(ref_min_snapshots_to_keep, min-snapshots-to-keep);
+DEFINE_ICEBERG_FIELD_ALIAS(ref_max_snapshot_age_ms, max-snapshot-age-ms);
+DEFINE_ICEBERG_FIELD_ALIAS(ref_max_ref_age_ms, max-ref-age-ms);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_format);
@@ -138,4 +148,12 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
+
+/// Fallback defaults for snapshot retention policy when table properties are absent.
+/// These values follow the Java reference implementation; the Iceberg spec does not
+/// mandate specific defaults. They are used as defaults for corresponding ClickHouse
+/// settings `iceberg_expire_default_*`.
+constexpr Int32 default_min_snapshots_to_keep = 1;
+constexpr Int64 default_max_snapshot_age_ms = 432000000; // 5 days
+constexpr Int64 default_max_ref_age_ms = std::numeric_limits<Int64>::max(); // forever, main branch never expires
 }

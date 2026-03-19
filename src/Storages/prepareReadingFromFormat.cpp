@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -71,12 +72,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
         {
             columns_to_read = filterTupleColumnsToRead(info.requested_columns);
         }
-        else if (columns_to_read.empty())
-        {
-            /// If only virtual columns were requested, just read the smallest column.
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
-        }
-        else
+        else if (!columns_to_read.empty())
         {
             /// We need to replace all subcolumns with their nested columns (e.g `a.b`, `a.b.c`, `x.y` -> `a`, `x`),
             /// because most formats cannot extract subcolumns on their own.
@@ -94,6 +90,12 @@ ReadFromFormatInfo prepareReadingFromFormat(
                 }
             }
             columns_to_read = std::move(new_columns_to_read);
+        }
+
+        /// If only virtual columns were requested, just read the smallest column.
+        if (columns_to_read.empty())
+        {
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
@@ -267,7 +269,9 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     new_info.prewhere_info = prewhere_info;
 
     /// Removes columns that are only used as prewhere input.
-    /// Adds prewhere result column if !remove_prewhere_column.
+    /// Adds prewhere outputs (the actual prewhere filter column is only added if
+    /// !remove_prewhere_column; but there may also be subexpressions computed by prewhere
+    /// expression and preserved for use further down the query pipeline).
     new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, row_level_filter, prewhere_info);
 
     /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
@@ -283,12 +287,12 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         new_info.requested_columns.emplace_back(col.name, col.type);
         if (info.format_header.has(col.name))
         {
+            /// Column read from file.
             new_info.columns_description.add(info.columns_description.get(col.name));
         }
         else
         {
-            chassert(col.name == prewhere_info->prewhere_column_name);
-            chassert(!prewhere_info->remove_prewhere_column);
+            /// Column produced by prewhere expression.
             new_info.columns_description.add(ColumnDescription(col.name, col.type));
         }
     }

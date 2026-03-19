@@ -232,7 +232,7 @@ def test_delete_race_leftovers(cluster):
     # and it can be race condition between removing from remote_data_paths and deleting blobs
     all_remote_paths = set()
     known_remote_paths = set()
-    for i in range(3):
+    for i in range(100):
         known_remote_paths = set(
             node.query(
                 f"SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 's32'"

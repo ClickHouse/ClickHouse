@@ -21,7 +21,7 @@ HTTPServerConnectionFactory::HTTPServerConnectionFactory(
     poco_check_ptr(factory);
 }
 
-Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
+Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {
 #if USE_NGHTTP2
     if (isHTTP2Connection(socket, http2_params))
@@ -30,7 +30,7 @@ Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(c
     return new HTTP1ServerConnection(context, tcp_server, socket, http1_params, factory, read_event, write_event);
 }
 
-Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server, TCPProtocolStackData & stack_data)
+Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server, TCPProtocolStackData & stack_data)
 {
 #if USE_NGHTTP2
     if (isHTTP2Connection(socket, http2_params))

@@ -5,7 +5,6 @@
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/ConsoleChannel.h>
-#include <Poco/StreamChannel.h>
 
 #include <gtest/gtest.h>
 

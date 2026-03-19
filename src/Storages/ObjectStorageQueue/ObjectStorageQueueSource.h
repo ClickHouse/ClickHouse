@@ -28,7 +28,7 @@ public:
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolders = std::vector<BucketHolderPtr>;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
-    using HiveLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap;
+    using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
     using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
@@ -74,6 +74,8 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
+        bool useBucketsForProcessing() const { return use_buckets_for_processing; }
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
@@ -87,7 +89,8 @@ public:
         const ObjectStorageQueueMode mode;
         const bool enable_hash_ring_filtering;
         const StorageID storage_id;
-        size_t buckets_num = 0;
+        const bool use_buckets_for_processing;
+        const size_t buckets_num = 0;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
@@ -180,7 +183,8 @@ public:
         std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
         const StorageID & storage_id_,
         LoggerPtr log_,
-        bool commit_once_processed_);
+        bool commit_once_processed_,
+        bool add_deduplication_info_);
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
@@ -196,14 +200,14 @@ public:
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
-        HiveLastProcessedFileInfoMap & file_map,
+        PartitionLastProcessedFileInfoMap & file_map,
         LastProcessedFileInfoMapPtr created_nodes = nullptr,
         const std::string & exception_message = {},
         int error_code = 0);
 
-    static void prepareHiveProcessedRequests(
+    static void preparePartitionProcessedRequests(
         Coordination::Requests & requests,
-        const HiveLastProcessedFileInfoMap & file_map);
+        const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(
@@ -247,6 +251,8 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
+    const bool add_deduplication_info;
+    const InsertDeduplicationVersions insert_deduplication_version;
     time_t transaction_start_time;
 
     LoggerPtr log;

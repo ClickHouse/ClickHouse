@@ -30,6 +30,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -106,12 +107,20 @@ public:
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
                 });
 
-            DataTypes set_element_types = {in_first_argument->getResultType()};
-            const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
+            if (set.empty())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Function '{}' second argument evaluated to Block with no columns",
+                    function_node->getFunctionName());
 
-            /// Do not unpack if empty tuple or single element tuple
-            if (left_tuple_type && left_tuple_type->getElements().size() > 1)
-                set_element_types = left_tuple_type->getElements();
+            DataTypes set_element_types;
+            set_element_types.reserve(set.size());
+            /// Get the `set_element_types` from `set` instead of `in_first_argument` because
+            /// inside `getSetElementsForConstantValue`, we already do necessary transformation including
+            /// getting `dictionaryType` from `DataTypeLowCardinality`. Therefore, we can skip some steps here if
+            /// we directly use `set` to get the `set_element_types`.
+            for (const auto & elem : set)
+                set_element_types.push_back(elem.type);
 
             set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});

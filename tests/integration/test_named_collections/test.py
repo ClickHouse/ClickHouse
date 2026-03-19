@@ -1,6 +1,8 @@
 import logging
 import os
 import time
+import threading
+import random
 from contextlib import nullcontext as does_not_raise
 
 import pytest
@@ -940,3 +942,99 @@ def test_system_named_collection(cluster, instance_name, show_secrets):
     validate_named_collection("collection2", "SQL", "30")
 
     node.query("DROP NAMED COLLECTION collection2")
+
+
+def test_concurrent_create_drop_race_condition(cluster):
+    """
+    Test for race condition when collections are deleted between list and read operations.
+
+    The background update thread in NamedCollectionFactory calls `getAll` which first
+    lists all collections, then reads each one. If a collection is deleted between
+    these operations (by another node or concurrent query), it should not cause an
+    exception.
+
+    This test rapidly creates and drops collections concurrently to trigger this race.
+    The test passes if no "Logical error" occurs (which would indicate chassert failure).
+    """
+    node1 = cluster.instances["node_with_keeper"]
+    node2 = cluster.instances["node_with_keeper_2"]
+
+    num_iterations = 50
+    stop_flag = threading.Event()
+
+    def create_collections(node, prefix, count):
+        for i in range(count):
+            if stop_flag.is_set():
+                break
+            try:
+                coll_name = f"{prefix}_{i}_{random.randint(0, 10000)}"
+                node.query(f"CREATE NAMED COLLECTION IF NOT EXISTS {coll_name} AS key='value'")
+            except Exception:
+                pass  # Ignore errors during concurrent operations
+
+    def drop_collections(node, prefix, count):
+        for i in range(count):
+            if stop_flag.is_set():
+                break
+            try:
+                # Try to drop collections that might or might not exist
+                collections = node.query(
+                    f"SELECT name FROM system.named_collections WHERE name LIKE '{prefix}%'"
+                ).strip().split('\n')
+                for coll in collections:
+                    if coll:
+                        node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
+            except Exception:
+                pass  # Ignore errors during concurrent operations
+
+    try:
+        # Run multiple iterations to increase chance of hitting the race
+        for iteration in range(5):
+            prefix = f"race_test_{iteration}"
+            threads = []
+
+            # Create threads that create collections on both nodes
+            for node in [node1, node2]:
+                t = threading.Thread(target=create_collections, args=(node, prefix, num_iterations))
+                threads.append(t)
+
+            # Create threads that drop collections on both nodes
+            for node in [node1, node2]:
+                t = threading.Thread(target=drop_collections, args=(node, prefix, num_iterations))
+                threads.append(t)
+
+            # Start all threads
+            for t in threads:
+                t.start()
+
+            # Wait for all threads to complete
+            for t in threads:
+                t.join(timeout=60)
+
+            # Small delay between iterations
+            time.sleep(0.5)
+
+        # Verify both nodes are still healthy by running a simple query
+        for node in [node1, node2]:
+            result = node.query("SELECT 1").strip()
+            assert result == "1", f"Node health check failed"
+
+        # Check for logical errors in server logs - this is the key assertion
+        # A logical error would indicate the race condition caused an exception (chassert failure)
+        for node, name in [(node1, "node_with_keeper"), (node2, "node_with_keeper_2")]:
+            logs = node.grep_in_log("Logical error")
+            assert not logs, f"{name}: Found logical error in logs: {logs[:500]}"
+
+    finally:
+        stop_flag.set()
+        # Cleanup any remaining collections from this test
+        for node in [node1, node2]:
+            try:
+                collections = node.query(
+                    "SELECT name FROM system.named_collections WHERE name LIKE 'race_test_%'"
+                ).strip().split('\n')
+                for coll in collections:
+                    if coll:
+                        node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
+            except Exception:
+                pass

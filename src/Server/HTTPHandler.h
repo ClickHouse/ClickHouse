@@ -7,7 +7,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Common/re2.h>
@@ -147,7 +147,7 @@ private:
         HTMLForm & params,
         HTTPServerResponseBase & response,
         Output & used_output,
-        std::optional<CurrentThread::QueryScope> & query_scope);
+        std::optional<QueryScope> & query_scope);
 
     bool trySendExceptionToClient(
         int exception_code,

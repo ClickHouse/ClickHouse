@@ -133,6 +133,11 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
     return ReturnType(true);
 }
 
+void SerializationTuple::readElementsSafe(DB::IColumn & column, std::function<void()> && read_func)
+{
+    addElementSafe<void>(assert_cast<ColumnTuple &>(column).getColumns().size(), column, [&](){ read_func(); return true; });
+}
+
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     addElementSafe<void>(elems.size(), column, [&]

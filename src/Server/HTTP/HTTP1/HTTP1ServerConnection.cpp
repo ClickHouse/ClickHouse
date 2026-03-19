@@ -163,7 +163,7 @@ void HTTP1ServerConnection::run()
                         {
                             sendErrorResponse(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
                         }
-                        catch (...) // NOLINT(bugprone-empty-catch)
+                        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
                         {
                         }
                     }

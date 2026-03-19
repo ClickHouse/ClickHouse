@@ -562,12 +562,50 @@ public:
 
     friend bool operator!=(const Node & left, const Node & right) { return !(left == right); }
 
+    /// Checks whether `this` node's access rights are a superset of `other`'s
     bool contains(const Node & other) const
     {
-        Node tmp_node = *this;
-        tmp_node.makeIntersection(other);
-        /// If we get the same node after the intersection, our node is fully covered by the given one.
-        return tmp_node == other;
+        /// The check traverses children from both sides:
+        /// 1) For each child in `other`, find the matching node in `this` and verify containment.
+        /// 2) For each child in `this`, find the matching node in `other` and verify containment.
+        ///
+        /// The reverse traversal (step 2) is needed to handle partial revokes correctly.
+        /// Example: GRANT SELECT ON *.*, REVOKE SELECT ON foo.*
+        ///
+        ///   this:                   other:
+        ///       root (SELECT)         root (SELECT)
+        ///        |
+        ///      "foo" (SELECT)
+        ///        |
+        ///        "" (leaf, USAGE)
+        ///
+        /// Step 1 alone would pass because `other` has no children to check against, but `this` does not contain `other` because
+        /// `this` has revoked SELECT on "foo".
+
+        if (!flags.contains(other.flags))
+            return false;
+
+        if (other.children)
+        {
+            for (const auto & other_child : *other.children)
+            {
+                Node this_child = tryGetLeaf(other_child.node_name, other_child.level, !other_child.isLeaf());
+                if (!this_child.contains(other_child))
+                    return false;
+            }
+        }
+
+        if (children)
+        {
+            for (const auto & this_child : *children)
+            {
+                Node other_child = other.tryGetLeaf(this_child.node_name, this_child.level, !this_child.isLeaf());
+                if (!this_child.contains(other_child))
+                    return false;
+            }
+        }
+
+        return true;
     }
 
     void makeUnion(const Node & other)
@@ -919,7 +957,13 @@ private:
         const AccessFlags & parent_flags_go,
         String path)
     {
-        auto grantable_flags = ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
+        Node * target_node = node;
+        if (!target_node)
+            target_node = node_go;
+
+        auto grantable_flags = target_node
+            ? ::DB::getAllGrantableFlags(target_node->level)
+            : ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
         auto parent_fl = parent_flags & grantable_flags;
         auto parent_fl_go = parent_flags_go & grantable_flags;
         auto flags = node ? node->flags : parent_fl;
@@ -928,10 +972,6 @@ private:
         auto revokes_go = parent_fl_go - flags_go - revokes;
         auto grants_go = flags_go - parent_fl_go;
         auto grants = flags - parent_fl - grants_go;
-
-        Node * target_node = node;
-        if (!target_node)
-            target_node = node_go;
 
         /// Inserts into result only meaningful nodes (e.g. wildcards or leafs).
         if (target_node && (target_node->isLeaf() || target_node->wildcard_grant))
@@ -1510,6 +1550,23 @@ AccessRightsElements AccessRights::getElements() const
 String AccessRights::toString() const
 {
     return getElements().toString();
+}
+
+
+AccessRights AccessRights::getGrantableRights() const
+{
+    AccessRights result;
+    for (auto & element : getElements())
+    {
+        if (!element.grant_option && !element.is_partial_revoke)
+            continue;
+
+        if (element.is_partial_revoke)
+            result.revoke(element);
+        else
+            result.grant(element);
+    }
+    return result;
 }
 
 

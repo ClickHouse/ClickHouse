@@ -307,7 +307,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
                         auto has_value = static_cast<UInt8>(column_data[i] != 0);
                         auto is_null = !!null_data[i];
 
-                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                        ternary_column_data[i] = static_cast<UInt8>(((has_value << 1) | is_null) & (1 << !is_null));
                     }
                 }
                 else
@@ -323,7 +323,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
                         auto has_value = ternary_column_data[i];
                         auto is_null = !!null_data[i];
 
-                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                        ternary_column_data[i] = static_cast<UInt8>(((has_value << 1) | is_null) & (1 << !is_null));
                     }
                 }
             }
@@ -336,7 +336,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
 
             for (size_t i = 0; i < size; ++i)
             {
-                ternary_column_data[i] = (column_data[i] != 0) << 1;
+                ternary_column_data[i] = static_cast<UInt8>((column_data[i] != 0) << 1);
             }
         }
         else
@@ -415,7 +415,7 @@ struct OperationApplier
     static void apply(Columns & in, ResultData & result_data, bool use_result_data_as_input = false)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
             if (!use_result_data_as_input)
                 doBatchedApplyAVX512BW<false>(in, result_data.data(), result_data.size());
@@ -424,7 +424,7 @@ struct OperationApplier
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX2))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
             if (!use_result_data_as_input)
                 doBatchedApplyAVX2<false>(in, result_data.data(), result_data.size());
@@ -475,13 +475,13 @@ struct OperationApplier
 
 #if USE_MULTITARGET_CODE
     template <bool CarryResult, typename Columns, typename Result>
-    static void doBatchedApplyAVX512BW(Columns & in, Result * __restrict result_data, size_t size) AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE
+    static void doBatchedApplyAVX512BW(Columns & in, Result * __restrict result_data, size_t size) X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
     {
         BATCH_BODY(doBatchedApplyAVX512BW)
     }
 
     template <bool CarryResult, typename Columns, typename Result>
-    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) AVX2_FUNCTION_SPECIFIC_ATTRIBUTE
+    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE
     {
         BATCH_BODY(doBatchedApplyAVX2)
     }
@@ -551,7 +551,7 @@ using FastApplierImpl =
 template <typename Op, typename Type, typename ... Types>
 struct TypedExecutorInvoker<Op, Type, Types ...>
 {
-    MULTITARGET_FUNCTION_AVX512BW_AVX2(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(
     template <typename T, typename Result>
     static void
@@ -570,14 +570,14 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
         if (const auto column = typeid_cast<const ColumnVector<Type> *>(&y))
         {
 #if USE_MULTITARGET_CODE
-            if (isArchSupported(TargetArch::AVX512BW))
+            if (isArchSupported(TargetArch::x86_64_v4))
             {
-                applyImplAVX512BW<T, Result>(x, *column, result);
+                applyImpl_x86_64_v4<T, Result>(x, *column, result);
                 return;
             }
-            if (isArchSupported(TargetArch::AVX2))
+            if (isArchSupported(TargetArch::x86_64_v3))
             {
-                applyImplAVX2<T, Result>(x, *column, result);
+                applyImpl_x86_64_v3<T, Result>(x, *column, result);
                 return;
             }
 #endif

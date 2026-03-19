@@ -195,7 +195,7 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
 }
 
 template <typename Type>
-SerializationPtr DataTypeEnum<Type>::doGetDefaultSerialization() const
+SerializationPtr DataTypeEnum<Type>::doGetSerialization(const SerializationInfoSettings &) const
 {
     return std::make_shared<SerializationEnum<Type>>(std::static_pointer_cast<const DataTypeEnum<Type>>(shared_from_this()));
 }
@@ -230,7 +230,7 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
         if (child->as<ASTLiteral>())
         {
             assign_count += !is_first_child;
-            ASTPtr func = makeASTOperator("equals", child, std::make_shared<ASTLiteral>(literal_child_assign_num + assign_count));
+            ASTPtr func = makeASTOperator("equals", child, make_intrusive<ASTLiteral>(literal_child_assign_num + assign_count));
             assign_number_child.emplace_back(func);
         }
         else if (child->as<ASTFunction>())

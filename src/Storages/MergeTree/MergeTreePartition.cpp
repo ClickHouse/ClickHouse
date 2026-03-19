@@ -14,7 +14,6 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include <base/hex.h>
 #include <Core/Block.h>
 
 
@@ -241,7 +240,9 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
                 result += '-';
 
             if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
-                result += toString(DateLUT::serverTimezoneInstance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
+                result += toString(
+                    DateLUT::serverTimezoneInstance().toNumYYYYMMDD(
+                        DayNum(static_cast<DayNum::UnderlyingType>(value[i].safeGet<UInt64>()))));
             else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(value[i].safeGet<IPv4>().toUnderType());
             else

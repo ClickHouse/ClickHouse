@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -34,10 +35,6 @@ public:
     template <typename Arg, SetLevelHint hint>
     auto ALWAYS_INLINE insert(Arg && arg)
     {
-        if (!empty() && arg == prev_value)
-            return;
-        prev_value = arg;
-
         if constexpr (hint == SetLevelHint::singleLevel)
         {
             asSingleLevel().insert(std::forward<Arg>(arg));
@@ -64,7 +61,7 @@ public:
     /// In merge, if one of the lhs and rhs is twolevelset and the other is singlelevelset, then the singlelevelset will need to convertToTwoLevel().
     /// It's not in parallel and will cost extra large time if the thread_num is large.
     /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.
-    static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
+    static void parallelizeMergePrepare(const VectorWithMemoryTracking<UniqExactSet *> & data_vec, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
     {
         UInt64 single_level_set_num = 0;
         UInt64 all_single_hash_size = 0;
@@ -90,7 +87,7 @@ public:
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = CurrentThread::getGroup()]()
+                auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
 
@@ -121,14 +118,10 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
-        if (empty())
+        if (size() == 0 && worthConvertingToTwoLevel(other.size()))
         {
-            prev_value = other.prev_value;
-            if (worthConvertingToTwoLevel(other.size()))
-            {
-                two_level_set = other.getTwoLevelSet();
-                return;
-            }
+            two_level_set = other.getTwoLevelSet();
+            return;
         }
 
         if (isSingleLevel() && other.isTwoLevel())
@@ -156,6 +149,8 @@ public:
             }
             else
             {
+
+                /// Usage of lhs and rhs is fine. The references belong to *this and will outlive `runner`, so the order of destruction is ok
                 ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::UNIQ_EXACT_MERGER);
                 try
                 {
@@ -205,19 +200,17 @@ public:
                 x.read(in);
                 asTwoLevel().insert(x.getValue());
             }
-            prev_value = asTwoLevel().begin()->getValue();
         }
         else
         {
             asSingleLevel().reserve(new_size);
+
             for (size_t i = 0; i < new_size; ++i)
             {
                 typename SingleLevelSet::Cell x;
                 x.read(in);
                 asSingleLevel().insert(x.getValue());
             }
-            if (new_size > 0)
-                prev_value = asSingleLevel().begin()->getValue();
         }
     }
 
@@ -230,15 +223,7 @@ public:
             asTwoLevel().writeAsSingleLevel(out);
     }
 
-    size_t size() const
-    {
-        return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size();
-    }
-
-    bool empty() const
-    {
-        return isSingleLevel() && asSingleLevel().size() == 0;
-    }
+    size_t size() const { return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size(); }
 
     /// To convert set to two level before merging (we cannot just call convertToTwoLevel() on right hand side set, because it is declared const).
     std::shared_ptr<TwoLevelSet> getTwoLevelSet() const
@@ -285,9 +270,5 @@ private:
 
     SingleLevelSet single_level_set;
     mutable std::shared_ptr<TwoLevelSet> two_level_set;
-
-    /// Consecutive keys optimization
-    value_type prev_value{};
 };
-
 }

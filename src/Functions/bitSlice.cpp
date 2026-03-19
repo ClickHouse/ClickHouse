@@ -166,16 +166,16 @@ public:
 
         for (size_t i = 0; i < size - 1; i++)
         {
-            out[i] = (input[i] << shift_bit) | (input[i + 1] >> (word_size - shift_bit));
+            out[i] = static_cast<UInt8>((input[i] << shift_bit) | (input[i + 1] >> (word_size - shift_bit)));
         }
         if (abandon_last_byte)
         {
-            out[size - 1] = (input[size - 1] << shift_bit) | (input[size] >> (word_size - shift_bit));
+            out[size - 1] = static_cast<UInt8>((input[size - 1] << shift_bit) | (input[size] >> (word_size - shift_bit)));
             out[size - 1] = out[size - 1] & (0xFF << (abandon_last_bit + shift_bit - word_size));
         }
         else
         {
-            out[size - 1] = (input[size - 1] << shift_bit) & (0xFF << (abandon_last_bit + shift_bit));
+            out[size - 1] = static_cast<UInt8>((input[size - 1] << shift_bit) & (0xFF << (abandon_last_bit + shift_bit)));
         }
 
 

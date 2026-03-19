@@ -52,7 +52,7 @@ std::optional<int32_t> getVersionFromRequest(const HTTPServerRequest & request)
     {
         return parse<int32_t>(version_param->second);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return std::nullopt;
     }
@@ -304,7 +304,7 @@ try
         Poco::URI uri(request.getURI());
         uri.getPathSegments(uri_segments);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Could not parse request path.");
         response.makeStream()->sendBufferAndFinalize("Could not parse request path. Check if special symbols are used.\n");

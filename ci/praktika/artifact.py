@@ -1,6 +1,6 @@
 import copy
-from dataclasses import dataclass
-from typing import List, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Union
 
 
 class Artifact:
@@ -22,7 +22,7 @@ class Artifact:
         path: Union[str, List[str]]
         compress_zst: bool = False
         _provided_by: str = ""
-        _s3_path: str = ""
+        ext: Dict[str, Any] = field(default_factory=dict)
 
         def is_s3_artifact(self):
             return self.type == Artifact.Type.S3
@@ -38,10 +38,20 @@ class Artifact:
                 res.append(obj)
             return res
 
-    @classmethod
-    def define_artifact(cls, name, type, path):
-        return cls.Config(name=name, type=type, path=path)
-
-    @classmethod
-    def define_gh_artifact(cls, name, path):
-        return cls.define_artifact(name=name, type=cls.Type.GH, path=path)
+        def add_tags(self, tags: Dict[str, str]):
+            """
+            Add tags to the artifact. Only S3 artifacts support tags.
+            Returns a copy of the artifact with the tags added.
+            :param tags: Dictionary of tag key-value pairs
+            :return: A new Config object with the tags added
+            :raises ValueError: If artifact type is not S3
+            """
+            if not self.is_s3_artifact():
+                raise ValueError(
+                    f"Tags can only be added to S3 artifacts, but artifact type is [{self.type}]"
+                )
+            obj = copy.deepcopy(self)
+            if "tags" not in obj.ext:
+                obj.ext["tags"] = {}
+            obj.ext["tags"].update(tags)
+            return obj

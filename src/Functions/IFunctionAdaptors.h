@@ -13,6 +13,7 @@ public:
     explicit FunctionToExecutableFunctionAdaptor(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
 
     String getName() const override { return function->getName(); }
+    void cancelExecution() const override { function->cancelExecution(); }
 
 protected:
 
@@ -124,6 +125,7 @@ public:
     bool isVariadic() const override { return function->isVariadic(); }
     bool isServerConstant() const override { return function->isServerConstant(); }
     bool isShortCircuit(IFunctionBase::ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
+    bool allowsOmittingParentheses() const override { return function->allowsOmittingParentheses(); }
 
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 
@@ -143,6 +145,7 @@ public:
     bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
     bool useDefaultImplementationForDynamic() const override { return function->useDefaultImplementationForDynamic(); }
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return function->getReturnTypeForDefaultImplementationForDynamic(); }
+    bool useDefaultImplementationForVariant() const override { return function->useDefaultImplementationForVariant(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
