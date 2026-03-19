@@ -273,6 +273,14 @@ private:
     mutable SharedMutex commit_logs_cache_mutex;
     mutable InMemoryCache commit_logs_cache TSA_GUARDED_BY(commit_logs_cache_mutex);
 
+    /// Cache optimization: stores max(lastCommittedIndex from getEntry, cleanUpTo parameter).
+    /// Invariant: cache is cleaned to at least this index. Used by getEntry to skip
+    /// the exclusive lock on commit_logs_cache_mutex when the committed index has not advanced.
+    /// Both getEntry and cleanUpTo write to this; writes are conditional (only advance, never regress)
+    /// so that an external cleanUpTo with a lower compaction index does not invalidate the optimization.
+    /// Reset to 0 in clear().
+    mutable std::atomic<uint64_t> last_cleaned_committed_index{0};
+
     LogEntryPtr latest_config;
     uint64_t latest_config_index = 0;
 

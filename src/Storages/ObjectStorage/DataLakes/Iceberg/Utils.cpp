@@ -85,6 +85,7 @@ namespace ProfileEvents
 
 namespace DB::Setting
 {
+    extern const SettingsUInt64 iceberg_metadata_staleness_ms;
     extern const SettingsUInt64 output_format_compression_level;
 }
 
@@ -978,7 +979,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
 }
 
-
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:
@@ -995,99 +995,120 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     std::optional<String> table_uuid,
-    bool use_table_uuid_for_metadata_file_selection)
+    bool use_table_uuid_for_metadata_file_selection,
+    bool force_fetch_latest_metadata)
 {
-    auto log = getLogger("IcebergMetadataFileResolver");
-    MostRecentMetadataFileSelectionWay selection_way
-        = data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
-        ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
-        : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
-    bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
-        || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
-    const auto metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
-    if (metadata_files.empty())
+    auto load_fn = [&]()
     {
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
-    }
-    std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
-    metadata_files_with_versions.reserve(metadata_files.size());
-    for (const auto & path : metadata_files)
-    {
-        String filename = std::filesystem::path(path).filename();
-        if (isTemporaryMetadataFile(filename))
-            continue;
-        auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
-
-        if (need_all_metadata_files_parsing)
+        auto log = getLogger("IcebergMetadataFileResolver");
+        MostRecentMetadataFileSelectionWay selection_way
+            = data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
+            ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
+            : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
+        bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
+            || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
+        const auto metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+        if (metadata_files.empty())
         {
-            auto metadata_file_object = getMetadataJSONObject(
-                metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
-            if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
+        }
+        std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
+        metadata_files_with_versions.reserve(metadata_files.size());
+        for (const auto & path : metadata_files)
+        {
+            String filename = std::filesystem::path(path).filename();
+            if (isTemporaryMetadataFile(filename))
+                continue;
+            auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+
+            if (need_all_metadata_files_parsing)
             {
-                if (metadata_file_object->has(Iceberg::f_table_uuid))
+                auto metadata_file_object = getMetadataJSONObject(
+                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
-                    auto current_table_uuid = metadata_file_object->getValue<String>(Iceberg::f_table_uuid);
-                    if (normalizeUuid(table_uuid.value()) == normalizeUuid(current_table_uuid))
+                    if (metadata_file_object->has(Iceberg::f_table_uuid))
                     {
-                        metadata_files_with_versions.emplace_back(
-                            version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                        auto current_table_uuid = metadata_file_object->getValue<String>(Iceberg::f_table_uuid);
+                        if (normalizeUuid(table_uuid.value()) == normalizeUuid(current_table_uuid))
+                        {
+                            metadata_files_with_versions.emplace_back(
+                                version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                        }
+                    }
+                    else
+                    {
+                        Int64 format_version = metadata_file_object->getValue<Int64>(Iceberg::f_format_version);
+                        throw Exception(
+                            format_version == 1 ? ErrorCodes::BAD_ARGUMENTS : ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                            "Table UUID is not specified in some metadata files for table by path {}",
+                            metadata_file_path);
                     }
                 }
                 else
                 {
-                    Int64 format_version = metadata_file_object->getValue<Int64>(Iceberg::f_format_version);
-                    throw Exception(
-                        format_version == 1 ? ErrorCodes::BAD_ARGUMENTS : ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Table UUID is not specified in some metadata files for table by path {}",
-                        metadata_file_path);
+                    metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
                 }
             }
             else
             {
-                metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                metadata_files_with_versions.emplace_back(version, 0, metadata_file_path);
             }
         }
-        else
-        {
-            metadata_files_with_versions.emplace_back(version, 0, metadata_file_path);
-        }
-    }
 
-    if (metadata_files_with_versions.empty())
-    {
-        if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+        if (metadata_files_with_versions.empty())
         {
+            if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+            {
+                throw Exception(
+                    ErrorCodes::FILE_DOESNT_EXIST,
+                    "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                    table_path,
+                    table_uuid.value());
+            }
             throw Exception(
                 ErrorCodes::FILE_DOESNT_EXIST,
-                "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
-                table_path,
-                table_uuid.value());
+                "The metadata file for Iceberg table with path {} doesn't exist",
+                table_path);
         }
-        throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST,
-            "The metadata file for Iceberg table with path {} doesn't exist",
-            table_path);
-    }
 
-    /// Get the latest version of metadata file: v<V>.metadata.json
-    const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
+        /// Get the latest version of metadata file: v<V>.metadata.json
+        const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
+        {
+            if (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
+            {
+                return *std::max_element(
+                    metadata_files_with_versions.begin(),
+                    metadata_files_with_versions.end(),
+                    [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.last_updated_ms < b.last_updated_ms; });
+            }
+            else
+            {
+                return *std::max_element(
+                    metadata_files_with_versions.begin(),
+                    metadata_files_with_versions.end(),
+                    [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
+            }
+        }();
+        return MetadataFileWithInfo{latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+    };
+
+    /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
+    size_t tolerated_staleness_ms = static_cast<size_t>(local_context->getSettingsRef()[Setting::iceberg_metadata_staleness_ms]);
+    /// If the force is been requested (normally it's required by certain types of operations), the tolerance will be 0 and we'll go to the remote catalog
+    if (force_fetch_latest_metadata)
+        tolerated_staleness_ms = 0;
+
+    if (metadata_cache)
     {
-        if (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
-        {
-            return *std::max_element(
-                metadata_files_with_versions.begin(),
-                metadata_files_with_versions.end(),
-                [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.last_updated_ms < b.last_updated_ms; });
-        }
-        else
-        {
-            return *std::max_element(
-                metadata_files_with_versions.begin(),
-                metadata_files_with_versions.end(),
-                [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
-        }
-    }();
-    return {latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+        return metadata_cache->getOrSetLatestMetadataVersion(
+            table_path,
+            table_uuid,
+            load_fn,
+            tolerated_staleness_ms
+        )->latest_metadata;
+    }
+    return load_fn();
 }
 
 static String resolveContained(const std::filesystem::path & base, const std::filesystem::path & relative)
@@ -1116,7 +1137,8 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     Poco::Logger * log,
-    const std::optional<String> & table_uuid)
+    const std::optional<String> & table_uuid,
+    bool force_fetch_latest_metadata)
 {
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {
@@ -1152,7 +1174,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             explicit_table_uuid,
             table_path);
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true, force_fetch_latest_metadata);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
@@ -1176,7 +1198,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     else
     {
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false, force_fetch_latest_metadata);
     }
 }
 

@@ -114,7 +114,7 @@ CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32) ENGI
         query += "SELECT id FROM {t} UNION ALL "
     query += "SELECT id FROM {t})"
 
-    assert node1.query(query.format(t=table_name)) == "250\n"
+    assert node1.query(query.format(t=table_name) + " SETTINGS min_rows_per_stream_for_gradual_resize = 0") == "250\n"
     drop_mysql_table(conn, table_name)
     conn.close()
 

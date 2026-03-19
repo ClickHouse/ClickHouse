@@ -452,8 +452,9 @@ void GradualResizeProcessor::maybeActivateMoreOutputs()
 {
     while (num_active_outputs < output_ports.size())
     {
-        bool rows_threshold = min_rows_per_output > 0 && total_rows_pushed >= num_active_outputs * min_rows_per_output;
-        bool bytes_threshold = min_bytes_per_output > 0 && total_bytes_pushed >= num_active_outputs * min_bytes_per_output;
+        /// Use division to avoid potential overflow with large user-configured thresholds.
+        bool rows_threshold = min_rows_per_output > 0 && total_rows_pushed / num_active_outputs >= min_rows_per_output;
+        bool bytes_threshold = min_bytes_per_output > 0 && total_bytes_pushed / num_active_outputs >= min_bytes_per_output;
 
         if (!rows_threshold && !bytes_threshold)
             break;
@@ -465,6 +466,9 @@ void GradualResizeProcessor::maybeActivateMoreOutputs()
         all_outputs_active = true;
 }
 
+/// This implementation keeps all input ports active at all times (avoiding upstream stalling)
+/// and gradually activates output ports as data volume grows.
+/// Uses many-to-many routing (like ResizeProcessor) — any input can feed any active output.
 IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
     if (!initialized)

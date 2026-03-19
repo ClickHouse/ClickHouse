@@ -1,5 +1,7 @@
 -- Tags: no-random-settings
 
+SET enable_analyzer = 1;
+
 -- Verify correct GROUP BY results with GradualResize enabled (rows threshold)
 SET min_rows_per_stream_for_gradual_resize = 1000;
 
@@ -33,7 +35,6 @@ FROM
     SELECT k, count()
     FROM test_gradual_resize
     GROUP BY k
-    SETTINGS enable_analyzer = 1
 )
 WHERE explain LIKE '%GradualResize%';
 
