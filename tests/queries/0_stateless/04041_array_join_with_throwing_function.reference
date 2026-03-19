@@ -1,0 +1,28 @@
+-- intDiv on division by zero
+5	1
+-- toDate on invalid string
+2024-01-01	1
+-- CAST on invalid conversion
+123	1
+-- repeat on too large result
+1	1
+-- base64Decode on invalid input
+Hello	1
+-- parseDateTime on invalid format
+2024-01-01 00:00:00	1
+-- arrayZip on mismatched lengths
+[(1,1)]	1
+-- geoToH3 on invalid coordinates
+599767013304303615	1
+-- JSONMergePatch on invalid JSON
+{"a":1}	1
+-- round with non-constant scale column that exceeds range
+3.14	1
+-- sleep on excessive duration
+-- file() on nonexistent file
+-- Aligned ARRAY JOIN with multiple columns
+5	1	10
+-- Unaligned ARRAY JOIN with multiple columns
+5	1	10
+5	0	20
+2	1	0
