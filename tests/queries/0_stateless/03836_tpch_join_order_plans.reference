@@ -194,7 +194,7 @@ Expression (Project names)
         GatherExchange
           Aggregating
             Expression ((Before GROUP BY + ))
-              JoinLogical (Shuffle HashJoin  swapped)
+              JoinLogical (Shuffle HashJoin (by __table4.ps_partkey)  swapped)
                 Expression (Change column names to column identifiers)
                   ShuffleExchange
                     ReadFromMergeTree (ParallelRead default.partsupp)

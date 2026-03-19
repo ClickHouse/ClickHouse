@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -50,6 +51,13 @@ public:
     void updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config);
     ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
 
+    /// Find the cheapest implementation satisfying `required_properties`,
+    /// excluding expressions in `excluded`. Used for cycle detection in `buildBestPlan`.
+    ExpressionWithCost getBestImplementationExcluding(
+        const ExpressionProperties & required_properties,
+        const CostConfig & cost_config,
+        const std::unordered_set<GroupExpression *> & excluded) const;
+
     /// Returns the weighted subtree cost of the best implementation satisfying
     /// the given properties, or infinity if none exists.
     Float64 getBestCostForProperties(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
@@ -60,8 +68,9 @@ public:
     std::vector<GroupExpressionPtr> logical_expressions;
     std::vector<GroupExpressionPtr> physical_expressions;
 
-    /// Best implementation for various required properties 
-    std::set<GroupExpressionPtr> best_implementations;
+    /// Best implementation for various required properties, indexed by distribution
+    /// shape (node_count, is_replicated) for O(1) bucket lookup.
+    std::unordered_map<UInt64, std::vector<GroupExpressionPtr>> best_implementations;
 
     /// Statistics for this group - shared by all expressions in the group
     /// since they all represent the same logical result
@@ -74,6 +83,12 @@ private:
     std::set<String> enforced_properties;   /// Tracks which required properties have had enforcer rules applied
     std::set<String> fully_done_properties; /// Tracks which required properties are fully optimized (all stages complete)
     std::unordered_set<String> physical_fingerprints;  /// Deduplicates identical physical expressions
+
+    /// Encode (node_count, is_replicated) into a single key for best_implementations lookup.
+    static UInt64 distributionKey(const DistributionDescription & distribution)
+    {
+        return (static_cast<UInt64>(distribution.node_count) << 1) | static_cast<UInt64>(distribution.is_replicated);
+    }
 };
 
 using GroupPtr = std::shared_ptr<Group>;

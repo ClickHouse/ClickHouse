@@ -58,8 +58,13 @@ void Group::setFullyDoneFor(const ExpressionProperties & required_properties)
 
 void Group::updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config)
 {
-    /// Remove all known best expressions with higher cost and properties satisfied by the new expression
-    for (auto best_it = best_implementations.begin(); best_it != best_implementations.end();)
+    UInt64 key = distributionKey(expression->properties.distribution);
+    auto & bucket = best_implementations[key];
+
+    /// Remove all known best expressions with higher cost and properties satisfied by the new expression.
+    /// Only the matching distribution-shape bucket needs checking — `isSatisfiedBy` requires
+    /// exact match on (node_count, is_replicated).
+    for (auto best_it = bucket.begin(); best_it != bucket.end();)
     {
         if (expression->properties.isSatisfiedBy((*best_it)->properties) &&
             (*best_it)->cost->subtree_cost.total(cost_config) <= expression->cost->subtree_cost.total(cost_config))
@@ -71,7 +76,7 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
         if ((*best_it)->properties.isSatisfiedBy(expression->properties) &&
             (*best_it)->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config))
         {
-            best_it = best_implementations.erase(best_it);
+            best_it = bucket.erase(best_it);
         }
         else
         {
@@ -79,13 +84,18 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
         }
     }
 
-    best_implementations.insert(expression);
+    bucket.push_back(std::move(expression));
 }
 
 ExpressionWithCost Group::getBestImplementation(const ExpressionProperties & required_properties, const CostConfig & cost_config) const
 {
+    UInt64 key = distributionKey(required_properties.distribution);
+    auto it = best_implementations.find(key);
+    if (it == best_implementations.end())
+        return {};
+
     GroupExpressionPtr found_best;
-    for (const auto & expression : best_implementations)
+    for (const auto & expression : it->second)
     {
         if (required_properties.isSatisfiedBy(expression->properties) &&
             (!found_best || found_best->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config)))
@@ -94,12 +104,33 @@ ExpressionWithCost Group::getBestImplementation(const ExpressionProperties & req
         }
     }
 
-//    std::cerr
-//        << "Get Best " << required_properties.dump() << " from group #" << group_id << "\n"
-//        << dump()
-//        << "\nFound:\n"
-//        << (found_best ? found_best->dump() : String())
-//        << "\n\n\n";
+    if (!found_best)
+        return {};
+
+    return {found_best, *found_best->cost};
+}
+
+ExpressionWithCost Group::getBestImplementationExcluding(
+    const ExpressionProperties & required_properties,
+    const CostConfig & cost_config,
+    const std::unordered_set<GroupExpression *> & excluded) const
+{
+    UInt64 key = distributionKey(required_properties.distribution);
+    auto it = best_implementations.find(key);
+    if (it == best_implementations.end())
+        return {};
+
+    GroupExpressionPtr found_best;
+    for (const auto & expression : it->second)
+    {
+        if (excluded.contains(expression.get()))
+            continue;
+        if (required_properties.isSatisfiedBy(expression->properties) &&
+            (!found_best || found_best->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config)))
+        {
+            found_best = expression;
+        }
+    }
 
     if (!found_best)
         return {};
@@ -138,14 +169,17 @@ void Group::dump(WriteBuffer & out, const CostConfig & cost_config, String inden
         out << "\n";
     }
 
-    for (const auto & best : best_implementations)
+    for (const auto & [_, bucket] : best_implementations)
     {
-        out << indent << "Best for " << best->properties.dump() << ":\n"
-            << indent << indent
-            << "Cost: " << best->cost->cost.total(cost_config) << " (subtree: " << best->cost->subtree_cost.total(cost_config);
-        if (best->cost->cost.sequential > 0)
-            out << ", seq: " << best->cost->cost.sequential;
-        out << ") : " << best->getDescription() << "\n";
+        for (const auto & best : bucket)
+        {
+            out << indent << "Best for " << best->properties.dump() << ":\n"
+                << indent << indent
+                << "Cost: " << best->cost->cost.total(cost_config) << " (subtree: " << best->cost->subtree_cost.total(cost_config);
+            if (best->cost->cost.sequential > 0)
+                out << ", seq: " << best->cost->cost.sequential;
+            out << ") : " << best->getDescription() << "\n";
+        }
     }
 }
 

@@ -154,25 +154,14 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         while (best->inputs.size() == 1
                && visited_expressions.contains(best.get()))
         {
-            GroupExpressionPtr alternative;
-            for (const auto & candidate : group->best_implementations)
-            {
-                if (visited_expressions.contains(candidate.get()))
-                    continue;
-                if (!props.isSatisfiedBy(candidate->properties))
-                    continue;
-                if (!alternative
-                    || alternative->cost->subtree_cost.total(cost_config)
-                       > candidate->cost->subtree_cost.total(cost_config))
-                    alternative = candidate;
-            }
-            if (!alternative)
+            auto alternative = group->getBestImplementationExcluding(props, cost_config, visited_expressions);
+            if (!alternative.expression)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Cascades optimizer: cycle detected in best-implementation chain at group #{} "
                     "with no acyclic alternative. Expression '{}', properties {}.\n"
                     "Group state:\n{}",
                     group_id, best->dump(cost_config), props.dump(), group->dump(cost_config));
-            best = alternative;
+            best = alternative.expression;
         }
 
         if (best->inputs.size() == 1)
