@@ -222,8 +222,8 @@ sleep 6  # Wait for both sleep(3) dup queries above to finish.
 # 17. HTTP: detach triggered by inline SETTINGS in POST body.
 echo "=== HTTP: Detach triggered by inline SETTINGS in query body ==="
 QID_INLINE_HTTP="${QUERY_ID_PREFIX}inline_http"
-RESP_INLINE_HTTP=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=${QID_INLINE_HTTP}" \
-    -X POST --data-binary "INSERT INTO ${TABLE} SELECT 8 SETTINGS allow_experimental_detach_non_readonly_queries=1, async_insert=0" 2>/dev/null || true)
+RESP_INLINE_HTTP=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0&query_id=${QID_INLINE_HTTP}" \
+    -X POST --data-binary "INSERT INTO ${TABLE} SELECT 8 SETTINGS allow_experimental_detach_non_readonly_queries=1" 2>/dev/null || true)
 echo "Inline SETTINGS detach response: $([ -n "$RESP_INLINE_HTTP" ] && echo '<query_id>' || echo '<empty>')"
 if [ -z "$RESP_INLINE_HTTP" ]; then
     echo "FAIL: Expected query_id when allow_experimental_detach_non_readonly_queries=1 is in inline SETTINGS"
