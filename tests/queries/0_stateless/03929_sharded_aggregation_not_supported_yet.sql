@@ -1,6 +1,8 @@
 -- Tests queries that could/should be supported by sharded aggregation but in the early stages of
 -- development does not support them for now.
 
+SET max_rows_to_group_by = 0;
+
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (

@@ -1,3 +1,5 @@
+SET max_rows_to_group_by = 0;
+
 DROP TABLE IF EXISTS test_sharded_agg_neg;
 CREATE TABLE test_sharded_agg_neg
 (

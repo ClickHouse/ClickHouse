@@ -1,5 +1,7 @@
 -- Tags: long
 
+SET max_rows_to_group_by = 0;
+
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (

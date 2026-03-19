@@ -1,7 +1,7 @@
--- Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest
+-- Tags: no-random-merge-tree-settings, no-random-settings
 -- EXPLAIN output may differ
 
-SET max_threads = 8;
+SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS test_sharded_agg_neg;
 CREATE TABLE test_sharded_agg_neg

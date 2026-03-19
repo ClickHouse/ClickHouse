@@ -1,6 +1,7 @@
--- Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest
+-- Tags: no-random-merge-tree-settings, no-random-settings
 -- EXPLAIN output may differ
 
+SET max_rows_to_group_by = 0;
 SET max_threads = 8;
 
 DROP TABLE IF EXISTS test;
