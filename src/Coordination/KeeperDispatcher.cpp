@@ -181,14 +181,6 @@ KeeperDispatcher::KeeperDispatcher()
     , log(getLogger("KeeperDispatcher"))
 {}
 
-namespace
-{
-bool isPerSessionReadBarrierEnabled(const CoordinationSettings & coordination_settings)
-{
-    return coordination_settings[CoordinationSetting::per_session_read_barrier]
-        && !coordination_settings[CoordinationSetting::quorum_reads];
-}
-}
 
 void KeeperDispatcher::requestThread()
 {
@@ -778,18 +770,26 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     keeper_context->initialize(config, this);
 
     const auto & coordination_settings = configuration_and_settings->coordination_settings;
-    if (isPerSessionReadBarrierEnabled(coordination_settings))
+    if (coordination_settings[CoordinationSetting::per_session_read_barrier])
     {
-        session_read_barrier = std::make_unique<KeeperSessionReadBarrier>(
-            KeeperSessionReadBarrier::Settings{
-                .max_pending_writes_per_session = coordination_settings[CoordinationSetting::max_pending_writes_per_session],
-                .max_deferred_reads_per_session = coordination_settings[CoordinationSetting::max_deferred_reads_per_session],
-            },
-            log);
-        LOG_WARNING(
-            log,
-            "`per_session_read_barrier` is enabled (with `quorum_reads` disabled). "
-            "Local reads will wait only for pending writes in the same session, not globally across sessions.");
+        if (coordination_settings[CoordinationSetting::quorum_reads])
+        {
+            LOG_WARNING(log, "`per_session_read_barrier` is ignored because `quorum_reads` is enabled. "
+                "Reads go through Raft consensus and do not use local read barriers.");
+        }
+        else
+        {
+            session_read_barrier = std::make_unique<KeeperSessionReadBarrier>(
+                KeeperSessionReadBarrier::Settings{
+                    .max_pending_writes_per_session = coordination_settings[CoordinationSetting::max_pending_writes_per_session],
+                    .max_deferred_reads_per_session = coordination_settings[CoordinationSetting::max_deferred_reads_per_session],
+                },
+                log);
+            LOG_INFO(
+                log,
+                "`per_session_read_barrier` is enabled. "
+                "Local reads will wait only for pending writes in the same session, not globally across sessions.");
+        }
     }
 
     requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size]);
