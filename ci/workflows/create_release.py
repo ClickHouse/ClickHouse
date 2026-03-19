@@ -30,7 +30,7 @@ workflow = Workflow.Config(
         ),
         Workflow.Config.InputConfig(
             name="type",
-            description='The type of release: "new" for a new release or "patch" for a patch release',
+            description="Release type - new for a new release branch, patch for a patch release",
             is_required=True,
             default_value="patch",
             options=["patch", "new"],

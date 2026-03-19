@@ -9,7 +9,7 @@ on:
         required: true
         default: ''
       type:
-        description: The type of release: "new" for a new release or "patch" for a patch release
+        description: Release type - new for a new release branch, patch for a patch release
         type: choice
         options: ['patch', 'new']
         default: patch
