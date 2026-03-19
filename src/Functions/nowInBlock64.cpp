@@ -84,7 +84,7 @@ Returns the current date and time at the moment of processing of each block of d
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
     )";
     FunctionDocumentation::Syntax syntax = R"(
-nowInBlock([scale[, timezone]])
+nowInBlock64([scale[, timezone]])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"scale", "Optional. Tick size (precision): 10^-precision seconds. Valid range: [0 : 9]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).", {"UInt8"}},
@@ -111,7 +111,7 @@ FORMAT PrettyCompactMonoBlock
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNowInBlock64>(documentation);
 }

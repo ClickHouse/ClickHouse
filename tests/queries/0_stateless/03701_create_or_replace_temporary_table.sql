@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 CREATE OR REPLACE TEMPORARY TABLE tmp (n UInt32) AS SELECT * FROM numbers(10);
 
 SELECT * FROM tmp;
@@ -14,4 +12,5 @@ SELECT * FROM tmp;
 
 DROP TEMPORARY TABLE tmp;
 
-ATTACH TEMPORARY TABLE tmp; -- { clientError SYNTAX_ERROR }
+ATTACH TEMPORARY TABLE tmp; -- { serverError SYNTAX_ERROR }
+DETACH TEMPORARY TABLE tmp; -- { serverError SYNTAX_ERROR }

@@ -128,7 +128,7 @@ SELECT currentProfiles();
     };
     FunctionDocumentation::IntroducedIn introduced_in_currentProfiles = {21, 9};
     FunctionDocumentation::Category category_currentProfiles = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_currentProfiles = {description_currentProfiles, syntax_currentProfiles, arguments_currentProfiles, returned_value_currentProfiles, examples_currentProfiles, introduced_in_currentProfiles, category_currentProfiles};
+    FunctionDocumentation documentation_currentProfiles = {description_currentProfiles, syntax_currentProfiles, arguments_currentProfiles, {}, returned_value_currentProfiles, examples_currentProfiles, introduced_in_currentProfiles, category_currentProfiles};
 
     FunctionDocumentation::Description description_enabledProfiles = R"(
 Returns an array of setting profile names which are enabled for the current user.
@@ -151,7 +151,7 @@ SELECT enabledProfiles();
     };
     FunctionDocumentation::IntroducedIn introduced_in_enabledProfiles = {21, 9};
     FunctionDocumentation::Category category_enabledProfiles = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_enabledProfiles = {description_enabledProfiles, syntax_enabledProfiles, arguments_enabledProfiles, returned_value_enabledProfiles, examples_enabledProfiles, introduced_in_enabledProfiles, category_enabledProfiles};
+    FunctionDocumentation documentation_enabledProfiles = {description_enabledProfiles, syntax_enabledProfiles, arguments_enabledProfiles, {}, returned_value_enabledProfiles, examples_enabledProfiles, introduced_in_enabledProfiles, category_enabledProfiles};
 
     FunctionDocumentation::Description description_defaultProfiles = R"(
 Returns an array of default setting profile names for the current user.
@@ -174,7 +174,7 @@ SELECT defaultProfiles();
     };
     FunctionDocumentation::IntroducedIn introduced_in_defaultProfiles = {21, 9};
     FunctionDocumentation::Category category_defaultProfiles = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_defaultProfiles = {description_defaultProfiles, syntax_defaultProfiles, arguments_defaultProfiles, returned_value_defaultProfiles, examples_defaultProfiles, introduced_in_defaultProfiles, category_defaultProfiles};
+    FunctionDocumentation documentation_defaultProfiles = {description_defaultProfiles, syntax_defaultProfiles, arguments_defaultProfiles, {}, returned_value_defaultProfiles, examples_defaultProfiles, introduced_in_defaultProfiles, category_defaultProfiles};
 
     factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::currentProfiles); }, documentation_currentProfiles);
     factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles); }, documentation_enabledProfiles);

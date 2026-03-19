@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Common/CurrentThread.h>
 
 #include <algorithm>
 #include <deque>
@@ -7,13 +8,15 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Core/Joins.h>
-#include <Interpreters/JoinExpressionActions.h>
-#include <base/defines.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/safe_cast.h>
+#include <base/defines.h>
 #include <ranges>
 #include <stack>
 #include <unordered_map>
@@ -31,13 +34,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows)
+DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
-    , relation_id(id)
+    , column_stats(std::move(column_stats_))
+    , relation_id(static_cast<int>(id))
 {
     relations.set(id);
 }
@@ -56,6 +61,40 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
+    /// Merge column stats from both children, then update NDVs for equi-join key columns.
+    column_stats = left->column_stats;
+    column_stats.insert(right->column_stats.begin(), right->column_stats.end());
+
+    for (const auto & predicate : join_operator.expression)
+    {
+        auto [op, left_node, right_node] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+
+        if (left_node.fromRight() && right_node.fromLeft())
+            std::swap(left_node, right_node);
+        if (!left_node.fromLeft() || !right_node.fromRight())
+            continue;
+
+        const auto & left_col = left_node.getColumnName();
+        const auto & right_col = right_node.getColumnName();
+        auto left_it = column_stats.find(left_col);
+        auto right_it = column_stats.find(right_col);
+
+        if (left_it != column_stats.end() && right_it != column_stats.end())
+        {
+            UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
+            left_it->second.num_distinct_values = min_ndv;
+            right_it->second.num_distinct_values = min_ndv;
+        }
+    }
+
+    /// Cap all NDVs at the estimated output rows.
+    if (cardinality_)
+    {
+        for (auto & [_, stats] : column_stats)
+            stats.num_distinct_values = std::min(stats.num_distinct_values, *cardinality_);
+    }
 }
 
 bool DPJoinEntry::isLeaf() const { return !left && !right; }
@@ -64,22 +103,29 @@ String DPJoinEntry::dump() const
 {
     if (isLeaf())
         return fmt::format("Leaf({})", relation_id);
-    return fmt::format("Join({})", toString(relations));
+    return fmt::format("Join({})", fmt::join(relations, ","));
 }
 
 class JoinOrderOptimizer
 {
 public:
-    explicit JoinOrderOptimizer(QueryGraph query_graph_)
+    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_)
         : query_graph(std::move(query_graph_))
+        , enabled_algorithms(enabled_algorithms_)
     {
+        auto context = CurrentThread::tryGetQueryContext();
+        if (context)
+        {
+            query_status = context->getProcessListElementSafe();
+            interactive_cancel_callback = context->getInteractiveCancelCallback();
+        }
     }
 
     std::shared_ptr<DPJoinEntry> solve();
 private:
     void buildQueryGraph();
 
-    std::shared_ptr<DPJoinEntry> solveDP();
+    std::shared_ptr<DPJoinEntry> solveDPsize();
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
@@ -89,6 +135,9 @@ private:
     double computeSelectivity(const std::vector<JoinActionRef *> & edges);
     size_t getColumnStats(BitSet rels, const String & column_name);
 
+    /// Peridically called from potentially long running optimization to check time limits and send progress
+    void checkLimits();
+
     constexpr static auto APPLY_DP_THRESHOLD = 10;
 
     QueryGraph query_graph;
@@ -96,9 +145,20 @@ private:
     std::unordered_map<JoinActionRef, double> expression_selectivity;
     std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
 
+    const std::vector<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = getLogger("JoinOrderOptimizer");
+
+    QueryStatusPtr query_status;
+    std::function<bool()> interactive_cancel_callback;
 };
 
+void JoinOrderOptimizer::checkLimits()
+{
+    if (query_status)
+        query_status->checkTimeLimit();
+    if (interactive_cancel_callback)
+        interactive_cancel_callback();
+}
 
 size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_name)
 {
@@ -106,15 +166,20 @@ size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_nam
     auto rel_id = rels.getSingleBit();
     if (!rel_id.has_value())
     {
-        /// Assume all keys are distinct
+        /// Look up NDV from the dp_table entry's column_stats (propagated through joins).
         if (auto it = dp_table.find(rels); it != dp_table.end())
+        {
+            auto col_it = it->second->column_stats.find(column_name);
+            if (col_it != it->second->column_stats.end())
+                return col_it->second.num_distinct_values;
             return it->second->estimated_rows.value_or(0);
+        }
         return 0;
     }
 
     const auto & relation_stat = relation_stats.at(rel_id.value());
-    const auto & column_stats = relation_stat.column_stats;
-    if (auto it = column_stats.find(column_name); it != column_stats.end())
+    const auto & col_stats = relation_stat.column_stats;
+    if (auto it = col_stats.find(column_name); it != col_stats.end())
         return it->second.num_distinct_values;
     return relation_stat.estimated_rows.value_or(0);
 }
@@ -135,7 +200,7 @@ double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
     UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());
     UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
     if (max_ndv > 0)
-        selectivity = std::min(selectivity, 1.0 / max_ndv);
+        selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
     return selectivity;
 }
 
@@ -157,8 +222,8 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (!left->estimated_rows || !right->estimated_rows)
         return {};
 
-    double lhs = left->estimated_rows.value();
-    double rhs = right->estimated_rows.value();
+    double lhs = static_cast<double>(left->estimated_rows.value());
+    double rhs = static_cast<double>(right->estimated_rows.value());
 
     double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
 
@@ -169,7 +234,10 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (join_kind == JoinKind::Full)
         joined_rows = std::max(joined_rows, lhs + rhs);
 
-    if (joined_rows > std::numeric_limits<UInt64>::max())
+    /// Use >= to avoid undefined behavior when joined_rows is very close to max UInt64
+    /// Due to floating point precision, a value slightly less than max when compared
+    /// as double could still overflow when cast to UInt64
+    if (joined_rows >= static_cast<double>(std::numeric_limits<UInt64>::max()))
         return std::numeric_limits<UInt64>::max();
     if (joined_rows < 1)
         return 1;
@@ -181,7 +249,7 @@ static double computeJoinCost(
     const std::shared_ptr<DPJoinEntry> & right,
     double selectivity)
 {
-    return left->cost + right->cost + selectivity * left->estimated_rows.value_or(1) * right->estimated_rows.value_or(1);
+    return left->cost + right->cost + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
@@ -189,16 +257,32 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinReorderMicroseconds);
 
     std::shared_ptr<DPJoinEntry> best_plan;
-    if (!best_plan)
+
+    for (const auto & algorithm : enabled_algorithms)
     {
-        LOG_TRACE(log, "Solving join order using greedy algorithm");
-        best_plan = solveGreedy();
+        LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
+        switch (algorithm)
+        {
+            case JoinOrderAlgorithm::DPSIZE:
+                best_plan = solveDPsize();
+                break;
+            case JoinOrderAlgorithm::GREEDY:
+                best_plan = solveGreedy();
+                if (!best_plan)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order with greedy algorithm");
+                break;
+        }
+
+        if (best_plan)
+            break;
     }
 
     if (!best_plan)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
+        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
+            "Failed to find a valid join order, try adding 'greedy' algorithm as fallback to query_plan_optimize_join_order_algorithm setting.");
 
-    LOG_TRACE(log, "Optimized join order in {:.2f} ms", watch.elapsed() / 1000.0);
+    LOG_TRACE(log, "Optimized join order in {:.2f} ms, best plan cost: {}, estimated cardinality: {}",
+        static_cast<double>(watch.elapsed()) / 1000.0, best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown");
     return best_plan;
 }
 
@@ -243,7 +327,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows));
+        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
     }
 
     std::vector<JoinActionRef *> applied_edge;
@@ -329,6 +413,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         if (best_i == best_j)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find components to join");
 
+        LOG_TEST(log, "Best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, join operator: {}",
+            best_plan->dump(), best_plan->left->dump(), best_plan->right->dump(),
+            best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown",
+            best_plan->join_operator.dump());
+
         /// replace the two components with the best plan
         components.erase(components.begin() + std::max(best_i, best_j));
         components.erase(components.begin() + std::min(best_i, best_j));
@@ -351,8 +440,119 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 }
 
 
-std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDP()
+/// Checks if predicate has sources from both left and right sets
+static bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
 {
+    const auto & participating = predicate->getSourceRelations();
+    return (participating & left) && (participating & right);
+}
+
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
+{
+    const size_t total_relations_count = query_graph.relation_stats.size();
+
+    /// Components by size (index 0 is not used that why the size is N+1)
+    std::vector<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
+
+    /// Populate DP table for components of size=1
+    for (size_t i = 0; i < total_relations_count; ++i)
+    {
+        const auto & rel = query_graph.relation_stats[i];
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
+        components[1][entry->relations] = entry;
+        dp_table[entry->relations] = entry;
+    }
+
+    /// Iteratively build components of size from 2 to N
+    for (size_t component_size = 2; component_size <= total_relations_count; ++component_size)
+    {
+        for (size_t smaller_component_size = 1; smaller_component_size <= component_size / 2; ++smaller_component_size)
+        {
+            const size_t bigger_component_size = component_size - smaller_component_size;
+
+            for (const auto & [_, right] : components[smaller_component_size])
+            {
+                checkLimits();
+
+                for (const auto & [_, left] : components[bigger_component_size])
+                {
+                    /// Do components overlap?
+                    if (left->relations & right->relations)
+                        continue;
+
+                    /// If both components are of the same size then check each pair just once, not twice
+                    if (smaller_component_size == bigger_component_size && *left->relations.begin() > *right->relations.begin())
+                        continue;
+
+                    const auto combined_relations = left->relations | right->relations;
+
+                    auto join_kind = isValidJoinOrder(left->relations, right->relations);
+                    if (!join_kind)
+                        continue;
+
+                    /// FIXME: Restrict to Inner joins for now because isValidJoinOrder seems to not handle non-Inner joins with swapped inputs correctly
+                    if (*join_kind != JoinKind::Inner)
+                        continue;
+
+                    auto applicable_edge = getApplicableExpressions(left->relations, right->relations);
+                    /// Only leave the edges that connect left and right
+                    std::vector<JoinActionRef *> edge;
+                    for (auto & edge_it : applicable_edge)
+                    {
+                        if (connects(edge_it, left->relations, right->relations))
+                        {
+                            LOG_TEST(log, "Adding predicate connecting {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            edge.push_back(edge_it);
+                        }
+                        else if ((edge_it->fromLeft() || edge_it->fromRight() || edge_it->fromNone()) && component_size == 2)
+                        {
+                            /// If a predicate does not connect tables we add it at the earliest stage - when joining just 2 tables
+                            LOG_TEST(log, "Adding early non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            edge.push_back(edge_it);
+                        }
+                        else
+                        {
+                            LOG_TEST(log, "Skipping non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                        }
+                    }
+
+                    LOG_TEST(log, "Considering join between {} and {}, predicates count: {}", left->dump(), right->dump(), edge.size());
+
+                    if (edge.empty())
+                        continue;
+
+                    auto selectivity = computeSelectivity(edge);
+                    auto new_cost = computeJoinCost(left, right, selectivity);
+
+                    auto current_best = dp_table.find(combined_relations);
+                    if (current_best == dp_table.end() || new_cost < current_best->second->cost)
+                    {
+                        if (!edge.empty() && join_kind == JoinKind::Cross)
+                            join_kind = JoinKind::Inner;
+                        auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
+                        JoinOperator join_operator(
+                            join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
+                            std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
+                        auto new_best_plan = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
+
+                        LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
+                            new_best_plan->dump(), new_best_plan->left->dump(), new_best_plan->right->dump(),
+                            new_best_plan->cost, new_best_plan->estimated_rows ? toString(*new_best_plan->estimated_rows) : "unknown",
+                            new_best_plan->join_operator.dump());
+
+                        dp_table[combined_relations] = new_best_plan;
+                        components[component_size][combined_relations] = new_best_plan;
+                    }
+                }
+            }
+        }
+    }
+
+    auto best_full_plan = dp_table.find(BitSet::allSet(total_relations_count));
+    if (best_full_plan != dp_table.end())
+        return best_full_plan->second;
+
+    LOG_TRACE(log, "Failed to find best plan using DPsize algorithm");
     return nullptr;
 }
 
@@ -391,6 +591,9 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
         return right_join_type;
     if (right_join_type == JoinKind::Inner)
         return left_join_type;
+    /// Allow FULL join as it's restricted to table swapping and no reordering
+    if (left_join_type == JoinKind::Full && right_join_type == JoinKind::Full)
+        return JoinKind::Full;
 
     /// Conflict, join is not possible:
     /// FROM t1 LEFT JOIN t2 LEFT JOIN t3
@@ -399,12 +602,12 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
     return {};
 }
 
-DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph)
+DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (query_graph.relation_stats.size() <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderOptimizer: number of relations must be greater than 1");
 
-    JoinOrderOptimizer reorderer(std::move(query_graph));
+    JoinOrderOptimizer reorderer(std::move(query_graph), optimization_settings.query_plan_optimize_join_order_algorithm);
     auto best_plan = reorderer.solve();
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");

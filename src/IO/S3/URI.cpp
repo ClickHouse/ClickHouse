@@ -32,7 +32,7 @@ namespace ErrorCodes
 namespace S3
 {
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
+URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters)
 {
     /// Case when bucket name represented in domain name of S3 URL.
     /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
@@ -74,6 +74,12 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
             break;
         }
     }
+
+    /// In compatibility mode, we want to treat pre-signed URLs like plain ones,
+    /// so we fold their query into the key (like make '?' behave as wildcard)
+    /// Do it by unmarking presigned here, but if it actually looks like a presigned URL
+    if (!keep_presigned_query_parameters && looks_like_presigned)
+        looks_like_presigned = false;
 
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();

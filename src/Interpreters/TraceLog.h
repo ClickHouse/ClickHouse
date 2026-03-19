@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/SystemLog.h>
 #include <Common/setThreadName.h>
 #include <Common/QueryProfiler.h>
@@ -31,6 +32,7 @@ struct TraceLogElement
     Decimal64 event_time_microseconds{};
     UInt64 timestamp_ns{};
     TraceType trace_type{};
+    UInt64 cpu_id{};
     UInt64 thread_id{};
     ThreadName thread_name = ThreadName::UNKNOWN;
     String query_id{};
@@ -46,6 +48,14 @@ struct TraceLogElement
     ProfileEvents::Event event{ProfileEvents::end()};
     /// Increment of profile event for TraceType::ProfileEvent.
     ProfileEvents::Count increment{};
+
+    /// Instrumentation values
+    UInt64 instrumented_point_id;
+    Int32 function_id = -1;
+    String function_name{};
+    String handler{};
+    std::optional<Instrumentation::EntryType> entry_type{};
+    std::optional<UInt64> duration_nanoseconds{};
 
     static std::string name() { return "TraceLog"; }
     static ColumnsDescription getColumnsDescription();

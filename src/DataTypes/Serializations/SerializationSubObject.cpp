@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
@@ -13,11 +14,11 @@ namespace ErrorCodes
 }
 
 SerializationSubObject::SerializationSubObject(
-    const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_)
+    const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_)
     : paths_prefix(paths_prefix_)
     , typed_paths_serializations(typed_paths_serializations_)
     , dynamic_type(dynamic_type_)
-    , dynamic_serialization(dynamic_type->getDefaultSerialization())
+    , dynamic_serialization(dynamic_serialization_)
 {
 }
 
@@ -158,7 +159,8 @@ void SerializationSubObject::deserializeBinaryBulkStatePrefix(
         structure_state_concrete->shared_data_serialization_version,
         structure_state_concrete->shared_data_buckets,
         paths_prefix,
-        dynamic_type);
+        dynamic_type,
+        dynamic_serialization);
     sub_object_state->shared_data_serialization->deserializeBinaryBulkStatePrefix(settings, sub_object_state->shared_data_state, cache);
     settings.path.pop_back();
 
@@ -187,7 +189,10 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     auto & column_object = assert_cast<ColumnObject &>(*mutable_column);
     /// If it's a new object column, set dynamic paths and statistics.
     if (column_object.empty())
+    {
+        column_object.setMaxDynamicPaths(sub_object_state->dynamic_sub_paths.size());
         column_object.setDynamicPaths(sub_object_state->dynamic_sub_paths);
+    }
 
     auto & typed_paths = column_object.getTypedPaths();
     auto & dynamic_paths = column_object.getDynamicPaths();

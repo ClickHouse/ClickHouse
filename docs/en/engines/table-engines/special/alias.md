@@ -7,9 +7,20 @@ title: 'Alias table engine'
 doc_type: 'reference'
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
 # Alias table engine
 
+<ExperimentalBadge/>
+
 The `Alias` engine creates a proxy to another table. All read and write operations are forwarded to the target table, while the alias itself stores no data and only maintains a reference to the target table.
+
+:::info
+This is an experimental feature that may change in backwards-incompatible ways in the future releases.
+Enable usage of the Alias table engine
+with [allow_experimental_alias_table_engine](/operations/settings/settings#allow_experimental_alias_table_engine) setting.
+Input the command `set allow_experimental_alias_table_engine = 1`.
+:::
 
 ## Creating a Table {#creating-a-table}
 
@@ -33,6 +44,10 @@ The `Alias` table does not support explicit column definitions. Columns are auto
 
 - **`target_db (optional)`** — Name of the database containing the target table.
 - **`target_table`** — Name of the target table.
+
+:::note
+When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
+:::
 
 ## Supported Operations {#supported-operations}
 

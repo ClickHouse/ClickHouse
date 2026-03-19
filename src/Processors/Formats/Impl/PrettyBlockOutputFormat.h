@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/PODArray.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -42,7 +43,7 @@ protected:
     size_t prev_row_number_width = 7;
     size_t row_number_width = 7; // "10000. "
 
-    const FormatSettings format_settings;
+    FormatSettings format_settings;
     Serializations serializations;
 
     using Widths = PODArray<size_t>;
@@ -54,7 +55,7 @@ protected:
     void writeSuffix() override;
     virtual void writeSuffixImpl();
 
-    void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
+    void onRowsReadBeforeUpdate() override;
 
     void calculateWidths(
         const Block & header, const Chunk & chunk, bool split_by_lines, bool & out_has_newlines,

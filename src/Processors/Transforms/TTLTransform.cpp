@@ -31,16 +31,36 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
     return {expr.expression, where_expr.expression};
 }
 
+SharedHeader TTLTransform::addExpiredColumnsToBlock(const SharedHeader & header, const NamesAndTypesList & expired_columns_)
+{
+    if (expired_columns_.empty())
+        return header;
+
+    auto output_block = *header;
+
+    for (const auto & col : expired_columns_)
+    {
+        if (output_block.has(col.name))
+            continue;
+
+        output_block.insert({col.type->createColumn(), col.type, col.name});
+    }
+
+    return std::make_shared<const Block>(std::move(output_block));
+}
+
 TTLTransform::TTLTransform(
     const ContextPtr & context,
     SharedHeader header_,
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
+    const NamesAndTypesList & expired_columns_,
     time_t current_time_,
     bool force_)
-    : IAccumulatingTransform(header_, header_)
+    : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
     , data_part(data_part_)
+    , expired_columns(expired_columns_)
     , log(getLogger(storage_.getLogName() + " (TTLTransform)"))
 {
     auto old_ttl_infos = data_part->ttl_infos;
@@ -71,32 +91,49 @@ TTLTransform::TTLTransform(
                 old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
                 getInputPort().getHeader(), storage_));
 
+    const auto & storage_columns = metadata_snapshot_->getColumns();
+    const auto & column_defaults = storage_columns.getDefaults();
+
+    auto build_default_expr = [&](const String & name)
+    {
+        using Result = std::pair<ExpressionActionsPtr, String>;
+        auto it = column_defaults.find(name);
+        if (it == column_defaults.end())
+            return Result{};
+        const auto & column = storage_columns.get(name);
+        auto default_ast = it->second.expression->clone();
+        default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
+        auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
+        auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
+        return Result{actions, default_ast->getColumnName()};
+    };
+
+    for (const auto & expired_column : expired_columns)
+    {
+        auto [default_expression, default_column_name] = build_default_expr(expired_column.name);
+        expired_columns_data.emplace(
+            expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
+    }
+
     if (metadata_snapshot_->hasAnyColumnTTL())
     {
-        const auto & storage_columns = metadata_snapshot_->getColumns();
-        const auto & column_defaults = storage_columns.getDefaults();
-
+        auto expired_columns_map = expired_columns.getNameToTypeMap();
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
-            ExpressionActionsPtr default_expression;
-            String default_column_name;
-            auto it = column_defaults.find(name);
-            if (it != column_defaults.end())
+            if (!expired_columns_map.contains(name))
             {
-                const auto & column = storage_columns.get(name);
-                auto default_ast = it->second.expression->clone();
-                default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
-
-                auto syntax_result
-                    = TreeRewriter(storage_.getContext()).analyze(default_ast, metadata_snapshot_->getColumns().getAllPhysical());
-                default_expression = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
-                default_column_name = default_ast->getColumnName();
+                auto [default_expression, default_column_name] = build_default_expr(name);
+                algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
+                    getExpressions(description, subqueries_for_sets, context),
+                    description,
+                    old_ttl_infos.columns_ttl[name],
+                    current_time_,
+                    force_,
+                    name,
+                    default_expression,
+                    default_column_name,
+                    isCompactPart(data_part)));
             }
-
-            algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
-                getExpressions(description, subqueries_for_sets, context), description,
-                old_ttl_infos.columns_ttl[name], current_time_,
-                force_, name, default_expression, default_column_name, isCompactPart(data_part)));
         }
     }
 
@@ -130,6 +167,25 @@ void TTLTransform::consume(Chunk chunk)
 
     removeSpecialColumnRepresentations(chunk);
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
+    /// Fill expired columns with default values which will later be handled in TTLColumnAlgorithm
+    for (const auto & [column, data] : expired_columns_data)
+    {
+        auto default_column
+            = ITTLAlgorithm::executeExpressionAndGetColumn(data.default_expression, block, data.default_column_name);
+        if (default_column)
+            default_column = default_column->convertToFullColumnIfConst();
+        else
+            default_column = data.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst();
+
+        /// Expired column may pre-exist (e.g. from customized merges like ReplacingMergeTree with version key), so
+        /// replace it with default instead of inserting a new one.
+        auto * c = block.findByName(column);
+        if (c)
+            c->column = default_column;
+        else
+            block.insert(ColumnWithTypeAndName(default_column, data.type, column));
+    }
 
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);

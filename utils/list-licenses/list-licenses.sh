@@ -17,10 +17,10 @@ fi
 
 LIBS_PATH="${ROOT_PATH}/contrib"
 
-libs=$(echo "${ROOT_PATH}/base/poco"; (find "${LIBS_PATH}" -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort) )
-for LIB in ${libs}
-do
-    LIB_NAME=$(basename "$LIB")
+# Function to process a single C/C++ library
+process_library() {
+    local LIB="$1"
+    local LIB_NAME=$(basename "$LIB")
 
     LIB_LICENSE=$(
         LC_ALL=C ${FIND_CMD} "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' -or -iname 'NOTICE' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
@@ -100,21 +100,21 @@ do
 
         echo -e "$LIB_NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
     fi
-done
+}
 
-# Special care for Rust
-for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml');
-do
-    FOLDER=$(dirname "$dependency")
+# Function to process a single Rust crate
+process_rust_crate() {
+    local dependency="$1"
+    local FOLDER=$(dirname "$dependency")
 
     # Crate names follow `some-crate-name-1.0.0` pattern.
     CRATE=$(basename "$FOLDER")
     NAME=$(echo "$CRATE" | rev | cut -f2- -d- | rev)
 
     LICENSE_TYPE=$(${GREP_CMD} 'license = "' "$dependency"  | cut -d '"' -f2)
-    if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive';
+    if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive|BSL-1.0';
     then
-        echo "Fatal error: unrecognized licenses ($LICENSE_TYPE) in the Rust code"
+        echo "Fatal error: unrecognized licenses ($LICENSE_TYPE) in the Rust code" >&2
         exit 1
     fi
 
@@ -154,26 +154,70 @@ do
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
+           [ "$LICENSE_TYPE" == "Zlib OR Apache-2.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
-           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ];
+           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0/MIT" ];
         then
             LICENSE_PATH="/utils/list-licenses/Apache-2.0.txt"
+        elif [ "$LICENSE_TYPE" == "BSL-1.0" ]
+        then
+            # NOTE: this should be Boost Software License not Business Software License (BUSL)
+            LICENSE_PATH="/utils/list-licenses/BSL-1.0.txt"
         elif [ "$LICENSE_TYPE" == "MIT" ]
         then
             LICENSE_PATH="/utils/list-licenses/MIT.txt"
-        elif [ "$LICENSE_TYPE" == "MPL-2.0" ]
+        elif [ "$LICENSE_TYPE" == "MPL-2.0" ] || [ "$LICENSE_TYPE" == "MPL-2.0+" ];
         then
             LICENSE_PATH="/utils/list-licenses/MPL-2.0.txt"
-        elif [ "$LICENSE_TYPE" == "BSD-3-Clause" ]
+        elif [ "$LICENSE_TYPE" == "BSD-3-Clause" ] ||
+             [ "$LICENSE_TYPE" == "GPL-2.0-only OR BSD-3-Clause" ];
         then
             LICENSE_PATH="/utils/list-licenses/BSD-3-Clause.txt"
+        elif [ "$LICENSE_TYPE" == "ISC" ]
+        then
+            LICENSE_PATH="/utils/list-licenses/ISC.txt"
         else
-            echo "Could not find a valid license file for \"${LICENSE_TYPE}\" in $FOLDER"
-            ls "$FOLDER"
+            echo "Could not find a valid license file for \"${LICENSE_TYPE}\" in $FOLDER" >&2
+            ls "$FOLDER" >&2
             exit 1
         fi
     fi
 
     RELATIVE_PATH=$(echo "$LICENSE_PATH" | sed -r -e 's!^.+/(contrib|base)/!/\1/!')
     echo -e "$NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
-done
+}
+
+# Export functions and variables for parallel execution
+export -f process_library process_rust_crate
+export GREP_CMD FIND_CMD ROOT_PATH LIBS_PATH
+
+# Process C/C++ libraries in parallel
+libs=$(echo "${ROOT_PATH}/base/poco"; (${FIND_CMD} "${LIBS_PATH}" -mindepth 1 -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort) )
+
+# Use xargs for parallel processing (fall back to 4 jobs if nproc not available)
+JOBS=$(nproc 2>/dev/null || echo 4)
+
+# Process in parallel and preserve deterministic output.
+c_cpp_output=$(printf '%s\n' "$libs" | xargs -P "${JOBS}" -I {} bash -c 'process_library "$@"' _ {})
+c_cpp_status=$?
+if [ "${c_cpp_status}" -ne 0 ]
+then
+    exit "${c_cpp_status}"
+fi
+if [ -n "${c_cpp_output}" ]
+then
+    printf '%s\n' "${c_cpp_output}" | LC_ALL=C sort
+fi
+
+rust_output=$(${FIND_CMD} "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs -P "${JOBS}" -I {} bash -c 'process_rust_crate "$@"' _ {})
+rust_status=$?
+if [ "${rust_status}" -ne 0 ]
+then
+    exit "${rust_status}"
+fi
+if [ -n "${rust_output}" ]
+then
+    printf '%s\n' "${rust_output}" | LC_ALL=C sort
+fi

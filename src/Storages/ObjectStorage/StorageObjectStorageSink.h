@@ -12,10 +12,11 @@ public:
     StorageObjectStorageSink(
         const std::string & path_,
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context);
+        ContextPtr context,
+        const String & format,
+        const String & compression_method);
 
     ~StorageObjectStorageSink() override;
 

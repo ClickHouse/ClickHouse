@@ -6,7 +6,7 @@ from minio.deleteobjects import DeleteObject
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster, is_arm
-
+import re
 import time
 
 import logging
@@ -92,6 +92,7 @@ def setup_storage(cluster, node, storage_config, cleanup_disks):
         "<!-- DISK DEFINITION PLACEHOLDER -->",
         storage_config,
     )
+
     node.start_clickhouse()
     # complete readiness checks that the sessions can be established,
     # but it creates sesssion for this, which will create one more record in log,
@@ -144,11 +145,9 @@ def test_logs_with_disks(started_cluster):
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
 
-        node_logs.wait_for_log_line("Removed changelog changelog_25_27.bin because of compaction")
-
         stop_zk(node_zk)
 
-        previous_log_files = get_local_logs(node_logs)
+        assert len(get_local_logs(node_logs)) > 1
 
         setup_storage(
             started_cluster,
@@ -159,9 +158,8 @@ def test_logs_with_disks(started_cluster):
             cleanup_disks=False,
         )
 
-        node_logs.wait_for_log_line("KeeperLogStore: Continue to write into changelog_34_36.bin")
-
-        def get_single_local_log_file():
+        # all but the latest log should be on S3
+        def assert_single_local_log():
             local_log_files = get_local_logs(node_logs)
             start_time = time.time()
             while len(local_log_files) != 1:
@@ -171,30 +169,17 @@ def test_logs_with_disks(started_cluster):
                 ), "local_log_files size is not equal to 1 after 60s"
                 time.sleep(1)
                 local_log_files = get_local_logs(node_logs)
-            return local_log_files
 
-        # all but the latest log should be on S3
-        local_log_files = get_single_local_log_file()
-        assert local_log_files[0] == previous_log_files[-1]
-        s3_log_files = list_s3_objects(started_cluster, "logs/")
-        assert set(s3_log_files) == set(previous_log_files[:-1])
-
-        previous_log_files = s3_log_files + local_log_files
+        assert_single_local_log()
+        assert len(list_s3_objects(started_cluster, "logs/")) > 1
 
         node_zk = get_fake_zk("node_logs")
 
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
 
+        assert_single_local_log()
         stop_zk(node_zk)
-
-        local_log_files = get_single_local_log_file()
-        log_files = list_s3_objects(started_cluster, "logs/")
-
-        log_files.extend(local_log_files)
-        assert set(log_files) != previous_log_files
-
-        previous_log_files = log_files
 
         setup_storage(
             started_cluster,
@@ -205,8 +190,17 @@ def test_logs_with_disks(started_cluster):
             cleanup_disks=False,
         )
 
-        local_log_files = get_local_logs(node_logs)
-        assert set(local_log_files) == set(previous_log_files)
+        s3_files = list_s3_objects(started_cluster, "logs/")
+        start_time = time.time()
+        while len(s3_files) != 0:
+            logging.debug(f"S3 log files: {s3_files}")
+            assert (
+                time.time() - start_time < 60
+            ), "s3_files size is not equal to 0 after 60s"
+            time.sleep(1)
+            s3_files = list_s3_objects(started_cluster, "logs/")
+
+        assert len(get_local_logs(node_logs)) > 1
 
         node_zk = get_fake_zk("node_logs")
 

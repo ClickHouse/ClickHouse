@@ -133,10 +133,10 @@ String ASTCreateQuotaQuery::getID(char) const
 
 ASTPtr ASTCreateQuotaQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateQuotaQuery>(*this);
+    auto res = make_intrusive<ASTCreateQuotaQuery>(*this);
 
     if (roles)
-        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     return res;
 }

@@ -1,0 +1,14 @@
+<clickhouse>
+    <disable_internal_dns_cache>0</disable_internal_dns_cache>
+    <remote_servers>
+        <test_cluster>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>node8</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+    </remote_servers>
+</clickhouse>

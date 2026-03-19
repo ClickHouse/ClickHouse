@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/IndicesDescription.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -18,6 +19,7 @@ namespace DB
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
 }
@@ -97,7 +99,8 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     ttl_table = formattedASTNormalized(metadata_snapshot->getTableTTLs().definition_ast);
 
-    skip_indices = metadata_snapshot->getSecondaryIndices().toString();
+    /// We only store skip indices that are explicitly defined by user
+    skip_indices = metadata_snapshot->getSecondaryIndices().explicitToString();
 
     projections = metadata_snapshot->getProjections().toString();
 
@@ -369,11 +372,18 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
         is_equal = false;
     }
 
-    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).toString();
+    constexpr bool escape_index_filenames = true; /// It doesn't matter here, as we compare parsed strings
+    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).explicitToString();
     if (skip_indices != parsed_zk_skip_indices)
     {
-        handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
-        is_equal = false;
+        String all_parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).allToString();
+        // Backward compatibility: older replicas included implicit indices in metadata,
+        // while newer ones exclude them. This check allows comparison between both formats.
+        if (skip_indices != all_parsed_zk_skip_indices)
+        {
+            handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
+            is_equal = false;
+        }
     }
 
     String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
@@ -504,7 +514,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         }
 
         if (skip_indices_changed)
-            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, context);
+            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, new_metadata.escape_index_filenames, context);
 
         if (constraints_changed)
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
@@ -558,9 +568,26 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
     if (!skip_indices_changed) /// otherwise already updated
     {
+        /// Remove implicitly created indices and recalculate explicit ones
+        IndicesDescription new_indices;
         for (auto & index : new_metadata.secondary_indices)
-            index.recalculateWithNewColumns(new_metadata.columns, context);
+        {
+            if (!index.isImplicitlyCreated())
+            {
+                index.recalculateWithNewColumns(new_metadata.columns, context);
+                new_indices.push_back(index);
+            }
+        }
+        new_metadata.secondary_indices = std::move(new_indices);
     }
+
+    /// Regenerate implicit indices for the new columns regardless of whether indices were explicitly changed.
+    /// Implicit indices are not stored in ZooKeeper, so they must be recreated locally based on the current
+    /// columns and table settings.
+    /// Note: addImplicitIndicesForColumn checks for existing minmax indices on each column and won't create
+    /// duplicates if an explicit index already exists.
+    for (const auto & column : new_metadata.columns)
+        new_metadata.addImplicitIndicesForColumn(column, context);
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(

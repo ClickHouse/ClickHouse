@@ -9,10 +9,13 @@
 #include <QueryPipeline/BlockIO.h>
 
 #include <memory>
+#include <mutex>
 #include <optional>
 
 namespace DB
 {
+
+class QueryFuzzer;
 
 class IInterpreter;
 class ReadBuffer;
@@ -27,8 +30,8 @@ struct QueryResultDetails
     std::optional<String> content_type = {};
     std::optional<String> format = {};
     std::optional<String> timezone = {};
-    std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_created_at = {};
-    std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_expires_at = {};
+    std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_entry_created_at = {};
+    std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_entry_expires_at = {};
     std::unordered_map<String, String> additional_headers = {};
 };
 
@@ -132,4 +135,7 @@ void logExceptionBeforeStart(
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
     bool internal);
+
+/// Returns the global AST fuzzer instance with a lock held.
+std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();
 }

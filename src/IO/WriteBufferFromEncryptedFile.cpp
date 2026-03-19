@@ -11,11 +11,15 @@ WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
     std::unique_ptr<WriteBufferFromFileBase> out_,
     const String & key_,
     const FileEncryption::Header & header_,
-    size_t old_file_size)
-    : WriteBufferDecorator<WriteBufferFromFileBase>(std::move(out_), buffer_size_, nullptr, 0)
+    size_t old_file_size,
+    bool use_adaptive_buffer_size_,
+    size_t adaptive_buffer_initial_size)
+    : WriteBufferDecorator<WriteBufferFromFileBase>(std::move(out_), use_adaptive_buffer_size_ ? adaptive_buffer_initial_size : buffer_size_, nullptr, 0)
     , header(header_)
     , flush_header(!old_file_size)
     , encryptor(header.algorithm, key_, header.init_vector)
+    , use_adaptive_buffer_size(use_adaptive_buffer_size_)
+    , adaptive_buffer_max_size(buffer_size_)
 {
     encryptor.setOffset(old_file_size);
 }
@@ -57,6 +61,13 @@ void WriteBufferFromEncryptedFile::nextImpl()
     }
 
     encryptor.encrypt(working_buffer.begin(), offset(), *out);
+
+    /// Increase buffer size for next data if adaptive buffer size is used and nextImpl was called because of end of buffer.
+    if (!available() && use_adaptive_buffer_size && memory.size() < adaptive_buffer_max_size)
+    {
+        memory.resize(std::min(memory.size() * 2, adaptive_buffer_max_size));
+        BufferBase::set(memory.data(), memory.size(), 0);
+    }
 }
 
 }

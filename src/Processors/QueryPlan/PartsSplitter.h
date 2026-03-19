@@ -53,6 +53,7 @@ struct SplitPartsByRanges
 
     std::vector<RangesInDataParts> layers;
     std::vector<Values> borders;
+    bool in_reverse_order = false;
 };
 
 SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
@@ -66,7 +67,6 @@ Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
     ReadingInOrderStepGetter && step_getter,
-    bool in_reverse_order,
     ContextPtr context);
 
 }

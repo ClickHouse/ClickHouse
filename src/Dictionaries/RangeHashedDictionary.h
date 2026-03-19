@@ -64,7 +64,7 @@ template <DictionaryKeyType dictionary_key_type>
 class RangeHashedDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     RangeHashedDictionary(
         const StorageID & dict_id_,
@@ -91,14 +91,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -148,10 +148,10 @@ private:
     using KeyAttributeContainerType = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         HashMap<UInt64, IntervalMap<RangeStorageType>, DefaultHash<UInt64>>,
-        HashMapWithSavedHash<StringRef, IntervalMap<RangeStorageType>, DefaultHash<StringRef>>>;
+        HashMapWithSavedHash<std::string_view, IntervalMap<RangeStorageType>, DefaultHash<std::string_view>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
+    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>;
 
     struct Attribute final
     {
@@ -181,11 +181,11 @@ private:
             AttributeContainerType<UUID>,
             AttributeContainerType<IPv4>,
             AttributeContainerType<IPv6>,
-            AttributeContainerType<StringRef>,
+            AttributeContainerType<std::string_view>,
             AttributeContainerType<Array>>
             container;
 
-        std::optional<std::vector<bool>> is_value_nullable;
+        std::optional<VectorWithMemoryTracking<bool>> is_value_nullable;
     };
 
     template <typename RangeStorageType>
@@ -279,7 +279,7 @@ private:
     const RangeHashedDictionaryConfiguration configuration;
     BlockPtr update_field_loaded_block;
 
-    std::vector<Attribute> attributes;
+    VectorWithMemoryTracking<Attribute> attributes;
     KeyAttribute key_attribute;
 
     size_t bytes_allocated = 0;
@@ -390,7 +390,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                     out->insert(value);
                 });
         }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
+        else if constexpr (std::is_same_v<ValueType, std::string_view>)
         {
             auto * out = column.get();
 
@@ -398,18 +398,18 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                 getItemsInternalImpl<ValueType, true>(
                     attribute,
                     key_to_index,
-                    [&](size_t row, StringRef value, bool is_null)
+                    [&](size_t row, std::string_view value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
-                        out->insertData(value.data, value.size);
+                        out->insertData(value.data(), value.size());
                     });
             else
                 getItemsInternalImpl<ValueType, false>(
                     attribute,
                     key_to_index,
-                    [&](size_t, StringRef value, bool)
+                    [&](size_t, std::string_view value, bool)
                     {
-                        out->insertData(value.data, value.size);
+                        out->insertData(value.data(), value.size());
                     });
         }
         else
@@ -547,10 +547,11 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     {
         BlockIO io = source_ptr->loadAll();
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
             {
@@ -627,10 +628,10 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 template <DictionaryKeyType dictionary_key_type>
 typename RangeHashedDictionary<dictionary_key_type>::Attribute RangeHashedDictionary<dictionary_key_type>::createAttribute(const DictionaryAttribute & dictionary_attribute)
 {
-    std::optional<std::vector<bool>> is_value_nullable;
+    std::optional<VectorWithMemoryTracking<bool>> is_value_nullable;
 
     if (dictionary_attribute.is_nullable)
-        is_value_nullable.emplace(std::vector<bool>());
+        is_value_nullable.emplace(VectorWithMemoryTracking<bool>());
 
     Attribute attribute{dictionary_attribute.underlying_type, {}, std::move(is_value_nullable)};
 
@@ -702,12 +703,13 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
 
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
             {
@@ -853,7 +855,7 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 continue;
             }
 
-            if constexpr (std::is_same_v<KeyType, StringRef>)
+            if constexpr (std::is_same_v<KeyType, std::string_view>)
                 key = copyStringInArena(string_arena, key);
 
             for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
@@ -920,7 +922,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             const auto & string = value.safeGet<String>();
-            StringRef string_ref = copyStringInArena(string_arena, string);
+            std::string_view string_ref = copyStringInArena(string_arena, string);
             value_to_insert = string_ref;
         }
         else

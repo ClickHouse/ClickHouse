@@ -21,6 +21,7 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     const String & path_,
     const String & path_subcolumn_,
     const DataTypePtr & dynamic_type_,
+    const SerializationPtr & dynamic_serialization_,
     const DataTypePtr & subcolumn_type_,
     size_t bucket_)
     : SerializationWrapper(nested_)
@@ -30,7 +31,7 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     , path_subcolumn(path_subcolumn_)
     , dynamic_type(dynamic_type_)
     , subcolumn_type(subcolumn_type_)
-    , dynamic_serialization(dynamic_type_->getDefaultSerialization())
+    , dynamic_serialization(dynamic_serialization_)
     , bucket(bucket_)
 {
 }
@@ -250,7 +251,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         /// Check if we don't have any paths in shared data in current range.
         const auto & offsets = assert_cast<const ColumnArray &>(*map_column).getOffsets();
         if (offsets.back() == offsets[ssize_t(map_column_offset) - 1])
-            dynamic_column->insertManyDefaults(limit);
+            dynamic_column->insertManyDefaults(num_read_rows);
         else
             ColumnObject::fillPathColumnFromSharedData(*dynamic_column, path, map_column, map_column_offset, map_column->size());
 

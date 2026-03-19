@@ -478,10 +478,12 @@ SSHPtyHandler::~SSHPtyHandler()
 void SSHPtyHandler::run()
 {
     ::ssh::SSHEvent event;
-    SessionCallback sdata(session, server, socket().peerAddress(), options);
+    auto peer_addr = socket().peerAddress();
+    socket().close();
+    SessionCallback sdata(session, server, peer_addr, options);
     session.handleKeyExchange();
     event.addSession(session);
-    int max_iterations = options.auth_timeout_seconds * 1000 / options.event_poll_interval_milliseconds;
+    int max_iterations = static_cast<int>(options.auth_timeout_seconds * 1000 / options.event_poll_interval_milliseconds);
     int n = 0;
     while (!sdata.authenticated || !sdata.channel_callback)
     {
@@ -493,7 +495,7 @@ void SSHPtyHandler::run()
         if (server.isCancelled())
             return;
 
-        event.poll(options.event_poll_interval_milliseconds);
+        event.poll(static_cast<int>(options.event_poll_interval_milliseconds));
         n++;
     }
     bool fds_set = false;
@@ -502,7 +504,7 @@ void SSHPtyHandler::run()
     {
         /* Poll the main event which takes care of the session, the channel and
          * even our client's stdout/stderr (once it's started). */
-        event.poll(options.event_poll_interval_milliseconds);
+        event.poll(static_cast<int>(options.event_poll_interval_milliseconds));
 
         /* If client's stdout/stderr has been registered with the event,
          * or the client hasn't started yet, continue. */
@@ -531,15 +533,43 @@ void SSHPtyHandler::run()
     event.removeFd(sdata.channel_callback->client_input_output.out);
     event.removeFd(sdata.channel_callback->client_input_output.err);
 
+    /// Drain any remaining data from stdout/stderr pipes before closing the channel.
+    /// The client may have finished writing to the pipes before the event loop had a chance
+    /// to forward all the data through the SSH channel. For example, if the command fails
+    /// quickly (e.g. \i produces SUPPORT_IS_DISABLED), the error message in the pipe buffer
+    /// would be lost without this drain.
+    auto drain = [&](int fd, bool is_stderr)
+    {
+        if (fd == -1)
+            return;
+
+        struct pollfd pfd = {};
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        while (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN))
+        {
+            char buf[1024];
+            int bytes_read = static_cast<int>(read(fd, buf, sizeof(buf)));
+            if (bytes_read <= 0)
+                break;
+            if (is_stderr)
+                ssh_channel_write_stderr(sdata.channel_callback->channel.getCChannelPtr(), buf, bytes_read);
+            else
+                ssh_channel_write(sdata.channel_callback->channel.getCChannelPtr(), buf, bytes_read);
+        }
+    };
+    drain(sdata.channel_callback->client_input_output.out, false);
+    drain(sdata.channel_callback->client_input_output.err, true);
+
 
     sdata.channel_callback->channel.sendEof();
     sdata.channel_callback->channel.sendExitStatus(sdata.channel_callback->getClientExitCode());
     sdata.channel_callback->channel.close();
 
     /* Wait up to finish_timeout_seconds seconds for the client to terminate the session. */
-    max_iterations = options.finish_timeout_seconds * 1000 / options.event_poll_interval_milliseconds;
+    max_iterations = static_cast<int>(options.finish_timeout_seconds * 1000 / options.event_poll_interval_milliseconds);
     for (n = 0; n < max_iterations && !session.hasFinished(); n++)
-        event.poll(options.event_poll_interval_milliseconds);
+        event.poll(static_cast<int>(options.event_poll_interval_milliseconds));
 
     LOG_DEBUG(log, "Connection closed");
 }

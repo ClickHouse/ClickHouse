@@ -1,11 +1,18 @@
-#include <Common/Exception.h>
-#include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Common/Exception.h>
 
+#include <memory>
 #include <stack>
 
 namespace DB
@@ -32,9 +39,9 @@ void checkHeaders(const QueryPlan::Node & node, const std::string_view context_d
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
-    extern const int PROJECTION_NOT_USED;
+extern const int INCORRECT_DATA;
+extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
+extern const int PROJECTION_NOT_USED;
 }
 
 namespace QueryPlanOptimizations
@@ -71,6 +78,11 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.use_skip_indexes_for_top_k,
+        optimization_settings.use_top_k_dynamic_filtering,
+        optimization_settings.max_limit_for_top_k_optimization,
+        optimization_settings.use_skip_indexes_on_data_read,
+        optimization_settings.parallel_replicas_filter_pushdown,
     };
 
     while (!stack.empty())
@@ -84,8 +96,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
             /// Traverse all children first.
             if (frame.next_child < frame.node->children.size())
             {
-                stack.push(
-                {
+                stack.push({
                     .node = frame.node->children[frame.next_child],
                     .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
                 });
@@ -112,9 +123,10 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
                 if (optimization_settings.is_explain)
                     return;
 
-                throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                "Too many optimizations applied to query plan. Current limit {}",
-                                max_optimizations_to_apply);
+                throw Exception(
+                    ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                    "Too many optimizations applied to query plan. Current limit {}",
+                    max_optimizations_to_apply);
             }
 
 
@@ -123,7 +135,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
             if (update_depth)
             {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-                checkHeaders(*frame.node, String("after optimization") + optimization.name, update_depth);
+                checkHeaders(*frame.node, String("after optimization ") + optimization.name, update_depth);
 #endif
                 ++total_applied_optimizations;
             }
@@ -143,44 +155,11 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
-struct NoOp{};
-
-template <typename Func1, typename Func2 = NoOp>
-void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})
-{
-    stack.clear();
-    stack.push_back({.node = &root});
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.back();
-
-        if constexpr (!std::is_same_v<Func1, NoOp>)
-        {
-            if (frame.next_child == 0)
-            {
-                on_enter(*frame.node);
-            }
-        }
-
-        /// Traverse all children first.
-        if (frame.next_child < frame.node->children.size())
-        {
-            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-            ++frame.next_child;
-            stack.push_back(next_frame);
-            continue;
-        }
-
-        if constexpr (!std::is_same_v<Func2, NoOp>)
-        {
-            on_leave(*frame.node);
-        }
-
-        stack.pop_back();
-    }
-}
-
+void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeExchanges(QueryPlan::Node & root);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -196,6 +175,11 @@ void optimizeTreeSecondPass(
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.use_skip_indexes_for_top_k,
+        optimization_settings.use_top_k_dynamic_filtering,
+        optimization_settings.max_limit_for_top_k_optimization,
+        optimization_settings.use_skip_indexes_on_data_read,
+        optimization_settings.parallel_replicas_filter_pushdown,
     };
 
     Stack stack;
@@ -203,13 +187,13 @@ void optimizeTreeSecondPass(
 
     while (!stack.empty())
     {
-        optimizePrimaryKeyConditionAndLimit(stack);
+        if (optimization_settings.query_plan_optimize_primary_key)
+            optimizePrimaryKeyConditionAndLimit(stack);
 
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.
-        if (optimization_settings.direct_read_from_text_index)
-            optimizeDirectReadFromTextIndex(stack, nodes);
+        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index);
 
         auto & frame = stack.back();
 
@@ -222,24 +206,23 @@ void optimizeTreeSecondPass(
             continue;
         }
 
-        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
-        if (optimization_settings.optimize_prewhere)
-            optimizePrewhere(*frame.node);
-
         stack.pop_back();
     }
 
-    /// Materialize subplan references before other optimizations.
-    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    if (!optimization_settings.correlated_subqueries_use_in_memory_buffer)
     {
-        materializeQueryPlanReferences(frame_node, nodes);
-    });
+        /// Materialize subplan references before other optimizations.
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            materializeQueryPlanReferences(frame_node, nodes);
+        });
 
-    /// Remove CommonSubplanSteps (they must be not used at that point).
-    traverseQueryPlan(stack, root, [&](auto & frame_node)
-    {
-        optimizeUnusedCommonSubplans(frame_node);
-    });
+        /// Remove CommonSubplanSteps (they must be not used at that point).
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            optimizeUnusedCommonSubplans(frame_node);
+        });
+    }
 
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
@@ -247,6 +230,7 @@ void optimizeTreeSecondPass(
         {
             optimizeJoinLogical(frame_node, nodes, optimization_settings);
             optimizeJoinLegacy(frame_node, nodes, optimization_settings);
+            useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
         },
         [&](auto & frame_node)
         {
@@ -255,7 +239,7 @@ void optimizeTreeSecondPass(
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-    /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
+    /// If join runtime filters were added re-run push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
     if (join_runtime_filters_were_added)
     {
@@ -273,11 +257,16 @@ void optimizeTreeSecondPass(
                     if (!changed_nodes)
                         break;
                 }
-            },
+            });
+    }
+
+    /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
+    if (optimization_settings.optimize_prewhere)
+    {
+        traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
-                if (optimization_settings.optimize_prewhere)
-                    optimizePrewhere(frame_node);
+                optimizePrewhere(frame_node, optimization_settings.remove_unused_columns);
             });
     }
 
@@ -285,10 +274,21 @@ void optimizeTreeSecondPass(
         [&](auto & frame_node)
         {
             if (optimization_settings.read_in_order)
-                optimizeReadInOrder(frame_node, nodes);
+                optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order)
-                optimizeDistinctInOrder(frame_node, nodes);
+                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+        },
+        [&](auto & frame_node)
+        {
+            /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
+            if (optimization_settings.make_distributed_plan)
+            {
+                tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
+                tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
+                tryMakeDistributedSorting(frame_node, nodes, optimization_settings);
+                tryMakeDistributedRead(frame_node, nodes, optimization_settings);
+            }
         });
 
     stack.push_back({.node = &root});
@@ -317,7 +317,7 @@ void optimizeTreeSecondPass(
                 }
 
                 if (optimization_settings.aggregation_in_order)
-                    optimizeAggregationInOrder(*frame.node, nodes);
+                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }
 
             /// Traverse all children first.
@@ -345,9 +345,10 @@ void optimizeTreeSecondPass(
                 {
                     /// Limit only first pass in EXPLAIN mode.
                     if (!optimization_settings.is_explain)
-                        throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                        "Too many projection optimizations applied to query plan. Current limit {}",
-                                        max_optimizations_to_apply);
+                        throw Exception(
+                            ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                            "Too many projection optimizations applied to query plan. Current limit {}",
+                            max_optimizations_to_apply);
                 }
 
                 /// Stack is updated after this optimization and frame is not valid anymore.
@@ -377,7 +378,7 @@ void optimizeTreeSecondPass(
             stack.push_back(next_frame);
             continue;
         }
-        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep*>(frame.node->step.get()))
+        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep *>(frame.node->step.get()))
         {
             read_from_local_parallel_replica_plan = true;
 
@@ -385,7 +386,7 @@ void optimizeTreeSecondPass(
             local_plan->optimize(optimization_settings);
 
             auto * local_plan_node = frame.node;
-            query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
+            query_plan.replaceNodeWithPlan(local_plan_node, std::move(*local_plan));
 
             // after applying optimize() we still can have several expression in a row,
             // so merge them to make plan more concise
@@ -398,6 +399,9 @@ void optimizeTreeSecondPass(
     // local plan can contain redundant sorting
     if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
         tryRemoveRedundantSorting(&root);
+    /// Optimize exchanges
+    if (optimization_settings.make_distributed_plan && optimization_settings.distributed_plan_optimize_exchanges)
+        optimizeExchanges(root);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
     /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
@@ -442,8 +446,11 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0)
             {
-                if (optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization))
-                    break;
+                if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
+                {
+                    stack.pop_back();
+                    continue;
+                }
             }
 
             /// Traverse all children first.
@@ -461,23 +468,26 @@ void optimizeTreeSecondPass(
 
     if (optimization_settings.force_use_projection && has_reading_from_mt && applied_projection_names.empty())
         throw Exception(
-            ErrorCodes::PROJECTION_NOT_USED,
-            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
+            ErrorCodes::PROJECTION_NOT_USED, "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 
-    if (!optimization_settings.force_projection_name.empty() && has_reading_from_mt && !applied_projection_names.contains(optimization_settings.force_projection_name))
+    if (!optimization_settings.force_projection_name.empty() && has_reading_from_mt
+        && !applied_projection_names.contains(optimization_settings.force_projection_name))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Projection {} is specified in setting force_optimize_projection_name but not used",
-             optimization_settings.force_projection_name);
+            optimization_settings.force_projection_name);
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
+
+    considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 }
 
-void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void addStepsToBuildSets(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});

@@ -26,9 +26,9 @@ void IColumnDummy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
 }
 
-DataTypePtr IColumnDummy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
+void IColumnDummy::getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name and type from {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name from {}", getName());
 }
 
 void IColumnDummy::insert(const Field &)
@@ -41,7 +41,7 @@ bool IColumnDummy::isDefaultAt(size_t) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
 }
 
-StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const
+std::string_view IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const IColumn::SerializationSettings *) const
 {
     /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
     char * res = arena.allocContinue(1, begin);
@@ -49,7 +49,7 @@ StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, cha
     return { res, 1 };
 }
 
-void IColumnDummy::deserializeAndInsertFromArena(ReadBuffer & in)
+void IColumnDummy::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     ++s;
     in.ignore(1);
@@ -64,6 +64,11 @@ ColumnPtr IColumnDummy::filter(const Filter & filt, ssize_t /*result_size_hint*/
 {
     size_t bytes = countBytesInFilter(filt);
     return cloneDummy(bytes);
+}
+
+void IColumnDummy::filter(const Filter & filt)
+{
+    s = countBytesInFilter(filt);
 }
 
 void IColumnDummy::expand(const IColumn::Filter & mask, bool)
@@ -107,9 +112,7 @@ MutableColumns IColumnDummy::scatter(size_t num_columns, const Selector & select
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column.");
 
-    std::vector<size_t> counts(num_columns);
-    for (auto idx : selector)
-        ++counts[idx];
+    std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 
     MutableColumns res(num_columns);
     for (size_t i = 0; i < num_columns; ++i)

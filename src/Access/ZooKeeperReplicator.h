@@ -28,7 +28,8 @@ public:
         const String & zookeeper_path_,
         zkutil::GetZooKeeper get_zookeeper_,
         AccessChangesNotifier & changes_notifier_,
-        MemoryAccessStorage & memory_storage_);
+        MemoryAccessStorage & memory_storage_,
+        bool throw_on_invalid_entities_);
 
     ~ZooKeeperReplicator();
 
@@ -76,6 +77,7 @@ private:
 
     MemoryAccessStorage & memory_storage TSA_GUARDED_BY(mutex);
     AccessChangesNotifier & changes_notifier;
+    const bool throw_on_invalid_entities;
 
     bool insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
     bool removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists);

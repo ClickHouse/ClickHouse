@@ -1,0 +1,8 @@
+CREATE TABLE t (`c0` Int64 DEFAULT (1 AS a)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int64 DEFAULT (1 AS a)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int64, `c1` Int64 MATERIALIZED ((c0 + 1) AS a)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int64, `c1` Int64 MATERIALIZED ((c0 + 1) AS a)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int64, `c1` Int64 ALIAS ((c0 * 2) AS doubled)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int64, `c1` Int64 ALIAS ((c0 * 2) AS doubled)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int64 DEFAULT (1 AS a), `c1` String) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int64 DEFAULT (toInt64(now()) AS ts)) ENGINE = MergeTree ORDER BY c0

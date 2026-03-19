@@ -163,12 +163,12 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     /// Check if there are no such variant in read range.
     if (variant_limit && *variant_limit == 0)
     {
-        data.resize_fill(data.size() + limit, 1);
+        data.resize_fill(data.size() + num_read_discriminators, 1);
     }
     /// Check if there is only our variant in read range.
-    else if (variant_limit && *variant_limit == limit)
+    else if (variant_limit && *variant_limit == num_read_discriminators)
     {
-        data.resize_fill(data.size() + limit, 0);
+        data.resize_fill(data.size() + num_read_discriminators, 0);
     }
     /// Iterate through new discriminators to calculate the null map of our variant.
     else

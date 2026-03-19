@@ -159,7 +159,7 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
     {
         const String & fixed_string = tuple[bit].safeGet<String>();
         const UInt8 * src = reinterpret_cast<const UInt8 *>(fixed_string.data());
-        const Word mask = Word(1) << (bits - 1 - bit);
+        const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
         SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
@@ -215,7 +215,7 @@ void SerializationQBit::serializeFloatsFromQBit(const IColumn & column, size_t r
     {
         const auto & fs = assert_cast<const ColumnFixedString &>(extractElementColumn(column, bit));
         const UInt8 * src = reinterpret_cast<const UInt8 *>(fs.getChars().data()) + row_num * slice_size;
-        const Word mask = Word(1) << (bits - 1 - bit);
+        const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
         SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
@@ -423,7 +423,8 @@ void SerializationQBit::transposeBits(Word src, const size_t row_i, const size_t
 /// CPU Dispatch for untransposeBitPlane
 DECLARE_DEFAULT_CODE(
     template <typename T>
-    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask) {
+    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
+    {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
 
@@ -438,20 +439,24 @@ DECLARE_DEFAULT_CODE(
             for (int i = 0; i < 8; ++i)
             {
                 /// Mask is 0...0 if current bit is 0, 1...1 if it is 1. Use it to avoid a branch
-                T mask = -T((v >> i) & 1);
+                T mask = static_cast<T>(-T((v >> i) & 1));
                 dst[row_base - 7 + i] |= (mask & bit_mask);
             }
         }
     })
 
 /// Do not inline target specific implementations to avoid code bloat on all targets
-DECLARE_AVX512F_SPECIFIC_CODE(
-    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask) {
+DECLARE_X86_64_V4_SPECIFIC_CODE(
+    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
+    {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
 
         const __m512i bmask = _mm512_set1_epi64(bit_mask);
 
+        /// By default clang-21 with X86_64_V4 unrolls this loop (it didn't with AVX512F) and that makes it slower.
+        /// Prevent unrolling to achieve better performance.
+        _Pragma("nounroll")
         for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
         {
             uint8_t v = src[b];
@@ -468,8 +473,9 @@ DECLARE_AVX512F_SPECIFIC_CODE(
         }
     })
 
-DECLARE_AVX512VL_SPECIFIC_CODE(
-    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask) {
+DECLARE_X86_64_V4_SPECIFIC_CODE(
+    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
+    {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
 
@@ -520,8 +526,17 @@ DECLARE_AVX512VL_SPECIFIC_CODE(
         }
     })
 
-DECLARE_AVX512VL_SPECIFIC_CODE(
-    void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask) {
+#if USE_MULTITARGET_CODE
+
+/// Use explicit AVX512BW target instead of x86-64-v4 for better performance
+/// The generic x86-64-v4 arch seems to generate slower code for this specific workload
+_Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.1,sse4.2,popcnt,avx,avx2,fma,f16c,bmi,bmi2,avx512f,avx512cd,avx512bw,avx512dq,avx512vl\"))),apply_to=function)")
+namespace TargetSpecific::x86_64_v4
+{
+    using namespace DB::TargetSpecific::x86_64_v4;
+
+    void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
+    {
         const size_t bytes_per_fs = stride_len / 8;
         const __m512i bmask = _mm512_set1_epi16(bit_mask);
         ssize_t row_base = stride_len - 1;
@@ -563,7 +578,11 @@ DECLARE_AVX512VL_SPECIFIC_CODE(
             cur = _mm_mask_mov_epi16(cur, k8, upd);
             _mm_storeu_si128(reinterpret_cast<__m128i *>(rp), cur);
         }
-    })
+    }
+}
+_Pragma("clang attribute pop")
+
+#endif
 
 template <typename T>
 void SerializationQBit::untransposeBitPlane(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
@@ -571,18 +590,18 @@ void SerializationQBit::untransposeBitPlane(const UInt8 * __restrict src, T * __
 #if USE_MULTITARGET_CODE
     if constexpr (std::is_same_v<T, UInt64>)
     {
-        if (isArchSupported(TargetArch::AVX512F))
-            return TargetSpecific::AVX512F::untransposeBitPlaneFloat64Impl(src, dst, stride_len, bit_mask);
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat64Impl(src, dst, stride_len, bit_mask);
     }
     else if constexpr (std::is_same_v<T, UInt32>)
     {
-        if (isArchSupported(TargetArch::AVX512VL))
-            return TargetSpecific::AVX512VL::untransposeBitPlaneFloat32Impl(src, dst, stride_len, bit_mask);
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat32Impl(src, dst, stride_len, bit_mask);
     }
     else if constexpr (std::is_same_v<T, UInt16>)
     {
-        if (isArchSupported(TargetArch::AVX512VL))
-            return TargetSpecific::AVX512VL::untransposeBitPlaneBFloat16Impl(src, dst, stride_len, bit_mask);
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneBFloat16Impl(src, dst, stride_len, bit_mask);
     }
 #endif
     return TargetSpecific::Default::untransposeBitPlaneImpl(src, dst, stride_len, bit_mask);
