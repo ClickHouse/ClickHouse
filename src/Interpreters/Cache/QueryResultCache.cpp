@@ -513,12 +513,15 @@ QueryResultCache::Key::Key(
 
 bool QueryResultCache::Key::operator==(const Key & other) const
 {
-    return ast_hash == other.ast_hash;
+    return ast_hash == other.ast_hash && is_subquery == other.is_subquery;
 }
 
 size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
 {
-    return key.ast_hash.low64;
+    SipHash hash;
+    hash.update(key.ast_hash.low64);
+    hash.update(key.is_subquery);
+    return hash.get64();
 }
 
 size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
