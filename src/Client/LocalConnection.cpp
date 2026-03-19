@@ -64,35 +64,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-bool isNonReadOnlyQuery(const IAST * ast)
-{
-    if (!ast)
-        return false;
-    switch (ast->getQueryKind())
-    {
-        case IAST::QueryKind::Insert:
-        case IAST::QueryKind::Delete:
-        case IAST::QueryKind::Update:
-        case IAST::QueryKind::Create:
-        case IAST::QueryKind::Drop:
-        case IAST::QueryKind::Undrop:
-        case IAST::QueryKind::Rename:
-        case IAST::QueryKind::Alter:
-        case IAST::QueryKind::Grant:
-        case IAST::QueryKind::Revoke:
-        case IAST::QueryKind::Move:
-        case IAST::QueryKind::Optimize:
-        case IAST::QueryKind::Backup:
-        case IAST::QueryKind::Restore:
-        case IAST::QueryKind::Copy:
-            return true;
-        default:
-            return false;
-    }
-}
-}
 
 LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_, bool is_interactive_)
     : WithContext(context_)
@@ -253,11 +224,11 @@ void LocalConnection::sendQuery(
             ParserQuery parser(end, settings_ref[Setting::allow_settings_after_format_in_insert], settings_ref[Setting::implicit_select]);
             ASTPtr ast = parseQuery(parser, begin, end, "", max_query_size_val, settings_ref[Setting::max_parser_depth], settings_ref[Setting::max_parser_backtracks]);
 
-            ContextMutablePtr check_context = Context::createCopy(query_context);
-            InterpreterSetQuery::applySettingsFromQuery(ast, check_context);
-            const auto & check_settings = check_context->getSettingsRef();
-            if (check_settings[Setting::allow_experimental_detach_non_readonly_queries] && !check_settings[Setting::async_insert]
-                && ast && isNonReadOnlyQuery(ast.get()))
+            /// Apply inline SETTINGS before the detach check so they can trigger the detach path.
+            /// settings_ref is a reference to query_context, so it reflects the changes immediately.
+            InterpreterSetQuery::applySettingsFromQuery(ast, query_context);
+            if (settings_ref[Setting::allow_experimental_detach_non_readonly_queries] && !settings_ref[Setting::async_insert]
+                && ast && IAST::isNonReadOnlyQuery(ast.get()))
             {
                 const auto * insert_ast = ast->as<ASTInsertQuery>();
                 bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
