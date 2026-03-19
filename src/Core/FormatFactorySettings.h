@@ -1234,6 +1234,9 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_trim_fixed_string, false, R"(
+Trim trailing null bytes from FixedString values in text output formats. E.g. `toFixedString('John', 8)` is printed as `John` instead of `John\0\0\0\0`.
+)", 0) \
     \
     DECLARE(UInt64, input_format_allow_errors_num, 0, R"(
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).

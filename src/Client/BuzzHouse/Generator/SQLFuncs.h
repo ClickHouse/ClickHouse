@@ -729,7 +729,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCdetectCharset, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCdetectLanguage, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCdetectLanguageMixed, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCdetectProgrammingLanguage, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCdetectLanguageUnknown, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCdetectTonality, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNClemmatize, 0, 0, 2, 2),

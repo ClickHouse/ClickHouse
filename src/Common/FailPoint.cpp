@@ -160,6 +160,7 @@ static struct InitFiu
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
+    REGULAR(patch_parts_reverse_column_order) \
     PAUSEABLE_ONCE(physical_names_pause_after_metadata_alter) \
     ONCE(physical_names_throw_before_mapping_persist)
 
