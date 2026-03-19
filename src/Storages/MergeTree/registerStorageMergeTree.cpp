@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
+    extern const SettingsBool allow_experimental_physical_column_names;
 }
 
 namespace MergeTreeSetting
@@ -62,7 +63,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
-    extern const MergeTreeSettingsBool allow_experimental_physical_column_names;
 }
 
 namespace ServerSetting
@@ -923,7 +923,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (args.mode == LoadingStrictnessLevel::CREATE
         && (*storage->getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES)
     {
-        if (!(*storage->getSettings())[MergeTreeSetting::allow_experimental_physical_column_names])
+        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_physical_column_names])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Physical column names require setting `allow_experimental_physical_column_names = 1`");

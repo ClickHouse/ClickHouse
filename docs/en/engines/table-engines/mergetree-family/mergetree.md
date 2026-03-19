@@ -1261,7 +1261,13 @@ Physical column names are an experimental feature. Enable it with `allow_experim
 
 ### Enabling physical names {#enabling-physical-names}
 
-For new tables, set the `serialization_info_version` and `allow_experimental_physical_column_names` table settings:
+First, enable the experimental setting at session level:
+
+```sql
+SET allow_experimental_physical_column_names = 1;
+```
+
+For new tables, set the `serialization_info_version` table setting:
 
 ```sql
 CREATE TABLE example
@@ -1272,9 +1278,7 @@ CREATE TABLE example
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS
-    serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1;
+SETTINGS serialization_info_version = 'with_physical_names';
 ```
 
 For existing tables, also enable `activate_physical_names_for_existing_tables`.
@@ -1283,7 +1287,6 @@ Physical names are activated on the first compatible `ALTER` (`ADD COLUMN`, `DRO
 ```sql
 ALTER TABLE example MODIFY SETTING
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 -- This ALTER activates physical names and is already metadata-only:

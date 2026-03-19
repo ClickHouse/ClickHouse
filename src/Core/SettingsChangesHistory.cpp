@@ -59,6 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
             {"allow_statistics", false, true, "Column statistics are now GA"},
+            {"allow_experimental_physical_column_names", false, false, "New setting to gate persistent physical column names for MergeTree"},
             {"allow_experimental_statistics", false, true, "Column statistics are now GA"},
             {"allow_experimental_expire_snapshots", false, false, "New setting."},
             {"iceberg_expire_default_min_snapshots_to_keep", 1, 1, "New setting."},
@@ -1101,7 +1102,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
             {"serialization_info_version", "with_types", "with_types", "Add `with_physical_names` option for persistent physical column names"},
             {"activate_physical_names_for_existing_tables", false, false, "New setting"},
-            {"allow_experimental_physical_column_names", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {

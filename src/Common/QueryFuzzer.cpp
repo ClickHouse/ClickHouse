@@ -703,7 +703,6 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                "add_minmax_index_for_string_columns",
                "add_minmax_index_for_temporal_columns",
                "allow_coalescing_columns_in_partition_or_order_key",
-               "allow_experimental_physical_column_names",
                "allow_experimental_reverse_key",
                "allow_floating_point_partition_key",
                "allow_nullable_key",

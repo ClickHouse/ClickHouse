@@ -1,4 +1,6 @@
 -- Test 1: serialization.json is keyed by physical name, not logical name
+SET allow_experimental_physical_column_names = 1;
+
 SELECT 'Test 1: serialization.json is keyed by physical name';
 DROP TABLE IF EXISTS t_phys_ser_json;
 
@@ -12,7 +14,6 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 ALTER TABLE t_phys_ser_json ADD COLUMN c String;
@@ -42,8 +43,7 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1;
+    serialization_info_version = 'with_physical_names';
 
 INSERT INTO t_phys_colnames VALUES (1, 'one');
 ALTER TABLE t_phys_colnames RENAME COLUMN b TO d;
@@ -101,7 +101,6 @@ INSERT INTO t_phys_first_rename VALUES (1, 'one');
 
 ALTER TABLE t_phys_first_rename MODIFY SETTING
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 -- The first RENAME activates physical names AND is metadata-only (no mutation)
@@ -132,7 +131,6 @@ INSERT INTO t_phys_first_drop VALUES (1, 'one', 10);
 
 ALTER TABLE t_phys_first_drop MODIFY SETTING
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 -- The first DROP activates physical names AND is metadata-only
@@ -157,7 +155,6 @@ ORDER BY tuple()
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_rename_pk VALUES (1, 'one');
@@ -193,7 +190,6 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 1000000000,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_compact_mut VALUES (1, 10);
@@ -223,7 +219,6 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 ALTER TABLE t_phys_proj_merge ADD PROJECTION p_sum (SELECT a, sum(c) GROUP BY a);
@@ -263,7 +258,6 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 ALTER TABLE t_phys_sysparts ADD COLUMN c UInt64 DEFAULT 0;
@@ -301,7 +295,6 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 100,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 -- Small insert -> compact part
@@ -336,7 +329,6 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_skip_idx VALUES (1, 'hello world');
@@ -370,7 +362,6 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 ALTER TABLE t_phys_proj_sys ADD PROJECTION p_sum (SELECT a, sum(c) GROUP BY a);
@@ -394,7 +385,6 @@ CREATE TABLE t_check_rename_ser (a UInt64, b Nullable(String))
 ENGINE = MergeTree ORDER BY a
 SETTINGS min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 INSERT INTO t_check_rename_ser SELECT number, if(number % 10 = 0, toString(number), NULL) FROM numbers(1000);
 ALTER TABLE t_check_rename_ser RENAME COLUMN b TO d;

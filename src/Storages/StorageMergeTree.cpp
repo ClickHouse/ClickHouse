@@ -86,6 +86,7 @@ namespace FailPoints
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_physical_column_names;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -121,7 +122,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool activate_physical_names_for_existing_tables;
-    extern const MergeTreeSettingsBool allow_experimental_physical_column_names;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
 
@@ -435,8 +435,7 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
 
     bool settings_enable_physical_names =
         effective_new_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES
-        && effective_new_settings[MergeTreeSetting::activate_physical_names_for_existing_tables]
-        && effective_new_settings[MergeTreeSetting::allow_experimental_physical_column_names];
+        && effective_new_settings[MergeTreeSetting::activate_physical_names_for_existing_tables];
 
     bool has_compatible_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
     {
@@ -617,6 +616,12 @@ void StorageMergeTree::alter(
     commands.apply(new_metadata, local_context);
 
     auto pn_plan = preparePhysicalNameMappingForAlter(commands, old_metadata, new_metadata);
+
+    if (pn_plan.physical_names_active && !hasPhysicalNameMapping()
+        && !local_context->getSettingsRef()[Setting::allow_experimental_physical_column_names])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Physical column names require setting `allow_experimental_physical_column_names = 1`");
 
     auto maybe_mutation_commands = commands.getMutationCommands(
         old_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context,

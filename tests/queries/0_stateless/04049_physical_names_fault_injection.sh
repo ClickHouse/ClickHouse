@@ -7,6 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_physical_column_names=1"
+
 # Test 1: INSERT concurrent with metadata-only RENAME
 # Uses the physical_names_pause_after_metadata_alter failpoint to pause
 # ALTER RENAME after both the physical name mapping and metadata are committed
@@ -26,8 +28,7 @@ $CLICKHOUSE_CLIENT --query "
     SETTINGS
         min_bytes_for_wide_part = 0,
         serialization_info_version = 'with_physical_names',
-        activate_physical_names_for_existing_tables = 1,
-        allow_experimental_physical_column_names = 1;
+        activate_physical_names_for_existing_tables = 1;
 "
 
 echo "INSERT INTO t_fp_concurrent VALUES (1, 'before_rename')" | $CLICKHOUSE_CLIENT
@@ -65,8 +66,7 @@ $CLICKHOUSE_CLIENT --query "
     SETTINGS
         min_bytes_for_wide_part = 0,
         serialization_info_version = 'with_physical_names',
-        activate_physical_names_for_existing_tables = 1,
-        allow_experimental_physical_column_names = 1;
+        activate_physical_names_for_existing_tables = 1;
 "
 
 echo "INSERT INTO t_fp_crash VALUES (1, 'safe')" | $CLICKHOUSE_CLIENT
@@ -107,8 +107,7 @@ $CLICKHOUSE_CLIENT --query "
     SETTINGS
         min_bytes_for_wide_part = 0,
         serialization_info_version = 'with_physical_names',
-        activate_physical_names_for_existing_tables = 1,
-        allow_experimental_physical_column_names = 1;
+        activate_physical_names_for_existing_tables = 1;
 
     SYSTEM STOP MERGES t_fp_merge;
 "
@@ -155,8 +154,7 @@ $CLICKHOUSE_CLIENT --query "
     SETTINGS
         min_bytes_for_wide_part = 0,
         serialization_info_version = 'with_physical_names',
-        activate_physical_names_for_existing_tables = 1,
-        allow_experimental_physical_column_names = 1;
+        activate_physical_names_for_existing_tables = 1;
 "
 
 echo "INSERT INTO t_fp_drop VALUES (1, 'keep_me')" | $CLICKHOUSE_CLIENT

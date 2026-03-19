@@ -1,3 +1,5 @@
+SET allow_experimental_physical_column_names = 1;
+
 SELECT 'Test 1: compact parts with physical names after RENAME';
 
 DROP TABLE IF EXISTS t_phys_compact;
@@ -13,7 +15,6 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 1000000000,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_compact VALUES (1, 'one', 10);
@@ -56,7 +57,6 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
-    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_minmax VALUES (1, 'one', '2024-01-01');
