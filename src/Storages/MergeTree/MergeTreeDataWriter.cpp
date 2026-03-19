@@ -20,7 +20,9 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
+#include <Storages/MergeTree/VerticalInsertTask.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -92,6 +94,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsUInt64 enable_vertical_insert_algorithm;
+    extern const MergeTreeSettingsUInt64 vertical_insert_algorithm_min_rows_to_activate;
+    extern const MergeTreeSettingsUInt64 vertical_insert_algorithm_min_columns_to_activate;
+    extern const MergeTreeSettingsUInt64 vertical_insert_algorithm_min_bytes_to_activate;
+    extern const MergeTreeSettingsUInt64 vertical_insert_algorithm_columns_batch_size;
+    extern const MergeTreeSettingsUInt64 vertical_insert_algorithm_columns_batch_bytes;
 }
 
 namespace ErrorCodes
@@ -607,14 +615,16 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     Block & block = *block_with_partition.block;
     MergeTreePartition & partition = block_with_partition.partition;
 
-    auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    auto storage_columns = metadata_snapshot->getColumns().getAllPhysical();
+    auto columns = storage_columns.filter(block.getNames());
 
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
     const auto & global_settings = context->getSettingsRef();
     const auto & data_settings = data.getSettings();
-    bool optimize_on_insert = !isPatchPartitionId(partition_id)
+    const bool is_patch_partition = isPatchPartitionId(partition_id);
+    bool optimize_on_insert = !is_patch_partition
         && global_settings[Setting::optimize_on_insert]
         && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
@@ -883,25 +893,67 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
+    /// Patch parts rely on patch-key ordering; avoid vertical insert for them.
+    /// Check if vertical insert should be used
+    const bool use_vertical_insert = !is_patch_partition
+        && shouldUseVerticalInsert(block, storage_columns, data.merging_params, indices, data_settings, metadata_snapshot, new_data_part->getType());
+
     IMergedBlockOutputStream::GatheredData gathered_data;
-    gathered_data.statistics = std::move(statistics);
 
-    auto out = std::make_unique<MergedBlockOutputStream>(
-        new_data_part,
-        data_settings,
-        metadata_snapshot,
-        columns,
-        indices,
-        compression_codec,
-        std::move(index_granularity_ptr),
-        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
-        block.bytes(),
-        /*reset_columns=*/ false,
-        /*blocks_are_granules_size=*/ false,
-        context->getWriteSettings(),
-        static_cast<WrittenOffsetSubstreams *>(nullptr));
+    std::unique_ptr<MergedBlockOutputStream> out;
 
-    out->writeWithPermutation(block, perm_ptr);
+    if (use_vertical_insert)
+    {
+        LOG_DEBUG(log, "Using vertical insert for part {} ({} rows, {} columns)",
+            new_data_part->name, block.rows(), columns.size());
+
+        VerticalInsertTask::Settings vi_settings{
+            .columns_batch_size = (*data_settings)[MergeTreeSetting::vertical_insert_algorithm_columns_batch_size],
+            .columns_batch_bytes = (*data_settings)[MergeTreeSetting::vertical_insert_algorithm_columns_batch_bytes],
+        };
+
+        VerticalInsertTask task(
+            data,
+            data_settings,
+            metadata_snapshot,
+            new_data_part,
+            block,
+            perm_ptr,
+            std::move(indices),
+            std::move(statistics),
+            compression_codec,
+            std::move(index_granularity_ptr),
+            vi_settings,
+            context);
+
+        task.execute();
+
+        /// Get the output stream and checksums from vertical insert task
+        out = task.releaseOutputStream();
+        gathered_data.checksums = std::move(task.getVerticalChecksums());
+        gathered_data.columns_substreams = std::move(task.getVerticalColumnsSubstreams());
+    }
+    else
+    {
+        gathered_data.statistics = std::move(statistics);
+
+        out = std::make_unique<MergedBlockOutputStream>(
+            new_data_part,
+            data_settings,
+            metadata_snapshot,
+            columns,
+            indices,
+            compression_codec,
+            std::move(index_granularity_ptr),
+            (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
+            block.bytes(),
+            /*reset_columns=*/ false,
+            /*blocks_are_granules_size=*/ false,
+            context->getWriteSettings(),
+            static_cast<WrittenOffsetSubstreams *>(nullptr));
+
+        out->writeWithPermutation(block, perm_ptr);
+    }
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
@@ -924,10 +976,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     out->finalizeIndexGranularity();
+    /// For vertical insert, pass the full columns list so finalization covers all columns
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         gathered_data,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert]);
+        (*data_settings)[MergeTreeSetting::fsync_after_insert],
+        use_vertical_insert ? &columns : nullptr);
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -935,6 +989,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->getBytesOnDisk());
+
+    if (use_vertical_insert)
+    {
+        size_t open_streams = 0;
+        for (const auto & stream : temp_part->streams)
+            open_streams += stream.stream->getNumberOfOpenStreams();
+        temp_part->delayed_streams_weight = open_streams;
+    }
 
     return temp_part;
 }

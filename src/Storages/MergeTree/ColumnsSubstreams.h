@@ -43,6 +43,8 @@ public:
     size_t getTotalSubstreams() const { return total_substreams; }
     bool empty() const { return !total_substreams; }
 
+    const std::vector<std::pair<String, std::vector<String>>> & getColumnsSubstreams() const { return columns_substreams; }
+
     /// Check that we have substreams for all columns and they have the same order as in provided list.
     void validateColumns(const std::vector<String> & columns) const;
 

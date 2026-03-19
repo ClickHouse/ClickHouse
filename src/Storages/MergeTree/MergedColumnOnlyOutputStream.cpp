@@ -69,6 +69,15 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     new_serialization_infos.add(block);
 }
 
+void MergedColumnOnlyOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
+{
+    if (!block.rows())
+        return;
+
+    writer->write(block, permutation);
+    new_serialization_infos.add(block);
+}
+
 void MergedColumnOnlyOutputStream::finalizeIndexGranularity()
 {
     writer->finalizeIndexGranularity();
