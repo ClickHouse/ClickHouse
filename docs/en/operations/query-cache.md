@@ -173,7 +173,7 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 
 To remove only entries with tag `tag` from the query cache, you can use statement `SYSTEM CLEAR QUERY CACHE TAG 'tag'`.
 
-## Subquery Caching
+## Subquery Caching {#subquery-caching}
 
 By default, `use_query_cache` on the outer query does not propagate to subqueries. This means each subquery must explicitly opt in to caching:
 
