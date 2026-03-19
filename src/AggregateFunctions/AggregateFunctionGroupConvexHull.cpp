@@ -32,7 +32,7 @@ The function uses [Boost.Geometry](https://www.boost.org/doc/libs/release/libs/g
 See also:
 - [Geo Types](/sql-reference/data-types/geo)
     )";
-    FunctionDocumentation::Syntax syntax = "groupConvexHull(geometry [, correct_geometry])";
+    FunctionDocumentation::Syntax syntax = "groupConvexHull([prune_interval])(geometry [, correct_geometry])";
     FunctionDocumentation::Arguments arguments
         = {{"geometry",
             "Column to compute the convex hull of.",
@@ -41,7 +41,11 @@ See also:
             "Optional. A [UInt8](/sql-reference/data-types/int-uint) value that controls whether `boost::geometry::correct` is applied to "
             "input geometries (e.g. ensuring correct ring orientation and closure). `1` (default) enables correction, `0` disables it.",
             {"UInt8"}}};
-    FunctionDocumentation::Parameters doc_parameters = {};
+    FunctionDocumentation::Parameters doc_parameters
+        = {{"prune_interval",
+            "Optional. The number of accumulated geometries after which interior points are pruned via convex hull recomputation to bound "
+            "memory growth. Default: `200`."}};
+
     FunctionDocumentation::ReturnedValue returned_value
         = {"A Ring representing the outer boundary of the convex hull of all input geometries.", {"Ring"}};
     FunctionDocumentation::Examples examples
@@ -104,7 +108,32 @@ SELECT wkt(groupConvexHull(polygon)) AS hull FROM geo_polygons;
         "groupConvexHull",
         {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
          {
-             assertNoParameters(name, parameters);
+             if (parameters.size() > 1)
+                 throw Exception(
+                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                     "Aggregate function {} requires at most 1 parameter, got {}",
+                     name,
+                     parameters.size());
+
+             size_t prune_interval = AggregateFunctionGroupConvexHull<CartesianPoint>::kDefaultPruneInterval;
+             if (parameters.size() == 1)
+             {
+                 auto type = parameters[0].getType();
+                 if (type != Field::Types::Int64 && type != Field::Types::UInt64)
+                     throw Exception(
+                         ErrorCodes::BAD_ARGUMENTS,
+                         "Parameter prune_interval for aggregate function {} should be a positive integer",
+                         name);
+
+                 if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() <= 0)
+                     || (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
+                     throw Exception(
+                         ErrorCodes::BAD_ARGUMENTS,
+                         "Parameter prune_interval for aggregate function {} should be a positive integer",
+                         name);
+
+                 prune_interval = parameters[0].safeGet<UInt64>();
+             }
 
              if (argument_types.size() != 1 && argument_types.size() != 2)
                  throw Exception(
@@ -121,7 +150,7 @@ SELECT wkt(groupConvexHull(polygon)) AS hull FROM geo_polygons;
                          ErrorCodes::BAD_ARGUMENTS, "Second argument (correct_geometry) for aggregate function {} must be UInt8", name);
              }
 
-             return std::make_shared<AggregateFunctionGroupConvexHull<CartesianPoint>>(argument_types, correct_geometry);
+             return std::make_shared<AggregateFunctionGroupConvexHull<CartesianPoint>>(argument_types, correct_geometry, prune_interval);
          },
          documentation,
          AggregateFunctionProperties{}});

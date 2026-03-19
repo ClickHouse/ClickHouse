@@ -506,3 +506,53 @@ CREATE TABLE geo_null (g Geometry) ENGINE = Memory;
 INSERT INTO geo_null VALUES (NULL);
 SELECT groupConvexHull(g) FROM geo_null;
 DROP TABLE geo_null;
+
+-- =============================================================================
+-- prune_interval parameter
+-- =============================================================================
+
+-- Default (no parameter) should work as before
+CREATE TABLE geo (p Point) ENGINE = Memory;
+INSERT INTO geo VALUES ((0, 0)), ((10, 0)), ((10, 10)), ((0, 10));
+SELECT 'prune_interval default:',
+    polygonsEqualsCartesian(
+        [groupConvexHull(p)],
+        readWKTPolygon('POLYGON((0 0,0 10,10 10,10 0,0 0))'))
+FROM geo;
+DROP TABLE geo;
+
+-- Explicit prune_interval parameter
+CREATE TABLE geo (p Point) ENGINE = Memory;
+INSERT INTO geo VALUES ((0, 0)), ((10, 0)), ((10, 10)), ((0, 10));
+SELECT 'prune_interval=5000:',
+    polygonsEqualsCartesian(
+        [groupConvexHull(5000)(p)],
+        readWKTPolygon('POLYGON((0 0,0 10,10 10,10 0,0 0))'))
+FROM geo;
+DROP TABLE geo;
+
+-- Small prune_interval triggers frequent pruning
+CREATE TABLE geo (p Point) ENGINE = Memory;
+INSERT INTO geo VALUES ((0, 0)), ((10, 0)), ((10, 10)), ((0, 10)), ((5, 5));
+SELECT 'prune_interval=2:',
+    polygonsEqualsCartesian(
+        [groupConvexHull(2)(p)],
+        readWKTPolygon('POLYGON((0 0,0 10,10 10,10 0,0 0))'))
+FROM geo;
+DROP TABLE geo;
+
+-- prune_interval with correct_geometry argument
+CREATE TABLE geo (p Point) ENGINE = Memory;
+INSERT INTO geo VALUES ((0, 0)), ((10, 0)), ((10, 10)), ((0, 10));
+SELECT 'prune_interval=100 correct=1:',
+    polygonsEqualsCartesian(
+        [groupConvexHull(100)(p, toUInt8(1))],
+        readWKTPolygon('POLYGON((0 0,0 10,10 10,10 0,0 0))'))
+FROM geo;
+DROP TABLE geo;
+
+-- Negative tests for prune_interval parameter
+SELECT groupConvexHull(0)(p) FROM (SELECT (0.,0.)::Point AS p); -- { serverError BAD_ARGUMENTS }
+SELECT groupConvexHull(-1)(p) FROM (SELECT (0.,0.)::Point AS p); -- { serverError BAD_ARGUMENTS }
+SELECT groupConvexHull('abc')(p) FROM (SELECT (0.,0.)::Point AS p); -- { serverError BAD_ARGUMENTS }
+SELECT groupConvexHull(1, 2)(p) FROM (SELECT (0.,0.)::Point AS p); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
