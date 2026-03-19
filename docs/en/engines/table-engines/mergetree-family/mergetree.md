@@ -1251,7 +1251,7 @@ ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
 By default, MergeTree stores each column's data in files named after the column itself (e.g. `name.bin`, `name.mrk2`).
 This means that schema changes such as `RENAME COLUMN` or `DROP COLUMN` require rewriting every data part on disk through a mutation, which can be expensive for large tables.
 
-When the `serialization_info_version` setting is set to `with_physical_names`, each column is assigned a stable, counter-allocated physical name (e.g. `0`, `1`, `2`) that is used for on-disk file names.
+When the `serialization_info_version` setting is set to `with_physical_names`, each column is assigned a stable, counter-allocated physical name (e.g. `1`, `2`, `3`) that is used for on-disk file names.
 A persistent mapping from logical column names to physical names is stored in a `physical_names.json` file alongside the table metadata.
 This decouples file names from logical column names and enables metadata-only `RENAME COLUMN` and `DROP COLUMN` operations.
 

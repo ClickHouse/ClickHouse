@@ -34,6 +34,14 @@ constexpr auto KEY_MAPPING = "mapping";
 /// parses as a valid UInt64, then returns max + 1.  This prevents collisions
 /// when a table already has numeric column names like "2" or "10" — the
 /// counter must start above them.
+UInt64 safeIncrementPhysicalColumnId(UInt64 max_id)
+{
+    if (max_id == std::numeric_limits<UInt64>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Physical column name counter overflow: the maximum value {} has been reached", max_id);
+    return max_id + 1;
+}
+
 UInt64 getNextPhysicalColumnId(const NamesAndTypesList & columns)
 {
     UInt64 max_numeric_physical_name = 0;
@@ -49,7 +57,7 @@ UInt64 getNextPhysicalColumnId(const NamesAndTypesList & columns)
             max_numeric_physical_name = std::max(max_numeric_physical_name, value);
     }
 
-    return max_numeric_physical_name + 1;
+    return safeIncrementPhysicalColumnId(max_numeric_physical_name);
 }
 
 UInt64 getNextPhysicalColumnId(const std::unordered_map<String, String> & logical_to_physical)
@@ -66,7 +74,7 @@ UInt64 getNextPhysicalColumnId(const std::unordered_map<String, String> & logica
             max_numeric_physical_name = std::max(max_numeric_physical_name, value);
     }
 
-    return max_numeric_physical_name + 1;
+    return safeIncrementPhysicalColumnId(max_numeric_physical_name);
 }
 
 [[noreturn]] void throwMissingLogicalName(const String & logical_name)

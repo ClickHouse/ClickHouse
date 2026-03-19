@@ -763,8 +763,9 @@ void StorageMergeTree::alter(
                     });
 
                     setPhysicalNameMapping(std::move(*pn_plan.new_mapping));
-                    writePhysicalNameMappingToDisk();
                     mapping_was_changed = true;
+
+                    writePhysicalNameMappingToDisk();
 
                     fiu_do_on(FailPoints::physical_names_throw_after_mapping_persist,
                     {
