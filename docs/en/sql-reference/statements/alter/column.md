@@ -98,10 +98,10 @@ ALTER TABLE visits DROP COLUMN browser
 RENAME COLUMN [IF EXISTS] name to new_name
 ```
 
-Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
+Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
 
 :::note
-By default, `RENAME COLUMN` on MergeTree tables creates a mutation that rewrites every data part to update file names. When [physical column names](/engines/table-engines/mergetree-family/mergetree#physical-column-names) are active, `RENAME COLUMN` is a metadata-only operation — no mutation is created and no data files are rewritten.
+The cost of `RENAME COLUMN` depends on the table engine. For most engines the operation is metadata-only and completes almost instantly. For `MergeTree`-family tables, by default a mutation is created that rewrites every data part to update file names, which can be expensive for large tables. When [physical column names](/engines/table-engines/mergetree-family/mergetree#physical-column-names) are active, `RENAME COLUMN` becomes a metadata-only operation with no mutation.
 :::
 
 **NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`.

@@ -11,7 +11,8 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names';
+    serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1;
 
 INSERT INTO t_physical_names_basic VALUES (1, 'one');
 ALTER TABLE t_physical_names_basic ADD COLUMN c Nullable(String);
@@ -38,6 +39,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     enable_block_number_column = 1,
     enable_block_offset_column = 1;
 
@@ -78,7 +80,8 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names';
+    serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1;
 
 INSERT INTO t_physical_names_complex VALUES ([(1, 'a'), (2, 'b')], (3, 'c'), map('k', 4));
 SELECT n.x, n.y, t.x, t.y, mapKeys(m), mapValues(m) FROM t_physical_names_complex;

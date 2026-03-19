@@ -11,7 +11,8 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names';
+    serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1;
 
 INSERT INTO t_physical_merge VALUES (1, 'one');
 INSERT INTO t_physical_merge VALUES (2, 'two');
@@ -48,7 +49,8 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 1000000000,
-    serialization_info_version = 'with_physical_names';
+    serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1;
 
 INSERT INTO t_physical_compact VALUES (1, 'one');
 
@@ -81,7 +83,8 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names';
+    serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1;
 
 ALTER TABLE t_physical_mutation ADD COLUMN c UInt32 DEFAULT 0;
 INSERT INTO t_physical_mutation (a, b, c) VALUES (1, 'one', 10);

@@ -12,6 +12,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_instant_rename VALUES (1, 'one');
@@ -56,6 +57,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_instant_drop VALUES (1, 'one', 10);
@@ -91,6 +93,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_drop_readd VALUES (1, 'old_value');
@@ -122,6 +125,7 @@ INSERT INTO t_lazy_activate VALUES (1, 'one');
 
 ALTER TABLE t_lazy_activate MODIFY SETTING
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 -- Activation happens on first compatible ALTER
@@ -152,6 +156,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_modify_still_mutates VALUES (1, 10);

@@ -12,6 +12,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_chain VALUES (1, 'hello');
@@ -48,6 +49,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_multi_op VALUES (1, 'one', 10);
@@ -85,6 +87,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_rename_drop VALUES (1, 'one', 10);
@@ -116,6 +119,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_nullable VALUES (1, 'hello');
@@ -146,6 +150,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 ALTER TABLE t_phys_empty RENAME COLUMN b TO d;
@@ -172,6 +177,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 ALTER TABLE t_phys_counter ADD COLUMN c1 UInt64 DEFAULT 0;
@@ -210,6 +216,7 @@ ORDER BY tuple()
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_detach VALUES (1, 'hello');
@@ -242,6 +249,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_complex_types VALUES (1, {'k1': 10, 'k2': 20}, (100, 'hello'));
@@ -273,6 +281,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_dedup VALUES (1, 'hello');
@@ -303,6 +312,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_defaults (a, b) VALUES (1, 10);
@@ -323,6 +333,7 @@ DROP TABLE IF EXISTS t_phys_flat_nested;
 CREATE TABLE t_phys_flat_nested (a UInt64) ENGINE = MergeTree ORDER BY a
     SETTINGS min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 INSERT INTO t_phys_flat_nested VALUES (1);
 ALTER TABLE t_phys_flat_nested ADD COLUMN n Nested(x UInt64, y String); -- { serverError NOT_IMPLEMENTED }
@@ -334,6 +345,7 @@ DROP TABLE IF EXISTS t_phys_drop_readd;
 CREATE TABLE t_phys_drop_readd (a UInt64, b String) ENGINE = MergeTree ORDER BY a
     SETTINGS min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 INSERT INTO t_phys_drop_readd VALUES (1, 'old_data');
 ALTER TABLE t_phys_drop_readd DROP COLUMN b, ADD COLUMN b String DEFAULT 'new_default';
@@ -360,6 +372,7 @@ ENGINE = MergeTree ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 1000000000,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1,
     escape_variant_subcolumn_filenames = 0;
 

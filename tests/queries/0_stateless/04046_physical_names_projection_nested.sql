@@ -13,6 +13,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 ALTER TABLE t_phys_proj ADD PROJECTION p_sum (SELECT a, sum(c) GROUP BY a);
@@ -41,6 +42,7 @@ DROP TABLE IF EXISTS t_phys_proj_flat;
 CREATE TABLE t_phys_proj_flat (a UInt64, b String) ENGINE = MergeTree ORDER BY a
     SETTINGS min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 ALTER TABLE t_phys_proj_flat ADD COLUMN n Nested(x UInt64, y String); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE t_phys_proj_flat;
@@ -61,6 +63,7 @@ ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 INSERT INTO t_phys_nested_nf VALUES (1, 'hello', [(10, 'a'), (20, 'b')]);

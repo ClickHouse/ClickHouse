@@ -282,7 +282,14 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, activate_physical_names_for_existing_tables, false, R"(
     Enables activation of persistent physical column names for existing MergeTree-family tables.
+    Requires `allow_experimental_physical_column_names` to be set.
     )", 0) \
+    DECLARE(Bool, allow_experimental_physical_column_names, false, R"(
+    Enables the use of persistent physical column names for MergeTree-family tables.
+    When enabled, allows setting `serialization_info_version = 'with_physical_names'`
+    which decouples on-disk file names from logical column names, making `RENAME COLUMN`
+    and `DROP COLUMN` metadata-only operations.
+    )", EXPERIMENTAL) \
     DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
     Controls the serialization format for top-level `String` columns.
 

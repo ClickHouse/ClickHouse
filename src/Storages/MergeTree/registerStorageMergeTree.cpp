@@ -62,6 +62,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsBool allow_experimental_physical_column_names;
 }
 
 namespace ServerSetting
@@ -922,6 +923,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (args.mode == LoadingStrictnessLevel::CREATE
         && (*storage->getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES)
     {
+        if (!(*storage->getSettings())[MergeTreeSetting::allow_experimental_physical_column_names])
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Physical column names require setting `allow_experimental_physical_column_names = 1`");
+
         auto physical_name_mapping = PhysicalNameMapping::createForNewTable(metadata.getColumns().getAllPhysical());
         storage->setPhysicalNameMapping(std::move(physical_name_mapping));
         storage->writePhysicalNameMappingToDisk();

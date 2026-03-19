@@ -217,6 +217,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool activate_physical_names_for_existing_tables;
+    extern const MergeTreeSettingsBool allow_experimental_physical_column_names;
     extern const MergeTreeSettingsBool allow_experimental_reverse_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
@@ -4300,7 +4301,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         bool settings_enable_pn =
             effective_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES
-            && effective_settings[MergeTreeSetting::activate_physical_names_for_existing_tables];
+            && effective_settings[MergeTreeSetting::activate_physical_names_for_existing_tables]
+            && effective_settings[MergeTreeSetting::allow_experimental_physical_column_names];
         bool has_compat_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
         {
             return c.type == AlterCommand::RENAME_COLUMN || c.type == AlterCommand::DROP_COLUMN || c.type == AlterCommand::ADD_COLUMN;

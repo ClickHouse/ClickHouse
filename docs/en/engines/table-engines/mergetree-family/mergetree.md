@@ -1255,9 +1255,13 @@ When the `serialization_info_version` setting is set to `with_physical_names`, e
 A persistent mapping from logical column names to physical names is stored in a `physical_names.json` file alongside the table metadata.
 This decouples file names from logical column names and enables metadata-only `RENAME COLUMN` and `DROP COLUMN` operations.
 
+:::note
+Physical column names are an experimental feature. Enable it with `allow_experimental_physical_column_names = 1`.
+:::
+
 ### Enabling physical names {#enabling-physical-names}
 
-For new tables, set the `serialization_info_version` table setting:
+For new tables, set the `serialization_info_version` and `allow_experimental_physical_column_names` table settings:
 
 ```sql
 CREATE TABLE example
@@ -1268,7 +1272,9 @@ CREATE TABLE example
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS serialization_info_version = 'with_physical_names';
+SETTINGS
+    serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1;
 ```
 
 For existing tables, also enable `activate_physical_names_for_existing_tables`.
@@ -1277,6 +1283,7 @@ Physical names are activated on the first compatible `ALTER` (`ADD COLUMN`, `DRO
 ```sql
 ALTER TABLE example MODIFY SETTING
     serialization_info_version = 'with_physical_names',
+    allow_experimental_physical_column_names = 1,
     activate_physical_names_for_existing_tables = 1;
 
 -- This ALTER activates physical names and is already metadata-only:
@@ -1299,6 +1306,10 @@ Once physical names are active:
 - **`MODIFY COLUMN`** (type change) still creates a mutation as before, since the data must be rewritten.
 
 - **`ADD COLUMN`** allocates a new counter-based physical name for the column.
+
+### Limitations {#physical-names-limitations}
+
+- **Flattened `Nested` columns are not supported.** Adding a `Nested` column when `flatten_nested = 1` (the default) is rejected with a `NOT_IMPLEMENTED` error because flattened nested columns share array offset streams, which conflicts with counter-based physical names. Set `flatten_nested = 0` before adding `Nested` columns to a table with physical names.
 
 ### Checking physical names {#checking-physical-names}
 

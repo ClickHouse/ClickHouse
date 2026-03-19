@@ -1101,6 +1101,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
             {"serialization_info_version", "with_types", "with_types", "Add `with_physical_names` option for persistent physical column names"},
             {"activate_physical_names_for_existing_tables", false, false, "New setting"},
+            {"allow_experimental_physical_column_names", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {

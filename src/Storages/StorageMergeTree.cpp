@@ -121,6 +121,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool activate_physical_names_for_existing_tables;
+    extern const MergeTreeSettingsBool allow_experimental_physical_column_names;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
 
@@ -434,7 +435,8 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
 
     bool settings_enable_physical_names =
         effective_new_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES
-        && effective_new_settings[MergeTreeSetting::activate_physical_names_for_existing_tables];
+        && effective_new_settings[MergeTreeSetting::activate_physical_names_for_existing_tables]
+        && effective_new_settings[MergeTreeSetting::allow_experimental_physical_column_names];
 
     bool has_compatible_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
     {
