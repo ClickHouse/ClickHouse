@@ -280,7 +280,12 @@ void Set::appendSetElements(SetKeyColumns & holder)
     {
         auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
         if (set_elements[i]->empty())
-            set_elements[i] = filtered_column;
+            /// Use IColumn::mutate to ensure the column is independently owned.
+            /// filter() may return a column with sub-columns shared (via COW) with
+            /// the source chunk. Subsequent insertRangeFrom/insert calls modify through
+            /// assumeMutableRef, which would race with other pipeline threads reading
+            /// the same shared sub-columns.
+            set_elements[i] = IColumn::mutate(std::move(filtered_column));
         else
             set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
         if (transform_null_in && holder.null_map_holder)
