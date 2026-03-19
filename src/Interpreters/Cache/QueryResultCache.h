@@ -84,7 +84,7 @@ public:
         /// The SELECT query as plain string, displayed in SYSTEM.QUERY_CACHE. Stored explicitly, i.e. not constructed from the AST, for the
         /// sole reason that QueryResultCache-related SETTINGS are pruned from the AST (see removeQueryResultCacheSettings()) which would otherwise look
         /// ugly in SYSTEM.QUERY_CACHE.
-        const String query_string;
+        String query_string;
 
         /// ID of the query.
         const String query_id;

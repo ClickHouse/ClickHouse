@@ -376,9 +376,10 @@ ASTPtr removeTableAliases(ASTPtr ast)
     return ast;
 }
 
-IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery)
+IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery, const bool already_cloned = false)
 {
-    ast = ast->clone();
+    if (!already_cloned)
+        ast = ast->clone();
     ast = removeQueryResultCacheSettings(ast);
     if (is_subquery)
         ast = removeTableAliases(ast);
@@ -403,18 +404,21 @@ IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Set
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
 
-    /// Some specific settings are added to subqueries (extremes 0, max_result_bytes 0, max_result_rows 0),
-    /// however non subqueries don't have this settings in settings.changes() and therefore don't match in cache.
-    /// Try to also add default values for extremes, max_result_bytes, max_result_rows from settings.
+    /// The Planner forcibly sets `extremes`, `max_result_bytes`, `max_result_rows` for subqueries, which makes them
+    /// appear in `settings.changes()`. Non-subquery executions of the same AST typically don't have these in their
+    /// changed settings. To ensure cache hits between subquery writes and subquery reads, normalize by always
+    /// including the default values of these settings for subqueries.
+    if (is_subquery)
+    {
+        if (!changed_settings.tryGet("extremes"))
+            changed_settings_sorted.push_back({"extremes", settings[Setting::extremes].toString()});
 
-    if (!changed_settings.tryGet("extremes"))
-        changed_settings_sorted.push_back({"extremes", settings[Setting::extremes].toString()});
+        if (!changed_settings.tryGet("max_result_bytes"))
+            changed_settings_sorted.push_back({"max_result_bytes", settings[Setting::max_result_bytes].toString()});
 
-    if (!changed_settings.tryGet("max_result_bytes"))
-        changed_settings_sorted.push_back({"max_result_bytes", settings[Setting::max_result_bytes].toString()});
-
-    if (!changed_settings.tryGet("max_result_rows"))
-        changed_settings_sorted.push_back({"max_result_rows", settings[Setting::max_result_rows].toString()});
+        if (!changed_settings.tryGet("max_result_rows"))
+            changed_settings_sorted.push_back({"max_result_rows", settings[Setting::max_result_rows].toString()});
+    }
 
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & setting : changed_settings_sorted)
@@ -429,6 +433,24 @@ IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Set
 String queryStringFromAST(ASTPtr ast)
 {
     return ast->formatForLogging();
+}
+
+/// For subqueries, clones the AST once, strips aliases, and returns both hash and query string from the cleaned AST.
+/// For non-subqueries, computes hash (which clones internally) and query string from the original AST.
+std::pair<IASTHash, String> calculateAstHashAndQueryString(
+    ASTPtr ast, const String & current_database, const Settings & settings, bool is_subquery)
+{
+    if (is_subquery)
+    {
+        auto cleaned = removeTableAliases(ast->clone());
+        /// Get the query string before `calculateAstHash` mutates the AST (it strips cache-related SETTINGS).
+        auto qs = queryStringFromAST(cleaned);
+        auto hash = calculateAstHash(cleaned, current_database, settings, is_subquery, /*already_cloned=*/ true);
+        return {hash, std::move(qs)};
+    }
+    auto hash = calculateAstHash(ast, current_database, settings, is_subquery);
+    auto qs = queryStringFromAST(ast);
+    return {hash, std::move(qs)};
 }
 
 }
@@ -446,20 +468,22 @@ QueryResultCache::Key::Key(
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_,
     bool is_subquery_)
-    : ast_hash(calculateAstHash(ast_, current_database, settings, is_subquery_))
-    , header(header_)
+    : header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)
     , created_at(created_at_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
-    , query_string(is_subquery_ ? queryStringFromAST(removeTableAliases(ast_->clone())) : queryStringFromAST(ast_))
-    /// ^^ if subquery, remove unnecessary aliases first for more convenient display in system.query_cache
     , query_id(query_id_)
     , tag(settings[Setting::query_cache_tag])
     , is_subquery(is_subquery_)
 {
+    /// For subqueries, both hashing and display need a cloned AST with table aliases stripped.
+    /// Compute both from a single clone via `calculateAstHashAndQueryString`.
+    auto [hash, qs] = calculateAstHashAndQueryString(ast_, current_database, settings, is_subquery_);
+    ast_hash = hash;
+    query_string = std::move(qs);
 }
 
 QueryResultCache::Key::Key(
