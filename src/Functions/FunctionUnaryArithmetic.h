@@ -42,7 +42,7 @@ struct UnaryOperationImpl
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ArrayA & a, ArrayC & c) /// NOLINT
     {
         size_t size = a.size();
@@ -53,15 +53,27 @@ struct UnaryOperationImpl
     static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            vectorImpl_x86_64_v4(a, c);
+            vectorImplAVX512BW(a, c);
             return;
         }
 
-        if (isArchSupported(TargetArch::x86_64_v3))
+        if (isArchSupported(TargetArch::AVX512F))
         {
-            vectorImpl_x86_64_v3(a, c);
+            vectorImplAVX512F(a, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorImplAVX2(a, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorImplSSE42(a, c);
             return;
         }
 #endif
@@ -79,7 +91,7 @@ struct UnaryOperationImpl
 template <typename Op>
 struct FixedStringUnaryOperationImpl
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ColumnFixedString::Chars & a, /// NOLINT
         ColumnFixedString::Chars & c)
     {
@@ -92,15 +104,27 @@ struct FixedStringUnaryOperationImpl
     static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            vectorImpl_x86_64_v4(a, c);
+            vectorImplAVX512BW(a, c);
             return;
         }
 
-        if (isArchSupported(TargetArch::x86_64_v3))
+        if (isArchSupported(TargetArch::AVX512F))
         {
-            vectorImpl_x86_64_v3(a, c);
+            vectorImplAVX512F(a, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorImplAVX2(a, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorImplSSE42(a, c);
             return;
         }
 #endif
@@ -112,7 +136,7 @@ struct FixedStringUnaryOperationImpl
 template <typename Op>
 struct StringUnaryOperationReduceImpl
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
         MULTITARGET_FUNCTION_HEADER(static UInt64 NO_INLINE),
         vectorImpl,
         MULTITARGET_FUNCTION_BODY((const UInt8 * start, const UInt8 * end) /// NOLINT
@@ -126,14 +150,24 @@ struct StringUnaryOperationReduceImpl
     static UInt64 NO_INLINE vector(const UInt8 * start, const UInt8 * end)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            return vectorImpl_x86_64_v4(start, end);
+            return vectorImplAVX512BW(start, end);
         }
 
-        if (isArchSupported(TargetArch::x86_64_v3))
+        if (isArchSupported(TargetArch::AVX512F))
         {
-            return vectorImpl_x86_64_v3(start, end);
+            return vectorImplAVX512F(start, end);
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            return vectorImplAVX2(start, end);
+        }
+
+        if (isArchSupported(TargetArch::SSE42))
+        {
+            return vectorImplSSE42(start, end);
         }
 #endif
 
@@ -486,9 +520,9 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>> || std::is_same_v<Op<T0>, SignImpl<T0>>)
+                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>>)
                     {
-                        /// We don't need to cast the argument to the result type if it's abs/bitcount/sign function.
+                        /// We don't need to cast the argument to the result type if it's abs/bitcount function.
                         result = Op<T0>::compile(b, arguments[0].value, is_signed_v<T0>);
                     }
                     else

@@ -70,15 +70,15 @@ public:
 
 REGISTER_FUNCTION(BlockSerializedSize)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_blockSerializedSize = R"(
 Returns the uncompressed size in bytes of a block of values on disk.
 )";
-    FunctionDocumentation::Syntax syntax = "blockSerializedSize(x1[, x2[, ...]])";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Syntax syntax_blockSerializedSize = "blockSerializedSize(x1[, x2[, ...]])";
+    FunctionDocumentation::Arguments arguments_blockSerializedSize = {
         {"x1[, x2, ...]", "Any number of values for which to get the uncompressed size of the block.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of bytes that will be written to disk for a block of values without compression.", {"UInt64"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_blockSerializedSize = {"Returns the number of bytes that will be written to disk for a block of values without compression.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_blockSerializedSize = {
     {
         "Usage example",
         R"(
@@ -91,11 +91,11 @@ SELECT blockSerializedSize(maxState(1)) AS x;
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_blockSerializedSize = {20, 3};
+    FunctionDocumentation::Category category_blockSerializedSize = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_blockSerializedSize = {description_blockSerializedSize, syntax_blockSerializedSize, arguments_blockSerializedSize, {}, returned_value_blockSerializedSize, examples_blockSerializedSize, introduced_in_blockSerializedSize, category_blockSerializedSize};
 
-    factory.registerFunction<FunctionBlockSerializedSize>(documentation);
+    factory.registerFunction<FunctionBlockSerializedSize>(documentation_blockSerializedSize);
 }
 
 }

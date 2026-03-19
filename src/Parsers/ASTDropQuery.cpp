@@ -45,7 +45,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
-    if (isTemporary())
+    if (temporary)
         ostr << "TEMPORARY ";
 
     if (has_all)

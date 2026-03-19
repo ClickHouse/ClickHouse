@@ -513,11 +513,9 @@ public:
 class TupleType : public SQLType
 {
 public:
-    const bool nullable;
     const std::vector<SubType> subtypes;
-    explicit TupleType(const bool n, const std::vector<SubType> s)
-        : nullable(n)
-        , subtypes(s)
+    explicit TupleType(const std::vector<SubType> s)
+        : subtypes(s)
     {
     }
 
@@ -528,7 +526,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
-    bool isNullable() const override { return !nullable; }
+    bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::TUPLE; }
 
     ~TupleType() override;

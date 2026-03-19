@@ -1,12 +1,7 @@
 import argparse
 import os
 import time
-import sys
 from pathlib import Path
-
-repo_path = Path(__file__).resolve().parent.parent.parent
-repo_path_normalized = str(repo_path)
-sys.path.append(str(repo_path / "ci"))
 
 from ci.defs.defs import ToolSet, chcache_secret
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
@@ -14,12 +9,11 @@ from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
-from ci.praktika.utils import ContextManager, MetaClasses, Shell, Utils
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/fast_build"
 temp_dir = f"{current_directory}/ci/tmp/"
-build_dir_normalized = str(repo_path / "ci" / "tmp" / "fast_build")
 
 
 def clone_submodules():
@@ -63,25 +57,20 @@ def clone_submodules():
         "contrib/corrosion",
         "contrib/StringZilla",
         "contrib/rust_vendor",
-        "contrib/clickstack",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
     res = res and Shell.check("git submodule init", verbose=True, strict=True)
     res = res and Shell.check(
-        # NOTE: max-procs was 10 before, increased to 20 to speed up checkout.
-        # Roll back to 10 if this starts hitting GitHub rate limits.
-        command=f"xargs --max-procs={min([Utils.cpu_count(), 20])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
+        command=f"xargs --max-procs={min([Utils.cpu_count(), 10])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
         stdin_str="\0".join(submodules_to_update) + "\0",
-        timeout=300,
-        retries=3,
+        timeout=240,
+        retries=2,
         verbose=True,
     )
-    # NOTE: the three "git submodule foreach" cleanup commands (reset --hard,
-    # checkout @ -f, clean -xfd) that used to run here were removed because
-    # "git submodule update" already checks out the correct commit into a
-    # fresh clone.  The foreach commands added ~7s of sequential overhead
-    # iterating over every submodule for no benefit in the fast-test context.
+    res = res and Shell.check("git submodule foreach git reset --hard", verbose=True)
+    res = res and Shell.check("git submodule foreach git checkout @ -f", verbose=True)
+    res = res and Shell.check("git submodule foreach git clean -xfd", verbose=True)
     return res
 
 
@@ -122,8 +111,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Fast Test Job")
     parser.add_argument("--test", help="Optional test_case name to run", default="")
     parser.add_argument("--param", help="Optional custom job start stage", default=None)
-    parser.add_argument("--set-status-success", help="Forcefully set a green status", action="store_true")
     return parser.parse_args()
+
 
 def main():
     args = parse_args()
@@ -139,42 +128,21 @@ def main():
         stages.insert(0, stage)
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
-
-    for path in [
-        Path(temp_dir) / "clickhouse",
-        clickhouse_bin_path,
-        Path(current_directory) / "clickhouse",
-    ]:
-        if path.is_file():
-            clickhouse_bin_path = path
-            print(f"NOTE: clickhouse binary is found [{clickhouse_bin_path}] - skip the build")
-
+    if Info().is_local_run:
+        if clickhouse_bin_path.exists():
+            print(
+                f"NOTE: It's a local run and clickhouse binary is found [{clickhouse_bin_path}] - skip the build"
+            )
             stages = [JobStages.CONFIG, JobStages.TEST]
-            resolved_clickhouse_bin_path = clickhouse_bin_path.resolve()
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-server")
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-client")
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-local")
-            Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
-
-            break
-    else:
-        print(
-            f"NOTE: clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
-        )
-
-    # Global sccache settings for local and CI runs
-    os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
-    os.environ["SCCACHE_CACHE_SIZE"] = "40G"
-    os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
-    os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
-    os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
-    os.environ["SCCACHE_LOG"] = "info"
-
-    info = Info()
-    if info.is_local_run:
-        print("NOTE: It's a local run")
-        os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
+        else:
+            print(
+                f"NOTE: It's a local run and clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
+            )
+            time.sleep(5)
+        clickhouse_server_link = Path(f"{build_dir}/programs/clickhouse-server")
+        if not clickhouse_server_link.is_file():
+            Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
+        Shell.check(f"chmod +x {clickhouse_bin_path}")
     else:
         os.environ["CH_HOSTNAME"] = (
             "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
@@ -183,14 +151,22 @@ def main():
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
         os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
-    Utils.add_to_PATH(
-        f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"
-    )
+        os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
+        os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+        os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+        Shell.check("sccache --show-stats", verbose=True)
+
+    Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
 
     res = True
     results = []
     attach_files = []
     job_info = ""
+
+    if os.getuid() == 0:
+        res = res and Shell.check(
+            f"git config --global --add safe.directory {current_directory}"
+        )
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         results.append(
@@ -201,20 +177,13 @@ def main():
         )
         res = results[-1].is_ok()
 
-    os.makedirs(build_dir, exist_ok=True)
-
     if res and JobStages.CMAKE in stages:
-        # The sccache server sometimes fails to start because of issues with S3.
-        # Start it explicitly with retries before cmake, since cmake can invoke
-        # the compiler during configuration. Non-fatal: build can proceed without it.
-        if not Shell.check("sccache --start-server", retries=3):
-            print("WARNING: sccache server failed to start, build will proceed without it")
         results.append(
             # TODO: commented out to make job platform agnostic
             #   -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
             Result.from_commands_run(
                 name="Cmake configuration",
-                command=f"cmake {repo_path_normalized} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
+                command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
                 -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE} \
                 -DENABLE_LIBRARIES=0 \
@@ -222,9 +191,7 @@ def main():
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
-                -DUSE_SYSTEM_COMPILER_RT=1 \
-                -B {build_dir_normalized}",
-                workdir=repo_path_normalized,
+                -B {build_dir}",
             )
         )
         res = results[-1].is_ok()
@@ -234,7 +201,7 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command=f"command time -v cmake --build {build_dir_normalized} --"
+                command=f"command time -v cmake --build {build_dir} --"
                 " clickhouse-bundle clickhouse-stripped lexer_test",
             )
         )
@@ -244,23 +211,24 @@ def main():
 
     if res and JobStages.BUILD in stages:
         commands = [
+            f"mkdir -p {Settings.OUTPUT_DIR}/binaries",
             "sccache --show-stats",
             "clickhouse-client --version",
+            # "clickhouse-test --help",
         ]
         results.append(
             Result.from_commands_run(
                 name="Check and Compress binary",
                 command=commands,
-                workdir=build_dir_normalized,
+                workdir=build_dir,
             )
         )
         res = results[-1].is_ok()
 
     if res and JobStages.CONFIG in stages:
         commands = [
-            f"mkdir -p {temp_dir}/etc/clickhouse-server",
             f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
-            f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client --fast-test",
+            f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --fast-test",
             # f"cp -a {current_directory}/programs/server/config.d/log_to_console.xml {temp_dir}/etc/clickhouse-server/config.d/",
             f"rm -f {temp_dir}/etc/clickhouse-server/config.d/secure_ports.xml",
             update_path_ch_config,
@@ -273,12 +241,7 @@ def main():
         )
         res = results[-1].is_ok()
 
-    CH = ClickHouseProc(
-        ch_config_dir=f"{temp_dir}/etc/clickhouse-server",
-        ch_var_lib_dir=f"{temp_dir}/var/lib/clickhouse",
-    )
-    CH.install_configs()
-
+    CH = ClickHouseProc(fast_test=True)
     attach_debug = False
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -296,30 +259,19 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-
-        # Fast test runs lightweight SQL tests that are not CPU-bound,
-        # so we can use more parallelism than the default cpu_count/2.
-        nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
-
-        fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc_fast}"
-        if args.test:
-            fast_test_command += f" -- '{args.test}'"
-
-        res = CH.run_test(fast_test_command)
-
-        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run()
-        if not res:
-            test_results.results.append(
+        res = res and CH.run_fast_test(test=args.test or "")
+        if res:
+            results.append(FTResultsProcessor(wd=Settings.OUTPUT_DIR).run())
+            results[-1].set_timing(stopwatch=stop_watch_)
+        else:
+            results.append(
                 Result.create_from(
-                    name="clickhouse-test",
-                    status=Result.StatusExtended.FAIL,
-                    info="clickhouse-test error",
+                    name=step_name,
+                    status=Result.Status.ERROR,
+                    stopwatch=stop_watch_,
+                    info="Tests run error",
                 )
             )
-            attach_debug = True
-
-        results.append(test_results)
-        results[-1].set_timing(stopwatch=stop_watch_)
         if not results[-1].is_ok():
             attach_debug = True
         job_info = results[-1].info
@@ -327,14 +279,14 @@ def main():
     if attach_debug:
         attach_files += [
             clickhouse_bin_path,
-            *CH.prepare_logs(info=info, all=True),
+            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
+            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
         ]
 
-    CH.terminate(force=True)
+    CH.terminate()
 
-    status = Result.Status.SUCCESS if args.set_status_success else ""
     Result.create_from(
-        results=results, status=status, stopwatch=stop_watch, files=attach_files, info=job_info
+        results=results, stopwatch=stop_watch, files=attach_files, info=job_info
     ).complete_job()
 
 

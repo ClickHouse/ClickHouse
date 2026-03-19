@@ -69,7 +69,7 @@ Pipe StorageYTsaurus::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 
@@ -82,7 +82,9 @@ Pipe StorageYTsaurus::read(
     }
 
     YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));
-    return YTsaurusSourceFactory::createPipe(client, cypress_path, {.settings = settings}, sample_block, max_block_size, num_streams);
+    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = cypress_path, .settings = settings}, sample_block, max_block_size);
+
+    return Pipe(ptr);
 }
 
 YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
@@ -117,9 +119,9 @@ YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
     return configuration;
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context, const StorageID * table_id)
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
     {
         return StorageYTsaurus::processNamedCollectionResult(*named_collection, settings);
     }
@@ -149,7 +151,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id),
+            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext()),
             args.columns,
             args.constraints,
             args.comment);

@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <Common/CurrentThread.h>
 
 #include <algorithm>
 #include <deque>
@@ -37,11 +36,10 @@ namespace ErrorCodes
     extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
+DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
-    , column_stats(std::move(column_stats_))
     , relation_id(static_cast<int>(id))
 {
     relations.set(id);
@@ -61,40 +59,6 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
-    /// Merge column stats from both children, then update NDVs for equi-join key columns.
-    column_stats = left->column_stats;
-    column_stats.insert(right->column_stats.begin(), right->column_stats.end());
-
-    for (const auto & predicate : join_operator.expression)
-    {
-        auto [op, left_node, right_node] = predicate.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals)
-            continue;
-
-        if (left_node.fromRight() && right_node.fromLeft())
-            std::swap(left_node, right_node);
-        if (!left_node.fromLeft() || !right_node.fromRight())
-            continue;
-
-        const auto & left_col = left_node.getColumnName();
-        const auto & right_col = right_node.getColumnName();
-        auto left_it = column_stats.find(left_col);
-        auto right_it = column_stats.find(right_col);
-
-        if (left_it != column_stats.end() && right_it != column_stats.end())
-        {
-            UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
-            left_it->second.num_distinct_values = min_ndv;
-            right_it->second.num_distinct_values = min_ndv;
-        }
-    }
-
-    /// Cap all NDVs at the estimated output rows.
-    if (cardinality_)
-    {
-        for (auto & [_, stats] : column_stats)
-            stats.num_distinct_values = std::min(stats.num_distinct_values, *cardinality_);
-    }
 }
 
 bool DPJoinEntry::isLeaf() const { return !left && !right; }
@@ -113,7 +77,7 @@ public:
         : query_graph(std::move(query_graph_))
         , enabled_algorithms(enabled_algorithms_)
     {
-        auto context = CurrentThread::tryGetQueryContext();
+        auto context = CurrentThread::getQueryContext();
         if (context)
         {
             query_status = context->getProcessListElementSafe();
@@ -166,20 +130,15 @@ size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_nam
     auto rel_id = rels.getSingleBit();
     if (!rel_id.has_value())
     {
-        /// Look up NDV from the dp_table entry's column_stats (propagated through joins).
+        /// Assume all keys are distinct
         if (auto it = dp_table.find(rels); it != dp_table.end())
-        {
-            auto col_it = it->second->column_stats.find(column_name);
-            if (col_it != it->second->column_stats.end())
-                return col_it->second.num_distinct_values;
             return it->second->estimated_rows.value_or(0);
-        }
         return 0;
     }
 
     const auto & relation_stat = relation_stats.at(rel_id.value());
-    const auto & col_stats = relation_stat.column_stats;
-    if (auto it = col_stats.find(column_name); it != col_stats.end())
+    const auto & column_stats = relation_stat.column_stats;
+    if (auto it = column_stats.find(column_name); it != column_stats.end())
         return it->second.num_distinct_values;
     return relation_stat.estimated_rows.value_or(0);
 }
@@ -234,10 +193,7 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (join_kind == JoinKind::Full)
         joined_rows = std::max(joined_rows, lhs + rhs);
 
-    /// Use >= to avoid undefined behavior when joined_rows is very close to max UInt64
-    /// Due to floating point precision, a value slightly less than max when compared
-    /// as double could still overflow when cast to UInt64
-    if (joined_rows >= static_cast<double>(std::numeric_limits<UInt64>::max()))
+    if (joined_rows > static_cast<double>(std::numeric_limits<UInt64>::max()))
         return std::numeric_limits<UInt64>::max();
     if (joined_rows < 1)
         return 1;
@@ -327,7 +283,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
+        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows));
     }
 
     std::vector<JoinActionRef *> applied_edge;
@@ -458,7 +414,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     for (size_t i = 0; i < total_relations_count; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows);
         components[1][entry->relations] = entry;
         dp_table[entry->relations] = entry;
     }
@@ -478,10 +434,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                 {
                     /// Do components overlap?
                     if (left->relations & right->relations)
-                        continue;
-
-                    /// If both components are of the same size then check each pair just once, not twice
-                    if (smaller_component_size == bigger_component_size && *left->relations.begin() > *right->relations.begin())
                         continue;
 
                     const auto combined_relations = left->relations | right->relations;
@@ -591,9 +543,6 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
         return right_join_type;
     if (right_join_type == JoinKind::Inner)
         return left_join_type;
-    /// Allow FULL join as it's restricted to table swapping and no reordering
-    if (left_join_type == JoinKind::Full && right_join_type == JoinKind::Full)
-        return JoinKind::Full;
 
     /// Conflict, join is not possible:
     /// FROM t1 LEFT JOIN t2 LEFT JOIN t3

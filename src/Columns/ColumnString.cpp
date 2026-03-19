@@ -530,7 +530,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     auto res = ColumnString::create();
 
-    if (col_size == 0 || replicate_offsets.back() == 0)
+    if (0 == col_size)
         return res;
 
     Offsets & res_offsets = res->offsets;
@@ -598,20 +598,22 @@ void ColumnString::shrinkToFit()
     offsets.shrink_to_fit();
 }
 
-void ColumnString::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnString::getExtremes(Field & min, Field & max) const
 {
     min = String();
     max = String();
 
-    if (start >= end)
+    size_t col_size = size();
+
+    if (col_size == 0)
         return;
 
-    size_t min_idx = start;
-    size_t max_idx = start;
+    size_t min_idx = 0;
+    size_t max_idx = 0;
 
     ComparatorBase cmp_op(*this);
 
-    for (size_t i = start + 1; i < end; ++i)
+    for (size_t i = 1; i < col_size; ++i)
     {
         if (cmp_op.compare(i, min_idx) < 0)
             min_idx = i;

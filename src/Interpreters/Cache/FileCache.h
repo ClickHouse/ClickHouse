@@ -16,9 +16,8 @@
 #include <Interpreters/Cache/QueryLimit.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
-#include <Interpreters/Cache/FileCacheOriginInfo.h>
+#include <Interpreters/Cache/UserInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Interpreters/Cache/SplitFileCachePriority.h>
 #include <filesystem>
 #include <random>
 #include <pcg_random.hpp>
@@ -91,10 +90,8 @@ public:
     using Priority = IFileCachePriority;
     using PriorityEntry = IFileCachePriority::Entry;
     using QueryContextHolder = FileCacheQueryLimit::QueryContextHolder;
-    using OriginInfo = FileCacheOriginInfo;
-    using UserID = FileCacheOriginInfo::UserID;
-    using Type = FileSegmentKeyType;
-    using CachePriorityCreatorFunction = SplitFileCachePriority::CachePriorityCreatorFunction;
+    using UserInfo = FileCacheUserInfo;
+    using UserID = UserInfo::UserID;
 
     FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
@@ -109,15 +106,13 @@ public:
 
     const String & getBasePath() const;
 
-    static const FileCacheOriginInfo & getCommonOrigin();
+    static const UserInfo & getCommonUser();
 
-    static const OriginInfo & getInternalOrigin();
+    static const UserInfo & getInternalUser();
 
-    OriginInfo getCommonOriginWithSegmentKeyType(const std::filesystem::path & filename) const;
+    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const UserInfo & user) const;
 
-    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const;
-
-    String getKeyPath(const Key & key, const OriginInfo & origin) const;
+    String getKeyPath(const Key & key, const UserInfo & user) const;
 
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
@@ -137,7 +132,7 @@ public:
         size_t file_size,
         const CreateFileSegmentSettings & settings,
         size_t file_segments_limit,
-        const OriginInfo & origin,
+        const UserInfo & user,
         std::optional<size_t> boundary_alignment_ = std::nullopt);
 
     /**
@@ -161,14 +156,14 @@ public:
         size_t offset,
         size_t size,
         const CreateFileSegmentSettings & settings,
-        const OriginInfo & origin);
+        const UserInfo & user);
 
     FileSegmentsHolderPtr trySet(
         const Key & key,
         size_t offset,
         size_t size,
         const CreateFileSegmentSettings & settings,
-        const OriginInfo & origin);
+        const UserInfo & user);
 
     /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
     void removeFileSegment(const Key & key, size_t offset, const UserID & user_id);
@@ -205,7 +200,7 @@ public:
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
-        const OriginInfo & origin,
+        const UserInfo & user,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
@@ -262,10 +257,6 @@ private:
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;
 
-    // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
-    const bool use_split_cache;
-    const double split_cache_ratio;
-
     String name;
     LoggerPtr log;
 
@@ -318,7 +309,7 @@ private:
 
     void loadMetadata();
     void loadMetadataImpl();
-    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const OriginInfo & origin);
+    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const UserInfo & user);
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit
@@ -372,7 +363,7 @@ private:
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
-        const OriginInfo & origin_info,
+        const UserInfo & user,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
@@ -380,7 +371,7 @@ private:
         const EvictionInfo & main_eviction_info,
         const EvictionInfo * query_eviction_info,
         FileSegment & file_segment,
-        const OriginInfo & origin_info,
+        const UserInfo & user,
         const IFileCachePriority::IteratorPtr & main_priority_iterator,
         FileCacheReserveStat & reserve_stat,
         EvictionCandidates & eviction_candidates,

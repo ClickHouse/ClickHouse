@@ -1,5 +1,3 @@
--- Tags: no-azure-blob-storage
-
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey;
 CREATE TABLE customer(c_custkey Int32, c_nationkey Int32, c_nationkey_copy Int32) ENGINE MergeTree ORDER BY c_custkey SETTINGS index_granularity=10;
 
@@ -19,7 +17,6 @@ SET join_algorithm = 'hash,parallel_hash';
 SET query_plan_optimize_join_order_algorithm='greedy';
 SET query_plan_optimize_join_order_limit=1;
 SET query_plan_join_swap_table=0;
-SET enable_multiple_prewhere_read_steps=1;
 
 -- 1 row in filter
 SELECT count()
@@ -37,7 +34,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+WHERE
    type = 'QueryFinish' AND log_comment='Q1'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -59,7 +56,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+WHERE
    type = 'QueryFinish' AND log_comment='Q2'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -81,7 +78,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+WHERE
    type = 'QueryFinish' AND log_comment='Q3'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -101,7 +98,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 AND ProfileEvents['RuntimeFilterBlocksProcessed'] = 0 AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+WHERE
    type = 'QueryFinish' AND log_comment='Q4'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -121,7 +118,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+WHERE
    type = 'QueryFinish' AND log_comment='Q5'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -141,7 +138,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+WHERE
    type = 'QueryFinish' AND log_comment='Q6'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -163,6 +160,6 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] = 0 AND ProfileEvents['RuntimeFilterBlocksProcessed'] > 0 AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+WHERE
    type = 'QueryFinish' AND log_comment='Q7'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;

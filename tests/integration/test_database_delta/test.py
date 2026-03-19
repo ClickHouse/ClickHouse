@@ -50,11 +50,6 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
-        if int(cluster.instances["node1"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
-            pytest.skip(
-                "DeltaLake engine is not available"
-            )
-
         start_unity_catalog(cluster.instances["node1"])
 
         yield cluster
@@ -64,19 +59,12 @@ def started_cluster():
 
 
 def execute_spark_query(node, query_text):
-    # Kill any lingering Spark processes and remove the Derby metastore
-    # before starting a new Spark session. The metastore_db is created inside
-    # /spark-3.5.4-bin-hadoop3/ because spark-sql is run with cd to that directory.
-    # We remove the entire metastore_db (not just the lock file) because after
-    # SIGKILL the database can be left in a corrupted state, causing the next
-    # Spark session to hang during initialization.
     node.exec_in_container(
         [
             "bash",
             "-c",
-            """pkill -9 -f 'org.apache.spark' 2>/dev/null; sleep 1; rm -rf /spark-3.5.4-bin-hadoop3/metastore_db""",
+            f"""rm -f metastore_db/dbex.lck""",
         ],
-        nothrow=True,
     )
 
     try:
@@ -100,7 +88,6 @@ def execute_spark_query(node, query_text):
         -S -e "{query_text}"
     """,
             ],
-            timeout=600,
         )
     except subprocess.CalledProcessError as e:
         print("Command failed with exit code:", e.returncode)
@@ -247,13 +234,14 @@ def test_complex_table_schema(started_cluster, use_delta_kernel):
             "-", "_"
         )
     )
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
     table_name = f"complex_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     schema = "event_date DATE, event_time TIMESTAMP, hits ARRAY<integer>, ids MAP<int, string>, really_complex STRUCT<f1:int,f2:string>"
     create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/complex_schema/{table_name}'"
-    insert_query = f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), array(42, 123, 77), map(7, 'v7', 5, 'v5'), named_struct(\\\"f1\\\", 34, \\\"f2\\\", 'hello')"
-    execute_multiple_spark_queries(
+    execute_spark_query(node1, create_query)
+    execute_spark_query(
         node1,
-        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
+        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), array(42, 123, 77), map(7, 'v7', 5, 'v5'), named_struct(\\\"f1\\\", 34, \\\"f2\\\", 'hello')",
     )
 
     node1.query(
@@ -312,15 +300,16 @@ def test_timestamp_ntz(started_cluster, use_delta_kernel):
             "-", "_"
         )
     )
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
     table_name = f"table_with_timestamp_{use_delta_kernel}_{uuid.uuid4()}".replace(
         "-", "_"
     )
     schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
     create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
-    insert_query = f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')"
-    execute_multiple_spark_queries(
+    execute_spark_query(node1, create_query)
+    execute_spark_query(
         node1,
-        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
+        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')",
     )
 
     node1.query(
@@ -346,6 +335,11 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
 
     assert len(ntz_tables) == 1
 
+    def get_schemas():
+        return execute_spark_query(node1, f"SHOW SCHEMAS")
+
+    assert schema_name in get_schemas()
+
     ntz_data = ""
     for i in range(10):
         try:
@@ -361,10 +355,9 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
         except Exception as ex:
             if "Schema not found" not in str(ex):
                 raise ex
-            print(f"Retry {i + 1}")
-            time.sleep(1)
+            print(f"Retry {i + 1}, existing schemas: {get_schemas()}")
 
-    assert len(ntz_data) != 0
+    assert len(ntz_data) != 0, f"Schemas: {get_schemas()}"
     print(ntz_data)
     assert ntz_data[0] == "2024-10-01"
     assert ntz_data[1] == "2024-10-01 00:12:00.000000"
@@ -496,22 +489,22 @@ def test_snapshot_version(started_cluster):
         return versions
 
     schema_name = f"schema_{table_name}"
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
 
     schema = "event_date DATE, data STRING"
-    create_query = f"""CREATE TABLE {schema_name}.{table_name} ({schema})
+    create_query = f"""
+CREATE TABLE {schema_name}.{table_name} ({schema})
 USING Delta location '{table_path}'
 TBLPROPERTIES (
   delta.enableChangeDataFeed = true
-)"""
-    # Combine schema creation, table creation and initial insert into a single
-    # Spark invocation to avoid multiple slow JVM startups.
-    execute_multiple_spark_queries(
+)
+    """
+    execute_spark_query(node1, create_query)
+
+    # Commit data at version 1
+    execute_spark_query(
         node1,
-        [
-            f"CREATE SCHEMA {schema_name}",
-            create_query,
-            f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), 'hello'",
-        ],
+        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), 'hello'",
     )
 
     # Create table with columns `event_date`, `data`

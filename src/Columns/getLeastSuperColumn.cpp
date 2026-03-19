@@ -1,6 +1,5 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/getLeastSupertype.h>

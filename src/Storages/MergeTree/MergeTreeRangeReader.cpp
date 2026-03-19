@@ -20,7 +20,6 @@
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
 #ifdef __SSE2__
@@ -378,8 +377,9 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
 
     /// When no rows were physically read (e.g., all columns are defaults/missing,
-    /// or a constant PREWHERE expression), the granule sizes were determined from
-    /// the index granularity and are already accurate. No adjustment is needed.
+    /// or a constant PREWHERE expression like `PREWHERE 1`), the granule sizes
+    /// were determined directly from the index granularity and are already accurate.
+    /// No adjustment is needed in this case.
     if (num_read_rows == 0)
         return;
 
@@ -737,7 +737,7 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
     new_filter_vec.resize(new_filter_data - new_filter_vec.data());
 }
 
-DECLARE_X86_64_V4_SPECIFIC_CODE(
+DECLARE_AVX512BW_SPECIFIC_CODE(
 size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
     size_t count = 0;
@@ -768,7 +768,7 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 }
 ) /// DECLARE_AVX512BW_SPECIFIC_CODE
 
-DECLARE_X86_64_V3_SPECIFIC_CODE(
+DECLARE_AVX2_SPECIFIC_CODE(
 size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
     size_t count = 0;
@@ -807,10 +807,10 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
 {
 #if USE_MULTITARGET_CODE
     /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
-    if (isArchSupported(TargetArch::x86_64_v4))
-        return TargetSpecific::x86_64_v4::numZerosInTail(begin, end);
-    if (isArchSupported(TargetArch::x86_64_v3))
-        return TargetSpecific::x86_64_v3::numZerosInTail(begin, end);
+    if (isArchSupported(TargetArch::AVX512BW))
+        return TargetSpecific::AVX512BW::numZerosInTail(begin, end);
+    if (isArchSupported(TargetArch::AVX2))
+        return TargetSpecific::AVX2::numZerosInTail(begin, end);
 #endif
 
     size_t count = 0;
@@ -988,32 +988,6 @@ bool MergeTreeRangeReader::isCurrentRangeFinished() const
     return stream.isFinished();
 }
 
-static size_t getBytesInColumn(const IColumn & column)
-{
-    if (const auto * col_str = typeid_cast<const ColumnString *>(&column))
-    {
-        /// This function is used to estimate the number of bytes read from disk. For String column offsets might actually take
-        /// more memory than chars, so blindly assuming that each offset takes 8 bytes might overestimate the actual bytes read.
-        return col_str->getChars().size() + col_str->getOffsets().size() * getLengthOfVarUInt(col_str->getOffsets().back());
-    }
-    else if (const auto * col_sparse = typeid_cast<const ColumnSparse *>(&column))
-    {
-        /// Same logic as ColumnString for sparse columns.
-        const auto & values = col_sparse->getValuesColumn();
-        const auto & offsets = col_sparse->getOffsetsColumn();
-
-        if (offsets.empty())
-            return 0;
-
-        /// Offsets are stored as VarInt; estimate their total size using the last offset's length.
-        return getBytesInColumn(values)
-            + offsets.size() * getLengthOfVarInt(offsets.getInt(offsets.size() - 1));
-    }
-    else
-    {
-        return column.byteSize();
-    }
-}
 
 static size_t getTotalBytesInColumns(const Columns & columns)
 {
@@ -1021,7 +995,18 @@ static size_t getTotalBytesInColumns(const Columns & columns)
     for (const auto & column : columns)
     {
         if (column)
-            total_bytes += getBytesInColumn(*column);
+        {
+            if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
+            {
+                /// This function is used to estimate the number of bytes read from disk. For String column offsets might actually take
+                /// more memory than chars, so blindly assuming that each offset takes 8 bytes might overestimate the actual bytes read.
+                total_bytes += col_str->getChars().size() + col_str->getOffsets().size() * getLengthOfVarUInt(col_str->getOffsets().back());
+            }
+            else
+            {
+                total_bytes += column->byteSize();
+            }
+        }
     }
     return total_bytes;
 }
@@ -1100,11 +1085,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    /// When no columns were physically read (e.g., constant PREWHERE expression),
-    /// numReadRows() is 0 but total_rows_per_granule has the correct row count
-    /// from the index granularity. Use it so the reading chain can continue
-    /// to subsequent readers that read actual data columns.
-    result.num_rows = result.numReadRows() > 0 ? result.numReadRows() : result.total_rows_per_granule;
+    /// Use total_rows_per_granule because:
+    /// - In normal cases, after adjustLastGranule, it equals numReadRows()
+    /// - When no columns are read (e.g., constant PREWHERE), it has the correct value from index granularity
+    result.num_rows = result.total_rows_per_granule;
 
     updatePerformanceCounters(result.numReadRows());
 
@@ -1170,37 +1154,6 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     {
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
         fillDistanceColumnAndFilterForVectorSearch(columns, result, part_offsets_auto_column);
-    }
-
-    /// Always compute min/max part offset from granule offsets.
-    /// Patch parts reading (MergeTreePatchReaderMerge) requires these values
-    /// to determine which patches are relevant for the current block,
-    /// even when `_part_offset` column is not explicitly requested.
-    if (!result.min_part_offset.has_value())
-    {
-        if (result.granule_offsets.empty())
-        {
-            result.min_part_offset = 0;
-            result.max_part_offset = 0;
-        }
-        else if (result.total_rows_per_granule == 0)
-        {
-            result.min_part_offset = 0;
-            result.max_part_offset = 0;
-        }
-        else
-        {
-            result.min_part_offset = result.granule_offsets.front().starting_offset;
-
-            /// Find the last granule with non-zero rows to avoid unsigned underflow in `rows_per_granule[i] - 1`.
-            /// Zero-row granules can appear after `adjustLastGranule` subtracts all rows or after `clear`.
-            size_t last = result.rows_per_granule.size();
-            while (last > 0 && result.rows_per_granule[last - 1] == 0)
-                --last;
-
-            chassert(last > 0); /// total_rows_per_granule > 0 guarantees at least one non-zero granule
-            result.max_part_offset = result.granule_offsets[last - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
-        }
     }
 }
 
@@ -1381,7 +1334,7 @@ static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second
             "does not match second filter size ({})", bytes_in_first_filter, second_filter_size);
 }
 
-DECLARE_X86_ICELAKE_SPECIFIC_CODE(
+DECLARE_AVX512VBMI2_SPECIFIC_CODE(
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
     constexpr size_t AVX512_VEC_SIZE_IN_BYTES = 64;
@@ -1446,7 +1399,7 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
  * 1. https://www.felixcloutier.com/x86/pdep
  * 2. https://www.felixcloutier.com/x86/pcmpeqb:pcmpeqw:pcmpeqd
  */
-DECLARE_X86_64_V3_SPECIFIC_CODE(
+DECLARE_AVX2_SPECIFIC_CODE(
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
     constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
@@ -1525,13 +1478,13 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     const auto * second_data = second_descr.data->data();
 
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_icelake))
+    if (isArchSupported(TargetArch::AVX512VBMI2))
     {
-        TargetSpecific::x86_64_icelake::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
+        TargetSpecific::AVX512VBMI2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
     }
-    else if (isArchSupported(TargetArch::x86_64_v3))
+    else if (isArchSupported(TargetArch::AVX2))
     {
-        TargetSpecific::x86_64_v3::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
+        TargetSpecific::AVX2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
     }
     else
 #endif

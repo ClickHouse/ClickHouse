@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
-
 DROP TABLE IF EXISTS data_02771;
 
 CREATE TABLE data_02771

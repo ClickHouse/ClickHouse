@@ -172,8 +172,8 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
-        read_settings.read_through_distributed_cache = false;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
+        read_settings.read_through_distributed_cache = false;
         return read_settings;
     }
 
@@ -585,7 +585,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
                 {
                     starter->doBackup();
                 }
-                catch (const std::exception &)
+                catch (...)
                 {
                     starter->onException();
                 }
@@ -793,10 +793,7 @@ void BackupsWorker::writeBackupEntries(
         auto & entry = backup_entries[index].second;
         const auto & file_info = file_infos[index];
 
-        /// Using references here is fine as the variables reference objects either belonging to `this` or passed as references in the
-        /// function. The exception is file_info, which is itself a reference to `file_infos`, created before the runner (so it will be
-        /// destroyed after)
-        auto job = [&failed, &process_list_element, &backup, &file_info, &entry, this, is_internal_backup, &backup_id]()
+        auto job = [&]()
         {
             if (failed)
                 return;
@@ -1010,7 +1007,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
                 {
                     starter->doRestore();
                 }
-                catch (const std::exception &)
+                catch (...)
                 {
                     starter->onException();
                 }

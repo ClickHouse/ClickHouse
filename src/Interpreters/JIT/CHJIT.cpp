@@ -23,7 +23,6 @@
 
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
 #include <Core/Types.h>
 
@@ -522,12 +521,13 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
+    auto target_analysis = machine->getTargetIRAnalysis();
+    fam.registerPass([&] { return target_analysis; });
+
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
 
-    /// Pass the actual TargetMachine so that all optimization passes
-    /// (including target-specific ones) have proper target information.
-    llvm::PassBuilder pb(machine.get(), pto);
+    llvm::PassBuilder pb(nullptr, pto);
 
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);

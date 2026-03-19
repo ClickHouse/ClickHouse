@@ -99,10 +99,9 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
 void ExpressionStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, settings.indent_char);
     auto expression = std::make_shared<ExpressionActions>(actions_dag.clone());
-    if (!settings.compact)
-        expression->describeActions(settings.out, prefix);
+    expression->describeActions(settings.out, prefix);
 }
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -121,7 +120,7 @@ void ExpressionStep::serialize(Serialization & ctx) const
     actions_dag.serialize(ctx.out, ctx.registry);
 }
 
-QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ctx)
 {
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     if (ctx.input_headers.size() != 1)
@@ -140,11 +139,6 @@ IQueryPlanStep::RemovedUnusedColumns ExpressionStep::removeUnusedColumns(NameMul
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
-
-    /// When extra columns were absorbed from a child step that cannot reduce its output,
-    /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
-    if (prevent_input_removal)
-        remove_inputs = false;
 
     const auto required_output_count = required_outputs.size();
     auto split_results = actions_dag.splitPossibleOutputNames(std::move(required_outputs));

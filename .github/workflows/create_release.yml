@@ -257,8 +257,6 @@ jobs:
             # shellcheck disable=SC2086,SC2048
             docker buildx build \
               --platform=linux/amd64,linux/arm64 \
-              --provenance=true  \
-              --sbom=true \
               --output=type=registry \
               --label=com.clickhouse.build.version="$LABEL_VERSION" \
               ${TAGS[*]} \
@@ -321,8 +319,6 @@ jobs:
             # shellcheck disable=SC2086,SC2048
             docker buildx build \
               --platform=linux/amd64,linux/arm64 \
-              --provenance=true  \
-              --sbom=true \
               --output=type=registry \
               --label=com.clickhoghuse.build.version="$LABEL_VERSION" \
               ${TAGS[*]} \

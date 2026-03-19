@@ -11,7 +11,10 @@
 namespace DB
 {
 
-[[noreturn]] void throwUnexpectedLowCardinalityIndexType(size_t size);
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /**
  * How data is stored (in a nutshell):
@@ -56,9 +59,9 @@ public:
 
     Field operator[](size_t n) const override { return getDictionary()[getIndexes().getUInt(n)]; }
     void get(size_t n, Field & res) const override { getDictionary().get(getIndexes().getUInt(n), res); }
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
     {
-        getDictionary().getValueNameImpl(name_buf, getIndexes().getUInt(n), options);
+        return getDictionary().getValueNameAndTypeImpl(name_buf, getIndexes().getUInt(n), options);
     }
 
     std::string_view getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
@@ -176,11 +179,9 @@ public:
 
     std::vector<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
+    void getExtremes(Field & min, Field & max) const override
     {
-        /// TODO: optimize to avoid materializing the full indexed column
-        auto indexed = dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0);
-        indexed->getExtremes(min, max, start, end);
+        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
@@ -308,7 +309,7 @@ public:
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(indexes)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(indexes)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(indexes)->getElement(row);
-            default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
+            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
         }
     }
 
@@ -355,11 +356,8 @@ private:
 
         /// Create new dictionary with only keys that are mentioned in indexes.
         void compact(MutableColumnPtr & indexes);
-        /// Create nullable dictionary with only keys that are mentioned in indexes.
-        void compactToNullable(MutableColumnPtr & indexes);
 
         static MutableColumnPtr compact(const IColumnUnique & column_unique, MutableColumnPtr & indexes);
-        static MutableColumnPtr compactToNullable(const IColumnUnique & column_unique, MutableColumnPtr & indexes);
 
     private:
         WrappedPtr column_unique;
@@ -370,7 +368,6 @@ private:
     ColumnIndex idx;
 
     void compactInplace();
-    void compactInplaceToNullable();
     void compactIfSharedDictionary();
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;

@@ -13,7 +13,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/ErrnoException.h>
 
 namespace DB
 {

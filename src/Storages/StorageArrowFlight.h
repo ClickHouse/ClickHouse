@@ -11,7 +11,6 @@ namespace DB
 class ArrowFlightConnection;
 class NamedCollection;
 class StorageFactory;
-struct StorageID;
 
 class StorageArrowFlight : public IStorage, protected WithContext
 {
@@ -32,7 +31,7 @@ public:
         String ssl_override_hostname;
     };
 
-    static Configuration getConfiguration(ASTs & engine_args, ContextPtr context, const StorageID * table_id = nullptr);
+    static Configuration getConfiguration(ASTs & engine_args, ContextPtr context);
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection);
 
     StorageArrowFlight(

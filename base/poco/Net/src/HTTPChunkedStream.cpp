@@ -210,7 +210,6 @@ HTTPChunkedInputStream::HTTPChunkedInputStream(HTTPSession& session):
 	HTTPChunkedIOS(session, std::ios::in),
 	std::istream(&_buf)
 {
-	poco_ios_init(&_buf);
 }
 
 
@@ -226,7 +225,6 @@ HTTPChunkedOutputStream::HTTPChunkedOutputStream(HTTPSession& session):
 	HTTPChunkedIOS(session, std::ios::out),
 	std::ostream(&_buf)
 {
-	poco_ios_init(&_buf);
 }
 
 

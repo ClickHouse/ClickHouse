@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVariant.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -418,17 +420,17 @@ void ColumnVariant::get(size_t n, Field & res) const
         variants[discr]->get(offsetAt(n), res);
 }
 
-void ColumnVariant::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnVariant::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     Discriminator discr = localDiscriminatorAt(n);
     if (discr == NULL_DISCRIMINATOR)
     {
         if (options.notFull(name_buf))
             name_buf << "NULL";
-        return;
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     }
 
-    variants[discr]->getValueNameImpl(name_buf, offsetAt(n), options);
+    return variants[discr]->getValueNameAndTypeImpl(name_buf, offsetAt(n), options);
 }
 
 bool ColumnVariant::isDefaultAt(size_t n) const
@@ -729,9 +731,6 @@ void ColumnVariant::insertManyDefaults(size_t length)
 
 void ColumnVariant::popBack(size_t n)
 {
-    if (n > size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
     /// If we have only NULLs, just pop back from local_discriminators and offsets.
     if (hasOnlyNulls())
     {
@@ -942,16 +941,8 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     /// In this case we can just filter this variant and resize discriminators/offsets.
     if (auto non_empty_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
     {
-        const size_t num_variants = variants.size();
-        Columns new_variants;
-        new_variants.reserve(num_variants);
-        for (size_t i = 0; i != num_variants; ++i)
-        {
-            if (i == *non_empty_discr)
-                new_variants.emplace_back(variants[i]->filter(filt, result_size_hint));
-            else
-                new_variants.emplace_back(variants[i]->cloneEmpty());
-        }
+        Columns new_variants(variants.begin(), variants.end());
+        new_variants[*non_empty_discr] = variants[*non_empty_discr]->filter(filt, result_size_hint);
         size_t new_size = new_variants[*non_empty_discr]->size();
         ColumnPtr new_discriminators = local_discriminators->cloneResized(new_size);
         ColumnPtr new_offsets = offsets->cloneResized(new_size);
@@ -1093,7 +1084,7 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
             if (i == *non_empty_local_discr)
                 new_variants.emplace_back(variants[*non_empty_local_discr]->permute(perm, limit)->assumeMutable());
             else
-                new_variants.emplace_back(variants[i]->cloneEmpty());
+                new_variants.emplace_back(variants[i]->assumeMutable());
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();
@@ -1123,7 +1114,7 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
             if (i == *non_empty_local_discr)
                 new_variants.emplace_back(variants[*non_empty_local_discr]->index(indexes, limit)->assumeMutable());
             else
-                new_variants.emplace_back(variants[i]->cloneEmpty());
+                new_variants.emplace_back(variants[i]->assumeMutable());
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();
@@ -1189,7 +1180,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     if (size() != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", replicate_offsets.size(), size());
 
-    if (empty() || replicate_offsets.back() == 0)
+    if (empty())
         return cloneEmpty();
 
     /// If we have only NULLs, just resize column to the new size.
@@ -1500,7 +1491,7 @@ void ColumnVariant::protect()
         variant->protect();
 }
 
-void ColumnVariant::getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const
+void ColumnVariant::getExtremes(Field & min, Field & max) const
 {
     min = Null();
     max = Null();
