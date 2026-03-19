@@ -47,6 +47,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_parquet_metadata_cache", false, true, "Enables cache of parquet file metadata."},
             {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
             {"use_text_index_tokens_cache", false, false, "New setting"},
+            {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
+            {"text_index_density_threshold", 0.5, 0.5, "New setting for lazy posting list density threshold"},
             {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},

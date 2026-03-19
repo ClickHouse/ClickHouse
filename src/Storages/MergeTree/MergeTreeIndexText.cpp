@@ -1386,16 +1386,31 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
 {
     return
     {
-        {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
-        {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
-        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
+        {MergeTreeIndexSubstream::Type::Regular, "", ".idx2"},
+        {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx2"},
+        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx2"}
     };
 }
 
 MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
 {
+    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx2"))
+    {
+        return {2, {
+            {MergeTreeIndexSubstream::Type::Regular, "", ".idx2"},
+            {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx2"},
+            {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx2"}
+        }};
+    }
+
     if (indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
-        return {1, getSubstreams()};
+    {
+        return {1, {
+            {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
+            {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
+            {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
+        }};
+    }
 
     return {0, {}};
 }

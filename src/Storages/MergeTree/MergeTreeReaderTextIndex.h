@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/flat_hash_set.h>
 #include <roaring/roaring.hh>

@@ -2,6 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -24,6 +25,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsFloat text_index_hint_max_selectivity;
+    extern const SettingsString text_index_posting_list_apply_mode;
+    extern const SettingsFloat text_index_density_threshold;
 }
 
 namespace ErrorCodes
@@ -601,12 +604,62 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     if (postings.empty() || search_query->tokens.empty())
         return;
 
-    if (search_query->search_mode == TextSearchMode::Any)
-        applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
-    else if (search_query->search_mode == TextSearchMode::All)
-        applyPostingsAll(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
+    /// Check if lazy apply mode is enabled and the index is V2.
+    const auto & ctx_settings = condition_text.getContext()->getSettingsRef();
+    const String & apply_mode = ctx_settings[Setting::text_index_posting_list_apply_mode].value;
+    bool use_lazy = (apply_mode == "lazy") && (deserialization_state->version >= 2);
+    bool used_lazy = false;
+
+    if (use_lazy)
+    {
+        auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+        const auto & remaining_tokens = granule_text.getRemainingTokens();
+
+        /// Build PostingListCursorMap for query tokens with V2 compressed postings.
+        PostingListCursorMap cursor_map;
+        for (const auto & token : search_query->tokens)
+        {
+            auto info_it = remaining_tokens.find(token);
+            if (info_it == remaining_tokens.end())
+                continue;
+
+            const auto & token_info = *info_it->second;
+
+            /// Only create lazy cursors for compressed posting lists (V2 has Index Section in .pst).
+            if (token_info.header & PostingsSerialization::Flags::IsCompressed)
+            {
+                auto * postings_stream = large_postings_streams.count(token)
+                    ? large_postings_streams.at(token).get()
+                    : small_postings_stream.get();
+
+                auto cursor = std::make_shared<PostingListCursor>(*postings_stream, token_info);
+                cursor_map[token] = std::move(cursor);
+            }
+        }
+
+        /// Use lazy path if all required tokens have lazy cursors.
+        if (!cursor_map.empty() && cursor_map.size() == search_query->tokens.size())
+        {
+            float density_threshold = ctx_settings[Setting::text_index_density_threshold].value;
+
+            if (search_query->search_mode == TextSearchMode::Any)
+                lazyUnionPostingLists(column, cursor_map, search_query->tokens, old_size, row_offset, num_rows);
+            else if (search_query->search_mode == TextSearchMode::All)
+                lazyIntersectPostingLists(column, cursor_map, search_query->tokens, old_size, row_offset, num_rows, density_threshold);
+
+            used_lazy = true;
+        }
+    }
+
+    if (!used_lazy)
+    {
+        if (search_query->search_mode == TextSearchMode::Any)
+            applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
+        else if (search_query->search_mode == TextSearchMode::All)
+            applyPostingsAll(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
+    }
 }
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
