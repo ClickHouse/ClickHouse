@@ -258,7 +258,10 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         /// distributed_ddl_output_mode = '*_only_active', although it may be still busy with previous queries.
         /// Provide a way to identify such replicas to avoid waiting for them until they catch up.
         UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
-        unsynced_after_recovery = max_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] <= new_max_log_ptr;
+        /// Use strict less-than: with `<=`, when `max_replication_lag_to_enqueue` is 0 the condition
+        /// `max_log_ptr + 0 <= new_max_log_ptr` is always true (since `max_log_ptr` can only grow),
+        /// which would falsely mark a fully caught-up replica as unsynced.
+        unsynced_after_recovery = max_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < new_max_log_ptr;
         LOG_INFO(log, "Finishing replica initialization, our_log_ptr={}, max_log_ptr={}, unsynced_after_recovery={}", max_log_ptr, new_max_log_ptr, unsynced_after_recovery.load());
         if (unsynced_after_recovery)
             active_id += DatabaseReplicated::REPLICA_UNSYNCED_MARKER;
@@ -621,7 +624,9 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     {
         UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
         LOG_TRACE(log, "Replica was not fully synced after recovery: our_log_ptr={}, max_log_ptr={}", our_log_ptr, max_log_ptr);
-        chassert(our_log_ptr < max_log_ptr);
+        /// Use `<=` instead of `<`: the replica may have already caught up (`our_log_ptr == max_log_ptr`)
+        /// while `unsynced_after_recovery` is still set — this is a valid state, not a logic error.
+        chassert(our_log_ptr <= max_log_ptr);
         bool became_synced = our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
         if (became_synced)
         {
