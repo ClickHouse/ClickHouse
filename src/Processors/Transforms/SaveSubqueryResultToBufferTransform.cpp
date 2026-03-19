@@ -31,6 +31,9 @@ void SaveSubqueryResultToBufferTransform::transform(Chunk & chunk)
 
 void SaveSubqueryResultToBufferTransform::onFinish()
 {
+    if (finished)
+        return;
+    finished = true;
     chunk_buffer->onInputFinish();
 }
 

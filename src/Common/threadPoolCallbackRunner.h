@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <exception>
 #include <future>
 
@@ -29,7 +30,7 @@ using ThreadPoolCallbackRunnerUnsafe = std::function<std::future<Result>(Callbac
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
-    return [my_pool = &pool, thread_group = CurrentThread::getGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
+    return [my_pool = &pool, thread_group = getCurrentThreadGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
         auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, my_callback = std::move(callback)]() mutable -> Result
         {
@@ -63,9 +64,25 @@ std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, T
     return schedule(std::move(task), priority); /// NOLINT
 }
 
-/// NOTE It's still not completely safe.
-/// When creating a runner on stack, you MUST make sure that it's created (and destroyed) before local objects captured by task lambda.
-
+/// ============================================================================
+/// CRITICAL SAFETY WARNING: DO NOT CAPTURE LOCAL VARIABLES BY REFERENCE!
+/// ============================================================================
+///
+/// Even though the destructor calls waitForAllToFinish(), exceptions during
+/// the enqueue loop can cause stack unwinding BEFORE the wait, resulting in
+/// stack-use-after-scope bugs when tasks access destroyed variables.
+///
+/// WRONG:  runner.enqueueAndKeepTrack([&my_lambda, ...] { my_lambda(); });
+/// RIGHT:  runner.enqueueAndKeepTrack([my_lambda, ...] { my_lambda(); });
+///
+/// WRONG:  runner.enqueueAndKeepTrack([&] { ... });  // captures everything by ref!
+/// RIGHT:  runner.enqueueAndKeepTrack([this, var1, var2] { ... });
+///
+/// For mutexes, use shared ownership:
+/// WRONG:  std::mutex m; runner.enqueueAndKeepTrack([&m] { ... });
+/// RIGHT:  auto m = std::make_shared<std::mutex>(); runner.enqueueAndKeepTrack([m] { ... });
+///
+///
 template <typename Result, typename PoolT = ThreadPool, typename Callback = std::function<Result()>>
 class ThreadPoolCallbackRunnerLocal final
 {
@@ -163,6 +180,18 @@ public:
         waitForAllToFinish();
     }
 
+    /// Deleted overload: Catch std::ref() and std::reference_wrapper usage at compile-time
+    template <typename Fn>
+    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(
+        std::reference_wrapper<Fn> callback,
+        Priority priority = {},
+        std::optional<uint64_t> wait_microseconds = {}) = delete;
+    // If you hit this error, you're passing std::ref(lambda) or capturing by reference.
+    // Change [&my_lambda] to [my_lambda] (capture by value).
+    //
+    // Note: This only catches std::reference_wrapper. It does NOT catch all reference
+    // captures (e.g., [&local_var]). Use clang-tidy or code review for complete coverage.
+
     /// Adds a new task to the pool and returns it
     /// You are responsible for handling it from now on, checking its status and so on. You must implement your own waitForAllToFinish* equivalent
     /// You must ensure that all returned tasks are waited upon (i.e., their futures are completed) before the ThreadPool is destroyed.
@@ -173,7 +202,7 @@ public:
         auto task = std::make_shared<Task>();
         task->future = promise->get_future();
 
-        auto task_func = [this, task, thread_group = CurrentThread::getGroup(), my_callback = std::move(callback), promise]() mutable -> void
+        auto task_func = [this, task, thread_group = getCurrentThreadGroup(), my_callback = std::move(callback), promise]() mutable -> void
         {
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))

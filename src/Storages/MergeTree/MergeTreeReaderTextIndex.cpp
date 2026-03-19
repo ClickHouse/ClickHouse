@@ -49,6 +49,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->settings)
     , index(std::move(index_))
     , can_skip_mark(can_skip_mark_)
+    , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index.index).getPostingListCodec())
 {
     for (const auto & column : columns_)
     {
@@ -166,7 +167,7 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
             size_t num_rows_in_part = data_part_info_for_read->getRowCount();
             double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_part);
 
-            if (cardinality <= num_rows_in_part * selectivity_threshold)
+            if (cardinality <= static_cast<double>(num_rows_in_part) * selectivity_threshold)
             {
                 useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
                 ProfileEvents::increment(ProfileEvents::TextIndexUseHint);
@@ -232,7 +233,6 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
         may_be_true_granules.add(static_cast<UInt32>(mark));
 
     analyzed_granules.add(static_cast<UInt32>(mark));
-    granule_text.resetAfterAnalysis();
     return can_skip_mark && !may_be_true;
 }
 
@@ -273,8 +273,9 @@ size_t MergeTreeReaderTextIndex::readRows(
 
     size_t read_rows = 0;
     createEmptyColumns(res_columns);
+    size_t total_marks = data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal();
 
-    while (read_rows < max_rows_to_read)
+    while (read_rows < max_rows_to_read && from_mark < total_marks)
     {
         /// When the number of rows in a part is smaller than `index_granularity`,
         /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
@@ -339,7 +340,7 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
     }
 }
 
-double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const MergeTreeIndexGranuleText::TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
+double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
 {
     chassert(!query.tokens.empty());
 
@@ -359,7 +360,10 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
             /// The the expected cardinality of the intersection is:
             /// N * pn = N * (|A1| * |A2| * ... * |An| / N) = |A1| * |A2| * ... * |An| / N^(n-1).
 
-            double cardinality = 1.0;
+            /// Compute in log-space to avoid double overflow when many tokens
+            /// have large cardinalities: log(N * p1 * p2 * ... * pn) =
+            /// sum(log(|Ai|)) - (n-1) * log(N).
+            double log_cardinality = 0.0;
 
             for (const auto & token : query.tokens)
             {
@@ -367,11 +371,11 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
                 if (it == remaining_tokens.end())
                     return 0;
 
-                cardinality *= it->second.cardinality;
+                log_cardinality += std::log(static_cast<double>(it->second->cardinality));
             }
 
-            cardinality /= std::pow(total_rows, query.tokens.size() - 1);
-            return cardinality;
+            log_cardinality -= static_cast<double>(query.tokens.size() - 1) * std::log(static_cast<double>(total_rows));
+            return std::exp(log_cardinality);
         }
         case TextSearchMode::Any:
         {
@@ -388,11 +392,11 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
             for (const auto & token : query.tokens)
             {
                 auto it = remaining_tokens.find(token);
-                double token_cardinality = it == remaining_tokens.end() ? 0 : it->second.cardinality;
-                cardinality *= (1.0 - (token_cardinality / total_rows));
+                double token_cardinality = it == remaining_tokens.end() ? 0 : it->second->cardinality;
+                cardinality *= (1.0 - (token_cardinality / static_cast<double>(total_rows)));
             }
 
-            cardinality = total_rows * (1.0 - cardinality);
+            cardinality = static_cast<double>(total_rows) * (1.0 - cardinality);
             return cardinality;
         }
     }
@@ -427,7 +431,7 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
             continue;
         }
 
-        auto token_postings = readPostingsBlocksForToken(token, token_info, *rows_range);
+        auto token_postings = readPostingsBlocksForToken(token, *token_info, *rows_range);
 
         if (token_postings.size() == 1)
         {
@@ -466,7 +470,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
         if (inserted)
         {
             auto * postings_stream = large_postings_streams.at(token).get();
-            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx);
+            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx, postings_serialization, granule_text.getIndexIdForCaches());
         }
 
         token_postings.push_back(it->second);
@@ -486,9 +490,9 @@ void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
         if (it == postings_blocks.end())
             continue;
 
-        for (size_t i = 0; i < token_info.ranges.size(); ++i)
+        for (size_t i = 0; i < token_info->ranges.size(); ++i)
         {
-            if (!token_info.ranges[i].intersects(range))
+            if (!token_info->ranges[i].intersects(range))
                 it->second.erase(i);
         }
     }
@@ -597,7 +601,7 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     if (postings.empty() || search_query->tokens.empty())
         return;
 
-    if (search_query->search_mode == TextSearchMode::Any || postings.size() == 1)
+    if (search_query->search_mode == TextSearchMode::Any)
         applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
     else if (search_query->search_mode == TextSearchMode::All)
         applyPostingsAll(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);

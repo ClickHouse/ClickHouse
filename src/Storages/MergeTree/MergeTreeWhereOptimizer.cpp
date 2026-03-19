@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <ranges>
 #include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
@@ -77,7 +76,7 @@ static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, cons
     /// Add also requested subcolumns to known table columns.
     for (const auto & column : queried_columns)
     {
-        if (storage_columns.hasSubcolumn(column))
+        if (storage_columns.hasSubcolumn(options.kind, column))
             table_columns.insert(column);
     }
 
@@ -355,11 +354,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         if (where_optimizer_context.use_statistics)
         {
             cond.good = cond.viable;
-
-            cond.estimated_row_count = estimator->estimateRelationProfile(storage_metadata, node).rows;
-
-            if (node.getASTNode() != nullptr)
-                LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);
+            cond.estimated_row_count = static_cast<Float64>(estimator->estimateRelationProfile(storage_metadata, node).rows);
+            LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getColumnName(), cond.estimated_row_count);
         }
 
         if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
@@ -421,10 +417,10 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
     if (conditions.size() == 1)
         return conditions.front().node.getASTNode()->clone();
 
-    const auto function = std::make_shared<ASTFunction>();
+    const auto function = make_intrusive<ASTFunction>();
 
     function->name = "and";
-    function->arguments = std::make_shared<ASTExpressionList>();
+    function->arguments = make_intrusive<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
     for (const auto & elem : conditions)

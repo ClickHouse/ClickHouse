@@ -5,6 +5,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -29,7 +30,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
-#include <Storages/MergeTree/TextIndexUtils.h>
+#include <Storages/MergeTree/TextIndexSegment.h>
 
 namespace ProfileEvents
 {
@@ -54,6 +55,10 @@ using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
 class BuildTextIndexTransform;
 using BuildTextIndexTransformPtr = std::shared_ptr<BuildTextIndexTransform>;
+
+class BuildStatisticsTransform;
+using BuildStatisticsTransformPtr = std::shared_ptr<BuildStatisticsTransform>;
+using BuildStatisticsTransformMap = std::unordered_map<String, BuildStatisticsTransformPtr>;
 
 /**
  * Overview of the merge algorithm
@@ -158,6 +163,13 @@ public:
         return res;
     }
 
+    PlainMarksByName releaseCachedIndexMarks() const
+    {
+        PlainMarksByName res;
+        std::swap(global_ctx->cached_index_marks, res);
+        return res;
+    }
+
     bool execute();
 
     void cancel() noexcept;
@@ -210,6 +222,7 @@ private:
         Names deduplicate_by_columns{};
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
+        bool vertical_ttl_delete{false};
         CompressionCodecPtr compression_codec{nullptr};
 
         NamesAndTypesList gathering_columns{};
@@ -218,8 +231,9 @@ private:
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
-        MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
-        ColumnsSubstreams gathered_columns_substreams{};
+
+        MergedBlockOutputStream::GatheredData gathered_data{};
+        std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
@@ -250,8 +264,9 @@ private:
 
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
-        IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
+        WrittenOffsetSubstreams written_offset_substreams{};
         PlainMarksByName cached_marks;
+        PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
         bool need_prefix;
@@ -289,6 +304,7 @@ private:
         std::vector<Squashing> projection_squashes;
         size_t projection_block_num = 0;
         ExecutableTaskPtr merge_projection_parts_task_ptr;
+        BuildStatisticsTransformMap build_statistics_transforms;
 
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
@@ -385,6 +401,7 @@ private:
         {
             QueryPipeline pipeline;
             MergeTreeIndices indexes_to_recalc;
+            BuildStatisticsTransformMap build_statistics_transforms;
         };
 
         std::optional<PreparedColumnPipeline> prepared_pipeline;
@@ -394,6 +411,7 @@ private:
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
+        BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
     };
 
@@ -515,7 +533,7 @@ private:
         StageRuntimeContextPtr getContextForNextStage() override;
         ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeProjectionStageTotalMilliseconds; }
 
-        bool mergeMinMaxIndexAndPrepareProjections() const;
+        bool prepareProjections() const;
         bool executeProjections() const;
         bool finalizeProjectionsAndWholeMerge() const;
 
@@ -524,7 +542,7 @@ private:
 
         const MergeProjectionsStageSubtasks subtasks
         {
-            &MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections,
+            &MergeProjectionsStage::prepareProjections,
             &MergeProjectionsStage::executeProjections,
             &MergeProjectionsStage::finalizeProjectionsAndWholeMerge
         };
@@ -554,8 +572,12 @@ private:
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
+    static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
+    static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
+    static void mergeBuiltStatistics(BuildStatisticsTransformMap && build_statistics_transforms, const GlobalRuntimeContextPtr & global_ctx);
+    static BuildStatisticsTransformPtr addBuildStatisticsStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
 /// FIXME

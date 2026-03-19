@@ -39,7 +39,7 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_) const;
+    bool requestReadingInOrder() const;
 
     // The name of the returned type is misleading, this order has nothing in common with the corresponding SELECT query
     // and is taken from the storage metadata.
@@ -56,6 +56,7 @@ private:
     const bool need_only_count;
     const size_t max_block_size;
     size_t num_streams;
+    const size_t max_num_streams;
     const bool distributed_processing;
 
     void createIterator();

@@ -81,14 +81,11 @@ namespace impl
         ColumnPtr key0;
         ColumnPtr key1;
         bool is_const;
-        const ColumnArray::Offsets * offsets = nullptr;
 
         size_t size() const
         {
             assert(key0 && key1);
             assert(key0->size() == key1->size());
-            if (offsets != nullptr && !offsets->empty())
-                return offsets->back();
             return key0->size();
         }
 
@@ -96,18 +93,18 @@ namespace impl
         {
             if (is_const)
                 i = 0;
-            assert(key0->size() == key1->size());
-            if (offsets != nullptr && i > 0)
-            {
-                const auto * const begin = std::upper_bound(offsets->begin(), offsets->end(), i - 1);
-                const auto * upper = std::upper_bound(begin, offsets->end(), i);
-                if (upper != offsets->end())
-                    i = upper - begin;
-            }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
             assert(key0->size() > i);
             return {key0data[i], key1data[i]};
+        }
+
+        /// Replicate key columns so that each array element gets the key of its parent row.
+        SipHashKeyColumns replicateForArray(const ColumnArray::Offsets & offsets) const
+        {
+            if (is_const)
+                return *this;
+            return {.key0 = key0->replicate(offsets), .key1 = key1->replicate(offsets), .is_const = false};
         }
     };
 
@@ -210,6 +207,7 @@ struct SipHash64Impl
     static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return combineHashesFunc<UInt64, SipHash64Impl>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct SipHash64KeyedImpl
@@ -233,6 +231,7 @@ struct SipHash64KeyedImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 #if USE_SSL
@@ -278,6 +277,7 @@ struct HalfMD5Impl
     /// Otherwise it will hash bytes in memory as a string using corresponding hash function.
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 #endif
 
@@ -291,6 +291,7 @@ struct SipHash128Impl
     static UInt128 apply(const char * data, const size_t size) { return sipHash128(data, size); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct SipHash128KeyedImpl
@@ -314,6 +315,7 @@ struct SipHash128KeyedImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct SipHash128ReferenceImpl
@@ -327,6 +329,7 @@ struct SipHash128ReferenceImpl
     static UInt128 apply(const char * data, const size_t size) { return sipHash128Reference(data, size); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct SipHash128ReferenceKeyedImpl
@@ -359,6 +362,7 @@ struct SipHash128ReferenceKeyedImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 /** Why we need MurmurHash2?
@@ -385,6 +389,7 @@ struct MurmurHash2Impl32
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct MurmurHash2Impl64
@@ -403,6 +408,7 @@ struct MurmurHash2Impl64
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 /// To be compatible with gcc: https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191
@@ -422,6 +428,7 @@ struct GccMurmurHashImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 /// To be compatible with Default Partitioner in Kafka:
@@ -444,6 +451,7 @@ struct KafkaMurmurHashImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct MurmurHash3Impl32
@@ -468,6 +476,7 @@ struct MurmurHash3Impl32
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct MurmurHash3Impl64
@@ -489,6 +498,7 @@ struct MurmurHash3Impl64
     static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return IntHash64Impl::apply(h1) ^ h2; }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct MurmurHash3Impl128
@@ -507,6 +517,7 @@ struct MurmurHash3Impl128
     static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, MurmurHash3Impl128>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
@@ -554,6 +565,7 @@ struct JavaHashImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct JavaHashUTF16LEImpl
@@ -589,6 +601,7 @@ struct JavaHashUTF16LEImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 /// This is just JavaHash with zeroed out sign bit.
@@ -610,6 +623,7 @@ struct HiveHashImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct ImplCityHash64
@@ -621,6 +635,7 @@ struct ImplCityHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
     static constexpr bool use_int_hash_for_pods = true;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 // see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
@@ -633,6 +648,7 @@ struct ImplFarmFingerprint64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return NAMESPACE_FOR_HASH_FUNCTIONS::Fingerprint(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Fingerprint64(s, len); }
     static constexpr bool use_int_hash_for_pods = true;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 // see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
@@ -645,6 +661,7 @@ struct ImplFarmHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len); }
     static constexpr bool use_int_hash_for_pods = true;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct ImplMetroHash64
@@ -668,6 +685,7 @@ struct ImplMetroHash64
     }
 
     static constexpr bool use_int_hash_for_pods = true;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct ImplXxHash32
@@ -688,6 +706,7 @@ struct ImplXxHash32
     static auto combineHashes(UInt32 h1, UInt32 h2) { return IntHash32Impl::apply(h1) ^ h2; }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct ImplXxHash64
@@ -705,6 +724,7 @@ struct ImplXxHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct ImplXXH3
@@ -722,6 +742,28 @@ struct ImplXXH3
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
+};
+
+struct ImplXXH3_128
+{
+    static constexpr auto name = "xxh3_128";
+    using ReturnType = UInt128;
+
+    static UInt128 apply(const char * s, const size_t len)
+    {
+        auto hash = XXH_INLINE_XXH3_128bits(s, len);
+        return {hash.low64, hash.high64};
+    }
+
+    /*
+       With current implementation with more than 1 arguments it will give the results
+       non-reproducible from outside of CH. (see comment on ImplXxHash32).
+     */
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, ImplXXH3_128>(h1, h2); }
+
+    static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = true;
 };
 
 DECLARE_MULTITARGET_CODE(
@@ -840,10 +882,10 @@ public:
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionIntHash<Impl, Name>>();
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionIntHash<Impl, Name>>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
+        selector.registerImplementation<TargetArch::x86_64_v4,
+            TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
     #endif
     }
 
@@ -1183,9 +1225,8 @@ private:
 
             if constexpr (Keyed)
             {
-                KeyColumnsType key_cols_tmp{key_cols};
-                key_cols_tmp.offsets = &offsets;
-                executeForArgument(key_cols_tmp, nested_type, nested_column, vec_temp, nested_is_first);
+                auto key_cols_replicated = key_cols.replicateForArray(offsets);
+                executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
             }
             else
                 executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
@@ -1431,7 +1472,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
+        /// backward-compatible
+        if constexpr (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
         {
             return std::make_shared<DataTypeFixedString>(sizeof(UInt128));
         }
@@ -1441,7 +1483,8 @@ public:
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
+        /// backward-compatible
+        if constexpr (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
         {
             return std::make_shared<DataTypeFixedString>(sizeof(UInt128));
         }
@@ -1479,7 +1522,7 @@ public:
             }
         }
 
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
+        if constexpr (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring) /// backward-compatible
         {
             if constexpr (std::endian::native == std::endian::big)
                 std::ranges::for_each(col_to->getData(), transformEndianness<std::endian::little, std::endian::native, ToType>);
@@ -1524,9 +1567,9 @@ public:
             .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 
 #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2, TargetSpecific::AVX2::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
         selector
-            .registerImplementation<TargetArch::AVX512F, TargetSpecific::AVX512F::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+            .registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 #endif
     }
 
@@ -1759,6 +1802,7 @@ struct ImplWyHash64
     static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return combineHashesFunc<UInt64, ImplWyHash64>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
@@ -1796,6 +1840,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
+using FunctionXXH3_128 = FunctionAnyHash<ImplXXH3_128>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 }

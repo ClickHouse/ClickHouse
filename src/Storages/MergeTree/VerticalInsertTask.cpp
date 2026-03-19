@@ -694,14 +694,14 @@ void VerticalInsertTask::executeHorizontalPhase()
         metadata_snapshot,
         merging_columns,
         horizontal_skip_indexes,
-        merging_statistics,
         codec,
         index_granularity,
-        context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
+        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         merging_block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        context->getWriteSettings());
+        context->getWriteSettings(),
+        static_cast<WrittenOffsetSubstreams *>(nullptr));
 
     if (!horizontal_output->getIndexGranularity())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granularity is not initialized for horizontal output in vertical insert");
@@ -910,10 +910,10 @@ struct VerticalInsertTask::VerticalPhaseState
             task.metadata_snapshot,
             batch_column_list,
             batch_skip_indexes,
-            batch_statistics,
             task.codec,
             task.horizontal_output->getIndexGranularity(),
-            batch_uncompressed_bytes);
+            batch_uncompressed_bytes,
+            static_cast<WrittenOffsetSubstreams *>(nullptr));
 
         ProfileEvents::increment(ProfileEvents::VerticalInsertWritersCreated);
         ProfileEvents::increment(ProfileEvents::VerticalInsertWriterFlushes);

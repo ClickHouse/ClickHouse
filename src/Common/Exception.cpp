@@ -5,9 +5,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/demangle.h>
+#include <Core/LogsLevel.h>
 #include <Common/AtomicLogger.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
+#include <Common/ExceptionExt.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Logger.h>
 #include <Common/SensitiveDataMasker.h>
@@ -133,7 +136,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
 }
 
 Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
-    : Poco::Exception(msg_masked.msg, code)
+    : Poco::Exception(std::move(msg_masked.msg), code)
     , remote(remote_)
 {
     if (terminate_on_any_exception)
@@ -186,6 +189,9 @@ void Exception::addMessage(const MessageMasked & msg_masked)
 
 std::string getExceptionStackTraceString(const std::exception & e)
 {
+    /// Explicitly block MEMORY_LIMIT_EXCEEDED
+    LockMemoryExceptionInThread lock(VariableContext::Global);
+
     auto * stack_trace_frames = e.get_stack_trace_frames();
     auto stack_trace_size = e.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
@@ -202,7 +208,7 @@ std::string getExceptionStackTraceString(std::exception_ptr e)
     {
         return getExceptionStackTraceString(exception);
     }
-    catch (...)
+    catch (...) // Ok: no stack trace available for non-std exceptions
     {
         return {};
     }
@@ -293,65 +299,9 @@ catch (...) // NOLINT(bugprone-empty-catch)
 {
 }
 
-static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
-{
-    try
-    {
-        PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
-        if (start_of_message.empty())
-        {
-            switch (level)
-            {
-                case LogsLevel::none: break;
-                case LogsLevel::test: LOG_TEST(logger, message); break;
-                case LogsLevel::trace: LOG_TRACE(logger, message); break;
-                case LogsLevel::debug: LOG_DEBUG(logger, message); break;
-                case LogsLevel::information: LOG_INFO(logger, message); break;
-                case LogsLevel::warning: LOG_WARNING(logger, message); break;
-                case LogsLevel::error: LOG_ERROR(logger, message); break;
-                case LogsLevel::fatal: LOG_FATAL(logger, message); break;
-            }
-        }
-        else
-        {
-            switch (level)
-            {
-                case LogsLevel::none: break;
-                case LogsLevel::test: LOG_TEST(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::trace: LOG_TRACE(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::debug: LOG_DEBUG(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::information: LOG_INFO(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::warning: LOG_WARNING(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::error: LOG_ERROR(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::fatal: LOG_FATAL(logger, "{}: {}", start_of_message, message.text); break;
-            }
-        }
-    }
-    catch (...) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    /// Mark the exception as logged.
-    try
-    {
-        throw;
-    }
-    catch (Exception & e)
-    {
-        e.markAsLogged();
-    }
-    catch (...) // NOLINT(bugprone-empty-catch)
-    {
-    }
-}
-
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message, LogsLevel level)
 {
-    /// Under high memory pressure, new allocations throw a
-    /// MEMORY_LIMIT_EXCEEDED exception.
-    ///
-    /// In this case the exception will not be logged, so let's block the
-    /// MemoryTracker until the exception will be logged.
+    /// Explicitly block MEMORY_LIMIT_EXCEEDED
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     /// getLogger can allocate memory too
@@ -361,11 +311,7 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
 {
-    /// Under high memory pressure, new allocations throw a
-    /// MEMORY_LIMIT_EXCEEDED exception.
-    ///
-    /// And in this case the exception will not be logged, so let's block the
-    /// MemoryTracker until the exception will be logged.
+    /// Explicitly block MEMORY_LIMIT_EXCEEDED
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     tryLogCurrentExceptionImpl(logger, start_of_message, level);
@@ -443,7 +389,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
             }
         }
 
-        if (num_maps > max_map_count * 0.90)
+        if (static_cast<double>(num_maps) > static_cast<double>(max_map_count) * 0.90)
         {
             msg += fmt::format(
                 "\nIt looks like that the process is near the limit on number of virtual memory mappings."
@@ -454,7 +400,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
                 num_maps, max_map_count);
         }
     }
-    catch (...)
+    catch (...) // Ok: cannot obtain additional info about memory usage
     {
         msg += "\nCannot obtain additional info about memory usage.";
     }
@@ -511,6 +457,9 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
     bool with_extra_info /*= true*/,
     bool with_version /*= true*/)
 {
+    /// Explicitly block MEMORY_LIMIT_EXCEEDED
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
     WriteBufferFromOwnString stream;
     std::string_view message_format_string;
     std::vector<std::string> message_format_string_args;
@@ -539,7 +488,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
     }
     catch (const std::exception & e)
     {
@@ -557,7 +506,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
 
         if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
         {
@@ -572,10 +521,10 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
 
                 abortOnFailedAssertion(stream.str());
             }
-            catch (...) {} // NOLINT(bugprone-empty-catch)
+            catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
         }
     }
-    catch (...)
+    catch (...) // Ok: unknown exception type, format what we can
     {
         try
         {
@@ -589,7 +538,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
     }
 
     return PreformattedMessage{stream.str(), message_format_string, message_format_string_args};
@@ -614,7 +563,7 @@ int getCurrentExceptionCode()
     {
         return ErrorCodes::STD_EXCEPTION;
     }
-    catch (...)
+    catch (...) // Ok: return error code for unknown exception types
     {
         return ErrorCodes::UNKNOWN_EXCEPTION;
     }
@@ -638,7 +587,7 @@ int getExceptionErrorCode(std::exception_ptr e)
     {
         return ErrorCodes::STD_EXCEPTION;
     }
-    catch (...)
+    catch (...) // Ok: return error code for unknown exception types
     {
         return ErrorCodes::UNKNOWN_EXCEPTION;
     }
@@ -715,7 +664,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
         if (with_stacktrace && !has_embedded_stack_trace)
             stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
     }
-    catch (...) {} // NOLINT(bugprone-empty-catch)
+    catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
 
     return PreformattedMessage{stream.str(), e.tryGetMessageFormatString(), e.getMessageFormatStringArgs()};
 }
@@ -752,7 +701,7 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
     {
         deserializeText(data);
     }
-    catch (...)
+    catch (...) // Ok: tryDeserializeText is a try-pattern, failure is expected
     {
         return false;
     }

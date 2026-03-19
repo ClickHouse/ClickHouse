@@ -58,6 +58,8 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
+    void renameInMemory(const StorageID & new_table_id) override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
