@@ -1951,9 +1951,8 @@ Aggregator::prepareColumnsForSharding(const Columns & columns, size_t row_count,
 
         /// TODO: If multiple aggregates share the same argument column, we materialize it
         /// multiple times. Could deduplicate by caching materialized columns by position.
-        for (size_t j = 0; j < aggregates_positions[i].size(); ++j)
+        for (auto pos : aggregates_positions[i])
         {
-            const auto pos = aggregates_positions[i][j];
             /// TODO: `addBatchForRows` reads columns by original row index and cannot
             /// handle sparse encoding. Materializing here until we add sparse-aware execution.
             auto argument_column = removeSpecialRepresentations(columns.at(pos)->convertToFullColumnIfConst());
