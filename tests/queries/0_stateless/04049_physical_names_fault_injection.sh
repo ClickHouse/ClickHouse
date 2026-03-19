@@ -27,9 +27,9 @@ $CLICKHOUSE_CLIENT --query "
         min_bytes_for_wide_part = 0,
         serialization_info_version = 'with_physical_names',
         activate_physical_names_for_existing_tables = 1;
-
-    INSERT INTO t_fp_concurrent VALUES (1, 'before_rename');
 "
+
+echo "INSERT INTO t_fp_concurrent VALUES (1, 'before_rename')" | $CLICKHOUSE_CLIENT
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT physical_names_pause_after_metadata_alter"
 
@@ -40,7 +40,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT physical_names_pause_after_met
 
 # While ALTER is paused (mapping + metadata both committed, only
 # serialization hint reset pending), insert a row using the new schema.
-$CLICKHOUSE_CLIENT --query "INSERT INTO t_fp_concurrent (a, d) VALUES (2, 'during_rename')"
+echo "INSERT INTO t_fp_concurrent (a, d) VALUES (2, 'during_rename')" | $CLICKHOUSE_CLIENT
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT physical_names_pause_after_metadata_alter"
 wait $ALTER_PID
@@ -65,9 +65,9 @@ $CLICKHOUSE_CLIENT --query "
         min_bytes_for_wide_part = 0,
         serialization_info_version = 'with_physical_names',
         activate_physical_names_for_existing_tables = 1;
-
-    INSERT INTO t_fp_crash VALUES (1, 'safe');
 "
+
+echo "INSERT INTO t_fp_crash VALUES (1, 'safe')" | $CLICKHOUSE_CLIENT
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT physical_names_throw_before_mapping_persist"
 
@@ -83,7 +83,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT physical_names_throw_before
 # Retry RENAME — must succeed because no partial state was committed.
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_fp_crash RENAME COLUMN b TO d"
 
-$CLICKHOUSE_CLIENT --query "INSERT INTO t_fp_crash (a, d) VALUES (2, 'recovered')"
+echo "INSERT INTO t_fp_crash (a, d) VALUES (2, 'recovered')" | $CLICKHOUSE_CLIENT
 $CLICKHOUSE_CLIENT --query "SELECT a, d FROM t_fp_crash ORDER BY a"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_fp_crash SYNC"
@@ -108,11 +108,11 @@ $CLICKHOUSE_CLIENT --query "
         activate_physical_names_for_existing_tables = 1;
 
     SYSTEM STOP MERGES t_fp_merge;
-
-    INSERT INTO t_fp_merge VALUES (1, 'one');
-    INSERT INTO t_fp_merge VALUES (2, 'two');
-    INSERT INTO t_fp_merge VALUES (3, 'three');
 "
+
+echo "INSERT INTO t_fp_merge VALUES (1, 'one')" | $CLICKHOUSE_CLIENT
+echo "INSERT INTO t_fp_merge VALUES (2, 'two')" | $CLICKHOUSE_CLIENT
+echo "INSERT INTO t_fp_merge VALUES (3, 'three')" | $CLICKHOUSE_CLIENT
 
 # Rename while merges are stopped (3 separate parts with old column name)
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_fp_merge RENAME COLUMN b TO d"
@@ -133,3 +133,44 @@ PARTS_AFTER=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.parts WHERE
 echo "parts_after_merge: $PARTS_AFTER"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_fp_merge SYNC"
+
+# Test 4: Two-phase DROP crash safety — exception after mapping persist but
+# before metadata commit.  With the two-phase drop fix, the mapping must
+# NOT have removed the dropped column yet, so the exception rolls back cleanly
+# and column b remains readable.
+
+$CLICKHOUSE_CLIENT --query "
+    DROP TABLE IF EXISTS t_fp_drop;
+
+    CREATE TABLE t_fp_drop
+    (
+        a UInt64,
+        b String
+    )
+    ENGINE = MergeTree
+    ORDER BY a
+    SETTINGS
+        min_bytes_for_wide_part = 0,
+        serialization_info_version = 'with_physical_names',
+        activate_physical_names_for_existing_tables = 1;
+"
+
+echo "INSERT INTO t_fp_drop VALUES (1, 'keep_me')" | $CLICKHOUSE_CLIENT
+
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT physical_names_throw_after_mapping_persist"
+
+# This ALTER should fail because of the injected exception
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_fp_drop DROP COLUMN b" 2>&1 | grep -o -m1 'FAULT_INJECTED'
+
+# Column b must still be readable — the two-phase drop kept b's mapping
+# entry in the persisted mapping (deferred removal to post-commit), and the
+# exception handler reverted the in-memory mapping to the old state.
+$CLICKHOUSE_CLIENT --query "SELECT a, b FROM t_fp_drop ORDER BY a"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT physical_names_throw_after_mapping_persist"
+
+# Retry DROP — must succeed because no partial state was committed.
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_fp_drop DROP COLUMN b"
+$CLICKHOUSE_CLIENT --query "SELECT a FROM t_fp_drop ORDER BY a"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE t_fp_drop SYNC"
