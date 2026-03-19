@@ -139,7 +139,7 @@ void KeeperSessionReadBarrier::registerPendingWrites(const KeeperRequestsForSess
 
         if (state_ptr->pending_writes.size() > settings_.max_pending_writes_per_session)
         {
-            LOG_WARNING(log_, "Session {} exceeded max pending writes limit ({}), current: {}",
+            LOG_WARNING(LogFrequencyLimiter(log_, 10), "Session {} exceeded max pending writes limit ({}), current: {}",
                 req.session_id, settings_.max_pending_writes_per_session, state_ptr->pending_writes.size());
         }
     }
