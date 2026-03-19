@@ -17,12 +17,13 @@ SerializationSubObjectSharedData::SerializationSubObjectSharedData(
     SerializationObjectSharedData::SerializationVersion serialization_version_,
     size_t buckets_,
     const String & paths_prefix_,
-    const DataTypePtr & dynamic_type_)
+    const DataTypePtr & dynamic_type_,
+    const SerializationPtr & dynamic_serialization_)
     : serialization_version(serialization_version_)
     , buckets(buckets_)
     , paths_prefix(paths_prefix_)
     , dynamic_type(dynamic_type_)
-    , dynamic_serialization(dynamic_type->getDefaultSerialization())
+    , dynamic_serialization(dynamic_serialization_)
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
 }
@@ -222,7 +223,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         {
             auto [src_shared_data_paths, src_shared_data_values, src_shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(*sub_object_shared_data_state->map_column);
             auto [dst_shared_data_paths, dst_shared_data_values, dst_shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(*column->assumeMutable());
-            StringRef prefix_ref(paths_prefix);
+            std::string_view prefix_ref(paths_prefix);
             for (size_t i = map_column_offset; i != sub_object_shared_data_state->map_column->size(); ++i)
             {
                 size_t start = (*src_shared_data_offsets)[ssize_t(i) - 1];
@@ -231,7 +232,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 size_t lower_bound_index = ColumnObject::findPathLowerBoundInSharedData(prefix_ref, *src_shared_data_paths, start, end);
                 for (; lower_bound_index != end; ++lower_bound_index)
                 {
-                    auto path = src_shared_data_paths->getDataAt(lower_bound_index).toView();
+                    auto path = src_shared_data_paths->getDataAt(lower_bound_index);
                     if (!path.starts_with(paths_prefix))
                         break;
 

@@ -47,12 +47,12 @@ private:
     ContextPtr context;
     SharedHeader source_header;
 
-    absl::flat_hash_map<StringRef, SinkPtr> partition_id_to_sink;
-    HashMapWithSavedHash<StringRef, size_t> partition_id_to_chunk_index;
+    absl::flat_hash_map<std::string_view, SinkPtr> partition_id_to_sink;
+    HashMapWithSavedHash<std::string_view, size_t> partition_id_to_chunk_index;
     IColumn::Selector chunk_row_index_to_partition_index;
     Arena partition_keys_arena;
 
-    SinkPtr getSinkForPartitionKey(StringRef partition_key);
+    SinkPtr getSinkForPartitionKey(std::string_view partition_key);
 };
 
 }

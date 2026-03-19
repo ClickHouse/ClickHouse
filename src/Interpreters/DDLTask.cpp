@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/NetException.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
@@ -24,6 +25,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -55,6 +57,11 @@ namespace ErrorCodes
 }
 
 
+String HostID::readableString() const
+{
+    return host_name + ":" + DB::toString(port);
+}
+
 HostID HostID::fromString(const String & host_port_str)
 {
     HostID res;
@@ -65,21 +72,8 @@ HostID HostID::fromString(const String & host_port_str)
 
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
-    try
-    {
-        auto address = DNSResolver::instance().resolveAddress(host_name, port);
-        return DB::isLocalAddress(address, clickhouse_port);
-    }
-    catch (const DB::NetException &)
-    {
-        /// Avoid "Host not found" exceptions
-        return false;
-    }
-    catch (const Poco::Net::NetException &)
-    {
-        /// Avoid "Host not found" exceptions
-        return false;
-    }
+    auto address = DNSResolver::instance().resolveAddress(host_name, port);
+    return DB::isLocalAddress(address, clickhouse_port);
 }
 
 bool HostID::isLoopbackHost() const
@@ -324,7 +318,16 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     }
 
     if (entry.settings)
-        query_context->applySettingsChanges(*entry.settings);
+    {
+        /// Clamp settings to the constraints of the local node, similar to how
+        /// TCPHandler handles secondary queries. Without this, settings from the
+        /// initiator node could bypass stricter constraints on worker nodes.
+        /// Work on a copy to avoid mutating the entry, which may be read later
+        /// (e.g. by DatabaseReplicatedTask::createSyncedNodeIfNeed) or retried.
+        auto settings_changes = *entry.settings;
+        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+    }
 
     return query_context;
 }
@@ -340,7 +343,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
     if (config_host_name)
     {
-        if (!IsSelfHostname(*config_host_name, maybe_secure_port, port))
+        if (!isSelfHostname(log, *config_host_name, maybe_secure_port, port))
             throw Exception(
                 ErrorCodes::DNS_ERROR,
                 "{} is not a local address. Check parameter 'host_name' in the configuration",
@@ -365,7 +368,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
         try
         {
-            if (!IsSelfHostID(host, maybe_secure_port, port))
+            if (!isSelfHostID(log, host, maybe_secure_port, port))
                 continue;
 
             if (host.isLoopbackHost())
@@ -589,18 +592,47 @@ String DDLTask::getShardID() const
     return res;
 }
 
-bool DDLTask::IsSelfHostID(const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+bool DDLTask::isSelfHostID(LoggerPtr log, const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
 {
-    // If the checking_host_id has a loopback address, it is not considered as the self host_id.
-    // Because all replicas will try to claim it as their own hosts.
-    return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
-        || checking_host_id.isLocalAddress(self_port);
+    try
+    {
+        return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
+            || checking_host_id.isLocalAddress(self_port);
+    }
+    catch (const DB::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_id.host_name, e.displayText());
+        return false;
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_id.host_name, e.displayText());
+        return false;
+    }
 }
 
-bool DDLTask::IsSelfHostname(const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+bool DDLTask::isSelfHostname(
+    LoggerPtr log, const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
 {
-    return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
-        || HostID(checking_host_name, self_port).isLocalAddress(self_port);
+    try
+    {
+        return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
+            || HostID(checking_host_name, self_port).isLocalAddress(self_port);
+    }
+    catch (const DB::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_name, e.displayText());
+        return false;
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_name, e.displayText());
+        return false;
+    }
 }
 
 DatabaseReplicatedTask::DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_)
@@ -642,6 +674,20 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+
+        /// Make sure that we did not disable replicated DDL queries
+        const auto & macros = from_context->getMacros();
+        bool should_check_stop_flag = macros->getMacroMap().contains("replica");
+        if (should_check_stop_flag)
+        {
+            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
+            stop_flag_path = macros->expand(stop_flag_path);
+
+            zookeeper->createAncestors(stop_flag_path);
+
+            txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
+            txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
+        }
     }
 
     txn->addOp(getOpToUpdateLogPointer());

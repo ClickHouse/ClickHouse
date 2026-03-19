@@ -30,7 +30,7 @@ public:
     Macros() = default;
     Macros(const Poco::Util::AbstractConfiguration & config, const String & key, LoggerPtr log = nullptr);
     Macros(const Poco::Util::AbstractConfiguration & config, const String & key, Poco::Logger * log = nullptr);
-    explicit Macros(std::map<String, String> map);
+    explicit Macros(std::map<String, String, std::less<>> map);
 
     struct MacroExpansionInfo
     {
@@ -65,11 +65,11 @@ public:
       */
     Names expand(const Names & source_names, size_t level = 0) const;
 
-    using MacroMap = std::map<String, String>;
+    using MacroMap = std::map<String, String, std::less<>>;
     MacroMap getMacroMap() const { return macros; }
 
-    String getValue(const String & key) const;
-    std::optional<String> tryGetValue(const String & key) const;
+    String getValue(std::string_view key) const;
+    std::optional<String> tryGetValue(std::string_view key) const;
 
 private:
     MacroMap macros;

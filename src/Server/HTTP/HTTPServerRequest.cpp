@@ -94,7 +94,7 @@ bool HTTPServerRequest::checkPeerConnected() const
     catch (Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
     {
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return false;
     }
@@ -180,6 +180,19 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
     setMethod(method);
     setURI(uri);
     setVersion(version);
+}
+
+std::string HTTPServerRequest::toStringForLogging() const
+{
+    return fmt::format(
+        "Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
+        getMethod(),
+        clientAddress().toString(),
+        get("User-Agent", "(none)"),
+        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ("")),
+        getContentType(),
+        getTransferEncoding(),
+        get("X-Forwarded-For", "(none)"));
 }
 
 }

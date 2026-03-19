@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <string_view>
 #include <variant>
 
 namespace DB
@@ -16,6 +16,9 @@ using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
+
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 namespace JSONBuilder { class JSONMap; }
 
@@ -78,10 +81,14 @@ public:
     struct FormatSettings
     {
         WriteBuffer & out;
+        std::string header_prefix;
+        std::string detail_prefix;
         size_t offset = 0;
-        const size_t indent = 2;
+        const size_t base_indent = 2;
         const char indent_char = ' ';
         const bool write_header = false;
+        bool compact = false;
+        bool pretty = false;
     };
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
@@ -118,6 +125,9 @@ public:
 
     virtual bool hasCorrelatedExpressions() const;
 
+    virtual bool supportsDataflowStatisticsCollection() const { return false; }
+
+    void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
 
     /// Returns true if the step has implemented removeUnusedColumns.
     virtual bool canRemoveUnusedColumns() const { return false; }
@@ -154,6 +164,8 @@ protected:
     /// This field is used to store added processors from this step.
     /// It is used only for introspection (EXPLAIN PIPELINE).
     Processors processors;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 

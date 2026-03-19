@@ -2,7 +2,6 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
@@ -290,7 +289,7 @@ private:
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
-        runner([this, ticket_number]()
+        runner.enqueueAndKeepTrack([this, ticket_number]()
         {
             parserThreadFunction(ticket_number);
         });

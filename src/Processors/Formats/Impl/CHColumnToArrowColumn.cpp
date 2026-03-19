@@ -41,6 +41,7 @@
         M(Float64, arrow::DoubleBuilder)
 
 #define FOR_ARROW_TYPES(M) \
+        M(BOOL, arrow::BooleanType) \
         M(UINT8, arrow::UInt8Type) \
         M(INT8, arrow::Int8Type) \
         M(UINT16, arrow::UInt16Type) \
@@ -53,7 +54,8 @@
         M(DOUBLE, arrow::DoubleType) \
         M(BINARY, arrow::BinaryType) \
         M(STRING, arrow::StringType) \
-        M(FIXED_SIZE_BINARY, arrow::FixedSizeBinaryType)
+        M(FIXED_SIZE_BINARY, arrow::FixedSizeBinaryType) \
+        M(DATE32, arrow::Date32Type)
 
 namespace DB
 {
@@ -81,7 +83,7 @@ namespace DB
         {"Float32", arrow::float32()},
         {"Float64", arrow::float64()},
 
-        {"Date", arrow::uint16()},      /// uint16 is used instead of date32, because Apache Arrow cannot correctly serialize Date32Array.
+        {"Date", arrow::date32()},
         {"DateTime", arrow::uint32()},  /// uint32 is used instead of date64, because we don't need milliseconds.
         {"Date32", arrow::date32()},
 
@@ -538,7 +540,7 @@ namespace DB
                 }
                 else
                 {
-                    std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                    std::string_view string_ref = internal_column.getDataAt(string_i);
                     status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 }
                 checkStatus(status, write_column->getName(), format_name);
@@ -548,7 +550,7 @@ namespace DB
         {
             for (size_t string_i = start; string_i < end; ++string_i)
             {
-                std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                std::string_view string_ref = internal_column.getDataAt(string_i);
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 checkStatus(status, write_column->getName(), format_name);
             }
@@ -620,27 +622,57 @@ namespace DB
         const String & format_name,
         arrow::ArrayBuilder* array_builder,
         size_t start,
-        size_t end)
+        size_t end,
+        bool as_uint16)
     {
         const PaddedPODArray<UInt16> & internal_data = assert_cast<const ColumnVector<UInt16> &>(*write_column).getData();
-        arrow::UInt16Builder & builder = assert_cast<arrow::UInt16Builder &>(*array_builder);
-        arrow::Status status;
 
-        if (null_bytemap)
+        if (as_uint16)
         {
-            for (size_t value_i = start; value_i < end; ++value_i)
+            arrow::UInt16Builder & builder = assert_cast<arrow::UInt16Builder &>(*array_builder);
+            arrow::Status status;
+
+            if (null_bytemap)
             {
-                if ((*null_bytemap)[value_i])
-                    status = builder.AppendNull();
-                else
-                    status = builder.Append(internal_data[value_i]);
+                for (size_t value_i = start; value_i < end; ++value_i)
+                {
+                    if ((*null_bytemap)[value_i])
+                        status = builder.AppendNull();
+                    else
+                        status = builder.Append(internal_data[value_i]);
+                    checkStatus(status, write_column->getName(), format_name);
+                }
+            }
+            else
+            {
+                status = builder.AppendValues(internal_data.data() + start, end - start);
                 checkStatus(status, write_column->getName(), format_name);
             }
         }
         else
         {
-            status = builder.AppendValues(internal_data.data() + start, end - start);
-            checkStatus(status, write_column->getName(), format_name);
+            arrow::Date32Builder & builder = assert_cast<arrow::Date32Builder &>(*array_builder);
+            arrow::Status status;
+
+            if (null_bytemap)
+            {
+                for (size_t value_i = start; value_i < end; ++value_i)
+                {
+                    if ((*null_bytemap)[value_i])
+                        status = builder.AppendNull();
+                    else
+                        status = builder.Append(static_cast<Int32>(internal_data[value_i]));
+                    checkStatus(status, write_column->getName(), format_name);
+                }
+            }
+            else
+            {
+                for (size_t value_i = start; value_i < end; ++value_i)
+                {
+                    status = builder.Append(static_cast<Int32>(internal_data[value_i]));
+                    checkStatus(status, write_column->getName(), format_name);
+                }
+            }
         }
     }
 
@@ -815,7 +847,7 @@ namespace DB
                 fillArrowArrayWithIPv4ColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 break;
             case TypeIndex::Date:
-                fillArrowArrayWithDateColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                fillArrowArrayWithDateColumnData(column, null_bytemap, format_name, array_builder, start, end, settings.output_date_as_uint16);
                 break;
             case TypeIndex::DateTime:
                 fillArrowArrayWithDateTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
@@ -1048,6 +1080,9 @@ namespace DB
         if (isIPv4(column_type))
             return arrow::uint32();
 
+        if (isDate(column_type) && settings.output_date_as_uint16)
+            return arrow::uint16();
+
         const std::string type_name = column_type->getFamilyName();
         if (const auto * arrow_type_it = std::find_if(
                 internal_type_to_arrow_type.begin(),
@@ -1168,7 +1203,7 @@ namespace DB
                     column = recursiveRemoveLowCardinality(column);
 
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_schema->field(column_i)->type(), &array_builder);
+                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_schema->field(static_cast<int>(column_i))->type(), &array_builder);
                 checkStatus(status, column->getName(), format_name);
 
                 fillArrowArray(

@@ -228,10 +228,10 @@ public:
         UInt32 src_scale = getDecimalScale(*arguments[0].type);
         Int64 multiplier_msec = DecimalUtils::scaleMultiplier<DateTime64>(3);
         Int64 multiplier_src = DecimalUtils::scaleMultiplier<DateTime64>(src_scale);
-        auto factor = multiplier_msec / static_cast<double>(multiplier_src);
+        auto factor = static_cast<double>(multiplier_msec) / static_cast<double>(multiplier_src);
 
         for (size_t i = 0; i < input_rows_count; ++i)
-            res_data[i] = static_cast<Int64>(src_data[i] * factor - snowflake_epoch) << time_shift;
+            res_data[i] = static_cast<Int64>(static_cast<double>(src_data[i]) * factor - static_cast<double>(snowflake_epoch)) << time_shift;
 
         return res_column;
     }
@@ -348,7 +348,7 @@ SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
     };
     FunctionDocumentation::IntroducedIn introduced_in_snowflakeToDateTime = {21, 10};
     FunctionDocumentation::Category category_snowflakeToDateTime = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_snowflakeToDateTime = {description_snowflakeToDateTime, syntax_snowflakeToDateTime, arguments_snowflakeToDateTime, returned_value_snowflakeToDateTime, examples_snowflakeToDateTime, introduced_in_snowflakeToDateTime, category_snowflakeToDateTime};
+    FunctionDocumentation documentation_snowflakeToDateTime = {description_snowflakeToDateTime, syntax_snowflakeToDateTime, arguments_snowflakeToDateTime, {}, returned_value_snowflakeToDateTime, examples_snowflakeToDateTime, introduced_in_snowflakeToDateTime, category_snowflakeToDateTime};
 
     factory.registerFunction<FunctionSnowflakeToDateTime>(documentation_snowflakeToDateTime);
 
@@ -387,7 +387,7 @@ SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
     };
     FunctionDocumentation::IntroducedIn introduced_in_snowflakeToDateTime64 = {21, 10};
     FunctionDocumentation::Category category_snowflakeToDateTime64 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_snowflakeToDateTime64 = {description_snowflakeToDateTime64, syntax_snowflakeToDateTime64, arguments_snowflakeToDateTime64, returned_value_snowflakeToDateTime64, examples_snowflakeToDateTime64, introduced_in_snowflakeToDateTime64, category_snowflakeToDateTime64};
+    FunctionDocumentation documentation_snowflakeToDateTime64 = {description_snowflakeToDateTime64, syntax_snowflakeToDateTime64, arguments_snowflakeToDateTime64, {}, returned_value_snowflakeToDateTime64, examples_snowflakeToDateTime64, introduced_in_snowflakeToDateTime64, category_snowflakeToDateTime64};
 
     factory.registerFunction<FunctionSnowflakeToDateTime64>(documentation_snowflakeToDateTime64);
 
@@ -425,7 +425,7 @@ WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToS
     };
     FunctionDocumentation::IntroducedIn introduced_in_dateTimeToSnowflake = {21, 10};
     FunctionDocumentation::Category category_dateTimeToSnowflake = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_dateTimeToSnowflake = {description_dateTimeToSnowflake, syntax_dateTimeToSnowflake, arguments_dateTimeToSnowflake, returned_value_dateTimeToSnowflake, examples_dateTimeToSnowflake, introduced_in_dateTimeToSnowflake, category_dateTimeToSnowflake};
+    FunctionDocumentation documentation_dateTimeToSnowflake = {description_dateTimeToSnowflake, syntax_dateTimeToSnowflake, arguments_dateTimeToSnowflake, {}, returned_value_dateTimeToSnowflake, examples_dateTimeToSnowflake, introduced_in_dateTimeToSnowflake, category_dateTimeToSnowflake};
 
     factory.registerFunction<FunctionDateTimeToSnowflake>(documentation_dateTimeToSnowflake);
 
@@ -462,7 +462,7 @@ WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT 
     };
     FunctionDocumentation::IntroducedIn introduced_in_dateTime64ToSnowflake = {21, 10};
     FunctionDocumentation::Category category_dateTime64ToSnowflake = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_dateTime64ToSnowflake = {description_dateTime64ToSnowflake, syntax_dateTime64ToSnowflake, arguments_dateTime64ToSnowflake, returned_value_dateTime64ToSnowflake, examples_dateTime64ToSnowflake, introduced_in_dateTime64ToSnowflake, category_dateTime64ToSnowflake};
+    FunctionDocumentation documentation_dateTime64ToSnowflake = {description_dateTime64ToSnowflake, syntax_dateTime64ToSnowflake, arguments_dateTime64ToSnowflake, {}, returned_value_dateTime64ToSnowflake, examples_dateTime64ToSnowflake, introduced_in_dateTime64ToSnowflake, category_dateTime64ToSnowflake};
 
     factory.registerFunction<FunctionDateTime64ToSnowflake>(documentation_dateTime64ToSnowflake);
 }

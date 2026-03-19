@@ -17,6 +17,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
+
 namespace
 {
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_short_name)
@@ -65,6 +71,11 @@ namespace
             ASTPtr x;
             if (!parser.parse(pos, x, expected))
                 return false;
+
+            /// This only checks for top-level aliases, nested aliases are always parenthesized so they
+            /// do not cause a formatting inconsistency.
+            if (!x->tryGetAlias().empty())
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Top-level aliases are not allowed in row policy filter expressions.");
 
             expr = x;
             return true;
@@ -174,7 +185,7 @@ namespace
         return true;
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -187,7 +198,7 @@ namespace
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             return true;
         });
     }
@@ -240,7 +251,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!names_parser.parse(pos, names_ast, expected))
         return false;
 
-    auto names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(names_ast);
+    auto names = boost::static_pointer_cast<ASTRowPolicyNames>(names_ast);
     String cluster = std::exchange(names->cluster, "");
 
     String new_short_name;
@@ -279,13 +290,13 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         break;
     }
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
     parseToRoles(pos, expected, attach_mode, roles);
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    auto query = std::make_shared<ASTCreateRowPolicyQuery>();
+    auto query = make_intrusive<ASTCreateRowPolicyQuery>();
     node = query;
 
     query->alter = alter;

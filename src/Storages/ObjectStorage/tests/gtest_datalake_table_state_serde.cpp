@@ -34,7 +34,7 @@ TEST(DatalakeStateSerde, IcebergStateSerde)
             WriteBufferFromString write_buffer{str};
             iceberg_state.serialize(write_buffer);
         }
-        ReadBufferFromMemory read_buffer(str.data(), str.size()) ;
+        ReadBufferFromMemory read_buffer(str) ;
         Iceberg::TableStateSnapshot serde_state = Iceberg::TableStateSnapshot::deserialize(read_buffer, DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION);
         ASSERT_TRUE(read_buffer.eof());
         ASSERT_EQ(iceberg_state, serde_state);
@@ -53,7 +53,7 @@ TEST(DatalakeStateSerde, DataLakeStateSerde)
             WriteBufferFromString write_buffer{str};
             serializeDataLakeTableStateSnapshot(initial_state, write_buffer);
         }
-        ReadBufferFromMemory read_buffer(str.data(), str.size()) ;
+        ReadBufferFromMemory read_buffer(str);
         DataLakeTableStateSnapshot serde_state = deserializeDataLakeTableStateSnapshot(read_buffer);
         ASSERT_TRUE(read_buffer.eof());
         ASSERT_EQ(initial_state, serde_state);

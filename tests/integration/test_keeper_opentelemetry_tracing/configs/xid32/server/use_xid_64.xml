@@ -1,0 +1,5 @@
+<clickhouse>
+    <zookeeper>
+        <use_xid_64>0</use_xid_64>
+    </zookeeper>
+</clickhouse>

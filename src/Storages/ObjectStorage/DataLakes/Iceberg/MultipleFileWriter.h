@@ -20,10 +20,11 @@ public:
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const std::optional<FormatSettings> & format_settings_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        const String & write_format_,
         SharedHeader sample_block_);
 
     void consume(const Chunk & chunk);
+    void startNewFile();
     void finalize();
     void release();
     void cancel();
@@ -54,7 +55,7 @@ private:
     ObjectStoragePtr object_storage;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
-    StorageObjectStorageConfigurationPtr configuration;
+    const String& write_format;
     SharedHeader sample_block;
     UInt64 total_bytes = 0;
 };

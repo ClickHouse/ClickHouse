@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cmath>
 #include <map>
 #include <vector>
 
@@ -839,7 +838,8 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 void writeFieldBinary(const Field & x, WriteBuffer & buf);
 Field readFieldBinary(ReadBuffer & buf);
 
-String toString(const Field & x);
+String fieldToString(const Field & x);
+
 }
 
 template <>
@@ -860,6 +860,6 @@ struct fmt::formatter<DB::Field>
     template <typename FormatContext>
     auto format(const DB::Field & x, FormatContext & ctx) const
     {
-        return fmt::format_to(ctx.out(), "{}", toString(x));
+        return fmt::format_to(ctx.out(), "{}", fieldToString(x));
     }
 };

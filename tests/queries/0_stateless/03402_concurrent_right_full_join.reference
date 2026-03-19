@@ -29,7 +29,7 @@ Positions: 4 0 1
                ALIAS toNullable(__table1.id) :: 0 -> __table1.id Nullable(UInt32) : 4
                ALIAS toNullable(__table1.value) :: 1 -> __table1.value Nullable(String) : 0
       Positions: 4 0 2 3
-        Join
+        Join (JOIN FillRightFirst)
         Type: RIGHT
         Strictness: ALL
         Algorithm: ConcurrentHashJoin

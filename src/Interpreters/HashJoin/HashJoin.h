@@ -6,8 +6,6 @@
 #include <variant>
 #include <vector>
 
-#include <Parsers/ASTTablesInSelectQuery.h>
-
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 
@@ -140,6 +138,7 @@ public:
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
+    bool addBlockToJoin(const Block & source_block_, size_t num_rows, bool check_limits) override;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
     bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
@@ -181,6 +180,10 @@ public:
       */
     IBlocksStreamPtr getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+
+    IBlocksStreamPtr getNonJoinedBlocks(
+        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
+        size_t bucket_idx, size_t num_buckets) const override;
 
     void onBuildPhaseFinish() override;
 
@@ -273,15 +276,15 @@ public:
         std::shared_ptr<FixedHashMap<UInt16, Mapped>>                         key16;
         std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           key32;
         std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
-        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_string;
-        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_fixed_string;
+        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_string;
+        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
         std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_string;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_fixed_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
@@ -389,7 +392,6 @@ public:
     struct RightTableData
     {
         Type type = Type::EMPTY;
-        bool empty = true;
 
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
         /// =>

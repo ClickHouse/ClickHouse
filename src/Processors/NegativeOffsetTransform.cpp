@@ -31,20 +31,20 @@ NegativeOffsetTransform::NegativeOffsetTransform(const Block & header_, UInt64 o
     }
 }
 
-NegativeOffsetTransform::Status NegativeOffsetTransform::prepare()
-{
-    if (ports_data.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port NegativeOffsetTransform");
-
-    return prepare({0}, {0});
-}
-
 /// First, our goal is to pull all the data from input ports. Once we have reached the end,
 /// then it is clear what should be part of the `offset` and what should be pushed out to the output ports.
-IProcessor::Status NegativeOffsetTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
+NegativeOffsetTransform::Status NegativeOffsetTransform::prepare()
 {
+    if (allOutputsFinished())
+    {
+        for (auto & port : ports_data)
+            port.input_port->close();
+        return Status::Finished;
+    }
+
     if (stage == Stage::Pull)
     {
+
         bool has_data_need = false;
         bool has_full_port = false;
 
@@ -77,10 +77,7 @@ IProcessor::Status NegativeOffsetTransform::prepare(const PortNumbers & updated_
             }
         };
 
-        for (auto pos : updated_input_ports)
-            process(pos);
-
-        for (auto pos : updated_output_ports)
+        for (size_t pos = 0; pos < ports_data.size(); ++pos)
             process(pos);
 
         if (has_data_need)
@@ -132,7 +129,6 @@ IProcessor::Status NegativeOffsetTransform::prepare(const PortNumbers & updated_
 
 NegativeOffsetTransform::Status NegativeOffsetTransform::advancePort(PortsData & data)
 {
-    auto & output = *data.output_port;
     auto & input = *data.input_port;
 
     /// Check can input.
@@ -140,6 +136,11 @@ NegativeOffsetTransform::Status NegativeOffsetTransform::advancePort(PortsData &
     {
         return Status::Finished;
     }
+
+    /// If we already have enough rows buffered, try to push whole chunks when output ports become available.
+    Status push_status = tryPushWholeFrontChunk();
+    if (push_status != Status::Finished)
+        return push_status;
 
     input.setNeeded();
 
@@ -158,14 +159,14 @@ NegativeOffsetTransform::Status NegativeOffsetTransform::advancePort(PortsData &
             rows_before_limit_at_least->add(rows);
         }
 
-        queue.push(ChunkWithPort{&output, std::move(chunk)});
+        queue.push(ChunkWithPort{std::move(chunk)});
 
         /// Push whole chunks while we can still keep the required offset.
         /// Ensures that queue does not grow too large.
-        Status status = tryPushWholeFrontChunk();
+        push_status = tryPushWholeFrontChunk();
 
-        if (status != Status::Finished)
-            return status;
+        if (push_status != Status::Finished)
+            return push_status;
     }
 
     if (input.isFinished())
@@ -176,40 +177,32 @@ NegativeOffsetTransform::Status NegativeOffsetTransform::advancePort(PortsData &
 
 IProcessor::Status NegativeOffsetTransform::tryPushWholeFrontChunk()
 {
-    /// Output port is closed, nothing can be done with the chunks; so, we keep discarding them.
-    while (!queue.empty() && queue.front().output_port->isFinished())
+    /// Need to keep at least 'offset' rows queued.
+    while (queued_row_count > offset)
     {
+        assert(!queue.empty() && "Queue is empty in tryPushWholeFrontChunk");
+
         auto & front = queue.front();
-        const UInt64 front_chunk_rows = front.chunk.getNumRows();
+
+        Chunk & chunk = front.chunk;
+        const UInt64 front_chunk_rows = chunk.getNumRows();
+
+        /// Make sure that front chunk can be completey pushed without potentially
+        /// going into the offset area.
+        if (queued_row_count - front_chunk_rows < offset)
+            return Status::Finished;
+
+        auto * output = getAvailableOutputPort();
+        if (!output)
+            return Status::PortFull;
+
+        output->push(std::move(chunk));
+
         queue.pop();
         queued_row_count -= front_chunk_rows;
     }
 
-    /// Need to keep at least 'offset' rows queued.
-    if (queued_row_count <= offset)
-        return Status::Finished;
-
-    auto & front = queue.front();
-
-    auto & output = *front.output_port;
-
-    Chunk & chunk = front.chunk;
-    const UInt64 front_chunk_rows = chunk.getNumRows();
-
-    /// Make sure that front chunk can be completey pushed without potentially
-    /// going into the offset area.
-    if (queued_row_count - front_chunk_rows < offset)
-        return Status::Finished;
-
-    if (!output.canPush())
-        return Status::PortFull;
-
-    output.push(std::move(chunk));
-
-    queue.pop();
-    queued_row_count -= front_chunk_rows;
-
-    return Status::PortFull;
+    return Status::Finished;
 }
 
 IProcessor::Status NegativeOffsetTransform::tryPushRemainingChunkPrefix()
@@ -220,8 +213,6 @@ IProcessor::Status NegativeOffsetTransform::tryPushRemainingChunkPrefix()
 
     auto & front = queue.front();
 
-    auto & output = *front.output_port;
-
     Chunk & chunk = front.chunk;
     const UInt64 front_chunk_rows = chunk.getNumRows();
 
@@ -230,14 +221,8 @@ IProcessor::Status NegativeOffsetTransform::tryPushRemainingChunkPrefix()
             ErrorCodes::LOGICAL_ERROR,
             "NegativeOffsetTransformtryPushRemainingChunkPrefix must not be required to fully push the front chunk");
 
-    if (output.isFinished())
-    {
-        queue.pop();
-        queued_row_count -= front_chunk_rows;
-        return Status::Finished;
-    }
-
-    if (!output.canPush())
+    auto * output = getAvailableOutputPort();
+    if (!output)
         return Status::PortFull;
 
     /// queued_row_count    <---------------------->
@@ -258,11 +243,46 @@ IProcessor::Status NegativeOffsetTransform::tryPushRemainingChunkPrefix()
     /// Remove the remaining rows after the cut.
     queued_row_count -= (front_chunk_rows - take);
 
-    output.push(std::move(chunk));
+    output->push(std::move(chunk));
 
     queue.pop();
     queued_row_count -= take;
 
-    return Status::PortFull;
+    return Status::Finished;
+}
+
+bool NegativeOffsetTransform::allOutputsFinished() const
+{
+    for (const auto & data : ports_data)
+    {
+        if (!data.output_port->isFinished())
+            return false;
+    }
+    return true;
+}
+
+OutputPort * NegativeOffsetTransform::getAvailableOutputPort()
+{
+    const size_t num_outputs = ports_data.size();
+
+    if (num_outputs == 0)
+        return nullptr;
+
+    for (size_t i = 0; i < num_outputs; ++i)
+    {
+        const size_t idx = (next_output_port + i) % num_outputs;
+
+        auto & output = *ports_data[idx].output_port;
+        if (output.isFinished())
+            continue;
+
+        if (!output.canPush())
+            continue;
+
+        next_output_port = (idx + 1) % num_outputs;
+        return &output;
+    }
+
+    return nullptr;
 }
 }

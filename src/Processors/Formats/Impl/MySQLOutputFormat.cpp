@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
+#include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolBinary.h>
@@ -105,8 +106,8 @@ void MySQLOutputFormat::finalizeImpl()
                 info.read_rows,
                 ReadableSize(info.read_bytes),
                 elapsed_seconds,
-                static_cast<size_t>(info.read_rows / elapsed_seconds),
-                ReadableSize(info.read_bytes / elapsed_seconds));
+                static_cast<size_t>(static_cast<double>(info.read_rows) / elapsed_seconds),
+                ReadableSize(static_cast<double>(info.read_bytes) / elapsed_seconds));
         }
 
         const auto & header = getPort(PortKind::Main).getHeader();

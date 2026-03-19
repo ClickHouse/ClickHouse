@@ -8,6 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 table_id="$(random_str 10)"
 
+# Does additional index analysis round and affects profile events
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0"
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS table_$table_id;"
 
@@ -40,7 +43,8 @@ $CLICKHOUSE_CLIENT -m -q "
     FROM
         system.query_log
     WHERE
-        current_database = currentDatabase()
+        event_date >= yesterday() AND event_time >= now() - 600
+        AND current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;
@@ -57,7 +61,8 @@ $CLICKHOUSE_CLIENT -m -q "
     FROM
         system.query_log
     WHERE
-        current_database = currentDatabase()
+        event_date >= yesterday() AND event_time >= now() - 600
+        AND current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;
@@ -74,7 +79,8 @@ $CLICKHOUSE_CLIENT -m -q "
     FROM
         system.query_log
     WHERE
-        current_database = currentDatabase()
+        event_date >= yesterday() AND event_time >= now() - 600
+        AND current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;
@@ -91,7 +97,8 @@ $CLICKHOUSE_CLIENT -m -q "
     FROM
         system.query_log
     WHERE
-        current_database = currentDatabase()
+        event_date >= yesterday() AND event_time >= now() - 600
+        AND current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;
