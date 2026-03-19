@@ -157,10 +157,10 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Date32:
             return dumpValue(field.safeGet<Int32>());
         case TypeIndex::Int64:
-            return dumpValue(field.safeGet<Int64>());
-        case TypeIndex::DateTime64:
         case TypeIndex::Time:
+            return dumpValue(field.safeGet<Int64>());
         case TypeIndex::Time64:
+        case TypeIndex::DateTime64:
             return dumpValue(field.safeGet<Decimal64>().getValue().value);
         case TypeIndex::String:
         {
