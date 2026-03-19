@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -13,8 +13,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
-
-#include <h3api.h>
 
 
 namespace DB
@@ -35,7 +33,11 @@ class FunctionH3KRing : public IFunction
 public:
     static constexpr auto name = "h3kRing";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3KRing>(); }
+    H3Validator validator;
+
+    explicit FunctionH3KRing(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3KRing>(context); }
 
     std::string getName() const override { return name; }
 
@@ -114,6 +116,12 @@ public:
             /// Check is already made while fetching the argument for k (to determine if it's an unsigned integer). Nevertheless, it's checked again here.
             if (k < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
+
+            if (!validator.validateCell(origin_hindex))
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
 
             const auto vec_size = maxGridDiskSize(k);
             std::vector<H3Index, AllocatorWithMemoryTracking<H3Index>> hindex_vec;

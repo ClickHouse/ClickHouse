@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
+#include <cstring>
 #include <limits>
 
 namespace DB
@@ -197,7 +198,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (fractional && !in.eof() && *in.position() == '.')
                 {
                     ++in.position();
-                    fractional->digits = readDigits(digits, sizeof(digits), in);
+                    fractional->digits = static_cast<UInt8>(readDigits(digits, sizeof(digits), in));
                     readDecimalNumber(fractional->value, fractional->digits, digits);
                 }
                 return ReturnType(true);
@@ -212,7 +213,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (fractional && !in.eof() && *in.position() == '.')
                 {
                     ++in.position();
-                    fractional->digits = readDigits(digits, sizeof(digits), in);
+                    fractional->digits = static_cast<UInt8>(readDigits(digits, sizeof(digits), in));
                     readDecimalNumber(fractional->value, fractional->digits, digits);
                 }
                 return ReturnType(true);
@@ -530,7 +531,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     // fit into result type. To provide less precise value rather than bogus one.
                     num_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), num_digits);
 
-                    fractional->digits = num_digits;
+                    fractional->digits = static_cast<UInt8>(num_digits);
                     readDecimalNumber(fractional->value, num_digits, digits);
                 }
                 else if (strict)
@@ -675,8 +676,49 @@ ReturnType parseDateTimeBestEffortImpl(
                     else
                         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
 
-                    while (!in.eof() && isAlphaASCII(*in.position()))
-                        ++in.position();
+                    /// Read remaining alphabetical characters of the word.
+                    /// For example, "March" after reading "Mar", or "Monday" after reading "Mon".
+                    char rest[7]; /// Longest valid suffix: "tember" or "nesday" (6 chars)
+                    size_t num_rest = readAlpha(rest, sizeof(rest), in);
+
+                    /// If there are still more alphabetical characters, the word is longer than any known name.
+                    if (!in.eof() && isAlphaASCII(*in.position()))
+                    {
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
+                    }
+
+                    /// If the word is longer than 3 characters, validate that it is a known full month or weekday name.
+                    /// For example, "March" is valid but "Married" is not, even though both start with "Mar".
+                    if (num_rest > 0)
+                    {
+                        char full_word[10];
+                        memcpy(full_word, alpha, 3);
+                        memcpy(full_word + 3, rest, num_rest);
+                        size_t full_len = 3 + num_rest;
+
+                        bool is_valid_name
+                            = (full_len == 7 && 0 == strncasecmp(full_word, "January", 7))
+                            || (full_len == 8 && 0 == strncasecmp(full_word, "February", 8))
+                            || (full_len == 5 && 0 == strncasecmp(full_word, "March", 5))
+                            || (full_len == 5 && 0 == strncasecmp(full_word, "April", 5))
+                            || (full_len == 4 && 0 == strncasecmp(full_word, "June", 4))
+                            || (full_len == 4 && 0 == strncasecmp(full_word, "July", 4))
+                            || (full_len == 6 && 0 == strncasecmp(full_word, "August", 6))
+                            || (full_len == 9 && 0 == strncasecmp(full_word, "September", 9))
+                            || (full_len == 7 && 0 == strncasecmp(full_word, "October", 7))
+                            || (full_len == 8 && 0 == strncasecmp(full_word, "November", 8))
+                            || (full_len == 8 && 0 == strncasecmp(full_word, "December", 8))
+                            || (full_len == 6 && 0 == strncasecmp(full_word, "Monday", 6))
+                            || (full_len == 7 && 0 == strncasecmp(full_word, "Tuesday", 7))
+                            || (full_len == 9 && 0 == strncasecmp(full_word, "Wednesday", 9))
+                            || (full_len == 8 && 0 == strncasecmp(full_word, "Thursday", 8))
+                            || (full_len == 6 && 0 == strncasecmp(full_word, "Friday", 6))
+                            || (full_len == 8 && 0 == strncasecmp(full_word, "Saturday", 8))
+                            || (full_len == 6 && 0 == strncasecmp(full_word, "Sunday", 6));
+
+                        if (!is_valid_name)
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
+                    }
 
                     /// For RFC 2822
                     if (has_day_of_week)

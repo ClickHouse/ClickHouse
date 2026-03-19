@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -12,12 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
-#include <constants.h>
-#include <h3api.h>
-
-
 static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
-
 
 namespace DB
 {
@@ -37,7 +32,11 @@ class FunctionH3ToChildren : public IFunction
 public:
     static constexpr auto name = "h3ToChildren";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToChildren>(); }
+    H3Validator validator;
+
+    explicit FunctionH3ToChildren(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToChildren>(context); }
 
     std::string getName() const override { return name; }
 
@@ -109,6 +108,12 @@ public:
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(child_resolution), getName(), toString(MAX_H3_RES));
+
+            if (!validator.validateCell(parent_hindex))
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
 
             const size_t vec_size = cellToChildrenSize(parent_hindex, child_resolution);
             if (vec_size > MAX_ARRAY_SIZE)

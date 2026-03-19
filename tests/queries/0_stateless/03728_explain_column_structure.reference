@@ -1,12 +1,12 @@
 Header: 1 UInt8
 Input headers: #0
                dummy UInt8
-  ReadFromStorage (SystemOne)
+  ReadFromSystemOne
   Header: dummy UInt8
   Input headers: No input headers
 Header: 1 UInt8 Const(size = 0, UInt8(size = 1))
 Input headers: #0
                dummy UInt8 UInt8(size = 0)
-  ReadFromStorage (SystemOne)
+  ReadFromSystemOne
   Header: dummy UInt8 UInt8(size = 0)
   Input headers: No input headers

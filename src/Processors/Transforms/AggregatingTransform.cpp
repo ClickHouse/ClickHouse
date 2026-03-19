@@ -1,5 +1,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
 #include <Processors/Chunk.h>
@@ -16,6 +17,13 @@
 #include <algorithm>
 #include <atomic>
 
+namespace CurrentMetrics
+{
+    extern const Metric DestroyAggregatesThreads;
+    extern const Metric DestroyAggregatesThreadsActive;
+    extern const Metric DestroyAggregatesThreadsScheduled;
+}
+
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
@@ -27,6 +35,47 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
     extern const int LOGICAL_ERROR;
+}
+
+ManyAggregatedData::~ManyAggregatedData()
+{
+    try
+    {
+        if (variants.size() <= 1)
+            return;
+
+        // Aggregation states destruction may be very time-consuming.
+        // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
+        // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
+        const auto pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::DestroyAggregatesThreads,
+            CurrentMetrics::DestroyAggregatesThreadsActive,
+            CurrentMetrics::DestroyAggregatesThreadsScheduled,
+            variants.size());
+
+        for (auto && variant : variants)
+        {
+            if (variant->size() < 100'000) // some seemingly reasonable constant
+                continue;
+
+            // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
+            if (variant->aggregator)
+            {
+                pool->scheduleOrThrowOnError(
+                    [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::AGGREGATOR_DESTRUCTION);
+                        my_variant.reset();
+                    });
+            }
+        }
+
+        pool->wait();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 /// Convert block to chunk.
@@ -43,6 +92,16 @@ Chunk convertToChunk(const Block & block)
     chunk.getChunkInfos().add(std::move(info));
 
     return chunk;
+}
+
+Chunk convertToChunk(Aggregator::AggregatedChunk && agg_chunk)
+{
+    auto info = std::make_shared<AggregatedChunkInfo>();
+    info->bucket_num = agg_chunk.bucket_num;
+    info->is_overflows = agg_chunk.is_overflows;
+
+    agg_chunk.chunk.getChunkInfos().add(std::move(info));
+    return std::move(agg_chunk.chunk);
 }
 
 namespace
@@ -182,9 +241,9 @@ protected:
             return {};
         }
 
-        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(
+        auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
             *data, arena, params->final, bucket_num, shared_data->is_cancelled, updater);
-        Chunk chunk = convertToChunk(block);
+        Chunk chunk = convertToChunk(std::move(agg_chunk));
 
         shared_data->is_bucket_processed[bucket_num] = true;
 
@@ -218,15 +277,15 @@ protected:
             if (current_bucket_num < NUM_BUCKETS)
             {
                 Arena * arena = variant->aggregates_pool;
-                Block block = params->aggregator.convertOneBucketToBlock(*variant, arena, params->final, current_bucket_num++);
-                return convertToChunk(block);
+                auto agg_chunk = params->aggregator.convertOneBucketToChunk(*variant, arena, params->final, current_bucket_num++);
+                return convertToChunk(std::move(agg_chunk));
             }
         }
         else if (!single_level_converted)
         {
-            Block block = params->aggregator.prepareBlockAndFillSingleLevel<true /* return_single_block */>(*variant, params->final);
+            auto agg_chunk = params->aggregator.prepareChunkAndFillSingleLevel<true /* return_single_block */>(*variant, params->final);
             single_level_converted = true;
-            return convertToChunk(block);
+            return convertToChunk(std::move(agg_chunk));
         }
 
         variant.reset();
@@ -639,13 +698,14 @@ private:
             params->aggregator.mergeWithoutKeyDataImpl(*data, shared_data->is_cancelled);
             if (updater)
                 updater->recordAggregationStateSizes(*first, /*bucket=*/-1);
-            auto block = params->aggregator.prepareBlockAndFillWithoutKey(
+            auto agg_chunk = params->aggregator.prepareChunkAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
             if (updater)
-                updater->recordAggregationKeySizes(params->aggregator, block);
+                updater->recordAggregationKeySizes(
+                    agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
 
-            if (block.rows() > 0)
-                single_level_chunks.emplace_back(convertToChunk(block));
+            if (agg_chunk.chunk.getNumRows() > 0)
+                single_level_chunks.emplace_back(convertToChunk(std::move(agg_chunk)));
         }
     }
 
@@ -685,14 +745,15 @@ private:
                 throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
         }
 
-        auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
-        for (auto & block : blocks)
+        auto agg_chunks = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
+        for (auto & agg_chunk : agg_chunks)
         {
-            if (block.rows() > 0)
+            if (agg_chunk.chunk.getNumRows() > 0)
             {
                 if (updater)
-                    updater->recordAggregationKeySizes(params->aggregator, block);
-                single_level_chunks.emplace_back(convertToChunk(block));
+                    updater->recordAggregationKeySizes(
+                        agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
+                single_level_chunks.emplace_back(convertToChunk(std::move(agg_chunk)));
             }
         }
 
@@ -896,9 +957,8 @@ void AggregatingTransform::consume(Chunk chunk)
 
     if (params->params.only_merge)
     {
-        auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
-        block = materializeBlock(block);
-        if (!params->aggregator.mergeOnBlock(block, variants, no_more_keys, is_cancelled))
+        materializeChunk(chunk);
+        if (!params->aggregator.mergeOnBlock(chunk.detachColumns(), num_rows, false, variants, no_more_keys, is_cancelled))
             is_consume_finished = true;
     }
     else
@@ -918,9 +978,9 @@ void AggregatingTransform::initGenerate()
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
     {
         if (params->params.only_merge)
-            params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys, is_cancelled);
+            params->aggregator.mergeOnBlock(getInputs().front().getHeader().getColumns(), 0, false, variants, no_more_keys, is_cancelled);
         else
-            params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
+            params->aggregator.executeOnBlock(getInputs().front().getHeader().getColumns(), 0, 0, variants, key_columns, aggregate_columns, no_more_keys);
     }
 
     double elapsed_seconds = watch.elapsedSeconds();
@@ -928,8 +988,8 @@ void AggregatingTransform::initGenerate()
 
     LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({:.3f} rows/sec., {}/sec.)",
         src_rows, rows, ReadableSize(src_bytes),
-        elapsed_seconds, src_rows / elapsed_seconds,
-        ReadableSize(src_bytes / elapsed_seconds));
+        elapsed_seconds, static_cast<double>(src_rows) / elapsed_seconds,
+        ReadableSize(static_cast<double>(src_bytes) / elapsed_seconds));
 
     if (params->aggregator.hasTemporaryData())
     {

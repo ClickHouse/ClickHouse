@@ -1,0 +1,179 @@
+post-epoch: prunes partitions
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_dt64_explain)
+    Indexes:
+      MinMax
+        Keys:
+          ts
+        Condition: (ts in [\'1771632000\', +Inf))
+        Parts: 2/3
+        Granules: 2/3
+      Partition
+        Keys:
+          toDate(ts)
+        Condition: (toDate(ts) in [20505, +Inf))
+        Parts: 2/2
+        Granules: 2/2
+      PrimaryKey
+        Keys:
+          ts
+        Condition: (ts in [\'1771632000\', +Inf))
+        Parts: 2/2
+        Granules: 2/2
+        Search Algorithm: generic exclusion search
+      Ranges: 2
+pre-epoch: no pruning (overflow would give wrong result)
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_dt64_explain)
+    Indexes:
+      MinMax
+        Keys:
+          ts
+        Condition: (ts in [\'-43200\', +Inf))
+        Parts: 3/3
+        Granules: 3/3
+      Partition
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      PrimaryKey
+        Keys:
+          ts
+        Condition: (ts in [\'-43200\', +Inf))
+        Parts: 3/3
+        Granules: 3/3
+        Search Algorithm: generic exclusion search
+      Ranges: 3
+epoch boundary: pruning with correct range
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_dt64_explain)
+    Indexes:
+      MinMax
+        Keys:
+          ts
+        Condition: (ts in [\'0\', +Inf))
+        Parts: 3/3
+        Granules: 3/3
+      Partition
+        Keys:
+          toDate(ts)
+        Condition: (toDate(ts) in [0, +Inf))
+        Parts: 3/3
+        Granules: 3/3
+      PrimaryKey
+        Keys:
+          ts
+        Condition: (ts in [\'0\', +Inf))
+        Parts: 3/3
+        Granules: 3/3
+        Search Algorithm: generic exclusion search
+      Ranges: 3
+upper bound: no pruning (beyond Date max, overflow wraps)
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_dt64_explain)
+    Indexes:
+      MinMax
+        Keys:
+          ts
+        Condition: (ts in [\'5662310400\', +Inf))
+        Parts: 0/3
+        Granules: 0/3
+      Partition
+        Condition: true
+        Parts: 0/0
+        Granules: 0/0
+      PrimaryKey
+        Keys:
+          ts
+        Condition: (ts in [\'5662310400\', +Inf))
+        Parts: 0/0
+        Granules: 0/0
+      Ranges: 0
+at Date max: no pruning (boundary value, next wraps)
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_dt64_explain)
+    Indexes:
+      MinMax
+        Keys:
+          ts
+        Condition: (ts in [\'5662224000\', +Inf))
+        Parts: 0/3
+        Granules: 0/3
+      Partition
+        Condition: true
+        Parts: 0/0
+        Granules: 0/0
+      PrimaryKey
+        Keys:
+          ts
+        Condition: (ts in [\'5662224000\', +Inf))
+        Parts: 0/0
+        Granules: 0/0
+      Ranges: 0
+Date32 post-epoch: prunes partitions
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_d32_explain)
+    Indexes:
+      MinMax
+        Keys:
+          d
+        Condition: (d in [20505, +Inf))
+        Parts: 2/3
+        Granules: 2/3
+      Partition
+        Keys:
+          toDate(d)
+        Condition: (toDate(d) in [20505, +Inf))
+        Parts: 2/2
+        Granules: 2/2
+      PrimaryKey
+        Condition: true
+        Parts: 2/2
+        Granules: 2/2
+      Ranges: 2
+Date32 pre-epoch: no pruning
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_d32_explain)
+    Indexes:
+      MinMax
+        Keys:
+          d
+        Condition: (d in [-1, +Inf))
+        Parts: 3/3
+        Granules: 3/3
+      Partition
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Ranges: 3
+Date32 upper bound: no pruning
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_d32_explain)
+    Indexes:
+      MinMax
+        Keys:
+          d
+        Condition: (d in [65536, +Inf))
+        Parts: 0/3
+        Granules: 0/3
+      Partition
+        Condition: true
+        Parts: 0/0
+        Granules: 0/0
+      PrimaryKey
+        Condition: true
+        Parts: 0/0
+        Granules: 0/0
+      Ranges: 0

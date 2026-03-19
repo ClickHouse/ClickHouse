@@ -1,7 +1,6 @@
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
 #include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/DataTypeObject.h>
@@ -9,7 +8,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Core/NamesAndTypes.h>
 #include <IO/ReadHelpers.h>
 #include <ranges>
@@ -24,10 +22,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_)
+SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
     : serialization_version(serialization_version_)
     , dynamic_type(dynamic_type_)
-    , dynamic_serialization(dynamic_type_->getDefaultSerialization())
+    , dynamic_serialization(dynamic_serialization_)
     , buckets(buckets_)
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
@@ -686,10 +684,10 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
             structure_state.last_granule_structure.clear();
 
         size_t rows_to_read = limit + rows_offset;
-        StructureGranule current_granule;
-        std::swap(structure_state.last_granule_structure, current_granule);
         while (rows_to_read != 0)
         {
+            auto & current_granule = structure_state.last_granule_structure;
+
             /// Calculate remaining rows in current granule that can be read.
             size_t remaining_rows_in_granule = current_granule.num_rows - current_granule.limit - current_granule.offset;
 
@@ -740,12 +738,7 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
             }
 
             result->push_back(current_granule);
-            current_granule.clear();
         }
-
-        /// Remember the state of the last read granule because it can be partially read.
-        if (!result->empty())
-            structure_state.last_granule_structure = result->back();
     }
 
     /// Add deserialized data into cache.

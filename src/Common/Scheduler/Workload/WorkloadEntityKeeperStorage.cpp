@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -100,6 +101,7 @@ zkutil::ZooKeeperPtr WorkloadEntityKeeperStorage::getZooKeeper()
 
 void WorkloadEntityKeeperStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
+    auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::loadEntities");
     WorkloadEntityStorageBase::loadEntities(config);
     /// loadEntities() is called at startup and on configuration reload, so it's better not to stop here on no connection to ZooKeeper or any other error.
     /// However the watching thread must be started anyway in case the connection will be established later.
@@ -121,6 +123,7 @@ void WorkloadEntityKeeperStorage::processWatchQueue()
     LOG_DEBUG(log, "Started watching thread");
     DB::setThreadName(ThreadName::WORKLOAD_ENTRY_WATCH);
 
+    auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::processWatchQueue");
     UInt64 handled = 0;
     while (watching_flag)
     {
@@ -172,6 +175,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::storeEnt
     bool /*replace_if_exists*/,
     const Settings &)
 {
+    auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::storeEntityImpl");
     LOG_DEBUG(log, "Storing workload entity {}", backQuote(entity_name));
 
     String new_data = serializeLocalEntities(Event{entity_type, entity_name, create_entity_query});
@@ -199,6 +203,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
     const String & entity_name,
     bool /*throw_if_not_exists*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::removeEntityImpl");
     LOG_DEBUG(log, "Removing workload entity {}", backQuote(entity_name));
 
     String new_data = serializeLocalEntities(Event{entity_type, entity_name, {}});

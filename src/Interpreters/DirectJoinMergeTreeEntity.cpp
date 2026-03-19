@@ -245,14 +245,14 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
             for (size_t row_idx : matching_rows)
             {
                 selector_data.push_back(row_idx);
-                out_null_map.push_back(1);
+                out_null_map.push_back(true);
             }
         }
         else
         {
             /// Key not found: use sentinel index pointing to default values appended below
             selector_data.push_back(num_found_rows);
-            out_null_map.push_back(0);
+            out_null_map.push_back(false);
         }
 
         out_offsets.push_back(selector_data.size());

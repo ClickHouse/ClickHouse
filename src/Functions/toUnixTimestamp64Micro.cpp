@@ -7,7 +7,7 @@ namespace DB
 REGISTER_FUNCTION(ToUnixTimestamp64Micro)
 {
     /// toUnixTimestamp64Micro documentation
-    FunctionDocumentation::Description description_toUnixTimestamp64Micro = R"(
+    FunctionDocumentation::Description description = R"(
 Converts a [`DateTime64`](/sql-reference/data-types/datetime64) to a [`Int64`](/sql-reference/data-types/int-uint) value with fixed microsecond precision.
 The input value is scaled up or down appropriately depending on its precision.
 
@@ -15,12 +15,12 @@ The input value is scaled up or down appropriately depending on its precision.
 The output value is relative to UTC, not to the timezone of the input value.
 :::
     )";
-    FunctionDocumentation::Syntax syntax_toUnixTimestamp64Micro = "toUnixTimestamp64Micro(value)";
-    FunctionDocumentation::Arguments arguments_toUnixTimestamp64Micro = {
+    FunctionDocumentation::Syntax syntax = "toUnixTimestamp64Micro(value)";
+    FunctionDocumentation::Arguments arguments = {
         {"value", "DateTime64 value with any precision.", {"DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toUnixTimestamp64Micro = {"Returns a Unix timestamp in microseconds.", {"Int64"}};
-    FunctionDocumentation::Examples examples_toUnixTimestamp64Micro = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a Unix timestamp in microseconds.", {"Int64"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -34,12 +34,12 @@ SELECT toUnixTimestamp64Micro(dt64);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toUnixTimestamp64Micro = {20, 5};
-    FunctionDocumentation::Category category_toUnixTimestamp64Micro = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUnixTimestamp64Micro = {description_toUnixTimestamp64Micro, syntax_toUnixTimestamp64Micro, arguments_toUnixTimestamp64Micro, {}, returned_value_toUnixTimestamp64Micro, examples_toUnixTimestamp64Micro, introduced_in_toUnixTimestamp64Micro, category_toUnixTimestamp64Micro};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction("toUnixTimestamp64Micro",
-        [](ContextPtr){ return std::make_shared<FunctionToUnixTimestamp64>(6, "toUnixTimestamp64Micro"); }, documentation_toUnixTimestamp64Micro);
+        [](ContextPtr){ return std::make_shared<FunctionToUnixTimestamp64>(6, "toUnixTimestamp64Micro"); }, documentation);
 }
 
 }

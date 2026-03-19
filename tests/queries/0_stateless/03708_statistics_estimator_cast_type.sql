@@ -9,7 +9,7 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(dt64_column)
 ORDER BY dt64_column SETTINGS auto_statistics_types='tdigest';
 
-SET allow_statistics_optimize = 1;
+SET use_statistics = 1;
 
 INSERT INTO dt64test (`dt64_column`) VALUES ('2020-01-13 13:37:00');
 

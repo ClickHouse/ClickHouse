@@ -76,6 +76,12 @@ Int64 getINodeNumberFromPath(const String & path);
 
 }
 
+// On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
+// Undef it to avoid conflict with FS namespace below.
+#ifdef FS
+#  undef FS
+#endif
+
 namespace FS
 {
 bool createFile(const std::string & path);

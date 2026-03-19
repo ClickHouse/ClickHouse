@@ -106,7 +106,7 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
             size_t approx_chunk_size = input_format->getApproxBytesReadForChunk();
             /// We could decompress data during file segmentation.
             /// Correct chunk size using original segment size.
-            approx_chunk_size = static_cast<size_t>(std::ceil(static_cast<double>(approx_chunk_size) / unit.segment.size() * unit.original_segment_size));
+            approx_chunk_size = static_cast<size_t>(std::ceil(static_cast<double>(approx_chunk_size) / static_cast<double>(unit.segment.size()) * static_cast<double>(unit.original_segment_size)));
             unit.chunk_ext.approx_chunk_sizes.push_back(approx_chunk_size);
         }
 

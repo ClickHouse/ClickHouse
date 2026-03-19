@@ -57,7 +57,7 @@ TEST(SchedulerCustomResourceManager, Fairness)
     auto fairness_diff = [&] (Int64 value)
     {
         Int64 cur_unfairness = unfairness.fetch_add(value, std::memory_order_relaxed) + value;
-        EXPECT_NEAR(cur_unfairness, 0, 1);
+        EXPECT_NEAR(static_cast<double>(cur_unfairness), 0, 1);
     };
 
     constexpr size_t threads_per_queue = 2;

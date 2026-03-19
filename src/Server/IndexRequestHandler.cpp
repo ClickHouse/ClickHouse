@@ -4,9 +4,10 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/HTTPCommon.h>
 
-#include <incbin.h>
-
-INCBIN(resource_index_html, SOURCE_DIR "/programs/server/index.html");
+constexpr unsigned char resource_index_html[] =
+{
+#embed "../../programs/server/index.html"
+};
 
 
 namespace DB
@@ -30,7 +31,7 @@ void IndexRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
         setResponseDefaultHeaders(response);
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
         auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-        wb.write(reinterpret_cast<const char *>(gresource_index_htmlData), gresource_index_htmlSize);
+        wb.write(reinterpret_cast<const char *>(resource_index_html), std::size(resource_index_html));
         wb.finalize();
     }
     else

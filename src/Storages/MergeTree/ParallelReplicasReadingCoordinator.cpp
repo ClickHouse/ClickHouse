@@ -1103,28 +1103,32 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
     ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
 
-    if (is_reading_completed)
-        return;
-
     std::lock_guard lock(mutex);
 
     if (!pimpl)
+    {
         initialize(announcement.mode);
 
-    if (!snapshot_replica_num)
-    {
+        chassert(!snapshot_replica_num);
         snapshot_replica_num = announcement.replica_num;
-
         LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Using snapshot from replica num {}", snapshot_replica_num.value());
     }
+    else
+    {
+        // let's always check the reading mode match
+        if (announcement.mode != pimpl->getCoordinationMode())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Replica {} decided to read in {} mode, not in {}. This is a bug",
+                announcement.replica_num,
+                magic_enum::enum_name(announcement.mode),
+                magic_enum::enum_name(pimpl->getCoordinationMode()));
+        }
+    }
 
-    if (announcement.mode != pimpl->getCoordinationMode())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Replica {} decided to read in {} mode, not in {}. This is a bug",
-            announcement.replica_num,
-            magic_enum::enum_name(announcement.mode),
-            magic_enum::enum_name(pimpl->getCoordinationMode()));
+    if (is_reading_completed)
+        return;
 
     pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }

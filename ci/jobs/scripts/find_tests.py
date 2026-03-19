@@ -26,7 +26,7 @@ FAILED_TESTS_QUERY = """ \
             and pull_request_number = {PR_NUMBER}
             and check_name LIKE '{JOB_TYPE}%'
             and check_status = 'failure'
-            and match(test_name, '^[0-9]{{5}}_')
+            and match(test_name, '{TEST_NAME_PATTERN}')
             and test_status = 'FAIL'
             and check_start_time >= now() - interval 300 day
           order by check_start_time desc
@@ -104,8 +104,16 @@ class Targeting:
 
         tests = []
         cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+        if self.job_type == self.INTEGRATION_JOB_TYPE:
+            test_name_pattern = "^test_"
+        elif self.job_type == self.STATELESS_JOB_TYPE:
+            test_name_pattern = "^[0-9]{5}_"
+        else:
+            assert False, f"Not supported job type [{self.job_type}]"
         query = FAILED_TESTS_QUERY.format(
-            PR_NUMBER=self.info.pr_number, JOB_TYPE=self.job_type
+            PR_NUMBER=self.info.pr_number,
+            JOB_TYPE=self.job_type,
+            TEST_NAME_PATTERN=test_name_pattern,
         )
         query_result = cidb.query(query, log_level="")
         # Parse test names from the query result
@@ -283,9 +291,23 @@ class Targeting:
 
         # TODO: Add coverage supoort for Integration tests
         if self.job_type == self.STATELESS_JOB_TYPE:
-            covering_tests, result = self.get_most_relevant_tests(ch_path)
-            tests.update(covering_tests)
-            results.append(result)
+            try:
+                covering_tests, result = self.get_most_relevant_tests(ch_path)
+                tests.update(covering_tests)
+                results.append(result)
+            except Exception as e:
+                print(
+                    f"WARNING: Failed to get coverage-based tests (best effort): {e}",
+                    file=sys.stderr,
+                )
+                results.append(
+                    Result(
+                        name="tests found by coverage",
+                        status=Result.StatusExtended.OK,
+                        info=f"Skipped: {e}",
+                    )
+                )
+                raise
 
         return tests, Result(
             name="Fetch relevant tests",

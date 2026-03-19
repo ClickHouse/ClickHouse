@@ -1,7 +1,7 @@
+#include <Common/isValidUTF8.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
-#include <Common/isValidUTF8.h>
 
 namespace DB
 {
@@ -215,7 +215,7 @@ SOFTWARE.
         memset(buf + len + 1, 0, 16);
         check_packed(_mm_loadu_si128(reinterpret_cast<__m128i *>(buf + 1)));
 
-        return _mm_testz_si128(error, error);
+        return static_cast<UInt8>(_mm_testz_si128(error, error));
     }
 #endif
 

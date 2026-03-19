@@ -110,6 +110,8 @@ private:
             interval = Timespan(30 * Timespan::DAYS);
         else if (unit == "seconds") // for testing only
             interval = Timespan(n * Timespan::SECONDS);
+        else if (unit == "milliseconds") // for testing only
+            interval = Timespan(n * Timespan::MILLISECONDS);
         else if (unit == "minutes")
             interval = Timespan(n * Timespan::MINUTES);
         else if (unit == "hours")

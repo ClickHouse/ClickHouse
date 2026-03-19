@@ -74,6 +74,8 @@ public:
 
     const ElementSerializations & getElementsSerializations() const { return elems; }
 
+    static void readElementsSafe(IColumn & column, std::function<void()> && read_func);
+
 private:
     ElementSerializations elems;
     bool has_explicit_names;

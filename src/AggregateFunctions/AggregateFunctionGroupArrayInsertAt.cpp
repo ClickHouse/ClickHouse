@@ -247,7 +247,7 @@ If in one query several values are inserted into the same position, the function
         {"default_x", "Optional. Default value for substituting in empty positions.", {"Any"}},
         {"size", "Optional. Length of the resulting array. When using this parameter, the default value `default_x` must be specified.", {"UInt32"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Array with inserted values.", {"Array"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with inserted values.", {"Array"}};
     FunctionDocumentation::Examples examples = {
     {
         "Basic usage without parameters",
@@ -298,7 +298,7 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, {}, documentation});
+    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation});
 }
 
 }

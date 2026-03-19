@@ -47,11 +47,11 @@ TEST(ColumnTuple, EmptyTupleExpand)
     ColumnPtr tuple_col = ColumnTuple::create(5);
 
     IColumn::Filter mask;
-    mask.push_back(1);
-    mask.push_back(0);
-    mask.push_back(1);
-    mask.push_back(0);
-    mask.push_back(1);
+    mask.push_back(true);
+    mask.push_back(false);
+    mask.push_back(true);
+    mask.push_back(false);
+    mask.push_back(true);
 
     ColumnPtr filtered = tuple_col->filter(mask, -1);
     ASSERT_EQ(filtered->size(), 3);
@@ -62,11 +62,11 @@ TEST(ColumnTuple, EmptyTupleExpand)
     ASSERT_EQ(expanded->size(), mask.size());
 
     IColumn::Filter inverted_mask;
-    inverted_mask.push_back(0);
-    inverted_mask.push_back(1);
-    inverted_mask.push_back(0);
-    inverted_mask.push_back(1);
-    inverted_mask.push_back(0);
+    inverted_mask.push_back(false);
+    inverted_mask.push_back(true);
+    inverted_mask.push_back(false);
+    inverted_mask.push_back(true);
+    inverted_mask.push_back(false);
 
     ColumnPtr filtered_inv = tuple_col->filter(inverted_mask, -1);
     ASSERT_EQ(filtered_inv->size(), 2);

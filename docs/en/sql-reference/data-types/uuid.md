@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 A Universally Unique Identifier (UUID) is a 16-byte value used to identify records. For detailed information about UUIDs, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
-While different UUID variants exist (see [here](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)), ClickHouse does not validate that inserted UUIDs conform to a particular variant.
+While different UUID variants exist, e.g. UUIDv4 and UUIDv7 (see [here](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)), ClickHouse does not validate that inserted UUIDs conform to a particular variant.
 UUIDs are internally treated as a sequence of 16 random bytes with [8-4-4-4-12 representation](https://en.wikipedia.org/wiki/Universally_unique_identifier#Textual_representation) at SQL level.
 
 Example UUID value:
@@ -26,15 +26,23 @@ The default UUID is all-zero. It is used, for example, when a new record is inse
 00000000-0000-0000-0000-000000000000
 ```
 
+:::warning
 Due to historical reasons, UUIDs are sorted by their second half.
-UUIDs should therefore not be used directly in a primary key, sorting key, or partition key of a table.
+
+While this is fine for UUIDv4 values, this can deteriorate performance with UUIDv7 columns used in primary index definitions (usage in ordering keys or partition keys is fine).
+More specifically, UUIDv7 values consist of a timestamp in the first half and a counter in the second half.
+UUIDv7 sorting in sparse primary key indexes (i.e., the first values of each index granule) will therefore be by counter field.
+Assuming UUIDs were sorted by the first half (timestamp), then the primary key index analysis step at the beginning of queries is expected to prune all marks in all but one part.
+However, with sorting by the second half (counter), at least one mark is expected to be returned for all parts, leading to unnecessary unnecessary disk accesses.
+:::
 
 Example:
 
 ```sql
-CREATE TABLE tab (uuid UUID) ENGINE = Memory;
-INSERT INTO tab SELECT generateUUIDv4() FROM numbers(50);
-SELECT * FROM tab ORDER BY uuid;
+CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (uuid);
+
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(50);
+SELECT * FROM tab;
 ```
 
 Result:
@@ -55,33 +63,17 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-As a workaround, the UUID can be converted to a type with an intuitive sort order.
-
-Example using conversion to UInt128:
+As a workaround, the UUID can be converted to a timestamp extracted from the second half:
 
 ```sql
-CREATE TABLE tab (uuid UUID) ENGINE = Memory;
-INSERT INTO tab SELECT generateUUIDv4() FROM numbers(50);
-SELECT * FROM tab ORDER BY toUInt128(uuid);
+CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (UUIDv7ToDateTime(uuid));
+-- Or alternatively:                      [...] PRIMARY KEY (toStartOfHour(UUIDv7ToDateTime(uuid)));
+
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(50);
+SELECT * FROM tab;
 ```
 
-Result:
-
-```sql
-┌─uuid─────────────────────────────────┐
-│ 018b81cd-aca1-4e9c-9e56-a84a074dc1a8 │
-│ 02380033-c96a-438e-913f-a2c67e341def │
-│ 057cf435-7044-456a-893b-9183a4475cea │
-│ 0a3c1d4c-f57d-44cc-8567-60cb0c46f76e │
-│ 0c15bf1c-8633-4414-a084-7017eead9e41 │
-│                [...]                 │
-│ f808cf05-ea57-4e81-8add-29a195bde63d │
-│ f859fb5d-764b-4a33-81e6-9e4239dae083 │
-│ fb1b7e37-ab7b-421a-910b-80e60e2bf9eb │
-│ fc3174ff-517b-49b5-bfe2-9b369a5c506d │
-│ fece9bf6-3832-449a-b058-cd1d70a02c8b │
-└──────────────────────────────────────┘
-```
+ORDER BY (UUIDv7ToDateTime(uuid), uuid)
 
 ## Generating UUIDs {#generating-uuids}
 

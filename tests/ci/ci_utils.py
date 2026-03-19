@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -8,7 +9,6 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
-import platform
 
 import requests
 

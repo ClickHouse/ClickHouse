@@ -9,6 +9,7 @@
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -24,6 +25,7 @@
 #include <Common/formatReadable.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ErrorCodes.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -42,7 +44,8 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -108,6 +111,10 @@
 namespace fs = std::filesystem;
 using namespace std::literals;
 
+#if USE_FUZZING_MODE
+int clickhouseMain(int argc_, char ** argv_);
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -133,6 +140,7 @@ namespace Setting
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
+    extern const SettingsBool ignore_format_null_for_explain;
 }
 
 namespace ErrorCodes
@@ -176,7 +184,7 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
+        if (query_with_output->isOutfileTruncate() && query_with_output->out_file)
         {
             if (fs::exists(tmp_file))
                 fs::remove(tmp_file);
@@ -188,7 +196,7 @@ void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_fil
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
+        if (query_with_output->isOutfileTruncate() && query_with_output->out_file)
         {
             const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
             String tmp_file = tmp_file_node.value.safeGet<std::string>();
@@ -330,7 +338,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         }
     }
 
-    /// Copy rows from src that dst does not contains.
+    /// Copy rows from src that dst does not contain.
     for (const auto & [id, pos] : rows_by_name)
     {
         for (size_t col = 0; col < src.columns(); ++col)
@@ -409,7 +417,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         try
         {
             if (dialect == Dialect::kusto)
-                res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             else
                 res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
         }
@@ -715,9 +723,9 @@ try
                 auto flags = O_WRONLY | O_EXCL;
 
                 auto file_exists = fs::exists(out_file);
-                if (file_exists && query_with_output->is_outfile_append)
+                if (file_exists && query_with_output->isOutfileAppend())
                     flags |= O_APPEND;
-                else if (file_exists && query_with_output->is_outfile_truncate)
+                else if (file_exists && query_with_output->isOutfileTruncate())
                     flags |= O_TRUNC;
                 else
                     flags |= O_CREAT;
@@ -730,7 +738,7 @@ try
                     static_cast<int>(compression_level)
                 );
 
-                if (query_with_output->is_into_outfile_with_stdout)
+                if (query_with_output->isIntoOutfileWithStdout())
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
@@ -747,6 +755,10 @@ try
                     throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
                 const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
                 current_format = id.name();
+
+                const bool ignore_null_for_explain = client_context->getSettingsRef()[Setting::ignore_format_null_for_explain];
+                if (boost::iequals(current_format, "Null") && parsed_query->as<ASTExplainQuery>() && ignore_null_for_explain)
+                    current_format = default_output_format;
             }
             else if (query_with_output->out_file)
             {
@@ -1106,7 +1118,11 @@ void ClientBase::updateSuggest(const ASTPtr & ast)
         }
     }
 
-    if (const auto * create_function = ast->as<ASTCreateFunctionQuery>())
+    if (const auto * create_function = ast->as<ASTCreateSQLFunctionQuery>())
+    {
+        new_words.push_back(create_function->getFunctionName());
+    }
+    if (const auto * create_function = ast->as<ASTCreateWasmFunctionQuery>())
     {
         new_words.push_back(create_function->getFunctionName());
     }
@@ -1205,10 +1221,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
             out_file = out_file_node.value.safeGet<std::string>();
 
-            if (query_with_output->is_outfile_truncate)
+            if (query_with_output->isOutfileTruncate())
             {
                 out_file_if_truncated = out_file;
-                out_file = fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file);
+                fs::path out_file_path(out_file);
+                out_file = (out_file_path.parent_path() / fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file_path.filename().string())).string();
             }
 
             if (client_context->getSettingsRef()[Setting::into_outfile_create_parent_directories])
@@ -1244,14 +1261,14 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
             UInt64 compression_level = 3;
 
-            if (query_with_output->is_outfile_append && query_with_output->is_outfile_truncate)
+            if (query_with_output->isOutfileAppend() && query_with_output->isOutfileTruncate())
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot use INTO OUTFILE with APPEND and TRUNCATE simultaneously.");
             }
 
-            if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
+            if (query_with_output->isOutfileAppend() && compression_method != CompressionMethod::None)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -1274,7 +1291,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             if (fs::exists(out_file))
             {
-                if (!query_with_output->is_outfile_append && !query_with_output->is_outfile_truncate)
+                if (!query_with_output->isOutfileAppend() && !query_with_output->isOutfileTruncate())
                 {
                     throw Exception(
                         ErrorCodes::FILE_ALREADY_EXISTS,
@@ -1870,8 +1887,17 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     }
     catch (...)
     {
-        if (sendCancel(std::current_exception()))
-            receiveEndOfQueryForInsert();
+        /// Wrap cleanup in try-catch to prevent connection errors
+        /// (e.g., NETWORK_ERROR from sendCancel) from replacing
+        /// the original exception (e.g., a parsing error with row number).
+        try
+        {
+            if (sendCancel(std::current_exception()))
+                receiveEndOfQueryForInsert();
+        }
+        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
         throw;
     }
 }
@@ -3037,7 +3063,7 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
 
     if (!ast_create.storage->settings)
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         ast_create.storage->set(ast_create.storage->settings, settings_ast);
     }
@@ -3207,7 +3233,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             }
         }
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return "";
     }
@@ -3291,9 +3317,9 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
 
-        ("format,f", po::value<std::string>(), "Default output format (and input format for clickhouse-local)")
-        ("output-format", po::value<std::string>(), "Default output format (this option has preference over --format)")
-        ("vertical,E", "Vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
+        ("format,f", po::value<std::string>(), "Default input and output format. In clickhouse-client only the default output format.")
+        ("output-format", po::value<std::string>(), "Default output format. Takes precedence over --format.")
+        ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode (can also use --hilite)")
 
@@ -3842,43 +3868,7 @@ fs::path ClientBase::getHistoryFilePath()
     throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Neither $CLICKHOUSE_HISTORY_FILE, $HOME nor $XDG_STATE_HOME is set; cannot place history file.");
 }
 
-
-#if USE_FUZZING_MODE
-extern "C" int LLVMFuzzerRunDriver(int * argc, char *** argv, int (*callback)(const uint8_t * data, size_t size));
-ClientBase * app;
-
-void ClientBase::runLibFuzzer()
-{
-    app = this;
-    std::vector<String> fuzzer_args_holder;
-
-    if (const char * fuzzer_args_env = getenv("FUZZER_ARGS")) // NOLINT(concurrency-mt-unsafe)
-        boost::split(fuzzer_args_holder, fuzzer_args_env, isWhitespaceASCII, boost::token_compress_on);
-
-    std::vector<char *> fuzzer_args;
-    fuzzer_args.push_back(argv0);
-    for (auto & arg : fuzzer_args_holder)
-        fuzzer_args.emplace_back(arg.data());
-
-    int fuzzer_argc = static_cast<int>(fuzzer_args.size());
-    char ** fuzzer_argv = fuzzer_args.data();
-
-    LLVMFuzzerRunDriver(&fuzzer_argc, &fuzzer_argv, [](const uint8_t * data, size_t size)
-    {
-        try
-        {
-            String query(reinterpret_cast<const char *>(data), size);
-            app->processQueryText(query);
-        }
-        catch (...)
-        {
-            return -1;
-        }
-
-        return 0;
-    });
-}
-#else
+#if !USE_FUZZING_MODE
 void ClientBase::runLibFuzzer() {}
 #endif
 

@@ -106,17 +106,18 @@ public:
 
     ColumnPtr ALWAYS_INLINE executeForVariantOrDynamicAndNull(const ColumnWithTypeAndName & variant_or_dynamic_col) const
     {
+        ColumnPtr col = variant_or_dynamic_col.column->convertToFullColumnIfConst();
         const auto & column_variant_or_dynamic =
             isVariant(variant_or_dynamic_col.type) ?
-                checkAndGetColumn<ColumnVariant>(*variant_or_dynamic_col.column) :
-                checkAndGetColumn<ColumnDynamic>(*variant_or_dynamic_col.column).getVariantColumn();
+                checkAndGetColumn<ColumnVariant>(*col) :
+                checkAndGetColumn<ColumnDynamic>(*col).getVariantColumn();
         auto res = DataTypeUInt8().createColumn();
         auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
         data.resize(column_variant_or_dynamic.size());
         for (size_t i = 0; i < column_variant_or_dynamic.size(); ++i)
         {
-            bool ele_is_null = column_variant_or_dynamic.isNullAt(i);
-            data[i] = is_equal_mode ? ele_is_null && true : ele_is_null && false;
+            bool is_null = column_variant_or_dynamic.isNullAt(i);
+            data[i] = is_equal_mode ? is_null : !is_null;
         }
         return res;
     }

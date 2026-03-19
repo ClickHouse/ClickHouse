@@ -31,6 +31,8 @@ public:
         bool use_signed_indexes_for_dictionary = false;
         /// Always use (U)Int64 type for indexes in Arrow::Dictionary.
         bool use_64_bit_indexes_for_dictionary = false;
+        /// Output Date as UInt16 instead of Arrow DATE32 for backward compatibility.
+        bool output_date_as_uint16 = false;
     };
 
     CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_);
