@@ -35,7 +35,9 @@ def find_balanced_parens(s, start):
 
 def rewrite_function_call(sql, func_name, rewriter):
     """Find and rewrite all calls to func_name(args) using the rewriter function.
-    rewriter(args_string) -> replacement_string"""
+    rewriter(args_string) -> replacement_string
+    If the call is followed by FILTER (WHERE ...), the FILTER clause is relocated
+    to the innermost groupArray/groupArrayIf call in the replacement."""
     result = []
     i = 0
     pat = re.compile(re.escape(func_name) + r'\s*\(', re.IGNORECASE)
@@ -59,6 +61,29 @@ def rewrite_function_call(sql, func_name, rewriter):
         args = sql[paren_start+1:paren_end]
         replacement = rewriter(args)
         if replacement is not None:
+            # Check for trailing FILTER (WHERE ...) clause
+            after = sql[paren_end + 1:]
+            filter_match = re.match(r'\s*FILTER\s*\(', after, re.IGNORECASE)
+            if filter_match:
+                filter_paren_pos = paren_end + 1 + after.index('(')
+                filter_paren_end = find_balanced_parens(sql, filter_paren_pos)
+                if filter_paren_end != -1:
+                    filter_clause = sql[paren_end + 1:filter_paren_end + 1].strip()
+                    # Attach FILTER after the closing paren of innermost groupArray
+                    # Find groupArray(...) and insert FILTER after its closing paren
+                    ga_match = re.search(r'\b(groupArray(?:If)?)\s*\(', replacement)
+                    if ga_match:
+                        ga_paren = ga_match.end() - 1
+                        ga_end = find_balanced_parens(replacement, ga_paren)
+                        if ga_end != -1:
+                            replacement = (
+                                replacement[:ga_end + 1]
+                                + ' ' + filter_clause
+                                + replacement[ga_end + 1:]
+                            )
+                    i = filter_paren_end + 1
+                    result.append(replacement)
+                    continue
             result.append(replacement)
         else:
             # rewriter declined, keep original
@@ -100,31 +125,48 @@ def split_top_level_args(args):
 
 
 def rewrite_string_agg(args):
-    """STRING_AGG(expr, sep) -> arrayStringConcat(groupArray(assumeNotNull(expr)), sep)
-       STRING_AGG(DISTINCT expr, sep) -> arrayStringConcat(arrayDistinct(groupArray(assumeNotNull(expr))), sep)"""
+    """STRING_AGG(expr, sep) -> arrayStringConcat(assumeNotNull(groupArray(assumeNotNull(expr))), sep)
+       STRING_AGG(DISTINCT expr, sep) -> arrayStringConcat(arrayDistinct(assumeNotNull(groupArray(assumeNotNull(expr)))), sep)
+       STRING_AGG(expr) -> same with default separator ','
+       STRING_AGG(expr, sep ORDER BY col) -> strip ORDER BY (not supported in groupArray)
+    The outer assumeNotNull is needed because group_by_use_nulls = 1 makes aggregate results Nullable,
+    and Array cannot be inside Nullable."""
+    # Strip PostgreSQL aggregate ORDER BY clause from args
+    args = re.sub(r'\s+ORDER\s+BY\s+[^,)]+$', '', args.rstrip(), flags=re.IGNORECASE)
     parts = split_top_level_args(args)
+    if len(parts) == 1:
+        # Single-arg STRING_AGG: default separator is ','
+        parts.append("','")
     if len(parts) != 2:
         return None
     expr = parts[0].strip()
     sep = parts[1].strip()
+    # Strip ORDER BY that ended up in the separator
+    sep = re.sub(r'\s+ORDER\s+BY\s+.*$', '', sep, flags=re.IGNORECASE).strip()
+    if not sep:
+        sep = "','"
     distinct = False
     if expr.upper().startswith('DISTINCT '):
         distinct = True
         expr = expr[9:].strip()
     if distinct:
-        return f"arrayStringConcat(arrayDistinct(groupArray(assumeNotNull({expr}))), {sep})"
+        return f"arrayStringConcat(arrayDistinct(assumeNotNull(groupArray(assumeNotNull({expr})))), {sep})"
     else:
-        return f"arrayStringConcat(groupArray(assumeNotNull({expr})), {sep})"
+        return f"arrayStringConcat(assumeNotNull(groupArray(assumeNotNull({expr}))), {sep})"
 
 
 def rewrite_array_agg(args):
-    """ARRAY_AGG(expr) -> groupArray(assumeNotNull(expr))
-       ARRAY_AGG(DISTINCT expr) -> arrayDistinct(groupArray(assumeNotNull(expr)))"""
+    """ARRAY_AGG(expr) -> assumeNotNull(groupArray(assumeNotNull(expr)))
+       ARRAY_AGG(DISTINCT expr) -> arrayDistinct(assumeNotNull(groupArray(assumeNotNull(expr))))
+       Strips PostgreSQL ORDER BY inside the aggregate.
+    The outer assumeNotNull prevents Nullable(Array(...)) from group_by_use_nulls."""
     expr = args.strip()
+    # Strip ORDER BY clause
+    expr = re.sub(r'\s+ORDER\s+BY\s+\S+(?:\s+(?:ASC|DESC))?(?:\s+NULLS\s+(?:FIRST|LAST))?', '', expr, flags=re.IGNORECASE)
     if expr.upper().startswith('DISTINCT '):
         expr = expr[9:].strip()
-        return f"arrayDistinct(groupArray(assumeNotNull({expr})))"
-    return f"groupArray(assumeNotNull({expr}))"
+        return f"arrayDistinct(assumeNotNull(groupArray(assumeNotNull({expr}))))"
+    return f"assumeNotNull(groupArray(assumeNotNull({expr})))"
 
 
 def rewrite_string_to_array(args):
@@ -137,8 +179,13 @@ def rewrite_string_to_array(args):
 
 
 def rewrite_date_part(args):
-    """DATE_PART('unit', expr) -> datePart('unit', expr) -- ClickHouse has this"""
-    return f"datePart({args})"
+    """DATE_PART('unit', expr) -> EXTRACT(unit FROM expr) -- ClickHouse supports EXTRACT natively."""
+    parts = split_top_level_args(args)
+    if len(parts) != 2:
+        return f"EXTRACT({args})"
+    unit = parts[0].strip().strip("'\"")
+    expr = parts[1].strip()
+    return f"EXTRACT({unit} FROM {expr})"
 
 
 def rewrite_regexp_split_to_array(args):
@@ -179,12 +226,13 @@ def rewrite_functions(sql):
     # that got mangled. Rewrite as groupArray variant.
     def rewrite_string_agg_distinct(args):
         parts = split_top_level_args(args)
+        if len(parts) == 1:
+            parts.append("','")
         if len(parts) != 2:
             return None
-        return f"arrayStringConcat(arrayDistinct(groupArray(assumeNotNull({parts[0]}))), {parts[1]})"
+        return f"arrayStringConcat(arrayDistinct(assumeNotNull(groupArray(assumeNotNull({parts[0]})))), {parts[1]})"
     sql = rewrite_function_call(sql, 'STRING_AGGDistinct', rewrite_string_agg_distinct)
     sql = rewrite_function_call(sql, 'string_aggDistinct', rewrite_string_agg_distinct)
-    sql = rewrite_function_call(sql, 'STRING_AGGIf', lambda args: rewrite_string_agg(args))
 
     # ARRAY_AGG
     sql = rewrite_function_call(sql, 'ARRAY_AGG', rewrite_array_agg)
@@ -194,8 +242,9 @@ def rewrite_functions(sql):
     sql = rewrite_function_call(sql, 'string_to_array', rewrite_string_to_array)
     sql = rewrite_function_call(sql, 'STRING_TO_ARRAY', rewrite_string_to_array)
 
-    # DATE_PART
+    # DATE_PART / date_part
     sql = rewrite_function_call(sql, 'DATE_PART', rewrite_date_part)
+    sql = rewrite_function_call(sql, 'date_part', rewrite_date_part)
 
     # regexp_split_to_array / REGEXP_SPLIT_TO_ARRAY
     sql = rewrite_function_call(sql, 'regexp_split_to_array', rewrite_regexp_split_to_array)
@@ -211,8 +260,33 @@ def rewrite_functions(sql):
     # TO_TIMESTAMP -> toDateTime64
     sql = rewrite_function_call(sql, 'TO_TIMESTAMP', lambda args: f"toDateTime64({args}, 6)")
 
-    # ARRAY_LENGTH -> length
-    sql = rewrite_function_call(sql, 'ARRAY_LENGTH', lambda args: f"length({args})")
+    # ARRAY_LENGTH(arr, dim) -> length(arr) (ignore dimension argument)
+    def rewrite_array_length(args):
+        parts = split_top_level_args(args)
+        return f"length({parts[0]})"
+    sql = rewrite_function_call(sql, 'ARRAY_LENGTH', rewrite_array_length)
+
+    # CARDINALITY -> length (PostgreSQL CARDINALITY returns array length)
+    sql = rewrite_function_call(sql, 'CARDINALITY', lambda args: f"length({args})")
+    sql = rewrite_function_call(sql, 'cardinality', lambda args: f"length({args})")
+
+    # ARRAY_TO_STRING -> arrayStringConcat
+    def rewrite_array_to_string(args):
+        parts = split_top_level_args(args)
+        if len(parts) >= 2:
+            return f"arrayStringConcat({parts[0]}, {parts[1]})"
+        return None
+    sql = rewrite_function_call(sql, 'ARRAY_TO_STRING', rewrite_array_to_string)
+    sql = rewrite_function_call(sql, 'array_to_string', rewrite_array_to_string)
+
+    # SPLIT_PART(string, delimiter, position) -> splitByChar(delimiter, string)[position]
+    def rewrite_split_part(args):
+        parts = split_top_level_args(args)
+        if len(parts) == 3:
+            return f"splitByString({parts[1]}, {parts[0]})[{parts[2]}]"
+        return None
+    sql = rewrite_function_call(sql, 'SPLIT_PART', rewrite_split_part)
+    sql = rewrite_function_call(sql, 'split_part', rewrite_split_part)
 
     # REGEXP_SUBSTR -> regexpExtract
     sql = rewrite_function_call(sql, 'REGEXP_SUBSTR', lambda args: f"regexpExtract({args})")
@@ -336,14 +410,24 @@ def rewrite_unnest_lateral(sql):
     )
 
     # Remaining standalone unnest(expr) calls -> arrayJoin(expr)
-    sql = re.sub(r'\bunnest\s*\(', 'arrayJoin(', sql)
-    sql = re.sub(r'\bUNNEST\s*\(', 'arrayJoin(', sql)
+    sql = re.sub(r'\bunnest\s*\(', 'arrayJoin(', sql, flags=re.IGNORECASE)
 
     return sql
 
 
 def rewrite_pg_cast(sql):
-    """ClickHouse supports :: cast operator natively. No rewrite needed."""
+    """Fix PostgreSQL-specific cast patterns that ClickHouse doesn't support.
+    ClickHouse supports :: for basic types, but not ::type[] (array casts),
+    ::jsonb, ::json, or ::regclass."""
+    # ::int[] or ::integer[] -> remove (ClickHouse doesn't have array type cast syntax)
+    sql = re.sub(r'::\s*(?:int|integer|bigint|text|varchar|float|double)\s*\[\s*\]', '', sql, flags=re.IGNORECASE)
+    # ::jsonb / ::json -> remove (ClickHouse has no JSON type in this sense)
+    sql = re.sub(r'::\s*jsonb?\b', '', sql, flags=re.IGNORECASE)
+    # ::regclass -> remove
+    sql = re.sub(r'::\s*regclass\b', '', sql, flags=re.IGNORECASE)
+    # PostgreSQL JSON operators: ->> 'key' -> JSONExtractString(expr, 'key')
+    # This is complex to handle in general; just remove the operator for now
+    sql = re.sub(r"\s*->>\s*'(\w+)'", r"", sql)
     return sql
 
 
@@ -362,6 +446,161 @@ def rewrite_no_supertype(sql):
     COALESCE(COUNT(...), -1) -> use 0 instead of -1 won't work.
     Actually: wrap in toInt64. This is rare (21 cases), skip for now."""
     return sql
+
+
+def rewrite_any_comparison(sql):
+    """Rewrite 'expr = ANY(array_expr)' to 'has(array_expr, expr)'.
+    Also handles != ANY -> NOT has, and <> ANY -> NOT has."""
+    pat = re.compile(r'(=|!=|<>)\s*ANY\s*\(', re.IGNORECASE)
+    result = []
+    i = 0
+    while i < len(sql):
+        m = pat.search(sql, i)
+        if not m:
+            result.append(sql[i:])
+            break
+
+        # Find the LHS expression (the token/expression before the operator)
+        # Walk backwards from the operator to find the LHS
+        op = m.group(1)
+        prefix = sql[i:m.start()]
+        result.append(prefix)
+
+        # Find matching paren for ANY(
+        paren_start = m.end() - 1
+        paren_end = find_balanced_parens(sql, paren_start)
+        if paren_end == -1:
+            result.append(sql[m.start():m.end()])
+            i = m.end()
+            continue
+
+        array_expr = sql[paren_start + 1:paren_end]
+
+        # Extract the LHS from what we've accumulated so far
+        # The LHS is the last expression token before the operator
+        accumulated = ''.join(result)
+        # Find the LHS by looking for the last word/expression token
+        lhs_match = re.search(r'(\S+)\s*$', accumulated)
+        if lhs_match:
+            lhs = lhs_match.group(1)
+            # Remove the LHS from accumulated result
+            accumulated = accumulated[:lhs_match.start()]
+            if op == '=':
+                replacement = f"has({array_expr}, {lhs})"
+            else:
+                replacement = f"NOT has({array_expr}, {lhs})"
+            result = [accumulated, replacement]
+        else:
+            # Can't find LHS, keep original
+            result.append(sql[m.start():paren_end + 1])
+
+        i = paren_end + 1
+
+    return ''.join(result)
+
+
+def rewrite_arrayjoin_to_array_join(sql):
+    """Convert arrayJoin(expr) in FROM/JOIN position to ARRAY JOIN expr AS alias.
+    Uses find_balanced_parens to correctly handle nested parentheses."""
+    # Find all occurrences of arrayJoin( in the SQL
+    pat = re.compile(r'arrayJoin\s*\(', re.IGNORECASE)
+    result = []
+    i = 0
+    while i < len(sql):
+        m = pat.search(sql, i)
+        if not m:
+            result.append(sql[i:])
+            break
+
+        # Check if this arrayJoin is in a JOIN/FROM position by looking at preceding context.
+        prefix = sql[:m.start()]
+        prefix_stripped = prefix.rstrip()
+
+        # Explicit JOIN keyword or FROM keyword means join/table context
+        is_join_context = bool(re.search(
+            r'(?:\bJOIN|\bLEFT\s+JOIN|\bCROSS\s+JOIN|\bRIGHT\s+JOIN|\bFROM)\s*$',
+            prefix_stripped, re.IGNORECASE,
+        ))
+
+        # Comma before arrayJoin: only a join context if the most recent keyword
+        # before the comma is FROM (not SELECT/ORDER BY/GROUP BY etc.)
+        if not is_join_context and re.search(r',\s*$', prefix_stripped):
+            # Find the last SELECT or FROM keyword to determine context
+            from_match = list(re.finditer(r'\bFROM\b', prefix_stripped, re.IGNORECASE))
+            select_match = list(re.finditer(r'\bSELECT\b', prefix_stripped, re.IGNORECASE))
+            last_from = from_match[-1].start() if from_match else -1
+            last_select = select_match[-1].start() if select_match else -1
+            if last_from > last_select:
+                is_join_context = True
+
+        if not is_join_context:
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
+
+        # Find the matching closing paren
+        paren_start = m.end() - 1  # position of '('
+        paren_end = find_balanced_parens(sql, paren_start)
+        if paren_end == -1:
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
+
+        expr = sql[paren_start + 1:paren_end]
+        after = sql[paren_end + 1:]
+
+        # Parse: AS alias(col) or AS alias, optionally followed by ON ...
+        alias_match = re.match(r'\s+AS\s+(\w+)(?:\((\w+)\))?(.*)', after, re.IGNORECASE | re.DOTALL)
+        if not alias_match:
+            result.append(sql[i:paren_end + 1])
+            i = paren_end + 1
+            continue
+
+        alias = alias_match.group(1)
+        col = alias_match.group(2)  # may be None
+        rest = alias_match.group(3)
+        col_name = col if col else alias
+
+        # Strip optional ON clause (ON TRUE, ON col IS NOT NULL, or arbitrary ON condition)
+        on_match = re.match(r'\s+ON\s+(?:TRUE\b|[^\n,)]+)', rest, re.IGNORECASE)
+        if on_match:
+            rest = rest[on_match.end():]
+
+        # Determine join type from prefix
+        join_type = "ARRAY JOIN"
+        left_match = re.search(r'\bLEFT\s+JOIN\s*$', prefix_stripped, re.IGNORECASE)
+        cross_match = re.search(r'\bCROSS\s+JOIN\s*$', prefix_stripped, re.IGNORECASE)
+        plain_join_match = re.search(r'\bJOIN\s*$', prefix_stripped, re.IGNORECASE)
+        from_match = re.search(r'\bFROM\s*$', prefix_stripped, re.IGNORECASE)
+        comma_match = re.search(r',\s*$', prefix_stripped)
+
+        if left_match:
+            join_type = "LEFT ARRAY JOIN"
+            prefix_stripped = prefix_stripped[:left_match.start()]
+        elif cross_match:
+            join_type = "ARRAY JOIN"
+            prefix_stripped = prefix_stripped[:cross_match.start()]
+        elif plain_join_match:
+            join_type = "ARRAY JOIN"
+            prefix_stripped = prefix_stripped[:plain_join_match.start()]
+        elif from_match:
+            # FROM arrayJoin(expr) AS alias -> FROM (SELECT arrayJoin(expr) AS alias)
+            # Wrap in a subquery since arrayJoin is not a table function
+            result.append(sql[i:len(prefix_stripped)])
+            result.append(f" (SELECT arrayJoin({expr}) AS {col_name}) AS _aj")
+            sql = rest
+            i = 0
+            continue
+        elif comma_match:
+            join_type = "ARRAY JOIN"
+            prefix_stripped = prefix_stripped[:comma_match.start()]
+
+        result.append(sql[i:len(prefix_stripped)])
+        result.append(f"\n{join_type} {expr} AS {col_name}")
+        sql = rest
+        i = 0
+
+    return ''.join(result)
 
 
 def rewrite_query(sql):
@@ -387,76 +626,25 @@ def rewrite_query(sql):
     # CURRENT_TIMESTAMP, EXTRACT(UNIT FROM ...), and FETCH/OFFSET natively.
     # No rewrites needed for these.
 
-    # 4. Fix subquery-based arrayJoin patterns that cause Nullable(Array) errors:
-    #    (SELECT arrayJoin(expr) AS col) alias ON TRUE -> ARRAY JOIN expr AS col
-    #    Use line-by-line matching for safety.
-    lines = sql.split('\n')
-    new_lines = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
+    # 3b. Rewrite PostgreSQL AT TIME ZONE 'tz' -> toTimezone(expr, 'tz')
+    sql = re.sub(
+        r"(\w+(?:\.\w+)?)\s+AT\s+TIME\s+ZONE\s+'([^']+)'",
+        r"toTimezone(\1, '\2')",
+        sql,
+        flags=re.IGNORECASE,
+    )
 
-        # Pattern: (SELECT arrayJoin(...) AS col) alias ON TRUE
-        m = re.match(
-            r'^(\s*).*\(\s*SELECT\s+arrayJoin\((.+)\)\s+AS\s+(\w+)\s*\)\s*\w*\s*ON\s+TRUE\s*$',
-            line, re.IGNORECASE,
-        )
-        if m:
-            indent = m.group(1)
-            expr = m.group(2)
-            col = m.group(3)
-            # Determine JOIN type from previous line
-            join_type = "ARRAY JOIN"
-            if new_lines and re.search(r'\bLEFT\s+JOIN\s*$', new_lines[-1], re.IGNORECASE):
-                new_lines[-1] = re.sub(r'\s*LEFT\s+JOIN\s*$', '', new_lines[-1], flags=re.IGNORECASE)
-                join_type = "LEFT ARRAY JOIN"
-            elif new_lines and re.search(r'\bCROSS\s+JOIN\s*$', new_lines[-1], re.IGNORECASE):
-                new_lines[-1] = re.sub(r'\s*CROSS\s+JOIN\s*$', '', new_lines[-1], flags=re.IGNORECASE)
-                join_type = "ARRAY JOIN"
-            elif new_lines and re.search(r'\bJOIN\s*$', new_lines[-1], re.IGNORECASE):
-                new_lines[-1] = re.sub(r'\s*JOIN\s*$', '', new_lines[-1], flags=re.IGNORECASE)
-                join_type = "ARRAY JOIN"
-            new_lines.append(f"{indent}{join_type} {expr} AS {col}")
-            i += 1
-            continue
+    # 3c. Remove CAST(... AS JSON/JSONB) — ClickHouse has no JSON type for casts
+    sql = re.sub(r'\bCAST\s*\(([^)]+)\s+AS\s+JSON(?:B)?\s*\)', r'\1', sql, flags=re.IGNORECASE)
 
-        # Pattern: LEFT JOIN arrayJoin(expr) AS col ON TRUE/IS NOT NULL
-        m = re.match(
-            r'^(\s*)LEFT\s+JOIN\s+arrayJoin\((.+)\)\s+AS\s+(\w+)\s+ON\s+(?:TRUE|\w+\s+IS\s+NOT\s+NULL)\s*$',
-            line, re.IGNORECASE,
-        )
-        if m:
-            new_lines.append(f"{m.group(1)}LEFT ARRAY JOIN {m.group(2)} AS {m.group(3)}")
-            i += 1
-            continue
+    # 4. Rewrite PostgreSQL = ANY(array_expr) to ClickHouse has(array_expr, lhs)
+    sql = rewrite_any_comparison(sql)
 
-        # Pattern: CROSS JOIN arrayJoin(expr) AS col
-        m = re.match(
-            r'^(\s*)CROSS\s+JOIN\s+arrayJoin\((.+)\)\s+AS\s+(\w+)\s*(?:ON\s+TRUE)?\s*$',
-            line, re.IGNORECASE,
-        )
-        if m:
-            new_lines.append(f"{m.group(1)}ARRAY JOIN {m.group(2)} AS {m.group(3)}")
-            i += 1
-            continue
+    # 5. Convert arrayJoin(...) in FROM/JOIN position to ARRAY JOIN syntax.
+    #    Uses find_balanced_parens for robust matching of nested expressions.
+    sql = rewrite_arrayjoin_to_array_join(sql)
 
-        # Pattern: , arrayJoin(expr) AS col ON TRUE
-        m = re.match(
-            r'^(\s*),\s*arrayJoin\((.+)\)\s+AS\s+(\w+)\s+ON\s+(?:TRUE|\w+\s+IS\s+NOT\s+NULL)\s*$',
-            line, re.IGNORECASE,
-        )
-        if m:
-            new_lines.append(f"{m.group(1)}ARRAY JOIN {m.group(2)} AS {m.group(3)}")
-            i += 1
-            continue
-
-        new_lines.append(line)
-        i += 1
-
-    sql = '\n'.join(new_lines)
-
-    # 5. Fix remaining "LEFT JOIN\nARRAY JOIN" -> "LEFT ARRAY JOIN" patterns
+    # 6. Fix remaining "LEFT JOIN\nARRAY JOIN" -> "LEFT ARRAY JOIN" patterns
     sql = re.sub(
         r'\bLEFT\s+JOIN\s*\n(\s*)ARRAY\s+JOIN\b',
         r'LEFT ARRAY JOIN',
@@ -471,6 +659,37 @@ def rewrite_query(sql):
     )
     sql = re.sub(r'\bLEFT\s+JOIN\s+ARRAY\s+JOIN\b', 'LEFT ARRAY JOIN', sql, flags=re.IGNORECASE)
     sql = re.sub(r'\bCROSS\s+JOIN\s+ARRAY\s+JOIN\b', 'ARRAY JOIN', sql, flags=re.IGNORECASE)
+
+    # 7. Fix PostgreSQL OFFSET X LIMIT Y -> ClickHouse LIMIT Y OFFSET X
+    sql = re.sub(
+        r'\bOFFSET\s+(\d+)\s+LIMIT\s+(\d+)',
+        r'LIMIT \2 OFFSET \1',
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # 8. Convert FETCH FIRST N ROWS ONLY without preceding ORDER BY to LIMIT N
+    sql = re.sub(
+        r'\bFETCH\s+FIRST\s+(\d+)\s+ROWS\s+ONLY\b',
+        r'LIMIT \1',
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # 9. Rewrite EXTRACT(DOW FROM expr) -> toDayOfWeek(expr)
+    #    and EXTRACT(ISODOW FROM expr) -> toDayOfWeek(expr)
+    pat_dow = re.compile(r'\bEXTRACT\s*\(\s*(?:ISO)?DOW\s+FROM\s+', re.IGNORECASE)
+    while True:
+        m = pat_dow.search(sql)
+        if not m:
+            break
+        paren_start = sql.index('(', m.start())
+        paren_end = find_balanced_parens(sql, paren_start)
+        if paren_end == -1:
+            break
+        from_pos = m.end()
+        expr = sql[from_pos:paren_end]
+        sql = sql[:m.start()] + f'toDayOfWeek({expr})' + sql[paren_end+1:]
 
     return sql
 

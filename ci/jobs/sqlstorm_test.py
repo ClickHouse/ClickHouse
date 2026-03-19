@@ -13,6 +13,7 @@ temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 # Thresholds based on baseline run with ClickHouse 26.3 and ClickHouse-dialect queries.
 # The DBA StackOverflow dataset with ~18K SQLStorm queries.
+# With the PostgreSQL -> ClickHouse query rewriter, ~60% of queries succeed.
 MIN_TOTAL_QUERIES = 18_000
 MIN_SUCCESS_RATE = 0.50  # at least 50% queries should succeed
 

@@ -19,6 +19,10 @@ import subprocess
 import sys
 import time
 
+# Import the query rewriter for PostgreSQL -> ClickHouse dialect conversion
+sys.path.insert(0, os.path.dirname(__file__))
+from rewrite_queries import rewrite_query
+
 
 # ClickHouse type mapping from the OLAPBench schema types
 TYPE_MAP = {
@@ -38,12 +42,13 @@ CLICKHOUSE_SETTINGS = [
     "allow_experimental_join_condition = 1",
     "allow_experimental_analyzer = 1",
     "use_query_cache = 0",
-    "aggregate_functions_null_for_empty = 1",
     "union_default_mode = 'DISTINCT'",
     "join_use_nulls = 1",
     "group_by_use_nulls = 1",
     "prefer_column_name_to_alias = 1",
     "cast_keep_nullable = 1",
+    # aggregate_functions_null_for_empty is NOT set because it makes groupArray
+    # return Nullable(Array(...)) which is illegal in ClickHouse's type system.
 ]
 
 # Additional settings for schema creation and data loading only
@@ -166,8 +171,8 @@ def load_data(schema, data_dir, port, database):
         if delimiter != ",":
             settings_args.extend(["--format_csv_delimiter", delimiter])
 
-        # Use INSERT FROM INFILE for fast loading
-        query = f'INSERT INTO {database}."{table_name}" FROM INFILE \'{csv_file}\' FORMAT CSV'
+        # Use INSERT FROM INFILE for fast loading; CSVWithNames skips the header row
+        query = f'INSERT INTO {database}."{table_name}" FROM INFILE \'{csv_file}\' FORMAT CSVWithNames'
         cmd = [
             "clickhouse-client",
             "--port", str(port),
@@ -191,30 +196,69 @@ def load_data(schema, data_dir, port, database):
 def classify_error(stderr):
     """Classify an error message into a category."""
     lower = stderr.lower()
-    if "timeout" in lower or "time limit" in lower or "time_limit" in lower or "max_execution_time" in lower:
+    if "connection refused" in lower or "network_error" in lower:
+        return "connection_error"
+    if "timeout" in lower or "time limit" in lower or "time_limit" in lower or "max_execution_time" in lower or "timeout_exceeded" in lower:
         return "timeout"
     if "memory limit" in lower or "memory_limit" in lower:
         return "oom"
     if "syntax error" in lower or "parse error" in lower:
         return "syntax_error"
-    if "connection refused" in lower or "network_error" in lower:
-        return "connection_error"
-    if "unknown function" in lower or "function with name" in lower and "does not exist" in lower:
+    if ("unknown function" in lower or "function with name" in lower) and "does not exist" in lower:
         return "unknown_function"
-    if "unknown identifier" in lower or "cannot be resolved" in lower:
+    if "unknown identifier" in lower or "cannot be resolved" in lower or "unknown expression" in lower:
         return "unknown_identifier"
     if "not an aggregate" in lower or "not in group by" in lower:
         return "not_an_aggregate"
     if "not implemented" in lower or "not_implemented" in lower:
         return "not_implemented"
-    if "unknown database" in lower:
+    if "unknown database" in lower or "database" in lower and "does not exist" in lower:
         return "unknown_database"
     if "invalid_join_on" in lower or "cannot determine join" in lower:
         return "invalid_join"
     return "error"
 
 
-def run_queries(query_dir, port, database, timeout, out_dir):
+def wait_for_server(port, max_attempts=30, delay=2):
+    """Wait for ClickHouse server to become ready."""
+    for attempt in range(max_attempts):
+        try:
+            result = subprocess.run(
+                ["clickhouse-client", "--port", str(port), "--query", "SELECT 1"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                return True
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        time.sleep(delay)
+    return False
+
+
+def ensure_database(port, database, schema, data_dir):
+    """Ensure the database exists; recreate schema and reload data if needed."""
+    # Check if database exists using a direct client call (run_clickhouse_query uses --format Null)
+    try:
+        result = subprocess.run(
+            ["clickhouse-client", "--port", str(port),
+             "--query", f"SELECT count() FROM system.databases WHERE name = '{database}'"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip() == "1":
+            return True
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+    print(f"  Database {database} lost, recreating schema and reloading data...")
+    if not create_schema(schema, port, database):
+        return False
+    if not load_data(schema, data_dir, port, database):
+        return False
+    print(f"  Database {database} restored")
+    return True
+
+
+def run_queries(query_dir, port, database, timeout, out_dir, schema=None, data_dir=None):
     """Run all SQL query files and collect results."""
     results = []
 
@@ -225,6 +269,9 @@ def run_queries(query_dir, port, database, timeout, out_dir):
 
     total = len(query_files)
     print(f"Running {total} queries (timeout={timeout}s)")
+
+    consecutive_conn_errors = 0
+    max_conn_errors = 5  # trigger recovery after this many consecutive connection errors
 
     for i, qf in enumerate(query_files, 1):
         query_path = os.path.join(query_dir, qf)
@@ -241,6 +288,9 @@ def run_queries(query_dir, port, database, timeout, out_dir):
         if not query:
             continue
 
+        # Apply PostgreSQL -> ClickHouse dialect rewrites
+        query = rewrite_query(query)
+
         ok, stdout, stderr, elapsed_ms = run_clickhouse_query(
             query, port=port, database=database, timeout=timeout
         )
@@ -248,9 +298,35 @@ def run_queries(query_dir, port, database, timeout, out_dir):
         if ok:
             state = "success"
             message = ""
+            consecutive_conn_errors = 0
         else:
             state = classify_error(stderr)
             message = stderr.strip()[:500]
+
+            # Detect server crash / connection errors and attempt recovery
+            if state in ("connection_error", "unknown_database"):
+                consecutive_conn_errors += 1
+                if consecutive_conn_errors >= max_conn_errors:
+                    print(f"  Server appears down after {consecutive_conn_errors} consecutive errors, attempting recovery...")
+                    if wait_for_server(port):
+                        if schema and data_dir and ensure_database(port, database, schema, data_dir):
+                            consecutive_conn_errors = 0
+                            # Retry the current query
+                            ok, stdout, stderr, elapsed_ms = run_clickhouse_query(
+                                query, port=port, database=database, timeout=timeout
+                            )
+                            if ok:
+                                state = "success"
+                                message = ""
+                            else:
+                                state = classify_error(stderr)
+                                message = stderr.strip()[:500]
+                        else:
+                            print("  Failed to restore database, continuing...")
+                    else:
+                        print("  Server did not recover, continuing...")
+            else:
+                consecutive_conn_errors = 0
 
         results.append({
             "query": query_name,
@@ -342,7 +418,10 @@ def main():
             sys.exit(1)
 
     # Run queries
-    results = run_queries(args.query_dir, args.port, args.database, args.timeout, args.out_dir)
+    results = run_queries(
+        args.query_dir, args.port, args.database, args.timeout, args.out_dir,
+        schema=schema, data_dir=args.data_dir,
+    )
 
     # Compute and save stats
     stats = compute_stats(results)
