@@ -63,7 +63,7 @@ def test(storage_policy, key_prefix):
             ) ENGINE=MergeTree()
             PARTITION BY id % 10
             ORDER BY id
-            SETTINGS storage_policy='{}'
+            SETTINGS storage_policy='{}', cleanup_delay_period=1, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0
             """.format(
                 table_name, storage_policy
             )

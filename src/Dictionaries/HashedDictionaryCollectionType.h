@@ -1,12 +1,15 @@
 #pragma once
 
+#include <Core/Types_fwd.h>
 #include <Dictionaries/IDictionary.h>
-#include <Common/HashTable/PackedHashMap.h>
+#include <Common/CacheLine.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include <Core/Types_fwd.h>
+#include <Common/HashTable/PackedHashMap.h>
+
 #include <sparsehash/sparse_hash_map>
 #include <sparsehash/sparse_hash_set>
+
 #include <type_traits>
 
 namespace DB::HashedDictionaryImpl
@@ -78,7 +81,7 @@ constexpr bool useSparseHashForHashedDictionary()
 ///
 /// Based on HashTableGrowerWithPrecalculation
 template <size_t initial_size_degree = 8>
-class alignas(64) HashTableGrowerWithPrecalculationAndMaxLoadFactor
+class alignas(CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndMaxLoadFactor
 {
     UInt8 size_degree = initial_size_degree;
     size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
@@ -108,7 +111,7 @@ public:
     {
         size_degree += delta;
         precalculated_mask = (1ULL << size_degree) - 1;
-        precalculated_max_fill = static_cast<size_t>((1ULL << size_degree) * max_load_factor);
+        precalculated_max_fill = static_cast<size_t>(static_cast<double>(1ULL << size_degree) * max_load_factor);
     }
 
     /// The size of the hash table in the cells.
@@ -137,8 +140,8 @@ public:
         {
             /// Slightly more optimal than HashTableGrowerWithPrecalculation
             /// and takes into account max_load_factor.
-            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 1;
-            if ((1ULL << size_degree) * max_load_factor < num_elems)
+            size_degree = static_cast<UInt8>(static_cast<size_t>(log2(num_elems - 1)) + 1);
+            if (static_cast<double>(1ULL << size_degree) * max_load_factor < static_cast<double>(num_elems))
                 ++size_degree;
         }
         increaseSizeDegree(0);
@@ -146,11 +149,11 @@ public:
 
     void setBufSize(size_t buf_size_)
     {
-        size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
+        size_degree = static_cast<UInt8>(static_cast<size_t>(log2(buf_size_ - 1) + 1));
         increaseSizeDegree(0);
     }
 };
-static_assert(sizeof(HashTableGrowerWithPrecalculationAndMaxLoadFactor<>) == 64);
+static_assert(sizeof(HashTableGrowerWithPrecalculationAndMaxLoadFactor<>) == CH_CACHE_LINE_SIZE);
 
 HashTableGrowerWithPrecalculationAndMaxLoadFactor() -> HashTableGrowerWithPrecalculationAndMaxLoadFactor<8>;
 

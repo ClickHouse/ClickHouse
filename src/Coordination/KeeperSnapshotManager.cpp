@@ -22,6 +22,14 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+
+namespace ProfileEvents
+{
+    extern const Event KeeperSnapshotWrittenBytes;
+    extern const Event KeeperSnapshotFileSyncMicroseconds;
+}
 
 namespace DB
 {
@@ -62,7 +70,7 @@ namespace
     {
         std::filesystem::path path(snapshot_path);
         std::string filename = path.stem();
-        Strings name_parts;
+        std::vector<std::string_view> name_parts;
         splitInto<'_', '.'>(name_parts, filename);
         return parse<uint64_t>(name_parts[1]);
     }
@@ -725,7 +733,14 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
 
     auto plain_buf = disk->writeFile(snapshot_file_name);
     copyData(reader, *plain_buf);
+
+    const size_t bytes_written = plain_buf->count();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
+
+    Stopwatch watch;
     plain_buf->sync();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+
     plain_buf->finalize();
 
     disk->removeFile(tmp_snapshot_file_name);
@@ -750,7 +765,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeLatestSna
         }
         catch (const DB::Exception &)
         {
-            const auto & [path, disk, size] = *latest_itr->second;
+            const auto & [path, disk] = *latest_itr->second;
             disk->removeFile(path);
             existing_snapshots.erase(latest_itr->first);
             tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -763,7 +778,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeLatestSna
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
 {
-    const auto & [snapshot_path, snapshot_disk, size] = *existing_snapshots.at(up_to_log_idx);
+    const auto & [snapshot_path, snapshot_disk] = *existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
     auto reader = snapshot_disk->readFile(snapshot_path, getReadSettings());
     copyData(*reader, writer);
@@ -887,7 +902,7 @@ void KeeperSnapshotManager<Storage>::removeSnapshot(uint64_t log_idx)
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-    const auto & [path, disk, size] = *itr->second;
+    const auto & [path, disk] = *itr->second;
     disk->removeFileIfExists(path);
     existing_snapshots.erase(itr);
 }
@@ -912,9 +927,16 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
     else
         compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
+    const size_t bytes_before = compressed_writer->count();
     KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
+    const size_t bytes_written = compressed_writer->count() - bytes_before;
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
+
     compressed_writer->finalize();
+
+    Stopwatch watch;
     compressed_writer->sync();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
     disk->removeFile(tmp_snapshot_file_name);
 
@@ -947,7 +969,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() cons
 {
     if (!existing_snapshots.empty())
     {
-        const auto & [path, disk, size] = *existing_snapshots.at(getLatestSnapshotIndex());
+        const auto & [path, disk] = *existing_snapshots.at(getLatestSnapshotIndex());
 
         try
         {

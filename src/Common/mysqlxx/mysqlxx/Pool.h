@@ -61,6 +61,18 @@ public:
             incrementRefCount();
         }
 
+        Entry& operator=(const Entry& src)
+        {
+            if (this != &src)
+            {
+                decrementRefCount();
+                data = src.data;
+                pool = src.pool;
+                incrementRefCount();
+            }
+            return *this;
+        }
+
         ~Entry()
         {
             decrementRefCount();

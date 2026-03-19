@@ -1,12 +1,13 @@
 #include <ctime>
 #include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Interpreters/Context.h>
+#include <Common/ErrnoException.h>
 
 namespace DB
 {
@@ -94,6 +95,8 @@ public:
 
     bool isVariadic() const override { return true; }
 
+    bool allowsOmittingParentheses() const override { return true; }
+
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context); }
     explicit NowOverloadResolver(ContextPtr context)
@@ -102,15 +105,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() > 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
-        }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
-        }
+        FunctionArgumentDescriptors mandatory_arguments{};
+        FunctionArgumentDescriptors optional_arguments{
+            {"timezone", &isStringOrFixedString, nullptr, "String"}
+        };
+
+        validateFunctionArguments(getName(), arguments, mandatory_arguments, optional_arguments);
         if (arguments.size() == 1)
         {
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
@@ -129,7 +129,6 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
                 getName());
         }
-
         timespec spec{};
         if (clock_gettime(CLOCK_REALTIME, &spec))
             throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
@@ -175,6 +174,14 @@ SELECT now('Asia/Istanbul')
 ┌─now('Asia/Istanbul')─┐
 │  2020-10-17 10:42:23 │
 └──────────────────────┘
+        )"},
+        {"SQL standard syntax without parentheses", R"(
+SELECT NOW, CURRENT_TIMESTAMP
+        )",
+        R"(
+┌─────────────────NOW─┬───CURRENT_TIMESTAMP─┐
+│ 2020-10-17 07:42:19 │ 2020-10-17 07:42:19 │
+└─────────────────────┴─────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

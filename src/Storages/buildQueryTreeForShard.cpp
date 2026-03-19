@@ -10,10 +10,9 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -261,6 +260,16 @@ private:
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
+/** Replaces large constant values with `__getScalar` function calls to avoid
+  * serializing them directly in the query text sent to remote shards.
+  *
+  * When a query contains large constants (e.g., large arrays or strings),
+  * sending them as literals in the query text is inefficient. Instead, we store
+  * the constant in a scalar context and replace it with a `__getScalar('hash')`
+  * function call. The remote shard will retrieve the actual value from the scalar context.
+  *
+  * The `optimize_const_name_size` setting controls the threshold for this optimization.
+  */
 class ReplaceLongConstWithScalarVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceLongConstWithScalarVisitor>
 {
 public:
@@ -276,21 +285,28 @@ public:
     {
         if (auto * function_node = parent->as<FunctionNode>())
         {
-            // Do not traverse "getScalar"
+            /// Do not traverse into `__getScalar` - it's already been processed.
             if (function_node->getFunctionName() == "__getScalar")
                 return false;
 
-            // Do not visit parameters node
+            /// Do not visit parameters node.
             if (function_node->getParametersNode() == child)
                 return false;
         }
 
         if (auto * query_node = parent->as<QueryNode>())
         {
-            // Do not visit LIMIT and OFFSET nodes
+            /// Do not replace constants in LIMIT, OFFSET, LIMIT BY LIMIT, and LIMIT BY OFFSET clauses.
+            /// These must remain as `ConstantNode` because the query planner accesses their values
+            /// directly via `as<ConstantNode &>()`. Replacing them with `__getScalar` function nodes
+            /// would cause a bad cast exception during query planning.
             if (query_node->hasLimit() && query_node->getLimit() == child)
                 return false;
             if (query_node->hasOffset() && query_node->getOffset() == child)
+                return false;
+            if (query_node->hasLimitByLimit() && query_node->getLimitByLimit() == child)
+                return false;
+            if (query_node->hasLimitByOffset() && query_node->getLimitByOffset() == child)
                 return false;
         }
 
@@ -323,7 +339,7 @@ public:
         {
             WriteBufferFromOwnString name_buf;
             IColumn::Options options {.optimize_const_name_size = max_size};
-            col_const->getValueNameAndTypeImpl(name_buf, 0, options);
+            col_const->getValueNameImpl(name_buf, 0, options);
             if (options.notFull(name_buf))
                 return;
         }
@@ -341,7 +357,6 @@ public:
         context->getQueryContext()->addScalar(str_hash, scalar_block);
 
         auto scalar_query_hash_string = DB::toString(node_with_hash.hash);
-
 
         auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
 
@@ -427,7 +442,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto external_storage_holder = TemporaryTableHolder(
         mutable_context,
-        ColumnsDescription(columns, false),
+        ColumnsDescription(columns),
         ConstraintsDescription{},
         nullptr /*query*/,
         true /*create_for_global_subquery*/);
@@ -476,6 +491,57 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
         auto columns_it = column_source_to_columns.find(join_table_expression);
         const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
         subquery_node = buildSubqueryToReadColumnsFromTableExpression(columns, join_table_expression, context);
+    }
+    else if (join_table_expression_node_type == QueryTreeNodeType::ARRAY_JOIN)
+    {
+        /// ARRAY_JOIN columns have multiple sources: the ARRAY_JOIN itself provides
+        /// the array-joined columns, while the inner table provides pass-through columns.
+        /// We must preserve per-source attribution for correct resolution.
+        QueryTreeNodes subquery_projection_nodes;
+        NamesAndTypes projection_columns;
+        NameSet seen_column_names;
+
+        std::vector<QueryTreeNodePtr> nodes_to_visit = {join_table_expression};
+        while (!nodes_to_visit.empty())
+        {
+            auto current = nodes_to_visit.back();
+            nodes_to_visit.pop_back();
+
+            auto columns_it = column_source_to_columns.find(current);
+            if (columns_it != column_source_to_columns.end())
+            {
+                for (const auto & col : columns_it->second.columns)
+                {
+                    if (seen_column_names.insert(col.name).second)
+                    {
+                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, current));
+                        projection_columns.push_back(col);
+                    }
+                }
+            }
+
+            for (const auto & child : current->getChildren())
+                if (child)
+                    nodes_to_visit.push_back(child);
+        }
+
+        if (subquery_projection_nodes.empty())
+        {
+            auto constant_data_type = std::make_shared<DataTypeUInt64>();
+            subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+            projection_columns.push_back({"1", std::move(constant_data_type)});
+        }
+
+        auto context_copy = Context::createCopy(context);
+        updateContextForSubqueryExecution(context_copy);
+
+        auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
+        query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
+        query_node->resolveProjectionColumns(std::move(projection_columns));
+        query_node->getJoinTree() = join_table_expression;
+        query_node->setIsSubquery(true);
+
+        subquery_node = query_node;
     }
     else
     {
@@ -532,6 +598,29 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 planner_context->getMutableQueryContext(),
                 global_in_or_join_node.subquery_depth);
             temporary_table_expression_node->setAlias(join_table_expression->getAlias());
+
+            /** When a compound node like ARRAY_JOIN is replaced, its descendants (e.g., the inner TABLE)
+              * are not traversed by cloneAndReplace. Column nodes that reference these descendants
+              * as their source would get dangling weak pointers when the original tree is released.
+              * Map all descendants of the replaced node to the temporary table so that
+              * weak pointer updates in cloneAndReplace can find them.
+              */
+            std::vector<const IQueryTreeNode *> descendants_to_map;
+            for (const auto & child : join_table_expression->getChildren())
+                if (child)
+                    descendants_to_map.push_back(child.get());
+
+            while (!descendants_to_map.empty())
+            {
+                const auto * descendant = descendants_to_map.back();
+                descendants_to_map.pop_back();
+
+                replacement_map.emplace(descendant, temporary_table_expression_node);
+
+                for (const auto & child : descendant->getChildren())
+                    if (child)
+                        descendants_to_map.push_back(child.get());
+            }
 
             replacement_map.emplace(join_table_expression.get(), std::move(temporary_table_expression_node));
             continue;

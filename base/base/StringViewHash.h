@@ -292,18 +292,18 @@ struct CRC32Hash
         }
 
         const char * end = pos + size;
-        size_t res = -1U;
+        size_t res = static_cast<size_t>(-1U);
 
         do
         {
             UInt64 word = unalignedLoadLittleEndian<UInt64>(pos);
-            res = static_cast<unsigned>(CRC_INT(res, word));
+            res = static_cast<unsigned>(CRC_INT(static_cast<UInt32>(res), word));
 
             pos += 8;
         } while (pos + 8 < end);
 
         UInt64 word = unalignedLoadLittleEndian<UInt64>(end - 8);    /// I'm not sure if this is normal.
-        res = static_cast<unsigned>(CRC_INT(res, word));
+        res = static_cast<unsigned>(CRC_INT(static_cast<UInt32>(res), word));
 
         // abseil-cpp and std require hash functions to return 64-bit values,
         // though we intentionally use crc32 for the sake of speed.

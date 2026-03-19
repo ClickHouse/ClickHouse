@@ -1,9 +1,10 @@
 #pragma once
 
 #include "config.h"
-#include <Common/assert_cast.h>
 
 #if USE_SSL
+#include <Common/Logger.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteBufferDecorator.h>

@@ -38,7 +38,7 @@ node4 = cluster.add_instance(
     with_zookeeper=True,
     ipv6_address="2001:3984:3989::1:1114",
 )
-# Check SYSTEM DROP DNS CACHE on node5 and background cache update on node6
+# Check SYSTEM CLEAR DNS CACHE on node5 and background cache update on node6
 node5 = cluster.add_instance(
     "node5",
     main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
@@ -64,8 +64,18 @@ node8 = cluster.add_instance(
         "configs/remote_servers_with_disable_dns_setting.xml",
         "configs/listen_host.xml"
     ],
+    # Disable `with_remote_database_disk` as the `test_reload_cluster_config_if_host_address_change` may simulate DNS service outage, causing it to fail to start.
+    with_remote_database_disk=False,
     stay_alive=True,
     ipv6_address="2001:3984:3989::1:1118",
+)
+node9 = cluster.add_instance(
+    "node9",
+    main_configs=[
+        "configs/disable_cache_and_ipv6.xml",
+        "configs/listen_host.xml"
+    ],
+    ipv6_address="2001:3984:3989::1:1119",
 )
 
 
@@ -73,7 +83,8 @@ def _fill_nodes(nodes, table_name):
     for node in nodes:
         node.query(
             """
-            CREATE DATABASE IF NOT EXISTS test;
+            DROP DATABASE IF EXISTS test;
+            CREATE DATABASE test;
             CREATE TABLE IF NOT EXISTS {0}(date Date, id UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{0}', '{1}')
             ORDER BY id PARTITION BY toYYYYMM(date);
@@ -128,8 +139,8 @@ def test_ip_change_drop_dns_cache(cluster_ready):
     # We use ipv6 for hosts, but resolved DNS entries may contain an unexpected ipv4 address.
     node2.set_hosts([(node1_ipv6, "node1")])
     # drop DNS cache
-    node2.query("SYSTEM DROP DNS CACHE")
-    node2.query("SYSTEM DROP CONNECTIONS CACHE")
+    node2.query("SYSTEM CLEAR DNS CACHE")
+    node2.query("SYSTEM CLEAR CONNECTIONS CACHE")
 
     # First we check, that normal replication works
     node1.query(
@@ -155,8 +166,8 @@ def test_ip_change_drop_dns_cache(cluster_ready):
         assert_eq_with_retry(node2, "SELECT count(*) from test_table_drop", "6")
 
     # drop DNS cache
-    node2.query("SYSTEM DROP DNS CACHE")
-    node2.query("SYSTEM DROP CONNECTIONS CACHE")
+    node2.query("SYSTEM CLEAR DNS CACHE")
+    node2.query("SYSTEM CLEAR CONNECTIONS CACHE")
     # Data is downloaded
     assert_eq_with_retry(node2, "SELECT count(*) from test_table_drop", "6")
 
@@ -250,7 +261,7 @@ def test_dns_cache_update(cluster_ready):
     # Reset the node4 state
     node4.set_hosts([])
     node4.query("DROP TABLE distributed_lost_host")
-    # Probably a bug: `SYSTEM DROP DNS CACHE` doesn't work with distributed engine
+    # Probably a bug: `SYSTEM CLEAR DNS CACHE` doesn't work with distributed engine
     cluster.restart_service("node4")
 
 
@@ -337,12 +348,12 @@ def test_user_access_ip_change(cluster_ready, node_name):
     if node_name == "node5":
         # client is not allowed to connect, so execute it directly in container to send query from localhost
         node.exec_in_container(
-            ["bash", "-c", 'clickhouse client -q "SYSTEM DROP DNS CACHE"'],
+            ["bash", "-c", 'clickhouse client -q "SYSTEM CLEAR DNS CACHE"'],
             privileged=True,
             user="root",
         )
         node.exec_in_container(
-            ["bash", "-c", 'clickhouse client -q "SYSTEM DROP CONNECTIONS CACHE"'],
+            ["bash", "-c", 'clickhouse client -q "SYSTEM CLEAR CONNECTIONS CACHE"'],
             privileged=True,
             user="root",
         )
@@ -432,8 +443,8 @@ def test_dns_resolver_filter(cluster_ready, allow_ipv4, allow_ipv6):
     )
 
     node.query("SYSTEM RELOAD CONFIG")
-    node.query("SYSTEM DROP DNS CACHE")
-    node.query("SYSTEM DROP CONNECTIONS CACHE")
+    node.query("SYSTEM CLEAR DNS CACHE")
+    node.query("SYSTEM CLEAR CONNECTIONS CACHE")
 
     if not allow_ipv4 and not allow_ipv6:
         with pytest.raises(QueryRuntimeException):
@@ -475,3 +486,72 @@ def test_setting_disable_internal_dns_cache(cluster_ready, disable_internal_dns_
         assert node.query("SELECT count(*) from system.dns_cache;") == "0\n"
     else:
         assert node.query("SELECT count(*) from system.dns_cache;") != "0\n"
+
+    # Reset the node8 state
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/remote_servers_with_disable_dns_setting.xml",
+        "<disable_internal_dns_cache>[10]</disable_internal_dns_cache>",
+        "<disable_internal_dns_cache>0</disable_internal_dns_cache>"
+    )
+
+
+def test_reload_cluster_config_if_host_address_change(cluster_ready):
+    # `disable_internal_dns_cache` should be false for updating cache,
+    # so that we can reload cluster config if host address changes.
+    node = node8
+    # Back up DNS configuration (resolv.conf and hosts)
+    resolv_conf_bak = node.exec_in_container(["bash", "-c", "cat /etc/resolv.conf"])
+    hosts_bak = node.exec_in_container(["bash", "-c", "cat /etc/hosts"])
+    # Clear DNS configuration to simulate DNS service outage
+    node.exec_in_container(["bash", "-c", "echo '' > /etc/resolv.conf",], privileged=True, user="root")
+    node.exec_in_container(["bash", "-c", "echo '' > /etc/hosts"], privileged=True, user="root")
+
+    node.restart_clickhouse()
+
+    # Failed to resolve DNS at cluster initialization
+    assert node.wait_for_log_line(
+        regexp="Cluster: Code: 198. DB::NetException: Not found address of host: node8.",
+        filename="/var/log/clickhouse-server/clickhouse-server.err.log",
+        timeout=3
+    )
+    # `is_local` is set to false by default as failure in DNS resolution
+    assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "0\n"
+
+    # Restore the original DNS configuration to simulate DNS service recovery
+    node.exec_in_container(["bash", "-c", f"echo '{resolv_conf_bak}' > /etc/resolv.conf"], privileged=True, user="root")
+    node.exec_in_container(["bash", "-c", f"echo '{hosts_bak}' > /etc/hosts"], privileged=True, user="root")
+    # Wait a bit until dns cache will be updated
+    assert_eq_with_retry(node, "SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'", "1")
+
+    # Change the resolved IPs of node8
+    node.exec_in_container(["bash", "-c", f"echo -e '127.0.0.1 node8\n192.168.1.1 node8\n192.168.1.2 node8' > /etc/hosts"], privileged=True, user="root")
+    # During this update period, the cluster config was reloaded
+    assert node.wait_for_log_line(
+        regexp="DNSCacheUpdater: IPs of host name node8 have been changed",
+        look_behind_lines=10,
+    )
+    assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "1\n"
+    assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8'") == "127.0.0.1\n192.168.1.1\n192.168.1.2\n"
+
+    # Change the resolved IPs' order of node8
+    node.exec_in_container(["bash", "-c", f"echo -e '192.168.1.2 node8\n192.168.1.1 node8\n127.0.0.1 node8' > /etc/hosts"], privileged=True, user="root")
+    # During this update period, the cluster config was not reloaded yet
+    assert node.wait_for_log_line(
+        regexp="DNSResolver: Updated DNS cache",
+        look_behind_lines=10,
+    )
+    assert node.count_in_log("DNSCacheUpdater: IPs of host name node8 have been changed") == "2\n"
+    assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "1\n"
+    assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8'") == "127.0.0.1\n192.168.1.2\n192.168.1.1\n"
+
+    # Reset the node8 state
+    node.exec_in_container(["bash", "-c", f"echo '{hosts_bak}' > /etc/hosts"], privileged=True, user="root")
+
+def test_dns_resolver_filter_cache_disabled(cluster_ready):
+    node = node9
+    node.set_hosts([(node.ipv6_address, "test_host")])
+    # query should fail because we disable IPv6 address resolution but provide no IPv4 address
+    with pytest.raises(QueryRuntimeException) as e:
+        node.query("SELECT * FROM remote('test_host', 'system', 'one')")
+    assert "DNS_ERROR" in str(e.value)
+    assert "After filtering there are no resolved address for host(test_host)" in str(e.value)

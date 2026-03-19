@@ -2,7 +2,7 @@
 -- Tag no-fasttest: Depends on S3
 
 SET s3_truncate_on_insert = 1,
-    s3_list_object_keys_size = 1;
+    s3_list_object_keys_size = 100;
 
 DROP TABLE IF EXISTS 03741_data, 03741_filter;
 
@@ -60,7 +60,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT '';
 SELECT ProfileEvents['S3ListObjects'], ProfileEvents['EngineFileLikeReadFiles']
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND log_comment like '%03741_s3_glob_table_path_pushdown%'
   AND query_kind = 'Select'
   AND type = 'QueryFinish'
