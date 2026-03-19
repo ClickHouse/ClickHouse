@@ -321,9 +321,7 @@ void KeeperDispatcher::requestThread()
 
                     const auto prev_result_done = [&]
                     {
-                        /// has_result == false && get_result_code == OK means that our request still not processed.
-                        /// Sometimes NuRaft set errorcode without setting result, so we check both here.
-                        return !prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK;
+                        return !prev_result || prev_result->has_result();
                     };
 
                     /// Waiting until previous append will be successful, or batch is big enough
