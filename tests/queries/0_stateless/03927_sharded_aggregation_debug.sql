@@ -13,9 +13,25 @@ SELECT getSetting('optimize_aggregation_by_sharding') SETTINGS optimize_aggregat
 SELECT 'max_threads value:';
 SELECT getSetting('max_threads') SETTINGS max_threads = 8;
 
+SELECT 'max_rows_to_group_by:';
+SELECT getSetting('max_rows_to_group_by') SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 8;
+
+SELECT 'optimize_aggregation_in_order:';
+SELECT getSetting('optimize_aggregation_in_order') SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 8;
+
+SELECT 'force_aggregation_in_order:';
+SELECT getSetting('force_aggregation_in_order') SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 8;
+
+SELECT 'Key type:';
+SELECT toTypeName(a) FROM test_debug LIMIT 1;
+
 SELECT 'Full pipeline:';
 EXPLAIN PIPELINE SELECT a, sum(b) FROM test_debug GROUP BY a
     SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 8;
+
+SELECT 'Full pipeline with all guards disabled:';
+EXPLAIN PIPELINE SELECT a, sum(b) FROM test_debug GROUP BY a
+    SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 8, optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 
 SELECT 'Check ScatterByHashTransform:';
 SELECT count() > 0 FROM (
