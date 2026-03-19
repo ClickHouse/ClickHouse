@@ -1,6 +1,6 @@
 services:
   nessie:
-    image: ghcr.io/projectnessie/nessie:latest
+    image: ghcr.io/projectnessie/nessie:0.107.2
     depends_on:
       minio:
         condition: service_started

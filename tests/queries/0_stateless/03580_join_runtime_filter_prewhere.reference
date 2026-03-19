@@ -10,3 +10,9 @@ Prewhere filter column: __applyFilter(_runtime_filter_UNIQ_ID_0, __table2.c_nati
 BuildRuntimeFilter (Build runtime join filter on __table1.n_nationkey)
 ReadFromMergeTree (default.nation)
 Prewhere filter column: equals(__table1.n_name, \'FRANCE\'_String) (removed)
+-- Addintional filter in PREWHERE
+ReadFromMergeTree (default.customer)
+Prewhere filter column: and(equals(modulo(__table2.c_custkey, 4_UInt8), 0_UInt8), __applyFilter(_runtime_filter_UNIQ_ID_0, __table2.c_nationkey)) (removed)
+BuildRuntimeFilter (Build runtime join filter on __table1.n_nationkey)
+ReadFromMergeTree (default.nation)
+Prewhere filter column: equals(__table1.n_name, \'FRANCE\'_String) (removed)

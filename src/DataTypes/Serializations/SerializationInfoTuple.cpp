@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
 #include <Poco/JSON/Object.h>

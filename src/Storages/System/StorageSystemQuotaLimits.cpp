@@ -22,7 +22,9 @@ namespace
     {
         out_column_null_map.push_back(false);
         if (type_info.output_as_float)
-            static_cast<ColumnFloat64 &>(out_column).getData().push_back(double(value) / type_info.output_denominator);
+            static_cast<ColumnFloat64 &>(out_column)
+                .getData()
+                .push_back(static_cast<double>(value) / static_cast<double>(type_info.output_denominator));
         else
             static_cast<ColumnUInt64 &>(out_column).getData().push_back(value / type_info.output_denominator);
     }

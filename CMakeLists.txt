@@ -357,6 +357,10 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+
+    if(LINKER_NAME MATCHES "lld")
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
+    endif()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
@@ -367,6 +371,11 @@ else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
 set(MAX_LINKER_MEMORY 5000)
+if (ENABLE_FUZZING)
+    # Fuzzer builds produce many large ASan-instrumented binaries.
+    # Each linker instance needs significantly more memory than the default.
+    set(MAX_LINKER_MEMORY 16000)
+endif()
 include(cmake/limit_jobs.cmake)
 
 
@@ -374,7 +383,7 @@ include(cmake/limit_jobs.cmake)
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
 # Don't use the system compiler-rt library even if it is available. Instead build it directly
-option(USE_SYSTEM_COMPILER_RT "Use the system compiler-rt if available. If disabled it will be built from sources (supported for Linux and FreeBSD)" ON)
+option(USE_SYSTEM_COMPILER_RT "Use the system compiler-rt if available. If disabled it will be built from sources (supported for Linux and FreeBSD)" OFF)
 
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)
@@ -390,6 +399,8 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+elseif (OS_SUNOS)
+    include(cmake/sunos/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
@@ -504,29 +515,6 @@ macro (clickhouse_add_executable target)
     else ()
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
-
-    # Wrap the malloc/free and other C-style functions with our own ones
-    # to inject memory tracking mechanism into them.
-    # Sanitizers have their own way of intercepting the
-    # allocations and deallocations, so we skip this step for them.
-    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD))
-        target_link_options(${target} PRIVATE
-            "LINKER:--wrap=malloc"
-            "LINKER:--wrap=free"
-            "LINKER:--wrap=calloc"
-            "LINKER:--wrap=realloc"
-            "LINKER:--wrap=aligned_alloc"
-            "LINKER:--wrap=posix_memalign"
-            "LINKER:--wrap=valloc"
-            "LINKER:--wrap=memalign"
-            "LINKER:--wrap=reallocarray"
-        )
-        if (NOT USE_MUSL)
-            target_link_options(${target} PRIVATE
-                "LINKER:--wrap=pvalloc"
-            )
-        endif()
-    endif()
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)

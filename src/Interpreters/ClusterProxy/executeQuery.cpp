@@ -19,12 +19,12 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/ResizeProcessor.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <QueryPipeline/UnavailableShardTracker.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
@@ -49,6 +49,8 @@ namespace Setting
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_execution_time_leaf;
     extern const SettingsUInt64 max_memory_usage_for_user;
+    extern const SettingsUInt64 max_skip_unavailable_shards_num;
+    extern const SettingsFloat max_skip_unavailable_shards_ratio;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
     extern const SettingsMaxThreads max_threads;
@@ -241,6 +243,11 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     {
         new_settings[Setting::load_balancing] = LoadBalancing::ROUND_ROBIN;
     }
+
+    /// disable plan serialization for sample and custom key modes
+    /// until filter generation for these modes are done on query plan level
+    if (context->canUseOffsetParallelReplicas())
+        new_settings[Setting::serialize_query_plan] = false;
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
@@ -447,6 +454,16 @@ void executeQuery(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
 
+        UnavailableShardTrackerPtr unavailable_shard_tracker;
+        const auto & new_settings_ref = new_context->getSettingsRef();
+        if (new_settings_ref[Setting::skip_unavailable_shards])
+        {
+            size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
+            Float64 max_ratio = new_settings_ref[Setting::max_skip_unavailable_shards_ratio];
+            if (max_num > 0 || max_ratio > 0)
+                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
+        }
+
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
             std::move(remote_shards),
@@ -461,7 +478,8 @@ void executeQuery(
             log,
             shards,
             query_info.storage_limits,
-            not_optimized_cluster->getName());
+            not_optimized_cluster->getName(),
+            std::move(unavailable_shard_tracker));
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));
@@ -495,20 +513,10 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     /// check hedged connections setting
     if (settings[Setting::use_hedged_requests].value)
     {
-        if (settings[Setting::use_hedged_requests].changed)
-        {
-            LOG_WARNING(
-                logger,
-                "Setting 'use_hedged_requests' explicitly with enabled 'enable_parallel_replicas' has no effect. "
-                "Hedged connections are not used for parallel reading from replicas");
-        }
-        else
-        {
-            LOG_INFO(
-                logger,
-                "Disabling 'use_hedged_requests' in favor of 'enable_parallel_replicas'. Hedged connections are "
-                "not used for parallel reading from replicas");
-        }
+        LOG_INFO(
+            logger,
+            "Disabling 'use_hedged_requests' in favor of 'enable_parallel_replicas'. "
+            "Hedged connections are not used for parallel reading from replicas");
 
         /// disable hedged connections -> parallel replicas uses own logic to choose replicas
         context_mutable->setSetting("use_hedged_requests", Field{false});
@@ -666,6 +674,8 @@ void executeQueryWithParallelReplicas(
     SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
+    QueryTreeNodePtr query_tree,
+    PlannerContextPtr planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
     QueryPlanStepPtr analyzed_read_from_merge_tree)
@@ -704,6 +714,13 @@ void executeQueryWithParallelReplicas(
             return;
         }
 
+        std::shared_ptr<const QueryPlan> remote_query_plan;
+        if (new_context->getSettingsRef()[Setting::serialize_query_plan])
+        {
+            remote_query_plan = createRemotePlanForParallelReplicas(query_ast, * header, new_context, processed_stage);
+            remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+        }
+
         auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
@@ -712,6 +729,8 @@ void executeQueryWithParallelReplicas(
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,
+            query_tree,
+            planner_context,
             cluster,
             storage_id,
             coordinator,
@@ -725,7 +744,8 @@ void executeQueryWithParallelReplicas(
             std::move(storage_limits),
             std::move(connection_pools),
             local_replica_index,
-            shard.pool);
+            shard.pool,
+            std::move(remote_query_plan));
 
         auto remote_plan = std::make_unique<QueryPlan>();
         remote_plan->addStep(std::move(read_from_remote));
@@ -749,6 +769,8 @@ void executeQueryWithParallelReplicas(
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,
+            query_tree,
+            planner_context,
             cluster,
             storage_id,
             std::move(coordinator),
@@ -782,12 +804,21 @@ void executeQueryWithParallelReplicas(
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
 
-    auto header
-        = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
+    auto [header, new_planner_context]
+        = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
     auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     executeQueryWithParallelReplicas(
-        query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, std::move(analyzed_read_from_merge_tree));
+        query_plan,
+        storage_id,
+        header,
+        processed_stage,
+        modified_query_ast,
+        modified_query_tree,
+        new_planner_context,
+        context,
+        storage_limits,
+        std::move(analyzed_read_from_merge_tree));
 }
 
 void executeQueryWithParallelReplicas(
@@ -802,7 +833,8 @@ void executeQueryWithParallelReplicas(
         context, query_ast, storage_id.database_name, storage_id.table_name, /*remote_table_function_ptr*/ nullptr);
     auto header = InterpreterSelectQuery(modified_query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
-    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, nullptr);
+    executeQueryWithParallelReplicas(
+        query_plan, storage_id, header, processed_stage, modified_query_ast, nullptr, nullptr, context, storage_limits, nullptr);
 }
 
 void executeQueryWithParallelReplicasCustomKey(

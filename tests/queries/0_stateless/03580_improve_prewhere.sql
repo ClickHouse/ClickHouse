@@ -6,7 +6,7 @@ set move_primary_key_columns_to_end_of_prewhere = 1;
 set allow_reorder_prewhere_conditions = 1;
 set enable_analyzer = 1;
 set enable_parallel_replicas = 0;
-set allow_experimental_statistics = 1;
+set allow_statistics = 1;
 set use_statistics = 1;
 
 DROP TABLE IF EXISTS test_improve_prewhere;

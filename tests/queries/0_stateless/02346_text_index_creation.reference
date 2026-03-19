@@ -20,6 +20,9 @@ Test dictionary_block_size argument.
 Test dictionary_block_frontcoding_compression argument.
 -- dictionary_block_frontcoding_compression must be an integer.
 -- dictionary_block_frontcoding_compression must be 0 or 1.
+Test posting_list_codec argument.
+-- posting_list_codec must be a string.
+-- posting_list_codec must be none or bitpacking.
 Types are incorrect.
 Same argument appears >1 times.
 Non-existing argument.

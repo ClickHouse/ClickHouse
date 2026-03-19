@@ -636,24 +636,7 @@ size_t StorageFileLog::getPollTimeoutMillisecond() const
 
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
 {
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
-        return false;
-
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return false;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-    }
-
-    return true;
+    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
 size_t StorageFileLog::getTableDependentCount() const
@@ -771,7 +754,7 @@ bool StorageFileLog::streamToViews()
     }
 
     // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
     auto new_context = Context::createCopy(filelog_context);

@@ -47,7 +47,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
     auto ranges = part.ranges;
-    size_t ending_mark = ranges.empty() ? 0 : ranges.back().end;
+    [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
+
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (use_for_disjunctions)
         partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
@@ -75,6 +76,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             use_for_disjunctions,
             partial_eval_results,
             log).first;
+
+        LOG_DEBUG(log, "Index {} has dropped {}/{} granules in part {}", index_and_condition.index->index.name,
+                        (total_granules - ranges.getNumberOfMarks()), total_granules, part.data_part->name);
+        total_granules = ranges.getNumberOfMarks();
     }
 
     if (use_for_disjunctions)
@@ -82,35 +87,17 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
                             part.data_part, ranges, key_condition_rpn_template.value(),
                             partial_eval_results, reader_settings, log);
-    }
 
-    for (const auto & indices_and_condition : skip_indexes.merged_indices)
-    {
-        if (is_cancelled)
-            return {};
-
-        if (ranges.empty())
-            break;
-
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
-
-        ranges = MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
-            indices_and_condition.indices,
-            indices_and_condition.condition,
-            part.data_part,
-            ranges,
-            reader_settings,
-            mark_cache.get(),
-            uncompressed_cache.get(),
-            vector_similarity_index_cache.get(),
-            log);
+        LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
+                        ranges.getNumberOfMarks(), total_granules, part.data_part->name);
+        total_granules = ranges.getNumberOfMarks();
     }
 
     if (is_cancelled)
         return {};
 
     auto res = std::make_shared<SkipIndexReadResult>();
-    res->granules_selected.resize(ending_mark, false);
+    res->granules_selected.resize(part.data_part->index_granularity->getMarksCountWithoutFinal(), false);
     for (const auto & range : ranges)
     {
         for (auto i = range.begin; i < range.end; ++i)

@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/Block_fwd.h>
+#include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/IThrottler.h>
@@ -10,7 +11,6 @@
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
 #include <Core/UUID.h>
-#include <Core/ParallelReplicasMode.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
@@ -19,11 +19,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/ColumnsDescription.h>
 #include <Backups/BackupsInMemoryHolder.h>
 
 #include <Poco/AutoPtr.h>
@@ -41,6 +39,12 @@ namespace Poco::Net
 class IPAddress;
 class SocketAddress;
 }
+
+namespace Poco::Util
+{
+class AbstractConfiguration;
+}
+
 namespace zkutil
 {
     class ZooKeeper;
@@ -62,6 +66,7 @@ class ASTSelectQuery;
 
 class SystemLogs;
 
+class ColumnsDescription;
 struct ContextSharedPart;
 class ContextAccess;
 class ContextAccessWrapper;
@@ -101,8 +106,9 @@ class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
+class ParquetMetadataCache;
 class VectorSimilarityIndexCache;
-class TextIndexDictionaryBlockCache;
+class TextIndexTokensCache;
 class TextIndexHeaderCache;
 class TextIndexPostingsCache;
 class ProcessList;
@@ -187,6 +193,7 @@ class AsyncLoader;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
+class WasmModuleManager;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -285,12 +292,22 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+class SystemAllocatedMemoryHolder;
+using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
+
 /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
 /// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
 /// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
 struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 RuntimeFilterLookupPtr createRuntimeFilterLookup();
+
+class QueryMetadataCache;
+using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
+using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
+
+using DatabasePtr = std::shared_ptr<IDatabase>;
+using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -366,7 +383,7 @@ protected:
     {
         StorageID table = StorageID::createEmpty();
         std::optional<Names> column_names;
-        std::optional<ColumnsDescription> columns_description;
+        std::shared_ptr<ColumnsDescription> columns_description;
     };
 
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
@@ -533,16 +550,20 @@ protected:
     mutable std::mutex table_function_results_mutex;
 
     ContextWeakMutablePtr query_context;
-    ContextWeakMutablePtr session_context;  /// Session context or nullptr. Could be equal to this.
-    ContextWeakMutablePtr global_context;   /// Global context. Could be equal to this.
+    ContextWeakMutablePtr session_context;      /// Session context or nullptr. Could be equal to this.
+    ContextWeakMutablePtr global_context;       /// Global context. Could be equal to this.
+    ContextWeakMutablePtr background_context;   /// Context of background operations or a copy of global context. Could be equal to this.
 
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
+    /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
+    bool is_background_operation = false;
 
     inline static ContextPtr global_context_instance;
+    inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
@@ -555,6 +576,29 @@ protected:
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
 
+    struct StorageCache
+    {
+        static constexpr size_t NumShards = 6;
+
+        struct Shard
+        {
+            std::mutex mutex;
+            std::unordered_set<
+                StorageID,
+                StorageID::DatabaseAndTableNameHash,
+                StorageID::DatabaseAndTableNameEqual
+            > set;
+        };
+
+        std::array<Shard, NumShards> shards;
+
+        static size_t shardIndex(const StorageID & id)
+        {
+            return StorageID::DatabaseAndTableNameHash{}(id) & (NumShards - 1);
+        }
+    };
+
+    mutable StorageCache storage_cache;
     /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
     /// This is a per query cache and not shared across queries.
     mutable ReverseLookupCachePtr reverse_lookup_cache;
@@ -625,7 +669,7 @@ protected:
                                                         /// It's shared with all children contexts.
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
-    BackupsInMemoryHolder backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
+    std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -659,6 +703,10 @@ private:
     Context();
     Context(const Context &);
 
+#if USE_NURAFT
+    void setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) const;
+#endif
+
 public:
     /// Create initial Context with ContextShared and etc.
     static ContextMutablePtr createGlobal(ContextSharedPart * shared_part);
@@ -677,6 +725,8 @@ public:
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
+
+    DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const;
 
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
@@ -974,8 +1024,15 @@ public:
     /// For table functions s3/file/url/hdfs/input we can use structure from
     /// insertion table depending on select expression.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
-    /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
-    StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
+    /// Overload for the analyzer. Structure inference is performed in QueryAnalysisPass.
+    /// The execution_context is used for the actual table function execution
+    /// (to respect per-subquery SETTINGS), while `this` context is used for caching.
+    /// The cache key incorporates a hash of the settings changes so that identical table functions
+    /// with the same settings are still reused from cache.
+    StoragePtr executeTableFunction(
+        const ASTPtr & table_expression,
+        const TableFunctionPtr & table_function_ptr,
+        const ContextPtr & execution_context);
 
     StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
 
@@ -989,27 +1046,24 @@ public:
     String getInitialQueryId() const;
 
     void setCurrentDatabase(const String & name);
+    /// Set current_database without validating that database exists.
+    /// Use during bootstrap/restore scenarios where database may not be loaded yet.
+    void setCurrentDatabaseUnchecked(const String & name);
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
-
-    /// FIXME: for background operations (like Merge and Mutation) we also use the same Context object and even setup
-    /// query_id for it (table_uuid::result_part_name). We can distinguish queries from background operation in some way like
-    /// bool is_background = query_id.contains("::"), but it's much worse than just enum check with more clear purpose
-    void setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType setBackgroundOperationTypeForContextbackground_operation);
-    bool isBackgroundOperationContext() const;
 
     void killCurrentQuery() const;
     bool isCurrentQueryKilled() const;
 
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
-    bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description.has_value(); }
-    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::optional<ColumnsDescription> column_description = std::nullopt);
+    bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description != nullptr; }
+    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::shared_ptr<ColumnsDescription> column_description = nullptr);
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
     const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
-    const std::optional<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
+    const std::shared_ptr<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
@@ -1070,6 +1124,9 @@ public:
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 
+    bool hasWasmModuleManager() const;
+    WasmModuleManager & getWasmModuleManager() const;
+
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
@@ -1078,8 +1135,8 @@ public:
     BackupsWorker & getBackupsWorker() const;
     void waitAllBackupsAndRestores() const;
     void cancelAllBackupsAndRestores() const;
-    BackupsInMemoryHolder & getBackupsInMemory();
-    const BackupsInMemoryHolder & getBackupsInMemory() const;
+    std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
+    std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(
@@ -1174,6 +1231,13 @@ public:
         return ptr && ptr.get() == this;
     }
 
+    bool hasBackgroundContext() const { return !background_context.expired(); }
+    bool isBackgroundContext() const
+    {
+        return is_background_operation;
+    }
+    ContextMutablePtr getBackgroundContext() const;
+
     ContextMutablePtr getBufferContext() const;
 
     void setQueryContext(ContextMutablePtr context_) { query_context = context_; }
@@ -1184,6 +1248,7 @@ public:
     void makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings);
     void makeSessionContext();
     void makeGlobalContext();
+    void makeBackgroundContext(const Poco::Util::AbstractConfiguration & config);
 
     void setProgressCallback(ProgressCallback callback);
     /// Used in executeQuery() to pass it to the QueryPipeline.
@@ -1251,8 +1316,9 @@ public:
     std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
+    void signalKeeperDispatcherShutdown() const;
     void shutdownKeeperDispatcher() const;
-    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -1292,6 +1358,14 @@ public:
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
 
+    /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
+    SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;
+    void allowSystemAllocateMemory(bool allow);
+
+    /// See users_to_ignore_early_memory_limit_check in ServerSettings
+    std::shared_ptr<std::unordered_set<std::string>> getUsersToIgnoreEarlyMemoryLimitCheck() const;
+    void setUsersToIgnoreEarlyMemoryLimitCheck(std::string users);
+
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
@@ -1307,10 +1381,10 @@ public:
     std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
     void clearVectorSimilarityIndexCache() const;
 
-    void setTextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<TextIndexDictionaryBlockCache> getTextIndexDictionaryBlockCache() const;
-    void clearTextIndexDictionaryBlockCache() const;
+    void setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexTokensCache> getTextIndexTokensCache() const;
+    void clearTextIndexTokensCache() const;
 
     void setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1337,6 +1411,13 @@ public:
     void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
     void clearIcebergMetadataFilesCache() const;
+#endif
+
+#if USE_PARQUET
+    void setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<ParquetMetadataCache> getParquetMetadataCache() const;
+    void clearParquetMetadataCache() const;
 #endif
 
     void setAllowedDisksForTableEngines(std::unordered_set<String> && allowed_disks_) { allowed_disks = std::move(allowed_disks_); }
@@ -1378,6 +1459,7 @@ public:
     BackgroundSchedulePool & getSchedulePool() const;
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
+    BackgroundSchedulePool & getIcebergSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -1443,7 +1525,7 @@ public:
 
     using Dashboards = std::vector<std::map<String, String>>;
     std::optional<Dashboards> getDashboards() const;
-    void setDashboardsConfig(const ConfigurationPtr & config);
+    void setDashboardsConfig(const Poco::Util::AbstractConfiguration & config);
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -1612,8 +1694,6 @@ public:
     BlockMarshallingCallback getBlockMarshallingCallback() const;
     void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
 
-    RuntimeDataflowStatisticsCacheUpdaterPtr getRuntimeDataflowStatisticsCacheUpdater() const;
-
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);
 
@@ -1730,6 +1810,8 @@ private:
 
     /// Expect lock for shared->clusters_mutex
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
+
+    WasmModuleManager * initWasmModuleManager();
 
     std::unordered_set<String> allowed_disks;
     /// Throttling

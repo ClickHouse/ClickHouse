@@ -1,8 +1,8 @@
-#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/PODArray.h>
+#include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
@@ -93,7 +93,7 @@ void ColumnFunction::get(size_t n, Field & res) const
         res_tuple.push_back((*captured_columns[i].column)[n]);
 }
 
-DataTypePtr ColumnFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnFunction::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     size_t size = captured_columns.size();
 
@@ -104,20 +104,15 @@ DataTypePtr ColumnFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & n
         else
             name_buf << "tuple(";
     }
-    DataTypes element_types;
-    element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        const auto & type = captured_columns[i].column->getValueNameAndTypeImpl(name_buf, n, options);
-        element_types.push_back(type);
+        captured_columns[i].column->getValueNameImpl(name_buf, n, options);
     }
     if (options.notFull(name_buf))
         name_buf << ")";
-
-    return std::make_shared<DataTypeTuple>(element_types);
 }
 
 
@@ -313,6 +308,28 @@ size_t ColumnFunction::allocatedBytes() const
     return total_size;
 }
 
+void ColumnFunction::updateHashWithValue(size_t n, SipHash & hash) const
+{
+    hash.update(function->getName());
+    for (const auto & column : captured_columns)
+        column.column->updateHashWithValue(n, hash);
+}
+
+WeakHash32 ColumnFunction::getWeakHash32() const
+{
+    WeakHash32 hash(elements_size);
+    for (const auto & column : captured_columns)
+        hash.update(column.column->getWeakHash32());
+    return hash;
+}
+
+void ColumnFunction::updateHashFast(SipHash & hash) const
+{
+    hash.update(function->getName());
+    for (const auto & column : captured_columns)
+        column.column->updateHashFast(hash);
+}
+
 void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)
 {
     auto args = function->getArgumentTypes().size();
@@ -410,6 +427,41 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
 ColumnPtr ColumnFunction::recursivelyConvertResultToFullColumnIfLowCardinality() const
 {
     return ColumnFunction::create(elements_size, function, captured_columns, is_short_circuit_argument, is_function_compiled, true);
+}
+
+void ColumnFunction::forEachMutableSubcolumn(MutableColumnCallback callback)
+{
+    for (auto & column : captured_columns)
+    {
+        WrappedPtr wrapped = column.column;
+        callback(wrapped);
+        column.column = std::move(wrapped).detach();
+    }
+}
+
+void ColumnFunction::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    for (auto & column : captured_columns)
+    {
+        auto & mutable_column = column.column->assumeMutableRef();
+        callback(mutable_column);
+        mutable_column.forEachMutableSubcolumnRecursively(callback);
+    }
+}
+
+void ColumnFunction::forEachSubcolumn(ColumnCallback callback) const
+{
+    for (const auto & column : captured_columns)
+        callback(column.column);
+}
+
+void ColumnFunction::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    for (const auto & column : captured_columns)
+    {
+        callback(*column.column);
+        column.column->forEachSubcolumnRecursively(callback);
+    }
 }
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column)

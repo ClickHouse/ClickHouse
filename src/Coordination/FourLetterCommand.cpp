@@ -37,6 +37,8 @@ String formatZxid(int64_t zxid)
     String hex = getHexUIntLowercase(zxid);
     /// without leading zeros
     trimLeft(hex, '0');
+    if (hex.empty())
+        hex = "0";
     return "0x" + hex;
 }
 
@@ -341,8 +343,10 @@ String MonitorCommand::run()
 
     if (keeper_info.is_leader)
     {
+        print(ret, "learners", keeper_info.learner_count);
         print(ret, "followers", keeper_info.follower_count);
         print(ret, "synced_followers", keeper_info.synced_follower_count);
+        print(ret, "synced_non_voting_followers", keeper_info.synced_non_voting_follower_count);
     }
 
     return ret.str();
@@ -536,7 +540,7 @@ String EnviCommand::run()
 
     String os_user;
     os_user.resize(256, '\0');
-    if (0 == getlogin_r(os_user.data(), os_user.size() - 1))
+    if (0 == getlogin_r(os_user.data(), static_cast<int>(os_user.size() - 1)))
         os_user.resize(strlen(os_user.c_str()));
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.
@@ -661,7 +665,7 @@ void printToString(void * output, const char * data)
 String JemallocDumpStats::run()
 {
     std::string output;
-    malloc_stats_print(printToString, &output, nullptr);
+    je_malloc_stats_print(printToString, &output, nullptr);
     return output;
 }
 

@@ -2,9 +2,11 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/RangeRef.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionsConversion.h>
+#include <DataTypes/DataTypesNumber.h>
 
 using namespace DB;
 using namespace DB::detail;
@@ -212,4 +214,28 @@ TEST(ConversionMonotonicRef, toString)
         expectMonotonicity(
             ToStringMonotonicity::get(DataTypeUInt64(), ColumnValueRef::negativeInfinity(), ColumnValueRef::positiveInfinity()), {});
     }
+}
+
+TEST(ConversionMonotonic, toStringFixedString)
+{
+    DataTypeFixedString fixed_string_type(4);
+
+    const auto monotonicity = ToStringMonotonicity::get(fixed_string_type, {}, {});
+
+    ASSERT_EQ(monotonicity.is_monotonic, true);
+    ASSERT_EQ(monotonicity.is_positive, true);
+    ASSERT_EQ(monotonicity.is_always_monotonic, true);
+    ASSERT_EQ(monotonicity.is_strict, true);
+}
+
+TEST(ConversionMonotonic, toStringLowCardinalityFixedString)
+{
+    DataTypeLowCardinality low_cardinality_fixed_string_type(std::make_shared<DataTypeFixedString>(4));
+
+    const auto monotonicity = ToStringMonotonicity::get(low_cardinality_fixed_string_type, {}, {});
+
+    ASSERT_EQ(monotonicity.is_monotonic, true);
+    ASSERT_EQ(monotonicity.is_positive, true);
+    ASSERT_EQ(monotonicity.is_always_monotonic, true);
+    ASSERT_EQ(monotonicity.is_strict, true);
 }

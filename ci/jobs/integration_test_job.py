@@ -5,8 +5,15 @@ import time
 from pathlib import Path
 from typing import List, Tuple
 
+from more_itertools import tail
+
 from ci.jobs.scripts.find_tests import Targeting
-from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
+from ci.jobs.scripts.integration_tests_configs import (
+    IMAGES_ENV,
+    LLVM_COVERAGE_SKIP_PREFIXES,
+    get_optimal_test_batch,
+)
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -21,6 +28,59 @@ mem_gb = round(Utils.physical_memory() // (1024**3), 1)
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
 
+INFRASTRUCTURE_ERROR_PATTERNS = [
+    "timed out after",
+    "TimeoutExpired",
+    "Cannot connect to the Docker daemon",
+    "Error response from daemon",
+    "Name or service not known",
+    "Temporary failure in name resolution",
+    "Network is unreachable",
+    "Connection reset by peer",
+    "No space left on device",
+    "Cannot allocate memory",
+    "OCI runtime create failed",
+    "toomanyrequests",
+    "pull access denied",
+    "Got exception pulling images:",  # docker pull failure during cluster.start()
+]
+
+
+def _is_infrastructure_error(result: Result) -> bool:
+    """Returns True if the result is a failure caused by infrastructure issues."""
+    if not result.info:
+        return False
+    if result.status in (Result.Status.ERROR, Result.StatusExtended.ERROR):
+        return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+    # Docker compose/pull infrastructure failures may appear with FAIL status
+    # when pytest reports fixture (setup phase) errors as test failures.
+    # Require both docker context and an infrastructure pattern to avoid
+    # false positives on genuine test failures.
+    if result.status in (Result.Status.FAILED, Result.StatusExtended.FAIL):
+        has_docker_context = (
+            "'docker'" in result.info or "images_pull_cmd" in result.info
+        )
+        return has_docker_context and any(
+            p in result.info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        )
+    return False
+
+
+def _mark_infrastructure_errors(results: list) -> int:
+    """Scan results, label infrastructure errors with INFRA and change their status to SKIPPED.
+
+    Returns the number of results that were relabeled.
+    """
+    count = 0
+    for r in results:
+        if _is_infrastructure_error(r):
+            r.set_label(Result.Label.INFRA)
+            r.status = Result.StatusExtended.SKIPPED
+            count += 1
+    if count:
+        print(f"Marked {count} test result(s) as infrastructure errors")
+    return count
+
 
 def _start_docker_in_docker():
     with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
@@ -31,7 +91,9 @@ def _start_docker_in_docker():
         )
     retries = 20
     for i in range(retries):
-        if Shell.check("docker info > /dev/null", verbose=True):
+        # On last retry, show errors; otherwise suppress them
+        cmd = "docker info > /dev/null" if i == retries - 1 else "docker info > /dev/null 2>&1"
+        if Shell.check(cmd, verbose=True):
             break
         if i == retries - 1:
             raise RuntimeError(
@@ -82,6 +144,12 @@ def parse_args():
         type=int,
     )
     parser.add_argument(
+        "--session-timeout",
+        help="Optional. Session timeout in seconds",
+        default=None,
+        type=int,
+    )
+    parser.add_argument(
         "--param",
         help=(
             "Optional. Comma-separated KEY=VALUE pairs to inject as environment "
@@ -91,6 +159,80 @@ def parse_args():
         default="",
     )
     return parser.parse_args()
+
+
+def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
+    """Merge all profraw files into final profdata file.
+
+    Args:
+        llvm_profdata_cmd: Path to llvm-profdata tool
+        job_params: List of job parameters for naming output file
+    """
+    import subprocess
+    from pathlib import Path
+
+    # Find all profraw files
+    profraw_files = [str(p) for p in Path(".").rglob("*.profraw")]
+
+    if not profraw_files:
+        print("No profraw files found", flush=True)
+        return
+
+    joined_job_params = "_".join(job_params) if job_params else "all"
+    joined_job_params = joined_job_params.replace(" ", "_").replace("/", "_")
+    final_file = f"./it-{joined_job_params}.profdata"
+    print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
+
+    result = subprocess.run(
+        [llvm_profdata_cmd, "merge", "-sparse", "-failure-mode=warn"]
+        + profraw_files
+        + ["-o", final_file],
+        capture_output=True,
+        text=True,
+    )
+
+    # Check for corrupted files in stderr
+    corrupted_count = result.stderr.count(
+        "invalid instrumentation profile"
+    ) + result.stderr.count("file header is corrupt")
+    if corrupted_count > 0:
+        print(f"  WARNING: Found {corrupted_count} corrupted profraw files", flush=True)
+        # Extract and display corrupted filenames from stderr
+        corrupted_files = set()
+        for line in result.stderr.split("\n"):
+            if (
+                "invalid instrumentation profile" in line
+                or "file header is corrupt" in line
+                or "error:" in line.lower()
+            ):
+                print(f"    {line.strip()}", flush=True)
+                # Extract filename from error message (format: "error: file.profraw: ..." or "warning: file.profraw: ...")
+                parts = line.split(":")
+                if len(parts) >= 2:
+                    potential_file = parts[1].strip()
+                    if potential_file.endswith(".profraw"):
+                        corrupted_files.add(potential_file)
+        if corrupted_files:
+            print(f"  Corrupted files: {', '.join(corrupted_files)}", flush=True)
+
+    if result.returncode == 0:
+        print(f"Successfully created final coverage file: {final_file}", flush=True)
+
+        # Delete merged profraw files to save disk space
+        deleted_count = 0
+        for profraw_file in profraw_files:
+            try:
+                Path(profraw_file).unlink()
+                deleted_count += 1
+            except Exception as e:
+                print(f"  WARNING: Failed to delete {profraw_file}: {e}", flush=True)
+        print(f"  Deleted {deleted_count} profraw files", flush=True)
+        return final_file
+    else:
+        print(f"ERROR: Failed to create final coverage file", flush=True)
+        if result.stderr:
+            print(result.stderr, flush=True)
+        return None
 
 
 FLAKY_CHECK_TEST_REPEAT_COUNT = 3
@@ -115,6 +257,17 @@ def get_parallel_sequential_tests_to_run(
         for p in Path("./tests/integration/").glob("test_*/test*.py")
     ]
 
+    if "amd_llvm_coverage" in (job_options or ""):
+        before = len(test_files)
+        test_files = [
+            f
+            for f in test_files
+            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+        ]
+        print(
+            f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
+        )
+
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
@@ -127,30 +280,113 @@ def get_parallel_sequential_tests_to_run(
     # 1) test suit (e.g. test_directory or test_directory/)
     # 2) test module (e.g. test_directory/test_module or test_directory/test_module.py)
     # 3) test case (e.g. test_directory/test_module.py::test_case or test_directory/test_module::test_case[test_param])
+    def normalize_test_path(test_arg: str) -> str:
+        """Normalize test path by removing integration test directory prefixes."""
+        # Handle: tests/integration/, integration/, ./tests/integration/, or full paths
+        if "tests/integration/" in test_arg:
+            # Extract everything after tests/integration/
+            test_arg = test_arg.split("tests/integration/", 1)[1]
+        elif test_arg.startswith("integration/"):
+            # Handle integration/ prefix
+            test_arg = test_arg[len("integration/"):]
+        return test_arg
+
     def test_match(test_file: str, test_arg: str) -> bool:
         if "/" not in test_arg:
             return f"{test_arg}/" in test_file
         if test_arg.endswith(".py"):
             return test_file == test_arg
-        test_arg = test_arg.split("::", maxsplit=1)[0]
-        return test_file.removesuffix(".py") == test_arg.removesuffix(".py")
+        parts = test_arg.split("::", maxsplit=1)
+        test_module = parts[0]
+        if test_file.removesuffix(".py") != test_module.removesuffix(".py"):
+            return False
+        # When a specific test function is requested, verify it exists in the
+        # file.  Targeted CI runs pull test names from CIDB, but the test may
+        # have been moved or removed since the record was written.  Passing a
+        # stale nodeID to pytest causes the entire collection to fail with
+        # exit-code 5 ("no tests collected"), aborting all other tests too.
+        if len(parts) > 1:
+            test_func = parts[1].split("[")[0]  # strip parametrization
+            file_path = Path("./tests/integration/") / test_file
+            try:
+                content = file_path.read_text()
+                if f"def {test_func}(" not in content:
+                    print(
+                        f"WARNING: test function '{test_func}' not found in {test_file}, skipping stale target"
+                    )
+                    return False
+            except OSError:
+                return False
+        return True
 
     parallel_tests = []
     sequential_tests = []
     for test_arg in args_test:
+        # Normalize the test path first
+        normalized_test_arg = normalize_test_path(test_arg)
         matched = False
         for test_file in parallel_test_modules:
-            if test_match(test_file, test_arg):
-                parallel_tests.append(test_arg)
+            if test_match(test_file, normalized_test_arg):
+                parallel_tests.append(normalized_test_arg)
                 matched = True
         for test_file in sequential_test_modules:
-            if test_match(test_file, test_arg):
-                sequential_tests.append(test_arg)
+            if test_match(test_file, normalized_test_arg):
+                sequential_tests.append(normalized_test_arg)
                 matched = True
         if not no_strict:
             assert matched, f"Test [{test_arg}] not found"
 
     return parallel_tests, sequential_tests
+
+
+def tail(filepath: str, buff_len: int = 1024) -> List[str]:
+    with open(filepath, "rb") as f:
+        # Get file size to avoid seeking before start of file
+        f.seek(0, os.SEEK_END)
+        file_size = f.tell()
+
+        if file_size <= buff_len:
+            # File is smaller than buffer, read from beginning
+            f.seek(0)
+        else:
+            # File is larger, seek from end
+            f.seek(-buff_len, os.SEEK_END)
+            f.readline()  # Skip partial line
+
+        data = f.read()
+        return data.decode(errors="replace")
+
+
+def run_pytest_and_collect_results(
+    command: str, env: str, report_name: str, timeout: int = None
+) -> Result:
+    """
+    Does xdist timeout check.
+    """
+
+    test_result = Result.from_pytest_run(
+        command=command,
+        env=env,
+        cwd="./tests/integration/",
+        pytest_report_file=f"{temp_path}/pytest_{report_name}.jsonl",
+        pytest_logfile=f"{temp_path}/pytest_{report_name}.log",
+        logfile=f"{temp_path}/{report_name}.log",
+        timeout=timeout,
+    )
+
+    if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
+        f"{temp_path}/{report_name}.log"
+    ):
+        test_result.info = "ERROR: session-timeout occurred during test execution"
+        assert test_result.status == Result.Status.ERROR
+        test_result.results.append(
+            Result(
+                name="Timeout",
+                status=Result.StatusExtended.FAIL,
+                info=test_result.info,
+            )
+        )
+    return test_result
 
 
 def main():
@@ -167,6 +403,8 @@ def main():
     is_parallel = False
     is_sequential = False
     is_targeted_check = False
+    is_llvm_coverage = False
+    llvm_profdata_cmd = None
 
     # Set on_error_hook to collect logs on hard timeout
     Result.from_fs(info.job_name).set_on_error_hook(
@@ -210,6 +448,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
             batch_num, total_batches = map(int, to.split("/"))
         elif any(build in to for build in ("amd_", "arm_")):
             build_type = to
+            if "amd_llvm_coverage" in to:
+                is_llvm_coverage = True
         elif to == "old analyzer":
             use_old_analyzer = True
         elif to == "distributed plan":
@@ -278,16 +518,22 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 args.test
             ), "--test must be provided for flaky or bugfix job flavor with local run"
         else:
-            # TODO: reduce scope to modified test cases instead of entire modules
-            changed_files = info.get_changed_files()
-            for file in changed_files:
-                if (
-                    file.startswith("tests/integration/test")
-                    and Path(file).name.startswith("test")
-                    and file.endswith(".py")
-                    and Path(file).is_file()
-                ):
-                    changed_test_modules.append(file.removeprefix("tests/integration/"))
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+                # Not a bugfix PR - run a simple sanity test
+                changed_test_modules = ["test_accept_invalid_certificate/test.py"]
+            else:
+                # TODO: reduce scope to modified test cases instead of entire modules
+                changed_files = info.get_changed_files()
+                for file in changed_files:
+                    if (
+                        file.startswith("tests/integration/test")
+                        and Path(file).name.startswith("test")
+                        and file.endswith(".py")
+                        and Path(file).is_file()
+                    ):
+                        changed_test_modules.append(
+                            file.removeprefix("tests/integration/")
+                        )
 
     if is_bugfix_validation:
         if Utils.is_arm():
@@ -339,7 +585,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )  # remove parametrization - does not work with test repeat with --count
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
-    if not Shell.check("docker info > /dev/null", verbose=True):
+    if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
         _start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
@@ -382,10 +628,38 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
     }
+    if is_llvm_coverage:
+        test_env["LLVM_PROFILE_FILE"] = f"it-%4m.profraw"
+        print(
+            f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
+        )
+        # Auto-detect available LLVM profdata tool
+        for ver in ["21", "20", "18", "19", "17", "16", ""]:
+            cmd = f"llvm-profdata{'-' + ver if ver else ''}"
+            if Shell.check(f"command -v {cmd}", verbose=False):
+                llvm_profdata_cmd = cmd
+                break
+
+        if not llvm_profdata_cmd:
+            print("ERROR: llvm-profdata not found in PATH")
+        else:
+            print(f"Using {llvm_profdata_cmd} to merge coverage files")
+
     test_results = []
     failed_tests_files = []
 
     has_error = False
+    session_timeout_parallel = 3600 * 2
+    session_timeout_sequential = 3600
+
+    if is_llvm_coverage:
+        session_timeout_parallel = 7200
+        session_timeout_sequential = 7200
+
+    if args.session_timeout:
+        session_timeout_parallel = args.session_timeout * 2
+        session_timeout_sequential = args.session_timeout
+
     error_info = []
 
     module_repeat_cnt = 1
@@ -394,15 +668,22 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     failed_test_cases = []
 
+    # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host.
+    # Do this only in CI (non-local runs) and via a non-interactive privileged helper.
+    if not info.is_local_run:
+        try:
+            Utils.clear_dmesg()
+        except Exception as ex:
+            print(f"Failed to clear dmesg before integration tests: {ex}")
+
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
-            test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout=5400",
-                cwd="./tests/integration/",
+            test_result_parallel = run_pytest_and_collect_results(
+                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                 env=test_env,
-                pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
-                logfile=log_file,
+                report_name="parallel",
+                timeout=session_timeout_parallel + 600,
             )
             if is_flaky_check and not test_result_parallel.is_ok():
                 print(
@@ -410,42 +691,53 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 break
         test_results.extend(test_result_parallel.results)
+        _mark_infrastructure_errors(test_result_parallel.results)
         failed_test_cases.extend(
             [t.name for t in test_result_parallel.results if t.is_failure()]
         )
         if test_result_parallel.files:
             failed_tests_files.extend(test_result_parallel.files)
         if test_result_parallel.is_error():
-            has_error = True
-            error_info.append(test_result_parallel.info)
+            if not is_targeted_check:
+                # In targeted checks we may overload the run with many or heavy tests
+                # (--count N is used). In this mode, a session-timeout is an expected risk
+                # rather than an infrastructure problem, so we do not treat such errors as job-level
+                # failures and avoid setting the error flag for targeted runs.
+                has_error = True
+                error_info.append(test_result_parallel.info)
 
     fail_num = len([r for r in test_results if not r.is_ok()])
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
         for attempt in range(module_repeat_cnt):
-            log_file = f"{temp_path}/pytest_sequential.log"
-            test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=5400",
+            test_result_sequential = run_pytest_and_collect_results(
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                 env=test_env,
-                cwd="./tests/integration/",
-                pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
-                logfile=log_file,
+                report_name="sequential",
+                timeout=session_timeout_sequential + 600,
             )
+
             if is_flaky_check and not test_result_sequential.is_ok():
                 print(
                     f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
                 )
                 break
         test_results.extend(test_result_sequential.results)
+        _mark_infrastructure_errors(test_result_sequential.results)
         failed_test_cases.extend(
             [t.name for t in test_result_sequential.results if t.is_failure()]
         )
         if test_result_sequential.files:
             failed_tests_files.extend(test_result_sequential.files)
         if test_result_sequential.is_error():
-            has_error = True
-            error_info.append(test_result_sequential.info)
+            if not is_targeted_check:
+                # In targeted checks we may overload the run with many or heavy tests
+                # (--count N is used). In this mode, a session-timeout is an expected risk
+                # rather than an infrastructure problem, so we do not treat such errors as job-level
+                # failures and avoid setting the error flag for targeted runs.
+                has_error = True
+                error_info.append(test_result_sequential.info)
 
-    # Collect logs before rerun
+    # Collect logs before re-run
     attached_files = []
     if not info.is_local_run:
         failed_suits = []
@@ -481,11 +773,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
-        test_result_retries = Result.from_pytest_run(
+        test_result_retries = run_pytest_and_collect_results(
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
-            cwd="./tests/integration/",
-            pytest_report_file=f"{temp_path}/pytest_retries.jsonl",
+            report_name="retries",
+            timeout=1200 + 600,
         )
         successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
         failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
@@ -516,12 +808,50 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 attached_files.append("./ci/tmp/dmesg.log")
 
+    # For targeted checks, session-timeout is an expected risk (because of --count N
+    # overloading), so do not propagate the synthetic "Timeout" result as a failure.
+    if is_targeted_check:
+        test_results = [r for r in test_results if r.name != "Timeout"]
+
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
+
+    if is_llvm_coverage:
+        assert (
+            is_bugfix_validation is False
+        ), "LLVM coverage with bugfix validation is not supported"
+        has_failure = False
+        for r in R.results:
+            if r.status == Result.StatusExtended.FAIL:
+                if r.has_label(Result.Label.OK_ON_RETRY):
+                    # Remove label and set to OK
+                    r.remove_label(Result.Label.OK_ON_RETRY)
+                    r.status = Result.StatusExtended.OK
+                else:
+                    has_failure = True
+        if has_failure:
+            R.set_failed()
+            R.set_info("Some tests failed during LLVM coverage run")
+        else:
+            R.set_success()
+            has_error = False
+
+    # If all non-OK results are infrastructure errors, do not treat as a real failure
+    if has_error:
+        non_ok = [r for r in test_results if not r.is_ok()]
+        if non_ok and all(r.has_label(Result.Label.INFRA) for r in non_ok):
+            print(
+                "All failures are infrastructure errors - clearing error flag"
+            )
+            has_error = False
+            force_ok_exit = True
 
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation:
+    if is_bugfix_validation and Labels.PR_BUGFIX in info.pr_labels:
+        assert (
+            is_llvm_coverage is False
+        ), "Bugfix validation with LLVM coverage is not supported"
         has_failure = False
         for r in R.results:
             # invert statuses
@@ -538,7 +868,22 @@ tar -czf ./ci/tmp/logs.tar.gz \
         else:
             R.set_success()
 
-    R.sort().complete_job()
+    force_ok_exit = False
+    if is_llvm_coverage and llvm_profdata_cmd:
+        print("Collecting and merging LLVM coverage files...")
+
+        # Merge all profraw files into final profdata file
+        merged_profdata = merge_profraw_files(llvm_profdata_cmd, job_params)
+
+        # Attach profdata file to the result report so it is uploaded
+        # unconditionally (even when tests fail) and visible in the CI report.
+        if merged_profdata and os.path.exists(merged_profdata):
+            R.files.append(merged_profdata)
+
+        force_ok_exit = True
+        print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+
+    R.sort().complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

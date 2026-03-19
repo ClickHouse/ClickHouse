@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/IDataType.h>
+#include <Core/Defines.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -13,6 +14,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -63,9 +65,9 @@ static FillColumnDescription::StepFunction getStepFunction(
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::Kind::NAME: \
-            return [step, scale, &date_lut](Field & field, Int32 jumps_count) { \
+            return [step, scale, &date_lut](Field & field, Int64 jumps_count) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.safeGet<T>()), static_cast<Int32>(step) * jumps_count, date_lut, utc_time_zone, scale); };
+                    field.safeGet<T>()), step * jumps_count, date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -80,7 +82,11 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
     {
         if (which.isDate() || which.isDate32())
         {
-            Int64 avg_seconds = step.safeGet<Int64>() * step_kind->toAvgSeconds();
+            Int64 step_value = step.safeGet<Int64>();
+            Int64 avg_seconds = 0;
+            if (common::mulOverflow(step_value, static_cast<Int64>(step_kind->toAvgSeconds()), avg_seconds))
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                                "Overflow in WITH FILL step value");
             if (std::abs(avg_seconds) < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                                 "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
@@ -102,7 +108,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             {
 #define DECLARE_CASE(NAME) \
                 case IntervalKind::Kind::NAME: \
-                    return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int32 jumps_count) \
+                    return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int64 jumps_count) \
                     { \
                         auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
                         auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, static_cast<UInt16>(field_decimal.getScale())); \
@@ -120,7 +126,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
     }
     else
     {
-        return [step](Field & field, Int32 jumps_count)
+        return [step](Field & field, Int64 jumps_count)
         {
             auto shifted_step = step;
             if (jumps_count != 1)
@@ -552,10 +558,18 @@ bool FillingTransform::generateSuffixIfNeeded(
     }
 
     bool filling_row_changed = false;
+    size_t rows_since_last_cancel_check = 0;
     while (true)
     {
         if (!filling_row.next(next_row, filling_row_changed))
             break;
+
+        if (++rows_since_last_cancel_check == DEFAULT_BLOCK_SIZE)
+        {
+            rows_since_last_cancel_check = 0;
+            if (isCancelled())
+                break;
+        }
 
         interpolate(result_columns, interpolate_block);
         insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
@@ -645,8 +659,11 @@ void FillingTransform::transformRange(
         }
     }
 
-    /// Init staleness first interval
-    filling_row.updateConstraintsWithStalenessRow(input_fill_columns, range_begin);
+    /// Init staleness first interval only for new sorting prefix.
+    /// When continuing from a previous chunk, the constraint from the last original row must be preserved
+    /// to correctly limit filling between the last row of the previous chunk and the first row of the new one.
+    if (new_sorting_prefix)
+        filling_row.updateConstraintsWithStalenessRow(input_fill_columns, range_begin);
 
     for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
     {
@@ -673,10 +690,18 @@ void FillingTransform::transformRange(
         }
 
         bool filling_row_changed = false;
+        size_t rows_since_last_cancel_check = 0;
         while (true)
         {
             if (!filling_row.next(next_row, filling_row_changed))
                 break;
+
+            if (++rows_since_last_cancel_check == DEFAULT_BLOCK_SIZE)
+            {
+                rows_since_last_cancel_check = 0;
+                if (isCancelled())
+                    break;
+            }
 
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
@@ -689,6 +714,7 @@ void FillingTransform::transformRange(
             /// Initialize staleness border for current row to generate it's prefix
             filling_row.updateConstraintsWithStalenessRow(input_fill_columns, row_ind);
 
+            rows_since_last_cancel_check = 0;
             while (filling_row.shift(next_row, filling_row_changed))
             {
                 logDebug("filling_row after shift", filling_row);
@@ -697,12 +723,22 @@ void FillingTransform::transformRange(
                 {
                     logDebug("inserting prefix filling_row", filling_row);
 
+                    if (++rows_since_last_cancel_check == DEFAULT_BLOCK_SIZE)
+                    {
+                        rows_since_last_cancel_check = 0;
+                        if (isCancelled())
+                            break;
+                    }
+
                     interpolate(result_columns, interpolate_block);
                     insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
                     copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
                     filling_row_changed = false;
 
                 } while (filling_row.next(next_row, filling_row_changed));
+
+                if (isCancelled())
+                    break;
             }
         }
 
