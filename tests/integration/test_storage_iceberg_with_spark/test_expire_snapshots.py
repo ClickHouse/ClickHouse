@@ -938,4 +938,85 @@ def test_expire_snapshots_shared_manifest_no_double_count(started_cluster_iceber
     assert counts["deleted_manifest_lists_count"] >= 1, \
         "Expected at least one manifest list deleted (ML1 shared by S1 and S2)"
 
+
+# ---------------------------------------------------------------------------
+# Coverage gap tests (PR #99130)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_expire_snapshots_snapshot_ids_with_fuse(started_cluster_iceberg_with_spark, storage_type):
+    """snapshot_ids + expire_before: fuse protects snapshots newer than the timestamp.
+
+    Exercises the fuse-protection branch in partitionSnapshotsByIds (Mutations.cpp:1194):
+    a snapshot explicitly listed in snapshot_ids is NOT expired when its timestamp
+    is >= expire_before_ms.  Only snapshots strictly older than the fuse are expired.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = make_table_name("test_expire_ids_fuse", storage_type)
+
+    # Create S1 first, then sleep 2 s before S2/S3 so they land in a different
+    # second.  expire_before is passed at second granularity ("%Y-%m-%d %H:%M:%S"),
+    # so S1 and S2 must be at least 1 second apart for the fuse to sit strictly
+    # between them without truncation artifacts.
+    create_and_populate(
+        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME, 1
+    )
+    time.sleep(2)
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (2);", settings=ICEBERG_SETTINGS)
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (3);", settings=ICEBERG_SETTINGS)
+
+    snap_ids = get_snapshot_ids(instance, TABLE_NAME)
+    assert len(snap_ids) == 3
+    s1_id, s2_id, s3_id = snap_ids
+
+    # Read raw timestamps so we can place the fuse between S1 and S2
+    meta = read_iceberg_metadata(instance, TABLE_NAME)
+    ts = {s["snapshot-id"]: s["timestamp-ms"] for s in meta["snapshots"]}
+    # Round S1's timestamp up to the next full second: always > ts[s1_id]
+    # and always <= ts[s2_id] (which is >= ts[s1_id] + 2000 ms).
+    fuse_s = ts[s1_id] // 1000 + 1
+    fuse_str = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(fuse_s))
+
+    # Attempt to expire both S1 and S2 explicitly, with fuse protecting S2
+    # S1 timestamp_s < fuse_s  → should be expired
+    # S2 timestamp_s >= fuse_s → is_protected_by_fuse = true → should be retained
+    result = expire_snapshots(
+        instance,
+        TABLE_NAME,
+        args=[f"snapshot_ids = [{s1_id}, {s2_id}]", f"expire_before = '{fuse_str}'"],
+    )
+
+    retained = get_retained_ids(instance, TABLE_NAME)
+    assert s1_id not in retained, "S1 (older than fuse) should have been expired"
+    assert s2_id in retained, "S2 (newer than fuse) should be fuse-protected"
+    assert s3_id in retained, "Current snapshot must always be retained"
     assert_data_intact(instance, TABLE_NAME, 3)
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_expire_snapshots_requires_experimental_setting(started_cluster_iceberg_with_spark, storage_type):
+    """expire_snapshots raises SUPPORT_IS_DISABLED when allow_experimental_expire_snapshots=0.
+
+    Exercises the feature gate at IcebergMetadata.cpp:605-611.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = make_table_name("test_expire_gate", storage_type)
+
+    create_and_populate(
+        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME, 2
+    )
+
+    # Without the experimental flag, expire_snapshots must be blocked
+    settings_no_flag = {"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 0}
+    error = instance.query_and_get_error(
+        f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots();",
+        settings=settings_no_flag,
+    )
+    assert "SUPPORT_IS_DISABLED" in error, f"Expected SUPPORT_IS_DISABLED, got: {error}"
+    assert "allow_experimental_expire_snapshots" in error, \
+        f"Error should mention the setting name, got: {error}"
+
+    # With the flag enabled it should succeed
+    result = expire_snapshots(instance, TABLE_NAME)
+    parse_expire_result(result)
+    assert_data_intact(instance, TABLE_NAME, 2)

@@ -4,9 +4,9 @@
 
 TPCDS_SETTINGS_JSON="$CURDIR/../../benchmarks/tpc-ds/settings.json"
 
-# TPC-DS queries scan large tables, exceeding the default 20M row limit in CI.
-# 50M is enough for most queries but q04 under ParallelReplicas (llvm_coverage build) exceeds it.
-SETTINGS=(-m --max_rows_to_read 75000000)
+# 1. --max_rows_to_read 0 because of https://github.com/ClickHouse/ClickHouse/issues/99937. Can be removed after the issue is closed.
+# 2. TPC-DS tables use S3 web disk. Increase HTTP retries to avoid transient `No message received` errors (default is 10).
+SETTINGS=(-m --max_rows_to_read 0 --http_max_tries 100)
 _tpcds_output=$(jq -e -r '
     "--format", .format,
     (.settings | to_entries[] | "--\(.key)", (.value | tostring))

@@ -11,6 +11,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
+#include <Common/ProfiledLocks.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Disks/DiskLocal.h>
@@ -41,6 +42,11 @@ namespace ProfileEvents
     extern const Event KeeperReadSnapshot;
     extern const Event KeeperSaveSnapshot;
     extern const Event KeeperStorageLockWaitMicroseconds;
+    extern const Event KeeperStorageLockHoldMicroseconds;
+    extern const Event KeeperStorageSharedLockWaitMicroseconds;
+    extern const Event KeeperStorageSharedLockHoldMicroseconds;
+    extern const Event KeeperProcessAndResponsesLockWaitMicroseconds;
+    extern const Event KeeperProcessAndResponsesLockHoldMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -211,21 +217,13 @@ void assertDigest(
     }
 }
 
-template <bool shared>
-struct LockGuardWithStats final
-{
-    using LockType = std::conditional_t<shared, std::shared_lock<SharedMutex>, std::unique_lock<SharedMutex>>;
-    LockType lock;
-    explicit LockGuardWithStats(SharedMutex & mutex)
-    {
-        Stopwatch watch;
-        LockType l(mutex);
-        ProfileEvents::increment(ProfileEvents::KeeperStorageLockWaitMicroseconds, watch.elapsedMicroseconds());
-        lock = std::move(l);
-    }
+/// Macros to construct timed lock guards for storage_mutex with appropriate ProfileEvents.
+/// We cannot use a factory function because TSA does not track lock ownership across function boundaries.
+#define KEEPER_STORAGE_LOCK_EXCLUSIVE(name) \
+    ProfiledExclusiveLock name(storage_mutex, ProfileEvents::KeeperStorageLockWaitMicroseconds, ProfileEvents::KeeperStorageLockHoldMicroseconds)
 
-    ~LockGuardWithStats() = default;
-};
+#define KEEPER_STORAGE_LOCK_SHARED(name) \
+    ProfiledSharedLock name(storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds, ProfileEvents::KeeperStorageSharedLockHoldMicroseconds)
 
 union XidHelper
 {
@@ -491,7 +489,7 @@ std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const Keeper
     KeeperDigest digest_after_preprocessing;
     try
     {
-        LockGuardWithStats<true> lock(storage_mutex);
+        KEEPER_STORAGE_LOCK_SHARED(lock);
         digest_after_preprocessing = storage->preprocessRequest(
             request_for_session.request,
             request_for_session.session_id,
@@ -527,7 +525,7 @@ std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const Keeper
 template<typename Storage>
 void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & request_for_session)
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     KeeperResponseForSession response = processReconfiguration(request_for_session);
     response.response->enqueue_ts = std::chrono::steady_clock::now();
     if (!responses_queue.push(response))
@@ -671,7 +669,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             response_for_session.response = response;
             response_for_session.request = request_for_session->request;
 
-            LockGuardWithStats<false> lock(storage_mutex);
+            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             session_id = storage->getSessionID(session_id_request.session_timeout_ms);
             LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
             response->session_id = session_id;
@@ -687,8 +685,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             }
 
             {
-                LockGuardWithStats<true> lock(storage_mutex);
-                std::lock_guard response_lock(process_and_responses_lock);
+                KEEPER_STORAGE_LOCK_SHARED(lock);
+                ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds, ProfileEvents::KeeperProcessAndResponsesLockHoldMicroseconds);
                 KeeperResponsesForSessions responses_for_sessions
                     = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
                 for (auto & response_for_session : responses_for_sessions)
@@ -767,7 +765,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
             snapshot_deserialization_result
                 = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
 
-        LockGuardWithStats<false> storage_lock(storage_mutex);
+        KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
         /// maybe some logs were preprocessed with log idx larger than the snapshot idx
         /// we have to apply them to the new storage
         storage->applyUncommittedState(*snapshot_deserialization_result.storage, snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
@@ -812,7 +810,7 @@ void KeeperStateMachine<Storage>::rollbackRequest(const KeeperRequestForSession 
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
 
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
@@ -832,7 +830,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     auto snapshot_meta_copy = nuraft::snapshot::deserialize(*snp_buf);
     CreateSnapshotTask snapshot_task;
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
-        LockGuardWithStats<false> lock(storage_mutex);
+        KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
         snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot<Storage>>(storage.get(), snapshot_meta_copy, getClusterConfig());
     }
 
@@ -908,7 +906,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
         }
         {
             /// Destroy snapshot with lock
-            LockGuardWithStats<false> lock(storage_mutex);
+            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             LOG_TRACE(log, "Clearing garbage after snapshot");
             /// Turn off "snapshot mode" and clear outdate part of storage state
             storage->clearGarbageAfterSnapshot();
@@ -1064,8 +1062,8 @@ void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSessi
 {
     /// Pure local request, just process it with storage
     {
-        LockGuardWithStats<true> storage_lock(storage_mutex);
-        std::lock_guard response_lock(process_and_responses_lock);
+        KEEPER_STORAGE_LOCK_SHARED(storage_lock);
+        ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds, ProfileEvents::KeeperProcessAndResponsesLockHoldMicroseconds);
         auto responses = storage->processRequest(
             request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
         for (auto & response_for_session : responses)
@@ -1084,7 +1082,7 @@ void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSessi
 template<typename Storage>
 void KeeperStateMachine<Storage>::shutdownStorage()
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     if (!storage)
         return;
     storage->finalize();
@@ -1093,7 +1091,7 @@ void KeeperStateMachine<Storage>::shutdownStorage()
 template<typename Storage>
 std::vector<int64_t> KeeperStateMachine<Storage>::getDeadSessions()
 {
-    LockGuardWithStats<true> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getDeadSessions();
 }
 
@@ -1106,7 +1104,7 @@ int64_t KeeperStateMachine<Storage>::getNextZxid() const
 template<typename Storage>
 KeeperDigest KeeperStateMachine<Storage>::getNodesDigest() const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
 }
 
@@ -1125,77 +1123,77 @@ const KeeperStorageStats & KeeperStateMachine<Storage>::getStorageStats() const 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getNodesCount() const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getNodesCount();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getTotalWatchesCount() const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getTotalWatchesCount();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getWatchedPathsCount() const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getWatchedPathsCount();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getSessionsWithWatchesCount() const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getSessionsWithWatchesCount();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getTotalEphemeralNodesCount() const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getTotalEphemeralNodesCount();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getSessionWithEphemeralNodesCount() const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getSessionWithEphemeralNodesCount();
 }
 
 template<typename Storage>
 void KeeperStateMachine<Storage>::dumpWatches(WriteBufferFromOwnString & buf) const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpWatches(buf);
 }
 
 template<typename Storage>
 void KeeperStateMachine<Storage>::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpWatchesByPath(buf);
 }
 
 template<typename Storage>
 void KeeperStateMachine<Storage>::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpSessionsAndEphemerals(buf);
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getApproximateDataSize() const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getApproximateDataSize();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getKeyArenaSize() const
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getArenaDataSize();
 }
 
@@ -1220,7 +1218,7 @@ ClusterConfigPtr IKeeperStateMachine::getClusterConfig() const
 template<typename Storage>
 void KeeperStateMachine<Storage>::recalculateStorageStats()
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     LOG_INFO(log, "Recalculating storage stats");
     storage->recalculateStats();
     LOG_INFO(log, "Done recalculating storage stats");
