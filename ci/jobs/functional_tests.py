@@ -431,6 +431,9 @@ def main():
 
         if is_flaky_check or is_targeted_check:
             commands.append(CH.enable_thread_fuzzer_config)
+            sanitizers = ("asan", "tsan", "msan", "ubsan")
+            if any(san in args.options for san in sanitizers):
+                commands.append(lambda: CH.set_memory_ratio(0.8))
 
         os.environ["MALLOC_CONF"] = (
             f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"

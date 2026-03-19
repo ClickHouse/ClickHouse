@@ -961,23 +961,61 @@ def get_stacktraces_from_clickhouse(args):
         return None
 
 
+def get_all_server_pids():
+    """Get PIDs of clickhouse-server processes belonging to the current process group.
+
+    Scoping to the process group avoids attaching gdb to unrelated servers on
+    shared runners where multiple test jobs may run concurrently.
+    """
+    try:
+        pgid = os.getpgrp()
+        output = subprocess.check_output(
+            f"pgrep -g {pgid} -x clickhouse-server",
+            shell=True,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+        ).strip()
+        if output:
+            return [int(p) for p in output.split()]
+    except Exception:
+        pass
+    return []
+
+
+def is_asan_build():
+    """Check if the server is an ASan build — gdb disables LeakSanitizer detections."""
+    try:
+        result = clickhouse_execute(
+            args,
+            "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)",
+        )
+        return result != b"0"
+    except Exception:
+        # If we can't query the server, check environment variable as fallback.
+        return bool(os.environ.get("ASAN_OPTIONS"))
+
+
 def print_stacktraces() -> None:
     server_pid = get_server_pid()
 
     bt = None
 
-    if server_pid and not args.replicated_database and not args.shared_catalog:
-        print("")
-        print(
-            f"Located ClickHouse server process {server_pid} listening at TCP port {args.tcp_port}"
-        )
-        print("Collecting stacktraces from all running threads with gdb:")
-
-        bt = get_stacktraces_from_gdb(server_pid)
-
-        if len(bt) < 1000:
-            print("Got suspiciously small stacktraces: ", bt)
-            bt = None
+    # Collect gdb stacktraces from all server processes (main + replicas).
+    # Skip gdb under ASan — it disables LeakSanitizer detections.
+    if not is_asan_build():
+        all_pids = get_all_server_pids()
+        if all_pids:
+            parts = []
+            for pid in all_pids:
+                label = "main server" if pid == server_pid else "replica"
+                print(f"\nCollecting stacktraces from {label} process {pid} with gdb:")
+                one_bt = get_stacktraces_from_gdb(pid)
+                if one_bt and len(one_bt) >= 1000:
+                    parts.append(f"=== PID {pid} ({label}) ===\n{one_bt}")
+                else:
+                    print(f"Got suspiciously small stacktraces from {pid}: {one_bt}")
+            if parts:
+                bt = "\n\n".join(parts)
 
     if bt is None:
         print("\nCollecting stacktraces from system.stacktraces table:")
@@ -1297,6 +1335,11 @@ class SettingsRandomizer:
         "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
+        "use_skip_indexes_for_top_k": lambda: random.randint(0, 1),
+        "use_top_k_dynamic_filtering": lambda: random.randint(0, 1),
+        "query_plan_max_limit_for_top_k_optimization": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
+        "query_plan_read_in_order_through_join": lambda: random.randint(0, 1),
+        "read_in_order_use_virtual_row": lambda: random.randint(0, 1),
         "short_circuit_function_evaluation_for_nulls_threshold": lambda: random.random() * 1.1,
         "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
         "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
@@ -1315,8 +1358,12 @@ class SettingsRandomizer:
         if (
             not args.no_parallel_replicas
             and "no-parallel-replicas" not in tags
-            and random_settings["automatic_parallel_replicas_mode"] != 0
+            and random_settings["automatic_parallel_replicas_mode"] == 2
         ):
+            # parallel replicas won't actually be used: since `automatic_parallel_replicas_mode` is 2 we will only collect statistics
+            random_settings["enable_parallel_replicas"] = 1
+            # seem to throw us over the memory limit in flaky checks with sanitizers
+            random_settings["parallel_distributed_insert_select"] = 0
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
@@ -2303,6 +2350,7 @@ class TestCase:
                         or "Attempt to read after eof" in stderr
                     )
                     and "Received exception from server" not in stderr
+                    and not check_server_liveness(self.args)
                 ):
                     reason = FailureReason.SERVER_DIED
 
@@ -2821,13 +2869,16 @@ class TestCase:
                 try:
                     self.send_test_name_failed(suite.suite, self.case)
                 except Exception:
-                    return TestResult(
-                        self.name,
-                        TestStatus.FAIL,
-                        FailureReason.SERVER_DIED,
-                        0.0,
-                        "\nServer does not respond to health check\n",
-                    )
+                    # If health-check failed, double-check server liveness. A single
+                    # check may fail because of memory exhaustion, for example.
+                    if not check_server_liveness(self.args):
+                        return TestResult(
+                            self.name,
+                            TestStatus.FAIL,
+                            FailureReason.SERVER_DIED,
+                            0.0,
+                            "\nServer does not respond to health check\n",
+                        )
 
             self.runs_count += 1
             self.testcase_args = self.configure_testcase_args(
@@ -2945,14 +2996,24 @@ class TestCase:
             )
         except (ConnectionError, http.client.ImproperConnectionState):
             total_time = (datetime.now() - start_time).total_seconds()
+            exc_description = self.add_info_about_settings(
+                self.get_description_from_exception_info(sys.exc_info())
+            )
+            if not check_server_liveness(self.args):
+                return TestResult(
+                    self.name,
+                    TestStatus.FAIL,
+                    FailureReason.SERVER_DIED,
+                    total_time,
+                    exc_description,
+                )
+            # Server is alive — this was a transient network error.
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
-                FailureReason.SERVER_DIED,
+                FailureReason.EXIT_CODE,
                 total_time,
-                self.add_info_about_settings(
-                    self.get_description_from_exception_info(sys.exc_info())
-                ),
+                exc_description,
             )
         except Exception:
             total_time = (datetime.now() - start_time).total_seconds()
@@ -3407,6 +3468,7 @@ def run_tests_array(
         Namespace,
         multiprocessing.sharedctypes.Synchronized,
         multiprocessing.synchronize.Event,
+        multiprocessing.sharedctypes.Synchronized,
         multiprocessing.managers.ListProxy,
         int
     ],
@@ -3419,6 +3481,7 @@ def run_tests_array(
         args,
         exit_code,
         server_died,
+        workers_to_shed,
         restarted_tests,
         process_index
     ) = all_tests_with_params
@@ -3476,6 +3539,14 @@ def run_tests_array(
         print(f"Running {about}{num_tests} {test_suite.suite} tests ({proc_name}).")
 
     while True:
+        # Check whether this worker has been asked to shed (stop after finishing
+        # its previous test). The check happens before popping the next test so
+        # no work is lost — the remaining workers will pick up the queue.
+        with workers_to_shed.get_lock():
+            if workers_to_shed.value > 0:
+                workers_to_shed.value -= 1
+                break
+
         if all_tests:
             try:
                 case = all_tests.pop(0)
@@ -3596,6 +3667,76 @@ def run_tests_array(
         )
 
     sys.stdout.flush()
+
+
+def check_server_liveness(args, max_retries=10) -> bool:
+    """Check if server is responding, with retries and exponential back-off.
+
+    Used to distinguish a real server death from a transient network failure
+    (e.g. the server being briefly unresponsive due to memory pressure).
+    Returns True if the server responds within the retry window, False otherwise.
+    """
+    for attempt in range(max_retries):
+        try:
+            clickhouse_execute(
+                args, "SELECT 1 /*liveness check*/", max_http_retries=1, timeout=10
+            )
+            return True
+        except Exception:
+            if attempt < max_retries - 1:
+                sleep(min(2**attempt, 10))
+    return False
+
+
+def get_server_memory_fraction(args) -> Optional[float]:
+    """Return the fraction of max_server_memory_usage currently in use (0.0–1.0).
+
+    Reads the server process RSS from /proc/<pid>/statm, which is more reliable
+    than querying MemoryTracking from system.metrics — the latter can be far
+    below actual RSS under sanitizer builds where jemalloc is disabled and the
+    memory tracker is not corrected to match RSS.
+
+    The max_server_memory_usage value is fetched once from the server and cached.
+
+    Returns None when the server PID is unavailable, the limit is unconfigured
+    (0), or the query/read fails.
+    """
+    # Cache the hard limit — it does not change at runtime.
+    if not hasattr(get_server_memory_fraction, "_max_memory"):
+        try:
+            get_server_memory_fraction._max_memory = int(
+                clickhouse_execute(
+                    args,
+                    "SELECT value FROM system.server_settings WHERE name = 'max_server_memory_usage'",
+                    max_http_retries=1,
+                    timeout=5,
+                )
+                .decode()
+                .strip()
+            )
+        except Exception:
+            return None
+
+    maximum = get_server_memory_fraction._max_memory
+    if maximum == 0:
+        return None
+
+    # Cache the server PID — it does not change during a test run.
+    if not hasattr(get_server_memory_fraction, "_server_pid"):
+        get_server_memory_fraction._server_pid = get_server_pid()
+    pid = get_server_memory_fraction._server_pid
+    if pid is None:
+        return None
+
+    try:
+        # /proc/<pid>/statm fields: size resident shared text lib data dt (in pages)
+        with open(f"/proc/{pid}/statm", "r") as f:
+            parts = f.read().split()
+        rss_pages = int(parts[1])
+        rss_bytes = rss_pages * os.sysconf("SC_PAGE_SIZE")
+        return rss_bytes / maximum
+    except Exception:
+        return None
 
 
 def check_server_started(args):
@@ -3834,6 +3975,7 @@ def do_run_tests(
         manager = multiprocessing.Manager()
         parallel_tests = manager.list()
         parallel_tests.extend(test_suite.parallel_tests)
+        workers_to_shed = multiprocessing.Value('i', 0)
 
         processes = []
         for i in range(jobs):
@@ -3848,6 +3990,7 @@ def do_run_tests(
                         args,
                         exit_code,
                         server_died,
+                        workers_to_shed,
                         restarted_tests,
                         i,  # process index
                     ),
@@ -3856,21 +3999,48 @@ def do_run_tests(
             processes.append(process)
             process.start()
 
+        # How often (seconds) to query server memory usage.
+        MEMORY_CHECK_INTERVAL = 5.0
+        # After shedding a worker, wait this long before the next check to give
+        # memory time to drop before potentially shedding another worker.
+        MEMORY_SHED_COOLDOWN = 30.0
+        # Fraction of max_server_memory_usage at which we start shedding workers.
+        MEMORY_PRESSURE_THRESHOLD = 0.8
+        last_memory_check = time()
+
         while processes:
             sleep(0.1)
             sys.stdout.flush()
+
+            # Periodically check memory pressure and reduce concurrency if needed.
+            # All workers share the same parallel_tests queue, so stopping one
+            # from picking up new tests reduces future concurrency without losing
+            # any already-queued work.
+            now = time()
+            if now - last_memory_check >= MEMORY_CHECK_INTERVAL and len(processes) > 1:
+                last_memory_check = now
+                memory_fraction = get_server_memory_fraction(args)
+                if memory_fraction is not None and memory_fraction > MEMORY_PRESSURE_THRESHOLD:
+                    # Cap outstanding shed requests so we never drain the pool
+                    # to zero: only increment if the number of workers that will
+                    # still be running after all pending sheds is greater than 1.
+                    with workers_to_shed.get_lock():
+                        if len(processes) - workers_to_shed.value > 1:
+                            workers_to_shed.value += 1
+                            print(
+                                f"Server memory at {memory_fraction:.0%} of limit — "
+                                f"signalling one worker to stop after its current test "
+                                f"({len(processes)} tracked, {workers_to_shed.value} pending shed)"
+                            )
+                    # Use a longer cooldown so memory has time to drop before
+                    # we consider shedding another worker.
+                    last_memory_check = time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
+
             # Periodically check the server for hangs
             # and stop all processes in this case
             if args.hung_check:
-                try:
-                    clickhouse_execute(
-                        args,
-                        query="SELECT 1 /*hung check*/",
-                        max_http_retries=20,
-                        timeout=10,
-                    )
-                except Exception as e:
-                    print(f"Hung check failed: {str(e)}")
+                if not check_server_liveness(args):
+                    print("Hung check failed: server is not responding")
                     server_died.set()
 
             if server_died.is_set():
@@ -3910,6 +4080,7 @@ def do_run_tests(
                 args,
                 exit_code,
                 server_died,
+                multiprocessing.Value('i', 0),  # sequential runner is never shed
                 restarted_tests,
                 jobs + 1
             )

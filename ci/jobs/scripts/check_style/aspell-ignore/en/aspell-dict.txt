@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3590
+personal_ws-1.1 en 3591
 AArch
 ABIs
 ACLs
@@ -735,6 +735,7 @@ NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
 NFKC
+NFKCCasefold
 NFKD
 NOAA
 NULLIF
@@ -1853,6 +1854,7 @@ dereference
 deserialization
 deserialize
 deserialized
+deserializer
 deserializing
 dest
 destructor
@@ -1861,7 +1863,6 @@ detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
-detectProgrammingLanguage
 detectTonality
 determinator
 deterministically
@@ -2806,6 +2807,7 @@ protocol
 protos
 proxied
 prql
+pseudocode
 pseudorandom
 pseudorandomize
 pseudoterminal
@@ -3525,6 +3527,7 @@ varpop
 varpopstable
 varsamp
 varsampstable
+VarUInt
 vectorized
 vectorscan
 vendoring

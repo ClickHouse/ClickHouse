@@ -447,7 +447,7 @@ enum SQLFunc {
     FUNCdetectLanguage = 442;
     FUNCdetectLanguageMixed = 443;
     FUNCdetectLanguageUnknown = 444;
-    FUNCdetectProgrammingLanguage = 445;
+    reserved 445;
     FUNCdetectTonality = 446;
     FUNCdictGet = 447;
     FUNCdictGetAll = 448;
@@ -1784,6 +1784,14 @@ message Constraint {
 
 message Function {
     required string function = 1;
+}
+
+message Policy {
+    required string policy = 1;
+}
+
+message Role {
+    required string role = 1;
 }
 
 message Cluster {
@@ -3560,6 +3568,8 @@ enum SQLObject {
     FUNCTION = 3;
     TABLE = 4;
     VIEW = 5;
+    ROW_POLICY = 6;
+    MASKING_POLICY = 7;
 }
 
 message SQLObjectName {
@@ -3567,6 +3577,7 @@ message SQLObjectName {
         ExprSchemaTable est = 1;
         Database database = 2;
         Function function = 3;
+        Policy policy = 4;
     }
 }
 
@@ -3578,8 +3589,9 @@ message Drop {
     required SQLObjectName object = 5;
     repeated SQLObjectName other_objects = 6;
     optional Cluster cluster = 7;
-    optional bool sync = 8;
-    optional SettingValues setting_values = 9;
+    optional ExprSchemaTable target = 8;
+    optional bool sync = 9;
+    optional SettingValues setting_values = 10;
 }
 
 message InsertFromFile {
@@ -3984,6 +3996,28 @@ message MovePartition {
     required Storage storage = 2;
 }
 
+message CreateRowPolicy {
+    optional bool is_restrictive = 1;
+    optional bool for_select = 2;
+}
+
+message CreateMaskingPolicy {
+    optional UpdateSet first_update = 1;
+    repeated UpdateSet other_updates = 2;
+    optional int32 priority = 3;
+}
+
+message AlterPolicyContent {
+    required ExprSchemaTable target = 1;
+    optional WhereStatement where_expr = 2;
+    optional Role role = 3;
+    oneof create_policy_oneof {
+        CreateRowPolicy row = 4;
+        CreateMaskingPolicy masking = 5;
+    }
+    optional Policy rename_to = 6;
+}
+
 message AlterItem {
     optional bool paren = 1;
     oneof alter_oneof {
@@ -4041,6 +4075,8 @@ message AlterItem {
         RefreshableView refresh = 51;
         /// For tables, views and databases
         string comment = 52;
+        /// For policies
+        AlterPolicyContent alter_policy = 53;
     }
 }
 
@@ -4198,23 +4234,17 @@ message SystemCommand {
         DropDatabaseReplica drop_database_replica = 86;
         ExprSchemaTable stop_cleanup = 87;
         ExprSchemaTable start_cleanup = 88;
-        ExprSchemaTable stop_virtual_parts_update = 89;
-        ExprSchemaTable start_virtual_parts_update = 90;
-        ExprSchemaTable stop_reduce_blocking_parts = 91;
-        ExprSchemaTable start_reduce_blocking_parts = 92;
-        bool stop_replicated_ddl_queries = 93;
-        bool start_replicated_ddl_queries = 94;
-        bool jemalloc_purge = 95;
-        bool jemalloc_enable_profile = 96;
-        bool jemalloc_disable_profile = 97;
-        bool jemalloc_flush_profile = 98;
-        bool sync_transaction_log = 99;
-        bool start_thread_fuzzer = 100;
-        bool stop_thread_fuzzer = 101;
-        bool drop_distributed_cache = 102;
-        string restart_disk = 103;
-        string clear_disk_metadata_cache = 104;
-        string unlock_snapshot = 105;
+        bool stop_replicated_ddl_queries = 89;
+        bool start_replicated_ddl_queries = 90;
+        bool jemalloc_purge = 91;
+        bool jemalloc_enable_profile = 92;
+        bool jemalloc_disable_profile = 93;
+        bool jemalloc_flush_profile = 94;
+        bool sync_transaction_log = 95;
+        bool start_thread_fuzzer = 96;
+        bool stop_thread_fuzzer = 97;
+        bool drop_distributed_cache = 98;
+        string unlock_snapshot = 99;
     }
 }
 
@@ -4349,6 +4379,20 @@ message ShowStatement {
     optional SettingValues setting_values = 24;
 }
 
+message CreatePolicy {
+    required CreateReplaceOption create_opt = 1;
+    optional bool if_not_exists = 2;
+    required Policy policy = 3;
+    required ExprSchemaTable target = 4;
+    optional Cluster cluster = 5;
+    optional WhereStatement where_expr = 6;
+    optional Role role = 7;
+    oneof create_policy_oneof {
+        CreateRowPolicy row = 8;
+        CreateMaskingPolicy masking = 9;
+    }
+}
+
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -4375,6 +4419,7 @@ message SQLQueryInner {
         Rename rename = 22;
         Kill kill = 23;
         ShowStatement show = 24;
+        CreatePolicy create_policy = 25;
     }
 }
 
@@ -4416,10 +4461,11 @@ message ExplainQuery {
         ESTIMATE = 6;
         TABLE_OVERRIDE = 7;
     }
-    optional bool is_explain = 1;
-    optional ExplainValues expl = 2;
-    repeated ExplainOption opts = 3;
-    required SQLQueryInner inner_query = 4;
+    optional string execute_as = 1;
+    optional bool is_explain = 2;
+    optional ExplainValues expl = 3;
+    repeated ExplainOption opts = 4;
+    required SQLQueryInner inner_query = 5;
 }
 
 message SingleSQLQuery {
