@@ -57,10 +57,12 @@ private:
     using Data = AggregateFunctionGroupConvexHullData<Point>;
     WKBGeometry input_type;
     bool correct_geometry = true;
+    size_t prune_interval;
 
-    /// Every kPruneInterval additions, recompute the convex hull and discard
-    /// interior points to cap memory growth.
-    static constexpr size_t kPruneInterval = 3000;
+public:
+    static constexpr size_t kDefaultPruneInterval = 200;
+
+private:
 
     static void pruneAccumulated(Data & state)
     {
@@ -115,11 +117,13 @@ private:
     }
 
 public:
-    explicit AggregateFunctionGroupConvexHull(const DataTypes & argument_types_, bool correct_geometry_ = true)
+    explicit AggregateFunctionGroupConvexHull(
+        const DataTypes & argument_types_, bool correct_geometry_ = true, size_t prune_interval_ = kDefaultPruneInterval)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupConvexHull<Point>>(
               argument_types_, {}, DataTypeFactory::instance().get("Ring"))
         , input_type(resolveInputType(argument_types_.at(0)))
         , correct_geometry(correct_geometry_)
+        , prune_interval(prune_interval_)
     {
     }
 
@@ -278,7 +282,7 @@ public:
         }
 
         /// Periodically prune interior points to bound memory.
-        if (++state.add_count >= kPruneInterval)
+        if (++state.add_count >= prune_interval)
             pruneAccumulated(state);
     }
 
@@ -303,17 +307,23 @@ public:
 
         /// Prune after merge if the combined state is large.
         state.add_count += rhs_state.add_count;
-        if (state.add_count >= kPruneInterval)
+        if (state.add_count >= prune_interval)
             pruneAccumulated(state);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        const auto & state = this->data(place);
+        /// Prune before serializing to minimise the serialized state size.
+        /// This is semantically a no-op (the logical value is unchanged),
+        /// so the const_cast is safe.
+        auto & state = const_cast<Data &>(this->data(place));
 
         writeBinaryLittleEndian(state.has_value, buf);
         if (!state.has_value)
             return;
+
+        // prune the accumulated state while serializing, regardless of add_count
+        pruneAccumulated(state);
 
         std::stringstream wkt_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         wkt_stream.exceptions(std::ios::failbit);

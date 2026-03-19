@@ -44,3 +44,7 @@ Geometry with NULLs:	1
 [(0,0),(0,0),(0,0),(0,0)]
 POLYGON((1 1,1 1,1 1,1 1))
 []
+prune_interval default:	1
+prune_interval=5000:	1
+prune_interval=2:	1
+prune_interval=100 correct=1:	1
