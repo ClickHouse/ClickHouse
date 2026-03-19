@@ -18,6 +18,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/executeQuery.h>
@@ -543,6 +544,35 @@ void HTTPHandler::processQuery(
                 if (!request.checkPeerConnected())
                     context->killCurrentQuery();
             });
+    }
+
+    /// Apply SETTINGS embedded in the query text itself (e.g. `INSERT ... SETTINGS allow_experimental_detach_non_readonly_queries=1`)
+    /// before the detach decision so that inline settings can trigger the detach path.
+    /// `settings` is a reference to context->getSettingsRef(), so it reflects any changes made here.
+    /// `executeQueryImpl` will call `applySettingsFromQuery` again — that call is idempotent.
+    if (!query.empty())
+    {
+        ParserQuery parser_for_inline_settings(
+            query.data() + query.size(),
+            settings[Setting::allow_settings_after_format_in_insert],
+            settings[Setting::implicit_select]);
+        const size_t max_query_size_for_settings
+            = settings[Setting::max_query_size] ? settings[Setting::max_query_size] : std::numeric_limits<size_t>::max();
+        const char * query_pos = query.data();
+        std::string parse_error;
+        if (ASTPtr inline_ast = tryParseQuery(
+                parser_for_inline_settings,
+                query_pos,
+                query.data() + query.size(),
+                parse_error,
+                /*hilite=*/false,
+                /*description=*/"",
+                /*allow_multi_statements=*/false,
+                max_query_size_for_settings,
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks],
+                /*skip_insignificant=*/false))
+            InterpreterSetQuery::applySettingsFromQuery(inline_ast, context);
     }
 
     /// Detach path: for non-readonly queries (e.g. INSERT-SELECT) when allow_experimental_detach_non_readonly_queries is on,

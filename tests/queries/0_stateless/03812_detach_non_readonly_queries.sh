@@ -216,5 +216,32 @@ fi
 
 sleep 6  # Wait for both sleep(3) dup queries above to finish.
 
+# --- Inline SETTINGS in the query text trigger detach ---
+# The setting can be passed as SETTINGS clause inside the SQL itself, without URL params or client flags.
+
+# 17. HTTP: detach triggered by inline SETTINGS in POST body.
+echo "=== HTTP: Detach triggered by inline SETTINGS in query body ==="
+QID_INLINE_HTTP="${QUERY_ID_PREFIX}inline_http"
+RESP_INLINE_HTTP=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=${QID_INLINE_HTTP}" \
+    -X POST --data-binary "INSERT INTO ${TABLE} SELECT 8 SETTINGS allow_experimental_detach_non_readonly_queries=1, async_insert=0" 2>/dev/null || true)
+echo "Inline SETTINGS detach response: $([ -n "$RESP_INLINE_HTTP" ] && echo '<query_id>' || echo '<empty>')"
+if [ -z "$RESP_INLINE_HTTP" ]; then
+    echo "FAIL: Expected query_id when allow_experimental_detach_non_readonly_queries=1 is in inline SETTINGS"
+    exit 1
+fi
+wait_for_count 8
+
+# 18. Native: detach triggered by inline SETTINGS in query text.
+echo "=== Native: Detach triggered by inline SETTINGS in query text ==="
+QID_INLINE_NATIVE="${QUERY_ID_PREFIX}inline_native"
+RESP_INLINE_NATIVE=$($CLICKHOUSE_CLIENT --query_id "${QID_INLINE_NATIVE}" \
+    -q "INSERT INTO ${TABLE} SELECT 9 SETTINGS allow_experimental_detach_non_readonly_queries=1, async_insert=0" 2>/dev/null || true)
+echo "Inline SETTINGS detach response: $([ -n "$RESP_INLINE_NATIVE" ] && echo '<query_id>' || echo '<empty>')"
+if [ -z "$RESP_INLINE_NATIVE" ]; then
+    echo "FAIL: Expected query_id when allow_experimental_detach_non_readonly_queries=1 is in inline SETTINGS"
+    exit 1
+fi
+wait_for_count 9
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $TABLE"
 echo "OK"

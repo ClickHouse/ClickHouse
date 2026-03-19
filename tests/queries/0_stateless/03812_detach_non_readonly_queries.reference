@@ -32,4 +32,8 @@ Duplicate query_id error returned: yes
 === Native: ExceptionBeforeStart — duplicate query_id rejected ===
 First detach response: <query_id>
 Duplicate query_id error returned: yes
+=== HTTP: Detach triggered by inline SETTINGS in query body ===
+Inline SETTINGS detach response: <query_id>
+=== Native: Detach triggered by inline SETTINGS in query text ===
+Inline SETTINGS detach response: <query_id>
 OK
