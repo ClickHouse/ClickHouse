@@ -760,6 +760,11 @@ public:
     {
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
+
+    Monotonicity getMonotonicityForRange(const IDataType &, const ColumnValueRef &, const ColumnValueRef &) const override
+    {
+        return { .is_monotonic = true, .is_always_monotonic = true };
+    }
 };
 
 

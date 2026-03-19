@@ -58,6 +58,8 @@ struct FunctionUnaryArithmeticMonotonicity<NameByteSwap>
 {
     static bool has() { return false; }
     static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &) { return {}; }
+
+    static IFunction::Monotonicity get(const IDataType &, const ColumnValueRef &, const ColumnValueRef &) { return {}; }
 };
 
 REGISTER_FUNCTION(ByteSwap)

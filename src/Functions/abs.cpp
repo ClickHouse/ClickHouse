@@ -92,6 +92,29 @@ struct FunctionUnaryArithmeticMonotonicity<NameAbs>
             .is_strict = true,
         };
     }
+
+    static IFunction::Monotonicity get(const IDataType &, const ColumnValueRef & left, const ColumnValueRef & right)
+    {
+        auto as_float64_boundary = [](const ColumnValueRef & ref, bool is_left) -> Float64
+        {
+            if (ref.isInfinity() || !ref.column || ref.isNullAt())
+                return is_left ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
+
+            return ref.column->getFloat64(ref.row);
+        };
+
+        const Float64 left_float = as_float64_boundary(left, /*is_left=*/true);
+        const Float64 right_float = as_float64_boundary(right, /*is_left=*/false);
+
+        if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
+            return {};
+
+        return {
+            .is_monotonic = true,
+            .is_positive = std::min(left_float, right_float) >= 0,
+            .is_strict = true,
+        };
+    }
 };
 
 REGISTER_FUNCTION(Abs)

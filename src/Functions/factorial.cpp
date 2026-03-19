@@ -80,7 +80,28 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameFactorial>
         if (!left.isNull() && !right.isNull())
         {
             auto left_value = applyVisitor(FieldVisitorConvertToNumber<Int128>(), left);
-            auto right_value = applyVisitor(FieldVisitorConvertToNumber<Int128>(), left);
+            auto right_value = applyVisitor(FieldVisitorConvertToNumber<Int128>(), right);
+            if (1 <= left_value && left_value <= right_value && right_value <= 20)
+                is_strict = true;
+        }
+
+        return {
+            .is_monotonic = true,
+            .is_positive = true,
+            .is_always_monotonic = true,
+            .is_strict = is_strict,
+        };
+    }
+
+    static IFunction::Monotonicity get(const IDataType &, const ColumnValueRef & left, const ColumnValueRef & right)
+    {
+        bool is_strict = false;
+
+        auto is_null_like = [](const ColumnValueRef & ref) { return ref.isInfinity() || !ref.column || ref.isNullAt(); };
+        if (!is_null_like(left) && !is_null_like(right))
+        {
+            const auto left_value = static_cast<Int128>(left.column->getInt(left.row));
+            const auto right_value = static_cast<Int128>(right.column->getInt(right.row));
             if (1 <= left_value && left_value <= right_value && right_value <= 20)
                 is_strict = true;
         }

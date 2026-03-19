@@ -13,6 +13,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -156,7 +157,7 @@ MatchResult matchSortDescriptionAndKey(
         if (!func.hasInformationAboutMonotonicity())
             return {};
 
-        auto monotonicity = func.getMonotonicityForRange(*func.getArgumentTypes().at(0), {}, {});
+        auto monotonicity = func.getMonotonicityForRange(*func.getArgumentTypes().at(0), Field(), Field());
         if (!monotonicity.is_monotonic)
             return {};
 

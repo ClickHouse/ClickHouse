@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include <cstring>
+
 namespace DB
 {
 
@@ -77,6 +79,67 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
         };
 
         bool is_monotonic = will_overflow(left, false) == will_overflow(right, true);
+        return { .is_monotonic = is_monotonic, .is_positive = false, .is_strict = true };
+    }
+
+    static IFunction::Monotonicity get(const IDataType & original_type, const ColumnValueRef & left, const ColumnValueRef & right)
+    {
+        const IDataType * type = &original_type;
+        if (const DataTypeLowCardinality * t = typeid_cast<const DataTypeLowCardinality *>(type))
+            type = t->getDictionaryType().get();
+        if (const DataTypeNullable * t = typeid_cast<const DataTypeNullable *>(type))
+            type = t->getNestedType().get();
+
+        /// If the input is signed, assume monotonic.
+        /// Not fully correct because of the corner case -INT64_MIN == INT64_MIN and similar.
+        if (!type->isValueRepresentedByUnsignedInteger())
+            return { .is_monotonic = true, .is_positive = false, .is_strict = true };
+
+        /// Not sure if there is a better way to do it
+        auto read_wide_integer = [](const IColumn & column, size_t row, auto & out_value)
+        {
+            const auto data = column.getDataAt(row);
+            chassert(data.size() == sizeof(out_value));
+            memcpy(&out_value, data.data(), sizeof(out_value));
+        };
+
+
+        /// negate(UInt64) -> Int64:
+        ///  * monotonically decreases on [0, 2^63] (no overflow),
+        ///  * then jumps up from -2^63 to 2^63-1, then
+        ///  * monotonically decreases on [2^63+1, 2^64-1] (with overflow).
+        /// Similarly for UInt128 and UInt256.
+        /// Note: we currently don't handle the corner case -UINT64_MIN == UINT64_MIN.
+
+        auto will_overflow = [&](const ColumnValueRef & ref) -> bool
+        {
+            if (ref.isNegativeInfinity())
+                return false;
+            if (ref.isPositiveInfinity())
+                return true;
+            if (!ref.column || ref.isNullAt())
+                return true;
+
+            const auto which = WhichDataType(*type);
+            if (which.isUInt128())
+            {
+                UInt128 value;
+                read_wide_integer(*ref.column, ref.row, value);
+                return value > UInt128(1) << 127;
+            }
+
+            if (which.isUInt256())
+            {
+                UInt256 value;
+                read_wide_integer(*ref.column, ref.row, value);
+                return value > UInt256(1) << 255;
+            }
+
+            const UInt64 value = ref.column->getUInt(ref.row);
+            return value > (1ULL << 63);
+        };
+
+        bool is_monotonic = will_overflow(left) == will_overflow(right);
         return { .is_monotonic = is_monotonic, .is_positive = false, .is_strict = true };
     }
 };

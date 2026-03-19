@@ -48,6 +48,11 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
     {
         return {};
     }
+
+    static IFunction::Monotonicity get(const IDataType &, const ColumnValueRef &, const ColumnValueRef &)
+    {
+        return {};
+    }
 };
 
 REGISTER_FUNCTION(BitNot)

@@ -2366,6 +2366,7 @@ FunctionBasePtr createFunctionBaseCast(
         data_types[i] = arguments[i].type;
 
     detail::FunctionCast::MonotonicityForRange monotonicity;
+    detail::FunctionCast::MonotonicityForRangeRef monotonicity_ref;
 
     auto monotonicity_result_type = recursiveRemoveLowCardinality(return_type);
 
@@ -2385,7 +2386,16 @@ FunctionBasePtr createFunctionBaseCast(
     if (isEnum(arguments.front().type)
         && castTypeToEither<DataTypeEnum8, DataTypeEnum16>(monotonicity_result_type.get(), [&](auto & type)
         {
-            monotonicity = detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
+            using FieldGetter = IFunctionBase::Monotonicity (*)(const IDataType &, const Field &, const Field &);
+            monotonicity = static_cast<FieldGetter>(&detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get);
+
+            using RefGetter = IFunctionBase::Monotonicity (*)(const IDataType &, const ColumnValueRef &, const ColumnValueRef &);
+            if constexpr (requires (const IDataType & t, const ColumnValueRef & l, const ColumnValueRef & r)
+            {
+                detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get(t, l, r);
+            })
+                monotonicity_ref = static_cast<RefGetter>(&detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get);
+
             return true;
         }))
     {
@@ -2397,14 +2407,23 @@ FunctionBasePtr createFunctionBaseCast(
         DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64, DataTypeTime, DataTypeTime64,
         DataTypeString>(monotonicity_result_type.get(), [&](auto & type)
         {
-            monotonicity = detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
+            using FieldGetter = IFunctionBase::Monotonicity (*)(const IDataType &, const Field &, const Field &);
+            monotonicity = static_cast<FieldGetter>(&detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get);
+
+            using RefGetter = IFunctionBase::Monotonicity (*)(const IDataType &, const ColumnValueRef &, const ColumnValueRef &);
+            if constexpr (requires (const IDataType & t, const ColumnValueRef & l, const ColumnValueRef & r)
+            {
+                detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get(t, l, r);
+            })
+                monotonicity_ref = static_cast<RefGetter>(&detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get);
+
             return true;
         }))
     {
     }
 
     return std::make_unique<detail::FunctionCast>(
-        context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, date_time_overflow_behavior);
+        context, name, std::move(monotonicity), std::move(monotonicity_ref), data_types, return_type, diagnostic, cast_type, date_time_overflow_behavior);
 }
 
 

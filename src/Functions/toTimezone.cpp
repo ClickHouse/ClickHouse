@@ -77,6 +77,12 @@ public:
         return { .is_monotonic = b, .is_positive = b, .is_always_monotonic = b, .is_strict = b };
     }
 
+    Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const ColumnValueRef & /*left*/, const ColumnValueRef & /*right*/) const override
+    {
+        const bool b = is_constant_timezone;
+        return { .is_monotonic = b, .is_positive = b, .is_always_monotonic = b, .is_strict = b };
+    }
+
 private:
     bool is_constant_timezone;
     DataTypes argument_types;

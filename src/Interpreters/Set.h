@@ -1,5 +1,7 @@
 #pragma once
 
+#include <span>
+
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
@@ -14,6 +16,8 @@ namespace DB
 {
 
 struct Range;
+struct RangeRef;
+struct PrimaryKeyIndexAnalysisContext;
 
 class Context;
 class IFunctionBase;
@@ -218,6 +222,12 @@ public:
     bool hasMonotonicFunctionsChain() const;
 
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
+    BoolMask checkInRange(
+        std::span<const RangeRef> key_ranges,
+        const DataTypes & data_types,
+        bool single_point,
+        ColumnsWithTypeAndName & key_columns,
+        PrimaryKeyIndexAnalysisContext & index_analysis_context) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }
 
