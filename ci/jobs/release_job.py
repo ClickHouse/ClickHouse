@@ -249,19 +249,18 @@ def main():
                 " > ./utils/list-versions/version_date.tsv",
                 "echo 'Update docker version'",
                 "./utils/list-versions/update-docker-version.sh",
-                # TODO: re-enable changelog generation
-                # "echo 'Generate ChangeLog'",
-                # "docker pull clickhouse/style-test:latest",
-                # f"git remote set-url origin https://x-access-token:{_GH_TOKEN_SECRET.get_value()}@github.com/ClickHouse/ClickHouse.git",
-                # f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
-                # f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
-                # f" clickhouse/style-test:latest"
-                # f" ./tests/ci/changelog.py -v --debug-helpers"
-                # f" --gh-user-or-token {_GH_TOKEN_SECRET.get_value()}"
-                # f" --jobs=5"
-                # f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
-                # "git remote set-url origin git@github.com:ClickHouse/ClickHouse.git",
-                # f"git add ./docs/changelogs/{release_tag}.md",
+                "echo 'Generate ChangeLog'",
+                "docker pull clickhouse/style-test:latest",
+                f"git remote set-url origin https://x-access-token:{_GH_TOKEN_SECRET.get_value()}@github.com/ClickHouse/ClickHouse.git",
+                f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
+                f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
+                f" clickhouse/style-test:latest"
+                f" ./tests/ci/changelog.py -v --debug-helpers"
+                f" --gh-user-or-token {_GH_TOKEN_SECRET.get_value()}"
+                f" --jobs=5"
+                f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
+                "git remote set-url origin git@github.com:ClickHouse/ClickHouse.git",
+                f"git add ./docs/changelogs/{release_tag}.md",
                 "echo 'Generate Security'",
                 "python3 ./utils/security-generator/generate_security.py"
                 " > SECURITY.md",
@@ -521,7 +520,17 @@ def main():
         )
     )
 
-    Result.create_from(results=results, stopwatch=stopwatch).complete_job()
+    log_files = [
+        p
+        for p in [
+            "/tmp/reprepro.log",
+            "/tmp/createrepo_c.log",
+            os.path.expanduser("~/fuse_mount.log"),
+            RELEASE_INFO_FILE,
+        ]
+        if os.path.isfile(p)
+    ]
+    Result.create_from(results=results, stopwatch=stopwatch, files=log_files).complete_job()
 
 
 if __name__ == "__main__":
