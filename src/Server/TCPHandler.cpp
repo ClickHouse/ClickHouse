@@ -605,10 +605,10 @@ void TCPHandler::runImpl()
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(query_state->query_context);
 
-            /// Apply SETTINGS embedded in the query text (e.g. `INSERT ... SETTINGS allow_experimental_detach_non_readonly_queries=1`)
-            /// before the detach decision so that inline settings can trigger the detach path.
-            /// `settings_ref` is a reference to query_context's settings, so it reflects changes made here.
-            /// `executeQueryImpl` will call `applySettingsFromQuery` again — that call is idempotent.
+            /// Apply SETTINGS from the fully parsed query AST (including `INSERT ... SETTINGS ...`) before the detach decision.
+            /// tryParseQuery can return null for valid queries; parseQuery matches executeQuery and ensures query-level SETTINGS apply.
+            /// executeQueryImpl will call applySettingsFromQuery again — that call is idempotent.
+            ASTPtr ast_detach;
             {
                 const auto & pre_settings = query_state->query_context->getSettingsRef();
                 const size_t max_query_size_pre
@@ -617,22 +617,25 @@ void TCPHandler::runImpl()
                     query_state->query.data() + query_state->query.size(),
                     pre_settings[Setting::allow_settings_after_format_in_insert],
                     pre_settings[Setting::implicit_select]);
-                const char * query_pos_pre = query_state->query.data();
-                std::string parse_error_pre;
-                if (ASTPtr inline_ast = tryParseQuery(
+                try
+                {
+                    ast_detach = parseQuery(
                         parser_pre,
-                        query_pos_pre,
+                        query_state->query.data(),
                         query_state->query.data() + query_state->query.size(),
-                        parse_error_pre,
-                        /*hilite=*/false,
-                        /*description=*/"",
-                        /*allow_multi_statements=*/false,
+                        "",
                         max_query_size_pre,
                         pre_settings[Setting::max_parser_depth],
-                        pre_settings[Setting::max_parser_backtracks],
-                        /*skip_insignificant=*/false))
-                    InterpreterSetQuery::applySettingsFromQuery(inline_ast, query_state->query_context);
+                        pre_settings[Setting::max_parser_backtracks]);
+                }
+                catch (...)
+                {
+                    /// Ok: parse failed for early SETTINGS extraction; detach uses session settings only; executeQuery will parse and report errors.
+                    ast_detach = nullptr;
+                }
             }
+            if (ast_detach)
+                InterpreterSetQuery::applySettingsFromQuery(ast_detach, query_state->query_context);
 
             /// Detach path: for non-readonly queries when allow_experimental_detach_non_readonly_queries is on, run the query in a background thread and return query_id immediately.
             /// Skip when async_insert is set (preserve async-insert queue semantics). Only detach when the query does not need data from the client (e.g. INSERT...SELECT, not INSERT FORMAT ...).
@@ -647,9 +650,25 @@ void TCPHandler::runImpl()
 
                 try
                 {
-                    const size_t max_query_size = settings_ref[Setting::max_query_size] ? settings_ref[Setting::max_query_size] : std::numeric_limits<size_t>::max();
-                    ParserQuery parser(query_state->query.data() + query_state->query.size(), settings_ref[Setting::allow_settings_after_format_in_insert], settings_ref[Setting::implicit_select]);
-                    ASTPtr ast = parseQuery(parser, query_state->query.data(), query_state->query.data() + query_state->query.size(), "", max_query_size, settings_ref[Setting::max_parser_depth], settings_ref[Setting::max_parser_backtracks]);
+                    ASTPtr ast;
+                    if (ast_detach)
+                        ast = ast_detach;
+                    else
+                    {
+                        const size_t max_query_size = settings_ref[Setting::max_query_size] ? settings_ref[Setting::max_query_size] : std::numeric_limits<size_t>::max();
+                        ParserQuery parser(
+                            query_state->query.data() + query_state->query.size(),
+                            settings_ref[Setting::allow_settings_after_format_in_insert],
+                            settings_ref[Setting::implicit_select]);
+                        ast = parseQuery(
+                            parser,
+                            query_state->query.data(),
+                            query_state->query.data() + query_state->query.size(),
+                            "",
+                            max_query_size,
+                            settings_ref[Setting::max_parser_depth],
+                            settings_ref[Setting::max_parser_backtracks]);
+                    }
 
                     if (ast && IAST::isNonReadOnlyQuery(ast.get()))
                     {

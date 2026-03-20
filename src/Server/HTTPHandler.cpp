@@ -101,6 +101,7 @@ extern const int INVALID_SESSION_TIMEOUT;
 extern const int INVALID_CONFIG_PARAMETER;
 extern const int HTTP_LENGTH_REQUIRED;
 extern const int SESSION_ID_EMPTY;
+extern const int LIMIT_EXCEEDED;
 }
 
 namespace
@@ -496,9 +497,17 @@ void HTTPHandler::processQuery(
         LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
         copyData(limit, body_query);
         query = body_query.str();
-        boost::trim_right(query);
-        if (!query.empty())
+        /// Do not trim the raw POST body: trailing bytes for INSERT ... FORMAT ... can be part of the format payload.
+        /// Whitespace-only bodies are treated as empty (same as trim-then-empty), without mutating real payloads.
+        if (query.empty() || std::all_of(query.begin(), query.end(), [](char c) { return isWhitespaceASCII(c); }))
+        {
+            query.clear();
+            query_from_body = false;
+        }
+        else
+        {
             query_from_body = true;
+        }
     }
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
@@ -546,33 +555,33 @@ void HTTPHandler::processQuery(
             });
     }
 
-    /// Apply SETTINGS embedded in the query text itself (e.g. `INSERT ... SETTINGS allow_experimental_detach_non_readonly_queries=1`)
-    /// before the detach decision so that inline settings can trigger the detach path.
-    /// `settings` is a reference to context->getSettingsRef(), so it reflects any changes made here.
-    /// `executeQueryImpl` will call `applySettingsFromQuery` again — that call is idempotent.
+    /// Apply SETTINGS from the fully parsed query AST (including `INSERT ... SETTINGS ...`) before the detach decision.
+    /// tryParseQuery can return null for valid queries; parseQuery matches executeQuery. executeQueryImpl will call
+    /// applySettingsFromQuery again — idempotent.
     if (!query.empty())
     {
+        const size_t max_query_size_for_settings
+            = settings[Setting::max_query_size] ? settings[Setting::max_query_size] : std::numeric_limits<size_t>::max();
         ParserQuery parser_for_inline_settings(
             query.data() + query.size(),
             settings[Setting::allow_settings_after_format_in_insert],
             settings[Setting::implicit_select]);
-        const size_t max_query_size_for_settings
-            = settings[Setting::max_query_size] ? settings[Setting::max_query_size] : std::numeric_limits<size_t>::max();
-        const char * query_pos = query.data();
-        std::string parse_error;
-        if (ASTPtr inline_ast = tryParseQuery(
+        try
+        {
+            ASTPtr ast_for_settings = parseQuery(
                 parser_for_inline_settings,
-                query_pos,
+                query.data(),
                 query.data() + query.size(),
-                parse_error,
-                /*hilite=*/false,
-                /*description=*/"",
-                /*allow_multi_statements=*/false,
+                "",
                 max_query_size_for_settings,
                 settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks],
-                /*skip_insignificant=*/false))
-            InterpreterSetQuery::applySettingsFromQuery(inline_ast, context);
+                settings[Setting::max_parser_backtracks]);
+            InterpreterSetQuery::applySettingsFromQuery(ast_for_settings, context);
+        }
+        catch (...)
+        {
+            /// Ok: incomplete or non-SQL body, multipart edge cases, etc.; executeQuery will validate later.
+        }
     }
 
     /// Detach path: for non-readonly queries (e.g. INSERT-SELECT) when allow_experimental_detach_non_readonly_queries is on,
@@ -580,7 +589,7 @@ void HTTPHandler::processQuery(
     /// Supports both query in URL (?query=...) and query in POST body (e.g. curl -X POST --data-binary "INSERT ...").
     /// We skip this path when async_insert=1 so that the server's async-insert queue semantics (and wait_for_async_insert) are preserved.
     /// Prepared-statement parameters from the URL (param_xxx) are already on the context and are copied into the background thread's context.
-    /// Also check params directly so the detach path is taken when the client sends allow_experimental_detach_non_readonly_queries=1 in the URL.
+    /// URL param, session settings, and query-level SETTINGS (applied above) all feed into getSettingsRef().
     const bool want_detach_non_readonly
         = settings[Setting::allow_experimental_detach_non_readonly_queries] || params.getParsedLast<bool>("allow_experimental_detach_non_readonly_queries", false);
     if (want_detach_non_readonly && !settings[Setting::async_insert] && request.getMethod() == HTTPServerRequest::HTTP_POST
@@ -609,6 +618,11 @@ void HTTPHandler::processQuery(
         std::optional<std::future<void>> detach_started;
         String detach_query_id;
 
+        /// POST body for ?query=... URL case is read into body_data with a byte cap. If the body is larger,
+        /// the socket still holds the tail; sync fallback must not rebuild input from only the prefix.
+        bool http_detach_post_body_read_ok = query_from_body;
+        bool http_detach_post_body_truncated = false;
+
         try
         {
             const size_t max_query_size_val
@@ -619,14 +633,32 @@ void HTTPHandler::processQuery(
                 body_data.insert(body_data.end(), query.data(), query.data() + query.size());
 
             query_to_parse = query;
-            boost::trim_right(query_to_parse);
-            if (query_to_parse.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty query after trim");
             if (!query_from_body)
             {
-                LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
-                WriteBufferFromVector<PODArray<char>> body_buf(body_data);
-                copyData(limit, body_buf);
+                boost::trim_right(query_to_parse);
+                if (query_to_parse.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty query after trim");
+            }
+            else if (query_to_parse.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty query");
+            if (!query_from_body)
+            {
+                {
+                    LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
+                    WriteBufferFromVector<PODArray<char>> body_buf(body_data);
+                    copyData(limit, body_buf);
+                }
+                http_detach_post_body_read_ok = true;
+                /// After LimitReadBuffer destructor, the nested stream position is synced; if not at EOF, more POST data remains.
+                if (body_data.size() >= max_post_body_size && !in_post_maybe_compressed->eof())
+                {
+                    http_detach_post_body_truncated = true;
+                    throw Exception(
+                        ErrorCodes::LIMIT_EXCEEDED,
+                        "HTTP POST body is larger than maximum size {} ({} MiB) for buffered detach handling",
+                        max_post_body_size,
+                        max_post_body_size / 1024 / 1024);
+                }
             }
 
             ParserQuery parser(
@@ -725,6 +757,21 @@ void HTTPHandler::processQuery(
         }
         catch (...)
         {
+            /// Do not fall back to sync after a partial POST read: the socket was advanced only up to max_post_body_size
+            /// and restore_input_for_sync would feed a truncated body (silent wrong results for text formats).
+            if (http_detach_post_body_truncated)
+            {
+                tryLogCurrentException(
+                    log,
+                    "Cannot run HTTP query in detach mode: POST body exceeds max_post_body_size; refusing sync fallback that would truncate data");
+                throw;
+            }
+            /// copyData failed (e.g. I/O): body_data may be partial and the stream is not safely re-readable for sync.
+            if (!http_detach_post_body_read_ok && !query_from_body)
+            {
+                tryLogCurrentException(log, "Cannot run HTTP query in detach mode: failed to read POST body; refusing unsafe sync fallback");
+                throw;
+            }
             /// Mechanism failure (e.g. parse error, empty query): fall back to sync execution.
             /// Only restore input if the detach thread was never launched.
             tryLogCurrentException(log, "Cannot run HTTP query in detach mode, falling back to sync");
