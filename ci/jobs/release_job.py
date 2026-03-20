@@ -19,6 +19,15 @@ _GH_TOKEN_SECRET = Secret.Config(
 
 _GEESEFS_VERSION = "v0.43.5"
 
+_R2_AUTH_TEST_SECRET = Secret.Config(
+    name="/release/r2-auth-test",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+)
+_R2_AUTH_PROD_SECRET = Secret.Config(
+    name="/release/r2-auth",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+)
+
 REPO_PATH = Utils.cwd()
 
 
@@ -122,6 +131,21 @@ def main():
                 f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
                 f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
             ],
+            workdir=REPO_PATH,
+        )
+
+        def write_r2_auth():
+            r2_auth_test = _R2_AUTH_TEST_SECRET.get_value()
+            with open(os.path.expanduser("~/.r2_auth_test"), "w") as f:
+                f.write(r2_auth_test)
+            if not args.dry_run:
+                r2_auth_prod = _R2_AUTH_PROD_SECRET.get_value()
+                with open(os.path.expanduser("~/.r2_auth"), "w") as f:
+                    f.write(r2_auth_prod)
+
+        step(
+            name="Write R2 Auth Config",
+            command=write_r2_auth,
             workdir=REPO_PATH,
         )
 
