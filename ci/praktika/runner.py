@@ -264,7 +264,7 @@ class Runner:
         env = _Environment.get()
         env.JOB_NAME = job.name
         env.dump()
-        preserve_stdio = sys.stdout.isatty() and sys.stdin.isatty()
+        preserve_stdio = sys.stdin.isatty()
         if preserve_stdio:
             print("WARNING: Preserving stdio")
 
