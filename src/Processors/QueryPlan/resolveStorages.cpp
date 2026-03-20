@@ -143,6 +143,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         storage = table_node->getStorage();
         snapshot = table_node->getStorageSnapshot();
         select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
+        select_query_info.row_level_filter = reading_from_table->getRowPolicyFilter();
     }
     else
     {

@@ -935,7 +935,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         {
             if (!select_query_options.only_analyze)
             {
-                auto & row_level_filter = table_expression_query_info.row_level_filter;
                 auto & prewhere_info = table_expression_query_info.prewhere_info;
                 const auto & prewhere_actions = table_expression_data.getPrewhereFilterActions();
                 const auto & columns_names = table_expression_data.getColumnNames();
@@ -1010,7 +1009,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
                     if (storage->supportsPrewhere())
-                        row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
+                        table_expression_query_info.row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                 }
@@ -1070,7 +1069,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             sample_block,
                             table_name,
                             table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}),
-                            is_merge_tree);
+                            is_merge_tree,
+                            table_expression_query_info.row_level_filter);
 
                         query_plan.addStep(std::move(reading_from_table));
                     }
