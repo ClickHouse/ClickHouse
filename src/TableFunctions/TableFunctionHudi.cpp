@@ -77,10 +77,10 @@ StorageObjectStorageConfigurationPtr TableFunctionHudiImpl<Definition, Configura
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                 if (std::string_view(Definition::name).starts_with("iceberg"))
-                    configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
+                    configuration = std::make_shared<StorageS3Configuration>();
 #if USE_PARQUET
                 else
-                    configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
+                    configuration = std::make_shared<StorageS3Configuration>();
 #endif
                 break;
 #endif
@@ -94,10 +94,10 @@ StorageObjectStorageConfigurationPtr TableFunctionHudiImpl<Definition, Configura
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                 if (std::string_view(Definition::name).starts_with("iceberg"))
-                    configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
+                    configuration = std::make_shared<StorageAzureConfiguration>();
 #if USE_PARQUET
                 else
-                    configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
+                    configuration = std::make_shared<StorageAzureConfiguration>();
 #endif
                 break;
 #endif
@@ -110,10 +110,10 @@ StorageObjectStorageConfigurationPtr TableFunctionHudiImpl<Definition, Configura
                     Definition::object_storage_type != "local")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
                 if (std::string_view(Definition::name).starts_with("iceberg"))
-                    configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
+                    configuration = std::make_shared<StorageLocalConfiguration>();
 #if USE_PARQUET
                 else
-                    configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
+                    configuration = std::make_shared<StorageLocalConfiguration>();
 #endif
                 break;
 #endif
@@ -122,7 +122,7 @@ StorageObjectStorageConfigurationPtr TableFunctionHudiImpl<Definition, Configura
             }
         }
         else
-            configuration = std::make_shared<Configuration>(settings);
+            configuration = std::make_shared<Configuration>();
     }
     return configuration;
 }
@@ -298,12 +298,12 @@ StoragePtr TableFunctionHudiImpl<Definition, Configuration>::executeImpl(
 }
 
 #if USE_AWS_S3
-template class TableFunctionHudiImpl<HudiDefinition, StorageS3HudiConfiguration>;
+template class TableFunctionHudiImpl<HudiDefinition, StorageS3Configuration>;
 #endif
 
 /// Cluster definition instantiation (needed as base class for TableFunctionHudiClusterImpl).
 #if USE_AWS_S3
-template class TableFunctionHudiImpl<HudiClusterDefinition, StorageS3HudiConfiguration>;
+template class TableFunctionHudiImpl<HudiClusterDefinition, StorageS3Configuration>;
 #endif
 
 }

@@ -45,15 +45,15 @@ protected:
 };
 
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionPaimonS3Cluster = TableFunctionPaimonClusterImpl<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration>;
+using TableFunctionPaimonS3Cluster = TableFunctionPaimonClusterImpl<PaimonS3ClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionPaimonCluster = TableFunctionPaimonClusterImpl<PaimonClusterDefinition, StorageS3PaimonConfiguration>;
+using TableFunctionPaimonCluster = TableFunctionPaimonClusterImpl<PaimonClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionPaimonAzureCluster = TableFunctionPaimonClusterImpl<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration>;
+using TableFunctionPaimonAzureCluster = TableFunctionPaimonClusterImpl<PaimonAzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 #if USE_AVRO && USE_HDFS
-using TableFunctionPaimonHDFSCluster = TableFunctionPaimonClusterImpl<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration>;
+using TableFunctionPaimonHDFSCluster = TableFunctionPaimonClusterImpl<PaimonHDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 }

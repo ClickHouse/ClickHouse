@@ -81,7 +81,7 @@ StoragePtr TableFunctionHudiClusterImpl<Definition, Configuration>::executeImpl(
 }
 
 #if USE_AWS_S3
-template class TableFunctionHudiClusterImpl<HudiClusterDefinition, StorageS3HudiConfiguration>;
+template class TableFunctionHudiClusterImpl<HudiClusterDefinition, StorageS3Configuration>;
 #endif
 
 }

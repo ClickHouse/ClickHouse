@@ -81,13 +81,13 @@ StoragePtr TableFunctionDeltaLakeClusterImpl<Definition, Configuration>::execute
 }
 
 #if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
-template class TableFunctionDeltaLakeClusterImpl<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
+template class TableFunctionDeltaLakeClusterImpl<DeltaLakeClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
-template class TableFunctionDeltaLakeClusterImpl<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration>;
+template class TableFunctionDeltaLakeClusterImpl<DeltaLakeS3ClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
-template class TableFunctionDeltaLakeClusterImpl<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration>;
+template class TableFunctionDeltaLakeClusterImpl<DeltaLakeAzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 
 }

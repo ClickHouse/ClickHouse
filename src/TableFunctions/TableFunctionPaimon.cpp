@@ -77,10 +77,10 @@ StorageObjectStorageConfigurationPtr TableFunctionPaimonImpl<Definition, Configu
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                 if (std::string_view(Definition::name).starts_with("iceberg"))
-                    configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
+                    configuration = std::make_shared<StorageS3Configuration>();
 #if USE_PARQUET
                 else
-                    configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
+                    configuration = std::make_shared<StorageS3Configuration>();
 #endif
                 break;
 #endif
@@ -94,10 +94,10 @@ StorageObjectStorageConfigurationPtr TableFunctionPaimonImpl<Definition, Configu
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                 if (std::string_view(Definition::name).starts_with("iceberg"))
-                    configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
+                    configuration = std::make_shared<StorageAzureConfiguration>();
 #if USE_PARQUET
                 else
-                    configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
+                    configuration = std::make_shared<StorageAzureConfiguration>();
 #endif
                 break;
 #endif
@@ -110,10 +110,10 @@ StorageObjectStorageConfigurationPtr TableFunctionPaimonImpl<Definition, Configu
                     Definition::object_storage_type != "local")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
                 if (std::string_view(Definition::name).starts_with("iceberg"))
-                    configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
+                    configuration = std::make_shared<StorageLocalConfiguration>();
 #if USE_PARQUET
                 else
-                    configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
+                    configuration = std::make_shared<StorageLocalConfiguration>();
 #endif
                 break;
 #endif
@@ -122,7 +122,7 @@ StorageObjectStorageConfigurationPtr TableFunctionPaimonImpl<Definition, Configu
             }
         }
         else
-            configuration = std::make_shared<Configuration>(settings);
+            configuration = std::make_shared<Configuration>();
     }
     return configuration;
 }
@@ -298,31 +298,31 @@ StoragePtr TableFunctionPaimonImpl<Definition, Configuration>::executeImpl(
 }
 
 #if USE_AVRO && USE_AWS_S3
-template class TableFunctionPaimonImpl<PaimonDefinition, StorageS3PaimonConfiguration>;
+template class TableFunctionPaimonImpl<PaimonDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AWS_S3
-template class TableFunctionPaimonImpl<PaimonS3Definition, StorageS3PaimonConfiguration>;
+template class TableFunctionPaimonImpl<PaimonS3Definition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-template class TableFunctionPaimonImpl<PaimonAzureDefinition, StorageAzurePaimonConfiguration>;
+template class TableFunctionPaimonImpl<PaimonAzureDefinition, StorageAzureConfiguration>;
 #endif
 #if USE_AVRO && USE_HDFS
-template class TableFunctionPaimonImpl<PaimonHDFSDefinition, StorageHDFSPaimonConfiguration>;
+template class TableFunctionPaimonImpl<PaimonHDFSDefinition, StorageHDFSConfiguration>;
 #endif
 #if USE_AVRO
-template class TableFunctionPaimonImpl<PaimonLocalDefinition, StorageLocalPaimonConfiguration>;
+template class TableFunctionPaimonImpl<PaimonLocalDefinition, StorageLocalConfiguration>;
 #endif
 
 /// Cluster definition instantiations (needed as base class for TableFunctionPaimonClusterImpl).
 #if USE_AVRO && USE_AWS_S3
-template class TableFunctionPaimonImpl<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration>;
-template class TableFunctionPaimonImpl<PaimonClusterDefinition, StorageS3PaimonConfiguration>;
+template class TableFunctionPaimonImpl<PaimonS3ClusterDefinition, StorageS3Configuration>;
+template class TableFunctionPaimonImpl<PaimonClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-template class TableFunctionPaimonImpl<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration>;
+template class TableFunctionPaimonImpl<PaimonAzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 #if USE_AVRO && USE_HDFS
-template class TableFunctionPaimonImpl<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration>;
+template class TableFunctionPaimonImpl<PaimonHDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 
 }

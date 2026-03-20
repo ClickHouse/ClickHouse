@@ -45,12 +45,12 @@ protected:
 };
 
 #if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeCluster = TableFunctionDeltaLakeClusterImpl<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
+using TableFunctionDeltaLakeCluster = TableFunctionDeltaLakeClusterImpl<DeltaLakeClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeS3Cluster = TableFunctionDeltaLakeClusterImpl<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration>;
+using TableFunctionDeltaLakeS3Cluster = TableFunctionDeltaLakeClusterImpl<DeltaLakeS3ClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeAzureCluster = TableFunctionDeltaLakeClusterImpl<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration>;
+using TableFunctionDeltaLakeAzureCluster = TableFunctionDeltaLakeClusterImpl<DeltaLakeAzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 }

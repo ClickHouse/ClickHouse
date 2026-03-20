@@ -85,10 +85,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
-                        configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
+                        configuration = std::make_shared<StorageS3Configuration>();
 #if USE_PARQUET
                     else
-                        configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
+                        configuration = std::make_shared<StorageS3Configuration>();
 #endif
                     break;
 #endif
@@ -102,10 +102,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
-                        configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
+                        configuration = std::make_shared<StorageAzureConfiguration>();
 #if USE_PARQUET
                     else
-                        configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
+                        configuration = std::make_shared<StorageAzureConfiguration>();
 #endif
                     break;
 #endif
@@ -118,10 +118,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::object_storage_type != "local")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
                     if (std::string_view(Definition::name).starts_with("iceberg"))
-                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
+                        configuration = std::make_shared<StorageLocalConfiguration>();
 #if USE_PARQUET
                     else
-                        configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
+                        configuration = std::make_shared<StorageLocalConfiguration>();
 #endif
                     break;
 #endif

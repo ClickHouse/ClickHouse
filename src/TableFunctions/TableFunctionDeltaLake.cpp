@@ -77,10 +77,10 @@ StorageObjectStorageConfigurationPtr TableFunctionDeltaLakeImpl<Definition, Conf
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                 if (std::string_view(Definition::name).starts_with("iceberg"))
-                    configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
+                    configuration = std::make_shared<StorageS3Configuration>();
 #if USE_PARQUET
                 else
-                    configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
+                    configuration = std::make_shared<StorageS3Configuration>();
 #endif
                 break;
 #endif
@@ -94,10 +94,10 @@ StorageObjectStorageConfigurationPtr TableFunctionDeltaLakeImpl<Definition, Conf
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                 if (std::string_view(Definition::name).starts_with("iceberg"))
-                    configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
+                    configuration = std::make_shared<StorageAzureConfiguration>();
 #if USE_PARQUET
                 else
-                    configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
+                    configuration = std::make_shared<StorageAzureConfiguration>();
 #endif
                 break;
 #endif
@@ -110,10 +110,10 @@ StorageObjectStorageConfigurationPtr TableFunctionDeltaLakeImpl<Definition, Conf
                     Definition::object_storage_type != "local")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
                 if (std::string_view(Definition::name).starts_with("iceberg"))
-                    configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
+                    configuration = std::make_shared<StorageLocalConfiguration>();
 #if USE_PARQUET
                 else
-                    configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
+                    configuration = std::make_shared<StorageLocalConfiguration>();
 #endif
                 break;
 #endif
@@ -122,7 +122,7 @@ StorageObjectStorageConfigurationPtr TableFunctionDeltaLakeImpl<Definition, Conf
             }
         }
         else
-            configuration = std::make_shared<Configuration>(settings);
+            configuration = std::make_shared<Configuration>();
     }
     return configuration;
 }
@@ -298,25 +298,25 @@ StoragePtr TableFunctionDeltaLakeImpl<Definition, Configuration>::executeImpl(
 }
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS && USE_AWS_S3
-template class TableFunctionDeltaLakeImpl<DeltaLakeDefinition, StorageS3DeltaLakeConfiguration>;
+template class TableFunctionDeltaLakeImpl<DeltaLakeDefinition, StorageS3Configuration>;
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS && USE_AWS_S3
-template class TableFunctionDeltaLakeImpl<DeltaLakeS3Definition, StorageS3DeltaLakeConfiguration>;
+template class TableFunctionDeltaLakeImpl<DeltaLakeS3Definition, StorageS3Configuration>;
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS && USE_AZURE_BLOB_STORAGE
-template class TableFunctionDeltaLakeImpl<DeltaLakeAzureDefinition, StorageAzureDeltaLakeConfiguration>;
+template class TableFunctionDeltaLakeImpl<DeltaLakeAzureDefinition, StorageAzureConfiguration>;
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-template class TableFunctionDeltaLakeImpl<DeltaLakeLocalDefinition, StorageLocalDeltaLakeConfiguration>;
+template class TableFunctionDeltaLakeImpl<DeltaLakeLocalDefinition, StorageLocalConfiguration>;
 #endif
 
 /// Cluster definition instantiations (needed as base class for TableFunctionDeltaLakeClusterImpl).
 #if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
-template class TableFunctionDeltaLakeImpl<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
-template class TableFunctionDeltaLakeImpl<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration>;
+template class TableFunctionDeltaLakeImpl<DeltaLakeClusterDefinition, StorageS3Configuration>;
+template class TableFunctionDeltaLakeImpl<DeltaLakeS3ClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
-template class TableFunctionDeltaLakeImpl<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration>;
+template class TableFunctionDeltaLakeImpl<DeltaLakeAzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 
 }

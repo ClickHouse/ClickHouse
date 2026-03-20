@@ -61,7 +61,7 @@ public:
       const String & format,
       const ContextPtr & context)
     {
-        Configuration configuration(createEmptySettings());
+        Configuration configuration;
         if (configuration.format == "auto")
             configuration.format = "Parquet"; /// Default format of data lakes.
 
@@ -102,15 +102,15 @@ protected:
 };
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS && USE_AWS_S3
-using TableFunctionDeltaLake = TableFunctionDeltaLakeImpl<DeltaLakeDefinition, StorageS3DeltaLakeConfiguration>;
+using TableFunctionDeltaLake = TableFunctionDeltaLakeImpl<DeltaLakeDefinition, StorageS3Configuration>;
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS && USE_AWS_S3
-using TableFunctionDeltaLakeS3 = TableFunctionDeltaLakeImpl<DeltaLakeS3Definition, StorageS3DeltaLakeConfiguration>;
+using TableFunctionDeltaLakeS3 = TableFunctionDeltaLakeImpl<DeltaLakeS3Definition, StorageS3Configuration>;
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS && USE_AZURE_BLOB_STORAGE
-using TableFunctionDeltaLakeAzure = TableFunctionDeltaLakeImpl<DeltaLakeAzureDefinition, StorageAzureDeltaLakeConfiguration>;
+using TableFunctionDeltaLakeAzure = TableFunctionDeltaLakeImpl<DeltaLakeAzureDefinition, StorageAzureConfiguration>;
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeLocal = TableFunctionDeltaLakeImpl<DeltaLakeLocalDefinition, StorageLocalDeltaLakeConfiguration>;
+using TableFunctionDeltaLakeLocal = TableFunctionDeltaLakeImpl<DeltaLakeLocalDefinition, StorageLocalConfiguration>;
 #endif
 }

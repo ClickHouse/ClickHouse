@@ -45,6 +45,6 @@ protected:
 };
 
 #if USE_AWS_S3
-using TableFunctionHudiCluster = TableFunctionHudiClusterImpl<HudiClusterDefinition, StorageS3HudiConfiguration>;
+using TableFunctionHudiCluster = TableFunctionHudiClusterImpl<HudiClusterDefinition, StorageS3Configuration>;
 #endif
 }

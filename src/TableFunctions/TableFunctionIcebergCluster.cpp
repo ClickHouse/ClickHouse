@@ -81,19 +81,19 @@ StoragePtr TableFunctionIcebergClusterImpl<Definition, Configuration>::executeIm
 }
 
 #if USE_AVRO
-template class TableFunctionIcebergClusterImpl<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration>;
+template class TableFunctionIcebergClusterImpl<IcebergLocalClusterDefinition, StorageLocalConfiguration>;
 #endif
 #if USE_AVRO && USE_AWS_S3
-template class TableFunctionIcebergClusterImpl<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration>;
+template class TableFunctionIcebergClusterImpl<IcebergS3ClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AWS_S3
-template class TableFunctionIcebergClusterImpl<IcebergClusterDefinition, StorageS3IcebergConfiguration>;
+template class TableFunctionIcebergClusterImpl<IcebergClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-template class TableFunctionIcebergClusterImpl<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration>;
+template class TableFunctionIcebergClusterImpl<IcebergAzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 #if USE_AVRO && USE_HDFS
-template class TableFunctionIcebergClusterImpl<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
+template class TableFunctionIcebergClusterImpl<IcebergHDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 
 }

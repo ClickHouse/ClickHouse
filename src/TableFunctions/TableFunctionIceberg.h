@@ -61,7 +61,7 @@ public:
       const String & format,
       const ContextPtr & context)
     {
-        Configuration configuration(createEmptySettings());
+        Configuration configuration;
         if (configuration.format == "auto")
             configuration.format = "Parquet"; /// Default format of data lakes.
 
@@ -102,18 +102,18 @@ protected:
 };
 
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionIceberg = TableFunctionIcebergImpl<IcebergDefinition, StorageS3IcebergConfiguration>;
+using TableFunctionIceberg = TableFunctionIcebergImpl<IcebergDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionIcebergS3 = TableFunctionIcebergImpl<IcebergS3Definition, StorageS3IcebergConfiguration>;
+using TableFunctionIcebergS3 = TableFunctionIcebergImpl<IcebergS3Definition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzure = TableFunctionIcebergImpl<IcebergAzureDefinition, StorageAzureIcebergConfiguration>;
+using TableFunctionIcebergAzure = TableFunctionIcebergImpl<IcebergAzureDefinition, StorageAzureConfiguration>;
 #endif
 #if USE_AVRO && USE_HDFS
-using TableFunctionIcebergHDFS = TableFunctionIcebergImpl<IcebergHDFSDefinition, StorageHDFSIcebergConfiguration>;
+using TableFunctionIcebergHDFS = TableFunctionIcebergImpl<IcebergHDFSDefinition, StorageHDFSConfiguration>;
 #endif
 #if USE_AVRO
-using TableFunctionIcebergLocal = TableFunctionIcebergImpl<IcebergLocalDefinition, StorageLocalIcebergConfiguration>;
+using TableFunctionIcebergLocal = TableFunctionIcebergImpl<IcebergLocalDefinition, StorageLocalConfiguration>;
 #endif
 }

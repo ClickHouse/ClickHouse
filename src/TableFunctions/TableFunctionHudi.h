@@ -61,7 +61,7 @@ public:
       const String & format,
       const ContextPtr & context)
     {
-        Configuration configuration(createEmptySettings());
+        Configuration configuration;
         if (configuration.format == "auto")
             configuration.format = "Parquet"; /// Default format of data lakes.
 
@@ -102,6 +102,6 @@ protected:
 };
 
 #if USE_AWS_S3
-using TableFunctionHudi = TableFunctionHudiImpl<HudiDefinition, StorageS3HudiConfiguration>;
+using TableFunctionHudi = TableFunctionHudiImpl<HudiDefinition, StorageS3Configuration>;
 #endif
 }

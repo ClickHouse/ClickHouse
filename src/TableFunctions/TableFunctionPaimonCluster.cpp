@@ -81,16 +81,16 @@ StoragePtr TableFunctionPaimonClusterImpl<Definition, Configuration>::executeImp
 }
 
 #if USE_AVRO && USE_AWS_S3
-template class TableFunctionPaimonClusterImpl<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration>;
+template class TableFunctionPaimonClusterImpl<PaimonS3ClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AWS_S3
-template class TableFunctionPaimonClusterImpl<PaimonClusterDefinition, StorageS3PaimonConfiguration>;
+template class TableFunctionPaimonClusterImpl<PaimonClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-template class TableFunctionPaimonClusterImpl<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration>;
+template class TableFunctionPaimonClusterImpl<PaimonAzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 #if USE_AVRO && USE_HDFS
-template class TableFunctionPaimonClusterImpl<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration>;
+template class TableFunctionPaimonClusterImpl<PaimonHDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 
 }

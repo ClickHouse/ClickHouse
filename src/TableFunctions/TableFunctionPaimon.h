@@ -61,7 +61,7 @@ public:
       const String & format,
       const ContextPtr & context)
     {
-        Configuration configuration(createEmptySettings());
+        Configuration configuration;
         if (configuration.format == "auto")
             configuration.format = "Parquet"; /// Default format of data lakes.
 
@@ -102,18 +102,18 @@ protected:
 };
 
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionPaimon = TableFunctionPaimonImpl<PaimonDefinition, StorageS3PaimonConfiguration>;
+using TableFunctionPaimon = TableFunctionPaimonImpl<PaimonDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionPaimonS3 = TableFunctionPaimonImpl<PaimonS3Definition, StorageS3PaimonConfiguration>;
+using TableFunctionPaimonS3 = TableFunctionPaimonImpl<PaimonS3Definition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionPaimonAzure = TableFunctionPaimonImpl<PaimonAzureDefinition, StorageAzurePaimonConfiguration>;
+using TableFunctionPaimonAzure = TableFunctionPaimonImpl<PaimonAzureDefinition, StorageAzureConfiguration>;
 #endif
 #if USE_AVRO && USE_HDFS
-using TableFunctionPaimonHDFS = TableFunctionPaimonImpl<PaimonHDFSDefinition, StorageHDFSPaimonConfiguration>;
+using TableFunctionPaimonHDFS = TableFunctionPaimonImpl<PaimonHDFSDefinition, StorageHDFSConfiguration>;
 #endif
 #if USE_AVRO
-using TableFunctionPaimonLocal = TableFunctionPaimonImpl<PaimonLocalDefinition, StorageLocalPaimonConfiguration>;
+using TableFunctionPaimonLocal = TableFunctionPaimonImpl<PaimonLocalDefinition, StorageLocalConfiguration>;
 #endif
 }

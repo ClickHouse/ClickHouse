@@ -45,18 +45,18 @@ protected:
 };
 
 #if USE_AVRO
-using TableFunctionIcebergLocalCluster = TableFunctionIcebergClusterImpl<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration>;
+using TableFunctionIcebergLocalCluster = TableFunctionIcebergClusterImpl<IcebergLocalClusterDefinition, StorageLocalConfiguration>;
 #endif
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionIcebergS3Cluster = TableFunctionIcebergClusterImpl<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration>;
+using TableFunctionIcebergS3Cluster = TableFunctionIcebergClusterImpl<IcebergS3ClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionIcebergCluster = TableFunctionIcebergClusterImpl<IcebergClusterDefinition, StorageS3IcebergConfiguration>;
+using TableFunctionIcebergCluster = TableFunctionIcebergClusterImpl<IcebergClusterDefinition, StorageS3Configuration>;
 #endif
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzureCluster = TableFunctionIcebergClusterImpl<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration>;
+using TableFunctionIcebergAzureCluster = TableFunctionIcebergClusterImpl<IcebergAzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 #if USE_AVRO && USE_HDFS
-using TableFunctionIcebergHDFSCluster = TableFunctionIcebergClusterImpl<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
+using TableFunctionIcebergHDFSCluster = TableFunctionIcebergClusterImpl<IcebergHDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 }
