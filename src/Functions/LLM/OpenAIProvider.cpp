@@ -102,16 +102,119 @@ LLMResponse OpenAIProvider::call(const LLMRequest & request, const ConnectionTim
     if (choices && choices->size() > 0)
     {
         auto choice = choices->getObject(0);
-        auto message = choice->getObject("message");
-        response.result = message->getValue<String>("content");
-        response.finish_reason = choice->getValue<String>("finish_reason");
+        if (choice)
+        {
+            auto message = choice->getObject("message");
+            if (message)
+                response.result = message->optValue<String>("content", "");
+            response.finish_reason = choice->optValue<String>("finish_reason", "stop");
+        }
     }
 
     if (json_obj->has("usage"))
     {
         auto usage = json_obj->getObject("usage");
-        response.input_tokens = usage->getValue<UInt64>("prompt_tokens");
-        response.output_tokens = usage->getValue<UInt64>("completion_tokens");
+        if (usage)
+        {
+            response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
+            response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
+        }
+    }
+
+    return response;
+}
+
+Poco::URI OpenAIProvider::deriveEmbeddingURI() const
+{
+    String path = uri.getPath();
+    size_t pos = path.find("/chat/completions");
+    if (pos != String::npos)
+    {
+        String new_path = path.substr(0, pos) + "/embeddings";
+        Poco::URI embedding_uri(uri);
+        embedding_uri.setPath(new_path);
+        return embedding_uri;
+    }
+    if (path.find("/embeddings") != String::npos)
+        return uri;
+
+    Poco::URI embedding_uri(uri);
+    embedding_uri.setPath("/v1/embeddings");
+    return embedding_uri;
+}
+
+LLMEmbeddingResponse OpenAIProvider::embed(const LLMEmbeddingRequest & request, const ConnectionTimeouts & timeouts)
+{
+    Poco::URI embedding_uri = deriveEmbeddingURI();
+
+    Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
+    root->set("input", sanitizeTextForLLM(request.input));
+    root->set("model", request.model);
+    if (request.dimensions > 0)
+        root->set("dimensions", static_cast<Int64>(request.dimensions));
+
+    std::ostringstream body_stream; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    root->stringify(body_stream);
+    String body = body_stream.str();
+
+    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, embedding_uri, timeouts, ProxyConfiguration{});
+
+    Poco::Net::HTTPRequest http_request(
+        Poco::Net::HTTPRequest::HTTP_POST,
+        embedding_uri.getPathAndQuery(),
+        Poco::Net::HTTPMessage::HTTP_1_1);
+    http_request.setContentType("application/json");
+    http_request.set("Authorization", "Bearer " + api_key);
+    http_request.setContentLength(body.size());
+
+    auto & out_stream = session->sendRequest(http_request);
+    out_stream << body;
+
+    Poco::Net::HTTPResponse http_response;
+    auto & in_stream = session->receiveResponse(http_response);
+
+    std::string response_body;
+    {
+        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        ss << in_stream.rdbuf();
+        response_body = ss.str();
+    }
+
+    auto status = http_response.getStatus();
+    if (status != Poco::Net::HTTPResponse::HTTP_OK)
+    {
+        throw Exception(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "LLM embedding provider returned HTTP {}: {}", static_cast<int>(status), response_body);
+    }
+
+    Poco::JSON::Parser parser;
+    auto json_result = parser.parse(response_body);
+    auto json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
+
+    LLMEmbeddingResponse response;
+
+    auto data_arr = json_obj->getArray("data");
+    if (data_arr && data_arr->size() > 0)
+    {
+        auto first = data_arr->getObject(0);
+        if (first)
+        {
+            auto embedding_arr = first->getArray("embedding");
+            if (embedding_arr)
+            {
+                response.embedding.reserve(embedding_arr->size());
+                for (unsigned i = 0; i < embedding_arr->size(); ++i)
+                    response.embedding.push_back(static_cast<Float32>(embedding_arr->getElement<double>(i)));
+            }
+        }
+    }
+
+    if (json_obj->has("usage"))
+    {
+        auto usage = json_obj->getObject("usage");
+        if (usage)
+            response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
     }
 
     return response;

@@ -9,6 +9,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+}
+
+LLMEmbeddingResponse ILLMProvider::embed(const LLMEmbeddingRequest & /*request*/, const ConnectionTimeouts & /*timeouts*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Provider '{}' does not support embeddings", providerName());
 }
 
 LLMProviderPtr createLLMProvider(const String & provider_name, const String & endpoint, const String & api_key)
