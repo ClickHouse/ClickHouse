@@ -27,6 +27,7 @@ public:
     void initialize(Poco::Util::Application & self) override;
 
     int main(const std::vector<String> & /*args*/) override;
+    bool supportsLocalMetaCommands() const override { return true; }
 
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;

@@ -1464,7 +1464,7 @@
 
                 } else if (column === 'duration') {
                     td.classList.add('dur-column');
-                    td.textContent = value ? formatDuration(value) : '';
+                    td.textContent = value ? formatDuration(value, true) : '';
                 }
 
                 row.appendChild(td);
