@@ -89,9 +89,6 @@ const std::unordered_set<std::string> & getObfuscateKeywords()
             "LOADING", "ENABLE", "DISABLE", "NOTIFY", "QUERIES", "SIMILARITY", "VECTOR",
             "POSTINGS", "HEADER", "METADATA", "ALLOCATE", "FREE", "LOAD", "UNLOAD", "UNKNOWN",
             "CLIENT", "MODEL",
-            /// Dictionary layout/source keywords
-            "FLAT", "HASHED", "IP_TRIE", "REGEXP_TREE", "DIRECT", "CLICKHOUSE", "EXECUTABLE",
-            "LIBRARY",
             /// Special SQL functions/types parsed by special rules
             "EXTRACT", "TRIM", "DECIMAL",
             /// Multi-word data type constituents not registered as standalone keywords
@@ -1179,6 +1176,21 @@ void obfuscateQueries(
     /// (it contains interval units like '2 years' that must stay valid).
     bool after_interval = false;
 
+    /// Dictionary SOURCE(...) and LAYOUT(...) context tracking.
+    /// These blocks contain key-value pairs where keys are structural parameter names
+    /// (PORT, HOST, SIZE_IN_CELLS, etc.) that must be preserved, while values may be
+    /// user identifiers that should still be obfuscated.
+    /// Structure: SOURCE( TYPE( KEY1 value1 KEY2 value2 ... ) )
+    ///   depth 1: type name (fall through to known_identifier check)
+    ///   depth 2+: alternating key-value pairs
+    /// Values can contain sub-expressions like function calls: KEY func(arg1, arg2)
+    /// — everything inside value sub-expressions must be obfuscated.
+    bool expect_dict_block_open = false;    /// True after seeing SOURCE or LAYOUT keyword, expecting '('.
+    int dict_block_paren_depth = 0;         /// Parenthesis nesting depth inside the block; 0 = not inside.
+    bool dict_expect_key = true;            /// At depth >= 2, alternates between key (preserve) and value (obfuscate).
+    bool dict_after_value_bareword = false; /// True right after a value BareWord; if '(' follows, it's a function call.
+    int dict_value_paren_depth = 0;         /// Tracks parens opened inside a value; >0 means inside value sub-expression.
+
     auto always_false_func = [](std::string_view) { return false; };
 
     Lexer lexer(src.data(), src.data() + src.size());
@@ -1213,6 +1225,11 @@ void obfuscateQueries(
             in_insert_data = false;
             expect_format_name = false;
             after_interval = false;
+            expect_dict_block_open = false;
+            dict_block_paren_depth = 0;
+            dict_expect_key = true;
+            dict_after_value_bareword = false;
+            dict_value_paren_depth = 0;
             result.write(token.begin, token.size());
             continue;
         }
@@ -1333,6 +1350,108 @@ void obfuscateQueries(
             }
         }
 
+        /// ---- Dictionary SOURCE/LAYOUT block tracking. ----
+        /// These blocks use key-value pair grammar: SOURCE(TYPE(KEY1 value1 KEY2 value2 ...)).
+        /// At depth 1: the bare word is the source/layout type name — let it fall through to
+        /// normal keyword/known_identifier processing (factory-registered names handle it).
+        /// At depth >= 2: bare words alternate between structural keys (preserve) and
+        /// user-provided values (obfuscate). Non-BareWord values (literals, numbers) are always
+        /// obfuscated via normal processing.
+        if (expect_dict_block_open)
+        {
+            expect_dict_block_open = false;
+            if (token.type == TokenType::OpeningRoundBracket)
+            {
+                dict_block_paren_depth = 1;
+                result.write(token.begin, token.size());
+                continue;
+            }
+            /// Not an opening paren — fall through to normal processing.
+        }
+        if (dict_block_paren_depth > 0)
+        {
+            /// Resolve deferred value BareWord state: if '(' follows, it's a function call
+            /// and we enter a value sub-expression; otherwise the value is complete.
+            if (dict_after_value_bareword)
+            {
+                dict_after_value_bareword = false;
+                if (token.type == TokenType::OpeningRoundBracket)
+                {
+                    ++dict_block_paren_depth;
+                    dict_value_paren_depth = 1;
+                    result.write(token.begin, token.size());
+                    continue;
+                }
+                else
+                {
+                    dict_expect_key = true;
+                    /// Fall through to process this token normally below.
+                }
+            }
+
+            if (token.type == TokenType::OpeningRoundBracket)
+            {
+                ++dict_block_paren_depth;
+                if (dict_value_paren_depth > 0)
+                {
+                    /// Inside a value sub-expression — track nesting, fall through to obfuscate.
+                    ++dict_value_paren_depth;
+                }
+                else
+                {
+                    /// Structural paren (entering type-name args or key-value block).
+                    dict_expect_key = true;
+                    result.write(token.begin, token.size());
+                    continue;
+                }
+            }
+            else if (token.type == TokenType::ClosingRoundBracket)
+            {
+                --dict_block_paren_depth;
+                if (dict_value_paren_depth > 0)
+                {
+                    --dict_value_paren_depth;
+                    if (dict_value_paren_depth == 0)
+                    {
+                        /// Exiting value sub-expression — next bare word is a key.
+                        dict_expect_key = true;
+                    }
+                    /// Fall through to normal processing for the closing paren.
+                }
+                else
+                {
+                    dict_expect_key = true;
+                    result.write(token.begin, token.size());
+                    continue;
+                }
+            }
+
+            /// Inside a value sub-expression — fall through to normal obfuscation for all tokens.
+            if (dict_value_paren_depth > 0)
+            {
+                /// Fall through to normal processing — everything gets obfuscated.
+            }
+            else if (dict_block_paren_depth >= 2 && token.type == TokenType::BareWord)
+            {
+                if (dict_expect_key)
+                {
+                    /// Structural parameter name — preserve as-is.
+                    result.write(token.begin, token.size());
+                    dict_expect_key = false;
+                    continue;
+                }
+                /// User-provided identifier value — defer key reset in case '(' follows (function call).
+                dict_after_value_bareword = true;
+            }
+            else if (dict_block_paren_depth >= 2 && !dict_expect_key
+                     && (token.type == TokenType::Number || token.type == TokenType::StringLiteral))
+            {
+                /// Non-BareWord value consumed — next bare word is a key again.
+                dict_expect_key = true;
+            }
+            /// Fall through to normal processing for type names (depth 1) and values.
+        }
+
         /// ---- Normal token processing. ----
 
         if (token.type == TokenType::BareWord)
@@ -1371,6 +1490,12 @@ void obfuscateQueries(
             if (whole_token_uppercase == "INTERVAL")
             {
                 after_interval = true;
+            }
+
+            /// Track dictionary SOURCE/LAYOUT blocks (only at top level, not inside an existing block).
+            if (dict_block_paren_depth == 0 && (whole_token_uppercase == "SOURCE" || whole_token_uppercase == "LAYOUT"))
+            {
+                expect_dict_block_open = true;
             }
 
             if (getObfuscateKeywords().contains(whole_token_uppercase) || known_identifier_func(whole_token))

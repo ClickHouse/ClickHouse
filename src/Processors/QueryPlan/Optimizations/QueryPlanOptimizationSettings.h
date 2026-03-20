@@ -163,9 +163,9 @@ struct QueryPlanOptimizationSettings
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
-    bool parallel_replicas_enabled;
     size_t max_parallel_replicas = 1;
     size_t automatic_parallel_replicas_mode;
+    size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
 
     bool query_plan_optimize_primary_key = true;

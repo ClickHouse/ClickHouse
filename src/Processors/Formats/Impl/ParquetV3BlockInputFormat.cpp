@@ -1,4 +1,5 @@
 #include <memory>
+#include <Common/CurrentThread.h>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 

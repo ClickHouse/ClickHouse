@@ -1104,7 +1104,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_sql_insert_include_column_names", trueOrFalseSettingNoOracle},
     {"output_format_sql_insert_quote_names", trueOrFalseSettingNoOracle},
     {"output_format_sql_insert_use_replace", trueOrFalseSettingNoOracle},
-    {"output_format_values_escape_quote_with_quote", trueOrFalseSettingNoOracle},
     {"output_format_write_statistics", trueOrFalseSettingNoOracle},
     {"page_cache_inject_eviction", trueOrFalseSetting},
     {"parallel_distributed_insert_select", CHSetting(zeroOneTwo, {}, false)},
@@ -1814,7 +1813,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          /// {"output_format_native_encode_types_in_binary_format", trueOrFalseSettingNoOracle}, may block the client
          {"output_format_orc_row_index_stride", CHSetting(rowsRange, {}, false)},
          {"output_format_parquet_write_checksums", trueOrFalseSettingNoOracle},
-         {"output_format_tsv_crlf_end_of_line", trueOrFalseSettingNoOracle}});
+         {"output_format_tsv_crlf_end_of_line", trueOrFalseSettingNoOracle},
+         {"output_format_values_escape_quote_with_quote", trueOrFalseSettingNoOracle}});
 
     /// Remove disallowed settings
     for (const auto & entry : fc.disallowed_settings)
