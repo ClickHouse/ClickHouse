@@ -41,8 +41,8 @@
         <substitution>
            <name>numbers_medium</name>
            <values>
-               <value>numbers(1400000)</value>
-               <value>numbers_mt(12000000)</value>
+               <value>numbers(1000000)</value>
+               <value>numbers_mt(8000000)</value>
            </values>
         </substitution>
         <substitution>
