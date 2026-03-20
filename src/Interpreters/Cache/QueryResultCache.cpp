@@ -624,6 +624,11 @@ void QueryResultCacheWriter::finalizeWrite()
     if (skip_insert)
         return;
 
+    /// Multiple StreamInQueryResultCacheTransform instances (for Main/Totals/Extremes streams) share
+    /// the same writer. The first call finalizes; subsequent calls are no-ops. This is correct because
+    /// all transforms buffer into the same query_result before any of them calls finalizeWrite.
+    /// Early-exit paths below (min_query_runtime, duplicate key, max size) are intentional rejections
+    /// that should not be retried by another transform.
     if (was_finalized.exchange(true))
         return;
 
