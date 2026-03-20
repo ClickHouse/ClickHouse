@@ -343,8 +343,8 @@ profiles:
         c1 = """
 <max_server_memory_usage_to_ram_ratio>0.95</max_server_memory_usage_to_ram_ratio>
 <cache_size_to_ram_max_ratio>0.95</cache_size_to_ram_max_ratio>
-<vector_similarity_index_cache_size>214748364800</vector_similarity_index_cache_size>
-<max_build_vector_similarity_index_thread_pool_size>48</max_build_vector_similarity_index_thread_pool_size>
+<vector_similarity_index_cache_size>42949672960</vector_similarity_index_cache_size>
+<max_build_vector_similarity_index_thread_pool_size>16</max_build_vector_similarity_index_thread_pool_size>
 <vector_similarity_index_cache_size_ratio>0.99</vector_similarity_index_cache_size_ratio>
 </clickhouse>
         """

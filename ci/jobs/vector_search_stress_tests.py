@@ -494,6 +494,12 @@ class RunTest:
         for t in threads:
             t.join()
 
+    # Drop the table in the end to reclaim space
+    def drop_table(self):
+        logger(f"Dropping {self._table}")
+
+        drop_table = f"DROP TABLE {self._table}"
+        self._chclient.query(drop_table)
 
 def run_single_test(test_name, dataset, test_params):
     try:
@@ -527,6 +533,8 @@ def run_single_test(test_name, dataset, test_params):
         # Run concurrency test on the current truth set
         if test_runner._test_params[CONCURRENCY_TEST]:
             test_runner.concurrency_test()
+
+        test_runner.drop_table()
     except Exception as e:
         print(traceback.format_exc(), file=sys.stdout)
         return False
