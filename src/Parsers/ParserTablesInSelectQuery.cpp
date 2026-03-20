@@ -217,6 +217,8 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             else if (ParserKeyword(Keyword::LOCAL).ignore(pos, expected))
                 table_join->locality = JoinLocality::Local;
 
+            bool is_natural = ParserKeyword(Keyword::NATURAL).ignore(pos, expected);
+
             table_join->strictness = JoinStrictness::Unspecified;
 
             /// Legacy: allow JOIN type before JOIN kind
@@ -267,6 +269,14 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 (table_join->kind != JoinKind::Left && table_join->kind != JoinKind::Right))
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "SEMI|ANTI JOIN should be LEFT or RIGHT.");
 
+            if (is_natural && table_join->strictness != JoinStrictness::Unspecified)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "NATURAL JOIN cannot be combined with ANY/ALL/ASOF/SEMI/ANTI modifiers.");
+
+            if (is_natural && (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Paste))
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "NATURAL JOIN cannot be used with CROSS or PASTE join.");
+
+            table_join->is_natural = is_natural;
+
             if (!ParserKeyword(Keyword::JOIN).ignore(pos, expected))
                 return false;
         }
@@ -277,7 +287,11 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
         if (table_join->kind != JoinKind::Comma
             && table_join->kind != JoinKind::Cross && table_join->kind != JoinKind::Paste)
         {
-            if (ParserKeyword(Keyword::USING).ignore(pos, expected))
+            if (table_join->is_natural)
+            {
+                /// NATURAL JOIN: the USING columns are derived automatically from common column names during analysis.
+            }
+            else if (ParserKeyword(Keyword::USING).ignore(pos, expected))
             {
                 /// Expression for USING could be in parentheses or not.
                 bool in_parens = pos->type == TokenType::OpeningRoundBracket;

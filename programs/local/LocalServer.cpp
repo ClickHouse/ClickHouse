@@ -158,6 +158,13 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 page_cache_history_window_ms;
+    extern const ServerSettingsString page_cache_policy;
+    extern const ServerSettingsDouble page_cache_size_ratio;
+    extern const ServerSettingsUInt64 page_cache_min_size;
+    extern const ServerSettingsUInt64 page_cache_max_size;
+    extern const ServerSettingsDouble page_cache_free_memory_ratio;
+    extern const ServerSettingsUInt64 page_cache_shards;
     extern const ServerSettingsString allowed_disks_for_table_engines;
 }
 
@@ -166,6 +173,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 void applySettingsOverridesForLocal(ContextMutablePtr context)
@@ -872,6 +880,30 @@ void LocalServer::processConfig()
     total_memory_tracker.setHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+    size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
+    size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
+    if (page_cache_max_size != 0 && (page_cache_min_size > page_cache_max_size))
+    {
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Invalid page cache configuration: page_cache_min_size ({}) is greater than page_cache_max_size ({}).",
+            page_cache_min_size,
+            page_cache_max_size);
+    }
+
+    if (page_cache_max_size != 0)
+    {
+        global_context->setPageCache(
+            std::chrono::milliseconds(Int64(server_settings[ServerSetting::page_cache_history_window_ms])),
+            server_settings[ServerSetting::page_cache_policy],
+            server_settings[ServerSetting::page_cache_size_ratio],
+            server_settings[ServerSetting::page_cache_min_size],
+            server_settings[ServerSetting::page_cache_max_size],
+            server_settings[ServerSetting::page_cache_free_memory_ratio],
+            server_settings[ServerSetting::page_cache_shards]);
+        total_memory_tracker.setPageCache(global_context->getPageCache().get());
+    }
 
     const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
     const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * cache_size_to_ram_max_ratio);

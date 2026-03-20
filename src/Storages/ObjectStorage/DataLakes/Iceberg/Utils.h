@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
 #include <Columns/IColumn.h>
@@ -38,17 +39,13 @@ void writeMessageToFile(
 /// Maybe return false if failed to write metadata.json
 /// Will try to write hint multiple times, but will not report failure to write hint.
 bool writeMetadataFileAndVersionHint(
-    const std::string & metadata_file_path,
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
     const std::string & metadata_file_content,
-    const std::string & version_hint_path,
-    std::string version_hint_content,
+    const IcebergPathFromMetadata & version_hint_path,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
-    DB::CompressionMethod compression_method,
-    bool try_write_version_hint
-);
-
-std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
+    bool try_write_version_hint);
 
 struct TransformAndArgument
 {
@@ -67,12 +64,6 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid);
 
-struct MetadataFileWithInfo
-{
-    Int32 version;
-    String path;
-    CompressionMethod compression_method;
-};
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type);
@@ -93,7 +84,9 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     Poco::Logger * log,
-    const std::optional<String> & table_uuid);
+    const std::optional<String> & table_uuid,
+    CompressionMethod known_compression_method,
+    bool force_fetch_latest_metadata = true);
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);

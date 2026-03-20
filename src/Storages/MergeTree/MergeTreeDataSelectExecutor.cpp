@@ -951,7 +951,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
-           }
+
+            }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
             if (perform_top_k_optimization)
@@ -1092,13 +1093,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const auto num_indices = skip_indexes.useful_indices.size();
-
-    if (!skip_indexes.useful_indices.empty() && context->hasQueryContext())
-    {
-        auto query_context = context->getQueryContext();
-        for (const auto & idx : skip_indexes.useful_indices)
-            query_context->addSkipIndexAccessInfo(filter_context.storage_id.getFullTableName(), idx.index->index.name);
-    }
 
     const auto part_stats_granularity = settings[Setting::per_part_index_stats] ? original_num_parts : 1;
     for (size_t part_index = 0; part_index < part_stats_granularity; ++part_index)
