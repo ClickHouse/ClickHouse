@@ -1,6 +1,5 @@
 #include <Processors/Transforms/SaveSubqueryResultToBufferTransform.h>
 
-#include <Columns/IColumn.h>
 #include <Processors/ChunkBuffer.h>
 #include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -25,15 +24,7 @@ void SaveSubqueryResultToBufferTransform::transform(Chunk & chunk)
     Columns columns_to_save;
     columns_to_save.reserve(columns_to_save_indices.size());
     for (size_t index : columns_to_save_indices)
-    {
-        /// Deep-clone columns via IColumn::mutate to ensure the buffer holds
-        /// independently-owned copies. The original chunk continues downstream
-        /// to another pipeline (e.g., a JOIN's FillingRightJoinSideTransform)
-        /// which may modify column sub-columns in place (via prepareForSquashing,
-        /// compress, etc.). Without cloning, the buffer's columns would be corrupted
-        /// by these concurrent modifications — a data race.
-        columns_to_save.push_back(IColumn::mutate(chunk.getColumns()[index]));
-    }
+        columns_to_save.push_back(chunk.getColumns()[index]);
 
     chunk_buffer->append(Chunk(std::move(columns_to_save), chunk.getNumRows()));
 }
