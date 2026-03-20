@@ -172,9 +172,12 @@ BlockIO YTsarususDictionarySource::loadAll()
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
           client
         , configuration->cypress_path
-        , { .settings = configuration->settings,
-            .select_rows_columns = configuration->ytsaurus_columns_description,
-            .check_types_allow_nullable = true,
+        , { 
+              .settings = configuration->settings
+            , .select_rows_columns = configuration->ytsaurus_columns_description
+            , .check_types_allow_nullable = true
+            , .lookup_throttler = lookup_throttler
+
         }
         , sample_block
         , max_block_size
@@ -206,6 +209,7 @@ BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64
               .settings = configuration->settings
             , .lookup_input_blocks = std::move(lookup_blocks)
             , .check_types_allow_nullable = true
+            , .lookup_throttler = lookup_throttler
             }
         , sample_block
         , max_block_size
@@ -266,7 +270,7 @@ void YTsarususDictionarySource::initilizeLookupThrottlerIfNeeded()
     if (throttler_initialized)
         return;
     throttler_initialized = true;
-    auto max_lookups_per_sec = configuration->settings[YTsaurusSetting::lookup_throttler_max_requests_per_second];
+    auto max_lookups_per_sec = configuration->settings[YTsaurusSetting::lookup_throttler_max_requests_per_second].value;
     if (!supportsSelectiveLoad() || !max_lookups_per_sec)
         return;
     lookup_throttler = std::make_shared<Throttler>(
