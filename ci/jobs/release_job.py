@@ -17,6 +17,8 @@ _GH_TOKEN_SECRET = Secret.Config(
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
+_GEESEFS_VERSION = "v0.43.5"
+
 REPO_PATH = Utils.cwd()
 
 
@@ -284,6 +286,18 @@ def main():
         )
 
     if args.release_type == "patch" and not args.only_docker:
+        arch = Shell.get_output("uname -m", strict=True)
+        arch = "amd64" if arch == "x86_64" else "arm64"
+        step(
+            name="Install geesefs",
+            command=[
+                f"command -v geesefs && geesefs --version | grep -q {_GEESEFS_VERSION} ||"
+                f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
+                f" -o /usr/local/bin/geesefs && chmod +x /usr/local/bin/geesefs)",
+            ],
+            workdir=REPO_PATH,
+        )
+
         for name, flag in (
             ("Export TGZ Packages", "--export-tgz"),
             ("Test TGZ Packages", "--test-tgz"),
