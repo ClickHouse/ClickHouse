@@ -127,7 +127,7 @@ def main():
         step(
             name="Install geesefs",
             command=[
-                f"command -v geesefs && geesefs --version | grep -q {_GEESEFS_VERSION} ||"
+                f"command -v geesefs && geesefs --version 2>&1 | grep -qF {_GEESEFS_VERSION.lstrip('v')} ||"
                 f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
                 f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
                 "command -v createrepo_c || sudo apt-get install -y createrepo-c",
