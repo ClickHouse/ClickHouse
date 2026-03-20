@@ -1,0 +1,4 @@
+OK: Parameterized SELECT
+OK: Parameterized IN clause
+OK: Parameterized aggregation
+Integration tests passed

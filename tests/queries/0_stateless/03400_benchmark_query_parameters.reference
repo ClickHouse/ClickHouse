@@ -1,0 +1,8 @@
+OK: Basic string parameter
+OK: Numeric parameter
+OK: Array parameter
+OK: Multiple parameters
+OK: Identifier parameter
+OK: Space-separated parameter
+OK: Hyphen variant parameter
+All tests passed

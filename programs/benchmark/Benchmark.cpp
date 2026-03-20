@@ -40,6 +40,8 @@
 #include <Common/CurrentMetrics.h>
 #include <IO/WriteBuffer.h>
 #include <Client/ClientApplicationBaseParser.h>
+#include <Core/ProtocolDefines.h>
+#include <Core/Protocol.h>
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
@@ -64,6 +66,7 @@ namespace ErrorCodes
     extern const int CANNOT_BLOCK_SIGNAL;
     extern const int EMPTY_DATA_PASSED;
     extern const int UNRECOGNIZED_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class Benchmark : public Poco::Util::Application
@@ -74,7 +77,8 @@ public:
         String && proto_send_chunked,
         String && proto_recv_chunked,
         bool print_stacktrace_,
-        Settings && settings_)
+        Settings && settings_,
+        NameToNameMap && query_parameters_)
         : connection_arguments(ConnectionArguments{
             .hosts = options.contains("host") ? std::make_optional(options["host"].as<Strings>()) : std::nullopt,
             .ports = options.contains("port") ? std::make_optional(options["port"].as<Ports>()) : std::nullopt,
@@ -109,6 +113,7 @@ public:
         display_client_side_time(options.contains("client-side-time")),
         print_stacktrace(print_stacktrace_),
         settings(std::move(settings_)),
+        query_parameters(std::move(query_parameters_)),
         shared_context(Context::createShared()),
         global_context(Context::createGlobal(shared_context.get())),
         pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, max_concurrency)
@@ -117,6 +122,10 @@ public:
         global_context->setSettings(settings);
         global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
         global_context->setQueryKindInitial();
+
+        /// Set query parameters in context
+        if (!query_parameters.empty())
+            global_context->setQueryParameters(query_parameters);
 
         /// This is needed to receive blocks with columns of AggregateFunction data type
         /// (example: when using stage = 'with_mergeable_state')
@@ -257,7 +266,8 @@ private:
     size_t reconnect;
     bool display_client_side_time;
     bool print_stacktrace;
-    const Settings & settings;
+    Settings settings;
+    NameToNameMap query_parameters;  /// Parameterized query values
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
@@ -269,6 +279,8 @@ private:
 
     /// Don't execute new queries after timelimit or SIGINT or exception
     std::atomic<bool> shutdown{false};
+    /// Whether server version has been checked for query parameter support
+    std::atomic<bool> server_version_checked{false};
 
     std::atomic<size_t> queries_executed{0};
 
@@ -670,6 +682,22 @@ private:
 
         ConnectionPool::Entry entry = connections[connection_index]->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
 
+        /// Check server version for query parameter support on the first query execution,
+        /// reusing the connection already obtained from the pool.
+        if (!query_parameters.empty() && !server_version_checked.load(std::memory_order_relaxed))
+        {
+            UInt64 server_revision = entry->getServerRevision(
+                ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
+
+            if (server_revision < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Query parameters are not supported by the server (revision {}). "
+                    "Minimum required revision is {}.",
+                    server_revision, DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS);
+
+            server_version_checked.store(true, std::memory_order_relaxed);
+        }
+
         bool should_reconnect = false;
         {
             std::lock_guard lock(queries_per_connection_mutex);
@@ -882,11 +910,58 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("proto_caps", value<std::string>(), "Enable/disable chunked protocol (comma-separated): chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
         ;
 
+        /// Parse query parameters manually and filter them out from arguments
+        /// (same approach as clickhouse-client)
+        NameToNameMap query_parameters;
+        std::vector<String> filtered_arguments;
+
+        /// skip program name
+        for (int arg_num = 1; arg_num < argc; ++arg_num)
+        {
+            std::string_view arg = argv[arg_num];
+
+            if (arg.starts_with("--param_") || arg.starts_with("--param-"))
+            {
+                auto param_continuation = arg.substr(strlen("--param_"));
+                auto equal_pos = param_continuation.find_first_of('=');
+
+                if (equal_pos == std::string::npos)
+                {
+                    /// param_name value
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter requires value");
+                    arg = argv[arg_num];
+                    if (arg.starts_with("--") || arg.starts_with("-"))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Parameter `{}` requires a value, but got `{}` which looks like a flag. "
+                            "Use --param_{}=<value> syntax instead.",
+                            param_continuation, arg, param_continuation);
+                    query_parameters.emplace(String(param_continuation), String(arg));
+                    /// Skip both --param_name and value from filtered arguments
+                }
+                else
+                {
+                    if (equal_pos == 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
+
+                    /// param_name=value
+                    query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
+                    /// Skip --param_name=value from filtered arguments
+                }
+            }
+            else
+            {
+                /// Add non-parameter arguments to filtered list
+                filtered_arguments.emplace_back(argv[arg_num]);
+            }
+        }
+
         Settings settings;
         auto options_description_non_verbose = options_description;
         settings.addToProgramOptions(options_description);
 
-        auto parser = po::command_line_parser(argc, argv)
+        auto parser = po::command_line_parser(filtered_arguments)
                           .options(options_description)
                           .extra_parser(OptionsAliasParser(options_description))
                           .allow_unregistered();
@@ -896,7 +971,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
         if (!unrecognized_options.empty())
         {
-            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS,
+                "Unrecognized option '{}'", unrecognized_options[0]);
         }
 
         /// Check positional options.
@@ -926,6 +1002,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
                 std::cout << options_description << "\n";
             else
                 std::cout << options_description_non_verbose << "\n";
+            std::cout << "\nQuery parameters:\n"
+                         "  --param_<name>=<value>      Set query parameter (can also use --param-<name>).\n"
+                         "                              Multiple parameters can be specified.\n"
+                         "                              Example: --param_id=42 --query \"SELECT {id:UInt32}\"\n";
             std::cout << "\nSee also: https://clickhouse.com/docs/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }
@@ -982,7 +1062,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             std::move(proto_send_chunked),
             std::move(proto_recv_chunked),
             print_stacktrace,
-            std::move(settings));
+            std::move(settings),
+            std::move(query_parameters));
         return benchmark.run();
     }
     catch (const po::error & e)
