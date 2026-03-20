@@ -370,19 +370,20 @@ private:
 ///   * `_a` -> token
 ///   * `__` -> ignored (no alphanumeric)
 ///
-/// 2. Connectors
+/// 2. Connectors (ASCII only)
 ///
-/// * `:` connects **letters only**, not digits.
-/// * `.` and `'` connect **letters-letters** or **digits-digits**.
+/// * ASCII `:` (U+003A) connects **letters only**, not digits.
+/// * ASCII `.` and `'` connect **letters-letters** or **digits-digits**.
 /// * If the connector cannot connect both sides, it is treated as a **token boundary**.
 ///
-/// 3. Unicode / Chinese
+/// 3. Unicode / CJK
 ///
-/// * Chinese characters are **always single-character tokens**.
+/// * Non-ASCII Unicode characters are **always single-character tokens** (including CJK).
 ///
 /// 4. Token Validity
 ///
-/// * Tokens must contain at least **one ASCII letter or digit** to be valid.
+/// * ASCII tokens must contain at least **one ASCII letter or digit** to be valid.
+/// * Non-ASCII Unicode characters are valid single-character tokens on their own.
 /// * Connectors `_`, `:`, `.`, `'` cannot form a token by themselves.
 /// * `_` can start or end the token but must **not be the only character**.
 ///
@@ -410,7 +411,7 @@ struct UnicodeWordTokenizer final : public ITokenizerHelper<UnicodeWordTokenizer
     {
     }
 
-    static const char * getName() { return "unicode_word"; }
+    static const char * getName() { return "unicodeWord"; }
     static const char * getExternalName() { return getName(); }
     String getDescription() const override { return getName(); }
 
