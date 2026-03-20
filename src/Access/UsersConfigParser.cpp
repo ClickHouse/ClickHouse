@@ -461,24 +461,6 @@ namespace
         user->default_database = default_database;
 
         String database_namespace = config.getString(user_config + ".database_namespace", "");
-        if (!database_namespace.empty())
-        {
-            /// Validate: namespace feature must be enabled (separator configured).
-            String separator = config.getString("database_namespace_separator", "");
-            if (separator.empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot set database_namespace for user '{}': the database namespace feature is not enabled. "
-                    "Set the 'database_namespace_separator' server setting to enable it.",
-                    user->getName());
-
-            /// Validate: namespace value must not contain the separator.
-            if (database_namespace.find(separator) != String::npos)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Database namespace '{}' for user '{}' cannot contain the separator '{}'",
-                    database_namespace, user->getName(), separator);
-        }
         user->database_namespace = database_namespace;
 
         return user;
