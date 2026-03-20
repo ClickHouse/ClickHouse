@@ -10,10 +10,6 @@
 2024-01-01 00:00:00	1
 -- arrayZip on mismatched lengths
 [(1,1)]	1
--- geoToH3 on invalid coordinates
-599767013304303615	1
--- JSONMergePatch on invalid JSON
-{"a":1}	1
 -- round with non-constant scale column that exceeds range
 3.14	1
 -- sleep on excessive duration

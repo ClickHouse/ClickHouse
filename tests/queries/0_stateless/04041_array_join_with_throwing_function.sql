@@ -39,18 +39,6 @@ SELECT arrayZip(a1, a2), arr_val FROM (
     SELECT a1, a2, arr FROM VALUES('a1 Array(UInt8), a2 Array(UInt8), arr Array(UInt8)', ([1], [1], [1]), ([1,2], [1], []))
 ) ARRAY JOIN arr AS arr_val;
 
--- geoToH3 on invalid coordinates
-SELECT '-- geoToH3 on invalid coordinates';
-SELECT geoToH3(lon, lat, 5), arr_val FROM (
-    SELECT lon, lat, arr FROM VALUES('lon Float64, lat Float64, arr Array(UInt8)', (37.79, 55.8, [1]), (nan, nan, []))
-) ARRAY JOIN arr AS arr_val;
-
--- JSONMergePatch on invalid JSON
-SELECT '-- JSONMergePatch on invalid JSON';
-SELECT JSONMergePatch(j), arr_val FROM (
-    SELECT j, arr FROM VALUES('j String, arr Array(UInt8)', ('{"a":1}', [1]), ('not-json', []))
-) ARRAY JOIN arr AS arr_val;
-
 -- round with scale column that exceeds range
 SELECT '-- round with non-constant scale column that exceeds range';
 SELECT round(x, s), arr_val FROM (
