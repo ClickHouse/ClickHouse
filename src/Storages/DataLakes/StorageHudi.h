@@ -67,27 +67,11 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        bool async_insert) override;
-
-    void truncate(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr local_context,
-        TableExclusiveLockHolder &) override;
-
     void drop() override;
-
-    bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
 
     bool supportsDynamicSubcolumns() const override { return true; }
-
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
@@ -96,16 +80,6 @@ public:
     bool isObjectStorage() const override { return true; }
 
     bool supportsReplication() const override { return true; }
-
-    /// Things required for PREWHERE.
-    bool supportsPrewhere() const override;
-    bool canMoveConditionsToPrewhere() const override;
-    std::optional<NameSet> supportedPrewhereColumns() const override;
-    ColumnSizeByName getColumnSizes() const override;
-
-    bool prefersLargeBlocks() const override;
-
-    bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 
@@ -134,33 +108,6 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
-    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
-
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
-
-    bool optimize(
-        const ASTPtr & /*query*/,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ASTPtr & /*partition*/,
-        bool /*final*/,
-        bool /*deduplicate*/,
-        const Names & /* deduplicate_by_columns */,
-        bool /*cleanup*/,
-        ContextPtr context) override;
-
-    bool supportsDelete() const override { return current_metadata && current_metadata->supportsDelete(); }
-
-    bool supportsParallelInsert() const override { return current_metadata && current_metadata->supportsParallelInsert(); }
-
-    void mutate(const MutationCommands &, ContextPtr) override;
-    void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
-
-    Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
-
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
-
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
 protected:
     /// Creates ReadBufferIterator for schema inference implementation.

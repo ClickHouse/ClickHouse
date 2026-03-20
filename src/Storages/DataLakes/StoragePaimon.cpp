@@ -201,50 +201,17 @@ String StoragePaimon::getName() const
     return "Paimon" + configuration->getEngineName();
 }
 
-bool StoragePaimon::prefersLargeBlocks() const
-{
-    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration->format);
-}
 
-bool StoragePaimon::parallelizeOutputAfterReading(ContextPtr context) const
-{
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
-}
 
 bool StoragePaimon::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-bool StoragePaimon::supportsPrewhere() const
-{
-    return supports_prewhere;
-}
 
-bool StoragePaimon::canMoveConditionsToPrewhere() const
-{
-    return supports_prewhere;
-}
 
-std::optional<NameSet> StoragePaimon::supportedPrewhereColumns() const
-{
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ {});
-}
 
-IStorage::ColumnSizeByName StoragePaimon::getColumnSizes() const
-{
-    return getInMemoryMetadataPtr()->getFakeColumnSizes();
-}
 
-IDataLakeMetadata * StoragePaimon::getExternalMetadata(ContextPtr query_context)
-{
-    configuration->update(object_storage, query_context);
-    if (!current_metadata || !current_metadata->supportsUpdate())
-        current_metadata = PaimonMetadata::create(object_storage, configuration, query_context).release();
-    else
-        current_metadata->update(query_context);
-    return current_metadata;
-}
 
 void StoragePaimon::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
@@ -278,38 +245,7 @@ void StoragePaimon::updateExternalDynamicMetadataIfExists(ContextPtr query_conte
 }
 
 
-std::optional<UInt64> StoragePaimon::totalRows(ContextPtr query_context) const
-{
-    if (!PaimonMetadata::supportsTotalRows(query_context, object_storage->getType()))
-        return std::nullopt;
 
-    /// Trivial count optimization can be applied only on initiator replica.
-    /// (distributed_processing=true on non-initiator replicas).
-    /// This is needed only for old analyzer.
-    if (distributed_processing)
-        return std::nullopt;
-
-    configuration->update(object_storage, query_context);
-    if (!current_metadata)
-        current_metadata = PaimonMetadata::create(object_storage, configuration, query_context).release();
-
-    return current_metadata->totalRows(query_context);
-}
-
-std::optional<UInt64> StoragePaimon::totalBytes(ContextPtr query_context) const
-{
-    if (!PaimonMetadata::supportsTotalBytes(query_context, object_storage->getType()))
-        return std::nullopt;
-
-    if (distributed_processing)
-        return std::nullopt;
-
-    configuration->update(object_storage, query_context);
-    if (!current_metadata)
-        current_metadata = PaimonMetadata::create(object_storage, configuration, query_context).release();
-
-    return current_metadata->totalBytes(query_context);
-}
 
 void StoragePaimon::read(
     QueryPlan & query_plan,
@@ -365,45 +301,8 @@ void StoragePaimon::read(
     query_plan.addStep(std::move(read_step));
 }
 
-SinkToStoragePtr StoragePaimon::write(
-    const ASTPtr &,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr local_context,
-    bool /* async_insert */)
-{
-    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
 
-    if (!current_metadata->supportsWrites())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    return current_metadata->write(
-        sample_block, storage_id, object_storage,
-        configuration, format_settings,
-        local_context, catalog);
-}
-
-bool StoragePaimon::optimize(
-    const ASTPtr & /*query*/,
-    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    const ASTPtr & /*partition*/,
-    bool /*final*/,
-    bool /*deduplicate*/,
-    const Names & /* deduplicate_by_columns */,
-    bool /*cleanup*/,
-    [[maybe_unused]] ContextPtr context)
-{
-    return current_metadata->optimize(metadata_snapshot, context, format_settings);
-}
-
-void StoragePaimon::truncate(
-    const ASTPtr & /* query */,
-    const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
-    TableExclusiveLockHolder & /* table_holder */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Truncate is not supported for data lake engine");
-}
 
 void StoragePaimon::drop()
 {
@@ -521,43 +420,10 @@ SchemaCache & StoragePaimon::getSchemaCache(const ContextPtr & context, const st
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
 }
 
-void StoragePaimon::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
-{
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto storage = getStorageID();
-    current_metadata->mutate(commands, configuration, context_, storage, metadata_snapshot, catalog, format_settings);
-}
 
-void StoragePaimon::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
-{
-    current_metadata->checkMutationIsPossible(commands);
-}
 
-Pipe StoragePaimon::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
-{
-    auto * metadata = getExternalMetadata(context);
-    if (!metadata)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
-    return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
-}
 
-void StoragePaimon::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
-{
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, context);
 
-    current_metadata->alter(params, context);
-
-    DatabaseCatalog::instance()
-        .getDatabase(storage_id.database_name)
-        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
-    setInMemoryMetadata(new_metadata);
-}
-
-void StoragePaimon::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
-{
-    current_metadata->checkAlterIsPossible(commands);
-}
 
 
 }

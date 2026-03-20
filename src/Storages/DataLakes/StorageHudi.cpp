@@ -201,50 +201,17 @@ String StorageHudi::getName() const
     return "Hudi" + configuration->getEngineName();
 }
 
-bool StorageHudi::prefersLargeBlocks() const
-{
-    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration->format);
-}
 
-bool StorageHudi::parallelizeOutputAfterReading(ContextPtr context) const
-{
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
-}
 
 bool StorageHudi::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-bool StorageHudi::supportsPrewhere() const
-{
-    return supports_prewhere;
-}
 
-bool StorageHudi::canMoveConditionsToPrewhere() const
-{
-    return supports_prewhere;
-}
 
-std::optional<NameSet> StorageHudi::supportedPrewhereColumns() const
-{
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ {});
-}
 
-IStorage::ColumnSizeByName StorageHudi::getColumnSizes() const
-{
-    return getInMemoryMetadataPtr()->getFakeColumnSizes();
-}
 
-IDataLakeMetadata * StorageHudi::getExternalMetadata(ContextPtr query_context)
-{
-    configuration->update(object_storage, query_context);
-    if (!current_metadata || !current_metadata->supportsUpdate())
-        current_metadata = HudiMetadata::create(object_storage, configuration, query_context).release();
-    else
-        current_metadata->update(query_context);
-    return current_metadata;
-}
 
 void StorageHudi::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
@@ -278,38 +245,7 @@ void StorageHudi::updateExternalDynamicMetadataIfExists(ContextPtr query_context
 }
 
 
-std::optional<UInt64> StorageHudi::totalRows(ContextPtr query_context) const
-{
-    if (!HudiMetadata::supportsTotalRows(query_context, object_storage->getType()))
-        return std::nullopt;
 
-    /// Trivial count optimization can be applied only on initiator replica.
-    /// (distributed_processing=true on non-initiator replicas).
-    /// This is needed only for old analyzer.
-    if (distributed_processing)
-        return std::nullopt;
-
-    configuration->update(object_storage, query_context);
-    if (!current_metadata)
-        current_metadata = HudiMetadata::create(object_storage, configuration, query_context).release();
-
-    return current_metadata->totalRows(query_context);
-}
-
-std::optional<UInt64> StorageHudi::totalBytes(ContextPtr query_context) const
-{
-    if (!HudiMetadata::supportsTotalBytes(query_context, object_storage->getType()))
-        return std::nullopt;
-
-    if (distributed_processing)
-        return std::nullopt;
-
-    configuration->update(object_storage, query_context);
-    if (!current_metadata)
-        current_metadata = HudiMetadata::create(object_storage, configuration, query_context).release();
-
-    return current_metadata->totalBytes(query_context);
-}
 
 void StorageHudi::read(
     QueryPlan & query_plan,
@@ -365,45 +301,8 @@ void StorageHudi::read(
     query_plan.addStep(std::move(read_step));
 }
 
-SinkToStoragePtr StorageHudi::write(
-    const ASTPtr &,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr local_context,
-    bool /* async_insert */)
-{
-    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
 
-    if (!current_metadata->supportsWrites())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    return current_metadata->write(
-        sample_block, storage_id, object_storage,
-        configuration, format_settings,
-        local_context, catalog);
-}
-
-bool StorageHudi::optimize(
-    const ASTPtr & /*query*/,
-    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    const ASTPtr & /*partition*/,
-    bool /*final*/,
-    bool /*deduplicate*/,
-    const Names & /* deduplicate_by_columns */,
-    bool /*cleanup*/,
-    [[maybe_unused]] ContextPtr context)
-{
-    return current_metadata->optimize(metadata_snapshot, context, format_settings);
-}
-
-void StorageHudi::truncate(
-    const ASTPtr & /* query */,
-    const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
-    TableExclusiveLockHolder & /* table_holder */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Truncate is not supported for data lake engine");
-}
 
 void StorageHudi::drop()
 {
@@ -521,43 +420,10 @@ SchemaCache & StorageHudi::getSchemaCache(const ContextPtr & context, const std:
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
 }
 
-void StorageHudi::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
-{
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto storage = getStorageID();
-    current_metadata->mutate(commands, configuration, context_, storage, metadata_snapshot, catalog, format_settings);
-}
 
-void StorageHudi::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
-{
-    current_metadata->checkMutationIsPossible(commands);
-}
 
-Pipe StorageHudi::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
-{
-    auto * metadata = getExternalMetadata(context);
-    if (!metadata)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
-    return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
-}
 
-void StorageHudi::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
-{
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, context);
 
-    current_metadata->alter(params, context);
-
-    DatabaseCatalog::instance()
-        .getDatabase(storage_id.database_name)
-        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
-    setInMemoryMetadata(new_metadata);
-}
-
-void StorageHudi::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
-{
-    current_metadata->checkAlterIsPossible(commands);
-}
 
 
 }
