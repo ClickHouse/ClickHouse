@@ -1,6 +1,6 @@
--- Regression test: SaveSubqueryResultToBufferTransform was saving shared ColumnPtrs to the
--- buffer. When the downstream pipeline modified shared sub-columns, the buffer's columns
--- were corrupted, causing ColumnVariant inconsistency during cross join compress/decompress.
+-- Regression test: `Set::appendSetElements` stored a column from `filter` that had
+-- sub-columns shared (via COW) with the source chunk. Subsequent modifications via
+-- `assumeMutableRef` raced with other pipeline threads reading the same sub-columns.
 
 SET allow_experimental_dynamic_type = 1;
 SET allow_experimental_variant_type = 1;
