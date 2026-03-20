@@ -400,7 +400,7 @@ IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Set
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isSettingIgnoredInQueryResultCache(name)) /// see removeQueryResultCacheSettings() and isSubquerySpecificSetting() why this is a good idea
+        if (!isSettingIgnoredInQueryResultCache(name)) /// see removeQueryResultCacheSettings() and isSubquerySpecificSetting() for why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
 

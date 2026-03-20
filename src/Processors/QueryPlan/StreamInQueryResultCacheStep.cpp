@@ -37,25 +37,19 @@ void StreamInQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipe
             using ChunkType = QueryResultCacheWriter::ChunkType;
             using StreamType = QueryPipelineBuilder::StreamType;
 
-            ChunkType chunk_type;
+            ChunkType chunk_type = ChunkType::Result;
 
             switch (stream_type)
             {
                 case StreamType::Main:
-                {
                     chunk_type = ChunkType::Result;
                     break;
-                }
                 case StreamType::Totals:
-                {
                     chunk_type = ChunkType::Totals;
                     break;
-                }
                 case StreamType::Extremes:
-                {
                     chunk_type = ChunkType::Extremes;
                     break;
-                }
             }
 
             return std::make_shared<StreamInQueryResultCacheTransform>(*header, query_result_cache_writer, chunk_type);

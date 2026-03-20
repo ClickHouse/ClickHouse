@@ -16,7 +16,7 @@ ColumnsDescription StorageSystemQueryResultCache::getColumnsDescription()
     {
         {"query", std::make_shared<DataTypeString>(), "Query string."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
-        {"is_subquery", std::make_shared<DataTypeUInt8>(), "If the query cache entry is sub-query."},
+        {"is_subquery", std::make_shared<DataTypeUInt8>(), "Whether the query cache entry is a subquery result."},
         {"result_size", std::make_shared<DataTypeUInt64>(), "Size of the query cache entry."},
         {"tag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Tag of the query cache entry."},
         {"stale", std::make_shared<DataTypeUInt8>(), "If the query cache entry is stale."},
