@@ -345,3 +345,54 @@ def test_memory_reservation_concurrency():
     assert len(results) == 6, f"Expected 6 queries to complete, got {len(results)}. Errors: {errors}"
     assert len(errors) == 0, f"Expected no errors, got: {errors}"
 
+
+def test_cancel_query_with_memory_reservation():
+    """
+    Test that cancelling a query with an active memory reservation does not cause
+    use-after-free. Pipeline threads hold raw pointers to MemoryReservation and call
+    syncWithMemoryTracker between processor executions. The pipeline must be stopped
+    before the reservation is destroyed.
+    """
+    node.query(
+        f"""
+        create resource memory (memory reservation);
+        create workload all settings max_memory='1Gi';
+        create workload production in all;
+    """
+    )
+
+    for i in range(10):
+        query_id = f"cancel_reservation_{i}"
+
+        def run_query():
+            try:
+                # A query that runs long enough to be killed, and allocates memory
+                # to exercise syncWithMemoryTracker in pipeline threads.
+                node.query(
+                    "select count(*) from"
+                    " (select sleep(0.01), number from numbers_mt(10000000))"
+                    " group by number % 100000"
+                    " settings workload='production', reserve_memory='100Mi', max_threads=4",
+                    query_id=query_id,
+                )
+            except QueryRuntimeException:
+                pass  # Expected: query was killed
+
+        t = threading.Thread(target=run_query)
+        t.start()
+
+        # Wait for the query to start processing (not just queued)
+        while (
+            node.query(
+                f"select count() from system.processes where query_id = '{query_id}'"
+            ).strip()
+            == "0"
+        ):
+            pass
+
+        # Cancel — exercises the onCancelOrConnectionLoss / onException path
+        node.query(f"kill query where query_id = '{query_id}' sync")
+        t.join()
+
+    # If we got here without TSan alerts or crashes, the teardown order is correct
+
