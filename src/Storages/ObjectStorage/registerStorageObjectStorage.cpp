@@ -10,7 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>

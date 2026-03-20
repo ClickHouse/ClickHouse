@@ -24,7 +24,7 @@
 #include <Storages/DataLakes/StoragePaimon.h>
 #include <Storages/DataLakes/StoragePaimonCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/HivePartitioningUtils.h>
 
 

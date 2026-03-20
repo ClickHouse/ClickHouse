@@ -18,7 +18,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <base/Decimal.h>

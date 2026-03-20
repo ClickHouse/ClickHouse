@@ -24,7 +24,7 @@
 #include <Storages/DataLakes/StorageHudi.h>
 #include <Storages/DataLakes/StorageHudiCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/HivePartitioningUtils.h>
 
 

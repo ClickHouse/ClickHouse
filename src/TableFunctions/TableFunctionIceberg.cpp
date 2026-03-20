@@ -24,7 +24,7 @@
 #include <Storages/DataLakes/StorageIceberg.h>
 #include <Storages/DataLakes/StorageIcebergCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/HivePartitioningUtils.h>
 
 

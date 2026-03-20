@@ -17,7 +17,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Access/ContextAccess.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Core/Settings.h>

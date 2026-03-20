@@ -10,7 +10,7 @@
 #include <IO/Operators.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>

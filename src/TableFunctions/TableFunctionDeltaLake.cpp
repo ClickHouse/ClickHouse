@@ -24,7 +24,7 @@
 #include <Storages/DataLakes/StorageDeltaLake.h>
 #include <Storages/DataLakes/StorageDeltaLakeCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/HivePartitioningUtils.h>
 
 
