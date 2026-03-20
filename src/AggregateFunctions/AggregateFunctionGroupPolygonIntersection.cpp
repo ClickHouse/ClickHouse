@@ -21,7 +21,7 @@ Computes the geometric intersection of all polygons in a group, producing a sing
 
 If no rows are aggregated, an empty `MultiPolygon` is returned. If any row's geometry does not overlap with the accumulated intersection, the result becomes an empty `MultiPolygon`.
 
-`NULL` values are skipped and do not participate in the intersection. To treat `NULL` as an empty polygon instead, wrap the column with ifNull. Example: `ifNull(column, readWKTPolygon('POLYGON()'))`.
+`NULL` values are skipped and do not participate in the intersection. To treat `NULL` as an empty polygon instead, wrap the column with `ifNull`. Example: `ifNull(column, readWKTPolygon('POLYGON()'))`.
 
 Input geometries of type `Ring` or `Polygon` are internally upcast to `MultiPolygon` before the intersection is computed.
 
