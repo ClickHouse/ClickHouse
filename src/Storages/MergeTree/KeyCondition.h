@@ -578,17 +578,6 @@ private:
     /// Whether to use S2 spatial functions (`s2RectContains`, `s2CapContains`) as key conditions.
     bool allow_s2_keycondition = false;
 
-    /// Whether to use S2RegionCoverer-based cell-union covering instead of the
-    /// common-ancestor bounding-cell approach.
-    /// Only meaningful when allow_s2_keycondition is true.
-    bool s2_keycondition_use_coverer = false;
-
-    /// Whether to bypass ancestor lifting and test the granule's actual
-    /// [cell_min, cell_max] interval directly against the covering.
-    /// Only meaningful when both allow_s2_keycondition and
-    /// s2_keycondition_use_coverer are true.
-    bool s2_keycondition_use_range_intersect = false;
-
     /// If true, this key condition is relaxed. When a key condition is relaxed, it
     /// is considered weakened. This is because keys may not always align perfectly
     /// with the condition specified in the query, and the aim is to enhance the
