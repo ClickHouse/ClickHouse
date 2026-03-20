@@ -18,6 +18,9 @@ struct FinalByValidationResult
     ActionsDAG dag;
     std::vector<SortColumnDescription> sort_columns;
     bool has_non_identity = false;
+    /// True when FINAL BY specifies fewer expressions than sorting key columns.
+    /// Trailing sorting key columns are implicitly collapsed (merged together).
+    bool is_prefix = false;
 };
 
 /// Validate FINAL BY expressions against the sorting key.
@@ -28,7 +31,9 @@ struct FinalByValidationResult
 ///
 /// Checks:
 ///   1. Engine must be AggregatingMergeTree or SummingMergeTree.
-///   2. FINAL BY expression count must exactly equal the sorting key column count.
+///   2. FINAL BY expression count must not exceed the sorting key column count.
+///      It may be less — trailing sorting key columns are implicitly collapsed
+///      (all distinct values merged into one group).
 ///   3. Each FINAL BY expression must be a monotonic, same-direction function of
 ///      the corresponding sorting key column (identity is accepted).
 ///   4. No direction reversal is allowed.

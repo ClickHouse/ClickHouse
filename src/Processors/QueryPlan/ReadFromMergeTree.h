@@ -529,10 +529,13 @@ private:
     bool enable_vertical_final = false;
 
     /// FINAL BY: cached validation result (computed in constructor).
-    /// `use_final_by` is true only when at least one FINAL BY expression is
-    /// non-identity (i.e. differs from the corresponding sorting key column);
-    /// identity FINAL BY is equivalent to plain FINAL and skipped.
+    /// `use_final_by` is true when FINAL BY has a non-identity expression or
+    /// specifies fewer expressions than sorting key columns (prefix mode).
+    /// In both cases the merge sort description must be overridden.
+    /// `final_by_has_non_identity` is true when at least one FINAL BY expression
+    /// differs from the corresponding sorting key column (requires ExpressionTransform).
     bool use_final_by = false;
+    bool final_by_has_non_identity = false;
     std::shared_ptr<const ActionsDAG> final_by_dag;
     std::vector<SortColumnDescription> final_by_sort_columns;
 

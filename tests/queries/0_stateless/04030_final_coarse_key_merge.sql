@@ -190,8 +190,8 @@ ORDER BY month ASC;
 DROP TABLE t_final_by;
 
 -- ============================================================
--- Part 7: Error — FINAL BY count fewer than sorting key columns
--- ORDER BY (a, b), FINAL BY a  → must specify all columns
+-- Part 7: Prefix FINAL BY — fewer expressions than sorting key columns
+-- ORDER BY (a, b), FINAL BY a  → trailing column `b` is implicitly collapsed
 -- ============================================================
 
 DROP TABLE IF EXISTS t_final_by;
@@ -205,7 +205,19 @@ CREATE TABLE t_final_by
 ENGINE = AggregatingMergeTree
 ORDER BY (a, b);
 
-SELECT * FROM t_final_by FINAL BY a; -- { serverError BAD_ARGUMENTS }
+INSERT INTO t_final_by
+    SELECT intDiv(number, 5), number % 5, sumState(toUInt64(1)) FROM numbers(25) GROUP BY number;
+INSERT INTO t_final_by
+    SELECT intDiv(number, 5), number % 5, sumState(toUInt64(2)) FROM numbers(25) GROUP BY number;
+
+-- FINAL BY a: merges all rows with the same `a` regardless of `b`.
+-- 5 groups (a = 0..4), each with 5 values of b, each inserted twice with sums 1 and 2.
+-- Total per group: 5 * (1 + 2) = 15.
+SELECT
+    a,
+    finalizeAggregation(val) AS total
+FROM t_final_by FINAL BY a
+ORDER BY a ASC;
 
 DROP TABLE t_final_by;
 

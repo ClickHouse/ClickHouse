@@ -32,9 +32,9 @@ FinalByValidationResult validateFinalBy(
 
     const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
 
-    if (final_by_count != sorting_key.column_names.size())
+    if (final_by_count > sorting_key.column_names.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "FINAL BY has {} expressions but sorting key has {} columns",
+            "FINAL BY has {} expressions but sorting key has only {} columns",
             final_by_count, sorting_key.column_names.size());
 
     /// Match FINAL BY outputs against sorting key DAG outputs.
@@ -125,6 +125,7 @@ FinalByValidationResult validateFinalBy(
         .dag = std::move(final_by_dag),
         .sort_columns = std::move(final_by_sort_columns),
         .has_non_identity = has_non_identity,
+        .is_prefix = final_by_count < sorting_key.column_names.size(),
     };
 }
 

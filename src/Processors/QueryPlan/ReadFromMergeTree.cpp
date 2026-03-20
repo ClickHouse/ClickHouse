@@ -449,7 +449,8 @@ ReadFromMergeTree::ReadFromMergeTree(
             data.merging_params.mode);
         final_by_dag = std::make_shared<const ActionsDAG>(std::move(result.dag));
         final_by_sort_columns = std::move(result.sort_columns);
-        use_final_by = result.has_non_identity;
+        final_by_has_non_identity = result.has_non_identity;
+        use_final_by = result.has_non_identity || result.is_prefix;
     }
 }
 
@@ -1886,21 +1887,28 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             limit = final_limit;
         }
 
-        /// Apply FINAL BY (validated earlier) — add expression transforms and override sort description.
+        /// Apply FINAL BY (validated earlier) — override sort description and optionally add expression transforms.
         if (use_final_by)
         {
-            auto final_by_actions = std::make_shared<ExpressionActions>(final_by_dag->clone());
-
-            for (auto & pipe : pipes)
+            /// When at least one expression differs from the sorting key column,
+            /// add ExpressionTransform to compute the transformed columns.
+            if (final_by_has_non_identity)
             {
-                pipe.addSimpleTransform([&final_by_actions](const SharedHeader & header)
-                                        { return std::make_shared<ExpressionTransform>(header, final_by_actions); });
+                auto final_by_actions = std::make_shared<ExpressionActions>(final_by_dag->clone());
+
+                for (auto & pipe : pipes)
+                {
+                    pipe.addSimpleTransform([&final_by_actions](const SharedHeader & header)
+                                            { return std::make_shared<ExpressionTransform>(header, final_by_actions); });
+                }
+
+                /// Drop temporary columns introduced by the FINAL BY expression.
+                if (!pipes.empty())
+                    out_projection = createProjection(pipes.front().getHeader());
             }
 
-            /// Drop temporary columns introduced by the FINAL BY expression.
-            if (!pipes.empty())
-                out_projection = createProjection(pipes.front().getHeader());
-
+            /// Override sort description — for non-identity this uses the transformed
+            /// column names; for prefix-only this truncates to the FINAL BY prefix.
             sort_description.clear();
             sort_description.insert(sort_description.end(), final_by_sort_columns.begin(), final_by_sort_columns.end());
         }
