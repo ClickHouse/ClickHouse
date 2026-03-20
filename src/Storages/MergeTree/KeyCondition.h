@@ -261,6 +261,10 @@ public:
             /// Special for pointInPolygon to utilize minmax indices.
             /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
             FUNCTION_POINT_IN_POLYGON,
+            /// Special for S2 spatial functions to utilize granule-level index pruning.
+            /// For example: s2RectContains(lo, hi, s2_col) or s2CapContains(center, deg, s2_col)
+            FUNCTION_S2_RECT_CONTAINS,
+            FUNCTION_S2_CAP_CONTAINS,
             /// Can take any value.
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
@@ -319,6 +323,14 @@ public:
         /// Additionally, `key_columns` has two elements for point coordinates (x, y).
         std::optional<String> point_in_polygon_function_name;
         std::shared_ptr<Polygon> polygon;
+
+        /// For FUNCTION_S2_RECT_CONTAINS and FUNCTION_S2_CAP_CONTAINS.
+        /// Pimpl wrappers to avoid including S2 headers here.
+        /// Additionally, `key_columns` has one element for the S2 key column.
+        struct S2RectData;
+        struct S2CapData;
+        std::shared_ptr<S2RectData> s2_rect_data;
+        std::shared_ptr<S2CapData> s2_cap_data;
 
         /// What functions are applied to the key column before doing the range/set/etc check.
         /// E.g. toDate(key) > '2025-09-12'.
@@ -562,6 +574,20 @@ private:
     /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
     /// Used to check toDateTime monotonicity.
     bool date_time_overflow_behavior_ignore;
+
+    /// Whether to use S2 spatial functions (`s2RectContains`, `s2CapContains`) as key conditions.
+    bool allow_s2_keycondition = false;
+
+    /// Whether to use S2RegionCoverer-based cell-union covering instead of the
+    /// common-ancestor bounding-cell approach.
+    /// Only meaningful when allow_s2_keycondition is true.
+    bool s2_keycondition_use_coverer = false;
+
+    /// Whether to bypass ancestor lifting and test the granule's actual
+    /// [cell_min, cell_max] interval directly against the covering.
+    /// Only meaningful when both allow_s2_keycondition and
+    /// s2_keycondition_use_coverer are true.
+    bool s2_keycondition_use_range_intersect = false;
 
     /// If true, this key condition is relaxed. When a key condition is relaxed, it
     /// is considered weakened. This is because keys may not always align perfectly

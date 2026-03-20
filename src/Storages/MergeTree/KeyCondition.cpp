@@ -50,11 +50,22 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
 
+#include "config.h"
+#if USE_S2_GEOMETRY
+#include <Functions/s2_fwd.h>
+#include <s2/s2cell.h>
+#include <s2/s2cell_union.h>
+#include <s2/s2region_coverer.h>
+#endif
+
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_s2_keycondition;
+    extern const SettingsBool s2_keycondition_use_coverer;
+    extern const SettingsBool s2_keycondition_use_range_intersect;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
@@ -64,6 +75,80 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 }
+
+#if USE_S2_GEOMETRY
+/// S2 index pruning supports three modes for deciding whether a granule
+/// may contain rows matching a spatial predicate (rect or cap):
+///
+///  1. Ancestor mode (default):
+///     The granule's S2CellId range [min, max] is lifted to their
+///     common ancestor cell.  For rects, the ancestor is expanded to
+///     an S2LatLngRect via GetRectBound() and intersected with the
+///     query rect — this introduces over-approximation because
+///     GetRectBound() inflates at high latitudes and near face
+///     boundaries.  For caps, S2Cap::MayIntersect(S2Cell) is used
+///     directly on the ancestor cell (no rect expansion), so the
+///     only over-approximation comes from the ancestor being larger
+///     than the actual data range.
+///
+///  2. Coverer mode (s2_keycondition_use_coverer = true):
+///     At parse time, the query region is decomposed into a tight
+///     S2CellUnion of ~20 cells via S2RegionCoverer.  At eval time,
+///     S2CellUnion::Intersects(ancestor) does an O(log N) binary
+///     search over the covering cells, checking Hilbert-curve range
+///     overlap (pure integer comparisons, no trigonometry).  This
+///     avoids the GetRectBound() inflation entirely and produces
+///     fewer false positives.
+///
+///  3. Range-intersect mode (s2_keycondition_use_coverer = true,
+///     s2_keycondition_use_range_intersect = true):
+///     Same parse-time covering as mode 2, but at eval time the granule's
+///     actual [cell_min, cell_max] Hilbert interval is tested directly
+///     against the covering, bypassing the ancestor entirely.
+///     This is the most precise mode.
+///
+/// All modes are conservative: they may produce false positives
+/// (reading unnecessary granules) but never false negatives
+/// (skipping granules that contain matching rows).
+struct KeyCondition::RPNElement::S2RectData
+{
+    S2LatLngRect rect;
+    /// When populated (coverer mode), stores a tight cell-union covering of the
+    /// query rect.  Eval uses S2CellUnion::Intersects instead of GetRectBound.
+    std::optional<S2CellUnion> covering;
+};
+struct KeyCondition::RPNElement::S2CapData
+{
+    S2Cap cap;
+    /// When populated (coverer mode), stores a tight cell-union covering of the
+    /// query cap.  Eval uses S2CellUnion::Intersects instead of MayIntersect.
+    std::optional<S2CellUnion> covering;
+};
+
+/// Returns true if any cell in `covering` has a Hilbert-curve range that
+/// overlaps the granule's actual interval [cell_min.range_min(), cell_max.range_max()].
+///
+/// This is more precise than S2CellUnion::Intersects(ancestor) because it
+/// tests the granule's actual range directly, without first lifting
+/// [cell_min, cell_max] to a (larger) common ancestor cell.
+///
+/// Algorithm: binary search for the first covering cell not entirely before
+/// cell_min, then check that it starts before cell_max ends.
+/// Identical structure to S2CellUnion::Intersects(S2CellId) but uses
+/// [cell_min, cell_max] as the target interval instead of a single cell's
+/// [range_min, range_max].
+static bool coveringIntersectsRange(
+    const S2CellUnion & covering,
+    S2CellId cell_min,
+    S2CellId cell_max)
+{
+    auto it = std::lower_bound(
+        covering.begin(), covering.end(), cell_min,
+        [](S2CellId a, S2CellId b) { return a.range_max() < b.range_min(); });
+    return it != covering.end()
+        && it->range_min() <= cell_max.range_max();
+}
+#endif
 
 /// for "^prefix..." string it returns "prefix"
 static String extractFixedPrefixFromRegularExpression(const String & regexp)
@@ -447,11 +532,35 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
                 return true;
             }
-        }
+        },
+#if USE_S2_GEOMETRY
+        {
+            "s2RectContains",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_S2_RECT_CONTAINS;
+                return true;
+            }
+        },
+        {
+            "s2CapContains",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_S2_CAP_CONTAINS;
+                return true;
+            }
+        },
+#endif
 };
 
 static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
-    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
+    = {
+        KeyCondition::RPNElement::FUNCTION_UNKNOWN,
+        KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE,
+        KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON,
+        KeyCondition::RPNElement::FUNCTION_S2_RECT_CONTAINS,
+        KeyCondition::RPNElement::FUNCTION_S2_CAP_CONTAINS,
+    };
 
 /// Functions with range inversion cannot be relaxed. It will become stricter instead.
 /// For example:
@@ -879,6 +988,9 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
+    , allow_s2_keycondition(context->getSettingsRef()[Setting::allow_experimental_s2_keycondition])
+    , s2_keycondition_use_coverer(context->getSettingsRef()[Setting::s2_keycondition_use_coverer])
+    , s2_keycondition_use_range_intersect(context->getSettingsRef()[Setting::s2_keycondition_use_range_intersect])
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -2903,6 +3015,87 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return atom_it->second(out, const_value);
         };
 
+#if USE_S2_GEOMETRY
+        auto analyze_s2_rect_contains = [&, this]() -> bool
+        {
+            /// s2RectContains(lo_const, hi_const, s2_point_column)
+            /// arg0 = lo (const UInt64), arg1 = hi (const UInt64), arg2 = s2 key column
+            Field lo_val, hi_val;
+            DataTypePtr lo_type, hi_type;
+
+            if (!func.getArgumentAt(0).tryGetConstant(lo_val, lo_type))
+                return false;
+            if (!func.getArgumentAt(1).tryGetConstant(hi_val, hi_type))
+                return false;
+
+            auto name = func.getArgumentAt(2).getColumnName();
+            auto it = key_columns.find(name);
+            if (it == key_columns.end())
+                return false;
+
+            out.key_columns.push_back(it->second);
+
+            UInt64 lo_id = lo_val.safeGet<UInt64>();
+            UInt64 hi_id = hi_val.safeGet<UInt64>();
+            S2LatLng lo_latlng = S2CellId(lo_id).ToLatLng();
+            S2LatLng hi_latlng = S2CellId(hi_id).ToLatLng();
+            S2LatLngRect rect(lo_latlng, hi_latlng);
+            if (!rect.is_valid())
+                return false;
+
+            out.s2_rect_data = std::make_shared<RPNElement::S2RectData>(RPNElement::S2RectData{rect, std::nullopt});
+            if (s2_keycondition_use_coverer)
+            {
+                /// Coverer mode: decompose the query rect into ~20 S2 cells
+                /// that tightly cover it.  This is done once at parse time;
+                /// per-granule eval then uses S2CellUnion::Intersects (integer
+                /// comparisons) instead of GetRectBound (trigonometry).
+                S2RegionCoverer::Options opts;
+                opts.set_max_cells(20);
+                out.s2_rect_data->covering = S2RegionCoverer(opts).GetCovering(rect);
+            }
+            const auto atom_it = atom_map.find(func_name);
+            return atom_it->second(out, lo_val);
+        };
+
+        auto analyze_s2_cap_contains = [&, this]() -> bool
+        {
+            /// s2CapContains(center_const, degrees_const, s2_point_column)
+            Field center_val, degrees_val;
+            DataTypePtr center_type, degrees_type;
+
+            if (!func.getArgumentAt(0).tryGetConstant(center_val, center_type))
+                return false;
+            if (!func.getArgumentAt(1).tryGetConstant(degrees_val, degrees_type))
+                return false;
+
+            auto name = func.getArgumentAt(2).getColumnName();
+            auto it = key_columns.find(name);
+            if (it == key_columns.end())
+                return false;
+
+            out.key_columns.push_back(it->second);
+
+            UInt64 center_id = center_val.safeGet<UInt64>();
+            Float64 degrees = degrees_val.safeGet<Float64>();
+            S2Cap cap(S2CellId(center_id).ToPoint(), S1Angle::Degrees(degrees));
+            if (!cap.is_valid())
+                return false;
+
+            out.s2_cap_data = std::make_shared<RPNElement::S2CapData>(RPNElement::S2CapData{cap, std::nullopt});
+            if (s2_keycondition_use_coverer)
+            {
+                /// Coverer mode: same as for rect — decompose the query cap
+                /// into a tight cell-union covering at parse time.
+                S2RegionCoverer::Options opts;
+                opts.set_max_cells(20);
+                out.s2_cap_data->covering = S2RegionCoverer(opts).GetCovering(cap);
+            }
+            const auto atom_it = atom_map.find(func_name);
+            return atom_it->second(out, center_val);
+        };
+#endif
+
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
@@ -3184,6 +3377,16 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 return analyze_point_in_polygon();
             }
 
+#if USE_S2_GEOMETRY
+            if (allow_s2_keycondition)
+            {
+                if (func_name == "s2RectContains")
+                    return analyze_s2_rect_contains();
+                if (func_name == "s2CapContains")
+                    return analyze_s2_cap_contains();
+            }
+#endif
+
             return false;
         }
 
@@ -3437,6 +3640,8 @@ KeyCondition::Description KeyCondition::getDescription() const
             case RPNElement::FUNCTION_NOT_IN_SET:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_S2_RECT_CONTAINS:
+            case RPNElement::FUNCTION_S2_CAP_CONTAINS:
             {
                 auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = false});
                 auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = true});
@@ -4051,7 +4256,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             {
                 rpn_stack.push(PlainRanges::makeUniverse());
             }
-            else /// FUNCTION_UNKNOWN or functions not supported by this method (FUNCTION_ARGS_IN_HYPERRECTANGLE, FUNCTION_POINT_IN_POLYGON)
+            else /// FUNCTION_UNKNOWN or functions not supported by this method (FUNCTION_ARGS_IN_HYPERRECTANGLE, FUNCTION_POINT_IN_POLYGON, FUNCTION_S2_*)
             {
                 if (!has_filter)
                     rpn_stack.push(PlainRanges::makeUniverse());
@@ -4375,6 +4580,148 @@ BoolMask KeyCondition::checkInHyperrectangle(
             rpn_stack.emplace_back(
                 boost::geometry::intersects(polygon_by_minmax_index, element.polygon->data), true);
         }
+#if USE_S2_GEOMETRY
+        else if (element.function == RPNElement::FUNCTION_S2_RECT_CONTAINS)
+        {
+            /// Granule contains S2CellId values in range [s2_min, s2_max].
+            ///
+            /// Both modes first lift [cell_min, cell_max] to their common
+            /// ancestor — the smallest S2 cell that contains the entire
+            /// granule range.  Every row in the granule lies within this
+            /// ancestor cell, so if the query region does not intersect
+            /// the ancestor, the granule can be safely skipped.
+            ///
+            /// The two modes differ in how "query region ∩ ancestor" is tested:
+            ///
+            ///  Ancestor mode:
+            ///     ancestor → S2Cell → GetRectBound() → S2LatLngRect
+            ///     Then test rect.Intersects(bounding_rect).
+            ///     GetRectBound() converts a spherical quad to a lat/lng box,
+            ///     which inflates significantly at high latitudes and near S2
+            ///     face boundaries, increasing false positives.
+            ///     Note: S2LatLngRect also offers an exact Intersects(S2Cell)
+            ///     that avoids this inflation, but it is expensive (per-edge
+            ///     trigonometry), and the main source of imprecision is the
+            ///     coarse ancestor cell itself, so the payoff is small.
+            ///
+            ///  Coverer mode:
+            ///     The query rect was pre-decomposed into ~20 S2 cells
+            ///     (S2CellUnion) at parse time.  Here we just call
+            ///     covering.Intersects(ancestor), which is an O(log N)
+            ///     binary search checking Hilbert-curve range overlap —
+            ///     pure integer comparisons, no trigonometry, and no
+            ///     GetRectBound() inflation.
+
+            const Range & key_range = hyperrectangle[element.key_columns[0]];
+
+            if (unlikely(!element.s2_rect_data))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            UInt64 s2_min_raw = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), key_range.left);
+            UInt64 s2_max_raw = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), key_range.right);
+
+            S2CellId cell_min(s2_min_raw);
+            S2CellId cell_max(s2_max_raw);
+
+            /// Find common ancestor cell covering [cell_min, cell_max].
+            int level = cell_min.GetCommonAncestorLevel(cell_max);
+            if (level < 0)
+            {
+                /// No common ancestor — the cells span the entire sphere.
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+            S2CellId ancestor = cell_min.parent(level);
+
+            bool intersects;
+            if (element.s2_rect_data->covering.has_value())
+            {
+                if (s2_keycondition_use_range_intersect)
+                {
+                    /// Range-intersect mode: test the granule's actual [cell_min, cell_max]
+                    /// interval directly — no ancestor inflation.
+                    intersects = coveringIntersectsRange(
+                        *element.s2_rect_data->covering, cell_min, cell_max);
+                }
+                else
+                {
+                    /// Coverer mode: test covering against the common ancestor cell.
+                    intersects = element.s2_rect_data->covering->Intersects(ancestor);
+                }
+            }
+            else
+            {
+                /// Ancestor mode: check rect against the bounding rect of the ancestor cell.
+                S2Cell granule_cell(ancestor);
+                intersects = element.s2_rect_data->rect.Intersects(granule_cell.GetRectBound());
+            }
+            rpn_stack.emplace_back(intersects, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_S2_CAP_CONTAINS)
+        {
+            /// Same ancestor-based granule representation as the rect branch
+            /// above; see the detailed comment there.
+            ///
+            /// The difference in ancestor mode is that S2Cap::MayIntersect
+            /// works directly on the S2Cell (no GetRectBound() expansion),
+            /// so the only over-approximation comes from the ancestor cell
+            /// being coarser than the actual granule range.  This makes the
+            /// ancestor mode for caps already reasonably precise.
+            ///
+            /// Coverer mode still helps when the ancestor is very coarse
+            /// (low level) — the covering's ~20 cells provide a tighter
+            /// representation of the query cap than the single ancestor cell.
+
+            const Range & key_range = hyperrectangle[element.key_columns[0]];
+
+            if (unlikely(!element.s2_cap_data))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            UInt64 s2_min_raw = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), key_range.left);
+            UInt64 s2_max_raw = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), key_range.right);
+
+            S2CellId cell_min(s2_min_raw);
+            S2CellId cell_max(s2_max_raw);
+
+            int level = cell_min.GetCommonAncestorLevel(cell_max);
+            if (level < 0)
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+            S2CellId ancestor = cell_min.parent(level);
+
+            bool intersects;
+            if (element.s2_cap_data->covering.has_value())
+            {
+                if (s2_keycondition_use_range_intersect)
+                {
+                    /// Range-intersect mode: test the granule's actual [cell_min, cell_max]
+                    /// interval directly — no ancestor inflation.
+                    intersects = coveringIntersectsRange(
+                        *element.s2_cap_data->covering, cell_min, cell_max);
+                }
+                else
+                {
+                    /// Coverer mode: test covering against the common ancestor cell.
+                    intersects = element.s2_cap_data->covering->Intersects(ancestor);
+                }
+            }
+            else
+            {
+                /// Ancestor mode: check if the cap may intersect the ancestor cell.
+                S2Cell granule_cell(ancestor);
+                intersects = element.s2_cap_data->cap.MayIntersect(granule_cell);
+            }
+            rpn_stack.emplace_back(intersects, true);
+        }
+#endif
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
@@ -4728,6 +5075,10 @@ String KeyCondition::RPNElement::toString(const std::vector<String> & key_names)
             buf << ")";
             return buf.str();
         }
+        case FUNCTION_S2_RECT_CONTAINS:
+            return "s2RectContains";
+        case FUNCTION_S2_CAP_CONTAINS:
+            return "s2CapContains";
         case FUNCTION_IS_NULL:
         case FUNCTION_IS_NOT_NULL:
         {
@@ -4780,6 +5131,8 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             case RPNElement::FUNCTION_NOT_IN_SET:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_S2_RECT_CONTAINS:
+            case RPNElement::FUNCTION_S2_CAP_CONTAINS:
             case RPNElement::FUNCTION_IS_NULL:
             case RPNElement::FUNCTION_IS_NOT_NULL:
             case RPNElement::ALWAYS_FALSE:
@@ -4838,6 +5191,8 @@ bool KeyCondition::alwaysFalse() const
             case RPNElement::FUNCTION_NOT_IN_SET:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_S2_RECT_CONTAINS:
+            case RPNElement::FUNCTION_S2_CAP_CONTAINS:
             case RPNElement::FUNCTION_IS_NULL:
             case RPNElement::FUNCTION_IS_NOT_NULL:
             case RPNElement::FUNCTION_UNKNOWN:
@@ -4925,6 +5280,8 @@ std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> KeyCondition::topLevelC
             case RPNElement::FUNCTION_IS_NOT_NULL:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_S2_RECT_CONTAINS:
+            case RPNElement::FUNCTION_S2_CAP_CONTAINS:
             case RPNElement::FUNCTION_UNKNOWN:
             case RPNElement::ALWAYS_FALSE:
             case RPNElement::ALWAYS_TRUE:

@@ -2551,6 +2551,15 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 )", 0) \
+    DECLARE(Bool, allow_experimental_s2_keycondition, false, R"(
+If true, allow `s2RectContains` and `s2CapContains` to be used as key conditions for primary key index pruning. When the key column stores S2 cell identifiers, this enables granule-level spatial filtering so that non-matching granules are skipped during reads.
+)", 0) \
+    DECLARE(Bool, s2_keycondition_use_coverer, false, R"(
+When `allow_experimental_s2_keycondition` is enabled, use `S2RegionCoverer`-based cell-union covering for index pruning of `s2RectContains` and `s2CapContains` instead of the default common-ancestor bounding-cell approach. The covering is computed once at parse time; per-granule intersection checks use `S2CellUnion::Intersects`, producing fewer false positives.
+)", 0) \
+    DECLARE(Bool, s2_keycondition_use_range_intersect, false, R"(
+When both `allow_experimental_s2_keycondition` and `s2_keycondition_use_coverer` are enabled, use the granule's actual `[cell_min, cell_max]` Hilbert-curve interval directly for intersection testing against the pre-computed `S2RegionCoverer` covering, instead of first lifting the interval to a common ancestor cell. This avoids the ancestor over-approximation and produces the fewest false positives.
+)", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
 )", 0) \
