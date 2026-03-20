@@ -2626,6 +2626,15 @@ If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x
     DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
 Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into the disjunction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are handled: the argument list is normalized like `coalesce` itself (`NULL` literals dropped, arguments after the first non-`Nullable` one dropped), and a trailing non-`NULL` constant, if any, is emitted as the final branch. The rewrite is strictly additive for index pruning; runtime filtering still uses the original predicate.
 )", 0) \
+    DECLARE(Bool, allow_experimental_s2_keycondition, false, R"(
+If true, allow `s2RectContains` and `s2CapContains` to be used as key conditions for primary key index pruning. When the key column stores S2 cell identifiers, this enables granule-level spatial filtering so that non-matching granules are skipped during reads.
+)", 0) \
+    DECLARE(Bool, s2_keycondition_use_coverer, false, R"(
+When `allow_experimental_s2_keycondition` is enabled, use `S2RegionCoverer`-based cell-union covering for index pruning of `s2RectContains` and `s2CapContains` instead of the default common-ancestor bounding-cell approach. The covering is computed once at parse time; per-granule intersection checks use `S2CellUnion::Intersects`, producing fewer false positives.
+)", 0) \
+    DECLARE(Bool, s2_keycondition_use_range_intersect, false, R"(
+When both `allow_experimental_s2_keycondition` and `s2_keycondition_use_coverer` are enabled, use the granule's actual `[cell_min, cell_max]` Hilbert-curve interval directly for intersection testing against the pre-computed `S2RegionCoverer` covering, instead of first lifting the interval to a common ancestor cell. This avoids the ancestor over-approximation and produces the fewest false positives.
+)", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
 )", 0) \
