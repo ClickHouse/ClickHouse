@@ -1,4 +1,5 @@
 #include <Storages/DataLakes/StorageIceberg.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -79,7 +80,6 @@ StorageIceberg::StorageIceberg(
     , catalog(catalog_)
     , storage_id(table_id_)
 {
-    configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
 
@@ -100,21 +100,17 @@ StorageIceberg::StorageIceberg(
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
         LOG_DEBUG(log, "Creating new storage with specified columns");
-        configuration->create(
-            object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
+        configuration->update(object_storage, context);
+        IcebergMetadata::createInitial(
+            object_storage, configuration, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
 
     try
     {
         if (!do_lazy_init)
         {
-            if (is_table_function)
-                configuration->lazyInitializeIfNeeded(object_storage, context);
-            else
-                configuration->update(object_storage, context);
-
-            if (auto * ext_meta = configuration->getExternalMetadata())
-                current_metadata = ext_meta;
+            configuration->update(object_storage, context);
+            current_metadata = IcebergMetadata::create(object_storage, configuration, context).release();
         }
     }
     catch (...)
@@ -166,7 +162,7 @@ StorageIceberg::StorageIceberg(
     ///    There's probably no reason for this, and it should just copy those fields like the others.
     ///  * If the table contains files in different formats, with only some of them supporting
     ///    prewhere, things break.
-    supports_prewhere = configuration->supportsPrewhere() && format_supports_prewhere;
+    supports_prewhere = format_supports_prewhere; /// Iceberg supports prewhere
     supports_tuple_elements = format_supports_prewhere;
 
     StorageInMemoryMetadata metadata;
@@ -178,9 +174,11 @@ StorageIceberg::StorageIceberg(
         /// Additionally reload columns from the snapshot when the per-format setting is enabled.
         /// This is done eagerly because select queries for table functions may bypass
         /// updateExternalDynamicMetadataIfExists.
-        configuration->lazyInitializeIfNeeded(object_storage, context);
-        if (auto * ext_meta = configuration->getExternalMetadata())
-            current_metadata = ext_meta;
+        if (!current_metadata)
+        {
+            configuration->update(object_storage, context);
+            current_metadata = IcebergMetadata::create(object_storage, configuration, context).release();
+        }
         if (auto state = current_metadata->getTableStateSnapshot(context))
         {
             metadata.setDataLakeTableState(*state);
@@ -201,14 +199,11 @@ StorageIceberg::StorageIceberg(
 
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
-    if (configuration->partition_strategy)
-        metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
-
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context,
         format_settings,
-        configuration->partition_strategy_type,
+        PartitionStrategyFactory::StrategyType::NONE,
         {} /* sample_path */));
 
     setInMemoryMetadata(metadata);
@@ -257,7 +252,10 @@ IStorage::ColumnSizeByName StorageIceberg::getColumnSizes() const
 IDataLakeMetadata * StorageIceberg::getExternalMetadata(ContextPtr query_context)
 {
     configuration->update(object_storage, query_context);
-    current_metadata = configuration->getExternalMetadata();
+    if (!current_metadata || !current_metadata->supportsUpdate())
+        current_metadata = IcebergMetadata::create(object_storage, configuration, query_context).release();
+    else
+        current_metadata->update(query_context);
     return current_metadata;
 }
 
@@ -267,7 +265,10 @@ void StorageIceberg::updateExternalDynamicMetadataIfExists(ContextPtr query_cont
     /// Using if_not_updated_before=true would leave latest_snapshot_version
     /// stale from the first query and silently omit new files.
     configuration->update(object_storage, query_context);
-    current_metadata = configuration->getExternalMetadata();
+    if (!current_metadata || !current_metadata->supportsUpdate())
+        current_metadata = IcebergMetadata::create(object_storage, configuration, query_context).release();
+    else
+        current_metadata->update(query_context);
 
     auto state = current_metadata->getTableStateSnapshot(query_context);
     if (!state)
@@ -292,7 +293,7 @@ void StorageIceberg::updateExternalDynamicMetadataIfExists(ContextPtr query_cont
 
 std::optional<UInt64> StorageIceberg::totalRows(ContextPtr query_context) const
 {
-    if (!configuration->supportsTotalRows(query_context, object_storage->getType()))
+    if (!IcebergMetadata::supportsTotalRows(query_context, object_storage->getType()))
         return std::nullopt;
 
     /// Trivial count optimization can be applied only on initiator replica.
@@ -301,24 +302,24 @@ std::optional<UInt64> StorageIceberg::totalRows(ContextPtr query_context) const
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
-    if (auto * ext_meta = configuration->getExternalMetadata())
-        current_metadata = ext_meta;
+    configuration->update(object_storage, query_context);
+    if (!current_metadata)
+        current_metadata = IcebergMetadata::create(object_storage, configuration, query_context).release();
 
     return current_metadata->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageIceberg::totalBytes(ContextPtr query_context) const
 {
-    if (!configuration->supportsTotalBytes(query_context, object_storage->getType()))
+    if (!IcebergMetadata::supportsTotalBytes(query_context, object_storage->getType()))
         return std::nullopt;
 
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
-    if (auto * ext_meta = configuration->getExternalMetadata())
-        current_metadata = ext_meta;
+    configuration->update(object_storage, query_context);
+    if (!current_metadata)
+        current_metadata = IcebergMetadata::create(object_storage, configuration, query_context).release();
 
     return current_metadata->totalBytes(query_context);
 }
@@ -336,14 +337,7 @@ void StorageIceberg::read(
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 
-    if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Reading from a partitioned {} storage is not implemented yet",
-                        getName());
-    }
-
-    const auto & settings = local_context->getSettingsRef();
+const auto & settings = local_context->getSettingsRef();
 #if USE_DELTA_KERNEL_RS
     {
         if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
