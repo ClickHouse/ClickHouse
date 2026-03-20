@@ -21,11 +21,7 @@ PrecedenceAllocation::~PrecedenceAllocation()
         removeChild(children.begin()->second.get());
 }
 
-const String & PrecedenceAllocation::getTypeName() const
-{
-    static String type_name("precedence_allocation");
-    return type_name;
-}
+std::string_view PrecedenceAllocation::getTypeName() const { return "precedence_allocation"; }
 
 void PrecedenceAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_base)
 {

@@ -17,7 +17,7 @@ public:
     ResourceCost getLimit() const;
 
     // ISchedulerNode
-    const String & getTypeName() const override;
+    std::string_view getTypeName() const override;
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override;
     void removeChild(ISchedulerNode * child_) override;
     ISchedulerNode * getChild(const String & child_name) override;

@@ -41,11 +41,7 @@ ResourceCost AllocationLimit::getLimit() const
     return max_allocated;
 }
 
-const String & AllocationLimit::getTypeName() const
-{
-    static String type_name("allocation_limit");
-    return type_name;
-}
+std::string_view AllocationLimit::getTypeName() const { return "allocation_limit"; }
 
 void AllocationLimit::attachChild(const std::shared_ptr<ISchedulerNode> & child_)
 {

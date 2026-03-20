@@ -30,11 +30,7 @@ AllocationQueue::~AllocationQueue()
     purgeQueue();
 }
 
-const String & AllocationQueue::getTypeName() const
-{
-    static String type_name("allocation_queue");
-    return type_name;
-}
+std::string_view AllocationQueue::getTypeName() const { return "allocation_queue"; }
 
 void AllocationQueue::insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size)
 {

@@ -46,11 +46,7 @@ public:
             removeChild(child.get());
     }
 
-    const String & getTypeName() const override
-    {
-        static String type_name("bandwidth_limit");
-        return type_name;
-    }
+    std::string_view getTypeName() const override { return "bandwidth_limit"; }
 
     bool equals(ISchedulerNode * other) override
     {

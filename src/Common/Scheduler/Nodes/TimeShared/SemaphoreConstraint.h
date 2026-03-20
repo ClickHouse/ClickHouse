@@ -40,11 +40,7 @@ public:
             removeChild(child.get());
     }
 
-    const String & getTypeName() const override
-    {
-        static String type_name("inflight_limit");
-        return type_name;
-    }
+    std::string_view getTypeName() const override { return "inflight_limit"; }
 
     bool equals(ISchedulerNode * other) override
     {

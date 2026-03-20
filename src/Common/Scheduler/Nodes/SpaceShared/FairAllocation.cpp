@@ -21,11 +21,7 @@ FairAllocation::~FairAllocation()
         removeChild(children.begin()->second.get());
 }
 
-const String & FairAllocation::getTypeName() const
-{
-    static String type_name("fair_allocation");
-    return type_name;
-}
+std::string_view FairAllocation::getTypeName() const { return "fair_allocation"; }
 
 void FairAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_base)
 {

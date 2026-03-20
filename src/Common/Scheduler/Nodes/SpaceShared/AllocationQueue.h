@@ -25,7 +25,7 @@ public:
     AllocationQueue(EventQueue & event_queue_, const SchedulerNodeInfo & info_, Int64 max_queued_ = default_max_queued);
     ~AllocationQueue() override;
 
-    const String & getTypeName() const override;
+    std::string_view getTypeName() const override;
     void insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size) override;
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override;
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;

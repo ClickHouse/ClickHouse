@@ -62,11 +62,7 @@ public:
             removeChild(children.begin()->second.get());
     }
 
-    const String & getTypeName() const override
-    {
-        static String type_name("fair");
-        return type_name;
-    }
+    std::string_view getTypeName() const override { return "fair"; }
 
     bool equals(ISchedulerNode * other) override
     {

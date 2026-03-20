@@ -116,7 +116,7 @@ public:
 
     virtual ~ISchedulerNode();
 
-    virtual const String & getTypeName() const = 0;
+    virtual std::string_view getTypeName() const = 0;
 
     /// Checks if two nodes configuration is equal
     virtual bool equals(ISchedulerNode * other);

@@ -13,7 +13,7 @@ public:
     ~FairAllocation() override;
 
     // ISchedulerNode
-    const String & getTypeName() const override;
+    std::string_view getTypeName() const override;
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_base) override;
     void removeChild(ISchedulerNode * child_base) override;
     ISchedulerNode * getChild(const String & child_name) override;

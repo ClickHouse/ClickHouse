@@ -726,11 +726,7 @@ public:
     }
 
 protected: // Hide all the ISchedulerNode interface methods as an implementation details
-    const String & getTypeName() const override
-    {
-        static String type_name("workload");
-        return type_name;
-    }
+    std::string_view getTypeName() const override { return "workload"; }
 
     bool equals(ISchedulerNode *) override
     {

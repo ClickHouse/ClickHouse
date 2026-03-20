@@ -19,11 +19,7 @@ public:
         parent = nullptr; // to avoid chassert in ISchedulerNode destructor, should be detached from parent before destruction
     }
 
-    const String & getTypeName() const override
-    {
-        static String type_name("fake");
-        return type_name;
-    }
+    std::string_view getTypeName() const override { return "fake"; }
 
     void attachChild(const SchedulerNodePtr & child) override
     {

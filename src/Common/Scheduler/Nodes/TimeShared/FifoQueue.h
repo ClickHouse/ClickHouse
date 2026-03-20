@@ -43,11 +43,7 @@ public:
         purgeQueue();
     }
 
-    const String & getTypeName() const override
-    {
-        static String type_name("fifo");
-        return type_name;
-    }
+    std::string_view getTypeName() const override { return "fifo"; }
 
     bool equals(ISchedulerNode * other) override
     {
