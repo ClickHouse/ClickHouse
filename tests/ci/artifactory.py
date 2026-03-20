@@ -132,8 +132,8 @@ class DebianArtifactory:
         paths = [
             self.pd.LOCAL_DIR + "/" + file for file in self.pd.get_deb_packages_files()
         ]
-        REPREPRO_CMD_PREFIX = f"reprepro --basedir {R2MountPoint.MOUNT_POINT}/configs/deb --outdir {R2MountPoint.MOUNT_POINT}/deb --verbose"
-        cmd = f"{REPREPRO_CMD_PREFIX} includedeb {self.codename} {' '.join(paths)}"
+        REPREPRO_CMD_PREFIX = f"reprepro --ignore=unknownfield --basedir {R2MountPoint.MOUNT_POINT}/configs/deb --outdir {R2MountPoint.MOUNT_POINT}/deb --verbose"
+        cmd = f"{REPREPRO_CMD_PREFIX} includedeb {self.codename} {' '.join(paths)} >> /tmp/reprepro.log 2>&1"
         print("Running export commands:")
         Shell.check(cmd, strict=True, verbose=True)
         Shell.check("sync")
@@ -145,7 +145,7 @@ class DebianArtifactory:
             print(
                 f"Copy packages from {RepoCodenames.LTS} to {RepoCodenames.STABLE} repository"
             )
-            cmd = f"{REPREPRO_CMD_PREFIX} copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)}"
+            cmd = f"{REPREPRO_CMD_PREFIX} copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)} >> /tmp/reprepro.log 2>&1"
             print("Running copy command:")
             print(f"  {cmd}")
             Shell.check(cmd, strict=True)
@@ -233,7 +233,7 @@ class RpmArtifactory:
         # switching between different fuse providers invalidates --update option (apparently some fuse(s) can mess around with mtime)
         #   add --skip-stat to skip mtime check
         commands = (
-            f"createrepo_c --local-sqlite --workers=2 --update --skip-stat --verbose {dest_dir}",
+            f"createrepo_c --local-sqlite --workers=2 --update --skip-stat --verbose {dest_dir} >> /tmp/createrepo_c.log 2>&1",
             f"gpg --sign-with {self._SIGN_KEY} --detach-sign --batch --yes --armor {dest_dir / 'repodata' / 'repomd.xml'}",
         )
         print(f"Exporting RPM packages into [{codename}]")
