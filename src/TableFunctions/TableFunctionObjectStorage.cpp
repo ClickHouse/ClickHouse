@@ -13,6 +13,10 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
 #include <TableFunctions/TableFunctionObjectStorageCluster.h>
+#include <TableFunctions/TableFunctionIceberg.h>
+#include <TableFunctions/TableFunctionDeltaLake.h>
+#include <TableFunctions/TableFunctionHudi.h>
+#include <TableFunctions/TableFunctionPaimon.h>
 #include <TableFunctions/registerTableFunctions.h>
 
 #include <Interpreters/parseColumnsListForTableFunction.h>

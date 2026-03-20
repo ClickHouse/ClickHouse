@@ -25,15 +25,12 @@ struct S3StorageSettings;
 struct AzureStorageSettings;
 struct HDFSStorageSettings;
 
-template <typename Definition, typename Configuration, bool is_data_lake = false>
-class TableFunctionObjectStorage : public ITableFunction
+template <typename Definition, typename Configuration>
+class TableFunctionPaimonImpl : public ITableFunction
 {
 public:
     static constexpr auto name = Definition::name;
-    using Settings = typename std::conditional_t<
-        is_data_lake,
-        DataLakeStorageSettings,
-        StorageObjectStorageSettings>;
+    using Settings = DataLakeStorageSettings;
 
     String getName() const override { return name; }
 
@@ -64,16 +61,11 @@ public:
       const String & format,
       const ContextPtr & context)
     {
-        if constexpr (is_data_lake)
-        {
-            Configuration configuration(createEmptySettings());
-            if (configuration.format == "auto")
-                configuration.format = "Parquet"; /// Default format of data lakes.
+        Configuration configuration(createEmptySettings());
+        if (configuration.format == "auto")
+            configuration.format = "Parquet"; /// Default format of data lakes.
 
-            configuration.addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
-        }
-        else
-            Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
+        configuration.addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
     }
 
     void setPartitionBy(const ASTPtr & partition_by_) override
@@ -109,19 +101,19 @@ protected:
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };
 
-#if USE_AWS_S3
-using TableFunctionS3 = TableFunctionObjectStorage<S3Definition, StorageS3Configuration>;
+#if USE_AVRO && USE_AWS_S3
+using TableFunctionPaimon = TableFunctionPaimonImpl<PaimonDefinition, StorageS3PaimonConfiguration>;
 #endif
-
-#if USE_AZURE_BLOB_STORAGE
-using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>;
+#if USE_AVRO && USE_AWS_S3
+using TableFunctionPaimonS3 = TableFunctionPaimonImpl<PaimonS3Definition, StorageS3PaimonConfiguration>;
 #endif
-
-#if USE_HDFS
-using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
+#if USE_AVRO && USE_AZURE_BLOB_STORAGE
+using TableFunctionPaimonAzure = TableFunctionPaimonImpl<PaimonAzureDefinition, StorageAzurePaimonConfiguration>;
 #endif
-
-
-/// Datalake table function aliases are defined in their own headers:
-/// TableFunctionIceberg.h, TableFunctionDeltaLake.h, TableFunctionHudi.h, TableFunctionPaimon.h
+#if USE_AVRO && USE_HDFS
+using TableFunctionPaimonHDFS = TableFunctionPaimonImpl<PaimonHDFSDefinition, StorageHDFSPaimonConfiguration>;
+#endif
+#if USE_AVRO
+using TableFunctionPaimonLocal = TableFunctionPaimonImpl<PaimonLocalDefinition, StorageLocalPaimonConfiguration>;
+#endif
 }
