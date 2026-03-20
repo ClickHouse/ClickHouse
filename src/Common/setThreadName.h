@@ -8,6 +8,7 @@ namespace DB
 #define THREAD_NAME_VALUES(M)\
     M(AGGREGATED_ZOOKEEPER_LOG, "AggrZooLog") \
     M(AGGREGATOR_DESTRUCTION, "AggregDestruct") \
+    M(AI_EMBED_POOL, "AIEmbedPool") \
     M(AGGREGATOR_POOL, "AggregatorPool") \
     M(ARROW_FILE, "ArrowFile") \
     M(ARROW_FLIGHT, "ArrowFlight") \

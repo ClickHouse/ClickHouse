@@ -289,6 +289,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP SCHEMA CACHE", Type::CLEAR_SCHEMA_CACHE},
             {"DROP FORMAT SCHEMA CACHE", Type::CLEAR_FORMAT_SCHEMA_CACHE},
             {"DROP S3 CLIENT CACHE", Type::CLEAR_S3_CLIENT_CACHE},
+            {"DROP AI EMBED CACHE", Type::CLEAR_AI_EMBED_CACHE},
         };
 
         for (const auto & [alias, type] : system_aliases)

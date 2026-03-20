@@ -17,6 +17,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
+#include <Functions/AIEmbed/EmbeddingCache.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -495,6 +496,13 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AWS S3");
 #endif
+
+        case Type::CLEAR_AI_EMBED_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_AI_EMBED_CACHE);
+            EmbeddingCache::instance().drop();
+            break;
+        }
 
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
@@ -2180,6 +2188,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_S3_CLIENT_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
+            break;
+        }
+        case Type::CLEAR_AI_EMBED_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_AI_EMBED_CACHE);
             break;
         }
         case Type::CLEAR_DISK_METADATA_CACHE:

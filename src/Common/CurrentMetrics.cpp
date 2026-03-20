@@ -501,6 +501,10 @@
     M(MergeTreeSnapshotCommitThreads, "Number of threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \
+    \
+    M(AIEmbedThreads, "Number of threads in the threadpool for AI_EMBED functions.") \
+    M(AIEmbedThreadsActive, "Number of active threads in the threadpool for AI_EMBED functions.") \
+    M(AIEmbedThreadsScheduled, "Number of queued or active jobs in the threadpool for AI_EMBED functions.") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS

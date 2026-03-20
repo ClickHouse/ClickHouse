@@ -1374,6 +1374,12 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterRowsChecked, "Number of rows checked by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsPassed, "Number of rows that passed (not filtered out by) JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsSkipped, "Number of rows in blocks that were skipped by JOIN Runtime Filters", ValueType::Number) \
+    \
+    M(AIEmbedRowsProcessed, "Total number of rows processed by AI_EMBED functions", ValueType::Number) \
+    M(AIEmbedRequestsMade, "Total number of HTTP requests made by AI_EMBED functions to embedding providers", ValueType::Number) \
+    M(AIEmbedFailedRows, "Number of rows that failed to embed (returned NULL in AI_EMBED_OR_NULL)", ValueType::Number) \
+    M(AIEmbedCacheHits, "Number of embedding cache hits in AI_EMBED functions", ValueType::Number) \
+    M(AIEmbedTotalBytes, "Total bytes of input text sent to embedding providers by AI_EMBED functions", ValueType::Bytes) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

@@ -7757,6 +7757,27 @@ Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 t
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_ai_functions, false, R"(
+Enable experimental AI functions (`AI_EMBED`, `AI_EMBED_OR_NULL`) for generating vector embeddings via external APIs.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_embed_timeout_ms, 30000, R"(
+Per-sub-batch HTTP request timeout in milliseconds for `AI_EMBED` functions.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_embed_max_retries, 3, R"(
+Maximum number of retries per sub-batch for transient errors (HTTP 429, 5xx) in `AI_EMBED` functions.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_embed_max_rows_per_query, 1000000, R"(
+Safety limit on the number of rows processed by `AI_EMBED` in a single query. Prevents accidental cost explosions.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_embed_max_parallel_requests, 4, R"(
+Maximum number of concurrent sub-batch HTTP requests per block in `AI_EMBED` functions.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_embed_cache_max_entries, 100000, R"(
+Maximum number of cached embeddings in the cross-query LRU cache. Set to 0 to disable caching.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_embed_cache_max_bytes, 536870912, R"(
+Maximum memory in bytes for the embedding cache (default 512 MB).
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
