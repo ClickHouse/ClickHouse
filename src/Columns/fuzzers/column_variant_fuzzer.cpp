@@ -38,16 +38,12 @@ static MutableColumnPtr buildSourceVariantColumn(const std::vector<ColumnVariant
 
     auto col = ColumnVariant::create(std::move(nested), local_to_global);
 
-    /// Determine local discriminators for UInt64 (global=1) and String (global=0)
-    /// by reversing the provided local_to_global mapping.
+    /// Determine the local discriminator for String (global=0) by reversing the mapping.
     ColumnVariant::Discriminator local_string = ColumnVariant::NULL_DISCRIMINATOR;
-    ColumnVariant::Discriminator local_uint64 = ColumnVariant::NULL_DISCRIMINATOR;
     for (size_t i = 0; i < local_to_global.size(); ++i)
     {
         if (local_to_global[i] == 0)
             local_string = static_cast<ColumnVariant::Discriminator>(i);
-        else if (local_to_global[i] == 1)
-            local_uint64 = static_cast<ColumnVariant::Discriminator>(i);
     }
 
     /// Insert: String "hello", UInt64 42, NULL, String "world", UInt64 100
