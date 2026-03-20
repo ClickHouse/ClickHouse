@@ -149,9 +149,9 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
-    bool supportsDelete() const override { return configuration->supportsDelete(); }
+    bool supportsDelete() const override { return current_metadata && current_metadata->supportsDelete(); }
 
-    bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
+    bool supportsParallelInsert() const override { return current_metadata && current_metadata->supportsParallelInsert(); }
 
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
