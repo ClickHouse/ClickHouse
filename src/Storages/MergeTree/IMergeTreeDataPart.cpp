@@ -2046,7 +2046,20 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
 
         bool has_any = false;
         bool missing_any = false;
-        auto serialization = IDataType::getSerialization(column_with_physical_name);
+        /// Must match reader / writer stream enumeration (e.g. `StringSizes` for
+        /// `with_size_stream`). Default serialization uses `SINGLE_STREAM` for String.
+        const auto & infos = getSerializationInfos();
+        SerializationPtr serialization;
+        if (auto it_name = infos.find(column_with_physical_name.getNameInStorage()); it_name != infos.end())
+            serialization = IDataType::getSerialization(column_with_physical_name, *it_name->second);
+        else if (column_with_physical_name.getPhysicalNameInStorage() != column_with_physical_name.getNameInStorage())
+        {
+            if (auto it_physical = infos.find(column_with_physical_name.getPhysicalNameInStorage()); it_physical != infos.end())
+                serialization = IDataType::getSerialization(column_with_physical_name, *it_physical->second);
+        }
+        if (!serialization)
+            serialization = IDataType::getSerialization(column_with_physical_name, infos.getSettings());
+
         serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
         {
             if (missing_any || ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
