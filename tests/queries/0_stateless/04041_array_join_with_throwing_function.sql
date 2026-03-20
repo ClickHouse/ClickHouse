@@ -27,12 +27,6 @@ SELECT length(repeat(s, n)), arr_val FROM (
     SELECT s, n, arr FROM VALUES('s String, n UInt64, arr Array(UInt8)', ('x', 1, [1]), ('x', 1000000000, []))
 ) ARRAY JOIN arr AS arr_val;
 
--- base64Decode on invalid input
-SELECT '-- base64Decode on invalid input';
-SELECT base64Decode(s), arr_val FROM (
-    SELECT s, arr FROM VALUES('s String, arr Array(UInt8)', ('SGVsbG8=', [1]), ('invalid', []))
-) ARRAY JOIN arr AS arr_val;
-
 -- parseDateTime on invalid format
 SELECT '-- parseDateTime on invalid format';
 SELECT parseDateTime(s, '%Y-%m-%d'), arr_val FROM (

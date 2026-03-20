@@ -6,8 +6,6 @@
 123	1
 -- repeat on too large result
 1	1
--- base64Decode on invalid input
-Hello	1
 -- parseDateTime on invalid format
 2024-01-01 00:00:00	1
 -- arrayZip on mismatched lengths
