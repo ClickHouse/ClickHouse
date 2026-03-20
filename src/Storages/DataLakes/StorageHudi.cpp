@@ -211,7 +211,7 @@ setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
 
 String StorageHudi::getName() const
 {
-    return configuration->getEngineName();
+    return "Hudi" + configuration->getEngineName();
 }
 
 bool StorageHudi::prefersLargeBlocks() const

@@ -211,7 +211,7 @@ setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
 
 String StoragePaimon::getName() const
 {
-    return configuration->getEngineName();
+    return "Paimon" + configuration->getEngineName();
 }
 
 bool StoragePaimon::prefersLargeBlocks() const

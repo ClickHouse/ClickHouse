@@ -211,7 +211,7 @@ setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
 
 String StorageDeltaLake::getName() const
 {
-    return configuration->getEngineName();
+    return "DeltaLake" + configuration->getEngineName();
 }
 
 bool StorageDeltaLake::prefersLargeBlocks() const

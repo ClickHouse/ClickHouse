@@ -211,7 +211,7 @@ setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
 
 String StorageIceberg::getName() const
 {
-    return configuration->getEngineName();
+    return "Iceberg" + configuration->getEngineName();
 }
 
 bool StorageIceberg::prefersLargeBlocks() const
