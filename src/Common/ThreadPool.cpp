@@ -180,6 +180,9 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     max_free_threads = std::min(max_free_threads, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
     available_threads.store(0, std::memory_order_relaxed);
+
+    /// Pre-reserve so that push_back in the worker (under DENY_ALLOCATIONS_IN_SCOPE) never allocates.
+    idle_thread_stack.reserve(max_threads);
 }
 
 template <typename Thread>
@@ -198,6 +201,9 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     /// We have to also adjust queue size, because it limits the number of scheduled and already running jobs in total.
     queue_size = queue_size ? std::max(queue_size, max_threads) : 0;
     jobs.reserve(queue_size);
+
+    if (idle_thread_stack.capacity() < max_threads)
+        idle_thread_stack.reserve(max_threads);
 
     if (need_start_threads)
     {
