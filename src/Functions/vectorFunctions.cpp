@@ -1430,7 +1430,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return array_function->canThrow(arguments); } 
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return array_function->canThrow(arguments); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

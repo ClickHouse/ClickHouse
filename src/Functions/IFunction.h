@@ -299,7 +299,7 @@ public:
 
     /** Returns true if the function may throw during execution depending on data values.
       * Used to prevent pushing such functions past row-filtering operations (e.g. ARRAY JOIN)
-      * Only accounts for data-dependent exceptions (e.g. invalid data parsing, division by zero), 
+      * Only accounts for data-dependent exceptions (e.g. invalid data parsing, division by zero),
       * not exceptions at preparation time (e.g. type resolution).
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return false; }
