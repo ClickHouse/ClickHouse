@@ -5,7 +5,7 @@ from shutil import copy2
 from typing import Optional
 
 from ci_utils import Shell, WithIter
-from create_release import (
+from ci.jobs.create_release import (
     PackageDownloader,
     ReleaseContextManager,
     ReleaseInfo,

@@ -104,7 +104,7 @@ def main():
         Result.from_commands_run(
             name="Prepare Release Info",
             command=[
-                f"python3 ./tests/ci/create_release.py --prepare-release-info"
+                f"python3 ./ci/jobs/create_release.py --prepare-release-info"
                 f" --ref {args.ref} --release-type {args.release_type}"
                 f" {dry_run_flag}".strip()
             ],
@@ -116,7 +116,7 @@ def main():
         Result.from_commands_run(
             name="Download All Release Artifacts",
             command=[
-                f"python3 ./tests/ci/create_release.py --download-packages"
+                f"python3 ./ci/jobs/create_release.py --download-packages"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
@@ -128,7 +128,7 @@ def main():
             Result.from_commands_run(
                 name="Push Git Tag for the Release",
                 command=[
-                    f"python3 ./tests/ci/create_release.py --push-release-tag"
+                    f"python3 ./ci/jobs/create_release.py --push-release-tag"
                     f" {dry_run_flag}".strip()
                 ],
                 workdir=REPO_PATH,
@@ -140,7 +140,7 @@ def main():
             Result.from_commands_run(
                 name="Push New Release Branch",
                 command=[
-                    f"python3 ./tests/ci/create_release.py --push-new-release-branch"
+                    f"python3 ./ci/jobs/create_release.py --push-new-release-branch"
                     f" {dry_run_flag}".strip()
                 ],
                 workdir=REPO_PATH,
@@ -152,7 +152,7 @@ def main():
             Result.from_commands_run(
                 name="Bump CH Version and Update Contributors' List",
                 command=[
-                    f"python3 ./tests/ci/create_release.py --create-bump-version-pr"
+                    f"python3 ./ci/jobs/create_release.py --create-bump-version-pr"
                     f" {dry_run_flag}".strip()
                 ],
                 workdir=REPO_PATH,
@@ -172,7 +172,7 @@ def main():
             Result.from_commands_run(
                 name="Bump Docker Versions, Changelog, Security",
                 command=[
-                    "python3 ./tests/ci/create_release.py --set-progress-started"
+                    "python3 ./ci/jobs/create_release.py --set-progress-started"
                     " --progress 'update changelog, docker version, security'",
                     "echo 'List versions'",
                     "./utils/list-versions/list-versions.sh"
@@ -275,7 +275,7 @@ def main():
                 command=[
                     "git reset --hard HEAD",
                     f"git checkout {original_branch}",
-                    "python3 ./tests/ci/create_release.py --set-progress-completed",
+                    "python3 ./ci/jobs/create_release.py --set-progress-completed",
                 ],
                 workdir=REPO_PATH,
             )
@@ -285,7 +285,7 @@ def main():
             Result.from_commands_run(
                 name="Create GH Release",
                 command=[
-                    f"python3 ./tests/ci/create_release.py --create-gh-release"
+                    f"python3 ./ci/jobs/create_release.py --create-gh-release"
                     f" {dry_run_flag}".strip()
                 ],
                 workdir=REPO_PATH,
@@ -325,7 +325,7 @@ def main():
         ):
             def build():
                 Shell.check(
-                    f"python3 ./tests/ci/create_release.py --set-progress-started"
+                    f"python3 ./ci/jobs/create_release.py --set-progress-started"
                     f" --progress {shlex.quote(progress)}",
                     strict=True,
                 )
@@ -366,7 +366,7 @@ def main():
 
                 Shell.check("git checkout -", strict=True)
                 Shell.check(
-                    "python3 ./tests/ci/create_release.py --set-progress-completed",
+                    "python3 ./ci/jobs/create_release.py --set-progress-completed",
                     strict=True,
                 )
 
@@ -431,7 +431,7 @@ def main():
         Result.from_commands_run(
             name="Update Release Info and Merge Created PRs",
             command=[
-                f"python3 ./tests/ci/create_release.py --merge-prs"
+                f"python3 ./ci/jobs/create_release.py --merge-prs"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
@@ -442,9 +442,9 @@ def main():
         Result.from_commands_run(
             name="Set Release Progress to Completed",
             command=[
-                "python3 ./tests/ci/create_release.py --set-progress-started"
+                "python3 ./ci/jobs/create_release.py --set-progress-started"
                 " --progress completed",
-                "python3 ./tests/ci/create_release.py --set-progress-completed",
+                "python3 ./ci/jobs/create_release.py --set-progress-completed",
             ],
             workdir=REPO_PATH,
         )
@@ -454,7 +454,7 @@ def main():
         Result.from_commands_run(
             name="Post Slack Message",
             command=[
-                f"python3 ./tests/ci/create_release.py --post-status"
+                f"python3 ./ci/jobs/create_release.py --post-status"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
