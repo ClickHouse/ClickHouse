@@ -25,6 +25,7 @@ namespace Setting
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
     extern const SettingsBool optimize_extract_common_expressions;
     extern const SettingsBool optimize_and_compare_chain;
+    extern const SettingsBool optimize_and_compare_chain_pruning;
 }
 
 namespace ErrorCodes
@@ -658,8 +659,15 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
     const QueryTreeNodePtr & expression,
-    ComparisonFilterInfo new_filter)
+    ComparisonFilterInfo new_filter,
+    bool enable_pruning)
 {
+    if (!enable_pruning)
+    {
+        filter_map[expression].push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
     const auto & raw_type = expression->getResultType();
     chassert(!raw_type->isNullable());
     auto expr_type = removeLowCardinality(raw_type);
@@ -694,6 +702,7 @@ static AddComparisonFilterResult addComparisonFilter(
             break;
         }
     }
+
     info_list.push_back(std::move(new_filter));
     return AddComparisonFilterResult::ADDED;
 }
@@ -1435,8 +1444,9 @@ private:
         if (function_node.getResultType()->isNullable())
             return;
 
-        ComparisonFilterMap filter_map;
+        const bool enable_pruning = getSettings()[Setting::optimize_and_compare_chain_pruning];
 
+        ComparisonFilterMap filter_map;
         QueryTreeNodePtrWithHashMap<QueryTreeNodeConstRawPtrWithHashSet> not_equals_node_to_constants;
         QueryTreeNodePtrWithHashMap<IndexedNodes> node_to_not_equals_functions;
 
@@ -1487,7 +1497,7 @@ private:
 
             auto normalized = constant_on_left ? flipComparisonFunction(*comparison_func) : *comparison_func;
             ComparisonFilterInfo new_filter{constant, normalized, argument, {}, argument_index};
-            auto result = addComparisonFilter(filter_map, expression, std::move(new_filter));
+            auto result = addComparisonFilter(filter_map, expression, std::move(new_filter), enable_pruning);
 
             if (result == AddComparisonFilterResult::CONFLICT)
             {
