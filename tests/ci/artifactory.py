@@ -22,9 +22,9 @@ class R2MountPoint:
     _TEST_BUCKET_NAME = "repo-test"
     _PROD_BUCKET_NAME = "packages"
     _CACHE_MAX_SIZE_GB = 20
-    MOUNT_POINT = "/home/ubuntu/mountpoint"
+    MOUNT_POINT = str(Path.home() / "mountpoint")
     API_ENDPOINT = "https://d4fd593eebab2e3a58a599400c4cd64d.r2.cloudflarestorage.com"
-    LOG_FILE = "/home/ubuntu/fuse_mount.log"
+    LOG_FILE = str(Path.home() / "fuse_mount.log")
     # mod time is not required by reprepro and createrepo - disable to simplify bucket's mount sync (applicable fro rclone)
     NOMODTIME = True
     # enable debug messages in mount log
@@ -42,7 +42,7 @@ class R2MountPoint:
 
         self.aux_mount_options = ""
         if self.app == MountPointApp.S3FS:
-            self.cache_dir = "/home/ubuntu/s3fs_cache"
+            self.cache_dir = str(Path.home() / "s3fs_cache")
             # self.aux_mount_options += "-o nomodtime " if self.NOMODTIME else "" not for s3fs
             self.aux_mount_options += "--debug " if self.DEBUG else ""
             self.aux_mount_options += (
@@ -52,7 +52,7 @@ class R2MountPoint:
             )
             if not dry_run:
                 self.aux_mount_options += (
-                    "-o passwd_file /home/ubuntu/.passwd-s3fs_packages "
+                    f"-o passwd_file {Path.home() / '.passwd-s3fs_packages'} "
                 )
             # without -o nomultipart there are errors like "Error 5 writing to /home/ubuntu/***.deb: Input/output error"
             self.mount_cmd = (
@@ -61,14 +61,14 @@ class R2MountPoint:
                 f"-o logfile={self.LOG_FILE} {self.aux_mount_options}"
             )
         elif self.app == MountPointApp.GEESEFS:
-            self.cache_dir = "/home/ubuntu/geesefs_cache"
+            self.cache_dir = str(Path.home() / "geesefs_cache")
             self.aux_mount_options += (
                 f" --cache={self.cache_dir} " if self.CACHE_ENABLED else ""
             )
             if not dry_run:
-                self.aux_mount_options += " --shared-config=/home/ubuntu/.r2_auth "
+                self.aux_mount_options += f" --shared-config={Path.home() / '.r2_auth'} "
             else:
-                self.aux_mount_options += " --shared-config=/home/ubuntu/.r2_auth_test "
+                self.aux_mount_options += f" --shared-config={Path.home() / '.r2_auth_test'} "
             if self.DEBUG:
                 self.aux_mount_options += " --debug_s3 "
             self.mount_cmd = (

@@ -98,12 +98,6 @@ def main():
     dry_run_flag = "--dry-run" if args.dry_run else ""
     original_branch = Shell.get_output("git rev-parse --abbrev-ref HEAD", strict=True)
 
-    arch = "amd64" if Shell.get_output("uname -m") == "x86_64" else "arm64"
-    geesefs_bin_dir = os.path.expanduser("~/.local/bin")
-    os.makedirs(geesefs_bin_dir, exist_ok=True)
-    if geesefs_bin_dir not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = geesefs_bin_dir + os.pathsep + os.environ.get("PATH", "")
-
     results = []
     ok = True
 
@@ -115,15 +109,21 @@ def main():
         if results[-1].status != Result.Status.SUCCESS:
             ok = False
 
-    step(
-        name="Install geesefs",
-        command=[
-            f"command -v geesefs && geesefs --version | grep -q {_GEESEFS_VERSION} ||"
-            f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
-            f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
-        ],
-        workdir=REPO_PATH,
-    )
+    if args.release_type == "patch" and not args.only_docker:
+        arch = "amd64" if Shell.get_output("uname -m") == "x86_64" else "arm64"
+        geesefs_bin_dir = os.path.expanduser("~/.local/bin")
+        os.makedirs(geesefs_bin_dir, exist_ok=True)
+        if geesefs_bin_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = geesefs_bin_dir + os.pathsep + os.environ.get("PATH", "")
+        step(
+            name="Install geesefs",
+            command=[
+                f"command -v geesefs && geesefs --version | grep -q {_GEESEFS_VERSION} ||"
+                f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
+                f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
+            ],
+            workdir=REPO_PATH,
+        )
 
     step(
         name="Prepare Release Info",
