@@ -7,6 +7,7 @@
 #include <functional>
 #include <queue>
 #include <list>
+#include <vector>
 #include <optional>
 #include <atomic>
 #include <stack>
