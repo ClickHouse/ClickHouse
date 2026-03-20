@@ -8,6 +8,7 @@ aggregation_memory_efficient_merge_threads	0
 allow_aggregate_partitions_independently	0
 allow_archive_path_syntax	1
 allow_asynchronous_read_from_io_pool_for_merge_tree	0
+allow_calculating_subcolumns_sizes_for_merge_tree_reading	1
 allow_changing_replica_until_first_data_packet	0
 allow_create_index_without_type	0
 allow_custom_error_code_in_throwif	0
@@ -43,6 +44,7 @@ allow_experimental_database_unity_catalog	0
 allow_experimental_delta_kernel_rs	1
 allow_experimental_delta_lake_writes	0
 allow_experimental_dynamic_type	1
+allow_experimental_expire_snapshots	0
 allow_experimental_full_text_index	1
 allow_experimental_funnel_functions	0
 allow_experimental_geo_types	1
@@ -52,6 +54,7 @@ allow_experimental_insert_into_iceberg	0
 allow_experimental_inverted_index	0
 allow_experimental_join_condition	0
 allow_experimental_join_right_table_sorting	0
+allow_experimental_json_lazy_type_hints	0
 allow_experimental_json_type	1
 allow_experimental_kafka_offsets_storage_in_keeper	0
 allow_experimental_kusto_dialect	0
@@ -65,6 +68,7 @@ allow_experimental_nullable_tuple_type	0
 allow_experimental_object_storage_queue_hive_partitioning	0
 allow_experimental_object_type	0
 allow_experimental_parallel_reading_from_replicas	0
+allow_experimental_polyglot_dialect	0
 allow_experimental_projection_optimization	1
 allow_experimental_prql_dialect	0
 allow_experimental_qbit_type	1
@@ -75,7 +79,7 @@ allow_experimental_s3queue	1
 allow_experimental_shared_merge_tree	1
 allow_experimental_shared_set_join	1
 allow_experimental_statistic	0
-allow_experimental_statistics	0
+allow_experimental_statistics	1
 allow_experimental_time_series_aggregate_functions	0
 allow_experimental_time_series_table	0
 allow_experimental_time_time64_type	1
@@ -103,6 +107,7 @@ allow_nondeterministic_mutations	0
 allow_nondeterministic_optimize_skip_unused_shards	0
 allow_not_comparable_types_in_comparison_functions	0
 allow_not_comparable_types_in_order_by	0
+allow_nullable_tuple_in_extracted_subcolumns	0
 allow_prefetched_read_pool_for_local_filesystem	0
 allow_prefetched_read_pool_for_remote_filesystem	1
 allow_push_predicate_ast_for_distributed_subqueries	1
@@ -113,6 +118,7 @@ allow_simdjson	1
 allow_special_bool_values_inside_variant	0
 allow_special_serialization_kinds_in_output_formats	1
 allow_statistic_optimize	1
+allow_statistics	1
 allow_statistics_optimize	1
 allow_suspicious_codecs	0
 allow_suspicious_fixed_string_types	0
@@ -306,6 +312,7 @@ delta_lake_enable_expression_visitor_logging	0
 delta_lake_insert_max_bytes_in_data_file	1073741824
 delta_lake_insert_max_rows_in_data_file	1000000
 delta_lake_log_metadata	0
+delta_lake_reload_schema_for_consistency	0
 delta_lake_snapshot_end_version	-1
 delta_lake_snapshot_start_version	-1
 delta_lake_snapshot_version	-1
@@ -530,6 +537,7 @@ function_locate_has_mysql_compatible_argument_order	1
 function_range_max_elements_in_block	500000000
 function_sleep_max_microseconds_per_block	3000000
 function_visible_width_behavior	1
+functions_h3_default_if_invalid	0
 geo_distance_returns_float64_on_float64_arguments	1
 geotoh3_argument_order	lat_lon
 glob_expansion_max_elements	1000
@@ -575,11 +583,15 @@ http_write_exception_in_output_format	0
 http_zlib_compression_level	3
 iceberg_delete_data_on_drop	0
 iceberg_engine_ignore_schema_evolution	0
+iceberg_expire_default_max_ref_age_ms	9223372036854775807
+iceberg_expire_default_max_snapshot_age_ms	432000000
+iceberg_expire_default_min_snapshots_to_keep	1
 iceberg_insert_max_bytes_in_data_file	1073741824
 iceberg_insert_max_partitions	100
 iceberg_insert_max_rows_in_data_file	1000000
 iceberg_metadata_compression_method	
 iceberg_metadata_log_level	none
+iceberg_metadata_staleness_ms	0
 iceberg_snapshot_id	0
 iceberg_timestamp_ms	0
 idle_connection_timeout	3600
@@ -906,6 +918,8 @@ max_rows_to_transfer	0
 max_sessions_for_user	0
 max_size_to_preallocate_for_aggregation	1000000000000
 max_size_to_preallocate_for_joins	1000000000000
+max_skip_unavailable_shards_num	0
+max_skip_unavailable_shards_ratio	0
 max_streams_for_files_processing_in_cluster_functions	0
 max_streams_for_merge_tree_reading	0
 max_streams_multiplier_for_merge_tables	5
@@ -986,7 +1000,7 @@ mutations_execute_nondeterministic_on_initiator	0
 mutations_execute_subqueries_on_initiator	0
 mutations_max_literal_size_to_replace	16384
 mutations_sync	0
-mysql_datatypes_support_level	
+mysql_datatypes_support_level	decimal,datetime64,date2Date32
 mysql_map_fixed_string_to_text_in_show_columns	1
 mysql_map_string_to_text_in_show_columns	1
 mysql_max_rows_to_insert	65536
@@ -1052,7 +1066,7 @@ optimize_skip_unused_shards_nesting	0
 optimize_skip_unused_shards_rewrite_in	1
 optimize_sorting_by_input_stream_properties	1
 optimize_substitute_columns	0
-optimize_syntax_fuse_functions	0
+optimize_syntax_fuse_functions	1
 optimize_throw_if_noop	0
 optimize_time_filter_with_preimage	1
 optimize_trivial_approximate_count_query	0
@@ -1160,6 +1174,7 @@ output_format_sql_insert_max_batch_size	65409
 output_format_sql_insert_quote_names	1
 output_format_sql_insert_table_name	table
 output_format_sql_insert_use_replace	0
+output_format_trim_fixed_string	0
 output_format_tsv_crlf_end_of_line	0
 output_format_values_escape_quote_with_quote	0
 output_format_write_statistics	1
@@ -1205,6 +1220,7 @@ parts_to_throw_insert	0
 per_part_index_stats	0
 periodic_live_view_refresh	60
 poll_interval	10
+polyglot_dialect	
 postgresql_connection_attempt_timeout	2
 postgresql_connection_pool_auto_close_connection	0
 postgresql_connection_pool_retries	2
@@ -1441,7 +1457,7 @@ trace_profile_events_list
 transfer_overflow_mode	throw
 transform_null_in	0
 traverse_shadow_remote_data_paths	0
-type_json_allow_duplicated_key_with_literal_and_nested_object	0
+type_json_allow_duplicated_key_with_literal_and_nested_object	1
 type_json_skip_duplicated_paths	0
 type_json_skip_invalid_typed_paths	0
 type_json_use_partial_match_to_skip_paths_by_regexp	1
@@ -1472,6 +1488,9 @@ use_page_cache_for_local_disks	0
 use_page_cache_for_object_storage	0
 use_page_cache_with_distributed_cache	0
 use_paimon_partition_pruning	0
+use_parquet_metadata_cache	1
+use_partition_key	1
+use_partition_pruning	1
 use_primary_key	1
 use_query_cache	0
 use_query_condition_cache	1
@@ -1488,6 +1507,7 @@ use_structure_from_insertion_table_in_table_functions	2
 use_text_index_dictionary_cache	0
 use_text_index_header_cache	0
 use_text_index_postings_cache	0
+use_text_index_tokens_cache	0
 use_top_k_dynamic_filtering	0
 use_uncompressed_cache	0
 use_variant_as_common_type	1
@@ -1505,6 +1525,10 @@ wait_changes_become_visible_after_commit_mode	wait_unknown
 wait_for_async_insert	1
 wait_for_async_insert_timeout	120
 wait_for_window_view_fire_signal_timeout	10
+webassembly_udf_max_fuel	100000
+webassembly_udf_max_input_block_size	0
+webassembly_udf_max_instances	32
+webassembly_udf_max_memory	134217728
 window_view_clean_interval	60
 window_view_heartbeat_interval	15
 workload	default

@@ -21,7 +21,7 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
         for substr in (
             "_debug, parallel",
             "_binary, parallel",
-            "_asan, distributed plan, parallel",
+            "_asan_ubsan, distributed plan, parallel",
             "_tsan, parallel",
         )
     )
@@ -62,7 +62,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
-        *JobConfigs.build_llvm_coverage_job,
+        *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
         JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
         JobConfigs.lightweight_functional_tests_job,
