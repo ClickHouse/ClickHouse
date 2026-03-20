@@ -33,6 +33,8 @@ namespace
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+        bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         ColumnPtr
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
         {

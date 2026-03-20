@@ -47,6 +47,7 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isDeterministic() const override { return false; } /// disable query condition cache
     bool isDeterministicInScopeOfQuery() const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }

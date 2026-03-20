@@ -148,6 +148,8 @@ public:
         return false;
     }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     std::size_t getNumberOfArguments() const override
     {
         return 0u;

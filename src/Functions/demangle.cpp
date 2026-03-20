@@ -46,6 +46,8 @@ public:
         return true;
     }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{

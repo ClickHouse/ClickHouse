@@ -33,6 +33,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DB::DataTypes & arguments) const override
@@ -91,6 +93,8 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 

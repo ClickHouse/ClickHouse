@@ -41,6 +41,8 @@ namespace
             return false;
         }
 
+        bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         String getName() const override
         {
             return toString(kind);

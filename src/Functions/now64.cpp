@@ -75,6 +75,8 @@ public:
         return false;
     }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
 private:
     Field time_value;
     DataTypes argument_types;

@@ -50,6 +50,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     /// getMacro may return different values on different shards/replicas, so it's not constant for distributed query
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 

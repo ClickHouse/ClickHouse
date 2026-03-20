@@ -54,6 +54,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -435,6 +437,7 @@ public:
     {
         return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
     }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     static ColumnsWithTypeAndName addTypeColumnToArguments(const ColumnsWithTypeAndName & arguments)
     {

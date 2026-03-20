@@ -67,6 +67,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Dynamic column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;

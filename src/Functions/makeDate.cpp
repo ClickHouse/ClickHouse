@@ -40,6 +40,8 @@ class FunctionWithNumericParamsBase : public IFunction
 public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isVariadic() const override { return true; }

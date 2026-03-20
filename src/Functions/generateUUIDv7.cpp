@@ -36,6 +36,7 @@ public:
     bool isDeterministicInScopeOfQuery() const final { return false; }
     bool useDefaultImplementationForNulls() const final { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     bool isVariadic() const final { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

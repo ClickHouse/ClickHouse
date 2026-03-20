@@ -46,6 +46,8 @@ namespace
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+        bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         String getName() const override { return toString(kind); }
 
         explicit FunctionCurrentRoles(const ContextPtr & context_, Kind kind_)

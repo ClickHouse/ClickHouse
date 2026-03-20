@@ -495,6 +495,7 @@ public:
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

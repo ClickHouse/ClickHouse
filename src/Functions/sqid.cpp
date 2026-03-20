@@ -35,6 +35,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidEncode>(); }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -97,6 +98,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidDecode>(); }
 

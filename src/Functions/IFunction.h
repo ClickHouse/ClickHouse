@@ -302,7 +302,7 @@ public:
       * Only accounts for data-dependent exceptions (e.g. invalid data parsing, division by zero),
       * not exceptions at preparation time (e.g. type resolution).
       */
-    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return false; }
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     /// The property of monotonicity for a certain range.
     struct Monotonicity
@@ -550,7 +550,7 @@ public:
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
-    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return false; }
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }
