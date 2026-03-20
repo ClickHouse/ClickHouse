@@ -49,6 +49,10 @@ PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
 {
     if (info.embedded_postings)
     {
+        /// Embedded postings must fit in a single decoded block.
+        /// If this ever fires, the token should use compressed postings instead.
+        chassert(info.cardinality <= BLOCK_SIZE);
+
         /// Decode all embedded postings into decoded_values.
         decoded_count = std::min(static_cast<size_t>(info.cardinality), static_cast<size_t>(BLOCK_SIZE));
         if (decoded_count > 0)
@@ -187,17 +191,14 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     if (bits > 32)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
 
-    std::vector<uint32_t> temp(count);
-    std::span<uint32_t> out_span(temp.data(), count);
+    std::span<uint32_t> out_span(decoded_values, count);
     BitpackingBlockCodec::decode(block_data, count, bits, out_span);
 
-    /// Restore absolute row ids from deltas.
-    std::inclusive_scan(temp.begin(), temp.end(), temp.begin(), std::plus<uint32_t>{}, last_decoded_doc_id);
-    last_decoded_doc_id = temp.empty() ? last_decoded_doc_id : temp.back();
+    /// Restore absolute row ids from deltas directly in decoded_values.
+    std::inclusive_scan(decoded_values, decoded_values + count, decoded_values, std::plus<uint32_t>{}, last_decoded_doc_id);
+    last_decoded_doc_id = count > 0 ? decoded_values[count - 1] : last_decoded_doc_id;
 
     decoded_count = count;
-    for (size_t i = 0; i < count; ++i)
-        decoded_values[i] = temp[i];
     index = 0;
 }
 
@@ -361,7 +362,9 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
         if (row_offset + num_rows <= seg_begin)
             break;
 
-        prepareSegment(i);
+        /// Skip re-preparing the segment if it is already loaded.
+        if (i != current_segment_idx || !has_prepared_first_segment)
+            prepareSegment(i);
 
         /// Decode all blocks in this segment that overlap with [row_offset, row_offset + num_rows).
         for (size_t b = 0; b < block_count; ++b)
@@ -409,7 +412,9 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
         if (row_offset + num_rows <= seg_begin)
             break;
 
-        prepareSegment(i);
+        /// Skip re-preparing the segment if it is already loaded.
+        if (i != current_segment_idx || !has_prepared_first_segment)
+            prepareSegment(i);
 
         for (size_t b = 0; b < block_count; ++b)
         {

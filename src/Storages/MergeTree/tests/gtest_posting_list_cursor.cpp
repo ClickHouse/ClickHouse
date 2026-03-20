@@ -564,11 +564,11 @@ TEST(PostingListCursorTest, IntersectFourAllOverlap)
 
 TEST(PostingListCursorTest, IntersectFourMixedSelectivity)
 {
-    // LCM(2, 3, 5, 7) = 210
-    auto docs1 = generateRange(0, 50, 2);  // every 2nd: 0, 2, 4, ...
-    auto docs2 = generateRange(0, 34, 3);  // every 3rd: 0, 3, 6, ...
-    auto docs3 = generateRange(0, 20, 5);  // every 5th: 0, 5, 10, ...
-    auto docs4 = generateRange(0, 15, 7);  // every 7th: 0, 7, 14, ...
+    // LCM(2, 3, 5, 7) = 210 — all sequences must cover at least [0, 210].
+    auto docs1 = generateRange(0, 106, 2);  // every 2nd: 0, 2, ..., 210
+    auto docs2 = generateRange(0, 71, 3);   // every 3rd: 0, 3, ..., 210
+    auto docs3 = generateRange(0, 43, 5);   // every 5th: 0, 5, ..., 210
+    auto docs4 = generateRange(0, 31, 7);   // every 7th: 0, 7, ..., 210
 
     auto info1 = makeEmbeddedInfo(docs1);
     auto info2 = makeEmbeddedInfo(docs2);

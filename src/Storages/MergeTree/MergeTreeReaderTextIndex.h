@@ -96,6 +96,10 @@ private:
     absl::flat_hash_set<std::string_view> useful_tokens;
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
     PostingsSerialization postings_serialization;
+
+    /// Lazy mode state, computed once in `readGranule` and reused across `fillColumn` calls.
+    bool use_lazy_mode = false;
+    float lazy_density_threshold = 0.5f;
 };
 
 }

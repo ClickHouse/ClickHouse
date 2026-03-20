@@ -92,6 +92,19 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
+
+    /// Pre-compute lazy mode flag once: requires V2 format and explicit opt-in.
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & ctx_settings = condition_text.getContext()->getSettingsRef();
+    const String & apply_mode = ctx_settings[Setting::text_index_posting_list_apply_mode].value;
+
+    if (apply_mode != "materialize" && apply_mode != "lazy")
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid value '{}' for setting text_index_posting_list_apply_mode, expected 'materialize' or 'lazy'",
+            apply_mode);
+
+    use_lazy_mode = (apply_mode == "lazy") && (deserialization_state->version >= 2);
+    lazy_density_threshold = ctx_settings[Setting::text_index_density_threshold].value;
 }
 
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
@@ -302,7 +315,11 @@ size_t MergeTreeReaderTextIndex::readRows(
         }
         else
         {
-            auto mark_postings = readPostingsIfNeeded(from_mark);
+            /// In lazy mode, skip Roaring Bitmap materialization — fillColumn
+            /// creates cursors directly from TokenPostingsInfo + .pst stream.
+            PostingsMap mark_postings;
+            if (!use_lazy_mode)
+                mark_postings = readPostingsIfNeeded(from_mark);
 
             for (size_t i = 0; i < res_columns.size(); ++i)
             {
@@ -601,16 +618,10 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     size_t old_size = column_data.size();
     column_data.resize_fill(old_size + num_rows, 0);
 
-    if (postings.empty() || search_query->tokens.empty())
+    if (search_query->tokens.empty())
         return;
 
-    /// Check if lazy apply mode is enabled and the index is V2.
-    const auto & ctx_settings = condition_text.getContext()->getSettingsRef();
-    const String & apply_mode = ctx_settings[Setting::text_index_posting_list_apply_mode].value;
-    bool use_lazy = (apply_mode == "lazy") && (deserialization_state->version >= 2);
-    bool used_lazy = false;
-
-    if (use_lazy)
+    if (use_lazy_mode)
     {
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
         const auto & remaining_tokens = granule_text.getRemainingTokens();
@@ -625,41 +636,44 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
 
             const auto & token_info = *info_it->second;
 
-            /// Only create lazy cursors for compressed posting lists (V2 has Index Section in .pst).
+            /// Compressed postings use lazy cursor; embedded postings use stream-free cursor.
             if (token_info.header & PostingsSerialization::Flags::IsCompressed)
             {
-                auto * postings_stream = large_postings_streams.count(token)
-                    ? large_postings_streams.at(token).get()
+                auto stream_it = large_postings_streams.find(token);
+                auto * postings_stream = stream_it != large_postings_streams.end()
+                    ? stream_it->second.get()
                     : small_postings_stream.get();
 
-                auto cursor = std::make_shared<PostingListCursor>(*postings_stream, token_info);
-                cursor_map[token] = std::move(cursor);
+                cursor_map[token] = std::make_shared<PostingListCursor>(*postings_stream, token_info);
+            }
+            else if (token_info.embedded_postings)
+            {
+                cursor_map[token] = std::make_shared<PostingListCursor>(token_info);
             }
         }
 
         /// Use lazy path if all required tokens have lazy cursors.
         if (!cursor_map.empty() && cursor_map.size() == search_query->tokens.size())
         {
-            float density_threshold = ctx_settings[Setting::text_index_density_threshold].value;
-
             if (search_query->search_mode == TextSearchMode::Any)
                 lazyUnionPostingLists(column, cursor_map, search_query->tokens, old_size, row_offset, num_rows);
             else if (search_query->search_mode == TextSearchMode::All)
-                lazyIntersectPostingLists(column, cursor_map, search_query->tokens, old_size, row_offset, num_rows, density_threshold);
+                lazyIntersectPostingLists(column, cursor_map, search_query->tokens, old_size, row_offset, num_rows, lazy_density_threshold);
 
-            used_lazy = true;
+            return;
         }
+        /// If not all tokens have cursors, fall through to materialize path.
     }
 
-    if (!used_lazy)
-    {
-        if (search_query->search_mode == TextSearchMode::Any)
-            applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
-        else if (search_query->search_mode == TextSearchMode::All)
-            applyPostingsAll(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
-    }
+    if (postings.empty())
+        return;
+
+    if (search_query->search_mode == TextSearchMode::Any)
+        applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
+    else if (search_query->search_mode == TextSearchMode::All)
+        applyPostingsAll(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
 }
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
