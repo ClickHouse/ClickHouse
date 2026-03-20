@@ -20,6 +20,7 @@
 #include <fmt/format.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -132,6 +133,12 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int ALL_CONNECTION_TRIES_FAILED;
+extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char parallel_replicas_wait_unavailable_replica_on_task_request[];
 }
 
 class ParallelReplicasReadingCoordinator::ImplInterface
@@ -370,6 +377,8 @@ private:
     bool possiblyCanReadPart(size_t replica, const RangesInDataPartDescription & description) const;
     void enqueueSegment(const RangesInDataPartDescription & description, const MarkRange & segment, size_t owner);
     void enqueueToStealerOrStealingQueue(const RangesInDataPartDescription & description, const MarkRange & segment);
+
+    bool isLastReplica() const { return (replicas_count - unavailable_replicas_count - finished_replicas) == 1; }
 };
 
 
@@ -803,22 +812,29 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
 
     ParallelReadResponse response;
     size_t current_mark_size = 0;
+    size_t assigned_to_me = 0;
+    size_t stolen_by_hash = 0;
+    size_t stolen_unassigned = 0;
+    size_t min_number_of_marks = request.min_number_of_marks;
+
+    /// Special handling for last replica: drain all queues to minimize round trips
+    if (isLastReplica())
+        min_number_of_marks = -1;
 
     /// 1. Try to select ranges meant for this replica by consistent hash
-    selectPartsAndRanges(
-        request.replica_num, ScanMode::TakeWhatsMineByHash, request.min_number_of_marks, current_mark_size, response.description);
-    const size_t assigned_to_me = current_mark_size;
+    selectPartsAndRanges(request.replica_num, ScanMode::TakeWhatsMineByHash, min_number_of_marks, current_mark_size, response.description);
+    assigned_to_me = current_mark_size;
 
     /// 2. Try to steal but with caching again (with different key)
     selectPartsAndRanges(
-        request.replica_num, ScanMode::TakeWhatsMineForStealing, request.min_number_of_marks, current_mark_size, response.description);
-    const size_t stolen_by_hash = current_mark_size - assigned_to_me;
+        request.replica_num, ScanMode::TakeWhatsMineForStealing, min_number_of_marks, current_mark_size, response.description);
+    stolen_by_hash = current_mark_size - assigned_to_me;
 
     /// 3. Try to steal with no preference. We're trying to postpone it as much as possible.
-    if (current_mark_size == 0)
+    if (current_mark_size == 0 || isLastReplica())
         selectPartsAndRanges(
-            request.replica_num, ScanMode::TakeEverythingAvailable, request.min_number_of_marks, current_mark_size, response.description);
-    const size_t stolen_unassigned = current_mark_size - stolen_by_hash - assigned_to_me;
+            request.replica_num, ScanMode::TakeEverythingAvailable, min_number_of_marks, current_mark_size, response.description);
+    stolen_unassigned = current_mark_size - stolen_by_hash - assigned_to_me;
 
     stats[request.replica_num].number_of_requests += 1;
     stats[request.replica_num].sum_marks += current_mark_size;
@@ -1135,6 +1151,22 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
 {
+#ifdef USE_LIBFIU
+    // wait on first task request until unavailable replica is detected, necessary for testing of draining last replica
+    bool fail_point_timeout = false;
+    fiu_do_on(FailPoints::parallel_replicas_wait_unavailable_replica_on_task_request, {
+        std::unique_lock lock(mutex);
+        fail_point_timeout = !wait_unavailable_replica_on_task_request_cv.wait_for(
+            lock,
+            std::chrono::seconds(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC * 2),
+            [this]()
+            { return !unavailable_nodes_registered_before_initialization.empty() || (pimpl && pimpl->unavailable_replicas_count > 0); });
+    });
+    if (fail_point_timeout)
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED, "`parallel_replicas_wait_unavailable_replica_on_task_request` fail point timeout exceeded");
+#endif
+
     if (request.min_number_of_marks == 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
@@ -1228,16 +1260,21 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
 {
     ProfileEvents::increment(ProfileEvents::ParallelReplicasUnavailableCount);
 
-    std::lock_guard lock(mutex);
-
-    if (!pimpl)
     {
-        unavailable_nodes_registered_before_initialization.push_back(replica_number);
-        if (unavailable_nodes_registered_before_initialization.size() == replicas_count)
-            throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Can't connect to any replica chosen for query execution");
+        std::lock_guard lock(mutex);
+        if (!pimpl)
+        {
+            unavailable_nodes_registered_before_initialization.push_back(replica_number);
+            if (unavailable_nodes_registered_before_initialization.size() == replicas_count)
+                throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Can't connect to any replica chosen for query execution");
+        }
+        else
+            pimpl->markReplicaAsUnavailable(replica_number);
     }
-    else
-        pimpl->markReplicaAsUnavailable(replica_number);
+
+#ifdef USE_LIBFIU
+    wait_unavailable_replica_on_task_request_cv.notify_all();
+#endif
 }
 
 void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)

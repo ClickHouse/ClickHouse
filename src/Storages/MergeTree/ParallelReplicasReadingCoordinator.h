@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/RequestResponse.h>
 
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -56,6 +57,10 @@ private:
     /// The problem is `markReplicaAsUnavailable` might be called before any of these requests happened.
     /// In this case we will remember the numbers of unavailable replicas and apply this knowledge later on initialization.
     std::vector<size_t> unavailable_nodes_registered_before_initialization;
+
+#ifdef USE_LIBFIU
+    std::condition_variable wait_unavailable_replica_on_task_request_cv;
+#endif
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
