@@ -293,7 +293,7 @@ def main():
             command=[
                 f"command -v geesefs && geesefs --version | grep -q {_GEESEFS_VERSION} ||"
                 f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
-                f" -o /usr/local/bin/geesefs && chmod +x /usr/local/bin/geesefs)",
+                f" | sudo tee /usr/local/bin/geesefs > /dev/null && sudo chmod +x /usr/local/bin/geesefs)",
             ],
             workdir=REPO_PATH,
         )
