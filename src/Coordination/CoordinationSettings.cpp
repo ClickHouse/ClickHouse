@@ -51,7 +51,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_flush_batch_size, 1000, "Max size of batch of requests that can be flushed together", 0) \
     DECLARE(UInt64, max_requests_quick_batch_size, 100, "Max size of batch of requests to try to get before proceeding with RAFT. Keeper will not wait for requests but take only requests that are already in queue" , 0) \
     DECLARE(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
-    DECLARE(Bool, per_session_read_barrier, false, "Enable per-session local read barrier: read requests wait only for pending writes from the same session", 0) \
+    DECLARE(Bool, per_session_read_barrier, true, "Enable per-session local read barrier: read requests wait only for pending writes from the same session", 0) \
     DECLARE(UInt64, max_deferred_reads_per_session, 1000, "Maximum number of read requests waiting for writes in a single session. Excess reads receive ZOPERATIONTIMEOUT. Only used when per_session_read_barrier is enabled", 0) \
     DECLARE(UInt64, max_pending_writes_per_session, 1000, "Maximum number of uncommitted writes tracked per session. Excess writes are processed but a warning is logged. Only used when per_session_read_barrier is enabled", 0) \
     DECLARE(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
