@@ -65,6 +65,9 @@ public:
         ~ThreadFromThreadPool();
 
     private:
+        /// Allow enclosing ThreadPoolImpl to access per-thread idle notification members.
+        friend ThreadPoolImpl;
+
         ThreadPoolImpl& parent_pool;
         Thread thread;
 
@@ -80,6 +83,12 @@ public:
 
         // Stores the position of the thread in the parent thread pool list
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
+
+        /// Per-thread condition variable for LIFO idle thread scheduling.
+        /// When idle, this thread pushes itself onto a LIFO stack and waits
+        /// on this CV. The scheduler wakes the most recently idle thread first.
+        std::condition_variable idle_wakeup_cv;
+        bool idle_wakeup_flag = false;
 
         // Remove itself from the parent pool
         void removeSelfFromPoolNoPoolLock();
@@ -165,7 +174,6 @@ private:
 
     mutable std::mutex mutex;
     std::condition_variable job_finished;
-    std::condition_variable new_job_or_shutdown;
 
     Metric metric_threads;
     Metric metric_active_threads;
@@ -200,11 +208,21 @@ private:
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
+    /// LIFO stack of idle threads for wake-up scheduling.
+    /// When a new job is scheduled, the most recently idle thread is woken first.
+    /// This concentrates work on fewer OS threads, improving CPU cache locality
+    /// and reducing memory fragmentation from allocator per-thread caches (e.g. jemalloc tcache).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/10818
+    std::vector<ThreadFromThreadPool *> idle_thread_stack;
+
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
+
+    /// Wake all threads in the idle stack. Must be called with mutex held.
+    void wakeUpAllIdleThreadsNoLock();
 
     void finalize();
     void onDestroy();

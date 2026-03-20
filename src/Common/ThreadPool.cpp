@@ -207,7 +207,7 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     else if (need_finish_free_threads)
     {
         /// Wake up free threads so they can finish themselves.
-        new_job_or_shutdown.notify_all();
+        wakeUpAllIdleThreadsNoLock();
     }
 }
 
@@ -244,7 +244,7 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
     if (need_finish_free_threads)
     {
         /// Wake up free threads so they can finish themselves.
-        new_job_or_shutdown.notify_all();
+        wakeUpAllIdleThreadsNoLock();
     }
 }
 
@@ -418,10 +418,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
             return on_error("cannot start the job or thread");
         }
-    }
 
-    /// Wake up a free thread to run the new job.
-    new_job_or_shutdown.notify_one();
+        /// Wake up the most recently idle thread (LIFO order) to run the new job.
+        /// LIFO scheduling concentrates work on fewer threads, improving cache locality
+        /// and reducing memory overhead from allocator per-thread caches.
+        if (!idle_thread_stack.empty())
+        {
+            auto * thread_to_wake = idle_thread_stack.back();
+            idle_thread_stack.pop_back();
+            thread_to_wake->idle_wakeup_flag = true;
+            thread_to_wake->idle_wakeup_cv.notify_one();
+        }
+    }
 
     ProfileEvents::increment(std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
@@ -512,9 +520,9 @@ void ThreadPoolImpl<Thread>::wait()
         std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
         watch.elapsedMicroseconds());
     /// Signal here just in case.
-    /// If threads are waiting on condition variables, but there are some jobs in the queue
+    /// If threads are idle but there are some jobs in the queue
     /// then it will prevent us from deadlock.
-    new_job_or_shutdown.notify_all();
+    wakeUpAllIdleThreadsNoLock();
     job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
     if (first_exception)
@@ -552,10 +560,10 @@ void ThreadPoolImpl<Thread>::finalize()
         /// Disable thread self-removal from `threads`. Otherwise, if threads remove themselves,
         /// the thread.join() operation will fail later in this function.
         threads_remove_themselves = false;
-    }
 
-    /// Notify all threads to wake them up, so they can complete their work and exit gracefully.
-    new_job_or_shutdown.notify_all();
+        /// Wake up all idle threads so they can see shutdown and exit gracefully.
+        wakeUpAllIdleThreadsNoLock();
+    }
 
     /// Join all threads before clearing the list
     for (auto& thread_ptr : threads)
@@ -584,6 +592,17 @@ void ThreadPoolImpl<Thread>::onDestroy()
         on_destroy_callbacks.pop();
         NOEXCEPT_SCOPE({ callback(); });
     }
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::wakeUpAllIdleThreadsNoLock()
+{
+    for (auto * thread : idle_thread_stack)
+    {
+        thread->idle_wakeup_flag = true;
+        thread->idle_wakeup_cv.notify_one();
+    }
+    idle_thread_stack.clear();
 }
 
 template <typename Thread>
@@ -730,15 +749,22 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
                 parent_pool.job_finished.notify_all();
                 if (parent_pool.shutdown)
-                    parent_pool.new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+                    parent_pool.wakeUpAllIdleThreadsNoLock(); /// `shutdown` was set, wake up other threads so they can finish themselves.
             }
 
-            parent_pool.new_job_or_shutdown.wait(lock, [this] {
-                return !parent_pool.jobs.empty()
-                    || parent_pool.shutdown
-                    || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
-            });
-
+            /// LIFO idle thread scheduling: push this thread onto the idle stack
+            /// and wait on a per-thread condition variable. The scheduler wakes the
+            /// most recently idle thread first, concentrating work on fewer OS threads.
+            /// This improves CPU cache locality and reduces memory fragmentation
+            /// from allocator per-thread caches (e.g. jemalloc tcache).
+            while (parent_pool.jobs.empty()
+                && !parent_pool.shutdown
+                && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
+            {
+                parent_pool.idle_thread_stack.push_back(this);
+                idle_wakeup_flag = false;
+                idle_wakeup_cv.wait(lock, [this] { return idle_wakeup_flag; });
+            }
 
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
