@@ -23,9 +23,9 @@ SELECT '= 127.0.0.1', ipv4_ FROM ipv4_test
     ORDER BY ipv4_;
 
 -- Assert that invalid values can't be inserted into IPv4 column.
-INSERT INTO ipv4_test VALUES ('hello'); -- { serverError CANNOT_PARSE_IPV4 }
-INSERT INTO ipv4_test VALUES ('300.0.0.1'); -- { serverError CANNOT_PARSE_IPV4 }
-INSERT INTO ipv4_test VALUES (''); -- { serverError CANNOT_PARSE_IPV4 }
+INSERT INTO ipv4_test VALUES ('hello'); -- { serverError 675 }
+INSERT INTO ipv4_test VALUES ('300.0.0.1'); -- { serverError 675 }
+INSERT INTO ipv4_test VALUES (''); -- { serverError 675 }
 
 DROP TABLE IF EXISTS ipv4_test;
 
@@ -58,9 +58,9 @@ SELECT '= 127.0.0.1', ipv6_ FROM ipv6_test
     ORDER BY ipv6_;
 
 -- Assert that invalid values can't be inserted into IPv6 column.
-INSERT INTO ipv6_test VALUES ('hello:world'); -- { serverError CANNOT_PARSE_IPV6 }
-INSERT INTO ipv6_test VALUES ('0:0:0:0:0:0:0:0:0'); -- { serverError CANNOT_PARSE_IPV6 }
-INSERT INTO ipv6_test VALUES (''); -- { serverError CANNOT_PARSE_IPV6 }
+INSERT INTO ipv6_test VALUES ('hello:world'); -- { serverError 676 }
+INSERT INTO ipv6_test VALUES ('0:0:0:0:0:0:0:0:0'); -- { serverError 676 }
+INSERT INTO ipv6_test VALUES (''); -- { serverError 676 }
 
 DROP TABLE IF EXISTS ipv6_test;
 
