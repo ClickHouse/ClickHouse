@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.4",
+        {
+            {"enable_automatic_use_uncompressed_cache", false, true, "Enable automatic use of uncompressed cache for eligible local MergeTree reads by default."},
+        });
         addSettingsChanges(settings_changes_history, "26.3",
         {
             {"optimize_syntax_fuse_functions", false, true, "The optimization is production-ready"},
@@ -47,7 +51,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
             {"use_text_index_tokens_cache", false, false, "New setting"},
             {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
-            {"enable_automatic_use_uncompressed_cache", false, true, "Enable automatic use of uncompressed cache for eligible local MergeTree reads by default."},
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, true, "Allow duplicated paths in JSON type with literal and nested object by default"},
