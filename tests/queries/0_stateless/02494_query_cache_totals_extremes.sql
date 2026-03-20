@@ -1,6 +1,9 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
+-- Reversed keys break aggregation-in-order for GROUP BY WITH TOTALS, producing wrong results
+SET force_primary_key_reverse_order = 0;
+
 SYSTEM CLEAR QUERY CACHE;
 DROP TABLE IF EXISTS tbl;
 

@@ -1,3 +1,6 @@
+-- SHOW CREATE TABLE output includes ORDER BY direction, which changes with reversed keys
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS alter_modify_column_ttl_without_type;
 
 SET allow_suspicious_ttl_expressions = 1;

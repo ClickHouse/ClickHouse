@@ -8,6 +8,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Disable force_primary_key_reverse_order: tests temporary tables with MergeTree, output depends on key direction
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+# All queries use CLICKHOUSE_CURL, so must also override the URL params where the setting is baked in
+CLICKHOUSE_URL="${CLICKHOUSE_URL}&force_primary_key_reverse_order=0"
 
 SESSION_ID_A="$RANDOM$RANDOM$RANDOM"
 SESSION_ID_B="$RANDOM$RANDOM$RANDOM"

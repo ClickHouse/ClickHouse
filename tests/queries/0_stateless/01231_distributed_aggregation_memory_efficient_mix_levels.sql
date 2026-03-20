@@ -1,5 +1,8 @@
 -- Tags: distributed, no-parallel
 
+-- Distributed aggregation with memory-efficient mode and external group by produces wrong counts with reversed keys
+SET force_primary_key_reverse_order = 0;
+
 set send_logs_level = 'error';
 
 create database if not exists shard_0;
