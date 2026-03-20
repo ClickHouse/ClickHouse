@@ -279,7 +279,7 @@ void searchOnArray(
 
             std::string_view input = input_string.getDataAt(element_idx);
 
-            forEachToken(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
+            forEachTokenPadded(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
 
             if (col_result[i])
                 break;
@@ -303,7 +303,7 @@ void searchOnString(
         col_result[i] = false;
         matcher.reset();
 
-        forEachToken(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
+        forEachTokenPadded(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
     }
 }
 

@@ -53,7 +53,6 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/StorageView.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -213,7 +212,7 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
   */
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextPtr & query_context, const ActionsDAG * post_filter)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextPtr & query_context)
 {
     bool collect_filters = false;
     const auto & settings = query_context->getSettingsRef();
@@ -236,11 +235,6 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             break;
         }
         if (typeid_cast<const StorageObjectStorageCluster *>(storage.get()))
-        {
-            collect_filters = true;
-            break;
-        }
-        if (typeid_cast<const StorageView *>(storage.get()))
         {
             collect_filters = true;
             break;
@@ -283,36 +277,6 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 
     auto & result_query_plan = planner.getQueryPlan();
 
-    /// This part is needed to support "skip unused shards" for the View over Distributed.
-    /// When reading through a View, the outer WHERE clause is not visible to the inner query.
-    /// Inject it as a FilterStep on top of the dummy plan so that predicate-push-down works.
-    if (post_filter)
-    {
-        const auto & header = *result_query_plan.getCurrentHeader();
-        bool all_inputs_present = true;
-        for (const auto & input : post_filter->getInputs())
-        {
-            if (!header.has(input->result_name))
-            {
-                all_inputs_present = false;
-                break;
-            }
-        }
-
-        if (all_inputs_present)
-        {
-            auto filter_dag = post_filter->clone();
-            // filter_dag.appendInputsForUnusedColumns(header);
-            String filter_column_name = filter_dag.getOutputs().at(0)->result_name;
-            auto filter_step = std::make_unique<FilterStep>(
-                result_query_plan.getCurrentHeader(),
-                std::move(filter_dag),
-                filter_column_name,
-                true /* remove_filter_column */);
-            result_query_plan.addStep(std::move(filter_step));
-        }
-    }
-
     QueryPlanOptimizationSettings optimization_settings(query_context);
     optimization_settings.build_sets = false; // no need to build sets to collect filters
     result_query_plan.optimize(optimization_settings);
@@ -342,7 +306,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     return res;
 }
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options, const ActionsDAG * post_filter)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return {};
@@ -360,7 +324,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     auto table_expressions_nodes
         = extractTableExpressions(query_tree_node, false /* add_array_join */, true /* recursive */);
 
-    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context, post_filter);
+    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context);
 }
 
 /// Extend lifetime of query context, storages, and table locks
@@ -1284,10 +1248,6 @@ void addWindowSteps(QueryPlan & query_plan,
         {
             SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
-            /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
-            /// would produce incomplete data and cause the pipeline to get stuck.
-            sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
-
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window_description.full_sort_description,
@@ -1623,15 +1583,14 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_,
-    const ActionsDAG * post_filter_)
+    SelectQueryOptions & select_query_options_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options,
         std::make_shared<GlobalPlannerContext>(
             findQueryForParallelReplicas(query_tree, select_query_options),
             findTableForParallelReplicas(query_tree, select_query_options),
-            collectFiltersForAnalysis(query_tree, select_query_options, post_filter_))))
+            collectFiltersForAnalysis(query_tree, select_query_options))))
 {
 }
 

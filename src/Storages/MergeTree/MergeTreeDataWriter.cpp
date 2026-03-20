@@ -676,7 +676,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices);
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
-        expr->execute(block);
+        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices)->execute(block);
     }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
@@ -892,7 +892,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         indices,
         compression_codec,
         std::move(index_granularity_ptr),
-        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
+        context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
@@ -991,11 +991,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
-    {
-        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {});
-        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
-        expr->execute(block);
-    }
+        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {})->execute(block);
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
     std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();

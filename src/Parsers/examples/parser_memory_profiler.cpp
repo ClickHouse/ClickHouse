@@ -74,11 +74,8 @@
 #include <sstream>
 #include <string>
 #include <cstdlib>
-#include <filesystem>
 #include <unistd.h>
 #include <atomic>
-
-#include <boost/program_options.hpp>
 
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
@@ -200,7 +197,21 @@ std::string readQuery()
     );
 }
 
-namespace po = boost::program_options;
+void printUsage(const char * prog_name)
+{
+    std::cerr << "Usage: " << prog_name << " [--profile <prefix>] [--symbolize]\n";
+    std::cerr << "  Reads SQL query from stdin until EOF and prints memory stats.\n";
+    std::cerr << "\nOptions:\n";
+    std::cerr << "  --profile <prefix>  Dump jemalloc heap profiles to <prefix>*.heap\n";
+    std::cerr << "  --symbolize         Symbolize heap profiles (requires --profile)\n";
+    std::cerr << "\nOutput format (tab-separated):\n";
+    std::cerr << "  query_length  allocated_before  allocated_after  allocated_diff\n";
+    std::cerr << "\nExamples:\n";
+    std::cerr << "  # Memory stats only:\n";
+    std::cerr << "  echo 'SELECT 1;' | " << prog_name << "\n";
+    std::cerr << "\n  # With heap profiling and symbolization (Linux):\n";
+    std::cerr << "  MALLOC_CONF=prof:true,lg_prof_sample:0 " << prog_name << " --profile /tmp/p_ --symbolize <<< 'SELECT 1;'\n";
+}
 
 void printProfilingStatus()
 {
@@ -240,63 +251,34 @@ try
 {
     using namespace DB;
 
-    po::options_description desc("Measure memory allocations during SQL parsing.\n"
-                                 "Reads query from stdin, prints tab-separated: query_length before after diff\n\n"
-                                 "Options");
-    desc.add_options()
-        ("help,h", "Show help")
-        ("profile", po::value<std::string>(), "Dump jemalloc heap profiles with this prefix")
-        ("symbolize", "Symbolize heap profiles (requires --profile)")
-        ("symbolize-batch", po::value<std::vector<std::string>>()->multitoken(),
-         "Batch-symbolize .heap files (shared cache via global LRU)")
-    ;
+    std::string profile_prefix;
+    bool enable_profiling = false;
+    bool enable_symbolize = false;
 
-    po::variables_map vm;
-    po::store(po::parse_command_line(argc, argv, desc), vm);
-    po::notify(vm);
-
-    if (vm.contains("help"))
+    for (int i = 1; i < argc; ++i)
     {
-        std::cerr << desc << "\n";
-        return 0;
-    }
-
-    /// Handle batch symbolization mode: global LRU cache is shared across calls
-    if (vm.contains("symbolize-batch"))
-    {
-        auto batch_files = vm["symbolize-batch"].as<std::vector<std::string>>();
-        if (batch_files.empty())
+        std::string arg = argv[i];
+        if (arg == "--profile" && i + 1 < argc)
         {
-            std::cerr << "Error: --symbolize-batch requires at least one .heap file\n";
+            profile_prefix = argv[++i];
+            enable_profiling = true;
+        }
+        else if (arg == "--symbolize")
+        {
+            enable_symbolize = true;
+        }
+        else if (arg == "--help" || arg == "-h")
+        {
+            printUsage(argv[0]);
+            return 0;
+        }
+        else
+        {
+            std::cerr << "Unknown option: " << arg << "\n";
+            printUsage(argv[0]);
             return 1;
         }
-
-        for (const auto & file : batch_files)
-        {
-            if (!std::filesystem::exists(file))
-            {
-                std::cerr << "Error: heap file not found: " << file << "\n";
-                return 1;
-            }
-        }
-
-        std::cerr << "Batch symbolizing " << batch_files.size() << " heap files...\n";
-        for (const auto & file : batch_files)
-        {
-            std::string output = file + ".sym";
-            symbolizeJemallocHeapProfile(file, output);
-            std::cerr << "Symbolized: " << file << " -> " << output << "\n";
-        }
-        std::cerr << "Done.\n";
-        return 0;
     }
-
-    std::string profile_prefix;
-    bool enable_profiling = vm.contains("profile");
-    bool enable_symbolize = vm.contains("symbolize");
-
-    if (enable_profiling)
-        profile_prefix = vm["profile"].as<std::string>();
 
     if (enable_symbolize && !enable_profiling)
     {

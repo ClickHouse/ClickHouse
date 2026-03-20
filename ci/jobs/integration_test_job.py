@@ -149,12 +149,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
+def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
     """Merge all profraw files into final profdata file.
 
     Args:
         llvm_profdata_cmd: Path to llvm-profdata tool
-        job_params: List of job parameters for naming output file
+        batch_num: Batch number for naming output file
     """
     import subprocess
     from pathlib import Path
@@ -166,9 +166,7 @@ def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
         print("No profraw files found", flush=True)
         return
 
-    joined_job_params = "_".join(job_params) if job_params else "all"
-    joined_job_params = joined_job_params.replace(" ", "_").replace("/", "_")
-    final_file = f"./it-{joined_job_params}.profdata"
+    final_file = f"./it-{batch_num}.profdata"
     print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
 
     result = subprocess.run(
@@ -282,28 +280,8 @@ def get_parallel_sequential_tests_to_run(
             return f"{test_arg}/" in test_file
         if test_arg.endswith(".py"):
             return test_file == test_arg
-        parts = test_arg.split("::", maxsplit=1)
-        test_module = parts[0]
-        if test_file.removesuffix(".py") != test_module.removesuffix(".py"):
-            return False
-        # When a specific test function is requested, verify it exists in the
-        # file.  Targeted CI runs pull test names from CIDB, but the test may
-        # have been moved or removed since the record was written.  Passing a
-        # stale nodeID to pytest causes the entire collection to fail with
-        # exit-code 5 ("no tests collected"), aborting all other tests too.
-        if len(parts) > 1:
-            test_func = parts[1].split("[")[0]  # strip parametrization
-            file_path = Path("./tests/integration/") / test_file
-            try:
-                content = file_path.read_text()
-                if f"def {test_func}(" not in content:
-                    print(
-                        f"WARNING: test function '{test_func}' not found in {test_file}, skipping stale target"
-                    )
-                    return False
-            except OSError:
-                return False
-        return True
+        test_arg = test_arg.split("::", maxsplit=1)[0]
+        return test_file.removesuffix(".py") == test_arg.removesuffix(".py")
 
     parallel_tests = []
     sequential_tests = []
@@ -654,14 +632,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     failed_test_cases = []
 
-    # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host.
-    # Do this only in CI (non-local runs) and via a non-interactive privileged helper.
-    if not info.is_local_run:
-        try:
-            Utils.clear_dmesg()
-        except Exception as ex:
-            print(f"Failed to clear dmesg before integration tests: {ex}")
-
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
@@ -859,7 +829,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print("Collecting and merging LLVM coverage files...")
 
         # Merge all profraw files into final profdata file
-        merge_profraw_files(llvm_profdata_cmd, job_params)
+        merge_profraw_files(llvm_profdata_cmd, batch_num)
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
