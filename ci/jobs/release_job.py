@@ -27,6 +27,10 @@ _R2_AUTH_PROD_SECRET = Secret.Config(
     name="/release/r2-auth",
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
+_GPG_SIGNING_KEY_SECRET = Secret.Config(
+    name="/release/gpg-signing-key",
+    type=Secret.Type.AWS_SSM_SECRET,
+)
 
 REPO_PATH = Utils.cwd()
 
@@ -148,6 +152,24 @@ def main():
         step(
             name="Write R2 Auth Config",
             command=write_r2_auth,
+            workdir=REPO_PATH,
+        )
+
+        def import_gpg_key():
+            import base64
+            key_b64 = _GPG_SIGNING_KEY_SECRET.get_value()
+            key_data = base64.b64decode(key_b64)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".gpg") as f:
+                f.write(key_data)
+                key_file = f.name
+            try:
+                Shell.check(f"gpg --import {key_file}", strict=True)
+            finally:
+                os.unlink(key_file)
+
+        step(
+            name="Import GPG Signing Key",
+            command=import_gpg_key,
             workdir=REPO_PATH,
         )
 
