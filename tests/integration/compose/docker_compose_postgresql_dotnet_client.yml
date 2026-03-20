@@ -1,5 +1,5 @@
 services:
   postgresql-dotnet-client:
-    image: clickhouse/postgresql-dotnet-client:${DOCKER_POSTGRESQL_DOTNET_CLIENT_TAG:-latest}
+    image: clickhouse/mysql_dotnet_client:${DOCKER_MYSQL_DOTNET_CLIENT_TAG:-latest}
     # to keep container running
     command: sleep infinity

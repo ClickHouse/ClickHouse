@@ -510,7 +510,7 @@ def test_dotnet_client(started_cluster):
         [
             "bash",
             "-c",
-            f"dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
+            f"cd /pg_testapp && dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
         ],
     )
     assert res == reference
