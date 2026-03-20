@@ -961,23 +961,61 @@ def get_stacktraces_from_clickhouse(args):
         return None
 
 
+def get_all_server_pids():
+    """Get PIDs of clickhouse-server processes belonging to the current process group.
+
+    Scoping to the process group avoids attaching gdb to unrelated servers on
+    shared runners where multiple test jobs may run concurrently.
+    """
+    try:
+        pgid = os.getpgrp()
+        output = subprocess.check_output(
+            f"pgrep -g {pgid} -x clickhouse-server",
+            shell=True,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+        ).strip()
+        if output:
+            return [int(p) for p in output.split()]
+    except Exception:
+        pass
+    return []
+
+
+def is_asan_build():
+    """Check if the server is an ASan build — gdb disables LeakSanitizer detections."""
+    try:
+        result = clickhouse_execute(
+            args,
+            "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)",
+        )
+        return result != b"0"
+    except Exception:
+        # If we can't query the server, check environment variable as fallback.
+        return bool(os.environ.get("ASAN_OPTIONS"))
+
+
 def print_stacktraces() -> None:
     server_pid = get_server_pid()
 
     bt = None
 
-    if server_pid and not args.replicated_database and not args.shared_catalog:
-        print("")
-        print(
-            f"Located ClickHouse server process {server_pid} listening at TCP port {args.tcp_port}"
-        )
-        print("Collecting stacktraces from all running threads with gdb:")
-
-        bt = get_stacktraces_from_gdb(server_pid)
-
-        if len(bt) < 1000:
-            print("Got suspiciously small stacktraces: ", bt)
-            bt = None
+    # Collect gdb stacktraces from all server processes (main + replicas).
+    # Skip gdb under ASan — it disables LeakSanitizer detections.
+    if not is_asan_build():
+        all_pids = get_all_server_pids()
+        if all_pids:
+            parts = []
+            for pid in all_pids:
+                label = "main server" if pid == server_pid else "replica"
+                print(f"\nCollecting stacktraces from {label} process {pid} with gdb:")
+                one_bt = get_stacktraces_from_gdb(pid)
+                if one_bt and len(one_bt) >= 1000:
+                    parts.append(f"=== PID {pid} ({label}) ===\n{one_bt}")
+                else:
+                    print(f"Got suspiciously small stacktraces from {pid}: {one_bt}")
+            if parts:
+                bt = "\n\n".join(parts)
 
     if bt is None:
         print("\nCollecting stacktraces from system.stacktraces table:")
@@ -1046,6 +1084,7 @@ class FailureReason(enum.Enum):
         f"Test runs too long (> {TEST_MAX_RUN_TIME_IN_SECONDS}s). Make it faster."
     )
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
+    CONNECTION_ERROR = "Connection error: "
 
     # SKIPPED reasons
     NOT_SUPPORTED = "not supported"
@@ -1297,6 +1336,9 @@ class SettingsRandomizer:
         "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
+        "use_skip_indexes_for_top_k": lambda: random.randint(0, 1),
+        "use_top_k_dynamic_filtering": lambda: random.randint(0, 1),
+        "query_plan_max_limit_for_top_k_optimization": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
         "query_plan_read_in_order_through_join": lambda: random.randint(0, 1),
         "read_in_order_use_virtual_row": lambda: random.randint(0, 1),
         "short_circuit_function_evaluation_for_nulls_threshold": lambda: random.random() * 1.1,
@@ -2970,7 +3012,7 @@ class TestCase:
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
-                FailureReason.EXIT_CODE,
+                FailureReason.CONNECTION_ERROR,
                 total_time,
                 exc_description,
             )
@@ -3778,19 +3820,21 @@ def collect_build_flags(args):
     value = clickhouse_execute(
         args, "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
     )
-    if b"-fsanitize=thread" in value:
-        result.append(BuildFlags.THREAD)
-        SANITIZED = True
-    elif b"-fsanitize=address" in value:
-        result.append(BuildFlags.ADDRESS)
-        SANITIZED = True
-    elif b"-fsanitize=undefined" in value:
-        result.append(BuildFlags.UNDEFINED)
-        SANITIZED = True
-    elif b"-fsanitize=memory" in value:
-        result.append(BuildFlags.MEMORY)
-        SANITIZED = True
-    elif b"-DSANITIZE_COVERAGE=1" in value:
+    sanitize_flag_map = {
+        b"thread": BuildFlags.THREAD,
+        b"address": BuildFlags.ADDRESS,
+        b"undefined": BuildFlags.UNDEFINED,
+        b"memory": BuildFlags.MEMORY,
+    }
+    import re as _re
+    m = _re.search(rb"-fsanitize=([\w,]+)", value)
+    if m:
+        for san in m.group(1).split(b","):
+            flag = sanitize_flag_map.get(san)
+            if flag is not None:
+                result.append(flag)
+        SANITIZED = bool(result)
+    if b"-DSANITIZE_COVERAGE=1" in value:
         result.append(BuildFlags.SANITIZE_COVERAGE)
 
     value = clickhouse_execute(

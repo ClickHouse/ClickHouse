@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.4",
+        {
+
+        });
         addSettingsChanges(settings_changes_history, "26.3",
         {
             {"min_rows_per_stream_for_gradual_resize", 0, 1000, "Enable gradual resize processor to limit effective parallelism for GROUP BY, reducing merge overhead for small result sets"},
@@ -1096,10 +1100,15 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.4",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
             {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
             {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
@@ -1112,6 +1121,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"},
         });
