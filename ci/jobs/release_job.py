@@ -97,64 +97,63 @@ def main():
     original_branch = Shell.get_output("git rev-parse --abbrev-ref HEAD", strict=True)
 
     results = []
+    ok = True
 
-    results.append(
-        Result.from_commands_run(
-            name="Prepare Release Info",
-            command=[
-                f"python3 ./ci/jobs/create_release.py --prepare-release-info"
-                f" --ref {args.ref} --release-type {args.release_type}"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
+    def step(**kwargs):
+        nonlocal ok
+        if not ok:
+            return
+        results.append(Result.from_commands_run(**kwargs))
+        if results[-1].status != Result.Status.SUCCESS:
+            ok = False
+
+    step(
+        name="Prepare Release Info",
+        command=[
+            f"python3 ./ci/jobs/create_release.py --prepare-release-info"
+            f" --ref {args.ref} --release-type {args.release_type}"
+            f" {dry_run_flag}".strip()
+        ],
+        workdir=REPO_PATH,
     )
 
-    results.append(
-        Result.from_commands_run(
-            name="Download All Release Artifacts",
-            command=[
-                f"python3 ./ci/jobs/create_release.py --download-packages"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
+    step(
+        name="Download All Release Artifacts",
+        command=[
+            f"python3 ./ci/jobs/create_release.py --download-packages"
+            f" {dry_run_flag}".strip()
+        ],
+        workdir=REPO_PATH,
     )
 
     if not args.only_repo and not args.only_docker:
-        results.append(
-            Result.from_commands_run(
-                name="Push Git Tag for the Release",
-                command=[
-                    f"python3 ./ci/jobs/create_release.py --push-release-tag"
-                    f" {dry_run_flag}".strip()
-                ],
-                workdir=REPO_PATH,
-            )
+        step(
+            name="Push Git Tag for the Release",
+            command=[
+                f"python3 ./ci/jobs/create_release.py --push-release-tag"
+                f" {dry_run_flag}".strip()
+            ],
+            workdir=REPO_PATH,
         )
 
     if args.release_type == "new" and not args.only_repo and not args.only_docker:
-        results.append(
-            Result.from_commands_run(
-                name="Push New Release Branch",
-                command=[
-                    f"python3 ./ci/jobs/create_release.py --push-new-release-branch"
-                    f" {dry_run_flag}".strip()
-                ],
-                workdir=REPO_PATH,
-            )
+        step(
+            name="Push New Release Branch",
+            command=[
+                f"python3 ./ci/jobs/create_release.py --push-new-release-branch"
+                f" {dry_run_flag}".strip()
+            ],
+            workdir=REPO_PATH,
         )
 
     if not args.only_repo and not args.only_docker:
-        results.append(
-            Result.from_commands_run(
-                name="Bump CH Version and Update Contributors' List",
-                command=[
-                    f"python3 ./ci/jobs/create_release.py --create-bump-version-pr"
-                    f" {dry_run_flag}".strip()
-                ],
-                workdir=REPO_PATH,
-            )
+        step(
+            name="Bump CH Version and Update Contributors' List",
+            command=[
+                f"python3 ./ci/jobs/create_release.py --create-bump-version-pr"
+                f" {dry_run_flag}".strip()
+            ],
+            workdir=REPO_PATH,
         )
 
     if (
@@ -166,34 +165,34 @@ def main():
             release_tag = json.load(f)["release_tag"]
         uid = os.getuid()
         gid = os.getgid()
-        results.append(
-            Result.from_commands_run(
-                name="Bump Docker Versions, Changelog, Security",
-                command=[
-                    "python3 ./ci/jobs/create_release.py --set-progress-started"
-                    " --progress 'update changelog, docker version, security'",
-                    "echo 'List versions'",
-                    "./utils/list-versions/list-versions.sh"
-                    " > ./utils/list-versions/version_date.tsv",
-                    "echo 'Update docker version'",
-                    "./utils/list-versions/update-docker-version.sh",
-                    "echo 'Generate ChangeLog'",
-                    "docker pull clickhouse/style-test:latest",
-                    f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
-                    f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
-                    f" clickhouse/style-test:latest"
-                    f" ./tests/ci/changelog.py -v --debug-helpers"
-                    f" --gh-user-or-token {_GH_TOKEN_SECRET.get_value()}"
-                    f" --jobs=5"
-                    f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
-                    f"git add ./docs/changelogs/{release_tag}.md",
-                    "echo 'Generate Security'",
-                    "python3 ./utils/security-generator/generate_security.py"
-                    " > SECURITY.md",
-                    "git diff HEAD",
-                ],
-                workdir=REPO_PATH,
-            )
+        step(
+            name="Bump Docker Versions, Changelog, Security",
+            command=[
+                "python3 ./ci/jobs/create_release.py --set-progress-started"
+                " --progress 'update changelog, docker version, security'",
+                "echo 'List versions'",
+                "./utils/list-versions/list-versions.sh"
+                " > ./utils/list-versions/version_date.tsv",
+                "echo 'Update docker version'",
+                "./utils/list-versions/update-docker-version.sh",
+                "echo 'Generate ChangeLog'",
+                "docker pull clickhouse/style-test:latest",
+                f"git remote set-url origin https://x-access-token:{_GH_TOKEN_SECRET.get_value()}@github.com/ClickHouse/ClickHouse.git",
+                f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
+                f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
+                f" clickhouse/style-test:latest"
+                f" ./tests/ci/changelog.py -v --debug-helpers"
+                f" --gh-user-or-token {_GH_TOKEN_SECRET.get_value()}"
+                f" --jobs=5"
+                f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
+                "git remote set-url origin git@github.com:ClickHouse/ClickHouse.git",
+                f"git add ./docs/changelogs/{release_tag}.md",
+                "echo 'Generate Security'",
+                "python3 ./utils/security-generator/generate_security.py"
+                " > SECURITY.md",
+                "git diff HEAD",
+            ],
+            workdir=REPO_PATH,
         )
 
     if (
@@ -254,12 +253,10 @@ def main():
             finally:
                 os.unlink(body_file_path)
 
-        results.append(
-            Result.from_commands_run(
-                name="Create ChangeLog PR",
-                command=create_changelog_pr,
-                workdir=REPO_PATH,
-            )
+        step(
+            name="Create ChangeLog PR",
+            command=create_changelog_pr,
+            workdir=REPO_PATH,
         )
 
     if (
@@ -267,27 +264,23 @@ def main():
         and not args.only_repo
         and not args.only_docker
     ):
-        results.append(
-            Result.from_commands_run(
-                name="Complete Previous Steps and Restore Git State",
-                command=[
-                    "git reset --hard HEAD",
-                    f"git checkout {original_branch}",
-                    "python3 ./ci/jobs/create_release.py --set-progress-completed",
-                ],
-                workdir=REPO_PATH,
-            )
+        step(
+            name="Complete Previous Steps and Restore Git State",
+            command=[
+                "git reset --hard HEAD",
+                f"git checkout {original_branch}",
+                "python3 ./ci/jobs/create_release.py --set-progress-completed",
+            ],
+            workdir=REPO_PATH,
         )
 
-        results.append(
-            Result.from_commands_run(
-                name="Create GH Release",
-                command=[
-                    f"python3 ./ci/jobs/create_release.py --create-gh-release"
-                    f" {dry_run_flag}".strip()
-                ],
-                workdir=REPO_PATH,
-            )
+        step(
+            name="Create GH Release",
+            command=[
+                f"python3 ./ci/jobs/create_release.py --create-gh-release"
+                f" {dry_run_flag}".strip()
+            ],
+            workdir=REPO_PATH,
         )
 
     if args.release_type == "patch" and not args.only_docker:
@@ -299,15 +292,13 @@ def main():
             ("Export Debian Packages", "--export-debian"),
             ("Test Debian Packages", "--test-debian"),
         ):
-            results.append(
-                Result.from_commands_run(
-                    name=name,
-                    command=[
-                        f"python3 ./tests/ci/artifactory.py {flag}"
-                        f" {dry_run_flag}".strip()
-                    ],
-                    workdir=REPO_PATH,
-                )
+            step(
+                name=name,
+                command=[
+                    f"python3 ./tests/ci/artifactory.py {flag}"
+                    f" {dry_run_flag}".strip()
+                ],
+                workdir=REPO_PATH,
             )
 
     if args.release_type == "patch" and not args.dry_run:
@@ -370,50 +361,46 @@ def main():
 
             return build
 
-        results.append(
-            Result.from_commands_run(
-                name="Docker clickhouse/clickhouse-server Building",
-                command=_make_docker_build(
-                    image="clickhouse/clickhouse-server",
-                    progress="docker server release",
-                    build_configs=[
-                        (
-                            "ubuntu",
-                            "docker/server/Dockerfile.ubuntu",
-                            "docker/server",
-                        ),
-                        (
-                            "alpine",
-                            "docker/server/Dockerfile.alpine",
-                            "docker/server",
-                        ),
-                    ],
-                ),
-                workdir=REPO_PATH,
-            )
+        step(
+            name="Docker clickhouse/clickhouse-server Building",
+            command=_make_docker_build(
+                image="clickhouse/clickhouse-server",
+                progress="docker server release",
+                build_configs=[
+                    (
+                        "ubuntu",
+                        "docker/server/Dockerfile.ubuntu",
+                        "docker/server",
+                    ),
+                    (
+                        "alpine",
+                        "docker/server/Dockerfile.alpine",
+                        "docker/server",
+                    ),
+                ],
+            ),
+            workdir=REPO_PATH,
         )
 
-        results.append(
-            Result.from_commands_run(
-                name="Docker clickhouse/clickhouse-keeper Building",
-                command=_make_docker_build(
-                    image="clickhouse/clickhouse-keeper",
-                    progress="docker keeper release",
-                    build_configs=[
-                        (
-                            "ubuntu",
-                            "docker/keeper/Dockerfile.ubuntu",
-                            "docker/keeper",
-                        ),
-                        (
-                            "alpine",
-                            "docker/keeper/Dockerfile.alpine",
-                            "docker/keeper",
-                        ),
-                    ],
-                ),
-                workdir=REPO_PATH,
-            )
+        step(
+            name="Docker clickhouse/clickhouse-keeper Building",
+            command=_make_docker_build(
+                image="clickhouse/clickhouse-keeper",
+                progress="docker keeper release",
+                build_configs=[
+                    (
+                        "ubuntu",
+                        "docker/keeper/Dockerfile.ubuntu",
+                        "docker/keeper",
+                    ),
+                    (
+                        "alpine",
+                        "docker/keeper/Dockerfile.alpine",
+                        "docker/keeper",
+                    ),
+                ],
+            ),
+            workdir=REPO_PATH,
         )
 
     # Always run — equivalent to `if: ${{ !cancelled() }}` in the workflow.
