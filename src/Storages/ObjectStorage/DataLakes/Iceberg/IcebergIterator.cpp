@@ -333,12 +333,11 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(
                 manifest_file_entry,
-                persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
+                manifest_file_entry->file_path,
                 table_state_snapshot->schema_id);
 
         if (callback && manifest_file_entry->parsed_entry->file_size_in_bytes.has_value())
-            if (*manifest_file_entry->parsed_entry->file_size_in_bytes > 0)
-            callback(FileProgress(0, static_cast<UInt64>(*manifest_file_entry->parsed_entry->file_size_in_bytes)));
+            callback(FileProgress(0, static_cast<Int64>(*manifest_file_entry->parsed_entry->file_size_in_bytes)));
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
