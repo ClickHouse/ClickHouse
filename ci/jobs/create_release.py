@@ -962,7 +962,7 @@ def checkout(ref: str) -> Iterator[None]:
     assert orig_ref
     Shell.check(
         f"git rev-parse --is-shallow-repository | grep -q true"
-        f" && {GIT_PREFIX} fetch --unshallow --prune --no-recurse-submodules"
+        f" && {GIT_PREFIX} fetch --unshallow --prune --no-tags --no-recurse-submodules"
         f" --filter=tree:0 origin {orig_ref} ||:",
         verbose=True,
     )
