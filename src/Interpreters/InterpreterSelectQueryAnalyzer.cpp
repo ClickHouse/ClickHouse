@@ -46,9 +46,12 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsString cluster_for_parallel_replicas;
+extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+extern const SettingsUInt64 automatic_parallel_replicas_mode;
+extern const SettingsParallelReplicasMode parallel_replicas_mode;
+extern const SettingsBool use_concurrency_control;
+extern const SettingsBool parallel_replicas_local_plan;
+extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace
@@ -122,6 +125,26 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             "_shard_count",
             Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
+    const auto & settings = result_context->getSettingsRef();
+    if (settings[Setting::automatic_parallel_replicas_mode] != 0)
+    {
+        // If `automatic_parallel_replicas_mode` is not zero, it means that the heuristic for automatic parallel replicas is enabled.
+        // In this case, we should disable `allow_experimental_parallel_reading_from_replicas`, since it is interpreted as an enforcement to use parallel replicas.
+        // If `allow_experimental_parallel_reading_from_replicas` was zero, then we have to skip applying the heuristic.
+        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+            && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS)
+        {
+            LOG_DEBUG(
+                getLogger("InterpreterSelectQueryAnalyzer"),
+                "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
+                " To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
+            result_context->setSetting("enable_parallel_replicas", Field(0));
+        }
+        else
+        {
+            result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
+        }
+    }
     return result_context;
 }
 
@@ -130,6 +153,14 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     const ASTPtr & ast, const ContextMutablePtr & ctx, const SelectQueryOptions & select_options, Args &&... interpreter_args)
 {
     const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
+    if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
+    {
+        LOG_TRACE(
+            logger,
+            "Setting 'enable_parallel_replicas' is disabled. Skipping building query plan with parallel "
+            "replicas.");
+        return QueryPlanPtr{};
+    }
     if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
     {
         LOG_TRACE(logger, "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
@@ -143,7 +174,8 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
     if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         return QueryPlanPtr{};
-    ctx->setSetting("enable_parallel_replicas", true);
+    // We shouldn't apply heuristic since this plan is meant to be a plan with enforced parallel replicas usage
+    ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
@@ -214,13 +246,18 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
 
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
-    const ASTPtr & query_, const ContextPtr & context_, const SelectQueryOptions & select_query_options_, const Names & column_names, const ActionsDAG * post_filter_)
+    const ASTPtr & query_,
+    const ContextPtr & context_,
+    const SelectQueryOptions & select_query_options_,
+    const Names & column_names,
+    const ActionsDAG * post_filter_)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
+          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
           { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, column_names); })
 {
@@ -238,6 +275,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
+          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
           [ast = query_->clone(),
            ctx = Context::createCopy(context_),
            storage = storage_,
@@ -254,6 +292,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
+          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
           [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
           { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options); })
 {

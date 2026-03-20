@@ -875,6 +875,8 @@ public:
     void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
+    String getLicenseFile() const;
+    void setLicenseFile(const String & value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
@@ -1459,6 +1461,7 @@ public:
     BackgroundSchedulePool & getSchedulePool() const;
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
+    BackgroundSchedulePool & getIcebergSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;

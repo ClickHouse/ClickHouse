@@ -643,7 +643,8 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.metadata_cache,
         context_,
         log.get(),
-        persistent_table_components.table_uuid);
+        persistent_table_components.table_uuid,
+        true);
 
     metadata = getMetadataJSONObject(
         metadata_path,
@@ -845,6 +846,7 @@ void IcebergStorageSink::finalizeBuffers()
     if (writer_per_partition_key.empty())
         return;
 
+    /// TODO: there's a chance that initializeMetadata() doesn't succeed within MAX_TRANSACTION_RETRIES without throwing, perhaps we should fail in this case
     size_t i = 0;
     while (i < MAX_TRANSACTION_RETRIES)
     {
@@ -911,7 +913,8 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites").get(),
-                persistent_table_components.table_uuid);
+                persistent_table_components.table_uuid,
+                true);
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
@@ -1051,6 +1054,16 @@ bool IcebergStorageSink::initializeMetadata()
                     return false;
                 }
             }
+        }
+
+        if (persistent_table_components.metadata_cache)
+        {
+            /// If there's an active metadata cache
+            /// We can't just cache 'our' written version as latest, because it could've been overwritten by a concurrent catalog update
+            /// This is why, we are safely invalidating the cache, and the very next reader will get the most up-to-date latest version
+            persistent_table_components.metadata_cache->remove(persistent_table_components.table_path);
+            if (persistent_table_components.table_uuid)
+                persistent_table_components.metadata_cache->remove(*persistent_table_components.table_uuid);
         }
     }
     catch (...)

@@ -6077,7 +6077,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
 
             if (txn)
             {
-                DataPartStateAndPartitionID outdated_parts{MergeTreeDataPartState::Active, partition_id};
+                DataPartStateAndPartitionID outdated_parts{MergeTreeDataPartState::Outdated, partition_id};
 
                 insertAtEnd(
                     res,
@@ -9462,6 +9462,7 @@ bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const 
 
 PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr local_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::unfreezePartitionsByMatcher");
     auto backup_path = fs::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
 
     LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());

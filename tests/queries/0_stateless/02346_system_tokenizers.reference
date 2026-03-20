@@ -6,3 +6,4 @@ sparse_grams
 splitByNonAlpha
 splitByString
 tokenbf_v1
+unicode_word
