@@ -3337,6 +3337,12 @@ Minimal count of rows to compress block in CROSS JOIN. Zero value means - disabl
     DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, R"(
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 )", 0) \
+    DECLARE(UInt64, max_bytes_before_compress_cross_join, 0, R"(
+If the accumulated right-side data of a CROSS JOIN exceeds this byte threshold, new blocks will be compressed in memory before storing. Zero value means - use `cross_join_min_bytes_to_compress` instead. This allows reducing memory usage at the cost of CPU for decompression during each iteration of the outer loop.
+)", 0) \
+    DECLARE(UInt64, max_bytes_before_external_cross_join, 0, R"(
+If the accumulated right-side data of a CROSS JOIN exceeds this byte threshold, the data will be flushed to temporary disk storage. Zero value means - disabled. When enabled, temporary storage must be configured. This allows CROSS JOINs to process datasets larger than available memory.
+)", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
 Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
 )", 0) \

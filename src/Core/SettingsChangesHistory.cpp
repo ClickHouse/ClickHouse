@@ -41,7 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
-
+            {"max_bytes_before_compress_cross_join", 0, 0, "If the accumulated right-side data of a CROSS JOIN exceeds this byte threshold, new blocks will be compressed in memory before storing."},
+            {"max_bytes_before_external_cross_join", 0, 0, "If the accumulated right-side data of a CROSS JOIN exceeds this byte threshold, the data will be flushed to temporary disk storage."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

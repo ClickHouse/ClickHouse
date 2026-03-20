@@ -1380,6 +1380,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "automatic_parallel_replicas_min_bytes_per_replica",
            "azure_max_single_part_upload_size",
            "cross_join_min_bytes_to_compress",
+           "max_bytes_before_compress_cross_join",
+           "max_bytes_before_external_cross_join",
            "default_max_bytes_in_join",
            "delta_lake_insert_max_bytes_in_data_file",
            /// ClickHouse cloud setting

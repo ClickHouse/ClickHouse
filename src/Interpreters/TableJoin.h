@@ -145,6 +145,8 @@ private:
     const bool join_use_nulls = false;
     const UInt64 cross_join_min_rows_to_compress = 1000;
     const UInt64 cross_join_min_bytes_to_compress = 10000;
+    const UInt64 max_bytes_before_compress_cross_join = 0;
+    const UInt64 max_bytes_before_external_cross_join = 0;
     const size_t max_joined_block_rows = 0;
     const size_t max_joined_block_bytes = 0;
     const bool joined_block_split_single_row = false;
@@ -295,6 +297,10 @@ public:
     UInt64 crossJoinMinRowsToCompress() const { return cross_join_min_rows_to_compress; }
 
     UInt64 crossJoinMinBytesToCompress() const { return cross_join_min_bytes_to_compress; }
+
+    UInt64 maxBytesBeforeCompressCrossJoin() const { return max_bytes_before_compress_cross_join; }
+
+    UInt64 maxBytesBeforeExternalCrossJoin() const { return max_bytes_before_external_cross_join; }
 
     bool forceNullableRight() const
     {

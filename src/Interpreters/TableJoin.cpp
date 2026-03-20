@@ -59,6 +59,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 cross_join_min_bytes_to_compress;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
+    extern const SettingsUInt64 max_bytes_before_compress_cross_join;
+    extern const SettingsUInt64 max_bytes_before_external_cross_join;
     extern const SettingsUInt64 default_max_bytes_in_join;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsUInt64 join_on_disk_max_files_to_merge;
@@ -160,6 +162,8 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , join_use_nulls(settings[Setting::join_use_nulls])
     , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
     , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
+    , max_bytes_before_compress_cross_join(settings[Setting::max_bytes_before_compress_cross_join])
+    , max_bytes_before_external_cross_join(settings[Setting::max_bytes_before_external_cross_join])
     , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
     , max_joined_block_bytes(settings[Setting::max_joined_block_size_bytes])
     , join_algorithms(settings[Setting::join_algorithm])
@@ -186,6 +190,8 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , join_use_nulls(join_use_nulls_)
     , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
     , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
+    , max_bytes_before_compress_cross_join(settings.max_bytes_before_compress_cross_join)
+    , max_bytes_before_external_cross_join(settings.max_bytes_before_external_cross_join)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
     , max_joined_block_bytes(settings.max_joined_block_size_bytes)
     , joined_block_split_single_row(settings.joined_block_split_single_row)

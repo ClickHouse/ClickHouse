@@ -700,9 +700,12 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
     size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
     size_t max_rows_in_join = table_join->sizeLimits().max_rows;
+    size_t max_bytes_before_external_cross = table_join->maxBytesBeforeExternalCrossJoin();
 
     if (kind == JoinKind::Cross && tmp_data
-        && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_in_join)
+        && (tmp_stream
+            || (max_bytes_before_external_cross && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_before_external_cross)
+            || (max_bytes_in_join && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_in_join)
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
         if (!tmp_stream)
@@ -725,9 +728,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
         size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
         size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();
+        size_t bytes_before_compress_cross = table_join->maxBytesBeforeCompressCrossJoin();
 
         if (kind == JoinKind::Cross
-            && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
+            && ((bytes_before_compress_cross && getTotalByteCount() >= bytes_before_compress_cross)
+                || (min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
                 || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
         {
             chassert(rows == block.rows()); /// We don't run parallel_hash for cross join

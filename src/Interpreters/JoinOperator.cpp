@@ -33,6 +33,8 @@ namespace Setting
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
     extern const SettingsUInt64 cross_join_min_bytes_to_compress;
+    extern const SettingsUInt64 max_bytes_before_compress_cross_join;
+    extern const SettingsUInt64 max_bytes_before_external_cross_join;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsUInt64 join_on_disk_max_files_to_merge;
@@ -78,6 +80,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool join_any_take_last_row;
     extern const QueryPlanSerializationSettingsUInt64 cross_join_min_rows_to_compress;
     extern const QueryPlanSerializationSettingsUInt64 cross_join_min_bytes_to_compress;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_compress_cross_join;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_cross_join;
     extern const QueryPlanSerializationSettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const QueryPlanSerializationSettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const QueryPlanSerializationSettingsUInt64 join_on_disk_max_files_to_merge;
@@ -134,6 +138,8 @@ JoinSettings::JoinSettings(const Settings & query_settings)
 
     cross_join_min_rows_to_compress = query_settings[Setting::cross_join_min_rows_to_compress];
     cross_join_min_bytes_to_compress = query_settings[Setting::cross_join_min_bytes_to_compress];
+    max_bytes_before_compress_cross_join = query_settings[Setting::max_bytes_before_compress_cross_join];
+    max_bytes_before_external_cross_join = query_settings[Setting::max_bytes_before_external_cross_join];
 
     partial_merge_join_left_table_buffer_bytes = query_settings[Setting::partial_merge_join_left_table_buffer_bytes];
     partial_merge_join_rows_in_right_blocks = query_settings[Setting::partial_merge_join_rows_in_right_blocks];
@@ -177,6 +183,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 
     cross_join_min_rows_to_compress = settings[QueryPlanSerializationSetting::cross_join_min_rows_to_compress];
     cross_join_min_bytes_to_compress = settings[QueryPlanSerializationSetting::cross_join_min_bytes_to_compress];
+    max_bytes_before_compress_cross_join = settings[QueryPlanSerializationSetting::max_bytes_before_compress_cross_join];
+    max_bytes_before_external_cross_join = settings[QueryPlanSerializationSetting::max_bytes_before_external_cross_join];
 
     partial_merge_join_left_table_buffer_bytes = settings[QueryPlanSerializationSetting::partial_merge_join_left_table_buffer_bytes];
     partial_merge_join_rows_in_right_blocks = settings[QueryPlanSerializationSetting::partial_merge_join_rows_in_right_blocks];
@@ -225,6 +233,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::cross_join_min_rows_to_compress] = cross_join_min_rows_to_compress;
     settings[QueryPlanSerializationSetting::cross_join_min_bytes_to_compress] = cross_join_min_bytes_to_compress;
+    settings[QueryPlanSerializationSetting::max_bytes_before_compress_cross_join] = max_bytes_before_compress_cross_join;
+    settings[QueryPlanSerializationSetting::max_bytes_before_external_cross_join] = max_bytes_before_external_cross_join;
 
     settings[QueryPlanSerializationSetting::partial_merge_join_left_table_buffer_bytes] = partial_merge_join_left_table_buffer_bytes;
     settings[QueryPlanSerializationSetting::partial_merge_join_rows_in_right_blocks] = partial_merge_join_rows_in_right_blocks;

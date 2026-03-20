@@ -78,6 +78,8 @@ namespace DB
     \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, "Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.", 0) \
     DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, "Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.", 0) \
+    DECLARE(UInt64, max_bytes_before_compress_cross_join, 0, "If the accumulated right-side data of a CROSS JOIN exceeds this byte threshold, new blocks will be compressed in memory before storing. Zero value means - use cross_join_min_bytes_to_compress instead.", 0) \
+    DECLARE(UInt64, max_bytes_before_external_cross_join, 0, "If the accumulated right-side data of a CROSS JOIN exceeds this byte threshold, the data will be flushed to temporary disk storage. Zero value means - disabled.", 0) \
     \
     DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, "If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.", 0) \
     DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, "Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.", 0) \

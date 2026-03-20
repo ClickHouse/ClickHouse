@@ -75,6 +75,8 @@ struct JoinSettings
     /* CROSS JOIN settings */
     UInt64 cross_join_min_rows_to_compress;
     UInt64 cross_join_min_bytes_to_compress;
+    UInt64 max_bytes_before_compress_cross_join;
+    UInt64 max_bytes_before_external_cross_join;
 
     /* Partial merge join settings */
     UInt64 partial_merge_join_left_table_buffer_bytes;
