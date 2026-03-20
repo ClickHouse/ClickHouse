@@ -135,7 +135,15 @@ def main():
                 f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
                 f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
                 "command -v createrepo_c || sudo apt-get install -y createrepo-c ||:",
-                "command -v reprepro || sudo apt-get install -y reprepro ||:",
+                # reprepro 5.4.4+ is required for the 'Limit' field in distributions config.
+                # Ubuntu Jammy only has 5.3.0, so build from source if needed.
+                "reprepro --version 2>&1 | grep -qE '5\\.[4-9]' || ("
+                "  sudo apt-get install -y dpkg-dev libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper &&"
+                "  git clone https://salsa.debian.org/debian/reprepro.git /tmp/reprepro-src &&"
+                "  cd /tmp/reprepro-src &&"
+                "  dpkg-buildpackage -b --no-sign &&"
+                "  sudo dpkg -i ../reprepro_$(dpkg-parsechangelog --show-field Version)_$(dpkg-architecture -q DEB_HOST_ARCH).deb"
+                ") ||:",
             ],
             workdir=REPO_PATH,
         )
