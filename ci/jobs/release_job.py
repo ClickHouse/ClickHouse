@@ -130,8 +130,8 @@ def main():
                 f"command -v geesefs && geesefs --version 2>&1 | grep -qF {_GEESEFS_VERSION.lstrip('v')} ||"
                 f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
                 f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
-                "command -v createrepo_c || sudo apt-get install -y createrepo-c",
-                "command -v reprepro || sudo apt-get install -y reprepro",
+                "command -v createrepo_c || sudo -n apt-get install -y createrepo-c ||:",
+                "command -v reprepro || sudo -n apt-get install -y reprepro ||:",
             ],
             workdir=REPO_PATH,
         )
