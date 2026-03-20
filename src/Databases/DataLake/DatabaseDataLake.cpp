@@ -36,7 +36,12 @@
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/DataLakes/StorageIceberg.h>
+#include <Storages/DataLakes/StorageIcebergCluster.h>
+#include <Storages/DataLakes/StorageDeltaLake.h>
+#include <Storages/DataLakes/StorageDeltaLakeCluster.h>
+#include <Storages/DataLakes/StoragePaimon.h>
+#include <Storages/DataLakes/StoragePaimonCluster.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -677,60 +682,81 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
-    const auto & query_settings = context_->getSettingsRef();
-
-    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && query_settings[Setting::parallel_replicas_for_cluster_engines]
-        && context_->canUseTaskBasedParallelReplicas()
-        && !context_->isDistributed();
-
-    const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-
-    if (can_use_parallel_replicas && !is_secondary_query)
+    /// Dispatch to the correct datalake storage class based on catalog type.
+    auto create_storage = [&]<typename Storage, typename ClusterStorage>() -> StoragePtr
     {
-        auto storage_id = StorageID(getDatabaseName(), name);
-        auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
-            parallel_replicas_cluster_name,
+        const auto & query_settings = context_->getSettingsRef();
+
+        const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
+        const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+            && query_settings[Setting::parallel_replicas_for_cluster_engines]
+            && context_->canUseTaskBasedParallelReplicas()
+            && !context_->isDistributed();
+
+        const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
+        if (can_use_parallel_replicas && !is_secondary_query)
+        {
+            auto storage_id = StorageID(getDatabaseName(), name);
+            auto storage_cluster = std::make_shared<ClusterStorage>(
+                parallel_replicas_cluster_name,
+                configuration,
+                configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(storage_id)),
+                storage_id,
+                columns,
+                ConstraintsDescription{},
+                nullptr,
+                context_,
+                /* is_table_function */true);
+
+            storage_cluster->startup();
+            return storage_cluster;
+        }
+
+        bool can_use_distributed_iterator =
+            context_->getClientInfo().collaborate_with_initiator &&
+            can_use_parallel_replicas;
+
+        return std::make_shared<Storage>(
             configuration,
-            configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(storage_id)),
-            storage_id,
+            configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
+            context_copy,
+            StorageID(getDatabaseName(), name),
             columns,
             ConstraintsDescription{},
-            nullptr,
-            context_,
-            /// Use is_table_function = true,
-            /// because this table is actually stateless like a table function.
-            /* is_table_function */true);
+            /* comment */"",
+            getFormatSettings(context_copy),
+            LoadingStrictnessLevel::CREATE,
+            getCatalog(),
+            /* if_not_exists*/true,
+            /* is_datalake_query*/true,
+            /* distributed_processing */can_use_distributed_iterator,
+            /* partition_by */nullptr,
+            /* order_by */nullptr,
+            /* is_table_function */true,
+            /* lazy_init */true);
+    };
 
-        storage_cluster->startup();
-        return storage_cluster;
+    switch (catalog->getCatalogType())
+    {
+        case DatabaseDataLakeCatalogType::ICEBERG_REST:
+        case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
+        case DatabaseDataLakeCatalogType::GLUE:
+            return create_storage.template operator()<StorageIceberg, StorageIcebergCluster>();
+
+        case DatabaseDataLakeCatalogType::UNITY:
+            return create_storage.template operator()<StorageDeltaLake, StorageDeltaLakeCluster>();
+
+        case DatabaseDataLakeCatalogType::PAIMON_REST:
+            return create_storage.template operator()<StoragePaimon, StoragePaimonCluster>();
+
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unsupported catalog type for DatabaseDataLake: {}",
+                toString(catalog->getCatalogType()));
     }
-
-    bool can_use_distributed_iterator =
-        context_->getClientInfo().collaborate_with_initiator &&
-        can_use_parallel_replicas;
-
-    return std::make_shared<StorageObjectStorage>(
-        configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
-        context_copy,
-        StorageID(getDatabaseName(), name),
-        /* columns */columns,
-        /* constraints */ConstraintsDescription{},
-        /* comment */"",
-        getFormatSettings(context_copy),
-        LoadingStrictnessLevel::CREATE,
-        getCatalog(),
-        /* if_not_exists*/true,
-        /* is_datalake_query*/true,
-        /* distributed_processing */can_use_distributed_iterator,
-        /* partition_by */nullptr,
-        /* order_by */nullptr,
-        /// Use is_table_function = true,
-        /// because this table is actually stateless like a table function.
-        /* is_table_function */true,
-        /* lazy_init */true);
 }
 
 void DatabaseDataLake::dropTable( /// NOLINT
