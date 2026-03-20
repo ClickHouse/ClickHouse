@@ -110,7 +110,7 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_)
     assert(effective_group_stopwatch.elapsed() == 0);
 }
 
-// c-tor for method createForFlushAsyncInsertQueue
+// c-tor for method createForFlushAsyncInsertQuery
 ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_)
     : master_thread_id(CurrentThread::get().thread_id)
     , parent(parent_)
@@ -688,7 +688,7 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
     catch (...)
     {
         /// GlobalProfiler is optional.
-        tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize GlobalProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.");
+        tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize GlobalProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.", LogsLevel::warning);
     }
 #endif
 }
@@ -729,7 +729,7 @@ void ThreadStatus::initQueryProfiler()
     catch (...)
     {
         /// QueryProfiler is optional.
-        tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize QueryProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.");
+        tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize QueryProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.", LogsLevel::warning);
     }
 }
 
@@ -814,81 +814,6 @@ void CurrentThread::detachFromGroupIfNotDetached()
     if (unlikely(!current_thread))
         return;
     current_thread->detachFromGroup();
-}
-
-void CurrentThread::QueryScope::logPeakMemoryUsage()
-{
-    auto group = CurrentThread::getGroup();
-    if (!group)
-        return;
-
-    log_peak_memory_usage_in_destructor = false;
-    group->memory_tracker.logPeakMemoryUsage();
-}
-
-CurrentThread::QueryScope::QueryScope(bool initialized_)
-: initialized(initialized_)
-{}
-
-CurrentThread::QueryScope::QueryScope(QueryScope && other) noexcept
-: initialized(other.initialized)
-{
-    other.initialized = false;
-}
-
-CurrentThread::QueryScope & CurrentThread::QueryScope::operator=(QueryScope && other) noexcept
-{
-    if (this == &other)
-        return *this;
-    initialized = other.initialized;
-    other.initialized = false;
-    return *this;
-}
-
-CurrentThread::QueryScope CurrentThread::QueryScope::create(ContextPtr query_context, std::function<void()> fatal_error_callback)
-{
-    if (!query_context->hasQueryContext())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Cannot initialize query scope without query context");
-
-    auto group = ThreadGroup::createForQuery(query_context, std::move(fatal_error_callback));
-    CurrentThread::attachToGroup(group);
-    return QueryScope(true);
-}
-
-CurrentThread::QueryScope CurrentThread::QueryScope::create(ContextMutablePtr query_context, std::function<void()> fatal_error_callback)
-{
-    if (!query_context->hasQueryContext())
-        query_context->makeQueryContext();
-
-    auto group = ThreadGroup::createForQuery(query_context, std::move(fatal_error_callback));
-    CurrentThread::attachToGroup(group);
-    return QueryScope(true);
-}
-
-CurrentThread::QueryScope CurrentThread::QueryScope::createForFlushAsyncInsertQuery(ContextPtr insert_context, ThreadGroupPtr flush_query_thread_group)
-{
-    auto group = ThreadGroup::createForFlushAsyncInsertQuery(insert_context, flush_query_thread_group);
-    CurrentThread::attachToGroup(group);
-    return QueryScope(true);
-}
-
-CurrentThread::QueryScope::~QueryScope()
-{
-    if (!initialized)
-        return;
-
-    try
-    {
-        if (log_peak_memory_usage_in_destructor)
-            logPeakMemoryUsage();
-
-        CurrentThread::detachFromGroupIfNotDetached();
-    }
-    catch (...)
-    {
-        tryLogCurrentException("CurrentThread", __PRETTY_FUNCTION__);
-    }
 }
 
 }

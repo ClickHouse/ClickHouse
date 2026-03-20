@@ -298,7 +298,7 @@ public:
     void clearQueryId() noexcept;
     const String & getQueryId() const;
 
-    ContextPtr getQueryContext() const;
+    ContextPtr tryGetQueryContext() const;
     ContextPtr getGlobalContext() const;
 
     /// Attaches slave thread to existing thread group

@@ -553,9 +553,7 @@ MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selecto
         if (column_length != selector.size())
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column");
 
-        std::vector<size_t> counts(num_columns);
-        for (auto idx : selector)
-            ++counts[idx];
+        std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 
         MutableColumns res(num_columns);
         for (size_t i = 0; i < num_columns; ++i)

@@ -135,7 +135,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     else if (teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog && rg.nextSmallNumber() < 5)
     {
         /// Swap engine if others are equivalent
-        static const std::vector<TableEngineValues> & logEngines
+        static const std::vector<TableEngineValues> logEngines
             = {TableEngineValues::StripeLog, TableEngineValues::Log, TableEngineValues::TinyLog};
 
         te.set_engine(rg.pickRandomly(logEngines));
@@ -429,7 +429,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
 
         if (nopt < 76)
         {
-            static const std::vector<String> & baseTypes
+            static const DB::Strings baseTypes
                 = {"TINYINT",
                    "SMALLINT",
                    "MEDIUMINT",
@@ -490,7 +490,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
             std::uniform_int_distribution<uint32_t> precisions(0, 65);
             const uint32_t precision = precisions(rg.generator);
             std::uniform_int_distribution<uint32_t> scales(UINT32_C(0), std::min(UINT32_C(30), precision));
-            static const std::vector<String> & baseTypes = {"FIXED", "DEC", "DECIMAL", "NUMERIC"};
+            static const DB::Strings baseTypes = {"FIXED", "DEC", "DECIMAL", "NUMERIC"};
 
             return fmt::format("{}({},{})", rg.pickRandomly(baseTypes), precision, scales(rg.generator));
         }
@@ -498,7 +498,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
         {
             /// Character types
             std::uniform_int_distribution<uint32_t> lengths(1, 65535);
-            static const std::vector<String> & baseTypes = {"CHAR", "VARCHAR", "BINARY", "VARBINARY"};
+            static const DB::Strings baseTypes = {"CHAR", "VARCHAR", "BINARY", "VARBINARY"};
 
             return fmt::format("{}({})", rg.pickRandomly(baseTypes), lengths(rg.generator));
         }
@@ -506,7 +506,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
         {
             /// Date/time with precision
             std::uniform_int_distribution<uint32_t> precisions(0, 6);
-            static const std::vector<String> & baseTypes = {"TIME", "TIMESTAMP", "DATETIME"};
+            static const DB::Strings baseTypes = {"TIME", "TIMESTAMP", "DATETIME"};
 
             return fmt::format("{}({})", rg.pickRandomly(baseTypes), precisions(rg.generator));
         }
@@ -684,7 +684,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
 
         if (nopt < 81)
         {
-            static const std::vector<String> & baseTypes
+            static const DB::Strings baseTypes
                 = {"SMALLINT",  "INTEGER",   "BIGINT",   "NUMERIC", "DECIMAL", "REAL",    "DOUBLE PRECISION", "SMALLSERIAL", "SERIAL",
                    "BIGSERIAL", "MONEY",     "TEXT",     "BPCHAR",  "BYTEA",   "TIME",    "TIMESTAMP",        "DATE",        "BOOLEAN",
                    "POINT",     "LINE",      "LSEG",     "BOX",     "PATH",    "POLYGON", "CIRCLE",           "CIDR",        "INET",
@@ -696,7 +696,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
         {
             /// Character types
             std::uniform_int_distribution<uint32_t> lengths(1, 255);
-            static const std::vector<String> & prefixes = {"", "VAR", "BP"};
+            static const DB::Strings prefixes = {"", "VAR", "BP"};
 
             baseType = fmt::format("{}CHAR({})", rg.pickRandomly(prefixes), lengths(rg.generator));
         }
@@ -829,11 +829,10 @@ String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool is
 
         if (nopt < 91)
         {
-            static const std::vector<String> & baseTypes
-                = {"TEXT",    "CLOB", "STRING",   "NUMERIC", "DECIMAL",          "MONEY",  "BOOLEAN",
-                   "TIME",    "DATE", "DATETIME", "INT",     "INTEGER",          "BIGINT", "SMALLINT",
-                   "TINYINT", "REAL", "DOUBLE",   "FLOAT",   "DOUBLE PRECISION", "BLOB",   "BINARY",
-                   "BYTEA"};
+            static const DB::Strings baseTypes = {"TEXT",    "CLOB", "STRING",   "NUMERIC", "DECIMAL",          "MONEY",  "BOOLEAN",
+                                                  "TIME",    "DATE", "DATETIME", "INT",     "INTEGER",          "BIGINT", "SMALLINT",
+                                                  "TINYINT", "REAL", "DOUBLE",   "FLOAT",   "DOUBLE PRECISION", "BLOB",   "BINARY",
+                                                  "BYTEA"};
             return rg.pickRandomly(baseTypes);
         }
         else if (nopt < 96)
@@ -849,7 +848,7 @@ String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool is
         {
             /// Character types
             std::uniform_int_distribution<uint32_t> lengths(1, 65535);
-            static const std::vector<String> & baseTypes = {"CHARACTER", "VARCHAR", "NCHAR"};
+            static const DB::Strings baseTypes = {"CHARACTER", "VARCHAR", "NCHAR"};
 
             return fmt::format("{}({})", rg.pickRandomly(baseTypes), lengths(rg.generator));
         }
@@ -1435,10 +1434,10 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
     te->add_params()->set_rvalue(sc.named_collection);
 }
 
-void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+void MinIOIntegration::setBackupDetails(const String & filename, BackupOut * bout)
 {
-    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
-    br->mutable_params()->add_out_params()->set_svalue(filename);
+    bout->add_out_params()->set_rvalue(sc.named_collection);
+    bout->add_out_params()->set_svalue(filename);
 }
 
 bool MinIOIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
@@ -1451,10 +1450,10 @@ void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable
     te->add_params()->set_rvalue(sc.named_collection);
 }
 
-void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+void AzuriteIntegration::setBackupDetails(const String & filename, BackupOut * bout)
 {
-    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
-    br->mutable_params()->add_out_params()->set_svalue(filename);
+    bout->add_out_params()->set_rvalue(sc.named_collection);
+    bout->add_out_params()->set_svalue(filename);
 }
 
 bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
@@ -1549,7 +1548,7 @@ bool DolorIntegration::reRunCreateDatabase(const String & body)
     return httpPut("/sparkdatabase", body);
 }
 
-static const DB::Strings & catalogs = {"glue", "hive", "rest", "unity"};
+static const DB::Strings catalogs = {"glue", "hive", "rest", "unity"};
 
 void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de)
 {
@@ -1614,48 +1613,47 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
         const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
         const uint32_t add_credentials = 3 * static_cast<uint32_t>(added_credentials < toadd_credentials);
-        const uint32_t prob_space = add_type + add_warehouse + add_endpoint + add_region + add_credentials;
-        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-        const uint32_t nopt = next_dist(rg.generator);
 
-        if (add_type && nopt < (add_type + 1))
-        {
-            sv->set_property("catalog_type");
-            sv->set_value("'" + catalog_str + "'");
-            added_type++;
-        }
-        else if (add_warehouse && nopt < (add_type + add_warehouse + 1))
-        {
-            sv->set_property("warehouse");
-            sv->set_value("'" + d.getName() + "'");
-            added_warehouse++;
-        }
-        else if (add_endpoint && nopt < (add_type + add_warehouse + add_endpoint + 1))
-        {
-            const ServerCredentials & minio = fc.minio_server.value();
+        rg.pickWeighted(
+            {{add_type,
+              [&]
+              {
+                  sv->set_property("catalog_type");
+                  sv->set_value("'" + catalog_str + "'");
+                  added_type++;
+              }},
+             {add_warehouse,
+              [&]
+              {
+                  sv->set_property("warehouse");
+                  sv->set_value("'" + d.getName() + "'");
+                  added_warehouse++;
+              }},
+             {add_endpoint,
+              [&]
+              {
+                  const ServerCredentials & minio = fc.minio_server.value();
 
-            de->add_params()->set_svalue(minio.user);
-            de->add_params()->set_svalue(minio.secret);
-            sv->set_property("storage_endpoint");
-            sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-            added_endpoint++;
-        }
-        else if (add_region && nopt < (add_type + add_warehouse + add_endpoint + add_region + 1))
-        {
-            sv->set_property("region");
-            sv->set_value("'" + cat->region + "'");
-            added_region++;
-        }
-        else if (add_credentials && nopt < (add_type + add_warehouse + add_endpoint + add_region + add_credentials + 1))
-        {
-            sv->set_property("vended_credentials");
-            sv->set_value(rg.nextBool() ? "1" : "0");
-            added_credentials++;
-        }
-        else
-        {
-            UNREACHABLE();
-        }
+                  de->add_params()->set_svalue(minio.user);
+                  de->add_params()->set_svalue(minio.secret);
+                  sv->set_property("storage_endpoint");
+                  sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+                  added_endpoint++;
+              }},
+             {add_region,
+              [&]
+              {
+                  sv->set_property("region");
+                  sv->set_value("'" + cat->region + "'");
+                  added_region++;
+              }},
+             {add_credentials,
+              [&]
+              {
+                  sv->set_property("vended_credentials");
+                  sv->set_value(rg.nextBool() ? "1" : "0");
+                  added_credentials++;
+              }}});
     }
 }
 
@@ -1787,58 +1785,57 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                 const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
                 const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
                 const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
-                const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;
-                std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-                const uint32_t nopt = next_dist(rg.generator);
 
-                if (add_sct && nopt < (add_sct + 1))
-                {
-                    sv->set_property("storage_catalog_type");
-                    sv->set_value("'" + catalog_str + "'");
-                    added_sct++;
-                }
-                else if (add_warehouse && nopt < (add_sct + add_warehouse + 1))
-                {
-                    sv->set_property("storage_warehouse");
-                    sv->set_value("'" + t.getDatabaseName() + "'");
-                    added_warehouse++;
-                }
-                else if (add_endpoint && nopt < (add_sct + add_warehouse + add_endpoint + 1))
-                {
-                    /// The key-value format is not well supported for catalogs at the moment
-                    const ServerCredentials & minio = fc.minio_server.value();
+                rg.pickWeighted(
+                    {{add_sct,
+                      [&]
+                      {
+                          sv->set_property("storage_catalog_type");
+                          sv->set_value("'" + catalog_str + "'");
+                          added_sct++;
+                      }},
+                     {add_warehouse,
+                      [&]
+                      {
+                          sv->set_property("storage_warehouse");
+                          sv->set_value("'" + t.getDatabaseName() + "'");
+                          added_warehouse++;
+                      }},
+                     {add_endpoint,
+                      [&]
+                      {
+                          /// The key-value format is not well supported for catalogs at the moment
+                          const ServerCredentials & minio = fc.minio_server.value();
 
-                    te->add_params()->set_svalue(t.getTablePath(fc));
-                    te->add_params()->set_svalue(minio.password);
-                    te->add_params()->set_svalue(minio.secret);
-                    if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
-                    {
-                        te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
-                        if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
-                        {
-                            te->add_params()->set_svalue(t.file_comp.value());
-                        }
-                    }
-                    sv->set_property("object_storage_endpoint");
-                    sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-                    added_endpoint++;
-                }
-                else if (add_region && nopt < (add_sct + add_warehouse + add_endpoint + add_region + 1))
-                {
-                    sv->set_property("storage_region");
-                    sv->set_value("'" + cat->region + "'");
-                    added_region++;
-                }
-                else if (add_url && nopt < (add_sct + add_warehouse + add_endpoint + add_region + add_url + 1))
-                {
-                    sv->set_property("storage_catalog_url");
-                    sv->set_value("'" + catalog_url + "'");
-                    added_url++;
-                }
-                else
-                {
-                    UNREACHABLE();
-                }
+                          te->add_params()->set_svalue(t.getTablePath(fc));
+                          te->add_params()->set_svalue(minio.password);
+                          te->add_params()->set_svalue(minio.secret);
+                          if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
+                          {
+                              te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+                              if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
+                              {
+                                  te->add_params()->set_svalue(t.file_comp.value());
+                              }
+                          }
+                          sv->set_property("object_storage_endpoint");
+                          sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+                          added_endpoint++;
+                      }},
+                     {add_region,
+                      [&]
+                      {
+                          sv->set_property("storage_region");
+                          sv->set_value("'" + cat->region + "'");
+                          added_region++;
+                      }},
+                     {add_url,
+                      [&]
+                      {
+                          sv->set_property("storage_catalog_url");
+                          sv->set_value("'" + catalog_url + "'");
+                          added_url++;
+                      }}});
             }
         }
     }
@@ -2072,15 +2069,15 @@ void ExternalIntegrations::dropPeerTableOnRemote(const SQLTable & t)
     }
 }
 
-void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const String & filename, BackupRestore * br)
+void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const String & filename, BackupOut * bout)
 {
     switch (dc)
     {
         case IntegrationCall::MinIO:
-            minio->setBackupDetails(filename, br);
+            minio->setBackupDetails(filename, bout);
             break;
         case IntegrationCall::Azurite:
-            azurite->setBackupDetails(filename, br);
+            azurite->setBackupDetails(filename, bout);
             break;
         default:
             UNREACHABLE();

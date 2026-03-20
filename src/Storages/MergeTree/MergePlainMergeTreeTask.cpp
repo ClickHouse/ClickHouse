@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
+#include <Common/CurrentThread.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>

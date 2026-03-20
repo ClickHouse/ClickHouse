@@ -2,7 +2,7 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryHelpers.h>
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/iota.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -66,7 +66,7 @@ public:
 
             try
             {
-                pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
+                pool.scheduleOrThrowOnError([this, shard, thread_group = getCurrentThreadGroup()]
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_LOAD);
 

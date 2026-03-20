@@ -447,7 +447,7 @@ enum SQLFunc {
     FUNCdetectLanguage = 442;
     FUNCdetectLanguageMixed = 443;
     FUNCdetectLanguageUnknown = 444;
-    FUNCdetectProgrammingLanguage = 445;
+    reserved 445;
     FUNCdetectTonality = 446;
     FUNCdictGet = 447;
     FUNCdictGetAll = 448;
@@ -1786,6 +1786,14 @@ message Function {
     required string function = 1;
 }
 
+message Policy {
+    required string policy = 1;
+}
+
+message Role {
+    required string role = 1;
+}
+
 message Cluster {
     optional string cluster = 1;
 }
@@ -2793,10 +2801,14 @@ message MergeTreeTextIndexFunc {
     required Index idx = 2;
 }
 
+message PartsList {
+    repeated string parts = 1;
+}
+
 message MergeTreeAnalyzeIndexesFunc {
     required ExprSchemaTable est = 1;
     optional Expr pred = 2;
-    optional string part = 3;
+    optional PartsList plist = 3;
 }
 
 message GenerateRandomFunc {
@@ -3024,27 +3036,42 @@ enum DatabaseEngineValues {
     DMemory = 2;
     DReplicated = 3;
     DShared = 4;
-    DLazy = 5;
-    DOrdinary = 6;
-    DDataLakeCatalog = 7;
-    DPostgreSQL = 8;
-    DMySQL = 9;
-    DSQLite = 10;
-    DBackup = 11;
-    DMaterializedPostgreSQL = 12;
+    DOrdinary = 5;
+    DDataLakeCatalog = 6;
+    DPostgreSQL = 7;
+    DMySQL = 8;
+    DSQLite = 9;
+    DBackup = 10;
+    DMaterializedPostgreSQL = 11;
 }
 
-message BackupDisk {
-    required string disk = 1;
-    required Database database = 2;
+message BackupParam {
+    oneof backup_param_oneof {
+        string svalue = 1;
+        string rvalue = 2;
+    }
+}
+
+message BackupOut {
+    enum BackupOutput {
+        Disk = 1;
+        File = 2;
+        Memory = 3;
+        Null = 4;
+        S3 = 5;
+        AzureBlobStorage = 6;
+    }
+    required BackupOutput out = 1;
+    repeated BackupParam out_params = 2;
+    /// Need to know backup number
+    required uint32 backup_number = 3;
 }
 
 message DatabaseEngineParam {
     oneof database_engine_param_oneof {
         string svalue = 1;
-        Database database = 2;
-        BackupDisk disk = 3;
-        Expr expr = 4;
+        Expr expr = 2;
+        BackupOut backup_out = 3;
     }
 }
 
@@ -3541,6 +3568,8 @@ enum SQLObject {
     FUNCTION = 3;
     TABLE = 4;
     VIEW = 5;
+    ROW_POLICY = 6;
+    MASKING_POLICY = 7;
 }
 
 message SQLObjectName {
@@ -3548,6 +3577,7 @@ message SQLObjectName {
         ExprSchemaTable est = 1;
         Database database = 2;
         Function function = 3;
+        Policy policy = 4;
     }
 }
 
@@ -3559,8 +3589,9 @@ message Drop {
     required SQLObjectName object = 5;
     repeated SQLObjectName other_objects = 6;
     optional Cluster cluster = 7;
-    optional bool sync = 8;
-    optional SettingValues setting_values = 9;
+    optional ExprSchemaTable target = 8;
+    optional bool sync = 9;
+    optional SettingValues setting_values = 10;
 }
 
 message InsertFromFile {
@@ -3820,7 +3851,7 @@ message RefreshableView {
     required RefreshPolicy policy = 1;
     required RefreshInterval interval = 2;
     optional RefreshInterval offset = 3;
-    required RefreshInterval randomize = 4;
+    optional RefreshInterval randomize = 4;
     optional DependsList depends = 5;
     optional SettingValues setting_values = 6;
     optional bool append = 7;
@@ -3965,6 +3996,28 @@ message MovePartition {
     required Storage storage = 2;
 }
 
+message CreateRowPolicy {
+    optional bool is_restrictive = 1;
+    optional bool for_select = 2;
+}
+
+message CreateMaskingPolicy {
+    optional UpdateSet first_update = 1;
+    repeated UpdateSet other_updates = 2;
+    optional int32 priority = 3;
+}
+
+message AlterPolicyContent {
+    required ExprSchemaTable target = 1;
+    optional WhereStatement where_expr = 2;
+    optional Role role = 3;
+    oneof create_policy_oneof {
+        CreateRowPolicy row = 4;
+        CreateMaskingPolicy masking = 5;
+    }
+    optional Policy rename_to = 6;
+}
+
 message AlterItem {
     optional bool paren = 1;
     oneof alter_oneof {
@@ -4016,11 +4069,14 @@ message AlterItem {
         TTLExpr modify_ttl  = 46;
         bool remove_ttl = 47;
         OptionalPartitionExpr rewrite_parts = 48;
+        OptionalPartitionExpr apply_patches = 49;
         /// For views
-        SelectParen modify_query = 49;
-        RefreshableView refresh = 50;
+        SelectParen modify_query = 50;
+        RefreshableView refresh = 51;
         /// For tables, views and databases
-        string comment = 51;
+        string comment = 52;
+        /// For policies
+        AlterPolicyContent alter_policy = 53;
     }
 }
 
@@ -4176,6 +4232,19 @@ message SystemCommand {
         uint32 unfreeze = 84;
         DropReplica drop_replica = 85;
         DropDatabaseReplica drop_database_replica = 86;
+        ExprSchemaTable stop_cleanup = 87;
+        ExprSchemaTable start_cleanup = 88;
+        bool stop_replicated_ddl_queries = 89;
+        bool start_replicated_ddl_queries = 90;
+        bool jemalloc_purge = 91;
+        bool jemalloc_enable_profile = 92;
+        bool jemalloc_disable_profile = 93;
+        bool jemalloc_flush_profile = 94;
+        bool sync_transaction_log = 95;
+        bool start_thread_fuzzer = 96;
+        bool stop_thread_fuzzer = 97;
+        bool drop_distributed_cache = 98;
+        string unlock_snapshot = 99;
     }
 }
 
@@ -4195,17 +4264,6 @@ message BackupRestoreElement {
     repeated ExprSchemaTable except_tables = 3;
 }
 
-message BackupParam {
-    oneof backup_param_oneof {
-        string svalue = 1;
-        string rvalue = 2;
-    }
-}
-
-message BackupParams {
-    repeated BackupParam out_params = 1;
-}
-
 message BackupRestore {
     enum BackupCommand {
         BACKUP = 1;
@@ -4215,28 +4273,17 @@ message BackupRestore {
     required BackupRestoreElement backup_element = 2;
     repeated BackupRestoreElement other_elements = 3;
     optional Cluster cluster = 4;
-    enum BackupOutput {
-        Disk = 1;
-        File = 2;
-        Memory = 3;
-        Null = 4;
-        S3 = 5;
-        AzureBlobStorage = 6;
-    }
-    required BackupOutput out = 5;
-    required BackupParams params = 6;
-    optional SettingValues setting_values = 7;
+    required BackupOut out = 5;
+    optional SettingValues setting_values = 6;
     enum SyncOrAsync {
         SYNC = 1;
         ASYNC = 2;
     }
-    optional SyncOrAsync sync = 8;
+    optional SyncOrAsync sync = 7;
     oneof backup_format_oneof {
-        InFormat informat = 9;
-        OutFormat outformat = 10;
+        InFormat informat = 8;
+        OutFormat outformat = 9;
     }
-    /// Need to know backup number
-    required uint32 backup_number = 11;
 }
 
 message Rename {
@@ -4332,6 +4379,20 @@ message ShowStatement {
     optional SettingValues setting_values = 24;
 }
 
+message CreatePolicy {
+    required CreateReplaceOption create_opt = 1;
+    optional bool if_not_exists = 2;
+    required Policy policy = 3;
+    required ExprSchemaTable target = 4;
+    optional Cluster cluster = 5;
+    optional WhereStatement where_expr = 6;
+    optional Role role = 7;
+    oneof create_policy_oneof {
+        CreateRowPolicy row = 8;
+        CreateMaskingPolicy masking = 9;
+    }
+}
+
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -4358,6 +4419,7 @@ message SQLQueryInner {
         Rename rename = 22;
         Kill kill = 23;
         ShowStatement show = 24;
+        CreatePolicy create_policy = 25;
     }
 }
 
@@ -4399,10 +4461,11 @@ message ExplainQuery {
         ESTIMATE = 6;
         TABLE_OVERRIDE = 7;
     }
-    optional bool is_explain = 1;
-    optional ExplainValues expl = 2;
-    repeated ExplainOption opts = 3;
-    required SQLQueryInner inner_query = 4;
+    optional string execute_as = 1;
+    optional bool is_explain = 2;
+    optional ExplainValues expl = 3;
+    repeated ExplainOption opts = 4;
+    required SQLQueryInner inner_query = 5;
 }
 
 message SingleSQLQuery {

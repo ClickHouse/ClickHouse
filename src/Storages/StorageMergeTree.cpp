@@ -756,7 +756,7 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id
         QueryStatusPtr process_list_element;
         if (CurrentThread::isInitialized())
         {
-            auto query_context = CurrentThread::get().getQueryContext();
+            auto query_context = CurrentThread::get().tryGetQueryContext();
             if (query_context)
                 process_list_element = query_context->getProcessListElement();
         }

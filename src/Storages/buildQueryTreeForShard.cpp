@@ -442,7 +442,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto external_storage_holder = TemporaryTableHolder(
         mutable_context,
-        ColumnsDescription(columns, false),
+        ColumnsDescription(columns),
         ConstraintsDescription{},
         nullptr /*query*/,
         true /*create_for_global_subquery*/);

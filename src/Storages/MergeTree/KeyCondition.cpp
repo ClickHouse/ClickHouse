@@ -3,6 +3,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -279,25 +280,19 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         },
         {
             "empty",
-            [] (RPNElement & out, const Field & value)
+            [] (RPNElement & out, const Field &)
             {
-                if (value.getType() != Field::Types::String)
-                    return false;
-
                 out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.range = Range("");
+                out.range = Range(String{});
                 return true;
             }
         },
         {
             "notEmpty",
-            [] (RPNElement & out, const Field & value)
+            [] (RPNElement & out, const Field &)
             {
-                if (value.getType() != Field::Types::String)
-                    return false;
-
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                out.range = Range("");
+                out.range = Range(String{});
                 return true;
             }
         },
@@ -1091,50 +1086,72 @@ bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
         auto func_result_type = func->getResultType();
 
-        /// DateTime64/Date32 are signed, but Date and DateTime are unsigned, so converting
-        /// values outside the unsigned range wraps around via static_cast, this can produce wrong pruning
+        /// DateTime64/Date32 are signed, but Date, DateTime, and UInt32 are unsigned, so converting
+        /// values outside the unsigned range wraps around or throws DECIMAL_OVERFLOW.
         ///
         /// we check the constant BEFORE execution to catch obvious out-of-range inputs,
         /// and AFTER execution to catch boundary values where the next value would wrap
         /// (toDate returns day 65535 — the next day overflows to 0)
         auto result_type_inner = removeLowCardinality(removeNullable(func_result_type));
-        if (isDate(result_type_inner) || isDateTime(result_type_inner))
+        auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
+        if (isDateTime64(arg_type_inner) || isTime64(arg_type_inner))
         {
-            auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
+            Int64 value;
             if (isDateTime64(arg_type_inner))
-            {
-                Int64 value = (*result_column)[0].safeGet<DateTime64>().getValue();
+                value = (*result_column)[0].safeGet<DateTime64>().getValue();
+            else
+                value = (*result_column)[0].safeGet<Time64>().getValue();
 
-                /// negative timestamps after cast -> large unsigned values
-                if (value < 0)
-                    return false;
+            /// negative timestamps after cast -> large unsigned values
+            if (value < 0)
+                return false;
 
-                UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale();
-                Int64 seconds = value / intExp10OfSize<Int64>(scale);
+            UInt32 scale = isDateTime64(arg_type_inner)
+                ? assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale()
+                : assert_cast<const DataTypeTime64 &>(*arg_type_inner).getScale();
+            Int64 seconds = value / intExp10OfSize<Int64>(scale);
 
-                /// timestamps beyond the target range -> small values
-                if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
-                    return false;
-                if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
-                    return false;
-            }
-            else if (isDate32(arg_type_inner))
-            {
-                /// day numbers as Int32 -> Date only fits [0, 65535],
-                /// DateTime only fits seconds up to DATE_LUT_MAX
-                auto value = (*result_column)[0].safeGet<Int32>();
-                if (value < 0)
-                    return false;
-                if (isDate(result_type_inner) && value > DATE_LUT_MAX_DAY_NUM)
-                    return false;
-                if (isDateTime(result_type_inner) && value * 86400LL >= DATE_LUT_MAX)
-                    return false;
-            }
+            /// timestamps beyond the target range -> small values
+            if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
+                return false;
+            if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
+                return false;
+            if (isUInt32(result_type_inner) && seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                return false;
+        }
+        else if (isDate32(arg_type_inner) && (isDate(result_type_inner) || isDateTime(result_type_inner) || isUInt32(result_type_inner)))
+        {
+            /// day numbers as Int32 -> Date only fits [0, 65535],
+            /// DateTime only fits seconds up to DATE_LUT_MAX
+            auto value = (*result_column)[0].safeGet<Int32>();
+            if (value < 0)
+                return false;
+            if (isDate(result_type_inner) && value > DATE_LUT_MAX_DAY_NUM)
+                return false;
+            if (isDateTime(result_type_inner) && value * 86400LL >= DATE_LUT_MAX)
+                return false;
+            if (isUInt32(result_type_inner) && value * 86400LL > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                return false;
         }
 
         result_column = func->execute({{result_column, argument_type, ""}}, func_result_type, result_column->size(), /* dry_run = */ false);
         result_column = result_column->convertToFullColumnIfLowCardinality();
         result_type = removeLowCardinality(func_result_type);
+
+        // Transforming nullable columns to the nested ones, in case no nulls found.
+        // This must be done before calling getUInt/get64 below.
+        if (result_column->isNullable())
+        {
+            const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
+            const auto & null_map_data = result_column_nullable.getNullMapData();
+            for (char8_t i : null_map_data)
+            {
+                if (i != 0)
+                    return false;
+            }
+            result_column = result_column_nullable.getNestedColumnPtr();
+            result_type = removeNullable(result_type);
+        }
 
         /// the result itself sits at the type's max — next value wraps so any >= / <= condition on
         /// it would give wrong partition ranges -> this catches timezone edge cases that pre-execution check might miss
@@ -1147,20 +1164,6 @@ bool applyFunctionChainToColumn(
         {
             if (result_column->get64(0) >= DATE_LUT_MAX)
                 return false;
-        }
-
-        // Transforming nullable columns to the nested ones, in case no nulls found
-        if (result_column->isNullable())
-        {
-            const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
-            const auto & null_map_data = result_column_nullable.getNullMapData();
-            for (char8_t i : null_map_data)
-            {
-                if (i != 0)
-                    return false;
-            }
-            result_column = result_column_nullable.getNestedColumnPtr();
-            result_type = removeNullable(result_type);
         }
     }
     out_column = result_column;
@@ -2571,8 +2574,16 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
 struct KeyCondition::RPNElement::Polygon
 {
     using PointT = boost::geometry::model::d2::point_xy<Float64>;
-    using PolygonT = boost::geometry::model::polygon<PointT>;
-    PolygonT data;
+    using RingT = boost::geometry::model::ring<PointT>;
+    using BoxT = boost::geometry::model::box<PointT>;
+
+    /// Outer ring of the polygon. We do not store holes; index analysis only
+    /// uses the outer boundary
+    RingT ring;
+
+    /// Bounding box of the ring, precomputed once when the RPN element is built
+    /// Useful for quick rejection to avoid costly `intersects` checks
+    BoxT bbox;
 };
 
 KeyCondition::RPNElement::RPNElement()
@@ -2894,9 +2905,14 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                 auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
                 auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
-                out.polygon->data.outer().push_back({x, y});
+                out.polygon->ring.emplace_back(x, y);
             }
-            boost::geometry::correct(out.polygon->data);
+            boost::geometry::correct(out.polygon->ring);
+
+            /// Store bounding box of the polygon so that we can quickly reject blocks/parts and avoid
+            /// costly `intersects` checks
+            boost::geometry::envelope(out.polygon->ring, out.polygon->bbox);
+
             return atom_it->second(out, const_value);
         };
 
@@ -2908,6 +2924,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
+
+            /// empty/notEmpty produce a meaningful range only for String key columns.
+            if ((func_name == "empty" || func_name == "notEmpty") && !isString(*key_expr_type))
+                return false;
         }
         else if (num_args == 2)
         {
@@ -3080,10 +3100,32 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 if (const_value.getType() == Field::Types::String)
                 {
-                    const_value = convertFieldToType(const_value, *key_expr_type_not_null);
-                    if (const_value.isNull())
-                        return false;
-                    /// No need to set condition_is_relaxed because we're doing exact conversion
+                    /// These functions use the constant as a string pattern or prefix.
+                    /// For example, if column is `FixedString` type, then in `startsWith(column, 'ab')`
+                    /// and `column LIKE 'ab%'`, `'ab'` is used to build the prefix range `['ab', 'ac')`.
+                    //  The literal must not be converted to the column type which is `FixedString`. If we
+                    /// first convert it to `FixedString(N)`, it becomes `'ab\0...'`, and the range is built from
+                    /// the padded value instead of from `'ab'`. This can lead to the upper bound being set to the
+                    /// next padded value, for example `['ab\0...', 'ab\0...\1')`, instead of to the next prefix
+                    /// range `['ab', 'ac')`. The padded range is too small and can miss values such as `'abc...'` that still
+                    /// satisfy `startsWith(column, 'ab')` and `column LIKE 'ab%'`.
+                    /// New functions should be added to this list only if their constant argument is used as a
+                    /// pattern or prefix in the same way.
+                    const bool should_keep_original_string_constant
+                        = isStringOrFixedString(key_expr_type_not_null)
+                        && (func_name == "like"
+                        || func_name == "notLike"
+                        || func_name == "startsWith"
+                        || func_name == "startsWithUTF8"
+                        || func_name == "match");
+
+                    if (!should_keep_original_string_constant)
+                    {
+                        const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                        if (const_value.isNull())
+                            return false;
+                        /// No need to set condition_is_relaxed because we're doing exact conversion
+                    }
                 }
                 else
                 {
@@ -4161,10 +4203,22 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = element.range.intersectsRange(key_range);
             bool contains = element.range.containsRange(key_range);
 
-            /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
-            /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
-            if (unlikely(key_range.left.isNaN() || key_range.right.isNaN()))
+            /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
+            /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
+            /// analysis may incorrectly include NaN values.
+            /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
+            ///   so no comparison condition can be true.
+            /// - If only right bound is NaN: the range extends into NaN territory,
+            ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+            if (unlikely(key_range.left.isNaN()))
+            {
+                intersects = false;
                 contains = false;
+            }
+            else if (unlikely(key_range.right.isNaN()))
+            {
+                contains = false;
+            }
 
             rpn_stack.emplace_back(intersects, !contains);
 
@@ -4299,19 +4353,34 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
         {
             /** There are 2 kinds of polygons:
-              *   1. Polygon by minmax index
+              *   1. Polygon by minmax index or primary key index
               *   2. Polygons which is provided by user
               *
               * Polygon by minmax index:
-              *   For hyperactangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
+              *   For hyperrectangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
               *
               * Algorithm:
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
-            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[0]].left);
-            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[0]].right);
-            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].left);
-            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].right);
+
+            /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`. So we need to separately handle `Null` case here.
+            auto convert_to_float64 = [](const FieldRef & ref, bool is_left_bound) -> Float64
+            {
+                if (ref.isNull())
+                {
+                    return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
+                }
+
+                return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
+            };
+
+            const auto & range_x = hyperrectangle[element.key_columns[0]];
+            const auto & range_y = hyperrectangle[element.key_columns[1]];
+
+            Float64 x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
+            Float64 x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
+            Float64 y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
+            Float64 y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
@@ -4319,20 +4388,31 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 continue;
             }
 
-            using Point = boost::geometry::model::d2::point_xy<Float64>;
-            using Polygon = boost::geometry::model::polygon<Point>;
-            Polygon  polygon_by_minmax_index;
-            polygon_by_minmax_index.outer().emplace_back(x_min, y_min);
-            polygon_by_minmax_index.outer().emplace_back(x_min, y_max);
-            polygon_by_minmax_index.outer().emplace_back(x_max, y_max);
-            polygon_by_minmax_index.outer().emplace_back(x_max, y_min);
+            using Point = KeyCondition::RPNElement::Polygon::PointT;
+            using Box   = boost::geometry::model::box<Point>;
 
-            /// Close ring
-            boost::geometry::correct(polygon_by_minmax_index);
+            Box index_box(Point(x_min, y_min), Point(x_max, y_max));
+
+            // Very cheap bbox vs bbox check
+            const auto & poly_bbox = element.polygon->bbox;
+            const auto & poly_min = poly_bbox.min_corner();
+            const auto & poly_max = poly_bbox.max_corner();
+            const auto & index_min = index_box.min_corner();
+            const auto & index_max = index_box.max_corner();
+
+            bool disjoint
+                = index_max.x() < poly_min.x() || index_min.x() > poly_max.x() || index_max.y() < poly_min.y() || index_min.y() > poly_max.y();
+
+            if (disjoint)
+            {
+                // Indices box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
+                rpn_stack.emplace_back(false, true);
+                continue;
+            }
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
-            rpn_stack.emplace_back(
-                boost::geometry::intersects(polygon_by_minmax_index, element.polygon->data), true);
+            bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
+            rpn_stack.emplace_back(intersects, true);
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
@@ -4672,16 +4752,16 @@ String KeyCondition::RPNElement::toString(const std::vector<String> & key_names)
         }
         case FUNCTION_POINT_IN_POLYGON:
         {
-            auto points_in_polygon = polygon->data.outer();
+            const auto & ring = polygon->ring;
             buf << point_in_polygon_function_name.value_or("") << "(";
             print_wrapped_columns();
             buf << ", ";
             buf << "[";
-            for (size_t i = 0; i < points_in_polygon.size(); ++i)
+            for (size_t i = 0; i < ring.size(); ++i)
             {
                 if (i != 0)
                     buf << ", ";
-                buf << "(" << points_in_polygon[i].x() << ", " << points_in_polygon[i].y() << ")";
+                buf << "(" << ring[i].x() << ", " << ring[i].y() << ")";
             }
             buf << "]";
             buf << ")";
