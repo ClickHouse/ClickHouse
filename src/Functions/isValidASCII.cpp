@@ -86,7 +86,7 @@ public:
     {
         return true;
     }
-    
+
     bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
