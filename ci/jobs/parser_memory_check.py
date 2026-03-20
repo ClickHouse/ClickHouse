@@ -21,7 +21,6 @@ from ci.praktika.utils import Shell, Utils
 TEMP_DIR = f"{Utils.cwd()}/ci/tmp"
 QUERIES_FILE = f"{Utils.cwd()}/utils/parser-memory-profiler/test_queries.txt"
 MASTER_PROFILER_BASE_URL = "https://clickhouse-builds.s3.us-east-1.amazonaws.com"
-MASTER_PROFILER_LATEST_URL = f"{MASTER_PROFILER_BASE_URL}/master/aarch64/parser_memory_profiler"
 
 # Threshold: a change is significant only if BOTH conditions are met
 CHANGE_THRESHOLD_BYTES = 100
@@ -58,29 +57,35 @@ NOISE_FRAME_PREFIXES = (
 
 
 def get_merge_base_profiler_url() -> str:
-    """Build the S3 URL for the merge-base parser_memory_profiler binary.
-    Falls back to latest master if merge-base info is unavailable."""
+    """Find the S3 URL for a recent master parser_memory_profiler binary.
+    Iterates master_track_commits_sha (like performance_tests.py) to find
+    the closest available build. Returns empty string if none found."""
     try:
         info = Info()
-        merge_base_sha = info.get_kv_data("merge_base_commit_sha")
-        if merge_base_sha:
-            url = f"{MASTER_PROFILER_BASE_URL}/REFs/master/{merge_base_sha}/build_arm_binary/parser_memory_profiler"
-            if Shell.check(f"curl -sfI {url} > /dev/null"):
-                print(f"Using merge-base binary (sha={merge_base_sha[:12]})")
+        commits = info.get_kv_data("master_track_commits_sha") or []
+        for sha in commits:
+            if not re.fullmatch(r"[0-9a-f]{40}", sha):
+                continue
+            url = f"{MASTER_PROFILER_BASE_URL}/REFs/master/{sha}/build_arm_binary/parser_memory_profiler"
+            if Shell.check(f"curl -sfI '{url}' > /dev/null"):
+                print(f"Using master binary from commit {sha[:12]}")
                 return url
-            print(f"Merge-base binary not found at {url}, falling back to latest master")
+        print(f"No master binary found in {len(commits)} tracked commits")
     except Exception as e:
-        print(f"Could not resolve merge-base: {e}, falling back to latest master")
-    return MASTER_PROFILER_LATEST_URL
+        print(f"Could not resolve master binary: {e}")
+    return ""
 
 
-def download_master_binary(dest_path: str) -> bool:
-    """Download merge-base (or latest master) parser_memory_profiler from S3."""
+def download_master_binary(dest_path: str) -> str:
+    """Download a master parser_memory_profiler binary from S3.
+    Returns error message on failure, empty string on success."""
     url = get_merge_base_profiler_url()
+    if not url:
+        return "No master binary found in tracked commits — cannot compare"
     print(f"Downloading base binary from {url}")
-    return Shell.check(
-        f"wget -nv -O {dest_path} {url} && chmod +x {dest_path}"
-    )
+    if not Shell.check(f"wget -nv -O '{dest_path}' '{url}' && chmod +x '{dest_path}'"):
+        return f"Failed to download master binary from {url}"
+    return ""
 
 
 def parse_symbolized_heap(sym_file: str) -> dict:
@@ -98,7 +103,7 @@ def parse_symbolized_heap(sym_file: str) -> dict:
         @ 0x1234 0x5678
           t*: <curobjs>: <curbytes> [<accumobjs>: <accumbytes>]
 
-    Returns dict: { "stack_key" -> { "bytes": int, "stack": "symbolized;frames" } }
+    Returns dict: { "stack_key" -> { "bytes": int, "frames": ["sym1", "sym2", ...] } }
     """
     if not os.path.exists(sym_file):
         print(f"Warning: symbolized file not found: {sym_file}")
@@ -232,7 +237,8 @@ def compute_diff(stacks_before: dict, stacks_after: dict) -> tuple:
     """
     Compute per-stack byte diffs between before and after heap profiles.
     Skips stacks that are entirely profiler overhead (e.g. dumpProfile, main-only).
-    Returns (total_diff, list of (diff_bytes, formatted_stack) sorted by |diff| desc).
+    Returns (total_diff, list of (diff_bytes, formatted_stack, full_frames) sorted by |diff| desc).
+    full_frames is the untruncated frame list for accurate cross-version matching.
     """
     all_keys = set(stacks_before.keys()) | set(stacks_after.keys())
     diffs = []
@@ -249,7 +255,8 @@ def compute_diff(stacks_before: dict, stacks_after: dict) -> tuple:
             formatted = format_stack(frames)
             if not formatted:
                 continue
-            diffs.append((diff, formatted))
+            full = flatten_frames_full(frames)
+            diffs.append((diff, formatted, full))
             total += diff
 
     diffs.sort(key=lambda x: -abs(x[0]))
@@ -271,18 +278,31 @@ def flatten_frames_full(frames: list) -> list:
 
 def compute_cross_version_diff(master_stacks: list, pr_stacks: list) -> list:
     """Compute per-stack diff between master and PR allocation profiles.
-    Input: lists of (diff_bytes, formatted_stack_str).
+    Input: lists of (diff_bytes, formatted_stack_str, full_frames).
+    Uses full (untruncated) frames as map keys to avoid false merges,
+    but returns the formatted (truncated) string for display.
     Returns list of (delta, master_bytes, pr_bytes, stack_str) sorted by |delta| desc."""
-    master_map = {s: b for b, s in master_stacks}
-    pr_map = {s: b for b, s in pr_stacks}
-    all_stacks = set(master_map.keys()) | set(pr_map.keys())
+    master_map = {}
+    master_display = {}
+    for b, s, full in master_stacks:
+        key = tuple(full)
+        master_map[key] = master_map.get(key, 0) + b
+        master_display[key] = s
+    pr_map = {}
+    pr_display = {}
+    for b, s, full in pr_stacks:
+        key = tuple(full)
+        pr_map[key] = pr_map.get(key, 0) + b
+        pr_display[key] = s
+    all_keys = set(master_map.keys()) | set(pr_map.keys())
     diffs = []
-    for stack in all_stacks:
-        m = master_map.get(stack, 0)
-        p = pr_map.get(stack, 0)
+    for key in all_keys:
+        m = master_map.get(key, 0)
+        p = pr_map.get(key, 0)
         delta = p - m
         if delta != 0:
-            diffs.append((delta, m, p, stack))
+            display = pr_display.get(key) or master_display.get(key, " > ".join(key))
+            diffs.append((delta, m, p, display))
     diffs.sort(key=lambda x: -abs(x[0]))
     return diffs
 
@@ -555,7 +575,8 @@ def format_profile_html(stacks, total_bytes, label):
         )
 
     rows = ""
-    for diff_bytes, stack in stacks:
+    for entry in stacks:
+        diff_bytes, stack = entry[0], entry[1]
         pct = (diff_bytes / total_bytes * 100) if total_bytes else 0
         bar_width = min(abs(pct), 100)
         rows += (
@@ -590,13 +611,14 @@ def generate_html_report(
 
         master_b = r["master_bytes"]
         abs_ch = abs(change)
-        pct_ch = (abs_ch / master_b * 100) if master_b else 0
+        base_b = abs(master_b)
+        pct_ch = (abs_ch / base_b * 100) if base_b > 0 else (100.0 if abs_ch > 0 else 0)
         sig = abs_ch > CHANGE_THRESHOLD_BYTES and pct_ch > CHANGE_THRESHOLD_PCT
 
-        if status == "FAIL":
+        if status == Result.StatusExtended.FAIL:
             row_class = "regression"
             status_badge = '<span class="badge badge-fail">FAIL</span>'
-        elif status == "ERROR":
+        elif status == Result.StatusExtended.ERROR:
             row_class = "error"
             status_badge = '<span class="badge badge-error">ERROR</span>'
         elif sig and change < 0:
@@ -686,7 +708,7 @@ def generate_html_report(
   th .sort-arrow {{ font-size: 10px; margin-left: 4px; color: #aaa; }}
   td {{ padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }}
   td.num {{ text-align: right; font-variant-numeric: tabular-nums; font-family: 'SF Mono', 'Consolas', monospace; white-space: nowrap; }}
-  td.query-cell {{ font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px; white-space: nowrap; }}
+  td.query-cell {{ font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px; overflow-wrap: break-word; word-break: break-all; }}
   tr:hover {{ background: #f8f9fa; cursor: pointer; }}
   tr.regression {{ background: #fff5f5; }}
   tr.regression:hover {{ background: #ffebee; }}
@@ -888,6 +910,11 @@ def run_profiler_collect_heap(
         elif line.startswith("Profile after:"):
             heap_after = line.split(":", 1)[1].strip().lstrip()
 
+    if not heap_before or not heap_after:
+        return {"error": f"heap profiles not found in profiler output (before={bool(heap_before)}, after={bool(heap_after)})"}
+    if not os.path.exists(heap_before) or not os.path.exists(heap_after):
+        return {"error": f"heap profile files missing on disk (before={os.path.exists(heap_before)}, after={os.path.exists(heap_after)})"}
+
     return {
         "jemalloc_diff": jemalloc_diff,
         "heap_before": heap_before,
@@ -979,7 +1006,7 @@ def load_queries(queries_file: str) -> list:
         return [
             line.strip()
             for line in f
-            if line.strip() and not line.startswith("#")
+            if line.strip() and not line.strip().startswith("#")
         ]
 
 
@@ -1007,7 +1034,8 @@ def main():
     results.append(Result(name="Check PR binary", status=Result.Status.SUCCESS))
 
     # Download master binary
-    if download_master_binary(master_profiler):
+    download_error = download_master_binary(master_profiler)
+    if not download_error:
         results.append(
             Result(name="Download master binary", status=Result.Status.SUCCESS)
         )
@@ -1016,7 +1044,7 @@ def main():
             Result(
                 name="Download master binary",
                 status=Result.Status.FAILED,
-                info="Failed to download master binary from S3",
+                info=download_error,
             )
         )
         Result.create_from(results=results, stopwatch=stop_watch).complete_job()
@@ -1039,7 +1067,7 @@ def main():
 
     for i, query in enumerate(queries):
         query_num = i + 1
-        query_display = query[:60].replace("\n", " ").replace("\t", " ")
+        query_display = query.replace("\n", " ").replace("\t", " ")
 
         master_prefix = f"{profiles_dir}/q{query_num}_master_"
         master_data = run_profiler_collect_heap(
@@ -1120,7 +1148,7 @@ def main():
                 "master_bytes": 0,
                 "pr_bytes": 0,
                 "change": 0,
-                "status": "ERROR",
+                "status": Result.StatusExtended.ERROR,
                 "master_stacks": [],
                 "pr_stacks": [],
                 "cross_diff": [],
@@ -1144,19 +1172,21 @@ def main():
         total_master_bytes += master_bytes
         total_pr_bytes += pr_bytes
 
-        # Determine status: significant only if abs change > threshold AND > 1% of base
+        # Determine status: significant only if abs change > threshold AND > 1% of base.
+        # For zero/negative baselines, use absolute threshold only.
         abs_change = abs(change)
-        pct_change = (abs_change / master_bytes * 100) if master_bytes else 0
+        base = abs(master_bytes)
+        pct_change = (abs_change / base * 100) if base > 0 else (100.0 if abs_change > 0 else 0)
         is_significant = abs_change > CHANGE_THRESHOLD_BYTES and pct_change > CHANGE_THRESHOLD_PCT
 
         if is_significant and change > 0:
-            status = "FAIL"
+            status = Result.StatusExtended.FAIL
             total_regressions += 1
         elif is_significant and change < 0:
-            status = "OK"
+            status = Result.StatusExtended.OK
             total_improvements += 1
         else:
-            status = "OK"
+            status = Result.StatusExtended.OK
 
         master_stacks = master_analysis.get("stack_diffs", [])
         pr_stacks = pr_analysis.get("stack_diffs", [])
@@ -1176,15 +1206,15 @@ def main():
         # Always include full profiles for both versions
         info_lines.append(f"\n--- Master profile ({master_bytes:,} bytes) ---")
         if master_stacks:
-            for diff_bytes, stack in master_stacks:
-                info_lines.append(f"  {diff_bytes:+,} bytes | {stack}")
+            for entry in master_stacks:
+                info_lines.append(f"  {entry[0]:+,} bytes | {entry[1]}")
         else:
             info_lines.append("  (no stack data)")
 
         info_lines.append(f"\n--- PR profile ({pr_bytes:,} bytes) ---")
         if pr_stacks:
-            for diff_bytes, stack in pr_stacks:
-                info_lines.append(f"  {diff_bytes:+,} bytes | {stack}")
+            for entry in pr_stacks:
+                info_lines.append(f"  {entry[0]:+,} bytes | {entry[1]}")
         else:
             info_lines.append("  (no stack data)")
 
