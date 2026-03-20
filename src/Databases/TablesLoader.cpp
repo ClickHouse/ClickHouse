@@ -19,6 +19,56 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// Apply database namespace to a dependency's database name during server restart.
+/// At startup, no user context is available, so we derive the namespace from the
+/// owning table's physical database name (e.g. "tenant1__testns" → prefix "tenant1__").
+/// This is needed because MV SELECT ASTs store logical (namespace-stripped) database names.
+void namespaceDependency(String & dep_database, const String & owner_database,
+                         const String & separator, const std::unordered_set<String> & shared_dbs)
+{
+    if (dep_database.empty() || separator.empty())
+        return;
+    if (Context::isExcludedFromNamespacing(owner_database))
+        return;
+
+    auto sep_pos = owner_database.find(separator);
+    if (sep_pos == String::npos)
+        return;
+
+    String prefix = owner_database.substr(0, sep_pos) + separator;
+    /// Only apply if not already prefixed (handles old metadata with physical names).
+    if (dep_database.starts_with(prefix))
+        return;
+    if (Context::isExcludedFromNamespacing(dep_database))
+        return;
+    if (shared_dbs.contains(dep_database))
+        return;
+
+    dep_database = prefix + dep_database;
+}
+
+/// Apply namespace to all entries in a TableNamesSet using the startup-time derivation.
+void namespaceDependencySet(TableNamesSet & deps, const String & owner_database,
+                            const String & separator, const std::unordered_set<String> & shared_dbs)
+{
+    if (separator.empty())
+        return;
+
+    TableNamesSet result;
+    for (auto & dep : deps)
+    {
+        auto namespaced = dep;
+        namespaceDependency(namespaced.database, owner_database, separator, shared_dbs);
+        result.emplace(std::move(namespaced));
+    }
+    deps = std::move(result);
+}
+
+}
+
 TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_)
     : global_context(global_context_)
     , databases(std::move(databases_))
@@ -167,10 +217,20 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
 
 void TablesLoader::buildDependencyGraph()
 {
+    String separator = global_context->getDatabaseNamespaceSeparator();
+    auto shared = global_context->getSharedDatabasesAcrossNamespaces();
+
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
         auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
         auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
+
+        /// The MV SELECT AST stores logical (namespace-stripped) database names.
+        /// All dependency graphs must use physical names for correct lookups.
+        /// During server restart, derive the namespace from the table's own physical
+        /// database name (e.g. "tenant1__testns" → prefix "tenant1__").
+        namespaceDependencySet(new_ref_dependencies.dependencies, table_name.database, separator, shared);
+        namespaceDependencySet(new_loading_dependencies, table_name.database, separator, shared);
 
         if (!new_ref_dependencies.dependencies.empty())
             referential_dependencies.addDependencies(table_name, new_ref_dependencies.dependencies);
@@ -180,34 +240,7 @@ void TablesLoader::buildDependencyGraph()
         if (new_ref_dependencies.mv_from_dependency)
         {
             auto dep = new_ref_dependencies.mv_from_dependency.value();
-
-            /// The MV SELECT AST stores logical (namespace-stripped) database names for
-            /// explicitly-qualified tables.  The dependency graph must use physical names
-            /// so the push-path can find dependents via physical StorageID.
-            /// During server restart the global context has no namespace, so we derive it
-            /// from the MV's own physical database name and the configured separator.
-            if (!dep.database_name.empty())
-            {
-                String separator = global_context->getDatabaseNamespaceSeparator();
-                if (!separator.empty() && !Context::isExcludedFromNamespacing(table_name.database))
-                {
-                    auto sep_pos = table_name.database.find(separator);
-                    if (sep_pos != String::npos)
-                    {
-                        String ns = table_name.database.substr(0, sep_pos);
-                        String prefix = ns + separator;
-                        /// Only apply if not already prefixed (handles old metadata with physical names).
-                        if (!dep.database_name.starts_with(prefix)
-                            && !Context::isExcludedFromNamespacing(dep.database_name))
-                        {
-                            auto shared = global_context->getSharedDatabasesAcrossNamespaces();
-                            if (!shared.contains(dep.database_name))
-                                dep.database_name = prefix + dep.database_name;
-                        }
-                    }
-                }
-            }
-
+            namespaceDependency(dep.database_name, table_name.database, separator, shared);
             mv_from_dependencies.addDependency(dep, StorageID{table_name});
         }
 
