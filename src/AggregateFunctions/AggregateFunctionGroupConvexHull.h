@@ -154,12 +154,9 @@ public:
 
     static void accumulatePolygon(Data & state, Polygon<Point> && poly, bool should_correct)
     {
-        /// Only take the outer ring; holes don't affect convex hull.
-        Polygon<Point> polygon;
-        polygon.outer() = std::move(poly.outer());
         if (should_correct)
-            boost::geometry::correct(polygon);
-        state.accumulated.emplace_back(std::move(polygon));
+            boost::geometry::correct(poly);
+        state.accumulated.emplace_back(std::move(poly));
         state.has_value = true;
     }
 
