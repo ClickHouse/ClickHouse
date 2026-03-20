@@ -121,7 +121,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int64 added_delete_files,
     Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
-    std::optional<Int64> user_defined_timestamp)
+    std::optional<Int64> user_defined_timestamp,
+    bool is_truncate)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
@@ -145,7 +146,16 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
-    if (num_deleted_rows == 0)
+    if (is_truncate)
+    {
+        summary->set(Iceberg::f_operation, Iceberg::f_overwrite);
+        Int32 prev_total_records = parent_snapshot && parent_snapshot->has(Iceberg::f_summary) && parent_snapshot->getObject(Iceberg::f_summary)->has(Iceberg::f_total_records) ? std::stoi(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_total_records)) : 0;
+        Int32 prev_total_data_files = parent_snapshot && parent_snapshot->has(Iceberg::f_summary) && parent_snapshot->getObject(Iceberg::f_summary)->has(Iceberg::f_total_data_files) ? std::stoi(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_total_data_files)) : 0;
+        
+        summary->set(Iceberg::f_deleted_records, std::to_string(prev_total_records));
+        summary->set(Iceberg::f_deleted_data_files, std::to_string(prev_total_data_files));
+    }
+    else if (num_deleted_rows == 0)
     {
         summary->set(Iceberg::f_operation, Iceberg::f_append);
         summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
@@ -165,6 +175,11 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto sum_with_parent_snapshot = [&](const char * field_name, Int64 snapshot_value)
     {
+        if (is_truncate)
+        {
+            summary->set(field_name, std::to_string(0));
+            return;
+        }
         Int64 prev_value = parent_snapshot ? parse<Int64>(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name)) : 0;
         summary->set(field_name, std::to_string(prev_value + snapshot_value));
     };
