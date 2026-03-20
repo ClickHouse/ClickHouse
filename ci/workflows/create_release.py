@@ -40,18 +40,21 @@ workflow = Workflow.Config(
             description="Run only repo updates including docker (repo-recovery, tests)",
             is_required=False,
             default_value="false",
+            is_boolean=True,
         ),
         Workflow.Config.InputConfig(
             name="only-docker",
             description="Run only docker builds (repo-recovery, tests)",
             is_required=False,
             default_value="false",
+            is_boolean=True,
         ),
         Workflow.Config.InputConfig(
             name="dry-run",
             description="Dry run — show what would be done without making changes",
             is_required=False,
             default_value="false",
+            is_boolean=True,
         ),
         Workflow.Config.InputConfig(
             name="assignee",

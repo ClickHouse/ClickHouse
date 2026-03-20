@@ -122,6 +122,13 @@ jobs:
         default: {DEFAULT_VALUE}\
 """
 
+        TEMPLATE_BOOLEAN_INPUT = """
+      {NAME}:
+        description: {DESCRIPTION}
+        type: boolean
+        default: {DEFAULT_VALUE}\
+"""
+
         TEMPLATE_SECRET_CONFIG = """\
       {SECRET_NAME}:
         required: true
@@ -397,7 +404,13 @@ class PullRequestPushYamlGen:
         # for dispatch workflows only
         dispatch_inputs = ""
         for input_item in self.workflow_config.dispatch_inputs:
-            if not input_item.options:
+            if input_item.is_boolean:
+                dispatch_inputs += YamlGenerator.Templates.TEMPLATE_BOOLEAN_INPUT.format(
+                    NAME=input_item.name,
+                    DESCRIPTION=input_item.description,
+                    DEFAULT_VALUE=input_item.default_value or "false",
+                )
+            elif not input_item.options:
                 dispatch_inputs += YamlGenerator.Templates.TEMPLATE_INPUT.format(
                     NAME=input_item.name,
                     DESCRIPTION=input_item.description,

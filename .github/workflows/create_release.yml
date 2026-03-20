@@ -15,15 +15,15 @@ on:
         default: patch
       only-repo:
         description: Run only repo updates including docker (repo-recovery, tests)
-        required: false
+        type: boolean
         default: false
       only-docker:
         description: Run only docker builds (repo-recovery, tests)
-        required: false
+        type: boolean
         default: false
       dry-run:
         description: Dry run — show what would be done without making changes
-        required: false
+        type: boolean
         default: false
       assignee:
         description: GitHub login to assign the changelog PR to (defaults to the workflow triggerer)
