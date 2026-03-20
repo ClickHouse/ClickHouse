@@ -44,8 +44,8 @@ public:
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
-        const ContextPtr & context_,
-        IcebergMetadataFilesCachePtr cache_ptr);
+        Iceberg::PersistentTableComponents && persistent_components_,
+        ContextPtr context_);
 
     ~IcebergMetadata() override;
 
@@ -145,8 +145,12 @@ public:
     void drop(ContextPtr context) override;
 
 private:
-    Iceberg::PersistentTableComponents initializePersistentTableComponents(
-        StorageObjectStorageConfigurationPtr configuration, IcebergMetadataFilesCachePtr cache_ptr, ContextPtr context_);
+    static Iceberg::PersistentTableComponents initializePersistentTableComponents(
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        IcebergMetadataFilesCachePtr cache_ptr,
+        ContextPtr context_,
+        LoggerPtr log);
 
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
@@ -162,7 +166,7 @@ private:
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
-    DB::Iceberg::PersistentTableComponents persistent_components;
+    const DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;

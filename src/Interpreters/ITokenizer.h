@@ -8,8 +8,6 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
-#include <absl/container/flat_hash_set.h>
-
 #if defined(__SSE2__)
 #  include <emmintrin.h>
 #  if defined(__SSE4_2__)
@@ -381,7 +379,6 @@ private:
 /// 3. Unicode / Chinese
 ///
 /// * Chinese characters are **always single-character tokens**.
-/// * Certain Unicode punctuation (Chinese punctuation) are **stop characters** and **break tokens**.
 ///
 /// 4. Token Validity
 ///
@@ -408,9 +405,8 @@ private:
 /// | `a.b a.3 a. .a ..a.b.3.` | `['a.b','a','3','a','a','a.b','3']`   |
 struct UnicodeWordTokenizer final : public ITokenizerHelper<UnicodeWordTokenizer>
 {
-    explicit UnicodeWordTokenizer(const std::vector<String> & stop_words_)
+    explicit UnicodeWordTokenizer()
         : ITokenizerHelper(Type::UnicodeWord)
-        , stop_words(stop_words_.begin(), stop_words_.end())
     {
     }
 
@@ -432,9 +428,6 @@ struct UnicodeWordTokenizer final : public ITokenizerHelper<UnicodeWordTokenizer
     void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
-
-private:
-    absl::flat_hash_set<String> stop_words;
 };
 
 namespace detail
