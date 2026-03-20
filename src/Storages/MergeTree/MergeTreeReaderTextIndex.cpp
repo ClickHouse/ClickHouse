@@ -652,17 +652,21 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
             }
         }
 
-        /// Use lazy path if all required tokens have lazy cursors.
-        if (!cursor_map.empty() && cursor_map.size() == search_query->tokens.size())
+        /// ALL mode: if any query token is missing from the granule, the intersection
+        /// is empty — return all zeros (already filled by resize_fill above).
+        if (search_query->search_mode == TextSearchMode::All
+            && cursor_map.size() < search_query->tokens.size())
+            return;
+
+        /// Use lazy cursors for whatever tokens are available.
+        if (!cursor_map.empty())
         {
             if (search_query->search_mode == TextSearchMode::Any)
                 lazyUnionPostingLists(column, cursor_map, search_query->tokens, old_size, row_offset, num_rows);
             else if (search_query->search_mode == TextSearchMode::All)
                 lazyIntersectPostingLists(column, cursor_map, search_query->tokens, old_size, row_offset, num_rows, lazy_density_threshold);
-
-            return;
         }
-        /// If not all tokens have cursors, fall through to materialize path.
+        return;
     }
 
     if (postings.empty())

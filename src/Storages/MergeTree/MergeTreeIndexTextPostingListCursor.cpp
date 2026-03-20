@@ -51,10 +51,13 @@ PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
     {
         /// Embedded postings must fit in a single decoded block.
         /// If this ever fires, the token should use compressed postings instead.
-        chassert(info.cardinality <= BLOCK_SIZE);
+        if (info.cardinality > BLOCK_SIZE)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Embedded posting list cardinality ({}) exceeds BLOCK_SIZE ({})",
+                info.cardinality, BLOCK_SIZE);
 
         /// Decode all embedded postings into decoded_values.
-        decoded_count = std::min(static_cast<size_t>(info.cardinality), static_cast<size_t>(BLOCK_SIZE));
+        decoded_count = static_cast<size_t>(info.cardinality);
         if (decoded_count > 0)
         {
             std::vector<uint32_t> buf(info.cardinality);
@@ -771,6 +774,7 @@ void lazyIntersectPostingLists(
     for (size_t i = 0; i < n; ++i)
         min_density = std::min(min_density, cursors[i]->density());
 
+    /// n < 256: brute-force uses UInt8 counters per row — would overflow with 256+ cursors.
     if (n < 256 && min_density >= density_threshold)
     {
         ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceIntersections);
