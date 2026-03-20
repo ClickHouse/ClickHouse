@@ -930,14 +930,21 @@ Int32 PostgreSQLHandler::parseNumberColumns(const std::vector<char> & output)
 
 void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
 {
+    /// Create an internal context from the global context (which has full access, bypassing grant checks)
+    /// but sharing the same session context, so that temporary views created here
+    /// are visible in subsequent user queries.
+    auto internal_context = Context::createCopy(server.context());
+    internal_context->makeQueryContext();
+    internal_context->setSessionContext(query_context->getSessionContext());
+
     String out_str;
     auto out_buffer = WriteBufferFromString(out_str);
 
     auto execute_query = [&](const String & query)
     {
-        QueryScope query_scope = QueryScope::create(query_context);
+        QueryScope query_scope = QueryScope::create(internal_context);
         ReadBufferFromString read_buf(query);
-        executeQuery(read_buf, out_buffer, query_context, {});
+        executeQuery(read_buf, out_buffer, internal_context, {}, QueryFlags{ .internal = true });
     };
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_type AS
