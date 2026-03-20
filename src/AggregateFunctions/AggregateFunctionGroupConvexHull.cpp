@@ -132,7 +132,9 @@ SELECT wkt(groupConvexHull(polygon)) AS hull FROM geo_polygons;
                          "Parameter prune_interval for aggregate function {} should be a positive integer",
                          name);
 
-                 prune_interval = parameters[0].safeGet<UInt64>();
+                 prune_interval = (type == Field::Types::Int64)
+                     ? static_cast<UInt64>(parameters[0].safeGet<Int64>())
+                     : parameters[0].safeGet<UInt64>();
              }
 
              if (argument_types.size() != 1 && argument_types.size() != 2)
