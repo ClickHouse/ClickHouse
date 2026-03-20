@@ -960,6 +960,12 @@ def checkout(ref: str) -> Iterator[None]:
     orig_ref = Shell.get_output_or_raise(f"{GIT_PREFIX} symbolic-ref --short HEAD")
     rollback_cmd = f"{GIT_PREFIX} checkout {orig_ref}"
     assert orig_ref
+    Shell.check(
+        f"git rev-parse --is-shallow-repository | grep -q true"
+        f" && {GIT_PREFIX} fetch --unshallow --prune --no-recurse-submodules"
+        f" --filter=tree:0 origin {orig_ref} ||:",
+        verbose=True,
+    )
     if ref != orig_ref:
         Shell.check(f"{GIT_PREFIX} checkout {ref}", strict=True, verbose=True)
     try:
