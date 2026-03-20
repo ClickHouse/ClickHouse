@@ -1854,6 +1854,7 @@ dereference
 deserialization
 deserialize
 deserialized
+deserializer
 deserializing
 dest
 destructor
@@ -1862,7 +1863,6 @@ detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
-detectProgrammingLanguage
 detectTonality
 determinator
 deterministically
@@ -2807,6 +2807,7 @@ protocol
 protos
 proxied
 prql
+pseudocode
 pseudorandom
 pseudorandomize
 pseudoterminal
@@ -3526,6 +3527,7 @@ varpop
 varpopstable
 varsamp
 varsampstable
+VarUInt
 vectorized
 vectorscan
 vendoring

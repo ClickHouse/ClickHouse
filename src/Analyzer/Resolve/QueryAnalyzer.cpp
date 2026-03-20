@@ -162,8 +162,13 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             {
                 scope.expression_join_tree_node = table_expression;
                 scope.registered_table_expression_nodes.insert(table_expression);
+                /// Mark table expression as being in resolve process to prevent
+                /// premature access during ALIAS column resolution in
+                /// initializeTableExpressionData (e.g. dictGet ALIAS columns).
+                scope.table_expressions_in_resolve_process.insert(table_expression.get());
                 validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
                 initializeTableExpressionData(scope.expression_join_tree_node, scope);
+                scope.table_expressions_in_resolve_process.erase(table_expression.get());
             }
 
             if (node_type == QueryTreeNodeType::LIST)
@@ -213,8 +218,13 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     {
         scope.expression_join_tree_node = table_expression;
         scope.registered_table_expression_nodes.insert(table_expression);
+        /// Mark table expression as being in resolve process to prevent
+        /// premature access during ALIAS column resolution in
+        /// initializeTableExpressionData (e.g. dictGet ALIAS columns).
+        scope.table_expressions_in_resolve_process.insert(table_expression.get());
         validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
+        scope.table_expressions_in_resolve_process.erase(table_expression.get());
     }
 
     if (node_type == QueryTreeNodeType::LIST)
@@ -3958,6 +3968,16 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         {
             if (exception.code() == ErrorCodes::UNKNOWN_IDENTIFIER)
             {
+                /** If resolution failed, the argument's subexpressions (e.g. scalar subqueries)
+                  * may be in an unresolved state. Mark the argument as unresolved so that
+                  * query tree passes (via traverseQueryTree) do not traverse into it and
+                  * encounter unresolved nodes like IDENTIFIER in join trees.
+                  *
+                  * Example: SELECT * FROM remote('localhost', view(SELECT 2 AS x), concat(x, (SELECT 1)))
+                  * Here concat(x, (SELECT 1)) fails on 'x', but the inner (SELECT 1) subquery
+                  * may not have been resolved yet, leaving its join tree as IdentifierNode("system.one").
+                  */
+                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
                 result_table_function_arguments.push_back(table_function_argument);
                 continue;
             }
@@ -4415,6 +4435,80 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
     return true;
 }
 
+/// Get ordered column names from a table expression, preserving left-to-right order.
+/// Returns false if the table expression type is not supported.
+static bool getOrderedColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, Names & result_columns)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push_back(root_table_expression.get());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * table_expression = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        switch (table_expression->getNodeType())
+        {
+            case QueryTreeNodeType::TABLE:
+            {
+                const auto * table_node = table_expression->as<TableNode>();
+                chassert(table_node);
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+                for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
+                    result_columns.push_back(column.name);
+                break;
+            }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                const auto * table_function_node = table_expression->as<TableFunctionNode>();
+                chassert(table_function_node);
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
+                    result_columns.push_back(column.name);
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                const auto * query_node = table_expression->as<QueryNode>();
+                chassert(query_node);
+                for (const auto & column : query_node->getProjectionColumns())
+                    result_columns.push_back(column.name);
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                const auto * union_node = table_expression->as<UnionNode>();
+                chassert(union_node);
+                for (const auto & column : union_node->computeProjectionColumns())
+                    result_columns.push_back(column.name);
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                const auto * join_node = table_expression->as<JoinNode>();
+                chassert(join_node);
+                nodes_to_process.push_back(join_node->getRightTableExpression().get());
+                nodes_to_process.push_back(join_node->getLeftTableExpression().get());
+                break;
+            }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                const auto * cross_join_node = table_expression->as<CrossJoinNode>();
+                chassert(cross_join_node);
+                const auto & exprs = cross_join_node->getTableExpressions();
+                for (auto it = exprs.rbegin(); it != exprs.rend(); ++it)
+                    nodes_to_process.push_back(it->get());
+                break;
+            }
+            default:
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 /// Resolve join node in scope
 void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
@@ -4438,6 +4532,48 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
         checkDuplicateTableNamesOrAliasForPasteJoin(join_node_typed, scope);
+
+    if (join_node_typed.isNaturalJoin())
+    {
+        /// Synthesize a USING expression from the intersection of left and right column names.
+        Names left_cols;
+        NameSet right_cols;
+
+        if (!getOrderedColumnsFromTableExpression(join_node_typed.getLeftTableExpression(), left_cols))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "NATURAL JOIN: cannot determine columns of left table expression in {}",
+                join_node_typed.formatASTForErrorMessage());
+
+        if (!getColumnsFromTableExpression(join_node_typed.getRightTableExpression(), right_cols))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "NATURAL JOIN: cannot determine columns of right table expression in {}",
+                join_node_typed.formatASTForErrorMessage());
+
+        QueryTreeNodes using_nodes;
+        NameSet seen;
+        for (const auto & col_name : left_cols)
+        {
+            /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
+            if (col_name.find('.') != std::string::npos)
+                continue;
+
+            if (right_cols.contains(col_name) && !seen.contains(col_name))
+            {
+                seen.insert(col_name);
+                using_nodes.push_back(std::make_shared<IdentifierNode>(Identifier(col_name)));
+            }
+        }
+
+        if (using_nodes.empty())
+        {
+            /// No common columns — degrade to CROSS JOIN (standard SQL behavior).
+            join_node_typed.setKind(JoinKind::Cross);
+            return;
+        }
+
+        join_node_typed.getJoinExpression() = std::make_shared<ListNode>(std::move(using_nodes));
+        join_node_typed.setUsingJoinExpression();
+    }
 
     if (join_node_typed.isOnJoinExpression())
     {

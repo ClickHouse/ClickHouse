@@ -189,11 +189,6 @@ bool SQLDatabase::isReplicatedOrSharedDatabase() const
     return isReplicatedDatabase() || isSharedDatabase();
 }
 
-const std::optional<String> & SQLDatabase::getCluster() const
-{
-    return cluster;
-}
-
 bool SQLDatabase::isAttached() const
 {
     return attached == DetachStatus::ATTACHED;
@@ -549,11 +544,6 @@ bool SQLBase::hasSQLitePeer() const
 bool SQLBase::hasClickHousePeer() const
 {
     return peer_table == PeerTableDatabase::ClickHouse;
-}
-
-const std::optional<String> & SQLBase::getCluster() const
-{
-    return cluster;
 }
 
 bool SQLBase::isAttached() const
@@ -970,14 +960,14 @@ bool SQLDictionary::supportsFinal() const
     return false;
 }
 
-const std::optional<String> & SQLFunction::getCluster() const
-{
-    return cluster;
-}
-
 void SQLFunction::setName(Function * f) const
 {
     f->set_function("f" + std::to_string(fname));
+}
+
+void SQLPolicy::setName(Policy * f) const
+{
+    f->set_policy("p" + std::to_string(policy_id));
 }
 
 const String & ColumnPathChain::getBottomName() const
