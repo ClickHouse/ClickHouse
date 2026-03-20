@@ -29,9 +29,9 @@ using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSett
 struct IPartitionStrategy;
 
 /**
- * A general class containing implementation for external table engines
- * such as StorageS3, StorageAzure, StorageHDFS.
- * Works with an object of IObjectStorage class.
+ * Storage class for data lake engine
+
+ * Copy-pasted from StorageObjectStorage, to be simplified.
  */
 class StoragePaimon : public IStorage
 {
@@ -91,11 +91,11 @@ public:
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
+    bool isDataLake() const override { return true; }
 
     bool isObjectStorage() const override { return true; }
 
-    bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
+    bool supportsReplication() const override { return true; }
 
     /// Things required for PREWHERE.
     bool supportsPrewhere() const override;
@@ -163,9 +163,6 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
 protected:
-    /// Get path sample for hive partitioning implementation.
-    String getPathSample(ContextPtr context);
-
     /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -187,9 +184,6 @@ protected:
     bool supports_prewhere = false;
     bool supports_tuple_elements = false;
     bool is_table_function = false;
-
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    NamesAndTypesList file_columns;
 
     LoggerPtr log;
 

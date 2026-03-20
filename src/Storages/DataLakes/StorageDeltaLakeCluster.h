@@ -30,7 +30,6 @@ public:
         ClusterPtr cluster,
         StorageMetadataPtr storage_metadata_snapshot) const override;
 
-    String getPathSample(ContextPtr context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
@@ -47,7 +46,6 @@ private:
     const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
 }

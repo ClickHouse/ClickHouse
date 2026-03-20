@@ -13,7 +13,6 @@
 #include <Storages/IPartitionStrategy.h>
 
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
@@ -23,7 +22,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
 }
@@ -33,30 +31,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-String StorageIcebergCluster::getPathSample(ContextPtr context)
-{
-    auto query_settings = configuration->getQuerySettings(context);
-    /// We don't want to throw an exception if there are no files with specified path.
-    query_settings.throw_on_zero_files_match = false;
-    auto file_iterator = StorageObjectStorageSource::createFileIterator(
-        configuration,
-        query_settings,
-        object_storage,
-        nullptr, // storage_metadata
-        false, // distributed_processing
-        context,
-        {}, // predicate
-        {},
-        {}, // virtual_columns
-        {}, // hive_columns
-        nullptr, // read_keys
-        {} // file_progress_callback
-    );
-
-    if (auto file = file_iterator->next(0))
-        return file->getPath();
-    return "";
-}
 
 StorageIcebergCluster::StorageIcebergCluster(
     const String & cluster_name_,
@@ -84,24 +58,9 @@ StorageIcebergCluster::StorageIcebergCluster(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
-    if (sample_path.empty()
-        && context_->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->isDataLakeConfiguration()
-        && !configuration->partition_strategy)
-        sample_path = getPathSample(context_);
-
-    /// Not grabbing the file_columns because it is not necessary to do it here.
-    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
-        columns,
-        configuration,
-        sample_path,
-        columns_in_table_or_function_definition.empty(),
-        std::nullopt,
-        context_);
-
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
-    if (is_table_function && configuration->isDataLakeConfiguration())
+    if (is_table_function)
     {
         /// For datalake table functions, always pin the current snapshot version so that
         /// query execution uses the same snapshot as query analysis (logical-race fix).
@@ -124,7 +83,7 @@ StorageIcebergCluster::StorageIcebergCluster(
         context_,
         /* format_settings */std::nullopt,
         configuration->partition_strategy_type,
-        sample_path));
+        {} /* sample_path */));
 
     setInMemoryMetadata(metadata);
 }
@@ -206,9 +165,6 @@ void StorageIcebergCluster::updateQueryToSendIfNeeded(
 
 void StorageIcebergCluster::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    if (!configuration->isDataLakeConfiguration())
-        return;
-
     /// Always force an update to pick up the latest snapshot version.
     /// Using if_not_updated_before=true would leave latest_snapshot_version
     /// stale from the first query and silently omit new files.
@@ -249,7 +205,7 @@ RemoteQueryExecutor::Extension StorageIcebergCluster::getTaskIteratorExtension(
         predicate,
         filter,
         virtual_columns,
-        hive_partition_columns_to_read_from_file_path,
+        {} /* hive_partition_columns */,
         nullptr,
         local_context->getFileProgressCallback(),
         /*ignore_archive_globs=*/false,

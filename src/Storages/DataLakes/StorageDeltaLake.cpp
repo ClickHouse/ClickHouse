@@ -19,7 +19,6 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
@@ -32,7 +31,6 @@
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
 
@@ -41,7 +39,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
-    extern const SettingsBool use_hive_partitioning;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
@@ -49,47 +46,10 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
-    extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
 }
 
-String StorageDeltaLake::getPathSample(ContextPtr context)
-{
-    auto query_settings = configuration->getQuerySettings(context);
-    /// We don't want to throw an exception if there are no files with specified path.
-    query_settings.throw_on_zero_files_match = false;
-    query_settings.ignore_non_existent_file = true;
-
-    bool local_distributed_processing = distributed_processing;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        local_distributed_processing = false;
-
-    auto file_iterator = StorageObjectStorageSource::createFileIterator(
-        configuration,
-        query_settings,
-        object_storage,
-        nullptr, // storage_metadata
-        local_distributed_processing,
-        context,
-        {}, // predicate
-        {},
-        {}, // virtual_columns
-        {}, // hive_columns
-        nullptr, // read_keys
-        {} // file_progress_callback
-    );
-
-    const auto path = configuration->getRawPath();
-
-    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
-        return path.path;
-
-    if (auto file = file_iterator->next(0))
-        return file->getPath();
-    return "";
-}
 
 StorageDeltaLake::StorageDeltaLake(
     StorageObjectStorageConfigurationPtr configuration_,
@@ -121,15 +81,12 @@ StorageDeltaLake::StorageDeltaLake(
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
-    const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->partition_strategy
-        && !configuration->isDataLakeConfiguration();
-    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
+    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
 
     LOG_DEBUG(
         log, "StorageDeltaLake: lazy_init={}, need_resolve_columns_or_format={}, "
-        "need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
-        lazy_init, need_resolve_columns_or_format, need_resolve_sample_path, is_table_function,
+        "is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
+        lazy_init, need_resolve_columns_or_format, is_table_function,
         is_datalake_query, columns_in_table_or_function_definition.toString(true));
 
     bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
@@ -147,7 +104,6 @@ StorageDeltaLake::StorageDeltaLake(
             object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
 
-    bool updated_configuration = false;
     try
     {
         if (!do_lazy_init)
@@ -156,7 +112,6 @@ StorageDeltaLake::StorageDeltaLake(
                 configuration->lazyInitializeIfNeeded(object_storage, context);
             else
                 configuration->update(object_storage, context);
-            updated_configuration = true;
         }
     }
     catch (...)
@@ -170,24 +125,10 @@ StorageDeltaLake::StorageDeltaLake(
         tryLogCurrentException(log, /*start of message = */ "", LogsLevel::warning);
     }
 
-    std::string sample_path;
-
     ColumnsDescription columns{columns_in_table_or_function_definition};
 
-    if (configuration->getRawPath().hasSchemaHashWildcard())
-    {
-        if (configuration->isDataLakeConfiguration())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported for DataLake engines");
 
-        if (configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported with hive partition strategy");
-
-        if (columns.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use _schema_hash placeholder without explicitly specifying columns");
-
-        configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
-    }
-
+    std::string sample_path;
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     else
@@ -195,39 +136,9 @@ StorageDeltaLake::StorageDeltaLake(
 
     configuration->check(context);
 
-    /// FIXME: We need to call getPathSample() lazily on select
-    /// in case it failed to be initialized in constructor.
-    if (updated_configuration && sample_path.empty() && need_resolve_sample_path && !configuration->partition_strategy)
-    {
-        try
-        {
-            sample_path = getPathSample(context);
-        }
-        catch (...)
-        {
-            LOG_WARNING(
-                log,
-                "Failed to list object storage, cannot use hive partitioning. "
-                "Error: {}",
-                getCurrentExceptionMessage(true));
-        }
-    }
 
-    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
-        columns,
-        configuration,
-        sample_path,
-        columns_in_table_or_function_definition.empty(),
-        format_settings,
-        context);
 
-    // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
-    if (!columns.empty() && file_columns.empty())
-    {
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "File without physical columns is not supported. Please try it with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
-            sample_path);
-    }
+
 
     bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
 
@@ -257,7 +168,7 @@ StorageDeltaLake::StorageDeltaLake(
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
-    if (!do_lazy_init && is_table_function && configuration->isDataLakeConfiguration())
+    if (!do_lazy_init && is_table_function)
     {
         /// For datalake table functions, always pin the current snapshot version so that
         /// query execution uses the same snapshot as query analysis (logical-race fix).
@@ -293,7 +204,7 @@ StorageDeltaLake::StorageDeltaLake(
         context,
         format_settings,
         configuration->partition_strategy_type,
-        sample_path));
+        {} /* sample_path */));
 
     setInMemoryMetadata(metadata);
 }
@@ -330,7 +241,7 @@ bool StorageDeltaLake::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageDeltaLake::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ {});
 }
 
 IStorage::ColumnSizeByName StorageDeltaLake::getColumnSizes() const
@@ -340,19 +251,12 @@ IStorage::ColumnSizeByName StorageDeltaLake::getColumnSizes() const
 
 IDataLakeMetadata * StorageDeltaLake::getExternalMetadata(ContextPtr query_context)
 {
-    if (!configuration->isDataLakeConfiguration())
-    return nullptr;
-
-configuration->update(object_storage, query_context);
-
+    configuration->update(object_storage, query_context);
     return configuration->getExternalMetadata();
 }
 
 void StorageDeltaLake::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    if (!configuration->isDataLakeConfiguration())
-        return;
-
     /// Always force an update to pick up the latest snapshot version.
     /// Using if_not_updated_before=true would leave latest_snapshot_version
     /// stale from the first query and silently omit new files.
@@ -420,13 +324,6 @@ void StorageDeltaLake::read(
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 
-    /// For data lake we did update in getExternalDynamicMetadata.
-    if (!is_table_function && !configuration->isDataLakeConfiguration())
-    {
-        configuration->update(object_storage, local_context);
-    }
-
-
     if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -436,7 +333,6 @@ void StorageDeltaLake::read(
 
     const auto & settings = local_context->getSettingsRef();
 #if USE_DELTA_KERNEL_RS
-    if (configuration->isDataLakeConfiguration())
     {
         if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
             start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
@@ -482,7 +378,7 @@ void StorageDeltaLake::read(
         supportsSubsetOfColumns(local_context),
         supports_tuple_elements,
         local_context,
-        PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+        PrepareReadingFromFormatHiveParams{ {}, {} });
 
 
     if (query_info.prewhere_info || query_info.row_level_filter)
@@ -525,59 +421,12 @@ SinkToStoragePtr StorageDeltaLake::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    /// For data lake we did update in getExternalDynamicMetadata.
-    if (!is_table_function && !configuration->isDataLakeConfiguration())
-    {
-        configuration->update(object_storage, local_context);
-    }
-
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-    const auto & settings = configuration->getQuerySettings(local_context);
-
-    const auto raw_path = configuration->getRawPath();
-
-    if (configuration->isArchive())
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Write into archive is not supported",
-                        raw_path.path);
-    }
-
-    if (raw_path.hasGlobsIgnorePlaceholders())
-    {
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
-                        configuration->getRawPath().path);
-    }
 
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
-
-    /// Not a data lake, just raw object storage
-
-    if (configuration->partition_strategy)
-    {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
-    }
-
-    auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
-    {
-        paths.push_back({*new_key});
-    }
-    configuration->setPaths(paths);
-
-    return std::make_shared<StorageObjectStorageSink>(
-        paths.back().path,
-        object_storage,
-        format_settings,
-        sample_block,
-        local_context,
-        configuration->format,
-        configuration->compression_method);
+    return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
 }
 
 bool StorageDeltaLake::optimize(
@@ -599,43 +448,8 @@ void StorageDeltaLake::truncate(
     ContextPtr /* context */,
     TableExclusiveLockHolder & /* table_holder */)
 {
-    const auto path = configuration->getRawPath();
-
-    if (configuration->isArchive())
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Table cannot be truncated",
-                        path.path);
-    }
-
-    if (configuration->isDataLakeConfiguration())
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Truncate is not supported for data lake engine");
-    }
-
-    if (path.hasGlobsIgnorePlaceholders())
-    {
-        throw Exception(
-            ErrorCodes::DATABASE_ACCESS_DENIED,
-            "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-            getName(), path.path);
-    }
-
-    if (path.hasPartitionWildcard())
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Truncate is not supported for partitioned tables, the path is '{}'",
-            path.path);
-    }
-
-    StoredObjects objects;
-    for (const auto & key : configuration->getPaths())
-    {
-        objects.emplace_back(key.path);
-    }
-    object_storage->removeObjectsIfExist(objects);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Truncate is not supported for data lake engine");
 }
 
 void StorageDeltaLake::drop()
