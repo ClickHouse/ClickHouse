@@ -18,6 +18,10 @@ allowed-tools: Task, Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
 - Fetch PR metadata (title, description, base/head refs, changed files).
 - Fetch the full PR diff.
 - Note the PR title, description, and linked issues
+- Validate PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`:
+  - `Changelog category` is present, valid, and semantically correct for the actual code change.
+  - `Changelog entry` is present and user-readable when required by the selected category.
+  - `Changelog entry` quality follows ClickHouse expectations: specific user-facing impact, no vague wording, and migration guidance for backward-incompatible changes.
 
 **If a branch name is given:**
 - Get the diff against `master`.
@@ -45,7 +49,7 @@ SCOPE & LANGUAGE
 
 INPUTS YOU WILL RECEIVE
 - PR title, description, motivation
-- PR template fields (`Changelog category`, `Changelog entry`)
+- PR template changelog metadata (`Changelog category`, `Changelog entry`, requirement/sufficiency, and user-facing quality)
 - Diff (file paths, added/removed lines)
 - Linked issues / discussions
 - CI status and logs (if available)
@@ -93,7 +97,8 @@ WHAT TO REVIEW VS WHAT TO IGNORE
 - Scan all changed lines for typos in comments, variable names, string literals, log messages, error messages, and documentation.
 - Report all typos found with suggested corrections.
 - Check that error messages are clear, informative, and help the user understand what went wrong and how to fix it.
-- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present and user-readable.
+- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present, specific, and user-readable.
+- Read the changelog-entry standards from `clickhouse-pr-description` and apply them: avoid vague text (e.g. "fix bug"), describe the exact affected feature/behavior, and for backward-incompatible changes explain old behavior, new behavior, and how to preserve old behavior when possible.
 
 **Explicitly ignore (do not comment on these unless they indicate a bug):**
 - Commented debugging code (completely ignore for draft PR, no more than one message in total)
@@ -192,6 +197,8 @@ CLICKHOUSE RULES (MANDATORY)
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
 - **Compilation time**
   Follow checklist **7) Compilation time & build impact**. Treat violations there as ClickHouse-rule issues.
+- **PR metadata quality**
+  For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes).
 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
 
@@ -221,10 +228,16 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 REQUESTED OUTPUT FORMAT
 Respond with the following sections. Be terse but specific. Include code suggestions as minimal diffs/patches where helpful.
 Focus on problems — do not describe what was checked and found to be fine. Use emojis (❌ ⚠️ ✅ 💡) to make findings scannable.
-**Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary, ClickHouse Compliance, and Final Verdict.
+**Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary, ClickHouse Rules, and Final Verdict.
 
 **Summary**
 - One paragraph explaining what the PR does and your high-level verdict.
+
+**PR Metadata** (omit if no issues found)
+- State whether `Changelog category` is correct for the actual change.
+- State whether `Changelog entry` is required by the chosen category, and whether the provided entry satisfies that requirement.
+- Evaluate `Changelog entry` quality using `clickhouse-pr-description` criteria (specific change, user impact, and migration guidance for backward-incompatible changes).
+- If any item is incorrect, provide the exact replacement text.
 
 **Missing context** (omit if none)
 - Bullet list of critical info you lacked. Prefix each item with ⚠️ (e.g., ⚠️ No CI logs available, ⚠️ No benchmarks provided).
@@ -237,11 +250,10 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 - **⚠️ Majors**
   - `[File:Line(s)]` Issue + rationale.
   - Suggested fix.
-- **💡 Nits** (only if they reduce bug risk or user confusion)
+- **💡 Nits**
   - `[File:Line(s)]` Issue + quick fix.
-  - Use this section for changelog-template quality issues (`Changelog category` mismatch, missing/unclear required `Changelog entry`).
+  - Use this section for changelog-template quality issues (`Changelog category` mismatch, missing/unclear required `Changelog entry`, or low-quality user-facing `Changelog entry` that is too vague).
 
-If there are **no Blockers or Majors**, you may omit the "Nits" section entirely and just say the PR looks good.
 
 **Tests** (omit if adequate)
 - Only include this section if tests are **missing or insufficient**. Prefix each missing test with ⚠️. Specify which additional tests to add and why.
@@ -261,6 +273,7 @@ Example:
 | No magic constants | ✅ | |
 | Backward compatibility | ⚠️ | Default changed without `SettingsChangesHistory.cpp` update |
 | `SettingsChangesHistory.cpp` | ❌ | Not updated |
+| PR metadata quality | ⚠️ | `Changelog category` does not match change type; `Changelog entry` is too vague for users |
 | Safe rollout | ➖ | |
 | Compilation time | ✅ | |
 

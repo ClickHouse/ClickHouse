@@ -3811,6 +3811,7 @@ SANITIZED = False
 
 def collect_build_flags(args):
     global RELEASE_NON_SANITIZED
+    global SANITIZED
 
     result = []
 
