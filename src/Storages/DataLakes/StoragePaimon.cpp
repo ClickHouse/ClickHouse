@@ -112,6 +112,9 @@ StoragePaimon::StoragePaimon(
                 configuration->lazyInitializeIfNeeded(object_storage, context);
             else
                 configuration->update(object_storage, context);
+
+            if (auto * ext_meta = configuration->getExternalMetadata())
+                current_metadata = ext_meta;
         }
     }
     catch (...)
@@ -176,7 +179,9 @@ StoragePaimon::StoragePaimon(
         /// This is done eagerly because select queries for table functions may bypass
         /// updateExternalDynamicMetadataIfExists.
         configuration->lazyInitializeIfNeeded(object_storage, context);
-        if (auto state = configuration->getTableStateSnapshot(context))
+        if (auto * ext_meta = configuration->getExternalMetadata())
+            current_metadata = ext_meta;
+        if (auto state = current_metadata->getTableStateSnapshot(context))
         {
             metadata.setDataLakeTableState(*state);
 
@@ -186,9 +191,9 @@ StoragePaimon::StoragePaimon(
             ///    a subset of columns from remote delta table
             /// 2. user want to override some data types
             ///    (for example, LawCardinality<String> instead of just String)
-            if (configuration->shouldReloadSchemaForConsistency(context))
+            if (current_metadata->shouldReloadSchemaForConsistency(context))
             {
-                if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, context))
+                if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, context))
                     metadata = *metadata_snapshot;
             }
         }
@@ -252,7 +257,8 @@ IStorage::ColumnSizeByName StoragePaimon::getColumnSizes() const
 IDataLakeMetadata * StoragePaimon::getExternalMetadata(ContextPtr query_context)
 {
     configuration->update(object_storage, query_context);
-    return configuration->getExternalMetadata();
+    current_metadata = configuration->getExternalMetadata();
+    return current_metadata;
 }
 
 void StoragePaimon::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
@@ -261,8 +267,9 @@ void StoragePaimon::updateExternalDynamicMetadataIfExists(ContextPtr query_conte
     /// Using if_not_updated_before=true would leave latest_snapshot_version
     /// stale from the first query and silently omit new files.
     configuration->update(object_storage, query_context);
+    current_metadata = configuration->getExternalMetadata();
 
-    auto state = configuration->getTableStateSnapshot(query_context);
+    auto state = current_metadata->getTableStateSnapshot(query_context);
     if (!state)
         return;
 
@@ -273,9 +280,9 @@ void StoragePaimon::updateExternalDynamicMetadataIfExists(ContextPtr query_conte
 
     /// Optionally also refresh the columns (and other schema-derived fields such as the
     /// Iceberg sort key) when the per-format reload setting is enabled.
-    if (configuration->shouldReloadSchemaForConsistency(query_context))
+    if (current_metadata->shouldReloadSchemaForConsistency(query_context))
     {
-        if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
+        if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, query_context))
             new_metadata = *metadata_snapshot;
     }
 
@@ -295,8 +302,10 @@ std::optional<UInt64> StoragePaimon::totalRows(ContextPtr query_context) const
         return std::nullopt;
 
     is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
+    if (auto * ext_meta = configuration->getExternalMetadata())
+        current_metadata = ext_meta;
 
-    return configuration->totalRows(query_context);
+    return current_metadata->totalRows(query_context);
 }
 
 std::optional<UInt64> StoragePaimon::totalBytes(ContextPtr query_context) const
@@ -308,7 +317,10 @@ std::optional<UInt64> StoragePaimon::totalBytes(ContextPtr query_context) const
         return std::nullopt;
 
     is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
-    return configuration->totalBytes(query_context);
+    if (auto * ext_meta = configuration->getExternalMetadata())
+        current_metadata = ext_meta;
+
+    return current_metadata->totalBytes(query_context);
 }
 
 void StoragePaimon::read(
@@ -337,7 +349,7 @@ void StoragePaimon::read(
         if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
             start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
-            if (const auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(configuration->getExternalMetadata());
+            if (const auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(current_metadata);
                 delta_kernel_metadata != nullptr)
             {
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -371,14 +383,9 @@ void StoragePaimon::read(
         }
     }
 #endif
-    auto read_from_format_info = configuration->prepareReadingFromFormat(
-        object_storage,
-        column_names,
-        storage_snapshot,
-        supportsSubsetOfColumns(local_context),
-        supports_tuple_elements,
-        local_context,
-        PrepareReadingFromFormatHiveParams{ {}, {} });
+    auto read_from_format_info = current_metadata->prepareReadingFromFormat(
+        column_names, storage_snapshot, local_context,
+        supportsSubsetOfColumns(local_context), supports_tuple_elements);
 
 
     if (query_info.prewhere_info || query_info.row_level_filter)
@@ -395,7 +402,7 @@ void StoragePaimon::read(
     if (!modified_format_settings.has_value())
         modified_format_settings.emplace(getFormatSettings(local_context));
 
-    configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
+    current_metadata->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
@@ -423,10 +430,13 @@ SinkToStoragePtr StoragePaimon::write(
 {
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
 
-    if (!configuration->supportsWrites())
+    if (!current_metadata->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
+    return current_metadata->write(
+        sample_block, storage_id, object_storage,
+        configuration, format_settings,
+        local_context, catalog);
 }
 
 bool StoragePaimon::optimize(
@@ -439,7 +449,7 @@ bool StoragePaimon::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return configuration->optimize(metadata_snapshot, context, format_settings);
+    return current_metadata->optimize(metadata_snapshot, context, format_settings);
 }
 
 void StoragePaimon::truncate(
@@ -460,7 +470,8 @@ void StoragePaimon::drop()
         catalog->dropTable(namespace_name, table_name);
     }
     /// We cannot use query context here, because drop is executed in the background.
-    configuration->drop(Context::getGlobalContextInstance());
+    if (current_metadata)
+        current_metadata->drop(Context::getGlobalContextInstance());
 }
 
 std::unique_ptr<ReadBufferIterator> StoragePaimon::createReadBufferIterator(
@@ -571,12 +582,12 @@ void StoragePaimon::mutate([[maybe_unused]] const MutationCommands & commands, [
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
-    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
+    current_metadata->mutate(commands, configuration, context_, storage, metadata_snapshot, catalog, format_settings);
 }
 
 void StoragePaimon::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    configuration->checkMutationIsPossible(commands);
+    current_metadata->checkMutationIsPossible(commands);
 }
 
 Pipe StoragePaimon::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
@@ -592,7 +603,7 @@ void StoragePaimon::alter(const AlterCommands & params, ContextPtr context, Alte
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
-    configuration->alter(params, context);
+    current_metadata->alter(params, context);
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
@@ -602,7 +613,7 @@ void StoragePaimon::alter(const AlterCommands & params, ContextPtr context, Alte
 
 void StoragePaimon::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
 {
-    configuration->checkAlterIsPossible(commands);
+    current_metadata->checkAlterIsPossible(commands);
 }
 
 

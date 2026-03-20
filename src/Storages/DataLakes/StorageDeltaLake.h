@@ -189,6 +189,9 @@ protected:
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
+
+    /// Datalake metadata extracted from configuration after initialization.
+    mutable IDataLakeMetadata * current_metadata = nullptr;
 };
 
 }
