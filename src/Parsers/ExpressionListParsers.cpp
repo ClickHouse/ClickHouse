@@ -912,6 +912,7 @@ struct ParserExpressionImpl
 
     ParserKeyword any_parser{Keyword::ANY};
     ParserKeyword all_parser{Keyword::ALL};
+    ParserKeyword some_parser{Keyword::SOME};
 
     // Recursion
     ParserQualifiedAsterisk qualified_asterisk_parser;
@@ -2715,7 +2716,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
 
-        if (any_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
+        /// ANY and SOME are semantically identical
+        if ((any_parser.ignore(pos, expected) || some_parser.ignore(pos, expected)) && subquery_parser.parse(pos, tmp, expected))
             subquery_function_type = SubqueryFunctionType::ANY;
         else if (all_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
             subquery_function_type = SubqueryFunctionType::ALL;

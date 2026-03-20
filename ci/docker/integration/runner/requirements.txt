@@ -1,4 +1,5 @@
 # Python >= 3.13 required
+legacy-cgi==2.6.4
 Jinja2==3.1.6
 MarkupSafe==3.0.3
 PyHDFS==0.4.0
@@ -105,4 +106,4 @@ tzlocal==2.1
 websocket-client==1.9.0
 wheel==0.46.3
 filelock==3.25.0
-kazoo @ git+https://github.com/ClickHouse/kazoo.git
+kazoo @ git+https://github.com/ClickHouse/kazoo.git@879e0b0e4ae367a289847b43a531938f68770125

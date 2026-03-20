@@ -10,15 +10,6 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Ope
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
 {
-    const Names & columns = header_->getNames();
-    size_t num_columns = columns.empty() ? header_->columns() : columns.size();
-
-    key_columns_pos.reserve(columns.size());
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        auto pos = columns.empty() ? i : header_->getPositionByName(columns[i]);
-        key_columns_pos.emplace_back(pos);
-    }
 }
 
 
@@ -140,13 +131,13 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     auto columns = chunk.detachColumns();
 
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
+    column_ptrs.reserve(columns.size());
 
-    for (auto pos : key_columns_pos)
+    for (auto & column : columns)
     {
-        /// Hash methods expect non-const column
-        columns[pos] = columns[pos]->convertToFullColumnIfConst();
-        column_ptrs.emplace_back(columns[pos].get());
+        /// Hash methods expect non-const columns.
+        column = column->convertToFullColumnIfConst();
+        column_ptrs.emplace_back(column.get());
     }
 
     if (isAllOperator())
@@ -189,13 +180,13 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
+    column_ptrs.reserve(columns.size());
 
-    for (auto pos : key_columns_pos)
+    for (auto & column : columns)
     {
-        /// Hash methods expect non-const column
-        columns[pos] = columns[pos]->convertToFullColumnIfConst();
-        column_ptrs.emplace_back(columns[pos].get());
+        /// Hash methods expect non-const columns.
+        column = column->convertToFullColumnIfConst();
+        column_ptrs.emplace_back(column.get());
     }
 
     size_t new_rows_num = 0;

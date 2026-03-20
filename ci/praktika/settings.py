@@ -102,6 +102,7 @@ class _Settings:
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
     CI_DB_INSERT_TIMEOUT_SEC = 20
+    CI_DB_QUERY_TIMEOUT_SEC = 60
 
     # to post links for reading statistics in html report (with read-only user)
     CI_DB_READ_USER: str = ""

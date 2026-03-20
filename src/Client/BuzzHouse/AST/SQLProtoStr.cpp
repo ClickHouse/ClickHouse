@@ -89,6 +89,24 @@ CONV_FN(Function, func)
     ret += func.function();
 }
 
+CONV_FN(Policy, rowp)
+{
+    ret += rowp.policy();
+}
+
+CONV_FN(Role, r)
+{
+    ret += "`";
+    for (const char & c : r.role())
+    {
+        if (c == '`')
+            ret += "``";
+        else
+            ret += c;
+    }
+    ret += "`";
+}
+
 void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
     if (cl.has_cluster())
@@ -3621,9 +3639,21 @@ CONV_FN(SQLObjectName, son)
         case SQLObjectNameType::kFunction:
             FunctionToString(ret, son.function());
             break;
+        case SQLObjectNameType::kPolicy:
+            PolicyToString(ret, son.policy());
+            break;
         default:
             ret += "t0";
     }
+}
+
+static String SQLObjectToString(const SQLObject obj)
+{
+    if (obj == SQLObject::ROW_POLICY)
+        return "ROW POLICY";
+    if (obj == SQLObject::MASKING_POLICY)
+        return "MASKING POLICY";
+    return SQLObject_Name(obj);
 }
 
 CONV_FN(Drop, dt)
@@ -3635,7 +3665,7 @@ CONV_FN(Drop, dt)
     {
         ret += "TEMPORARY ";
     }
-    ret += SQLObject_Name(dt.sobject());
+    ret += SQLObjectToString(dt.sobject());
     if (dt.if_exists())
     {
         ret += " IF EXISTS";
@@ -3654,6 +3684,11 @@ CONV_FN(Drop, dt)
     if (dt.has_cluster())
     {
         ClusterToString(ret, true, dt.cluster());
+    }
+    if ((dt.sobject() == SQLObject::ROW_POLICY || dt.sobject() == SQLObject::MASKING_POLICY) && dt.has_target())
+    {
+        ret += " ON ";
+        ExprSchemaTableToString(ret, dt.target());
     }
     if (dt.sync())
     {
@@ -4035,6 +4070,12 @@ CONV_FN(Exchange, et)
             break;
         case SQLObject::FUNCTION:
             ret += "FUNCTIONS";
+            break;
+        case SQLObject::ROW_POLICY:
+            ret += "ROW POLICIES";
+            break;
+        case SQLObject::MASKING_POLICY:
+            ret += "MASKING POLICIES";
             break;
     }
     ret += " ";
@@ -4469,6 +4510,65 @@ CONV_FN(RemoveColumnSetting, rcp)
     SettingListToString(ret, rcp.setting_values());
 }
 
+static void RowPolicyClausesToString(
+    String & ret,
+    const CreateRowPolicy & crp,
+    const bool has_where_expr,
+    const WhereStatement & where_expr,
+    const Role * role,
+    const bool create)
+{
+    if (crp.has_is_restrictive())
+    {
+        ret += " AS ";
+        ret += crp.is_restrictive() ? "RESTRICTIVE" : "PERMISSIVE";
+    }
+    if (create && crp.for_select())
+    {
+        ret += " FOR SELECT";
+    }
+    if (has_where_expr)
+    {
+        ret += " USING ";
+        WhereStatementToString(ret, where_expr);
+    }
+    if (role)
+    {
+        ret += " TO ";
+        RoleToString(ret, *role);
+    }
+}
+
+static void MaskingPolicyClausesToString(
+    String & ret, const CreateMaskingPolicy & cmp, const bool has_where_expr, const WhereStatement & where_expr, const Role * role)
+{
+    if (cmp.has_first_update())
+    {
+        ret += " UPDATE ";
+        UpdateSetToString(ret, cmp.first_update());
+        for (int i = 0; i < cmp.other_updates_size(); i++)
+        {
+            ret += ", ";
+            UpdateSetToString(ret, cmp.other_updates(i));
+        }
+    }
+    if (has_where_expr)
+    {
+        ret += " WHERE ";
+        WhereStatementToString(ret, where_expr);
+    }
+    if (role)
+    {
+        ret += " TO ";
+        RoleToString(ret, *role);
+    }
+    if (cmp.has_priority())
+    {
+        ret += " PRIORITY ";
+        ret += std::to_string(cmp.priority());
+    }
+}
+
 CONV_FN(AlterItem, alter)
 {
     ret += alter.paren() ? "(" : "";
@@ -4757,6 +4857,27 @@ CONV_FN(AlterItem, alter)
             ret += "MODIFY ";
             RefreshableViewToString(ret, alter.refresh());
             break;
+        case AlterType::kAlterPolicy: {
+            const AlterPolicyContent & apc = alter.alter_policy();
+            const Role * role = apc.has_role() ? &apc.role() : nullptr;
+
+            ret += "ON ";
+            ExprSchemaTableToString(ret, apc.target());
+            if (apc.has_rename_to())
+            {
+                ret += " RENAME TO ";
+                PolicyToString(ret, apc.rename_to());
+            }
+            if (apc.has_masking())
+            {
+                MaskingPolicyClausesToString(ret, apc.masking(), apc.has_where_expr(), apc.where_expr(), role);
+            }
+            else
+            {
+                RowPolicyClausesToString(ret, apc.row(), apc.has_where_expr(), apc.where_expr(), role, false);
+            }
+        }
+        break;
         default:
             ret += "DELETE WHERE TRUE";
     }
@@ -4770,7 +4891,7 @@ CONV_FN(Alter, alter)
     {
         ret += "TEMPORARY ";
     }
-    ret += SQLObject_Name(alter.sobject());
+    ret += SQLObjectToString(alter.sobject());
     ret += " ";
     SQLObjectNameToString(ret, alter.object());
     if (alter.has_cluster())
@@ -4794,7 +4915,7 @@ CONV_FN(Alter, alter)
 CONV_FN(Attach, at)
 {
     ret += "ATTACH ";
-    ret += SQLObject_Name(at.sobject());
+    ret += SQLObjectToString(at.sobject());
     ret += " ";
     SQLObjectNameToString(ret, at.object());
     if (at.has_cluster())
@@ -4817,7 +4938,7 @@ CONV_FN(Attach, at)
 CONV_FN(Detach, dt)
 {
     ret += "DETACH ";
-    ret += SQLObject_Name(dt.sobject());
+    ret += SQLObjectToString(dt.sobject());
     ret += " ";
     SQLObjectNameToString(ret, dt.object());
     if (dt.has_cluster())
@@ -5285,18 +5406,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kStartCleanup:
             SystemCommandOnCluster(ret, "START CLEANUP", cmd, cmd.start_cleanup());
             break;
-        case CmdType::kStopVirtualPartsUpdate:
-            SystemCommandOnCluster(ret, "STOP VIRTUAL PARTS UPDATE", cmd, cmd.stop_virtual_parts_update());
-            break;
-        case CmdType::kStartVirtualPartsUpdate:
-            SystemCommandOnCluster(ret, "START VIRTUAL PARTS UPDATE", cmd, cmd.start_virtual_parts_update());
-            break;
-        case CmdType::kStopReduceBlockingParts:
-            SystemCommandOnCluster(ret, "STOP REDUCE BLOCKING PARTS", cmd, cmd.stop_reduce_blocking_parts());
-            break;
-        case CmdType::kStartReduceBlockingParts:
-            SystemCommandOnCluster(ret, "START REDUCE BLOCKING PARTS", cmd, cmd.start_reduce_blocking_parts());
-            break;
         case CmdType::kStopReplicatedDdlQueries:
             ret += "STOP REPLICATED DDL QUERIES";
             can_set_cluster = true;
@@ -5340,22 +5449,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDropDistributedCache:
             ret += "DROP DISTRIBUTED CACHE";
             break;
-        case CmdType::kRestartDisk:
-            ret += "RESTART DISK '";
-            ret += cmd.restart_disk();
-            ret += "'";
-            can_set_cluster = true;
-            break;
-        case CmdType::kClearDiskMetadataCache:
-            ret += "DROP DISK METADATA CACHE";
-            if (!cmd.clear_disk_metadata_cache().empty())
-            {
-                ret += " '";
-                ret += cmd.clear_disk_metadata_cache();
-                ret += "'";
-            }
-            can_set_cluster = true;
-            break;
         case CmdType::kUnlockSnapshot:
             ret += "UNLOCK SNAPSHOT '";
             ret += cmd.unlock_snapshot();
@@ -5378,7 +5471,7 @@ CONV_FN(BackupRestoreObject, bobject)
     {
         ret += "TEMPORARY ";
     }
-    ret += SQLObject_Name(bobject.sobject());
+    ret += SQLObjectToString(bobject.sobject());
     ret += " ";
     SQLObjectNameToString(ret, bobject.object());
     if (bobject.has_alias())
@@ -5473,7 +5566,7 @@ CONV_FN(BackupRestore, backup)
 CONV_FN(Rename, ren)
 {
     ret += "RENAME ";
-    ret += SQLObject_Name(ren.sobject());
+    ret += SQLObjectToString(ren.sobject());
     ret += " ";
     SQLObjectNameToString(ret, ren.old_object());
     ret += " TO ";
@@ -5531,7 +5624,7 @@ CONV_FN(ShowObject, sh)
     {
         ret += "TEMPORARY ";
     }
-    ret += SQLObject_Name(sh.sobject());
+    ret += SQLObjectToString(sh.sobject());
     ret += " ";
     SQLObjectNameToString(ret, sh.object());
 }
@@ -5697,6 +5790,39 @@ CONV_FN(ShowStatement, sh)
     }
 }
 
+CONV_FN(CreatePolicy, cp)
+{
+    const bool is_masking = cp.has_masking();
+    const Role * role = cp.has_role() ? &cp.role() : nullptr;
+
+    ret += "CREATE ";
+    ret += is_masking ? "MASKING" : "ROW";
+    ret += " POLICY ";
+    if (cp.create_opt() == CreateReplaceOption::Create && cp.if_not_exists())
+    {
+        ret += "IF NOT EXISTS ";
+    }
+    else if (cp.create_opt() != CreateReplaceOption::Create)
+    {
+        ret += "OR REPLACE ";
+    }
+    PolicyToString(ret, cp.policy());
+    if (cp.has_cluster())
+    {
+        ClusterToString(ret, true, cp.cluster());
+    }
+    ret += " ON ";
+    ExprSchemaTableToString(ret, cp.target());
+    if (is_masking)
+    {
+        MaskingPolicyClausesToString(ret, cp.masking(), cp.has_where_expr(), cp.where_expr(), role);
+    }
+    else if (cp.has_row())
+    {
+        RowPolicyClausesToString(ret, cp.row(), cp.has_where_expr(), cp.where_expr(), role, true);
+    }
+}
+
 CONV_FN(SQLQueryInner, query)
 {
     using QueryType = SQLQueryInner::QueryInnerOneofCase;
@@ -5775,6 +5901,9 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kShow:
             ShowStatementToString(ret, query.show());
             break;
+        case QueryType::kCreatePolicy:
+            CreatePolicyToString(ret, query.create_policy());
+            break;
         default:
             ret += "SELECT 1";
     }
@@ -5782,6 +5911,12 @@ CONV_FN(SQLQueryInner, query)
 
 CONV_FN(ExplainQuery, explain)
 {
+    if (explain.has_execute_as())
+    {
+        ret += "EXECUTE AS '";
+        ret += explain.execute_as();
+        ret += "' ";
+    }
     if (explain.is_explain())
     {
         ret += "EXPLAIN ";
