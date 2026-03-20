@@ -107,13 +107,15 @@ bool WorkloadSettings::hasAllocationLimit(CostUnit unit) const
         case CostUnit::IOByte:
         case CostUnit::CPUNanosecond:
         case CostUnit::QuerySlot:
+            return false;
         case CostUnit::MemoryByte: return max_memory != unlimited;
     }
 }
 
 Int64 WorkloadSettings::getAllocationLimit(CostUnit unit) const
 {
-    switch (unit) {
+    switch (unit)
+    {
         case CostUnit::IOByte:
         case CostUnit::CPUNanosecond:
         case CostUnit::QuerySlot:

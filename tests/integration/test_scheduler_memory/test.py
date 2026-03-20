@@ -196,7 +196,14 @@ def test_max_waiting_queries_rejects_extra():
 
     def run_waiting_query(query_id):
         try:
-            time.sleep(0.3)  # Let the blocking query start
+            # Wait for the blocking query to start
+            while (
+                node.query(
+                    "select count() from system.processes where query_id = 'blocking_query'"
+                ).strip()
+                == "0"
+            ):
+                time.sleep(0.1)
             node.query(
                 f"select count(*) from numbers(100) settings workload='production', reserve_memory='5Mi'",
                 query_id=query_id,

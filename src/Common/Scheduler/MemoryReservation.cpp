@@ -45,7 +45,8 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
     {
         // Scheduler may call increaseApproved() immediately after insert, so set state beforehand
         increase_enqueued = true;
-        demand_increment.add(reserved_size);
+        enqueued_demand = reserved_size;
+        demand_increment.add(enqueued_demand);
     }
 
     queue.insertAllocation(*this, reserved_size);
@@ -115,7 +116,8 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
             chassert(!removed);
             pending_increase = actual_size - allocated_size;
             increase_enqueued = true;
-            demand_increment.add(pending_increase);
+            enqueued_demand = pending_increase;
+            demand_increment.add(enqueued_demand);
         }
         else if (!fail_reason && actual_size < allocated_size && !decrease_enqueued)
         {
@@ -184,7 +186,8 @@ void MemoryReservation::increaseApproved(const IncreaseRequest & increase)
     metrics.increases++;
     allocated_size += increase.size;
     approved_increment.add(increase.size);
-    demand_increment.sub(increase.size);
+    demand_increment.sub(enqueued_demand);
+    enqueued_demand = 0;
     increase_enqueued = false;
     cv.notify_all();
 }
@@ -209,7 +212,7 @@ void MemoryReservation::allocationFailed(const std::exception_ptr & reason)
     fail_reason = reason;
     removed = true; // failed allocation are auto-removed by the scheduler
     if (increase_enqueued)
-        demand_increment.sub(actual_size - allocated_size);
+        demand_increment.sub(enqueued_demand);
     approved_increment.sub(allocated_size);
     allocated_size = 0;
     cv.notify_all(); // notify dtor (e.g. for removal of pending allocation or queue purge) or syncWithMemoryTracker

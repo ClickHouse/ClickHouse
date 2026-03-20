@@ -30,10 +30,10 @@ public:
 
     virtual ~ResourceAllocation();
 
-    /// Previously reqeuested increase is approved. It is called from the scheduler thread.
+    /// Previously requested increase is approved. It is called from the scheduler thread.
     virtual void increaseApproved(const IncreaseRequest & increase) = 0;
 
-    /// Previously reqeuested decrease is approved. It is called from the scheduler thread.
+    /// Previously requested decrease is approved. It is called from the scheduler thread.
     virtual void decreaseApproved(const DecreaseRequest & decrease) = 0;
 
     /// Scheduler threads calls this method when queue is about to be destructed or pending allocation is cancelled.

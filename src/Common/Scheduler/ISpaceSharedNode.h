@@ -75,13 +75,11 @@ public:
         // For debugging purposes only
         String toString() const
         {
-            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            oss << "{ attached=" << (attached ? attached->getPath() : "nullptr")
-                << ", detached=" << (detached ? detached->getPath() : "nullptr")
-                << ", increase=" << (increase ? (*increase ? (*increase)->allocation.id : "nullptr") : "no_change")
-                << ", decrease=" << (decrease ? (*decrease ? (*decrease)->allocation.id : "nullptr") : "no_change")
-                << " }";
-            return oss.str();
+            return fmt::format("{{ attached={}, detached={}, increase={}, decrease={} }}",
+                attached ? attached->getPath() : "nullptr",
+                detached ? detached->getPath() : "nullptr",
+                increase ? (*increase ? (*increase)->allocation.id : "nullptr") : "no_change",
+                decrease ? (*decrease ? (*decrease)->allocation.id : "nullptr") : "no_change");
         }
     };
 

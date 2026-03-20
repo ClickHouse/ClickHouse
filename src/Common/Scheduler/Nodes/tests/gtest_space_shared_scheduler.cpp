@@ -13,6 +13,11 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int MEMORY_RESERVATION_KILLED;
+}
+
 struct SpaceSharedTest : public ResourceTestBase
 {
     SpaceSharedScheduler scheduler;
@@ -338,8 +343,9 @@ TEST(SchedulerSpaceShared, KillDuringPendingIncrease)
                 std::this_thread::yield();
             }
         }
-        catch (...) // Ok: intentionally catching eviction exception to verify it was thrown
+        catch (const DB::Exception & e)
         {
+            EXPECT_EQ(e.code(), ErrorCodes::MEMORY_RESERVATION_KILLED);
             exception_caught = true;
         }
     });

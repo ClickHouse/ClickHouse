@@ -2233,7 +2233,8 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSelfKilled)
         a1.waitSync();
         a1.setSize(150); // Exceeds limit
         a1.waitKilled();
-        try {
+        try
+        {
             a1.throwReason();
             GTEST_FAIL() << "Expected RESOURCE_LIMIT_EXCEEDED exception";
         }

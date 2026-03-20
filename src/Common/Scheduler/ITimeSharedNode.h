@@ -18,7 +18,7 @@ namespace DB
 ///  - it has at least one pending request in one of leaves of it's subtree;
 ///  - and enforced constraints, if any, are satisfied
 ///    (e.g. amount of concurrent requests is not greater than some number).
-class ITimeSharedNode: public ISchedulerNode
+class ITimeSharedNode : public ISchedulerNode
 {
 public:
     explicit ITimeSharedNode(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
