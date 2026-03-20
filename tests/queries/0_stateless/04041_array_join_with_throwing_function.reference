@@ -20,6 +20,8 @@
 -- file() on nonexistent file
 -- Aligned ARRAY JOIN with multiple columns
 5	1	10
+-- Aligned ARRAY JOIN with multiple columns and mismatched array lengths
+-- Aligned LEFT ARRAY JOIN with multiple columns and mismatched array lengths
 -- Unaligned ARRAY JOIN with multiple columns
 5	1	10
 5	0	20

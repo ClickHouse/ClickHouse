@@ -414,7 +414,7 @@ public:
     SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
-    SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
+    SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns, bool skip_throwing_functions) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
     /// Outputs of initial actions must contain column_name.

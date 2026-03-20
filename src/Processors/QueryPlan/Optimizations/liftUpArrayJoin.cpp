@@ -29,7 +29,8 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     const auto & expression = expression_step ? expression_step->getExpression()
                                               : filter_step->getExpression();
 
-    auto split_actions = expression.splitActionsBeforeArrayJoin(array_join_columns);
+    bool skip_throwing_functions = !array_join_step->isUnaligned() && array_join_columns.size() > 1;
+    auto split_actions = expression.splitActionsBeforeArrayJoin(array_join_columns, skip_throwing_functions);
 
     /// No actions can be moved before ARRAY JOIN.
     if (split_actions.first.trivial())
@@ -42,7 +43,9 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     child_node->children.emplace_back(&node);
     /// Expression/Filter -> ArrayJoin -> node -> Something
 
-    bool needs_filter = !array_join_step->isLeft() && split_actions.first.hasThrowingFunctions();
+    /// Aligned ARRAY JOIN with multiple columns is handled by keeping the throwing functions above the ARRAY JOIN instead of adding a filter.
+    /// This ensures the array size mismatch invariant is checked before the throwing functions.
+    bool needs_filter = !skip_throwing_functions && !array_join_step->isLeft() && split_actions.first.hasThrowingFunctions();
     if (needs_filter)
     {
         /// Insert filter for empty arrays below the expression
@@ -59,7 +62,7 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         auto it = array_join_columns.begin();
         const auto * filter_condition = &filter_dag.addFunction(not_empty_func, {&filter_dag.findInOutputs(*it)}, "__array_not_empty" + *it);
 
-        // In unaligned case any non-empty array keeps the row
+        /// In unaligned case any non-empty array keeps the row
         if (array_join_step->isUnaligned())
         {
             auto or_func = FunctionFactory::instance().get("or", nullptr);

@@ -77,6 +77,20 @@ SELECT intDiv(a, b), arr1_val, arr2_val FROM (
         (10, 2, [1], [10]), (10, 0, [], []))
 ) ARRAY JOIN arr1 AS arr1_val, arr2 AS arr2_val;
 
+-- Aligned ARRAY JOIN with multiple columns and mismatched array lengths
+SELECT '-- Aligned ARRAY JOIN with multiple columns and mismatched array lengths';
+SELECT intDiv(a, b), arr1_val, arr2_val FROM (
+    SELECT a, b, arr1, arr2 FROM VALUES('a UInt64, b UInt64, arr1 Array(UInt8), arr2 Array(UInt8)',
+        (10, 2, [1], [10, 11]), (10, 0, [], [1]))
+) ARRAY JOIN arr1 AS arr1_val, arr2 AS arr2_val; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+
+-- Aligned LEFT ARRAY JOIN with multiple columns and mismatched array lengths
+SELECT '-- Aligned LEFT ARRAY JOIN with multiple columns and mismatched array lengths';
+SELECT intDiv(a, b), arr1_val, arr2_val FROM (
+    SELECT a, b, arr1, arr2 FROM VALUES('a UInt64, b UInt64, arr1 Array(UInt8), arr2 Array(UInt8)',
+        (10, 2, [1], [10, 11]), (10, 0, [], [1]))
+) LEFT ARRAY JOIN arr1 AS arr1_val, arr2 AS arr2_val; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+
 -- Unaligned ARRAY JOIN with multiple columns
 SELECT '-- Unaligned ARRAY JOIN with multiple columns';
 SELECT intDiv(a, b), arr1_val, arr2_val FROM (
