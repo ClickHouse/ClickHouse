@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Disks/IDisk.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatSettings.h>
@@ -62,6 +63,7 @@ public:
         String path_for_partitioned_write;
         std::optional<String> format_from_filenames; /// Set if we managed to figure out which file format is used from the names of the file(s).
         std::optional<ArchiveInfo> archive_info; /// Set if the archive syntax is used.
+        DiskPtr user_files_disk; /// When set, paths are disk-relative and I/O goes through this disk.
 
         static FileSource parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax = {});
     };
@@ -181,6 +183,7 @@ private:
 
     std::string base_path;
     std::vector<std::string> paths;
+    DiskPtr user_files_disk; /// When set, paths are disk-relative and I/O goes through this disk.
 
     std::optional<ArchiveInfo> archive_info;
 

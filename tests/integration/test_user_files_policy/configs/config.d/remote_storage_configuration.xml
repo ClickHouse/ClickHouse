@@ -1,0 +1,24 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/data/disks/user_files/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </disk_s3_plain>
+        </disks>
+
+        <policies>
+            <user_files_s3>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain</disk>
+                    </main>
+                </volumes>
+            </user_files_s3>
+        </policies>
+    </storage_configuration>
+
+    <user_files_policy>user_files_s3</user_files_policy>
+</clickhouse>

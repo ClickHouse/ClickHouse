@@ -38,9 +38,9 @@ FileDictionarySource::FileDictionarySource(
     , sample_block{sample_block_}
     , context(context_)
 {
-    auto user_files_path = context->getUserFilesPath();
-    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, user_files_path))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
+    const auto user_files_paths = context->getUserFilesPaths();
+    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, user_files_paths))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", filepath);
 }
 
 

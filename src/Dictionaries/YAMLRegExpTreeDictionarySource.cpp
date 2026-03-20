@@ -288,11 +288,11 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
 {
     key_name = (*structure.key)[0].name;
 
-    const auto user_files_path = context->getUserFilesPath();
+    const auto user_files_paths = context->getUserFilesPaths();
 
-    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath_, user_files_path))
+    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath_, user_files_paths))
     {
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside {}", filepath_, user_files_path);
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside user files path", filepath_);
     }
 }
 

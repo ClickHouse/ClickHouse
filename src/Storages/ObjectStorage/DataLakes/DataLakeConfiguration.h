@@ -414,10 +414,10 @@ private:
     {
         if (object_storage->getType() == ObjectStorageType::Local)
         {
-            auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+            const auto user_files_paths = local_context->getUserFilesPaths();
+            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_paths))
                 throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", this->getPathForRead().path);
         }
     }
 

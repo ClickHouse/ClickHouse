@@ -34,6 +34,7 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/getIOUringReader.h>
+#include <Disks/IVolume.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -255,15 +256,116 @@ std::vector<std::string> listFilesWithRegexpMatching(
     return result;
 }
 
+/// Disk-based version of listFilesWithRegexpMatchingImpl.
+/// Paths are disk-relative (no leading slash).
+void listFilesWithRegexpMatchingOnDisk(
+    const DiskPtr & disk,
+    const std::string & dir_path,
+    const std::string & for_match,
+    size_t & total_bytes_to_read,
+    std::vector<std::string> & result,
+    bool recursive)
+{
+    const size_t first_glob_pos = for_match.find_first_of("*?{");
+
+    if (first_glob_pos == std::string::npos)
+    {
+        String full_path = dir_path + for_match;
+        if (disk->existsFile(full_path))
+        {
+            total_bytes_to_read += disk->getFileSize(full_path);
+            result.push_back(full_path);
+        }
+        return;
+    }
+
+    const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
+    const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);
+
+    const size_t next_slash_after_glob_pos = suffix_with_globs.find('/', 1);
+    const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
+
+    auto regexp = makeRegexpPatternFromGlobs(current_glob);
+    re2::RE2 matcher(regexp);
+    if (!matcher.ok())
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+            "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
+
+    bool skip_regex = current_glob == "/*";
+    if (!recursive)
+        recursive = current_glob == "/**";
+
+    const std::string prefix_without_globs = dir_path + for_match.substr(0, end_of_path_without_globs + 1);
+
+    if (!disk->existsDirectory(prefix_without_globs))
+        return;
+
+    const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
+
+    for (auto it = disk->iterateDirectory(prefix_without_globs); it->isValid(); it->next())
+    {
+        const String entry_name = it->name();
+        const String full_entry_path = prefix_without_globs + entry_name;
+        const String file_name = "/" + entry_name;
+
+        bool is_dir = disk->existsDirectory(full_entry_path);
+
+        if (!is_dir && !looking_for_directory)
+        {
+            if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
+            {
+                total_bytes_to_read += disk->getFileSize(full_entry_path);
+                result.push_back(full_entry_path);
+            }
+        }
+        else if (is_dir)
+        {
+            if (recursive)
+            {
+                listFilesWithRegexpMatchingOnDisk(disk, full_entry_path + "/",
+                    looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
+                    total_bytes_to_read, result, recursive);
+            }
+            else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
+            {
+                listFilesWithRegexpMatchingOnDisk(disk, full_entry_path + "/",
+                    suffix_with_globs.substr(next_slash_after_glob_pos),
+                    total_bytes_to_read, result, false);
+            }
+        }
+    }
+}
+
+/// Top-level wrapper for disk-based glob matching.
+std::vector<std::string> listFilesWithRegexpMatchingOnDisk(
+    const DiskPtr & disk,
+    const std::string & for_match,
+    size_t & total_bytes_to_read)
+{
+    std::vector<std::string> result;
+    Strings for_match_paths_expanded = expandSelectionGlob(for_match);
+
+    for (const auto & for_match_expanded : for_match_paths_expanded)
+    {
+        /// Remove leading slash if present (disk paths are relative)
+        std::string normalized = for_match_expanded;
+        if (!normalized.empty() && normalized[0] == '/')
+            normalized = normalized.substr(1);
+        listFilesWithRegexpMatchingOnDisk(disk, "", normalized, total_bytes_to_read, result, false);
+    }
+
+    return result;
+}
+
 std::string getTablePath(const std::string & table_dir_path, const std::string & format_name)
 {
     return table_dir_path + "/data." + escapeForFileName(format_name);
 }
 
-/// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
+/// Both db_dir_paths and table_path must be converted to absolute paths (in particular, path cannot contain '..').
 void checkCreationIsAllowed(
     ContextPtr context_global,
-    const std::string & db_dir_path,
+    const Strings & db_dir_paths,
     const std::string & table_path,
     bool can_be_directory)
 {
@@ -271,8 +373,8 @@ void checkCreationIsAllowed(
         return;
 
     /// "/dev/null" is allowed for perf testing
-    if (!fileOrSymlinkPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside `{}`", table_path, db_dir_path);
+    if (!fileOrSymlinkPathStartsWith(table_path, db_dir_paths) && table_path != "/dev/null")
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside user files path", table_path);
 
     if (can_be_directory)
     {
@@ -311,56 +413,197 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
     return {String{path_to_archive_view}, String{filename_view}};
 }
 
-/// Finds files matching a specified pattern with globs.
-Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
+/// Finds files matching a specified pattern with globs, searching across all user_files_paths.
+Strings getPathsList(const String & path_with_globs, const Strings & user_files_paths, const ContextPtr & context, size_t & total_bytes_to_read)
 {
-    fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
-    fs::path fs_pattern(path_with_globs);
-    if (fs_pattern.is_relative())
-        fs_pattern = user_files_absolute_path / fs_pattern;
-
-    Strings paths;
-
-    /// Do not use fs::canonical or fs::weakly_canonical.
-    /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-    String pattern = fs::absolute(fs_pattern).lexically_normal(); /// Normalize path.
+    Strings all_paths;
     bool can_be_directory = true;
 
-    if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
-    {
-        /// Patterns containing "{_partition_id}" are not used for reading and require special handling for writing
-        /// so we don't make a list of files here.
-        paths.push_back(pattern);
-    }
-    else if (pattern.find_first_of("*?{") == std::string::npos)
-    {
-        if (!fs::is_directory(pattern))
-        {
-            std::error_code error;
-            size_t size = fs::file_size(pattern, error);
-            if (!error)
-                total_bytes_to_read += size;
+    fs::path fs_pattern(path_with_globs);
 
-            paths.push_back(pattern);
-        }
-        else
+    /// For absolute paths, resolve once.
+    /// For relative paths, try each user_files_path to find matching files.
+    Strings base_paths_to_try;
+    if (fs_pattern.is_relative())
+    {
+        for (const auto & ufp : user_files_paths)
+            base_paths_to_try.push_back(fs::weakly_canonical(ufp));
+    }
+    else
+    {
+        base_paths_to_try.push_back(fs::weakly_canonical(user_files_paths.front()));
+    }
+
+    bool is_glob = path_with_globs.find_first_of("*?{") != std::string::npos;
+
+    /// For non-glob relative paths, find the file on the first disk that has it,
+    /// or fall back to the first disk path (for write operations or error reporting).
+    if (fs_pattern.is_relative() && !is_glob)
+    {
+        bool found = false;
+        for (const auto & user_files_absolute_path : base_paths_to_try)
         {
-            /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
-            can_be_directory = false;
+            fs::path resolved = fs::absolute(fs::path(user_files_absolute_path) / fs_pattern).lexically_normal();
+            String pattern = resolved.string();
+
+            if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
+            {
+                all_paths.push_back(pattern);
+                found = true;
+                break;
+            }
+
+            if (fs::exists(resolved))
+            {
+                if (!fs::is_directory(resolved))
+                {
+                    std::error_code error;
+                    size_t size = fs::file_size(resolved, error);
+                    if (!error)
+                        total_bytes_to_read += size;
+                    all_paths.push_back(pattern);
+                }
+                else
+                {
+                    auto listed = listFilesWithRegexpMatching(resolved / fs::path("*"), total_bytes_to_read);
+                    all_paths.insert(all_paths.end(), listed.begin(), listed.end());
+                    can_be_directory = false;
+                }
+                found = true;
+                break;
+            }
+        }
+
+        /// File not found on any disk - use the first disk path (for write operations or to produce a proper error)
+        if (!found)
+        {
+            String pattern = fs::absolute(fs::path(base_paths_to_try.front()) / fs_pattern).lexically_normal();
+            all_paths.push_back(pattern);
         }
     }
     else
     {
-        /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
-        can_be_directory = false;
+        /// For globs or absolute paths, iterate over all base paths
+        for (const auto & user_files_absolute_path : base_paths_to_try)
+        {
+            fs::path resolved_pattern = fs_pattern.is_relative()
+                ? (fs::path(user_files_absolute_path) / fs_pattern)
+                : fs_pattern;
+
+            /// Do not use fs::canonical or fs::weakly_canonical.
+            /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+            String pattern = fs::absolute(resolved_pattern).lexically_normal();
+
+            if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
+            {
+                all_paths.push_back(pattern);
+            }
+            else if (pattern.find_first_of("*?{") == std::string::npos)
+            {
+                if (!fs::is_directory(pattern))
+                {
+                    std::error_code error;
+                    size_t size = fs::file_size(pattern, error);
+                    if (!error)
+                        total_bytes_to_read += size;
+
+                    all_paths.push_back(pattern);
+                }
+                else
+                {
+                    auto listed = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+                    all_paths.insert(all_paths.end(), listed.begin(), listed.end());
+                    can_be_directory = false;
+                }
+            }
+            else
+            {
+                auto listed = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
+                all_paths.insert(all_paths.end(), listed.begin(), listed.end());
+                can_be_directory = false;
+            }
+
+            /// For absolute paths, only try once
+            if (!fs_pattern.is_relative())
+                break;
+        }
     }
 
-    for (const auto & path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, path, can_be_directory);
+    for (const auto & path : all_paths)
+        checkCreationIsAllowed(context, user_files_paths, path, can_be_directory);
 
-    return paths;
+    return all_paths;
+}
+
+/// Disk-based version of getPathsList. Paths are disk-relative.
+/// Returns (disk, paths) pair where disk is the disk the file was found on.
+std::pair<DiskPtr, Strings> getPathsListOnDisk(
+    const String & path_with_globs,
+    const VolumePtr & volume,
+    size_t & total_bytes_to_read)
+{
+    bool is_glob = path_with_globs.find_first_of("*?{") != std::string::npos;
+    auto disks = volume->getDisks();
+
+    if (!is_glob)
+    {
+        /// For non-glob paths, search across disks for the file.
+        String normalized = path_with_globs;
+        /// Remove leading slash - disk paths are relative
+        if (!normalized.empty() && normalized[0] == '/')
+            normalized = normalized.substr(1);
+
+        for (const auto & disk : disks)
+        {
+            if (disk->existsFile(normalized))
+            {
+                total_bytes_to_read += disk->getFileSize(normalized);
+                return {disk, {normalized}};
+            }
+            if (disk->existsDirectory(normalized))
+            {
+                /// List non-directory files under that directory
+                Strings paths;
+                for (auto it = disk->iterateDirectory(normalized); it->isValid(); it->next())
+                {
+                    String entry_path = normalized + "/" + it->name();
+                    if (disk->existsFile(entry_path))
+                    {
+                        total_bytes_to_read += disk->getFileSize(entry_path);
+                        paths.push_back(entry_path);
+                    }
+                }
+                return {disk, paths};
+            }
+        }
+
+        /// Not found on any disk - use the first disk (for write operations)
+        return {disks.front(), {normalized}};
+    }
+    else
+    {
+        /// For glob patterns, search across all disks and merge results.
+        Strings all_paths;
+        DiskPtr result_disk;
+        for (const auto & disk : disks)
+        {
+            auto listed = listFilesWithRegexpMatchingOnDisk(disk, path_with_globs, total_bytes_to_read);
+            if (!listed.empty())
+            {
+                if (!result_disk)
+                    result_disk = disk;
+                /// When files come from different disks via globs, we use the first disk
+                /// that has matching files. Mixing disks within a single query is not supported.
+                if (disk == result_disk)
+                    all_paths.insert(all_paths.end(), listed.begin(), listed.end());
+            }
+        }
+
+        if (!result_disk)
+            result_disk = disks.front();
+
+        return {result_disk, all_paths};
+    }
 }
 
 /// Gathers information about one or multiple files located in one or multiple archives.
@@ -368,7 +611,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
 StorageFile::ArchiveInfo getArchiveInfo(
     const std::string & path_to_archive,
     const std::string & file_in_archive,
-    const std::string & user_files_path,
+    const Strings & user_files_paths,
     const ContextPtr & context,
     size_t & total_bytes_to_read
 )
@@ -390,7 +633,7 @@ StorageFile::ArchiveInfo getArchiveInfo(
         };
     }
 
-    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
+    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_paths, context, total_bytes_to_read);
 
     return archive_info;
 }
@@ -502,6 +745,22 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         method = chooseCompressionMethod(current_path, compression_method);
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
+
+    int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
+}
+
+/// Create a read buffer that reads from a disk (supports S3, local, etc.)
+std::unique_ptr<ReadBuffer> createReadBufferFromDisk(
+    const DiskPtr & disk,
+    const String & current_path,
+    const String & compression_method,
+    ContextPtr context)
+{
+    CompressionMethod method = chooseCompressionMethod(current_path, compression_method);
+
+    ReadSettings read_settings = context->getReadSettings();
+    std::unique_ptr<ReadBuffer> nested_buffer = disk->readFile(current_path, read_settings);
 
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
@@ -973,12 +1232,28 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
         filename = source;
 
     FileSource res;
-    String user_files_path = context->getUserFilesPath();
+    VolumePtr user_files_volume = context->getUserFilesVolume();
 
-    if (!path_to_archive.empty())
-        res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
+    if (user_files_volume)
+    {
+        /// Use disk-based I/O when user_files_policy is configured.
+        /// Archive syntax is not supported with disk-based user files.
+        if (!path_to_archive.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive syntax is not supported with user_files_policy");
+
+        auto [disk, paths] = getPathsListOnDisk(filename, user_files_volume, res.total_bytes_to_read);
+        res.paths = std::move(paths);
+        res.user_files_disk = disk;
+    }
     else
-        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
+    {
+        Strings user_files_paths = context->getUserFilesPaths();
+
+        if (!path_to_archive.empty())
+            res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_paths, context, res.total_bytes_to_read);
+        else
+            res.paths = getPathsList(filename, user_files_paths, context, res.total_bytes_to_read);
+    }
 
     res.with_globs = res.paths.size() > 1;
 
@@ -1178,6 +1453,7 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     is_path_with_globs = file_source_.with_globs;
     path_for_partitioned_write = std::move(file_source_.path_for_partitioned_write);
     archive_info = std::move(file_source_.archive_info);
+    user_files_disk = std::move(file_source_.user_files_disk);
 
     is_db_table = false;
 
@@ -1409,7 +1685,7 @@ void StorageFileSource::beforeDestroy()
                 file_path = file_path.lexically_normal();
 
                 // Checking access rights
-                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), file_path, true);
+                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPaths(), file_path, true);
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))
@@ -1564,18 +1840,32 @@ Chunk StorageFileSource::generate()
 
             if (!read_buf)
             {
-                struct stat file_stat;
-                file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
-                current_file_size = file_stat.st_size;
-                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+                if (storage->user_files_disk)
+                {
+                    /// Use disk-based I/O
+                    current_file_size = storage->user_files_disk->getFileSize(current_path);
+                    current_file_last_modified = Poco::Timestamp::fromEpochTime(0); /// Modification time not easily available on all disks
 
-                if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
-                    continue;
+                    if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_file_size == 0)
+                        continue;
 
-                if (need_only_count && tryGetCountFromCache(file_stat))
-                    continue;
+                    read_buf = createReadBufferFromDisk(storage->user_files_disk, current_path, storage->compression_method, getContext());
+                }
+                else
+                {
+                    struct stat file_stat;
+                    file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    current_file_size = file_stat.st_size;
+                    current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
-                read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                    if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
+                        continue;
+
+                    if (need_only_count && tryGetCountFromCache(file_stat))
+                        continue;
+
+                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                }
             }
 
             size_t file_num = 0;
@@ -1797,7 +2087,10 @@ void StorageFile::read(
         else
             p = &paths;
 
-        if (p->size() == 1 && !fs::exists(p->at(0)))
+        bool file_exists = user_files_disk
+            ? user_files_disk->existsFile(p->at(0))
+            : fs::exists(p->at(0));
+        if (p->size() == 1 && !file_exists)
         {
             if (!context->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p->at(0));
@@ -1992,19 +2285,33 @@ public:
 
     void initialize()
     {
-        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
+        bool do_not_write_prefix = false;
+
+        std::unique_ptr<WriteBuffer> naked_buffer;
         if (use_table_fd)
         {
-            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(table_fd, DBMS_DEFAULT_BUFFER_SIZE);
+            auto fd_buffer = std::make_unique<WriteBufferFromFileDescriptor>(table_fd, DBMS_DEFAULT_BUFFER_SIZE);
+            /// In case of formats with prefixes if file is not empty we have already written prefix.
+            do_not_write_prefix = fd_buffer->size();
+            naked_buffer = std::move(fd_buffer);
+        }
+        else if (user_files_disk)
+        {
+            /// Use disk-based write (supports S3, etc.)
+            /// Check if file already has content for prefix handling
+            if (user_files_disk->existsFile(path))
+                do_not_write_prefix = user_files_disk->getFileSize(path) > 0;
+            WriteMode mode = WriteMode::Append;
+            naked_buffer = user_files_disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, mode);
         }
         else
         {
             flags |= O_WRONLY | O_APPEND | O_CREAT;
-            naked_buffer = std::make_unique<WriteBufferFromFile>(path, DBMS_DEFAULT_BUFFER_SIZE, flags);
+            auto file_buffer = std::make_unique<WriteBufferFromFile>(path, DBMS_DEFAULT_BUFFER_SIZE, flags);
+            /// In case of formats with prefixes if file is not empty we have already written prefix.
+            do_not_write_prefix = file_buffer->size();
+            naked_buffer = std::move(file_buffer);
         }
-
-        /// In case of formats with prefixes if file is not empty we have already written prefix.
-        bool do_not_write_prefix = naked_buffer->size();
         const auto & settings = getContext()->getSettingsRef();
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::move(naked_buffer),
@@ -2086,6 +2393,10 @@ private:
 
     int flags;
     std::unique_lock<std::shared_timed_mutex> lock;
+    DiskPtr user_files_disk; /// When set, write through this disk.
+
+public:
+    void setUserFilesDisk(DiskPtr disk) { user_files_disk = std::move(disk); }
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -2124,7 +2435,7 @@ public:
         fs::create_directories(fs::path(filepath).parent_path());
 
         validatePartitionKey(filepath, true);
-        checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
+        checkCreationIsAllowed(context, context->getUserFilesPaths(), filepath, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
@@ -2214,12 +2525,38 @@ SinkToStoragePtr StorageFile::write(
                             getStorageID().getNameForLogs());
 
         path = paths.front();
-        fs::create_directories(fs::path(path).parent_path());
+        if (user_files_disk)
+        {
+            /// Create parent directories on disk
+            auto parent_path = fs::path(path).parent_path().string();
+            if (!parent_path.empty() && !user_files_disk->existsDirectory(parent_path))
+                user_files_disk->createDirectories(parent_path);
+        }
+        else
+        {
+            fs::create_directories(fs::path(path).parent_path());
+        }
 
-        std::error_code error_code;
+        size_t existing_file_size = 0;
+        bool got_file_size = false;
+        if (user_files_disk)
+        {
+            if (user_files_disk->existsFile(path))
+            {
+                existing_file_size = user_files_disk->getFileSize(path);
+                got_file_size = true;
+            }
+        }
+        else
+        {
+            std::error_code error_code;
+            existing_file_size = fs::file_size(path, error_code);
+            got_file_size = !error_code;
+        }
+
         if (!context->getSettingsRef()[Setting::engine_file_truncate_on_insert] && !is_path_with_globs
             && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
-            && fs::file_size(path, error_code) != 0 && !error_code)
+            && got_file_size && existing_file_size != 0)
         {
             if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
             {
@@ -2231,7 +2568,7 @@ SinkToStoragePtr StorageFile::write(
                     new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
                     ++index;
                 }
-                while (fs::exists(new_path));
+                while (user_files_disk ? user_files_disk->existsFileOrDirectory(new_path) : fs::exists(new_path));
                 paths.push_back(new_path);
                 path = new_path;
             }
@@ -2246,7 +2583,7 @@ SinkToStoragePtr StorageFile::write(
         }
     }
 
-    return std::make_shared<StorageFileSink>(
+    auto sink = std::make_shared<StorageFileSink>(
         metadata_snapshot,
         getStorageID().getNameForLogs(),
         std::unique_lock{rwlock, getLockTimeout(context)},
@@ -2259,6 +2596,9 @@ SinkToStoragePtr StorageFile::write(
         format_name,
         context,
         flags);
+    if (user_files_disk)
+        sink->setUserFilesDisk(user_files_disk);
+    return sink;
 }
 
 bool StorageFile::storesDataOnDisk() const

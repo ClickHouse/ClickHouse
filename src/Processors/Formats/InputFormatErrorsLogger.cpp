@@ -45,12 +45,13 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
 
     if (context->getApplicationType() == Context::ApplicationType::SERVER)
     {
-        auto user_files_path = context->getUserFilesPath();
-        errors_file_path = fs::path(user_files_path) / path_in_setting;
-        if (!fileOrSymlinkPathStartsWith(errors_file_path, user_files_path))
+        const auto user_files_paths = context->getUserFilesPaths();
+        /// Resolve against the first user_files_path
+        errors_file_path = fs::path(user_files_paths.front()) / path_in_setting;
+        if (!fileOrSymlinkPathStartsWith(errors_file_path, user_files_paths))
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                            "Cannot log errors in path `{}`, because it is not inside `{}`",
-                            errors_file_path, user_files_path);
+                            "Cannot log errors in path `{}`, because it is not inside user files path",
+                            errors_file_path);
     }
     else
     {

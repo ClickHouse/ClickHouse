@@ -1323,6 +1323,39 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
     ```
     )", 0) \
+    DECLARE(String, user_files_policy, "", R"(
+    Storage policy for user files directory. When set, user files can reside on any disk in the specified policy's volume.
+    The policy should have exactly one volume. If set, this takes precedence over `user_files_path`.
+
+    **Example**
+
+    ```xml
+    <clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk1>
+                <path>/disk1/user_files/</path>
+            </disk1>
+            <disk2>
+                <path>/disk2/user_files/</path>
+            </disk2>
+        </disks>
+        <policies>
+            <user_files_two_disks>
+                <volumes>
+                    <main>
+                        <disk>disk1</disk>
+                        <disk>disk2</disk>
+                    </main>
+                </volumes>
+            </user_files_two_disks>
+        </policies>
+    </storage_configuration>
+
+    <user_files_policy>user_files_two_disks</user_files_policy>
+    </clickhouse>
+    ```
+    )", 0) \
     DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(
     The directory with dictionaries lib.
 

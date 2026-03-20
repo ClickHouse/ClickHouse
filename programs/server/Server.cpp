@@ -382,6 +382,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_open_files;
     extern const ServerSettingsString path;
     extern const ServerSettingsString user_files_path;
+    extern const ServerSettingsString user_files_policy;
     extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
     extern const ServerSettingsString top_level_domains_path;
@@ -2689,6 +2690,12 @@ try
         std::string temporary_path = tmp_path_setting.changed
             ? getCanonicalPath(String(tmp_path_setting.value), path_str) : String(path / "tmp/");
         global_context->setTemporaryStoragePath(temporary_path, server_settings[ServerSetting::max_temporary_data_on_disk_size]);
+    }
+
+    /// Storage policy for user files directory.
+    if (!server_settings[ServerSetting::user_files_policy].value.empty())
+    {
+        global_context->setUserFilesPolicy(server_settings[ServerSetting::user_files_policy]);
     }
 
     /// Initialize access storages.

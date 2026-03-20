@@ -223,9 +223,9 @@ DictionaryPtr createCacheDictionaryLayout(
     else
     {
         auto storage_configuration = parseSSDCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
-        auto user_files_path = global_context->getUserFilesPath();
-        if (created_from_ddl && !pathStartsWith(storage_configuration.file_path, user_files_path))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", storage_configuration.file_path, user_files_path);
+        const auto user_files_paths = global_context->getUserFilesPaths();
+        if (created_from_ddl && !pathStartsWith(storage_configuration.file_path, user_files_paths))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", storage_configuration.file_path);
 
         storage = std::make_shared<SSDCacheDictionaryStorage<dictionary_key_type>>(storage_configuration);
     }

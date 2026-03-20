@@ -271,6 +271,22 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
     return fileOrSymlinkPathStartsWith(filesystem_path, filesystem_prefix_path);
 }
 
+bool pathStartsWith(const String & path, const std::vector<String> & prefix_paths)
+{
+    for (const auto & prefix : prefix_paths)
+        if (pathStartsWith(path, prefix))
+            return true;
+    return false;
+}
+
+bool fileOrSymlinkPathStartsWith(const String & path, const std::vector<String> & prefix_paths)
+{
+    for (const auto & prefix : prefix_paths)
+        if (fileOrSymlinkPathStartsWith(path, prefix))
+            return true;
+    return false;
+}
+
 size_t getSizeFromFileDescriptor(int fd, const String & file_name)
 {
     struct stat buf;

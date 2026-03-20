@@ -219,13 +219,31 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     else
     {
         bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
-        fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
+        const auto user_files_paths = is_local ? Strings{""} : getContext()->getUserFilesPaths();
         if (fs::path(rocksdb_dir).is_relative())
-            rocksdb_dir = user_files_path / rocksdb_dir;
-        rocksdb_dir = fs::absolute(rocksdb_dir).lexically_normal();
+        {
+            /// For relative paths, try each user_files_path and use the first one where it exists.
+            bool found = false;
+            for (const auto & ufp : user_files_paths)
+            {
+                fs::path candidate = fs::absolute(fs::path(ufp) / rocksdb_dir).lexically_normal();
+                if (fs::exists(candidate))
+                {
+                    rocksdb_dir = candidate.string();
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                rocksdb_dir = fs::absolute(fs::path(user_files_paths.front()) / rocksdb_dir).lexically_normal().string();
+        }
+        else
+        {
+            rocksdb_dir = fs::absolute(rocksdb_dir).lexically_normal();
+        }
 
-        if (!is_local && !fileOrSymlinkPathStartsWith(fs::path(rocksdb_dir), user_files_path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path: {}", user_files_path.string());
+        if (!is_local && !fileOrSymlinkPathStartsWith(rocksdb_dir, user_files_paths))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path");
     }
 
     if (mode < LoadingStrictnessLevel::ATTACH)

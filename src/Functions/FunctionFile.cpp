@@ -6,6 +6,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Disks/IVolume.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
@@ -124,8 +125,64 @@ public:
         res_offsets.resize(input_rows_count);
 
         const auto & context = Context::getGlobalContextInstance();
-        fs::path user_files_absolute_path = fs::canonical(fs::path(context->getUserFilesPath()));
-        std::string user_files_absolute_path_string = user_files_absolute_path.string();
+        auto user_files_volume = context->getUserFilesVolume();
+
+        /// When user_files_policy is set, use disk-based I/O
+        if (user_files_volume)
+        {
+            auto disks = user_files_volume->getDisks();
+
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                std::string_view filename = column_src->getDataAt(row);
+                String file_path_str(filename);
+
+                /// Remove leading slash for disk-relative paths
+                if (!file_path_str.empty() && file_path_str[0] == '/')
+                    file_path_str = file_path_str.substr(1);
+
+                try
+                {
+                    /// Find the file on one of the disks
+                    DiskPtr found_disk;
+                    for (const auto & disk : disks)
+                    {
+                        if (disk->existsFile(file_path_str))
+                        {
+                            found_disk = disk;
+                            break;
+                        }
+                    }
+
+                    if (!found_disk)
+                        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File not found on any user files disk");
+
+                    auto read_settings = context->getReadSettings();
+                    auto in = found_disk->readFile(file_path_str, read_settings);
+                    auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
+                    copyData(*in, out);
+                }
+                catch (...)
+                {
+                    if (arguments.size() == 1)
+                        throw;
+
+                    if (vec_null_map_to)
+                        (*vec_null_map_to)[row] = true;
+                    else
+                        res_chars.insert(default_result.data(), default_result.data() + default_result.size());
+                }
+
+                res_offsets[row] = res_chars.size();
+            }
+        }
+        else
+        {
+        Strings user_files_paths = context->getUserFilesPaths();
+        /// Compute canonical paths for each user_files_path
+        std::vector<std::string> user_files_absolute_paths;
+        for (const auto & ufp : user_files_paths)
+            user_files_absolute_paths.push_back(fs::canonical(fs::path(ufp)).string());
 
         // If run in Local mode, no need for path checking.
         bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
@@ -136,7 +193,23 @@ public:
             fs::path file_path(filename.data(), filename.data() + filename.size());
 
             if (file_path.is_relative())
-                file_path = user_files_absolute_path / file_path;
+            {
+                /// For relative paths, try each user_files_path and use the first one where the file exists.
+                /// If not found on any, fall back to the first path.
+                bool found = false;
+                for (const auto & ufp : user_files_absolute_paths)
+                {
+                    fs::path candidate = fs::absolute(fs::path(ufp) / file_path).lexically_normal();
+                    if (fs::exists(candidate))
+                    {
+                        file_path = candidate;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    file_path = fs::absolute(fs::path(user_files_absolute_paths.front()) / file_path).lexically_normal();
+            }
 
             /// Do not use fs::canonical or fs::weakly_canonical.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
@@ -144,8 +217,20 @@ public:
 
             try
             {
-                if (need_check && !file_path.string().starts_with(user_files_absolute_path_string))
-                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
+                if (need_check)
+                {
+                    bool inside = false;
+                    for (const auto & ufp : user_files_absolute_paths)
+                    {
+                        if (file_path.string().starts_with(ufp))
+                        {
+                            inside = true;
+                            break;
+                        }
+                    }
+                    if (!inside)
+                        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside user files path");
+                }
 
                 ReadBufferFromFile in(file_path);
                 auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
@@ -164,6 +249,7 @@ public:
 
             res_offsets[row] = res_chars.size();
         }
+        } /// end of else (no user_files_volume)
 
         if (vec_null_map_to)
             return ColumnNullable::create(std::move(result), std::move(col_null_map_to));

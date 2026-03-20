@@ -190,7 +190,7 @@ StorageFileLog::StorageFileLog(
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals((*filelog_settings)[FileLogSetting::handle_error_mode]));
 
-    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
+    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPaths()))
     {
         if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
         {

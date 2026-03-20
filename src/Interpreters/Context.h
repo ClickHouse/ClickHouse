@@ -721,6 +721,8 @@ public:
     String getPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
+    Strings getUserFilesPaths() const;
+    VolumePtr getUserFilesVolume() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
@@ -792,6 +794,7 @@ public:
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
+    void setUserFilesPolicy(const String & policy_name);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
 

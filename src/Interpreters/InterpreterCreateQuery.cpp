@@ -1610,17 +1610,42 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         chassert(!ddl_guard);
 
-        fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
+        const auto user_files_paths = getContext()->getUserFilesPaths();
         fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
 
         if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
-                data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            {
+                /// Try each user_files_path and use the first one where the path exists.
+                bool found = false;
+                for (const auto & ufp : user_files_paths)
+                {
+                    fs::path candidate = (fs::path(ufp).lexically_normal() / data_path).lexically_normal();
+                    if (fs::exists(candidate))
+                    {
+                        data_path = candidate;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    data_path = (fs::path(user_files_paths.front()).lexically_normal() / data_path).lexically_normal();
+            }
+
+            bool inside = false;
+            for (const auto & ufp : user_files_paths)
+            {
+                if (startsWith(data_path, fs::path(ufp).lexically_normal()))
+                {
+                    inside = true;
+                    break;
+                }
+            }
+            if (!inside)
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+                                "Data directory {} must be inside user files path to attach it", String(data_path));
 
             /// Data path must be relative to root_path
             create.attach_from_path = fs::relative(data_path, root_path) / "";
@@ -1628,9 +1653,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            bool inside = false;
+            for (const auto & ufp : user_files_paths)
+            {
+                if (startsWith(data_path, fs::path(ufp).lexically_normal()))
+                {
+                    inside = true;
+                    break;
+                }
+            }
+            if (!inside)
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+                                "Data directory {} must be inside user files path to attach it", String(data_path));
         }
     }
     else if (create.attach && !create.attach_short_syntax && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)

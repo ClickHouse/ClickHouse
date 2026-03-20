@@ -43,19 +43,34 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(getLogger("DatabaseFileSystem(" + name_ + ")"))
 {
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
-    fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
+    const auto user_files_paths = is_local ? Strings{""} : getContext()->getUserFilesPaths();
 
     if (fs::path(path).is_relative())
     {
-        path = user_files_path / path;
+        /// For relative paths, try each user_files_path and use the first one where the path exists.
+        bool found = false;
+        for (const auto & ufp : user_files_paths)
+        {
+            fs::path candidate = fs::absolute(fs::path(ufp) / path).lexically_normal();
+            if (fs::exists(candidate))
+            {
+                path = candidate.string();
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            path = fs::absolute(fs::path(user_files_paths.front()) / path).lexically_normal().string();
+    }
+    else
+    {
+        path = fs::absolute(path).lexically_normal();
     }
 
-    path = fs::absolute(path).lexically_normal();
-
-    if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
+    if (!is_local && !pathStartsWith(path, user_files_paths))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Path must be inside user-files path: {}", user_files_path.string());
+                        "Path must be inside user-files path");
     }
 
     if (!fs::exists(path))
@@ -83,13 +98,13 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
 {
     /// If run in Local mode, no need for path checking.
     bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
-    const auto & user_files_path = context_->getUserFilesPath();
+    const auto user_files_paths = context_->getUserFilesPaths();
 
     /// Check access for file before checking its existence.
-    if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
+    if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_paths))
     {
         /// Access denied is thrown regardless of 'throw_on_error'
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside user files path");
     }
 
     if (!containsGlobs(table_path))

@@ -466,6 +466,8 @@ struct ContextSharedPart : boost::noncopyable
     String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
     String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
     String user_files_path TSA_GUARDED_BY(mutex);            /// Path to the directory with user provided files, usable by 'file' table function.
+    Strings user_files_paths TSA_GUARDED_BY(mutex);          /// All allowed user_files root paths (from policy volume or empty if single path).
+    VolumePtr user_files_volume TSA_GUARDED_BY(mutex);       /// Volume for user files (from policy, or nullptr).
     String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
     String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
@@ -1346,6 +1348,20 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
+Strings Context::getUserFilesPaths() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->user_files_paths.empty())
+        return shared->user_files_paths;
+    return {shared->user_files_path};
+}
+
+VolumePtr Context::getUserFilesVolume() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->user_files_volume;
+}
+
 String Context::getDictionariesLibPath() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -1755,6 +1771,47 @@ void Context::setUserFilesPath(const String & path)
 {
     std::lock_guard lock(shared->mutex);
     shared->user_files_path = path;
+}
+
+void Context::setUserFilesPolicy(const String & policy_name)
+{
+    StoragePolicyPtr policy;
+    {
+        std::lock_guard storage_policies_lock(shared->storage_policies_mutex);
+        policy = getStoragePolicySelector(storage_policies_lock)->get(policy_name);
+    }
+
+    if (policy->getVolumes().size() != 1)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+            "Policy '{}' is used for user files, such policy should have exactly one volume", policy_name);
+
+    VolumePtr volume = policy->getVolume(0);
+
+    if (volume->getDisks().empty())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No disks in volume for user files");
+
+    Strings paths;
+    for (const auto & disk : volume->getDisks())
+    {
+        if (!disk)
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "User files disk is null");
+
+        String disk_path = disk->getPath();
+        if (!disk_path.ends_with('/'))
+            disk_path += '/';
+        paths.push_back(disk_path);
+
+        /// Create the directory on each disk if it does not exist
+        if (!disk->existsDirectory(""))
+            disk->createDirectory("");
+    }
+
+    std::lock_guard lock(shared->mutex);
+    shared->user_files_paths = std::move(paths);
+    shared->user_files_volume = volume;
+    /// Keep user_files_path as the first disk for backward compatibility
+    if (!shared->user_files_paths.empty())
+        shared->user_files_path = shared->user_files_paths.front();
 }
 
 void Context::setDictionariesLibPath(const String & path)

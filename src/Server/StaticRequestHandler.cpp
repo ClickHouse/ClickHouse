@@ -121,8 +121,20 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         if (file_name.starts_with('/'))
             file_name = file_name.substr(1);
 
-        fs::path user_files_absolute_path = fs::canonical(fs::path(server.context()->getUserFilesPath()));
-        String file_path = fs::weakly_canonical(user_files_absolute_path / file_name);
+        const auto user_files_paths = server.context()->getUserFilesPaths();
+        /// Try each user_files_path and use the first one where the file exists.
+        String file_path;
+        for (const auto & ufp : user_files_paths)
+        {
+            fs::path candidate = fs::weakly_canonical(fs::canonical(fs::path(ufp)) / file_name);
+            if (fs::exists(candidate))
+            {
+                file_path = candidate.string();
+                break;
+            }
+        }
+        if (file_path.empty())
+            file_path = fs::weakly_canonical(fs::canonical(fs::path(user_files_paths.front())) / file_name);
 
         if (!fs::exists(file_path))
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid file name {} for static HTTPHandler. ", file_path);
