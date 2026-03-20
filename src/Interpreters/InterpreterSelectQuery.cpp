@@ -130,6 +130,7 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
@@ -540,7 +541,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     query_info.is_internal = options.is_internal;
 
     initSettings();
+
+    // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for
+    // the case of unsupported settings combination: enabled PRs + enabled AutoPR. Since it is not supported, we just
+    // disable both which is technically a correct behaviour: AutoPR is allowed to execute the query without PRs.
     const Settings & settings = context->getSettingsRef();
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+        && settings[Setting::automatic_parallel_replicas_mode] != 0)
+    {
+        LOG_DEBUG(
+            log,
+            "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
+            " This combination of settings is not supported in the old SELECT query analyzer."
+            " To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    }
 
     if (settings[Setting::max_subquery_depth] && options.subquery_depth > settings[Setting::max_subquery_depth])
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", settings[Setting::max_subquery_depth].toString());

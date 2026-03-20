@@ -20,6 +20,10 @@
 
 namespace DB
 {
+/// Callback invoked by setResponse and finishSession to deliver responses to clients.
+/// Must be safe for concurrent invocation: setResponse (from responseThread) and
+/// finishSession (from dead session cleaner) may invoke copies of the same callback
+/// concurrently for the same session.
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
 /// Highlevel wrapper for ClickHouse Keeper.
@@ -173,7 +177,8 @@ public:
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
 
-    /// Register session and subscribe for responses with callback
+    /// Register session and subscribe for responses with callback.
+    /// The callback must be safe for concurrent invocation — see ZooKeeperResponseCallback.
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
 
     /// Call if we don't need any responses for this session no more (session was expired)

@@ -2,6 +2,10 @@
 # Tags: no-fasttest, no-random-merge-tree-settings
 # Tag no-fasttest: needs s3
 
+# It is enabled by default. Setting randomisation for automatic parallel replicas sets `enable_parallel_replicas=1`,
+# i.e., essentially, it enforces distributed insert select. It is mostly fine, except it changes the profile events.
+CLICKHOUSE_CLIENT_OPT="--parallel_distributed_insert_select=0"
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh

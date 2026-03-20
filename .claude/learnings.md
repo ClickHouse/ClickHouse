@@ -1,5 +1,9 @@
 # Learnings
 
+## Add settings
+- When adding new settings in `Settings.cpp`, you must also add `extern` declarations in every `.cpp` file that uses them via `Setting::name` (e.g., in the `namespace Setting` block in `executeQuery.cpp`, `ClientBase.cpp`).
+- Rust crate build targets in ninja have the form `rust/workspace/cargo-build__ch_rust_<name>`, not just `_ch_rust_<name>`.
+
 ## INSERT ... VALUES via --query flag hangs
 
 `INSERT INTO ... VALUES (...)` passed via the `-q`/`--query` flag to `clickhouse client` hangs indefinitely in the native TCP protocol when `async_insert` defaults to `1` (which is the case in recent ClickHouse builds). This is a pre-existing protocol behavior, NOT a bug in the code under test and NOT a sign that the debug build is too slow.

@@ -45,5 +45,5 @@ SELECT tokens('你好世界', 'unicode_word'), tokensForLikePattern('%你好%世
 SELECT tokens('a:bc.d', 'unicode_word'), tokensForLikePattern('a:b%c.d', 'unicode_word');
 SELECT tokens('测试数据', 'unicode_word'), tokensForLikePattern('%测试，数据%', 'unicode_word');
 SELECT tokens('test_data', 'unicode_word'), tokensForLikePattern('test\_%data', 'unicode_word');
--- Stop word followed by escaped character in LIKE pattern (exercises escaped-state reset before stop word check)
-SELECT tokens('and%test', 'unicode_word', ['and']), tokensForLikePattern('and\%test', 'unicode_word', ['and']);
+-- Stop word param (removed for now) followed by escaped character in LIKE pattern (exercises escaped-state reset before stop word check)
+SELECT tokens('and%test', 'unicode_word', ['and']), tokensForLikePattern('and\%test', 'unicode_word', ['and']); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
