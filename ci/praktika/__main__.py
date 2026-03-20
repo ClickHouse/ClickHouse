@@ -130,6 +130,16 @@ def create_parser():
         default=None,
     )
     run_parser.add_argument(
+        "--workflow-input",
+        help=(
+            "Workflow dispatch inputs as comma-separated name=value pairs "
+            "(e.g. ref=main,type=patch,dry-run=true). Written to workflow_inputs.json "
+            "so that jobs can read them via Info.get_workflow_input_value"
+        ),
+        type=str,
+        default=None,
+    )
+    run_parser.add_argument(
         "--ci",
         help=(
             "Run in CI flag. When not set, a dummy local environment is generated (for local tests)"
@@ -280,6 +290,7 @@ def main():
                 path=args.path,
                 path_1=args.path_1,
                 workers=args.workers,
+                workflow_input=args.workflow_input,
             )
     else:
         parser.print_help()
