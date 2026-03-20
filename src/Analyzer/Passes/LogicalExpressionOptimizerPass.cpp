@@ -7,6 +7,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -331,18 +332,215 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
 {
     try
     {
-        auto target_type = removeNullable(removeLowCardinality(expr_type));
         const auto & from_type = constant_node->getResultType();
 
-        if (from_type->equals(*target_type))
+        if (from_type->equals(*expr_type))
             return constant_node->getValue();
 
-        return convertFieldToTypeStrict(constant_node->getValue(), *from_type, *target_type);
+        return convertFieldToTypeStrict(constant_node->getValue(), *from_type, *expr_type);
     }
     catch (...) /// Ok: conversion failure means we can't optimize, not an error
     {
         return std::nullopt;
     }
+}
+
+enum class BoundaryCheckResult : uint8_t
+{
+    ABOVE_MAX,
+    BELOW_MIN,
+    AT_MAX,
+    AT_MIN,
+    IN_RANGE
+};
+
+template <typename T>
+static BoundaryCheckResult checkBoundaryImpl(const Field & value)
+{
+    auto check = [](const auto & v) -> BoundaryCheckResult
+    {
+        if (accurate::greaterOp(v, std::numeric_limits<T>::max()))
+            return BoundaryCheckResult::ABOVE_MAX;
+        if (accurate::lessOp(v, std::numeric_limits<T>::lowest()))
+            return BoundaryCheckResult::BELOW_MIN;
+        if (accurate::equalsOp(v, std::numeric_limits<T>::max()))
+            return BoundaryCheckResult::AT_MAX;
+        if (accurate::equalsOp(v, std::numeric_limits<T>::lowest()))
+            return BoundaryCheckResult::AT_MIN;
+        return BoundaryCheckResult::IN_RANGE;
+    };
+
+    switch (value.getType())
+    {
+    case Field::Types::UInt64:
+        return check(value.safeGet<UInt64>());
+    case Field::Types::Int64:
+        return check(value.safeGet<Int64>());
+    default:
+        return BoundaryCheckResult::IN_RANGE;
+    }
+}
+
+/// Try to optimize a comparison against a native integer column.  Two transformations:
+///
+/// 1. Boundary folding: when the constant is out of range or at the type boundary, fold the
+///    condition to CONFLICT (always false) / REDUNDANT (always true), or tighten the operator
+///    (e.g. `Int8_col >= 127` becomes `Int8_col = 127`).
+///
+/// 2. Float literal rewrite: when the Float64 constant is not exactly representable as the
+///    target integer, rewrite it to an equivalent integer predicate via floor/ceil
+///    (e.g. `Int32_col > 3.5` becomes `Int32_col >= 4`).
+///    For equals/notEquals with non-integer floats, fold directly
+///    (e.g. `Int32_col = 3.5` is always false).
+///
+/// May modify filter.function and filter.converted_value in place.
+/// Returns CONFLICT (always false), REDUNDANT (always true), or std::nullopt if no folding occurred.
+static std::optional<AddComparisonFilterResult> tryFoldBoundaryOrRewriteFloatForIntColumn(
+    ComparisonFilterInfo & filter, const DataTypePtr & column_type)
+{
+    if (!isNativeInteger(column_type))
+        return std::nullopt;
+
+    const bool is_unsigned = column_type->isValueRepresentedByUnsignedInteger();
+    const size_t type_size = column_type->getSizeOfValueInMemory();
+
+    auto dispatch_boundary = [&](const Field & value) -> BoundaryCheckResult
+    {
+        if (is_unsigned)
+        {
+            switch (type_size)
+            {
+            case sizeof(UInt8):
+                return checkBoundaryImpl<UInt8>(value);
+            case sizeof(UInt16):
+                return checkBoundaryImpl<UInt16>(value);
+            case sizeof(UInt32):
+                return checkBoundaryImpl<UInt32>(value);
+            case sizeof(UInt64):
+                return checkBoundaryImpl<UInt64>(value);
+            default:
+                UNREACHABLE();
+            }
+        }
+        else
+        {
+            switch (type_size)
+            {
+            case sizeof(Int8):
+                return checkBoundaryImpl<Int8>(value);
+            case sizeof(Int16):
+                return checkBoundaryImpl<Int16>(value);
+            case sizeof(Int32):
+                return checkBoundaryImpl<Int32>(value);
+            case sizeof(Int64):
+                return checkBoundaryImpl<Int64>(value);
+            default:
+                UNREACHABLE();
+            }
+        }
+    };
+
+    auto fold_boundary = [&](const Field & value) -> std::optional<AddComparisonFilterResult>
+    {
+        auto boundary = dispatch_boundary(value);
+
+        if (boundary == BoundaryCheckResult::ABOVE_MAX)
+        {
+            switch (filter.function)
+            {
+            case ComparisonFunction::LESS:
+            case ComparisonFunction::LESS_OR_EQUALS:
+            case ComparisonFunction::NOT_EQUALS:
+                return AddComparisonFilterResult::REDUNDANT;
+            case ComparisonFunction::GREATER:
+            case ComparisonFunction::GREATER_OR_EQUALS:
+            case ComparisonFunction::EQUALS:
+                return AddComparisonFilterResult::CONFLICT;
+            }
+            UNREACHABLE();
+        }
+
+        if (boundary == BoundaryCheckResult::BELOW_MIN)
+        {
+            switch (filter.function)
+            {
+            case ComparisonFunction::GREATER:
+            case ComparisonFunction::GREATER_OR_EQUALS:
+            case ComparisonFunction::NOT_EQUALS:
+                return AddComparisonFilterResult::REDUNDANT;
+            case ComparisonFunction::LESS:
+            case ComparisonFunction::LESS_OR_EQUALS:
+            case ComparisonFunction::EQUALS:
+                return AddComparisonFilterResult::CONFLICT;
+            }
+            UNREACHABLE();
+        }
+
+        if (boundary == BoundaryCheckResult::AT_MAX)
+        {
+            if (filter.function == ComparisonFunction::GREATER)
+                return AddComparisonFilterResult::CONFLICT;
+            if (filter.function == ComparisonFunction::LESS_OR_EQUALS)
+                return AddComparisonFilterResult::REDUNDANT;
+            if (filter.function == ComparisonFunction::GREATER_OR_EQUALS)
+                filter.function = ComparisonFunction::EQUALS;
+        }
+
+        if (boundary == BoundaryCheckResult::AT_MIN)
+        {
+            if (filter.function == ComparisonFunction::LESS)
+                return AddComparisonFilterResult::CONFLICT;
+            if (filter.function == ComparisonFunction::GREATER_OR_EQUALS)
+                return AddComparisonFilterResult::REDUNDANT;
+            if (filter.function == ComparisonFunction::LESS_OR_EQUALS)
+                filter.function = ComparisonFunction::EQUALS;
+        }
+
+        return std::nullopt;
+    };
+
+    const Field & value = filter.converted_value
+        ? *filter.converted_value
+        : filter.constant_node->getValue();
+
+    if (filter.converted_value || value.getType() != Field::Types::Float64)
+        return fold_boundary(value);
+
+    const Float64 float_val = value.safeGet<Float64>();
+    if (std::isnan(float_val) || std::isinf(float_val))
+        return std::nullopt;
+
+    auto make_int_field = [&](Float64 v) -> Field
+    {
+        return is_unsigned ? Field(static_cast<UInt64>(v)) : Field(static_cast<Int64>(v));
+    };
+
+    const Float64 floored = std::floor(float_val);
+    if (float_val == floored)
+    {
+        filter.converted_value = make_int_field(floored);
+        return fold_boundary(*filter.converted_value);
+    }
+
+    switch (filter.function)
+    {
+    case ComparisonFunction::EQUALS:
+        return AddComparisonFilterResult::CONFLICT;
+    case ComparisonFunction::NOT_EQUALS:
+        return AddComparisonFilterResult::REDUNDANT;
+    case ComparisonFunction::LESS:
+    case ComparisonFunction::LESS_OR_EQUALS:
+        filter.function = ComparisonFunction::LESS_OR_EQUALS;
+        filter.converted_value = make_int_field(floored);
+        break;
+    case ComparisonFunction::GREATER:
+    case ComparisonFunction::GREATER_OR_EQUALS:
+        filter.function = ComparisonFunction::GREATER_OR_EQUALS;
+        filter.converted_value = make_int_field(std::ceil(float_val));
+        break;
+    }
+
+    return fold_boundary(*filter.converted_value);
 }
 
 static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo & left, const ComparisonFilterInfo & right)
@@ -462,7 +660,14 @@ static AddComparisonFilterResult addComparisonFilter(
     const QueryTreeNodePtr & expression,
     ComparisonFilterInfo new_filter)
 {
-    new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expression->getResultType());
+    const auto & raw_type = expression->getResultType();
+    chassert(!raw_type->isNullable());
+    auto expr_type = removeLowCardinality(raw_type);
+
+    new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
+
+    if (auto result = tryFoldBoundaryOrRewriteFloatForIntColumn(new_filter, expr_type))
+        return *result;
 
     auto it = filter_map.find(expression);
     if (it == filter_map.end())
