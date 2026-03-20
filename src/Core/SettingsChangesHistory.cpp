@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.4",
+        {
+            {"allow_experimental_physical_column_names", false, false, "New setting to gate persistent physical column names for MergeTree"},
+        });
         addSettingsChanges(settings_changes_history, "26.3",
         {
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
@@ -59,7 +63,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
             {"allow_statistics", false, true, "Column statistics are now GA"},
-            {"allow_experimental_physical_column_names", false, false, "New setting to gate persistent physical column names for MergeTree"},
             {"allow_experimental_statistics", false, true, "Column statistics are now GA"},
             {"allow_experimental_expire_snapshots", false, false, "New setting."},
             {"iceberg_expire_default_min_snapshots_to_keep", 1, 1, "New setting."},
@@ -1093,6 +1096,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.4",
+        {
+            {"serialization_info_version", "with_types", "with_types", "Add `with_physical_names` option for persistent physical column names"},
+            {"activate_physical_names_for_existing_tables", false, false, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
             {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
@@ -1100,8 +1108,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
             {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
-            {"serialization_info_version", "with_types", "with_types", "Add `with_physical_names` option for persistent physical column names"},
-            {"activate_physical_names_for_existing_tables", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
