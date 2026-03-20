@@ -14,6 +14,10 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
+#include <Storages/DataLakes/StorageIceberg.h>
+#include <Storages/DataLakes/StorageDeltaLake.h>
+#include <Storages/DataLakes/StorageHudi.h>
+#include <Storages/DataLakes/StoragePaimon.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
@@ -42,7 +46,8 @@ namespace
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
-std::shared_ptr<StorageObjectStorage>
+template <typename StorageType = StorageObjectStorage>
+std::shared_ptr<StorageType>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
@@ -77,7 +82,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
-    return std::make_shared<StorageObjectStorage>(
+    return std::make_shared<StorageType>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
@@ -248,7 +253,7 @@ void registerStorageIceberg(StorageFactory & factory)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "This storage configuration is not available at this build");
             }
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage<StorageIceberg>(args, configuration);
         },
         {
             .supports_settings = true,
@@ -283,7 +288,7 @@ void registerStorageIceberg(StorageFactory & factory)
             }
             else
                 configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage<StorageIceberg>(args, configuration);
         },
         {
             .supports_settings = true,
@@ -318,7 +323,7 @@ void registerStorageIceberg(StorageFactory & factory)
             }
             else
                 configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage<StorageIceberg>(args, configuration);
         },
         {
             .supports_settings = true,
@@ -335,7 +340,7 @@ void registerStorageIceberg(StorageFactory & factory)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage<StorageIceberg>(args, configuration);
         },
         {
             .supports_settings = true,
@@ -369,7 +374,7 @@ void registerStorageIceberg(StorageFactory & factory)
             }
             else
                 configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage<StorageIceberg>(args, configuration);
         },
         {
             .supports_settings = true,
@@ -420,7 +425,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
             else
                 configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
 
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage<StorageDeltaLake>(args, configuration);
         },
         {
             .supports_settings = true,
@@ -455,7 +460,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
             else
                 configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
 
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage<StorageDeltaLake>(args, configuration);
         },
         {
             .supports_settings = true,
@@ -489,7 +494,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
             }
             else
                 configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage<StorageDeltaLake>(args, configuration);
         },
         {
             .supports_settings = true,
@@ -522,7 +527,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
             }
             else
                 configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage<StorageDeltaLake>(args, configuration);
         },
         {
             .supports_settings = true,
@@ -542,7 +547,7 @@ void registerStorageHudi(StorageFactory & factory)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             auto configuration = std::make_shared<StorageS3HudiConfiguration>(storage_settings);
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage<StorageHudi>(args, configuration);
         },
         {
             .supports_settings = false,
