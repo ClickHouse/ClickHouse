@@ -113,6 +113,7 @@ FROM t_resampled_timeseries
 WHERE step = 10 AND metric_id IN (3,7) AND grid_timestamp BETWEEN '2024-12-12 12:00:00' AND '2024-12-12 12:02:00'
 ORDER BY metric_id, grid_timestamp;
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT metric_id, grid_timestamp, (finalizeAggregation(samples).1 as timestamp, finalizeAggregation(samples).2 as value), arrayMap(x -> grid_timestamp + interval x millisecond, timestamp) as ts
 FROM clusterAllReplicas('test_shard_localhost', currentDatabase(),t_resampled_timeseries_delta)
 WHERE step = 10 AND metric_id IN (3,7) AND grid_timestamp BETWEEN '2024-12-12 12:00:00' AND '2024-12-12 12:02:00'

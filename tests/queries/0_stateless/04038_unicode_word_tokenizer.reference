@@ -29,19 +29,10 @@ select tokens('错误503', 'unicode_word');
 ['错','误','503']
 select tokens('taichi张三丰in the house', 'unicode_word');
 ['taichi','张','三','丰','in','the','house']
--- stop words
-select tokens('错误，503', 'unicode_word'); -- default stop words contains common full-width separators
-['错','误','503']
-select tokens('错误and 503', 'unicode_word', ['and']);
-['错','误','503']
 -- edge cases
 select tokens('', 'unicode_word');                               -- empty string
 []
-select tokens('a.b', 'unicode_word', ['.']);                     -- dot as stop word does not suppress connector
-['a.b']
-select tokens('a.b', 'unicode_word', ['a.b']);                   -- dot-connected token as stop word
-[]
-select tokens('test', 'unicode_word', 'not_an_array'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT } -- wrong stop_words type
+select tokens('test', 'unicode_word', 'not_an_array'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select tokensForLikePattern('%abc', 'unicode_word');            -- wildcard before token
 []
 select tokensForLikePattern('abc%', 'unicode_word');            -- token before wildcard
@@ -68,8 +59,6 @@ select tokensForLikePattern('你', 'unicode_word');              -- single Unico
 ['你']
 select tokensForLikePattern('abc你好', 'unicode_word');         -- ASCII then Unicode
 ['abc','你','好']
-select tokensForLikePattern('，。你好', 'unicode_word');        -- punctuation stop words skipped
-['你','好']
 select tokensForLikePattern('你好%世界', 'unicode_word');       -- Unicode token with wildcards
 ['你','好','世','界']
 set enable_analyzer = 1;

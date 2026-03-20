@@ -316,7 +316,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
                 lines[i],
             )
             m_entry = re.match(
-                r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)(?:[^:]*:\s*(.*))?$",
+                r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)(?:\s*\(.*\))?(?:[^:]*:\s*(.*))?$",
                 lines[i],
             )
             if m_cat:
