@@ -21,6 +21,7 @@ public:
     virtual void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
+        const NameToNameMap & query_parameters,
         const String & query_id,
         UInt64 stage,
         ClientInfo & client_info,

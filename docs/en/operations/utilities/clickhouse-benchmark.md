@@ -75,6 +75,45 @@ clickhouse-benchmark [keys] < queries_file;
 
 If you want to apply some [settings](/operations/settings/overview) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
 
+## Query Parameters {#clickhouse-benchmark-query-parameters}
+
+`clickhouse-benchmark` supports parameterized queries similar to `clickhouse-client`. You can specify parameters using `--param_<name>=<value>` command-line options and reference them in queries using the `{name:Type}` syntax.
+
+**Syntax:**
+
+```bash
+clickhouse-benchmark --param_<name>=<value> [--param_<name2>=<value2> ...] --query "SELECT {name:Type}"
+```
+
+**Examples:**
+
+```bash
+# String parameter
+clickhouse-benchmark --iterations 10 --param_user 'alice' \
+    --query "SELECT * FROM users WHERE name = {user:String}"
+
+# Numeric parameter
+clickhouse-benchmark --iterations 100 --param_limit 1000 \
+    --query "SELECT * FROM table LIMIT {limit:UInt32}"
+
+# Array parameter
+clickhouse-benchmark --iterations 50 --param_ids '[1,2,3,4,5]' \
+    --query "SELECT * FROM table WHERE id IN {ids:Array(UInt32)}"
+
+# Multiple parameters
+clickhouse-benchmark --concurrency 10 --iterations 1000 \
+    --param_min_val 100 --param_max_val 200 \
+    --query "SELECT count() FROM table WHERE value BETWEEN {min_val:UInt32} AND {max_val:UInt32}"
+
+# Identifier parameter (for table/column names)
+clickhouse-benchmark --param_table 'system.numbers' \
+    --query "SELECT count() FROM {table:Identifier} LIMIT 1000000"
+```
+
+**Supported types:** All ClickHouse data types are supported. See the [data types reference](/sql-reference/data-types/index.md) for details.
+
+**Protocol compatibility:** Query parameters are sent via the network protocol and substituted on the server side. Servers older than version 21.12 do not support query parameters and will return an error.
+
 ## Environment variable options {#clickhouse-benchmark-environment-variable-options}
 
 The user name, password and host can be set via environment variables `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` and `CLICKHOUSE_HOST`.  
