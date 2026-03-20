@@ -75,19 +75,23 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 
 void BlockIO::onException(bool log_as_error)
 {
-    releaseWorkloadResources();
     setAllDataSent();
 
     for (const auto & callback : exception_callbacks)
         callback(log_as_error);
 
+    /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
+    /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);
+    releaseWorkloadResources();
 }
 
 void BlockIO::onCancelOrConnectionLoss()
 {
-    releaseWorkloadResources();
+    /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
+    /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);
+    releaseWorkloadResources();
 }
 
 void BlockIO::setAllDataSent() const
