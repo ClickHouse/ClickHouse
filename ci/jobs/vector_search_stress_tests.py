@@ -549,7 +549,7 @@ def install_and_start_clickhouse():
     info = Info()
 
     if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/100183/bdf5916a3f48d37b031c8c9893421e92b1ac9c23/build_arm_binary/clickhouse"
     elif Utils.is_amd():
         latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
     else:
