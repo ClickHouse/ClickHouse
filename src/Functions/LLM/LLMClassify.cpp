@@ -8,6 +8,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
 
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Parser.h>
+
+#include <sstream>
+
 namespace DB
 {
 
@@ -80,16 +86,16 @@ protected:
         auto field = (*cat_col->getDataColumnPtr())[0];
         const auto & arr = field.safeGet<Array>();
 
-        String enum_values;
+        Poco::JSON::Array enum_array;
         for (size_t i = 0; i < arr.size(); ++i)
-        {
-            if (i > 0) enum_values += ",";
-            enum_values += "\"" + arr[i].safeGet<String>() + "\"";
-        }
+            enum_array.add(arr[i].safeGet<String>());
 
-        return R"({"type":"json_schema","json_schema":{"name":"classification","strict":true,"schema":{"type":"object","properties":{"category":{"type":"string","enum":[)"
-            + enum_values
-            + R"(]}},"required":["category"],"additionalProperties":false}}})";
+        std::ostringstream enum_stream; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        enum_array.stringify(enum_stream);
+
+        return R"({"type":"json_schema","json_schema":{"name":"classification","strict":true,"schema":{"type":"object","properties":{"category":{"type":"string","enum":)"
+            + enum_stream.str()
+            + R"(}},"required":["category"],"additionalProperties":false}}})";
     }
 
     String postProcessResponse(const String & raw_response) const override
@@ -98,17 +104,16 @@ protected:
             return raw_response;
         if (raw_response.front() == '{')
         {
-            auto pos = raw_response.find("\"category\"");
-            if (pos != String::npos)
+            try
             {
-                auto val_start = raw_response.find('"', pos + 10);
-                if (val_start != String::npos)
-                {
-                    val_start++;
-                    auto val_end = raw_response.find('"', val_start);
-                    if (val_end != String::npos)
-                        return raw_response.substr(val_start, val_end - val_start);
-                }
+                Poco::JSON::Parser parser;
+                auto result = parser.parse(raw_response);
+                auto obj = result.extract<Poco::JSON::Object::Ptr>();
+                if (obj && obj->has("category"))
+                    return obj->getValue<String>("category");
+            }
+            catch (...)
+            {
             }
         }
         return raw_response;

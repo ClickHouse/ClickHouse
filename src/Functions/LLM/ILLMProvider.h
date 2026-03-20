@@ -5,6 +5,7 @@
 #include <Poco/JSON/Object.h>
 #include <optional>
 #include <memory>
+#include <vector>
 
 namespace DB
 {
@@ -25,6 +26,19 @@ struct LLMResponse
     UInt64 input_tokens = 0;
     UInt64 output_tokens = 0;
     String finish_reason;
+};
+
+struct LLMEmbeddingRequest
+{
+    String input;
+    String model;
+    UInt64 dimensions = 0;
+};
+
+struct LLMEmbeddingResponse
+{
+    std::vector<Float32> embedding;
+    UInt64 input_tokens = 0;
 };
 
 /// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
@@ -49,6 +63,7 @@ class ILLMProvider
 public:
     virtual ~ILLMProvider() = default;
     virtual LLMResponse call(const LLMRequest & request, const ConnectionTimeouts & timeouts) = 0;
+    virtual LLMEmbeddingResponse embed(const LLMEmbeddingRequest & request, const ConnectionTimeouts & timeouts);
     virtual String providerName() const = 0;
 };
 

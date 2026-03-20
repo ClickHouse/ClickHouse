@@ -16,6 +16,7 @@
 #include <Common/CurrentMetrics.h>
 
 #include <unordered_map>
+#include <unordered_set>
 
 namespace ProfileEvents
 {
@@ -145,8 +146,17 @@ ColumnPtr LLMFunctionBase::executeImpl(const ColumnsWithTypeAndName & arguments,
 
     std::unordered_map<UInt128, std::vector<size_t>, UInt128Hash> dedup_map;
 
+    std::unordered_set<size_t> null_input_rows;
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
+        const auto & text_col = arguments[getFirstDataArgIndex(arguments)].column;
+        if (text_col->isNullAt(i))
+        {
+            null_input_rows.insert(i);
+            continue;
+        }
+
         String user_message = buildUserMessage(arguments, i);
         std::vector<String> cache_args = {user_message, system_prompt};
         UInt128 key = LLMResultCache::buildKey(functionName(), config.model, temperature, cache_args);
@@ -275,6 +285,12 @@ ColumnPtr LLMFunctionBase::executeImpl(const ColumnsWithTypeAndName & arguments,
     std::vector<String> ordered_results(input_rows_count);
     UInt64 rows_processed_count = 0;
     UInt64 rows_skipped_count = 0;
+
+    for (size_t i : null_input_rows)
+    {
+        null_map->getData()[i] = 1;
+        ++rows_skipped_count;
+    }
 
     for (const auto & [key, rows] : dedup_map)
     {

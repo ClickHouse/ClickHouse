@@ -44,7 +44,7 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
     if (!request.response_format_json.empty())
     {
         Poco::JSON::Parser fmt_parser;
-        auto tools_array = new Poco::JSON::Array;
+        Poco::JSON::Array::Ptr tools_array = new Poco::JSON::Array;
 
         Poco::JSON::Object::Ptr tool = new Poco::JSON::Object;
         tool->set("name", "structured_output");
@@ -106,7 +106,14 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
     auto json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
     LLMResponse response;
-    response.finish_reason = json_obj->optValue<String>("stop_reason", "end_turn");
+
+    String anthropic_stop_reason = json_obj->optValue<String>("stop_reason", "end_turn");
+    if (anthropic_stop_reason == "max_tokens")
+        response.finish_reason = "length";
+    else if (anthropic_stop_reason == "end_turn")
+        response.finish_reason = "stop";
+    else
+        response.finish_reason = anthropic_stop_reason;
 
     auto content = json_obj->getArray("content");
     if (content)
@@ -114,18 +121,23 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
         for (unsigned i = 0; i < content->size(); ++i)
         {
             auto block = content->getObject(i);
-            auto type = block->getValue<String>("type");
+            if (!block)
+                continue;
+            String type = block->optValue<String>("type", "");
             if (type == "text")
             {
-                response.result = block->getValue<String>("text");
+                response.result = block->optValue<String>("text", "");
                 break;
             }
             else if (type == "tool_use")
             {
                 auto input = block->getObject("input");
-                std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
-                input->stringify(ss);
-                response.result = ss.str();
+                if (input)
+                {
+                    std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+                    input->stringify(ss);
+                    response.result = ss.str();
+                }
                 break;
             }
         }
@@ -134,8 +146,11 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
     if (json_obj->has("usage"))
     {
         auto usage = json_obj->getObject("usage");
-        response.input_tokens = usage->getValue<UInt64>("input_tokens");
-        response.output_tokens = usage->getValue<UInt64>("output_tokens");
+        if (usage)
+        {
+            response.input_tokens = usage->optValue<UInt64>("input_tokens", 0);
+            response.output_tokens = usage->optValue<UInt64>("output_tokens", 0);
+        }
     }
 
     return response;

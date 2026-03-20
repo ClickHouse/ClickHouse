@@ -1,0 +1,38 @@
+-- Function registration
+LLMClassify
+LLMExtract
+LLMGenerateContent
+LLMGenerateEmbedding
+LLMGenerateSQL
+LLMTranslate
+-- LLMClassify: too few arguments
+-- LLMClassify: too many arguments
+-- LLMClassify: missing named collection
+-- LLMExtract: too few arguments
+-- LLMExtract: too many arguments
+-- LLMExtract: missing named collection
+-- LLMTranslate: too few arguments
+-- LLMTranslate: too many arguments
+-- LLMTranslate: missing named collection
+-- LLMGenerateSQL: too few arguments
+-- LLMGenerateSQL: too many arguments
+-- LLMGenerateSQL: missing named collection
+-- LLMGenerateContent: too few arguments
+-- LLMGenerateContent: too many arguments
+-- LLMGenerateContent: missing named collection
+-- LLMGenerateEmbedding: too few arguments
+-- LLMGenerateEmbedding: too many arguments
+-- LLMGenerateEmbedding: missing named collection
+-- LLMClassify return type
+result	Nullable(String)
+-- LLMExtract return type
+result	Nullable(String)
+-- LLMTranslate return type
+result	Nullable(String)
+-- LLMGenerateSQL return type
+result	Nullable(String)
+-- LLMGenerateContent return type
+result	Nullable(String)
+-- LLMGenerateEmbedding return type
+result	Array(Float32)
+-- LLMGenerateEmbedding: non-constant dimensions

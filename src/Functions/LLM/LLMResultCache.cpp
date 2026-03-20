@@ -32,12 +32,18 @@ UInt128 LLMResultCache::buildKey(
     const std::vector<String> & arguments)
 {
     SipHash hash;
-    hash.update(function_name);
-    hash.update(model);
+    auto hash_string_with_length = [&](const String & s)
+    {
+        size_t len = s.size();
+        hash.update(len);
+        hash.update(s);
+    };
+    hash_string_with_length(function_name);
+    hash_string_with_length(model);
     auto temp_str = toString(temperature);
-    hash.update(temp_str);
+    hash_string_with_length(temp_str);
     for (const auto & arg : arguments)
-        hash.update(arg);
+        hash_string_with_length(arg);
     return hash.get128();
 }
 
