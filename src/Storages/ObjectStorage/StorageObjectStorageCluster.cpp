@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 
@@ -190,7 +191,17 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     if (!endsWith(table_function->name, "Cluster"))
+    {
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+
+        /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
+        /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
+        /// (e.g. `s3Cluster`) and prepend the cluster name argument. This ensures that on the shard,
+        /// `TableFunctionObjectStorageCluster::executeImpl` is called, which correctly handles
+        /// `distributed_processing` for task-based file distribution from the initiator.
+        args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
+        table_function->name += "Cluster";
+    }
     else
     {
         ASTPtr cluster_name_arg = args.front();
