@@ -418,6 +418,7 @@
     M(MergeWrittenRows, "Number of rows written during the merge.", ValueType::Number) \
     M(MergeTotalMilliseconds, "Total time spent for background merges", ValueType::Milliseconds) \
     M(MergeExecuteMilliseconds, "Total busy time spent for execution of background merges", ValueType::Milliseconds) \
+    M(MergeCommitMilliseconds, "Total time spent for committing merge results (part renaming, checksum verification, ZooKeeper updates)", ValueType::Milliseconds) \
     M(MergeHorizontalStageTotalMilliseconds, "Total time spent for horizontal stage of background merges", ValueType::Milliseconds) \
     M(MergeHorizontalStageExecuteMilliseconds, "Total busy time spent for execution of horizontal stage of background merges", ValueType::Milliseconds) \
     M(MergeVerticalStageTotalMilliseconds, "Total time spent for vertical stage of background merges", ValueType::Milliseconds) \
@@ -447,6 +448,7 @@
     M(MutationAffectedRowsUpperBound, "The upper bound of number of rows that were affected by mutation (e.g. number of rows that satisfy the predicate of UPDATE or DELETE mutation). The actual number may be slightly less", ValueType::Number) \
     M(MutationTotalMilliseconds, "Total time spent for mutations.", ValueType::Milliseconds) \
     M(MutationExecuteMilliseconds, "Total busy time spent for execution of mutations.", ValueType::Milliseconds) \
+    M(MutationCommitMilliseconds, "Total time spent for committing mutation results (part renaming, checksum verification, ZooKeeper updates)", ValueType::Milliseconds) \
     M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created", ValueType::Number) \
     M(MutationSomePartColumns, "Number of times when task to mutate some columns in part was created", ValueType::Number) \
     M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections in mutations", ValueType::Microseconds) \
@@ -1019,6 +1021,11 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number) \
     M(ObjectStorageQueueProcessedRows, "Number of processed rows in StorageS3(Azure)Queue", ValueType::Number) \
+    \
+    M(ObjectStorageListedObjects, "Total objects returned by object storage listing API before any filtering.", ValueType::Number) \
+    M(ObjectStorageGlobFilteredObjects, "Objects that did not match the glob or regex pattern and were skipped during listing.", ValueType::Number) \
+    M(ObjectStoragePredicateFilteredObjects, "Objects removed by virtual column predicate filtering on _path/_file.", ValueType::Number) \
+    M(ObjectStorageReadObjects, "Objects actually opened for reading by the object storage source.", ValueType::Number) \
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds", ValueType::Milliseconds) \
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted", ValueType::Number) \
