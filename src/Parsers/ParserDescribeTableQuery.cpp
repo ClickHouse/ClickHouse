@@ -32,7 +32,8 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     s_table.ignore(pos, expected);
 
     /// Try to parse SELECT query without parentheses (e.g., DESCRIBE SELECT 1)
-    if (ParserSelectWithUnionQuery().parse(pos, select, expected))
+    /// Only when the next token is not '(' — like (SELECT ...) AS alias we must go through ParserTableExpression
+    if (pos->type != TokenType::OpeningRoundBracket && ParserSelectWithUnionQuery().parse(pos, select, expected))
     {
         auto table_expr = make_intrusive<ASTTableExpression>();
         /// Wrap SELECT in ASTSubquery, as expected by the rest of the codebase
