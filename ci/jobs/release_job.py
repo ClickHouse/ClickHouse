@@ -130,6 +130,8 @@ def main():
                 f"command -v geesefs && geesefs --version | grep -q {_GEESEFS_VERSION} ||"
                 f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
                 f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
+                "command -v createrepo_c || sudo apt-get install -y createrepo-c",
+                "command -v reprepro || sudo apt-get install -y reprepro",
             ],
             workdir=REPO_PATH,
         )
@@ -217,18 +219,19 @@ def main():
                 " > ./utils/list-versions/version_date.tsv",
                 "echo 'Update docker version'",
                 "./utils/list-versions/update-docker-version.sh",
-                "echo 'Generate ChangeLog'",
-                "docker pull clickhouse/style-test:latest",
-                f"git remote set-url origin https://x-access-token:{_GH_TOKEN_SECRET.get_value()}@github.com/ClickHouse/ClickHouse.git",
-                f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
-                f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
-                f" clickhouse/style-test:latest"
-                f" ./tests/ci/changelog.py -v --debug-helpers"
-                f" --gh-user-or-token {_GH_TOKEN_SECRET.get_value()}"
-                f" --jobs=5"
-                f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
-                "git remote set-url origin git@github.com:ClickHouse/ClickHouse.git",
-                f"git add ./docs/changelogs/{release_tag}.md",
+                # TODO: re-enable changelog generation
+                # "echo 'Generate ChangeLog'",
+                # "docker pull clickhouse/style-test:latest",
+                # f"git remote set-url origin https://x-access-token:{_GH_TOKEN_SECRET.get_value()}@github.com/ClickHouse/ClickHouse.git",
+                # f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
+                # f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
+                # f" clickhouse/style-test:latest"
+                # f" ./tests/ci/changelog.py -v --debug-helpers"
+                # f" --gh-user-or-token {_GH_TOKEN_SECRET.get_value()}"
+                # f" --jobs=5"
+                # f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
+                # "git remote set-url origin git@github.com:ClickHouse/ClickHouse.git",
+                # f"git add ./docs/changelogs/{release_tag}.md",
                 "echo 'Generate Security'",
                 "python3 ./utils/security-generator/generate_security.py"
                 " > SECURITY.md",
