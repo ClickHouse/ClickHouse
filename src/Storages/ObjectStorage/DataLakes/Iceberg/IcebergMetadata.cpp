@@ -730,7 +730,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
 
-DataLakeMetadataPtr IcebergMetadata::create(
+std::unique_ptr<IcebergMetadata> IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context)

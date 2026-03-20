@@ -51,7 +51,7 @@ namespace Setting
 extern const SettingsBool use_paimon_partition_pruning;
 }
 
-DataLakeMetadataPtr PaimonMetadata::create(
+std::unique_ptr<PaimonMetadata> PaimonMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context)

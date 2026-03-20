@@ -34,7 +34,7 @@ public:
         const Poco::JSON::Object::Ptr & schema_json_object_,
         PaimonTableClientPtr table_client_ptr_);
 
-    static DataLakeMetadataPtr create(
+    static std::unique_ptr<PaimonMetadata> create(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);

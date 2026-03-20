@@ -9,7 +9,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Formats/FormatSettings.h>
@@ -191,7 +191,7 @@ protected:
     StorageID storage_id;
 
     /// Datalake metadata extracted from configuration after initialization.
-    mutable IDataLakeMetadata * current_metadata = nullptr;
+    mutable PaimonMetadata * current_metadata = nullptr;
 };
 
 }

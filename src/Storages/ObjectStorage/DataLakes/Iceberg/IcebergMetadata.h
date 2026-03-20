@@ -67,7 +67,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
 
-    static DataLakeMetadataPtr create(
+    static std::unique_ptr<IcebergMetadata> create(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);

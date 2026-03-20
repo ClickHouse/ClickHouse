@@ -24,10 +24,6 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DataLake/Common.h>
@@ -40,8 +36,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
-    extern const SettingsInt64 delta_lake_snapshot_start_version;
-    extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
@@ -89,13 +83,6 @@ StorageHudi::StorageHudi(
         lazy_init, need_resolve_columns_or_format, is_table_function,
         is_datalake_query, columns_in_table_or_function_definition.toString(true));
 
-    bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
-            || context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1;
-
-    if (!is_table_function && is_delta_lake_cdf)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
-    }
 
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
@@ -337,46 +324,8 @@ void StorageHudi::read(
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 
-const auto & settings = local_context->getSettingsRef();
-#if USE_DELTA_KERNEL_RS
-    {
-        if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
-            start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
-        {
-            if (const auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(current_metadata);
-                delta_kernel_metadata != nullptr)
-            {
-                auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
-                auto version_range = DeltaLake::TableChanges::getVersionRange(
-                    start_version,
-                    settings[Setting::delta_lake_snapshot_end_version].value);
-                auto table_changes = delta_kernel_metadata->getTableChanges(
-                    version_range,
-                    source_header,
-                    format_settings,
-                    local_context);
+    const auto & settings = local_context->getSettingsRef();
 
-                auto read_step = std::make_unique<ReadFromDeltaLakeTableChangesStep>(
-                    std::move(table_changes),
-                    source_header,
-                    column_names,
-                    query_info,
-                    storage_snapshot,
-                    num_streams,
-                    local_context);
-                query_plan.addStep(std::move(read_step));
-                return;
-            }
-        }
-        else if (auto end_version = settings[Setting::delta_lake_snapshot_start_version].value;
-                 end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::BAD_ARGUMENTS,
-                "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
-        }
-    }
-#endif
     auto read_from_format_info = current_metadata->prepareReadingFromFormat(
         column_names, storage_snapshot, local_context,
         supportsSubsetOfColumns(local_context), supports_tuple_elements);

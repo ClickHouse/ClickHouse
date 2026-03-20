@@ -10,6 +10,9 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <variant>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Formats/FormatSettings.h>
@@ -149,9 +152,9 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
-    bool supportsDelete() const override { return current_metadata && current_metadata->supportsDelete(); }
+    bool supportsDelete() const override { return getMetadata() && getMetadata()->supportsDelete(); }
 
-    bool supportsParallelInsert() const override { return current_metadata && current_metadata->supportsParallelInsert(); }
+    bool supportsParallelInsert() const override { return getMetadata() && getMetadata()->supportsParallelInsert(); }
 
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
@@ -191,7 +194,33 @@ protected:
     StorageID storage_id;
 
     /// Datalake metadata extracted from configuration after initialization.
-    mutable IDataLakeMetadata * current_metadata = nullptr;
+    /// Returns the current metadata pointer (type-erased), or nullptr if not initialized.
+    IDataLakeMetadata * getMetadata() const
+    {
+        return std::visit([]<typename T>(T ptr) -> IDataLakeMetadata *
+        {
+            if constexpr (std::is_same_v<T, std::monostate>)
+                return nullptr;
+            else
+                return ptr;
+        }, current_metadata);
+    }
+
+    /// Stores the raw pointer from a `DataLakeMetadataPtr` into the variant,
+    /// determining the concrete type at runtime.
+    void setMetadata(IDataLakeMetadata * ptr) const
+    {
+        if (auto * dk = dynamic_cast<DeltaLakeMetadataDeltaKernel *>(ptr))
+            current_metadata = dk;
+        else
+            current_metadata = dynamic_cast<DeltaLakeMetadata *>(ptr);
+    }
+
+    /// DeltaLake has two metadata backends: legacy `DeltaLakeMetadata` and
+    /// the delta-kernel-rs based `DeltaLakeMetadataDeltaKernel`.
+    /// Which one is used depends on build flags and runtime settings.
+    using DeltaLakeMetadataVariant = std::variant<std::monostate, DeltaLakeMetadata *, DeltaLakeMetadataDeltaKernel *>;
+    mutable DeltaLakeMetadataVariant current_metadata;
 };
 
 }

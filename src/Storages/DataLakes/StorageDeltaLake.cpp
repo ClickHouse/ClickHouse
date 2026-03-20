@@ -110,7 +110,7 @@ StorageDeltaLake::StorageDeltaLake(
         if (!do_lazy_init)
         {
             configuration->update(object_storage, context);
-            current_metadata = DeltaLakeMetadata::create(object_storage, configuration, context).release();
+            setMetadata(DeltaLakeMetadata::create(object_storage, configuration, context).release());
         }
     }
     catch (...)
@@ -174,12 +174,12 @@ StorageDeltaLake::StorageDeltaLake(
         /// Additionally reload columns from the snapshot when the per-format setting is enabled.
         /// This is done eagerly because select queries for table functions may bypass
         /// updateExternalDynamicMetadataIfExists.
-        if (!current_metadata)
+        if (!getMetadata())
         {
             configuration->update(object_storage, context);
-            current_metadata = DeltaLakeMetadata::create(object_storage, configuration, context).release();
+            setMetadata(DeltaLakeMetadata::create(object_storage, configuration, context).release());
         }
-        if (auto state = current_metadata->getTableStateSnapshot(context))
+        if (auto state = getMetadata()->getTableStateSnapshot(context))
         {
             metadata.setDataLakeTableState(*state);
 
@@ -189,9 +189,9 @@ StorageDeltaLake::StorageDeltaLake(
             ///    a subset of columns from remote delta table
             /// 2. user want to override some data types
             ///    (for example, LawCardinality<String> instead of just String)
-            if (current_metadata->shouldReloadSchemaForConsistency(context))
+            if (getMetadata()->shouldReloadSchemaForConsistency(context))
             {
-                if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, context))
+                if (auto metadata_snapshot = getMetadata()->buildStorageMetadataFromState(*state, context))
                     metadata = *metadata_snapshot;
             }
         }
@@ -252,11 +252,11 @@ IStorage::ColumnSizeByName StorageDeltaLake::getColumnSizes() const
 IDataLakeMetadata * StorageDeltaLake::getExternalMetadata(ContextPtr query_context)
 {
     configuration->update(object_storage, query_context);
-    if (!current_metadata || !current_metadata->supportsUpdate())
-        current_metadata = DeltaLakeMetadata::create(object_storage, configuration, query_context).release();
+    if (!getMetadata() || !getMetadata()->supportsUpdate())
+        setMetadata(DeltaLakeMetadata::create(object_storage, configuration, query_context).release());
     else
-        current_metadata->update(query_context);
-    return current_metadata;
+        getMetadata()->update(query_context);
+    return getMetadata();
 }
 
 void StorageDeltaLake::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
@@ -265,12 +265,12 @@ void StorageDeltaLake::updateExternalDynamicMetadataIfExists(ContextPtr query_co
     /// Using if_not_updated_before=true would leave latest_snapshot_version
     /// stale from the first query and silently omit new files.
     configuration->update(object_storage, query_context);
-    if (!current_metadata || !current_metadata->supportsUpdate())
-        current_metadata = DeltaLakeMetadata::create(object_storage, configuration, query_context).release();
+    if (!getMetadata() || !getMetadata()->supportsUpdate())
+        setMetadata(DeltaLakeMetadata::create(object_storage, configuration, query_context).release());
     else
-        current_metadata->update(query_context);
+        getMetadata()->update(query_context);
 
-    auto state = current_metadata->getTableStateSnapshot(query_context);
+    auto state = getMetadata()->getTableStateSnapshot(query_context);
     if (!state)
         return;
 
@@ -281,9 +281,9 @@ void StorageDeltaLake::updateExternalDynamicMetadataIfExists(ContextPtr query_co
 
     /// Optionally also refresh the columns (and other schema-derived fields such as the
     /// Iceberg sort key) when the per-format reload setting is enabled.
-    if (current_metadata->shouldReloadSchemaForConsistency(query_context))
+    if (getMetadata()->shouldReloadSchemaForConsistency(query_context))
     {
-        if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, query_context))
+        if (auto metadata_snapshot = getMetadata()->buildStorageMetadataFromState(*state, query_context))
             new_metadata = *metadata_snapshot;
     }
 
@@ -303,10 +303,10 @@ std::optional<UInt64> StorageDeltaLake::totalRows(ContextPtr query_context) cons
         return std::nullopt;
 
     configuration->update(object_storage, query_context);
-    if (!current_metadata)
-        current_metadata = DeltaLakeMetadata::create(object_storage, configuration, query_context).release();
+    if (!getMetadata())
+        setMetadata(DeltaLakeMetadata::create(object_storage, configuration, query_context).release());
 
-    return current_metadata->totalRows(query_context);
+    return getMetadata()->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageDeltaLake::totalBytes(ContextPtr query_context) const
@@ -318,10 +318,10 @@ std::optional<UInt64> StorageDeltaLake::totalBytes(ContextPtr query_context) con
         return std::nullopt;
 
     configuration->update(object_storage, query_context);
-    if (!current_metadata)
-        current_metadata = DeltaLakeMetadata::create(object_storage, configuration, query_context).release();
+    if (!getMetadata())
+        setMetadata(DeltaLakeMetadata::create(object_storage, configuration, query_context).release());
 
-    return current_metadata->totalBytes(query_context);
+    return getMetadata()->totalBytes(query_context);
 }
 
 void StorageDeltaLake::read(
@@ -343,14 +343,14 @@ const auto & settings = local_context->getSettingsRef();
         if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
             start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
-            if (const auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(current_metadata);
-                delta_kernel_metadata != nullptr)
+            if (const auto * const * delta_kernel_ptr = std::get_if<DeltaLakeMetadataDeltaKernel *>(&current_metadata);
+                delta_kernel_ptr != nullptr)
             {
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
                 auto version_range = DeltaLake::TableChanges::getVersionRange(
                     start_version,
                     settings[Setting::delta_lake_snapshot_end_version].value);
-                auto table_changes = delta_kernel_metadata->getTableChanges(
+                auto table_changes = (*delta_kernel_ptr)->getTableChanges(
                     version_range,
                     source_header,
                     format_settings,
@@ -377,7 +377,7 @@ const auto & settings = local_context->getSettingsRef();
         }
     }
 #endif
-    auto read_from_format_info = current_metadata->prepareReadingFromFormat(
+    auto read_from_format_info = getMetadata()->prepareReadingFromFormat(
         column_names, storage_snapshot, local_context,
         supportsSubsetOfColumns(local_context), supports_tuple_elements);
 
@@ -396,7 +396,7 @@ const auto & settings = local_context->getSettingsRef();
     if (!modified_format_settings.has_value())
         modified_format_settings.emplace(getFormatSettings(local_context));
 
-    current_metadata->modifyFormatSettings(modified_format_settings.value(), *local_context);
+    getMetadata()->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
@@ -424,10 +424,10 @@ SinkToStoragePtr StorageDeltaLake::write(
 {
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
 
-    if (!current_metadata->supportsWrites())
+    if (!getMetadata()->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    return current_metadata->write(
+    return getMetadata()->write(
         sample_block, storage_id, object_storage,
         configuration, format_settings,
         local_context, catalog);
@@ -443,7 +443,7 @@ bool StorageDeltaLake::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return current_metadata->optimize(metadata_snapshot, context, format_settings);
+    return getMetadata()->optimize(metadata_snapshot, context, format_settings);
 }
 
 void StorageDeltaLake::truncate(
@@ -464,8 +464,8 @@ void StorageDeltaLake::drop()
         catalog->dropTable(namespace_name, table_name);
     }
     /// We cannot use query context here, because drop is executed in the background.
-    if (current_metadata)
-        current_metadata->drop(Context::getGlobalContextInstance());
+    if (getMetadata())
+        getMetadata()->drop(Context::getGlobalContextInstance());
 }
 
 std::unique_ptr<ReadBufferIterator> StorageDeltaLake::createReadBufferIterator(
@@ -576,12 +576,12 @@ void StorageDeltaLake::mutate([[maybe_unused]] const MutationCommands & commands
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
-    current_metadata->mutate(commands, configuration, context_, storage, metadata_snapshot, catalog, format_settings);
+    getMetadata()->mutate(commands, configuration, context_, storage, metadata_snapshot, catalog, format_settings);
 }
 
 void StorageDeltaLake::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    current_metadata->checkMutationIsPossible(commands);
+    getMetadata()->checkMutationIsPossible(commands);
 }
 
 Pipe StorageDeltaLake::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
@@ -597,7 +597,7 @@ void StorageDeltaLake::alter(const AlterCommands & params, ContextPtr context, A
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
-    current_metadata->alter(params, context);
+    getMetadata()->alter(params, context);
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
@@ -607,7 +607,7 @@ void StorageDeltaLake::alter(const AlterCommands & params, ContextPtr context, A
 
 void StorageDeltaLake::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
 {
-    current_metadata->checkAlterIsPossible(commands);
+    getMetadata()->checkAlterIsPossible(commands);
 }
 
 

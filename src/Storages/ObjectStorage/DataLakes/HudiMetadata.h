@@ -42,7 +42,7 @@ public:
     {
     }
 
-    static DataLakeMetadataPtr create(
+    static std::unique_ptr<HudiMetadata> create(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationWeakPtr configuration,
         ContextPtr local_context)
