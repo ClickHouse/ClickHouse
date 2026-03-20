@@ -31,9 +31,13 @@ public:
 private:
     bool checkTLPWhere(const ASTSelectQuery & select, const ContextMutablePtr & context);
     bool checkNoREC(const ASTSelectQuery & select, const ContextMutablePtr & context);
+    bool checkTLPAggregate(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
     /// Try to insert random data into the table referenced by the SELECT query.
     void tryPopulateTable(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Check if the SELECT list contains aggregate functions.
+    static bool hasAggregates(const ASTSelectQuery & select);
 
     /// Execute a query using the ReadBuffer/WriteBuffer executeQuery API and return
     /// the output as a sorted vector of rows (one string per row, tab-separated columns).

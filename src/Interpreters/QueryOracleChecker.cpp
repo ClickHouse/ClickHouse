@@ -9,9 +9,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/SelectUnionMode.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
@@ -136,10 +134,6 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
         return false;
     if (select.distinct)
         return false;
-    if (select.groupBy())
-        return false;
-    if (select.having())
-        return false;
     if (select.limitLength())
         return false;
     if (select.limitBy())
@@ -151,16 +145,26 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
     if (!select.tables())
         return false;
 
-    /// Check for aggregate functions and window functions in SELECT list.
+    /// Window functions are never safe for oracle testing.
     if (select.select())
     {
         GetAggregatesVisitor::Data data;
         GetAggregatesVisitor(data).visit(select.select());
-        if (!data.aggregates.empty() || !data.window_functions.empty())
+        if (!data.window_functions.empty())
             return false;
     }
 
     return true;
+}
+
+
+bool QueryOracleChecker::hasAggregates(const ASTSelectQuery & select)
+{
+    if (!select.select())
+        return false;
+    GetAggregatesVisitor::Data data;
+    GetAggregatesVisitor(data).visit(select.select());
+    return !data.aggregates.empty();
 }
 
 
@@ -266,6 +270,10 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
         return false;
 
     if (!isSafeForOracle(select))
+        return false;
+
+    /// TLP WHERE requires no aggregates, no GROUP BY, no HAVING.
+    if (hasAggregates(select) || select.groupBy() || select.having())
         return false;
 
     if (hasNonDeterministicFunctions(select.clone()))
@@ -379,6 +387,10 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     if (!isSafeForOracle(select))
         return false;
 
+    /// NoREC requires no aggregates, no GROUP BY, no HAVING.
+    if (hasAggregates(select) || select.groupBy() || select.having())
+        return false;
+
     if (hasNonDeterministicFunctions(select.clone()))
         return false;
 
@@ -431,6 +443,191 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     }
 
     LOG_TRACE(logger, "NoREC oracle passed (count={})", opt_count);
+    return true;
+}
+
+
+bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    if (!select.where())
+        return false;
+
+    if (!isSafeForOracle(select))
+        return false;
+
+    if (!hasAggregates(select))
+        return false;
+
+    if (hasNonDeterministicFunctions(select.clone()))
+        return false;
+
+    /// Collect aggregate functions from the SELECT list.
+    GetAggregatesVisitor::Data agg_data;
+    GetAggregatesVisitor(agg_data).visit(select.select());
+    if (agg_data.aggregates.empty())
+        return false;
+
+    ASTPtr predicate = select.where()->clone();
+
+    /// Build the reference query: remove WHERE, keep everything else.
+    /// Add SETTINGS aggregate_functions_null_for_empty = 1.
+    auto ref_ast = select.clone();
+    auto & ref_select = ref_ast->as<ASTSelectQuery &>();
+    ref_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
+    stripOrderAndLimit(ref_select);
+    String ref_sql = formatAST(ref_ast) + " SETTINGS aggregate_functions_null_for_empty = 1";
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    /// Build the inner SELECT for partitioned subqueries:
+    /// Replace each agg(args) with aggState(args) AS _s_N.
+    /// Keep GROUP BY columns in the SELECT list so the outer query can group by them.
+    auto inner_ast = select.clone();
+    auto & inner_select = inner_ast->as<ASTSelectQuery &>();
+    stripOrderAndLimit(inner_select);
+
+    /// Build new SELECT list: [group_by_cols...,] aggState(args) AS _s_0, aggState(args) AS _s_1, ...
+    auto new_inner_select_list = make_intrusive<ASTExpressionList>();
+
+    /// Include GROUP BY columns in the inner SELECT (needed for outer GROUP BY).
+    bool has_group_by = inner_select.groupBy() != nullptr;
+    if (has_group_by)
+    {
+        for (const auto & group_expr : inner_select.groupBy()->children)
+            new_inner_select_list->children.push_back(group_expr->clone());
+    }
+
+    /// Transform aggregates: agg(args) -> aggState(args) AS _s_N
+    /// Also build the outer SELECT list: aggMerge(_s_N)
+    auto outer_select_list = make_intrusive<ASTExpressionList>();
+    if (has_group_by)
+    {
+        for (const auto & group_expr : inner_select.groupBy()->children)
+            outer_select_list->children.push_back(group_expr->clone());
+    }
+
+    size_t state_idx = 0;
+    for (const auto & aggregate_ast : agg_data.aggregates)
+    {
+        const auto * agg_func = aggregate_ast->as<ASTFunction>();
+        if (!agg_func)
+            return false;
+
+        String alias = fmt::format("_s_{}", state_idx);
+
+        /// Inner: aggState(args) AS _s_N
+        auto state_func_ast = agg_func->clone();
+        auto & state_func = state_func_ast->as<ASTFunction &>();
+        state_func.name = agg_func->name + "State";
+        state_func.setAlias(alias);
+        new_inner_select_list->children.push_back(std::move(state_func_ast));
+
+        /// Outer: aggMerge(_s_N)
+        auto merge_func = makeASTFunction(agg_func->name + "Merge", make_intrusive<ASTIdentifier>(alias));
+        outer_select_list->children.push_back(std::move(merge_func));
+
+        ++state_idx;
+    }
+
+    inner_select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(new_inner_select_list));
+
+    /// Build three partitioned inner queries.
+    auto inner1 = inner_ast->clone();
+    /// inner1 keeps the original WHERE
+
+    auto inner2 = inner_ast->clone();
+    inner2->as<ASTSelectQuery &>().setExpression(
+        ASTSelectQuery::Expression::WHERE, makeASTFunction("not", predicate->clone()));
+
+    auto inner3 = inner_ast->clone();
+    inner3->as<ASTSelectQuery &>().setExpression(
+        ASTSelectQuery::Expression::WHERE, makeASTFunction("isNull", predicate->clone()));
+
+    /// Build UNION ALL.
+    auto union_list = make_intrusive<ASTExpressionList>();
+    union_list->children.push_back(inner1);
+    union_list->children.push_back(inner2);
+    union_list->children.push_back(inner3);
+
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    union_query->union_mode = SelectUnionMode::UNION_ALL;
+    union_query->is_normalized = true;
+    union_query->list_of_selects = union_list;
+    union_query->children.push_back(union_list);
+
+    /// Build the outer query: SELECT aggMerge(_s_N), ... FROM (UNION ALL) [GROUP BY g]
+    String union_sql = formatAST(ASTPtr(union_query));
+
+    /// Build outer query as string — easier than AST construction for a subquery FROM.
+    String outer_select_str;
+    {
+        WriteBufferFromOwnString buf;
+        outer_select_list->format(buf, IAST::FormatSettings(/*one_line=*/true));
+        outer_select_str = buf.str();
+    }
+
+    String group_by_str;
+    if (has_group_by)
+    {
+        WriteBufferFromOwnString buf;
+        inner_select.groupBy()->format(buf, IAST::FormatSettings(/*one_line=*/true));
+        group_by_str = fmt::format(" GROUP BY {}", buf.str());
+    }
+
+    String metamorphic_sql = fmt::format(
+        "SELECT {} FROM ({}){} SETTINGS aggregate_functions_null_for_empty = 1",
+        outer_select_str, union_sql, group_by_str);
+
+    if (metamorphic_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+
+    LOG_TRACE(logger, "TLP Aggregate oracle: reference query: {}", ref_sql);
+    LOG_TRACE(logger, "TLP Aggregate oracle: metamorphic query: {}", metamorphic_sql);
+
+    auto ref_rows = executeAndCollectSortedRows(ref_sql, context);
+    auto meta_rows = executeAndCollectSortedRows(metamorphic_sql, context);
+
+    if (ref_rows != meta_rows)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+
+        String message = fmt::format(
+            "TLP Aggregate oracle mismatch!\n"
+            "Reference query ({} rows): {}\n"
+            "Metamorphic query ({} rows): {}\n",
+            ref_rows.size(), ref_sql,
+            meta_rows.size(), metamorphic_sql);
+
+        size_t max_diff = 5;
+        size_t shown = 0;
+        size_t ri = 0, mi = 0;
+        while ((ri < ref_rows.size() || mi < meta_rows.size()) && shown < max_diff)
+        {
+            if (ri < ref_rows.size() && (mi >= meta_rows.size() || ref_rows[ri] < meta_rows[mi]))
+            {
+                message += fmt::format("  Only in reference: {}\n", ref_rows[ri]);
+                ++ri;
+                ++shown;
+            }
+            else if (mi < meta_rows.size() && (ri >= ref_rows.size() || meta_rows[mi] < ref_rows[ri]))
+            {
+                message += fmt::format("  Only in metamorphic: {}\n", meta_rows[mi]);
+                ++mi;
+                ++shown;
+            }
+            else
+            {
+                ++ri;
+                ++mi;
+            }
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", message);
+    }
+
+    LOG_TRACE(logger, "TLP Aggregate oracle passed ({} rows, {} aggregates)", ref_rows.size(), state_idx);
     return true;
 }
 
@@ -535,12 +732,29 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::LOGICAL_ERROR)
-            throw; /// Oracle mismatch — propagate to crash the server
+            throw;
         LOG_TRACE(logger, "NoREC oracle execution error (skipping): {}", e.message());
     }
     catch (...)
     {
         LOG_TRACE(logger, "NoREC oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
+    }
+
+    /// TLP Aggregate oracle (uses State/Merge combinators for any aggregate)
+    try
+    {
+        if (checkTLPAggregate(*select, context))
+            any_check_performed = true;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+            throw;
+        LOG_TRACE(logger, "TLP Aggregate oracle execution error (skipping): {}", e.message());
+    }
+    catch (...)
+    {
+        LOG_TRACE(logger, "TLP Aggregate oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
     }
 
     return any_check_performed;
