@@ -172,7 +172,7 @@ BlockIO YTsarususDictionarySource::loadAll()
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
           client
         , configuration->cypress_path
-        , { 
+        , {
               .settings = configuration->settings
             , .select_rows_columns = configuration->ytsaurus_columns_description
             , .check_types_allow_nullable = true
