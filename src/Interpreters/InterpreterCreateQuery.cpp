@@ -1486,7 +1486,19 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
 
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
-    DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+
+    /// The MV SELECT AST stores logical (namespace-stripped) database names.
+    /// The view dependency graph must use physical names because the push-path
+    /// looks up by physical StorageID from table->getStorageID().
+    TableNamesSet mv_view_deps;
+    if (ref_dependencies.mv_from_dependency)
+    {
+        auto dep = ref_dependencies.mv_from_dependency.value();
+        if (!dep.database_name.empty())
+            dep.database_name = context->applyDatabaseNamespace(dep.database_name);
+        mv_view_deps.emplace(dep.getQualifiedName());
+    }
+    DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies, mv_view_deps);
 }
 
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
@@ -1654,7 +1666,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
-        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+
+        /// Use the logical (namespace-stripped) database name for the SELECT AST so that
+        /// unqualified table names resolve to e.g. `testns.t1` rather than `tenant1__testns.t1`.
+        /// This keeps the AST consistent with explicitly-qualified names (which are always
+        /// logical) and avoids double-prefix when the push-path resolveStorageID applies
+        /// the namespace again.
+        String select_default_database = getContext()->stripDatabaseNamespace(current_database);
+        AddDefaultDatabaseVisitor visitor(getContext(), select_default_database);
         visitor.visit(*create.select);
     }
 
@@ -2460,6 +2479,19 @@ BlockIO InterpreterCreateQuery::execute()
             if (is_create_database && !create.attach)
                 getContext()->validateDatabaseNameNoSeparator(database);
             create.setDatabase(getContext()->applyDatabaseNamespace(database));
+        }
+
+        /// Also namespace view target databases (e.g., the TO-table of a materialized view).
+        /// Without this, `CREATE MATERIALIZED VIEW db.mv TO db.target ...` would leave
+        /// `target`'s database un-namespaced, causing "Database db does not exist" later
+        /// when `validateMaterializedViewColumnsAndEngine` looks up the target table.
+        if (create.targets)
+        {
+            for (auto & target : create.targets->targets)
+            {
+                if (!target.table_id.database_name.empty())
+                    target.table_id.database_name = getContext()->applyDatabaseNamespace(target.table_id.database_name);
+            }
         }
     }
 

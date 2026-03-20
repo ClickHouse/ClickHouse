@@ -787,6 +787,11 @@ def test_materialized_view_under_namespace():
     because it tries to resolve the SELECT in a non-existent database.
     """
     ensure_testns_t1()
+
+    # Clean up from any previous run (CI flaky mode runs test multiple times)
+    q1("DROP VIEW IF EXISTS testns.mv_test")
+    q1("DROP TABLE IF EXISTS testns.mv_target")
+
     # Create a target table and a materialized view
     q1("CREATE TABLE testns.mv_target (x UInt32) ENGINE = MergeTree() ORDER BY x")
     q1("CREATE MATERIALIZED VIEW testns.mv_test TO testns.mv_target AS SELECT x FROM testns.t1")
@@ -795,6 +800,12 @@ def test_materialized_view_under_namespace():
     q1("INSERT INTO testns.t1 VALUES (100)")
     result = q1("SELECT x FROM testns.mv_target ORDER BY x")
     assert "100" in result
+
+    # Verify SHOW CREATE VIEW strips namespace from the TO-table database
+    show_result = q1("SHOW CREATE VIEW testns.mv_test")
+    assert "testns.mv_target" in show_result or "testns`.`mv_target" in show_result
+    # Physical name must not leak
+    assert "tenant1__testns" not in show_result
 
     # Cleanup
     q1("DROP VIEW testns.mv_test")

@@ -163,6 +163,14 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
 
     if (sql_security_type == SQLSecurityType::NONE)
     {
+        /// Propagate the database namespace from the parent context.
+        /// The NONE security type skips setUser (which normally sets the namespace),
+        /// but the MV's SELECT AST contains logical database names that must be resolved
+        /// via resolveStorageID — which requires the namespace to be set.
+        String parent_ns = context->getDatabaseNamespace();
+        if (!parent_ns.empty())
+            new_context->setDatabaseNamespace(parent_ns);
+
         new_context->applySettingsChanges(context->getSettingsRef().changes());
         return new_context;
     }

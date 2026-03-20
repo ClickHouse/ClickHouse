@@ -142,11 +142,47 @@ StorageMaterializedView::StorageMaterializedView(
         storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->primary_key->ptr(),
                                                                      storage_metadata.columns,
                                                                      local_context->getGlobalContext());
-    /// Use the database where the materialized view is created to resolve nested views
+    /// Use the database where the materialized view is created to resolve nested views.
+    /// Strip namespace from the database name so that the SELECT AST stores logical names
+    /// (e.g. `testns.t1` instead of `tenant1__testns.t1`).  The push-path context will
+    /// re-apply the namespace via resolveStorageID, avoiding double-prefix bugs.
     ContextMutablePtr mv_db_context = Context::createCopy(local_context);
-    mv_db_context->setCurrentDatabase(table_id_.database_name);
+    String mv_logical_database = local_context->stripDatabaseNamespace(table_id_.database_name);
+    mv_db_context->setCurrentDatabaseUnchecked(mv_logical_database);
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, mv_db_context);
+
+    /// The select AST now stores logical database names, but select_table_id must be physical
+    /// because the push-path uses physical StorageIDs for dependency lookups and source checks.
+    /// During CREATE, the context has the namespace set; during restart it doesn't.
+    /// In both cases we need to ensure select_table_id ends up with the physical name.
+    if (!select.select_table_id.database_name.empty())
+    {
+        String ns = local_context->getDatabaseNamespace();
+        String separator = local_context->getDatabaseNamespaceSeparator();
+        if (ns.empty() && !separator.empty()
+            && !Context::isExcludedFromNamespacing(table_id_.database_name))
+        {
+            /// During server restart, no user context is available so the namespace is empty.
+            /// Derive it from the MV's own physical database name (e.g. "tenant1__testns" -> "tenant1").
+            auto sep_pos = table_id_.database_name.find(separator);
+            if (sep_pos != String::npos)
+                ns = table_id_.database_name.substr(0, sep_pos);
+        }
+        if (!ns.empty() && !separator.empty())
+        {
+            String prefix = ns + separator;
+            /// Only apply if not already prefixed (handles old metadata with physical names).
+            if (!select.select_table_id.database_name.starts_with(prefix)
+                && !Context::isExcludedFromNamespacing(select.select_table_id.database_name))
+            {
+                auto shared = local_context->getSharedDatabasesAcrossNamespaces();
+                if (!shared.contains(select.select_table_id.database_name))
+                    select.select_table_id.database_name = prefix + select.select_table_id.database_name;
+            }
+        }
+    }
+
     if (select.select_table_id)
     {
         auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);

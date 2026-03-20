@@ -12,6 +12,8 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -26,6 +28,35 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int THERE_IS_NO_QUERY;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// Recursively strip database namespace from all ASTTableIdentifier nodes in the AST.
+/// This ensures SHOW CREATE VIEW displays logical names in the SELECT clause,
+/// even for tables where AddDefaultDatabaseVisitor filled in the physical database name.
+void stripDatabaseNamespaceFromAST(IAST * ast, const ContextPtr & context)
+{
+    if (!ast)
+        return;
+
+    if (auto * table_id = ast->as<ASTTableIdentifier>())
+    {
+        if (table_id->compound())
+        {
+            String db = table_id->getDatabaseName();
+            String stripped = context->stripDatabaseNamespace(db);
+            if (stripped != db)
+                table_id->resetTable(stripped, table_id->shortName());
+        }
+        return;
+    }
+
+    for (auto & child : ast->children)
+        stripDatabaseNamespaceFromAST(child.get(), context);
+}
+
 }
 
 BlockIO InterpreterShowCreateQuery::execute()
@@ -107,6 +138,22 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         String db = create.getDatabase();
         if (!db.empty())
             create.setDatabase(getContext()->stripDatabaseNamespace(db));
+
+        /// Also strip namespace from view target databases (e.g., the TO-table of a materialized view).
+        if (create.targets)
+        {
+            for (auto & target : create.targets->targets)
+            {
+                if (!target.table_id.database_name.empty())
+                    target.table_id.database_name = getContext()->stripDatabaseNamespace(target.table_id.database_name);
+            }
+        }
+
+        /// Strip namespace from database references inside the SELECT clause.
+        /// This covers both explicitly-qualified tables and those filled by
+        /// AddDefaultDatabaseVisitor (which may store physical names in older metadata).
+        if (create.select)
+            stripDatabaseNamespaceFromAST(create.select, getContext());
     }
 
     MutableColumnPtr column = ColumnString::create();
