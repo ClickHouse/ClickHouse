@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings
+-- Tags: no-parallel, no-random-settings, no-s3-storage, no-azure-blob-storage
 
 SET enable_automatic_use_uncompressed_cache = 1;
 SET enable_analyzer = 1;
