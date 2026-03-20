@@ -1,0 +1,120 @@
+-- { echo }
+
+SELECT 'Basic: ties at boundary';
+Basic: ties at boundary
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -3 WITH TIES;
+3
+3
+4
+4
+SELECT 'No ties at boundary';
+No ties at boundary
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -2 WITH TIES;
+4
+4
+SELECT 'Last 1 with ties';
+Last 1 with ties
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -1 WITH TIES;
+4
+4
+SELECT 'Limit exceeds total';
+Limit exceeds total
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -100 WITH TIES;
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+SELECT 'Negative limit + positive offset';
+Negative limit + positive offset
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT 4, -3 WITH TIES;
+3
+3
+4
+4
+SELECT 'Negative limit + negative offset';
+Negative limit + negative offset
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -3, -2 WITH TIES;
+2
+2
+3
+SELECT 'All same values';
+All same values
+SELECT 0 AS x FROM numbers(5) ORDER BY x LIMIT -2 WITH TIES;
+0
+0
+0
+0
+0
+SELECT 'Ties extend to all';
+Ties extend to all
+SELECT 0 AS x FROM numbers(5) ORDER BY x LIMIT -1 WITH TIES;
+0
+0
+0
+0
+0
+SELECT 'Multiple ORDER BY columns, no ties';
+Multiple ORDER BY columns, no ties
+SELECT intDiv(number, 2) AS x, number AS y FROM numbers(10) ORDER BY x, y LIMIT -3 WITH TIES;
+3	7
+4	8
+4	9
+SET max_block_size = 2;
+SELECT 'Small block size';
+Small block size
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -3 WITH TIES;
+3
+3
+4
+4
+SET max_block_size = 65536;
+SELECT 'Positive limit + negative offset';
+Positive limit + negative offset
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -3, 3 WITH TIES;
+0
+0
+1
+1
+SELECT 'Zero limit';
+Zero limit
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -0 WITH TIES;
+SELECT 'Without ties sanity check';
+Without ties sanity check
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -3;
+3
+4
+4
+SELECT 'Distinct values, no ties';
+Distinct values, no ties
+SELECT number FROM numbers(8) ORDER BY number LIMIT -3 WITH TIES;
+5
+6
+7
+SELECT 'Modulo groups, ties at boundary';
+Modulo groups, ties at boundary
+SELECT number % 3 AS x FROM numbers(9) ORDER BY x LIMIT -4 WITH TIES;
+1
+1
+1
+2
+2
+2
+SELECT 'Modulo groups, positive offset + negative limit';
+Modulo groups, positive offset + negative limit
+SELECT number % 3 AS x FROM numbers(9) ORDER BY x LIMIT 2, -3 WITH TIES;
+2
+2
+2
+SELECT 'Modulo groups, both negative';
+Modulo groups, both negative
+SELECT number % 3 AS x FROM numbers(9) ORDER BY x LIMIT -2, -3 WITH TIES;
+1
+1
+1
+2
