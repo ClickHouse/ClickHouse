@@ -74,7 +74,7 @@ WITH per_run_suite AS (
         check_start_time,
         sum(test_duration_ms) AS suite_duration_ms
     FROM checks
-    WHERE check_name LIKE 'Integration tests (amd_asan%'
+    WHERE check_name LIKE 'Integration tests (amd_asan_ubsan%'
       AND check_start_time > now() - INTERVAL 2 DAYS
       AND test_duration_ms != 0
       AND head_ref = 'master'
