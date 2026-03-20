@@ -905,8 +905,12 @@ class PackageDownloader:
         return res
 
     def run(self):
-        Shell.check(f"rm -rf {self.LOCAL_DIR}/*")
+        Shell.check(f"mkdir -p {self.LOCAL_DIR}")
         for package_file in self.deb_package_files + self.rpm_package_files + self.tgz_package_files:
+            local_path = self.LOCAL_DIR + "/" + package_file
+            if Path(local_path).is_file():
+                print(f"Already downloaded, skip: [{package_file}]")
+                continue
             print(f"Downloading: [{package_file}]")
             s3_path = "/".join([
                 self.s3_release_prefix,
@@ -917,10 +921,14 @@ class PackageDownloader:
             self.s3.download_file(
                 bucket=S3_BUILDS_BUCKET,
                 s3_path=s3_path,
-                local_file_path=self.LOCAL_DIR + "/" + package_file,
+                local_file_path=local_path,
             )
 
         for macos_binary, job_name in self.macos_binary_to_job_name.items():
+            local_path = self.LOCAL_DIR + "/" + macos_binary
+            if Path(local_path).is_file():
+                print(f"Already downloaded, skip: [{macos_binary}]")
+                continue
             print(f"Downloading: [{job_name}] binary to [{macos_binary}]")
             s3_path = "/".join([
                 self.s3_release_prefix,
@@ -931,7 +939,7 @@ class PackageDownloader:
             self.s3.download_file(
                 bucket=S3_BUILDS_BUCKET,
                 s3_path=s3_path,
-                local_file_path=self.LOCAL_DIR + "/" + macos_binary,
+                local_file_path=local_path,
             )
 
     def local_deb_packages_ready(self) -> bool:

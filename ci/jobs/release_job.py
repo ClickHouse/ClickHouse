@@ -9,7 +9,13 @@ from typing import List, Tuple
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
+
+_GH_TOKEN_SECRET = Secret.Config(
+    name="/github-tokens/robot-1",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+)
 
 REPO_PATH = Utils.cwd()
 
@@ -30,12 +36,6 @@ def parse_args() -> argparse.Namespace:
         choices=("new", "patch"),
         default=None,
         help="The type of release",
-    )
-    parser.add_argument(
-        "--gh-token",
-        type=str,
-        default=None,
-        help="GitHub token (ROBOT_CLICKHOUSE_COMMIT_TOKEN); falls back to env var",
     )
     parser.add_argument(
         "--assignee",
@@ -74,8 +74,6 @@ def parse_args() -> argparse.Namespace:
         args.only_repo = _wi("only-repo").lower() == "true"
     if not args.only_docker:
         args.only_docker = _wi("only-docker").lower() == "true"
-    if args.gh_token is None:
-        args.gh_token = os.environ.get("ROBOT_CLICKHOUSE_COMMIT_TOKEN", "")
     if args.assignee is None:
         args.assignee = _wi("assignee")
 
@@ -185,7 +183,7 @@ def main():
                     f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
                     f" clickhouse/style-test:latest"
                     f" ./tests/ci/changelog.py -v --debug-helpers"
-                    f" --gh-user-or-token {args.gh_token}"
+                    f" --gh-user-or-token {_GH_TOKEN_SECRET.get_value()}"
                     f" --jobs=5"
                     f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
                     f"git add ./docs/changelogs/{release_tag}.md",
@@ -217,7 +215,7 @@ def main():
                 "- Not for changelog (changelog entry is not required)"
             )
 
-            os.environ["GH_TOKEN"] = args.gh_token
+            os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
             Shell.check(
                 "git config user.email robot-clickhouse@users.noreply.github.com",
                 strict=True,
@@ -230,7 +228,7 @@ def main():
                 strict=True,
             )
             Shell.check(
-                f"git push https://x-access-token:{args.gh_token}@github.com/ClickHouse/ClickHouse.git {pr_branch}",
+                f"git push https://x-access-token:{_GH_TOKEN_SECRET.get_value()}@github.com/ClickHouse/ClickHouse.git {pr_branch}",
                 strict=True,
             )
 
