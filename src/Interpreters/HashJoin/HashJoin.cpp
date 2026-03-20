@@ -723,23 +723,6 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
         assertBlocksHaveEqualStructureAllowReplicated(data->sample_block, block_to_save, "joined block");
 
-        /// Column sub-columns (e.g., the data column of a ColumnArray) can be shared
-        /// with other live columns in the pipeline — this happens for columns extracted
-        /// from ColumnDynamic/ColumnVariant. If those pipeline columns are later modified
-        /// (e.g., via reserve/prepareForSquashing), the shared sub-columns' allocatedBytes()
-        /// would change, causing a mismatch with the tracked allocated_size.
-        /// Use IColumn::mutate to recursively unshare all sub-columns via COW. It is a
-        /// no-op for sub-columns that are already uniquely owned, and only clones those
-        /// that are actually shared.
-        /// This must happen before compress() so the compression lambda captures
-        /// independently-owned sub-columns.
-        {
-            auto columns_to_unshare = block_to_save.getColumns();
-            for (auto & col : columns_to_unshare)
-                col = IColumn::mutate(std::move(col));
-            block_to_save.setColumns(columns_to_unshare);
-        }
-
         size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
         size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();
 
