@@ -116,10 +116,6 @@ public:
 
     static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns);
 
-    /// Check if column is always zero. True if it's definite, false if we can't say for sure.
-    /// Call it only after subqueries for sets were executed.
-    bool checkColumnIsAlwaysFalse(const String & column_name) const;
-
     ExpressionActionsPtr clone() const;
 
 private:

@@ -2050,9 +2050,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
-                    ExpressionActions(
-                        prewhere_dag_and_flags->dag.clone(),
-                        ExpressionActionsSettings(context->getSettingsRef())).execute(before_prewhere_sample);
+                    before_prewhere_sample = prewhere_dag_and_flags->dag.updateHeader(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -2091,9 +2089,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     if (!extracting_subcolumns_dag.getNodes().empty())
                         dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(dag));
 
-                    ExpressionActions(
-                        std::move(dag),
-                        ExpressionActionsSettings(context->getSettingsRef())).execute(before_where_sample);
+                    /// Use updateHeader (dry-run evaluation) instead of ExpressionActions::execute,
+                    /// because sets from subqueries may not be ready yet at this point.
+                    before_where_sample = dag.updateHeader(before_where_sample);
 
                     auto & column_elem
                         = before_where_sample.getByName(query.where()->getColumnName());

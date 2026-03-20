@@ -1020,12 +1020,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 if (!data.hasColumn(column.name))
                 {
                     auto column_set = ColumnSet::create(1, prepared_set);
-                    /// If prepared_set is not empty, we have a set made with literals.
-                    /// Create a const ColumnSet to make constant folding work
-                    if (is_constant_set)
-                        column.column = ColumnConst::create(std::move(column_set), 1);
-                    else
-                        column.column = std::move(column_set);
+                    column.column = ColumnConst::create(std::move(column_set), 1);
                     data.addColumn(column);
                 }
 
