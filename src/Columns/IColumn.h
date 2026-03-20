@@ -715,7 +715,21 @@ public:
     {
         MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
         ptr.reset(); /// Reset use_count to 1.
-        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
+        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn)
+        {
+            auto detached = std::move(subcolumn).detach();
+            auto uc = detached->use_count();
+            subcolumn = IColumn::mutate(std::move(detached));
+            chassert(subcolumn->use_count() == 1);
+            if (uc == 1)
+            {
+                /// use_count was 1, so mutate returned the same object. Verify sub-columns are also use_count=1.
+                subcolumn->forEachSubcolumn([](const WrappedPtr & sub)
+                {
+                    chassert(sub->use_count() == 1);
+                });
+            }
+        });
         return res;
     }
 

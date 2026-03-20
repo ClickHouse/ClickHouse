@@ -4,6 +4,8 @@
 #include <boost/smart_ptr/intrusive_ref_counter.hpp>
 #include <initializer_list>
 
+#include <base/defines.h>
+
 
 /** Copy-on-write shared ptr.
   * Allows to work with shared immutable objects and sometimes unshare and mutate you own unique copy.
@@ -185,11 +187,13 @@ public:
 
     MutablePtr assumeMutable() const
     {
+        chassert(this->use_count() == 1);
         return const_cast<COW*>(this)->getPtr();
     }
 
     Derived & assumeMutableRef() const
     {
+        chassert(this->use_count() == 1);
         return const_cast<Derived &>(*derived());
     }
 
