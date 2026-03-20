@@ -13,10 +13,10 @@ namespace DB
   * Example: SELECT (col1, col2) FROM tab WHERE dictGet(DICT_NAME, DICT_ATTRIBUTE_COL, (col1, col2)) = CONSTEXPR;
   * Result: SELECT (col1, col2) FROM t WHERE (col1, col2) IN (SELECT (DICT_KEY_COL1, DICT_KEY_COL2) FROM dictionary(DICT_NAME) WHERE DICT_ATTRIBUTE_COL = CONSTEXPR);
   *
-  * Also optimizes `dictGetFamily(..., ATTR_COL, COL) IN (CONST_EXPRS)` into `COL IN (SELECT ... FROM dictionary WHERE ATTR_COL IN (CONST_EXPRS))`:
+  * Also optimizes `dictGetFamily(..., ATTR_COL, COL) IN (CONST_EXPRS)` into `COL IN (SELECT ... FROM dictionary WHERE ATTR_COL in_op (CONST_EXPRS))`:
   *
-  * Example: SELECT (col1, col2) FROM tab WHERE dictGet(DICT_NAME, DICT_ATTRIBUTE_COL, (col1, col2)) IN (CONST1, CONST2);
-  * Result: SELECT (col1, col2) FROM t WHERE (col1, col2) IN (SELECT (DICT_KEY_COL1, DICT_KEY_COL2) FROM dictionary(DICT_NAME) WHERE DICT_ATTRIBUTE_COL IN (CONST1, CONST2));
+  * Example: SELECT (col1, col2) FROM tab WHERE dictGet(DICT_NAME, DICT_ATTRIBUTE_COL, (col1, col2)) in_op (CONST1, CONST2);
+  * Result: SELECT (col1, col2) FROM t WHERE (col1, col2) IN (SELECT (DICT_KEY_COL1, DICT_KEY_COL2) FROM dictionary(DICT_NAME) WHERE DICT_ATTRIBUTE_COL in_op (CONST1, CONST2));
   *
   * Supported comparison operators: =, !=, <, <=, >, >=, LIKE, ILIKE and their negations.
   * Supported IN operators: in, notIn.

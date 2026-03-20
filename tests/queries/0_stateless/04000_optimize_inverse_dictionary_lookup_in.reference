@@ -20,7 +20,7 @@ SELECT
     __table1.color_id AS color_id,
     __table1.payload AS payload
 FROM default.t AS __table1
-WHERE __table1.color_id NOT IN (
+WHERE __table1.color_id IN (
     SELECT __table1.id AS id
     FROM dictionary(\'colors\') AS __table1
     WHERE __table1.name NOT IN (\'red\', \'blue\')
@@ -29,9 +29,8 @@ ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
 notIn with constant tuple
-1	a
-2	b
-3	c
+4	d
+5	R
 IN with numeric attribute - plan
 SELECT
     __table1.color_id AS color_id,
@@ -157,7 +156,7 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.fact AS __table1
-WHERE (__table1.k1, __table1.k2) NOT IN (
+WHERE (__table1.k1, __table1.k2) IN (
     SELECT
         __table1.k1 AS k1,
         __table1.k2 AS k2
@@ -169,9 +168,8 @@ ORDER BY
     __table1.k2 ASC,
     __table1.payload ASC
 notIn with composite key
-1	a	x
-1	b	y
-2	b	w
+2	a	z
+3	c	u
 IN with composite key, numeric attribute - plan
 SELECT
     __table1.k1 AS k1,

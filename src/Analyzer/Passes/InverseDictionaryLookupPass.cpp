@@ -166,10 +166,7 @@ public:
         auto where_condition = buildWhereCondition(*ctx, node_function, function_name, is_in_function);
         auto subquery = buildSubquery(*ctx, where_condition);
 
-        /// For comparison predicates, always use "in" as the final function
-        /// For IN predicates, preserve the original function name (in/notIn)
-        const String result_function_name = is_in_function ? function_name : "in";
-        auto final_in_expr = buildFinalInExpression(*ctx, subquery, result_function_name);
+        auto final_in_expr = buildFinalInExpression(*ctx, subquery, "in");
 
         DataTypePtr original_result_type = node_function->getResultType();
         QueryTreeNodePtr replacement_node = final_in_expr;
