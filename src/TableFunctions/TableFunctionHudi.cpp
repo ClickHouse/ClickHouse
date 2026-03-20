@@ -22,7 +22,7 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/DataLakes/StorageHudi.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/DataLakes/StorageHudiCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -245,7 +245,7 @@ StoragePtr TableFunctionHudiImpl<Definition, Configuration>::executeImpl(
 
     if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {
-        storage = std::make_shared<StorageObjectStorageCluster>(
+        storage = std::make_shared<StorageHudiCluster>(
             parallel_replicas_cluster_name,
             configuration,
             getObjectStorage(context, !is_insert_query),
@@ -299,6 +299,11 @@ StoragePtr TableFunctionHudiImpl<Definition, Configuration>::executeImpl(
 
 #if USE_AWS_S3
 template class TableFunctionHudiImpl<HudiDefinition, StorageS3HudiConfiguration>;
+#endif
+
+/// Cluster definition instantiation (needed as base class for TableFunctionHudiClusterImpl).
+#if USE_AWS_S3
+template class TableFunctionHudiImpl<HudiClusterDefinition, StorageS3HudiConfiguration>;
 #endif
 
 }

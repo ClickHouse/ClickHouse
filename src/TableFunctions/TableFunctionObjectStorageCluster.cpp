@@ -2,6 +2,10 @@
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionObjectStorageCluster.h>
+#include <TableFunctions/TableFunctionIcebergCluster.h>
+#include <TableFunctions/TableFunctionDeltaLakeCluster.h>
+#include <TableFunctions/TableFunctionHudiCluster.h>
+#include <TableFunctions/TableFunctionPaimonCluster.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>

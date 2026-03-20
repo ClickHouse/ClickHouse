@@ -64,48 +64,8 @@ using TableFunctionAzureBlobCluster = TableFunctionObjectStorageCluster<AzureClu
 using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 
-#if USE_AVRO
-using TableFunctionIcebergLocalCluster = TableFunctionObjectStorageCluster<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_AWS_S3
-using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
-using TableFunctionIcebergCluster = TableFunctionObjectStorageCluster<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_HDFS
-using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_AWS_S3
-using TableFunctionPaimonS3Cluster = TableFunctionObjectStorageCluster<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
-using TableFunctionPaimonCluster = TableFunctionObjectStorageCluster<PaimonClusterDefinition, StorageS3PaimonConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionPaimonAzureCluster = TableFunctionObjectStorageCluster<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_HDFS
-using TableFunctionPaimonHDFSCluster = TableFunctionObjectStorageCluster<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration, true>;
-#endif
-
-
-#if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
-using TableFunctionDeltaLakeS3Cluster = TableFunctionObjectStorageCluster<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
-#endif
-
-#if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeAzureCluster = TableFunctionObjectStorageCluster<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
-#endif
-
-#if USE_AWS_S3
-using TableFunctionHudiCluster = TableFunctionObjectStorageCluster<HudiClusterDefinition, StorageS3HudiConfiguration, true>;
-#endif
+/// Datalake cluster table function aliases are defined in their own headers:
+/// TableFunctionIcebergCluster.h, TableFunctionDeltaLakeCluster.h,
+/// TableFunctionHudiCluster.h, TableFunctionPaimonCluster.h
 
 }

@@ -22,7 +22,7 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/DataLakes/StorageDeltaLake.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/DataLakes/StorageDeltaLakeCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -245,7 +245,7 @@ StoragePtr TableFunctionDeltaLakeImpl<Definition, Configuration>::executeImpl(
 
     if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {
-        storage = std::make_shared<StorageObjectStorageCluster>(
+        storage = std::make_shared<StorageDeltaLakeCluster>(
             parallel_replicas_cluster_name,
             configuration,
             getObjectStorage(context, !is_insert_query),
@@ -308,6 +308,15 @@ template class TableFunctionDeltaLakeImpl<DeltaLakeAzureDefinition, StorageAzure
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 template class TableFunctionDeltaLakeImpl<DeltaLakeLocalDefinition, StorageLocalDeltaLakeConfiguration>;
+#endif
+
+/// Cluster definition instantiations (needed as base class for TableFunctionDeltaLakeClusterImpl).
+#if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
+template class TableFunctionDeltaLakeImpl<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
+template class TableFunctionDeltaLakeImpl<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration>;
+#endif
+#if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
+template class TableFunctionDeltaLakeImpl<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration>;
 #endif
 
 }

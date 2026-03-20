@@ -408,48 +408,8 @@ template class TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfigurati
 template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 
-#if USE_AVRO
-template class TableFunctionObjectStorage<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_AWS_S3
-template class TableFunctionObjectStorage<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
-template class TableFunctionObjectStorage<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_AZURE_BLOB_STORAGE
-template class TableFunctionObjectStorage<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_HDFS
-template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_AWS_S3
-template class TableFunctionObjectStorage<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
-template class TableFunctionObjectStorage<PaimonClusterDefinition, StorageS3PaimonConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_AZURE_BLOB_STORAGE
-template class TableFunctionObjectStorage<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_HDFS
-template class TableFunctionObjectStorage<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration, true>;
-#endif
-
-#if USE_PARQUET && USE_AWS_S3 && USE_DELTA_KERNEL_RS
-template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
-template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
-#endif
-
-#if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
-template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
-#endif
-
-#if USE_AWS_S3
-template class TableFunctionObjectStorage<HudiClusterDefinition, StorageS3HudiConfiguration, true>;
-#endif
+/// Datalake cluster template instantiations are now in their own files:
+/// TableFunctionIcebergCluster.cpp, TableFunctionDeltaLakeCluster.cpp, etc.
 
 #if USE_AVRO
 void registerTableFunctionIceberg(TableFunctionFactory & factory)

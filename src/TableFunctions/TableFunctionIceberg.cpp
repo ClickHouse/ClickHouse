@@ -22,7 +22,7 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/DataLakes/StorageIceberg.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/DataLakes/StorageIcebergCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -245,7 +245,7 @@ StoragePtr TableFunctionIcebergImpl<Definition, Configuration>::executeImpl(
 
     if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {
-        storage = std::make_shared<StorageObjectStorageCluster>(
+        storage = std::make_shared<StorageIcebergCluster>(
             parallel_replicas_cluster_name,
             configuration,
             getObjectStorage(context, !is_insert_query),
@@ -311,6 +311,21 @@ template class TableFunctionIcebergImpl<IcebergHDFSDefinition, StorageHDFSIceber
 #endif
 #if USE_AVRO
 template class TableFunctionIcebergImpl<IcebergLocalDefinition, StorageLocalIcebergConfiguration>;
+#endif
+
+/// Cluster definition instantiations (needed as base class for TableFunctionIcebergClusterImpl).
+#if USE_AVRO
+template class TableFunctionIcebergImpl<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration>;
+#endif
+#if USE_AVRO && USE_AWS_S3
+template class TableFunctionIcebergImpl<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration>;
+template class TableFunctionIcebergImpl<IcebergClusterDefinition, StorageS3IcebergConfiguration>;
+#endif
+#if USE_AVRO && USE_AZURE_BLOB_STORAGE
+template class TableFunctionIcebergImpl<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration>;
+#endif
+#if USE_AVRO && USE_HDFS
+template class TableFunctionIcebergImpl<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
 #endif
 
 }

@@ -22,7 +22,7 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/DataLakes/StoragePaimon.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/DataLakes/StoragePaimonCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -245,7 +245,7 @@ StoragePtr TableFunctionPaimonImpl<Definition, Configuration>::executeImpl(
 
     if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {
-        storage = std::make_shared<StorageObjectStorageCluster>(
+        storage = std::make_shared<StoragePaimonCluster>(
             parallel_replicas_cluster_name,
             configuration,
             getObjectStorage(context, !is_insert_query),
@@ -311,6 +311,18 @@ template class TableFunctionPaimonImpl<PaimonHDFSDefinition, StorageHDFSPaimonCo
 #endif
 #if USE_AVRO
 template class TableFunctionPaimonImpl<PaimonLocalDefinition, StorageLocalPaimonConfiguration>;
+#endif
+
+/// Cluster definition instantiations (needed as base class for TableFunctionPaimonClusterImpl).
+#if USE_AVRO && USE_AWS_S3
+template class TableFunctionPaimonImpl<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration>;
+template class TableFunctionPaimonImpl<PaimonClusterDefinition, StorageS3PaimonConfiguration>;
+#endif
+#if USE_AVRO && USE_AZURE_BLOB_STORAGE
+template class TableFunctionPaimonImpl<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration>;
+#endif
+#if USE_AVRO && USE_HDFS
+template class TableFunctionPaimonImpl<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration>;
 #endif
 
 }
