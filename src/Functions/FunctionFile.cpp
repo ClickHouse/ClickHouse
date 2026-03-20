@@ -137,20 +137,37 @@ public:
                 std::string_view filename = column_src->getDataAt(row);
                 String file_path_str(filename);
 
-                /// Remove leading slash for disk-relative paths
-                if (!file_path_str.empty() && file_path_str[0] == '/')
-                    file_path_str = file_path_str.substr(1);
-
                 try
                 {
-                    /// Find the file on one of the disks
                     DiskPtr found_disk;
-                    for (const auto & disk : disks)
+
+                    if (!file_path_str.empty() && file_path_str[0] == '/')
                     {
-                        if (disk->existsFile(file_path_str))
+                        /// For absolute paths, find the matching disk by path prefix.
+                        for (const auto & disk : disks)
                         {
-                            found_disk = disk;
-                            break;
+                            String disk_path = disk->getPath();
+                            if (file_path_str.starts_with(disk_path))
+                            {
+                                file_path_str = file_path_str.substr(disk_path.size());
+                                found_disk = disk;
+                                break;
+                            }
+                        }
+                        if (!found_disk)
+                            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                                "Absolute path '{}' is not inside any user files disk", String(filename));
+                    }
+                    else
+                    {
+                        /// For relative paths, find the file on one of the disks.
+                        for (const auto & disk : disks)
+                        {
+                            if (disk->existsFile(file_path_str))
+                            {
+                                found_disk = disk;
+                                break;
+                            }
                         }
                     }
 
@@ -179,10 +196,11 @@ public:
         else
         {
         Strings user_files_paths = context->getUserFilesPaths();
-        /// Compute canonical paths for each user_files_path
+        /// Do not use fs::canonical or fs::weakly_canonical.
+        /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
         std::vector<std::string> user_files_absolute_paths;
         for (const auto & ufp : user_files_paths)
-            user_files_absolute_paths.push_back(fs::canonical(fs::path(ufp)).string());
+            user_files_absolute_paths.push_back(fs::absolute(fs::path(ufp)).lexically_normal().string());
 
         // If run in Local mode, no need for path checking.
         bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;

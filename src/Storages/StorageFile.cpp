@@ -535,9 +535,32 @@ Strings getPathsList(const String & path_with_globs, const Strings & user_files_
     return all_paths;
 }
 
+/// Resolves an absolute path to a disk-relative path by stripping the matching disk's path prefix.
+/// Returns the disk and the relative path, or {nullptr, ""} if no disk matches.
+std::pair<DiskPtr, String> resolveAbsolutePathOnDisk(const String & absolute_path, const Disks & disks)
+{
+    for (const auto & disk : disks)
+    {
+        String disk_path = disk->getPath();
+        if (absolute_path.starts_with(disk_path))
+            return {disk, absolute_path.substr(disk_path.size())};
+    }
+    return {nullptr, {}};
+}
+
+/// Finds which disk in the volume contains the given disk-relative path.
+DiskPtr findDiskForPath(const String & relative_path, const Disks & disks)
+{
+    for (const auto & disk : disks)
+    {
+        if (disk->existsFile(relative_path) || disk->existsDirectory(relative_path))
+            return disk;
+    }
+    return nullptr;
+}
+
 /// Disk-based version of getPathsList. Paths are disk-relative.
-/// Returns (disk, paths) pair where disk is the disk the file was found on.
-std::pair<DiskPtr, Strings> getPathsListOnDisk(
+Strings getPathsListOnDisk(
     const String & path_with_globs,
     const VolumePtr & volume,
     size_t & total_bytes_to_read)
@@ -545,24 +568,69 @@ std::pair<DiskPtr, Strings> getPathsListOnDisk(
     bool is_glob = path_with_globs.find_first_of("*?{") != std::string::npos;
     auto disks = volume->getDisks();
 
+    bool is_absolute = !path_with_globs.empty() && path_with_globs[0] == '/';
+
     if (!is_glob)
     {
-        /// For non-glob paths, search across disks for the file.
-        String normalized = path_with_globs;
-        /// Remove leading slash - disk paths are relative
-        if (!normalized.empty() && normalized[0] == '/')
-            normalized = normalized.substr(1);
+        String normalized;
+        DiskPtr target_disk;
 
+        if (is_absolute)
+        {
+            /// For absolute paths, find which disk it belongs to by matching the disk path prefix.
+            auto [disk, relative] = resolveAbsolutePathOnDisk(path_with_globs, disks);
+            if (disk)
+            {
+                target_disk = disk;
+                normalized = relative;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "File `{}` is not inside any user files disk", path_with_globs);
+            }
+        }
+        else
+        {
+            /// Relative path - just use as-is.
+            normalized = path_with_globs;
+        }
+
+        if (target_disk)
+        {
+            /// We know which disk the file is on.
+            if (target_disk->existsFile(normalized))
+            {
+                total_bytes_to_read += target_disk->getFileSize(normalized);
+                return {normalized};
+            }
+            if (target_disk->existsDirectory(normalized))
+            {
+                Strings paths;
+                for (auto it = target_disk->iterateDirectory(normalized); it->isValid(); it->next())
+                {
+                    String entry_path = normalized + "/" + it->name();
+                    if (target_disk->existsFile(entry_path))
+                    {
+                        total_bytes_to_read += target_disk->getFileSize(entry_path);
+                        paths.push_back(entry_path);
+                    }
+                }
+                return paths;
+            }
+            return {normalized};
+        }
+
+        /// Search across all disks for the file.
         for (const auto & disk : disks)
         {
             if (disk->existsFile(normalized))
             {
                 total_bytes_to_read += disk->getFileSize(normalized);
-                return {disk, {normalized}};
+                return {normalized};
             }
             if (disk->existsDirectory(normalized))
             {
-                /// List non-directory files under that directory
                 Strings paths;
                 for (auto it = disk->iterateDirectory(normalized); it->isValid(); it->next())
                 {
@@ -573,36 +641,24 @@ std::pair<DiskPtr, Strings> getPathsListOnDisk(
                         paths.push_back(entry_path);
                     }
                 }
-                return {disk, paths};
+                return paths;
             }
         }
 
-        /// Not found on any disk - use the first disk (for write operations)
-        return {disks.front(), {normalized}};
+        /// Not found on any disk - return the path as-is (for write operations, will use first disk)
+        return {normalized};
     }
     else
     {
         /// For glob patterns, search across all disks and merge results.
         Strings all_paths;
-        DiskPtr result_disk;
         for (const auto & disk : disks)
         {
             auto listed = listFilesWithRegexpMatchingOnDisk(disk, path_with_globs, total_bytes_to_read);
-            if (!listed.empty())
-            {
-                if (!result_disk)
-                    result_disk = disk;
-                /// When files come from different disks via globs, we use the first disk
-                /// that has matching files. Mixing disks within a single query is not supported.
-                if (disk == result_disk)
-                    all_paths.insert(all_paths.end(), listed.begin(), listed.end());
-            }
+            all_paths.insert(all_paths.end(), listed.begin(), listed.end());
         }
 
-        if (!result_disk)
-            result_disk = disks.front();
-
-        return {result_disk, all_paths};
+        return all_paths;
     }
 }
 
@@ -1241,9 +1297,8 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
         if (!path_to_archive.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive syntax is not supported with user_files_policy");
 
-        auto [disk, paths] = getPathsListOnDisk(filename, user_files_volume, res.total_bytes_to_read);
-        res.paths = std::move(paths);
-        res.user_files_disk = disk;
+        res.paths = getPathsListOnDisk(filename, user_files_volume, res.total_bytes_to_read);
+        res.user_files_volume = user_files_volume;
     }
     else
     {
@@ -1453,7 +1508,7 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     is_path_with_globs = file_source_.with_globs;
     path_for_partitioned_write = std::move(file_source_.path_for_partitioned_write);
     archive_info = std::move(file_source_.archive_info);
-    user_files_disk = std::move(file_source_.user_files_disk);
+    user_files_volume = std::move(file_source_.user_files_volume);
 
     is_db_table = false;
 
@@ -1840,16 +1895,20 @@ Chunk StorageFileSource::generate()
 
             if (!read_buf)
             {
-                if (storage->user_files_disk)
+                if (storage->user_files_volume)
                 {
-                    /// Use disk-based I/O
-                    current_file_size = storage->user_files_disk->getFileSize(current_path);
+                    /// Use disk-based I/O - find which disk has this file
+                    auto disk = findDiskForPath(current_path, storage->user_files_volume->getDisks());
+                    if (!disk)
+                        disk = storage->user_files_volume->getDisks().front();
+
+                    current_file_size = disk->getFileSize(current_path);
                     current_file_last_modified = Poco::Timestamp::fromEpochTime(0); /// Modification time not easily available on all disks
 
                     if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_file_size == 0)
                         continue;
 
-                    read_buf = createReadBufferFromDisk(storage->user_files_disk, current_path, storage->compression_method, getContext());
+                    read_buf = createReadBufferFromDisk(disk, current_path, storage->compression_method, getContext());
                 }
                 else
                 {
@@ -2087,8 +2146,8 @@ void StorageFile::read(
         else
             p = &paths;
 
-        bool file_exists = user_files_disk
-            ? user_files_disk->existsFile(p->at(0))
+        bool file_exists = user_files_volume
+            ? findDiskForPath(p->at(0), user_files_volume->getDisks()) != nullptr
             : fs::exists(p->at(0));
         if (p->size() == 1 && !file_exists)
         {
@@ -2517,6 +2576,8 @@ SinkToStoragePtr StorageFile::write(
     }
 
     String path;
+    /// For writes, always use the first disk in the volume.
+    DiskPtr write_disk = user_files_volume ? user_files_volume->getDisks().front() : nullptr;
     if (!paths.empty())
     {
         if (is_path_with_globs)
@@ -2525,12 +2586,12 @@ SinkToStoragePtr StorageFile::write(
                             getStorageID().getNameForLogs());
 
         path = paths.front();
-        if (user_files_disk)
+        if (write_disk)
         {
             /// Create parent directories on disk
             auto parent_path = fs::path(path).parent_path().string();
-            if (!parent_path.empty() && !user_files_disk->existsDirectory(parent_path))
-                user_files_disk->createDirectories(parent_path);
+            if (!parent_path.empty() && !write_disk->existsDirectory(parent_path))
+                write_disk->createDirectories(parent_path);
         }
         else
         {
@@ -2539,11 +2600,11 @@ SinkToStoragePtr StorageFile::write(
 
         size_t existing_file_size = 0;
         bool got_file_size = false;
-        if (user_files_disk)
+        if (write_disk)
         {
-            if (user_files_disk->existsFile(path))
+            if (write_disk->existsFile(path))
             {
-                existing_file_size = user_files_disk->getFileSize(path);
+                existing_file_size = write_disk->getFileSize(path);
                 got_file_size = true;
             }
         }
@@ -2568,7 +2629,7 @@ SinkToStoragePtr StorageFile::write(
                     new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
                     ++index;
                 }
-                while (user_files_disk ? user_files_disk->existsFileOrDirectory(new_path) : fs::exists(new_path));
+                while (write_disk ? write_disk->existsFileOrDirectory(new_path) : fs::exists(new_path));
                 paths.push_back(new_path);
                 path = new_path;
             }
@@ -2596,8 +2657,8 @@ SinkToStoragePtr StorageFile::write(
         format_name,
         context,
         flags);
-    if (user_files_disk)
-        sink->setUserFilesDisk(user_files_disk);
+    if (write_disk)
+        sink->setUserFilesDisk(write_disk);
     return sink;
 }
 
