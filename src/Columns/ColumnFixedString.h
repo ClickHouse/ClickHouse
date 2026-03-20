@@ -98,7 +98,7 @@ public:
 
     bool isDefaultAt(size_t index) const override;
 
-    bool hasOnlyDefaults() const override
+    bool hasOnlyTypeDefaults() const override
     {
         return memoryIsZero(chars.data(), 0, chars.size());
     }

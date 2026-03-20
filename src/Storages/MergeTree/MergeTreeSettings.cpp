@@ -203,6 +203,10 @@ namespace ErrorCodes
     missing columns are filled with defaults — the same mechanism used by
     `ALTER TABLE ADD COLUMN`. This saves disk space for sparse-update workloads
     where most columns in each INSERT are left at their type's default value.
+    Columns with `DEFAULT`, `MATERIALIZED`, or `ALIAS` expressions are never
+    skipped, because the read path would evaluate the expression instead of
+    returning the type-default that was explicitly inserted. Patch parts
+    (used by lightweight UPDATE) are also excluded.
     )", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
     If the file name for column is too long (more than 'max_file_name_length'

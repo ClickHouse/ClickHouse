@@ -580,6 +580,51 @@ Block MergeTreeDataWriter::mergeBlock(
 }
 
 
+/// When skip_empty_columns_on_insert is enabled, columns whose values are
+/// entirely type-defaults are not written to the part on disk. This saves
+/// disk space for sparse-update workloads where most columns in each INSERT
+/// are left at their type's default. Missing columns are filled with defaults
+/// on read — the same mechanism used by ALTER TABLE ADD COLUMN.
+/// Columns with DEFAULT/MATERIALIZED/ALIAS expressions are never skipped:
+/// the read path would evaluate the expression instead of returning the
+/// type-default that was explicitly inserted.
+/// Patch parts are excluded — they require all columns for lightweight UPDATE.
+static bool skipEmptyColumnsOnInsert(
+    NamesAndTypesList & columns,
+    const Block & block,
+    SerializationInfoByName & infos,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettingsPtr & data_settings,
+    bool is_patch)
+{
+    if (!(*data_settings)[MergeTreeSetting::skip_empty_columns_on_insert] || is_patch)
+        return false;
+
+    const auto & columns_description = metadata_snapshot->getColumns();
+    NameSet empty_columns;
+    for (const auto & [col_name, _type] : columns)
+    {
+        auto col_default = columns_description.getDefault(col_name);
+        if (col_default && col_default->expression)
+            continue;
+        const auto & col_data = block.getByName(col_name);
+        if (col_data.column->hasOnlyTypeDefaults())
+            empty_columns.insert(col_name);
+    }
+    if (empty_columns.empty())
+        return false;
+
+    auto filtered = columns.eraseNames(empty_columns);
+    if (filtered.empty())
+        return false;
+
+    columns = std::move(filtered);
+    for (const auto & name : empty_columns)
+        infos.erase(name);
+    return true;
+}
+
+
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
@@ -817,40 +862,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    /// When skip_empty_columns_on_insert is enabled, columns whose values are
-    /// entirely type-defaults are not written to the part on disk. This saves
-    /// disk space for sparse-update workloads where most columns in each INSERT
-    /// are left at their type's default. Missing columns are filled with defaults
-    /// on read — the same mechanism used by ALTER TABLE ADD COLUMN.
-    /// Columns with DEFAULT/MATERIALIZED/ALIAS expressions are never skipped:
-    /// the read path would evaluate the expression instead of returning the
-    /// type-default that was explicitly inserted.
-    /// Patch parts are excluded — they require all columns for lightweight UPDATE.
-    bool has_empty_columns = false;
-    if ((*data_settings)[MergeTreeSetting::skip_empty_columns_on_insert] && !new_data_part->info.isPatch())
-    {
-        const auto & columns_description = metadata_snapshot->getColumns();
-        NameSet empty_columns;
-        for (const auto & col : block)
-        {
-            auto col_default = columns_description.getDefault(col.name);
-            if (col_default && col_default->expression)
-                continue;
-            if (col.column->hasOnlyDefaults())
-                empty_columns.insert(col.name);
-        }
-        if (!empty_columns.empty())
-        {
-            auto filtered = columns.eraseNames(empty_columns);
-            if (!filtered.empty())
-            {
-                columns = std::move(filtered);
-                has_empty_columns = true;
-                for (const auto & name : empty_columns)
-                    infos.erase(name);
-            }
-        }
-    }
+    bool has_empty_columns = skipEmptyColumnsOnInsert(columns, block, infos, metadata_snapshot, data_settings, new_data_part->info.isPatch());
 
     for (const auto & [column_name, _] : columns)
     {

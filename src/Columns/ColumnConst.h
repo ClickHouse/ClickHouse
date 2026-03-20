@@ -298,7 +298,7 @@ public:
         return data->isDefaultAt(0) ? s : 0;
     }
 
-    bool hasOnlyDefaults() const override
+    bool hasOnlyTypeDefaults() const override
     {
         return data->isDefaultAt(0);
     }

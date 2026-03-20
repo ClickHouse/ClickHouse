@@ -128,7 +128,7 @@ public:
     UInt64 get64(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
-    bool hasOnlyDefaults() const override
+    bool hasOnlyTypeDefaults() const override
     {
         return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
     }

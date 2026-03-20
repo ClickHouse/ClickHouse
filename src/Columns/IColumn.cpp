@@ -537,7 +537,7 @@ UInt64 IColumnHelper<Derived, Parent>::getNumberOfDefaultRows() const
 }
 
 template <typename Derived, typename Parent>
-bool IColumnHelper<Derived, Parent>::hasOnlyDefaults() const
+bool IColumnHelper<Derived, Parent>::hasOnlyTypeDefaults() const
 {
     const auto & self = static_cast<const Derived &>(*this);
     size_t num_rows = self.size();

@@ -77,7 +77,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
     }
 
-    bool hasOnlyDefaults() const override { return false; }
+    bool hasOnlyTypeDefaults() const override { return false; }
 
     void insert(const Field &) override
     {
