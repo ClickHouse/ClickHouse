@@ -41,12 +41,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
-
+            {"min_rows_per_stream_for_gradual_resize", 0, 1000, "Enable gradual resize processor to limit effective parallelism for GROUP BY, reducing merge overhead for small result sets"},
+            {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting to control gradual resize processor activation by byte count"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
-            {"min_rows_per_stream_for_gradual_resize", 0, 1000, "Enable gradual resize processor to limit effective parallelism for GROUP BY, reducing merge overhead for small result sets"},
-            {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting to control gradual resize processor activation by byte count"},
             {"allow_experimental_polyglot_dialect", false, false, "New setting to enable the polyglot SQL transpiler dialect."},
             {"polyglot_dialect", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."},
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
