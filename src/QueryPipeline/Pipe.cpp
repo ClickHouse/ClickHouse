@@ -8,6 +8,7 @@
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/Chain.h>
@@ -624,11 +625,89 @@ void Pipe::addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & 
         }
     };
 
+    /// Helper to apply a transform and, if the output header has a const-ness mismatch
+    /// with the main header (e.g., totals port may have different const-ness),
+    /// add a MaterializingTransform to reconcile.
+    auto add_transform_with_reconcile = [&](OutputPort *& port, StreamType stream_type)
+    {
+        if (!port)
+            return;
+
+        auto transform = getter(port->getSharedHeader(), stream_type);
+
+        if (transform)
+        {
+            if (transform->getInputs().size() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Processor for query pipeline transform should have single input, but {} has {} inputs",
+                    transform->getName(),
+                    transform->getInputs().size());
+
+            if (transform->getOutputs().size() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Processor for query pipeline transform should have single output, but {} has {} outputs",
+                    transform->getName(),
+                    transform->getOutputs().size());
+
+            connect(*port, transform->getInputs().front());
+            port = &transform->getOutputs().front();
+
+            if (collected_processors)
+                collected_processors->emplace_back(transform);
+
+            processors->emplace_back(std::move(transform));
+        }
+
+        const auto & out_header = port->getSharedHeader();
+
+        if (new_header && !blocksHaveEqualStructure(*new_header, *out_header))
+        {
+            /// The totals/extremes port produced a different header than the main ports.
+            /// This can happen when TotalsHavingTransform creates headers with different
+            /// const-ness. If the difference is only in const-ness (compatible after
+            /// materialization), add a MaterializingTransform to reconcile.
+            assertCompatibleHeader(*new_header, *out_header, "QueryPipeline");
+
+            auto materialize = std::make_shared<MaterializingTransform>(port->getSharedHeader());
+            connect(*port, materialize->getInputs().front());
+            port = &materialize->getOutputs().front();
+
+            /// After materializing, the header might still differ from new_header if new_header
+            /// has Const columns. In that case, we need to also materialize new_header and
+            /// re-process main ports. Instead, just update new_header to the materialized version.
+            auto materialized_header = port->getSharedHeader();
+            if (!blocksHaveEqualStructure(*new_header, *materialized_header))
+            {
+                /// new_header also has Const columns that need materializing.
+                /// Update new_header and add MaterializingTransform to all main ports.
+                new_header = std::make_shared<const Block>(materializeBlock(*new_header));
+                for (auto & main_port : output_ports)
+                {
+                    auto main_materialize = std::make_shared<MaterializingTransform>(main_port->getSharedHeader());
+                    connect(*main_port, main_materialize->getInputs().front());
+                    main_port = &main_materialize->getOutputs().front();
+
+                    if (collected_processors)
+                        collected_processors->emplace_back(main_materialize);
+
+                    processors->emplace_back(std::move(main_materialize));
+                }
+            }
+
+            if (collected_processors)
+                collected_processors->emplace_back(materialize);
+
+            processors->emplace_back(std::move(materialize));
+        }
+    };
+
     for (auto & port : output_ports)
         add_transform(port, StreamType::Main);
 
-    add_transform(totals_port, StreamType::Totals);
-    add_transform(extremes_port, StreamType::Extremes);
+    add_transform_with_reconcile(totals_port, StreamType::Totals);
+    add_transform_with_reconcile(extremes_port, StreamType::Extremes);
 
     header = new_header;
 }

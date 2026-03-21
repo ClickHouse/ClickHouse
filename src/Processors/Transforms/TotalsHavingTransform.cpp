@@ -82,11 +82,13 @@ TotalsHavingTransform::TotalsHavingTransform(
     finalizeBlock(finalized_header, aggregates_mask);
 
     /// Port for Totals.
+    /// Use updateHeader (same as transformHeader for main output) instead of execute
+    /// to ensure the totals port header has the same column constness as the main port.
+    /// Using execute on a 0-row block can produce different const-ness than updateHeader,
+    /// which causes "Block structure mismatch" in downstream ExpressionStep transforms.
     if (expression)
     {
-        auto totals_header = finalized_header;
-        size_t num_rows = totals_header.rows();
-        expression->execute(totals_header, num_rows);
+        auto totals_header = expression->getActionsDAG().updateHeader(finalized_header);
         filter_column_pos = totals_header.getPositionByName(filter_column_name);
         if (remove_filter)
             totals_header.erase(filter_column_name);
