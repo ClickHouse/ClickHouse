@@ -562,7 +562,7 @@ Possible values:
     DECLARE(Bool, type_json_skip_duplicated_paths, false, R"(
 When enabled, during parsing JSON object into JSON type duplicated paths will be ignored and only the first one will be inserted instead of an exception
 )", 0) \
-    DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, false, R"(
+    DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, true, R"(
 When enabled, JSONs like `{"a" : 42, "a" : {"b" : 42}}` where some key is duplicated but one of them is a nested object are allowed to be parsed.
 )", 0) \
     DECLARE(Bool, type_json_use_partial_match_to_skip_paths_by_regexp, true, R"(
@@ -1233,6 +1233,9 @@ Custom NULL representation in TSV format
 Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.23.
 
 Disabled by default.
+)", 0) \
+    DECLARE(Bool, output_format_trim_fixed_string, false, R"(
+Trim trailing null bytes from FixedString values in text output formats. E.g. `toFixedString('John', 8)` is printed as `John` instead of `John\0\0\0\0`.
 )", 0) \
     \
     DECLARE(UInt64, input_format_allow_errors_num, 0, R"(
