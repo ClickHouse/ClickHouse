@@ -7,7 +7,7 @@
 --
 -- Covered functions:
 --   LLMClassify, LLMExtract, LLMTranslate, LLMGenerateSQL,
---   LLMGenerateContent, generateEmbedding
+--   LLMGenerateContent, generateEmbedding, generateEmbeddingOrNull
 -- =============================================================================
 
 SET default_llm_resource = '';
@@ -17,7 +17,7 @@ SET default_llm_resource = '';
 -- =============================================================================
 
 SELECT '-- Function registration';
-SELECT name FROM system.functions WHERE name IN ('LLMClassify', 'LLMExtract', 'LLMGenerateContent', 'LLMGenerateSQL', 'LLMTranslate', 'generateEmbedding') ORDER BY name;
+SELECT name FROM system.functions WHERE name IN ('LLMClassify', 'LLMExtract', 'LLMGenerateContent', 'LLMGenerateSQL', 'LLMTranslate', 'generateEmbedding', 'generateEmbeddingOrNull') ORDER BY name;
 
 -- =============================================================================
 -- 2. LLMClassify: argument validation (expects 2-4 args)
@@ -102,6 +102,20 @@ SELECT '-- generateEmbedding: missing named collection';
 SELECT generateEmbedding('text', 256); -- { serverError BAD_ARGUMENTS }
 
 -- =============================================================================
+-- 7b. generateEmbeddingOrNull: argument validation (expects 2-3 args)
+-- =============================================================================
+
+SELECT '-- generateEmbeddingOrNull: too few arguments';
+SELECT generateEmbeddingOrNull(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT generateEmbeddingOrNull('text'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- generateEmbeddingOrNull: too many arguments';
+SELECT generateEmbeddingOrNull('a', 256, 'c', 'd'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- generateEmbeddingOrNull: missing named collection';
+SELECT generateEmbeddingOrNull('text', 256); -- { serverError BAD_ARGUMENTS }
+
+-- =============================================================================
 -- 8. Return type verification
 -- Uses column references (not constants) so the optimizer cannot fold the
 -- function call at analysis time. WHERE 0 prevents actual execution and HTTP.
@@ -167,6 +181,15 @@ SELECT '-- generateEmbedding return type';
 SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_embedding';
 DROP TABLE IF EXISTS _03300_ret_embedding;
+
+-- generateEmbeddingOrNull returns Nullable(Array(Float32))
+DROP TABLE IF EXISTS _03300_ret_embedding_or_null;
+CREATE TABLE _03300_ret_embedding_or_null ENGINE = Memory AS
+    SELECT generateEmbeddingOrNull(x, 256) AS result FROM (SELECT 'hello' AS x WHERE 0);
+SELECT '-- generateEmbeddingOrNull return type';
+SELECT name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = '_03300_ret_embedding_or_null';
+DROP TABLE IF EXISTS _03300_ret_embedding_or_null;
 
 -- =============================================================================
 -- 9. generateEmbedding: dimensions argument must be constant

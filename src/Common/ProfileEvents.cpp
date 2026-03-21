@@ -1379,13 +1379,13 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterRowsSkipped, "Number of rows in blocks that were skipped by JOIN Runtime Filters", ValueType::Number) \
     \
     /* LLM function events */ \
-    M(LLMInputTokens, "Total prompt tokens consumed across all LLM function calls in the query.", ValueType::Number) \
-    M(LLMOutputTokens, "Total completion tokens consumed across all LLM function calls in the query.", ValueType::Number) \
-    M(LLMCacheHits, "Number of LLM results served from cache (no API call made).", ValueType::Number) \
-    M(LLMCacheMisses, "Number of LLM results that required an API call (cache miss).", ValueType::Number) \
-    M(LLMAPICalls, "Number of HTTP requests dispatched to LLM providers (after cache and deduplication).", ValueType::Number) \
-    M(LLMRowsProcessed, "Number of rows that received an LLM result.", ValueType::Number) \
-    M(LLMRowsSkipped, "Number of rows that received NULL due to quota (break mode) or error (null mode).", ValueType::Number) \
+    M(AIInputTokens, "Total prompt tokens consumed across all LLM function calls in the query.", ValueType::Number) \
+    M(AIOutputTokens, "Total completion tokens consumed across all LLM function calls in the query.", ValueType::Number) \
+    M(AICacheHits, "Number of LLM results served from cache (no API call made).", ValueType::Number) \
+    M(AICacheMisses, "Number of LLM results that required an API call (cache miss).", ValueType::Number) \
+    M(AIAPICalls, "Number of HTTP requests dispatched to LLM providers (after cache and deduplication).", ValueType::Number) \
+    M(AIRowsProcessed, "Number of rows that received an LLM result.", ValueType::Number) \
+    M(AIRowsSkipped, "Number of rows that received NULL due to quota (break mode) or error (null mode).", ValueType::Number) \
     M(LLMTotalLatencyMicroseconds, "Wall-clock time spent waiting for LLM API responses.", ValueType::Microseconds) \
     M(LLMThrottlerSleepMicroseconds, "Time spent sleeping due to LLM rate limiting.", ValueType::Microseconds) \
 

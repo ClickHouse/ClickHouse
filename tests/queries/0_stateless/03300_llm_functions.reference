@@ -5,6 +5,7 @@ LLMGenerateContent
 LLMGenerateSQL
 LLMTranslate
 generateEmbedding
+generateEmbeddingOrNull
 -- LLMClassify: too few arguments
 -- LLMClassify: too many arguments
 -- LLMClassify: missing named collection
@@ -23,6 +24,9 @@ generateEmbedding
 -- generateEmbedding: too few arguments
 -- generateEmbedding: too many arguments
 -- generateEmbedding: missing named collection
+-- generateEmbeddingOrNull: too few arguments
+-- generateEmbeddingOrNull: too many arguments
+-- generateEmbeddingOrNull: missing named collection
 -- LLMClassify return type
 result	Nullable(String)
 -- LLMExtract return type
@@ -34,5 +38,7 @@ result	Nullable(String)
 -- LLMGenerateContent return type
 result	Nullable(String)
 -- generateEmbedding return type
+result	Array(Float32)
+-- generateEmbeddingOrNull return type
 result	Array(Float32)
 -- generateEmbedding: non-constant dimensions
