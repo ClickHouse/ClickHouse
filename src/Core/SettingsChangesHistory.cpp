@@ -44,6 +44,22 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
             {"enable_materialized_cte", false, false, "New setting"},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
+            {"allow_experimental_ai_functions", false, false, "New setting"},
+            {"default_llm_resource", "", "", "New setting"},
+            {"llm_request_timeout_sec", 60, 60, "New setting"},
+            {"llm_max_concurrent_requests", 16, 16, "New setting"},
+            {"llm_max_rps", 50, 50, "New setting"},
+            {"llm_max_retries", 3, 3, "New setting"},
+            {"llm_retry_initial_delay_ms", 1000, 1000, "New setting"},
+            {"llm_cache_ttl_sec", 86400, 86400, "New setting"},
+            {"llm_on_error", "throw", "throw", "New setting"},
+            {"llm_max_rows_per_query", 100000, 100000, "New setting"},
+            {"llm_max_input_tokens_per_query", 1000000, 1000000, "New setting"},
+            {"llm_max_output_tokens_per_query", 500000, 500000, "New setting"},
+            {"llm_max_api_calls_per_query", 1000, 1000, "New setting"},
+            {"llm_on_quota_exceeded", "throw", "throw", "New setting"},
+            {"embedding_max_batch_size", 100, 100, "New setting"},
+
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

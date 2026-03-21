@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -48,9 +47,9 @@ protected:
 
     String resolveSchemaForDatabase(const String & db_name) const
     {
-        auto database = DatabaseCatalog::instance().getDatabase(db_name, context);
+        auto database = DatabaseCatalog::instance().getDatabase(db_name, getContext());
         String schema;
-        auto iter = database->getTablesIterator(context);
+        auto iter = database->getTablesIterator(getContext());
         while (iter->isValid())
         {
             auto table_name = iter->name();
@@ -97,7 +96,7 @@ protected:
                 schema += db_schema;
         }
 
-        String current_db = context->getCurrentDatabase();
+        String current_db = getContext()->getCurrentDatabase();
         if (!current_db.empty() && current_db != "system" && current_db != "INFORMATION_SCHEMA"
             && current_db != "information_schema")
         {

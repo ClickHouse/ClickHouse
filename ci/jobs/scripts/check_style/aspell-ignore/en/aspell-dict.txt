@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3599
+personal_ws-1.1 en 3613
 AArch
 ABIs
 ACLs
@@ -280,6 +280,7 @@ DestroyAggregatesThreadsActive
 DictCacheRequests
 DictionaryMaxUpdateDelay
 DictionaryTotalFailedUpdates
+Dimensionality
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -431,6 +432,7 @@ Hostname
 HouseOps
 Hudi
 HudiCluster
+HuggingFace
 HyperLogLog
 Hypot
 IANA
@@ -596,6 +598,11 @@ LIMITs
 LINEITEM
 LLDB
 LLM
+LLMClassify
+LLMExtract
+LLMGenerateContent
+LLMGenerateSQL
+LLMTranslate
 LLMs
 LLVM's
 LOCALTIME
@@ -619,6 +626,7 @@ LinksDeployment
 Linq
 ListObject
 ListObjects
+LiteLLM
 LoadAverage
 LoadBalancing
 LocalFSReadMethod
@@ -843,6 +851,7 @@ Oblakov
 Observability
 Octonica
 Ok
+Ollama
 OnTime
 OneLake
 OpenAI
@@ -1279,6 +1288,7 @@ VIEWs
 Vadim
 Valgrind
 ValueType
+VarUInt
 VectorScan
 Vectorized
 VersionBadge
@@ -2047,6 +2057,8 @@ gaugehistogram
 gccMurmurHash
 gcem
 gdb's
+generateEmbedding
+generateEmbeddingOrNull
 generateRandom
 generateRandomStructure
 generateSerialID
@@ -2944,8 +2956,8 @@ reinterpretAsString
 reinterpretAsUInt
 reinterpretAsUUID
 remerge
-removeDiacriticsUTF
 remoteSecure
+removeDiacriticsUTF
 repivot
 replaceAll
 replaceOne
@@ -3518,6 +3530,7 @@ uuid
 uuids
 uuidv
 vCPU
+vLLM
 varPop
 varPopStable
 varSamp
@@ -3530,7 +3543,6 @@ varpop
 varpopstable
 varsamp
 varsampstable
-VarUInt
 vectorized
 vectorscan
 vendoring

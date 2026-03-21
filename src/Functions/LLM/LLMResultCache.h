@@ -3,16 +3,10 @@
 #include <Common/CacheBase.h>
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/CurrentMetrics.h>
 #include <Core/Types.h>
 #include <chrono>
 #include <mutex>
 
-namespace CurrentMetrics
-{
-    extern const Metric LLMCacheSizeInBytes;
-    extern const Metric LLMCacheEntries;
-}
 
 namespace DB
 {
