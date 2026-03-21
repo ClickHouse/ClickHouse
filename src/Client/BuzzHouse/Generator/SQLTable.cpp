@@ -2967,4 +2967,75 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
 }
 
+void StatementGenerator::generateNextCreatePolicy(RandomGenerator & rg, const bool row, CreatePolicy * crp)
+{
+    SQLPolicy next;
+    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+    const bool replace = !policies.empty() && rg.nextMediumNumber() < 16;
+
+    next.is_row = row;
+    /// ~50% of row policies are tagged for the oracle role so the row policy oracle has candidates to pick.
+    next.targets_oracle_role = fc.allow_query_oracles && rg.nextBool();
+    if (replace)
+    {
+        /// Let it mix row policies with masking policies
+        const SQLPolicy & existing = rg.pickValueRandomlyFromMap(this->policies);
+        next.policy_id = existing.policy_id;
+    }
+    else
+    {
+        next.policy_id = this->policy_counter++;
+    }
+    next.table_id = t.tname;
+
+    crp->set_create_opt(
+        replace ? (rg.nextBool() ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Replace) : CreateReplaceOption::Create);
+    if (!replace && rg.nextSmallNumber() < 3)
+    {
+        crp->set_if_not_exists(true);
+    }
+    next.setName(crp->mutable_policy());
+    t.setName(crp->mutable_target(), true);
+    if (row && !fc.clusters.empty() && rg.nextSmallNumber() < 4)
+    {
+        /// No cluster support for masking policies
+        next.cluster = rg.pickRandomly(fc.clusters);
+        setClusterClause(rg, next.cluster, crp->mutable_cluster());
+    }
+    if (row)
+    {
+        CreateRowPolicy * r = crp->mutable_row();
+
+        if (rg.nextSmallNumber() < 3)
+        {
+            r->set_is_restrictive(true);
+        }
+        r->set_for_select(rg.nextSmallNumber() < 3);
+    }
+    else
+    {
+        CreateMaskingPolicy * m = crp->mutable_masking();
+
+        /// UPDATE clause
+        generateUpdateSets(rg, t, m->mutable_first_update(), [&]() { return m->add_other_updates(); });
+        /// PRIORITY ~40% of the time
+        if (rg.nextSmallNumber() < 4)
+        {
+            m->set_priority(static_cast<int32_t>(rg.randomInt<uint32_t>(0, 100)));
+        }
+    }
+    /// USING filter: present ~70% of the time; absent means allow/deny all rows.
+    /// For oracle policies the filter is always present (oracle needs a predicate to test).
+    if (next.targets_oracle_role || rg.nextSmallNumber() < 8)
+    {
+        generateUptDelWhere(rg, t, crp->mutable_where_expr()->mutable_expr()->mutable_expr());
+        next.where_expr = crp->where_expr();
+    }
+    if (next.targets_oracle_role)
+    {
+        crp->mutable_role()->set_role(FuzzConfig::oracleRole);
+    }
+    this->staged_policies[next.policy_id] = next;
+}
+
 }
