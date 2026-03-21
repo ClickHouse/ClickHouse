@@ -333,6 +333,11 @@ pub unsafe extern "C" fn stringToH3(str_ptr: *const c_char) -> H3Index {
     let Ok(s) = c_str.to_str() else {
         return 0;
     };
+    // Normalize: strip optional "0x"/"0X" prefix and trailing "l"/"L" suffix
+    // to maintain backward compatibility with legacy H3 string formats.
+    let s = s.trim();
+    let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    let s = s.strip_suffix('l').or_else(|| s.strip_suffix('L')).unwrap_or(s);
     u64::from_str_radix(s, 16)
         .ok()
         .and_then(|v| CellIndex::try_from(v).ok())
