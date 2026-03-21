@@ -41,13 +41,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
-
-        });
-        addSettingsChanges(settings_changes_history, "26.3",
-        {
             {"optimize_topn_aggregation", false, false, "New setting to enable fused TopN aggregation optimization for GROUP BY ... ORDER BY aggregate LIMIT K queries."},
             {"topn_aggregation_pruning_level", 2, 2, "Controls Mode 2 pruning optimizations: 0=direct compute only, 1=+in-transform threshold, 2=+dynamic filter pushdown."},
             {"topn_aggregation_max_limit", 1000, 1000, "Maximum LIMIT value for applying TopN Mode 2 optimization; larger LIMIT falls back to standard pipeline to avoid regressions."},
+        });
+        addSettingsChanges(settings_changes_history, "26.3",
+        {
             {"allow_experimental_polyglot_dialect", false, false, "New setting to enable the polyglot SQL transpiler dialect."},
             {"polyglot_dialect", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."},
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
