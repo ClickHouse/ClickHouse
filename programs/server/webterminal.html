@@ -229,7 +229,7 @@
 
     function attemptConnect() {
         state = 'connecting';
-        term.write('\x1b[90mConnecting...\x1b[0m\r\n');
+        term.write('\x1b[90mConnecting...\x1b[0m');
 
         if (ws) {
             ws.onclose = null;
@@ -253,6 +253,8 @@
         ws.onopen = function() {
             opened = true;
             state = 'active';
+            // Erase the "Connecting..." message so PTY output starts on a clean line
+            term.write('\r\x1b[2K');
             sendResize();
         };
 
@@ -268,6 +270,7 @@
             if (!opened) {
                 // Handshake failed - likely authentication error
                 ws = null;
+                term.write('\r\x1b[2K');
                 promptCredentials('Authentication failed.');
             } else {
                 // Normal disconnect after session was active
