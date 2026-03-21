@@ -1692,6 +1692,26 @@ INSTANTIATE_TEST_SUITE_P(ALPSameValuesF32,
     )
 );
 
+INSTANTIATE_TEST_SUITE_P(ALPRDSameValuesF64,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP(RD)", 0.77)),
+        ::testing::Values(
+            generateSeq<Float64>(G([](auto) { return M_PI; }))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPRDSameValuesF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP(RD)", 0.52)),
+        ::testing::Values(
+            generateSeq<Float32>(G([](auto) { return M_PIf32; }))
+        )
+    )
+);
+
 class ALPTest : public ::testing::Test
 {
 protected:
