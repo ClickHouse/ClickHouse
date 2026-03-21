@@ -18,7 +18,7 @@ endif()
 option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
 option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
-option (ENABLE_H3O "Enable h3o (Rust H3 implementation)" OFF)
+option (ENABLE_H3O "Enable h3o (Rust H3 implementation)" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_H3O)
     message(STATUS "prql, skim, polyglot, and h3o are disabled")
