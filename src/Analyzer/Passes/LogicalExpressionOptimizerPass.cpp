@@ -1569,7 +1569,6 @@ private:
             {
                 /// Result of equality operator can be low cardinality, while AND always returns UInt8.
                 /// In that case we replace `(lc = 1) AND (lc = 1)` with `(lc = 1) AS UInt8`
-                chassert(function_type->equals(*removeLowCardinality(operand_type)));
                 node = createCastFunction(std::move(and_operands[0]), function_type, getContext());
             }
             else
