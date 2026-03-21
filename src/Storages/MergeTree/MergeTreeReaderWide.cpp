@@ -208,6 +208,45 @@ size_t MergeTreeReaderWide::readRows(
                     cache,
                     deserialize_states_cache);
 
+                /// Flattened Nested subcolumns with physical names (e.g. "n.x", "n.y")
+                /// use separate SubstreamsCaches but share a single on-disk offset stream.
+                /// Without physical names they would be subcolumns of a common parent "n"
+                /// and share `caches["n"]`, so the first sibling's offsets are reused via
+                /// cache hit. With physical names the caches diverge, forcing the second
+                /// sibling to re-read the stream whose position was already advanced by the
+                /// first sibling (and possibly not re-seekable due to prefetching on S3).
+                /// Pre-populate upcoming siblings' caches with the offsets we just read.
+                if (!column_to_read.physical_name.empty())
+                {
+                    ISerialization::SubstreamPath offsets_path{{ISerialization::Substream::ArraySizes}};
+                    auto this_offsets_stream = IMergeTreeDataPart::getStreamNameForColumn(
+                        column_to_read, offsets_path, ".bin",
+                        data_part_info_for_read->getChecksums(), storage_settings);
+                    if (this_offsets_stream)
+                    {
+                        if (auto cached = ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(&cache, offsets_path))
+                        {
+                            auto & [cached_column, num_read_rows] = *cached;
+                            for (size_t j = pos + 1; j < num_columns; ++j)
+                            {
+                                if (isColumnDroppedByPendingMutation(j))
+                                    continue;
+                                const auto & sibling = columns_to_read[j];
+                                if (sibling.physical_name.empty())
+                                    continue;
+                                auto sibling_offsets_stream = IMergeTreeDataPart::getStreamNameForColumn(
+                                    sibling, offsets_path, ".bin",
+                                    data_part_info_for_read->getChecksums(), storage_settings);
+                                if (sibling_offsets_stream && *sibling_offsets_stream == *this_offsets_stream)
+                                {
+                                    ISerialization::addColumnWithNumReadRowsToSubstreamsCache(
+                                        &caches[sibling.getNameInStorage()], offsets_path, cached_column, num_read_rows);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
                 if (!column->empty())
@@ -403,11 +442,10 @@ ReadBuffer * MergeTreeReaderWide::getStream(
         && substream_path[0].type == ISerialization::Substream::ArraySizes
         && Nested::extractTableName(name_and_type.getNameInStorage()) != name_and_type.getNameInStorage())
     {
-        /// Flattened Nested subcolumns with physical names (e.g. "n.x", "n.y") keep
-        /// separate SubstreamsCaches but share the on-disk offset stream (e.g. "n.size0").
-        /// When read_without_marks is true (common during merges), there is no seeking
-        /// between columns; after the first sibling reads the offset stream it is
-        /// positioned at the end, so subsequent siblings must seek back to re-read.
+        /// Defense-in-depth: normally the cache-sharing logic in `readRows`
+        /// pre-populates siblings' caches so this branch is not reached.
+        /// But if offset caching was skipped (e.g. exception during readData,
+        /// or a code path bypassing readRows), this ensures correct re-read.
         stream.seekToStart();
     }
 

@@ -20,6 +20,10 @@ The second parameter is `encode_sparse_stream`, not `prefix_len`. The `prefix_le
 
 `IDataType::getSerialization(column)` without settings defaults String to `SINGLE_STREAM`, missing the `StringSizes` substream. Always pass `SerializationInfoSettings` from the part's `serialization.json` (via `getSerializationInfos().getSettings()`) when enumerating streams for checksums/file-existence checks. The reader helper `getSerializationForPhysicalColumn` already does this correctly.
 
+## Flattened Nested siblings with physical names: shared offset stream + separate caches
+
+With physical names, flattened Nested subcolumns (e.g. `n.x`, `n.y`) use separate `SubstreamsCache` instances (`caches["n.x"]` vs `caches["n.y"]`) but share a single on-disk offset stream (`1.size0.bin`). Without physical names they are subcolumns of `"n"` and share `caches["n"]`, so offsets cached by the first sibling are reused. On S3, prefetching marks the shared stream as consumed → second sibling skips `seekToMark` → reads garbage. Fix: after reading each sibling, pre-populate upcoming siblings' caches with the offset data via `addColumnWithNumReadRowsToSubstreamsCache`.
+
 ## `clickhouse-test` script may hang on "Connecting to ClickHouse server"
 
 When running the test harness against a custom port, the script can hang during connection if the server is slow or there's a mismatch. Running tests directly with `clickhouse client --multiquery < test.sql` is a reliable alternative for local verification.
