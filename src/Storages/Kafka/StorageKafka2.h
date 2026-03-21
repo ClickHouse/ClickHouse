@@ -31,6 +31,8 @@ namespace DB
 {
 
 struct KafkaSettings;
+class Kafka2Source;
+class ReadFromStorageKafka2;
 template <typename TStorageKafka>
 struct KafkaInterceptors;
 
@@ -56,6 +58,8 @@ class StorageKafka2 final : public IStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
     friend KafkaInterceptors;
+    friend class Kafka2Source;
+    friend class ReadFromStorageKafka2;
 
 public:
     using KeeperHandlingConsumerPtr = std::shared_ptr<KeeperHandlingConsumer>;
@@ -87,7 +91,8 @@ public:
 
     void drop() override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

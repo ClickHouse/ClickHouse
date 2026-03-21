@@ -20,10 +20,14 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ColumnDefault.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/Kafka/Kafka2Source.h>
 #include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaProducer.h>
@@ -69,6 +73,7 @@ extern const Metric KafkaWrites;
 
 namespace ProfileEvents
 {
+extern const Event KafkaDirectReads;
 extern const Event KafkaBackgroundReads;
 extern const Event KafkaMessagesRead;
 extern const Event KafkaMessagesFailed;
@@ -95,6 +100,7 @@ namespace KafkaSetting
     extern const KafkaSettingsFloat input_format_allow_errors_ratio;
     extern const KafkaSettingsString kafka_broker_list;
     extern const KafkaSettingsString kafka_client_id;
+    extern const KafkaSettingsBool kafka_commit_on_select;
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
     extern const KafkaSettingsMilliseconds kafka_consumer_reschedule_ms;
     extern const KafkaSettingsString kafka_format;
@@ -119,6 +125,8 @@ namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
+extern const int QUERY_NOT_ALLOWED;
+extern const int ABORTED;
 extern const int REPLICA_ALREADY_EXISTS;
 extern const int TABLE_IS_DROPPED;
 extern const int NO_ZOOKEEPER;
@@ -377,16 +385,79 @@ void StorageKafka2::assertActive() const
 }
 
 
-Pipe StorageKafka2::read(
-    const Names & /*column_names */,
-    const StorageSnapshotPtr & /* storage_snapshot */,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr /* local_context */,
+class ReadFromStorageKafka2 final : public ReadFromStreamLikeEngine
+{
+public:
+    ReadFromStorageKafka2(
+        const Names & column_names_,
+        StoragePtr storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        SelectQueryInfo & query_info,
+        ContextPtr context_)
+        : ReadFromStreamLikeEngine{column_names_, storage_snapshot_, query_info.storage_limits, context_}
+        , column_names{column_names_}
+        , storage{storage_}
+        , storage_snapshot{storage_snapshot_}
+    {
+    }
+
+    String getName() const override { return "ReadFromStorageKafka2"; }
+
+private:
+    Pipe makePipe() final
+    {
+        auto & kafka_storage = storage->as<StorageKafka2 &>();
+        if (kafka_storage.shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
+        auto table_id = kafka_storage.getStorageID();
+        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+        if (num_views > 0)
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
+
+        ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
+
+        /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
+        Pipes pipes;
+        pipes.reserve(kafka_storage.num_consumers);
+        auto modified_context = Context::createCopy(getContext());
+        modified_context->applySettingsChanges(kafka_storage.settings_adjustments);
+
+        for (size_t i = 0; i < kafka_storage.num_consumers; ++i)
+        {
+            /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
+            pipes.emplace_back(std::make_shared<Kafka2Source>(
+                kafka_storage,
+                storage_snapshot,
+                modified_context,
+                column_names,
+                kafka_storage.log,
+                1,
+                i,
+                (*kafka_storage.kafka_settings)[KafkaSetting::kafka_commit_on_select]));
+        }
+
+        LOG_DEBUG(kafka_storage.log, "Starting reading {} streams", pipes.size());
+        return Pipe::unitePipes(std::move(pipes));
+    }
+
+    const Names column_names;
+    StoragePtr storage;
+    StorageSnapshotPtr storage_snapshot;
+};
+
+void StorageKafka2::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr query_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct read from the new Kafka storage is not implemented");
+    query_plan.addStep(std::make_unique<ReadFromStorageKafka2>(
+        column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
 }
 
 StreamingHandleErrorMode StorageKafka2::getHandleKafkaErrorMode() const
