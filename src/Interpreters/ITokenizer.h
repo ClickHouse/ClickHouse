@@ -71,11 +71,8 @@ public:
         const char * data,
         size_t length,
         BloomFilter & bloom_filter,
-        bool /*is_prefix*/,
-        bool /*is_suffix*/) const
-    {
-        stringToBloomFilter(data, length, bloom_filter);
-    }
+        bool is_prefix,
+        bool is_suffix) const = 0;
 
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
@@ -90,11 +87,8 @@ public:
         const char * data,
         size_t length,
         std::vector<String> & tokens,
-        bool /*is_prefix*/,
-        bool /*is_suffix*/) const
-    {
-        stringToTokens(data, length, tokens);
-    }
+        bool is_prefix,
+        bool is_suffix) const = 0;
 
     virtual void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
     virtual bool supportsStringLike() const = 0;
@@ -114,7 +108,6 @@ protected:
     const char * getTokenizerName() const override { return Derived::getName(); }
     const char * getTokenizerExternalName() const override { return Derived::getExternalName(); }
 
-private:
     std::unique_ptr<ITokenizer> clone() const override
     {
         return std::make_unique<Derived>(*static_cast<const Derived *>(this));
@@ -180,6 +173,9 @@ struct NgramsTokenizer final : public ITokenizerHelper<NgramsTokenizer>
     size_t getN() const { return n; }
 
     bool supportsStringLike() const override { return true; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
 private:
     size_t n;
 };
@@ -316,6 +312,8 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
     bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 private:
     std::vector<String> separators;
 };
@@ -333,6 +331,8 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
     bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
 /// Parser extracting sparse grams (the same as function sparseGrams).
@@ -351,6 +351,8 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 private:
     size_t min_gram_length;
     size_t max_gram_length;

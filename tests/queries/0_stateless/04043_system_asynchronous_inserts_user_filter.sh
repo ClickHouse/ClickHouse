@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
+# no-parallel: concurrent SYSTEM FLUSH ASYNC INSERT QUEUE from other tests drains the pending queue
 
 # Regression test: system.asynchronous_inserts must not leak cross-user insert metadata.
 # A user without SHOW_USERS privilege must only see their own pending inserts.
