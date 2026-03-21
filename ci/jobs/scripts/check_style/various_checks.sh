@@ -142,6 +142,7 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /FunctionsExternalDictionaries.cpp
     -e /FunctionsExternalDictionaries.h
     -e /FunctionDictGetKeys.cpp
+    -e /AIEmbed/FunctionAIEmbed.cpp
 
     -e /TimeSeries/timeSeriesIdToTagsGroup.cpp
     -e /TimeSeries/timeSeriesIdToTags.cpp
