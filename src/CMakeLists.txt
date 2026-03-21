@@ -343,6 +343,10 @@ set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEP
 ${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.css;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-fit.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-web-links.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
