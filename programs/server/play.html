@@ -3088,6 +3088,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     const mainEl = document.getElementById('main');
     let terminalIframe = null;
     let terminalActive = false;
+    let terminalHiddenByResize = false;
     const MIN_TERMINAL_HEIGHT = 20;
 
     function getTerminalURL() {
@@ -3109,7 +3110,10 @@ document.getElementById('download-button').addEventListener('click', async funct
             terminalIframe.id = 'terminal-iframe';
             terminalIframe.src = getTerminalURL();
             terminalPanel.insertBefore(terminalIframe, terminalResizer);
+        } else if (terminalHiddenByResize) {
+            terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
         }
+        terminalHiddenByResize = false;
     }
 
     /// Hide the terminal panel but keep the iframe alive so the session persists.
@@ -3175,6 +3179,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         if (!termDrag.active) return;
         const newHeight = termDrag.startHeight + (e.clientY - termDrag.startY);
         if (newHeight < MIN_TERMINAL_HEIGHT) {
+            terminalHiddenByResize = true;
             hideTerminal();
             termStop(e);
             return;
