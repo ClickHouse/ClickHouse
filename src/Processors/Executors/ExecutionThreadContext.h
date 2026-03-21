@@ -53,6 +53,7 @@ public:
     /// Methods to access/change currently executing task.
     bool hasTask() const { return node != nullptr; }
     void setTask(ExecutingGraph::Node * task) { node = task; }
+    ExecutingGraph::Node * popTask() { return std::exchange(node, nullptr); }
     bool executeTask();
     uint64_t getProcessorID() const { return node->processors_id; }
 

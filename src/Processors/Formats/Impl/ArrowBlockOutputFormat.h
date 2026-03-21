@@ -18,7 +18,7 @@ class CHColumnToArrowColumn;
 class ArrowBlockOutputFormat : public IOutputFormat
 {
 public:
-    ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_);
+    ArrowBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_);
 
     String getName() const override { return "Arrow"; }
 

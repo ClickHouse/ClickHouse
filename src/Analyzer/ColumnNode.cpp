@@ -89,11 +89,7 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compa
     hash_state.update(column.name);
 
     if (compare_options.compare_types)
-    {
-        const auto & column_type_name = column.type->getName();
-        hash_state.update(column_type_name.size());
-        hash_state.update(column_type_name);
-    }
+        column.type->updateHash(hash_state);
 }
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
@@ -138,7 +134,7 @@ ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
 
     column_identifier_parts.push_back(column.name);
 
-    return std::make_shared<ASTIdentifier>(std::move(column_identifier_parts));
+    return make_intrusive<ASTIdentifier>(std::move(column_identifier_parts));
 }
 
 }

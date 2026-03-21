@@ -1,4 +1,5 @@
 #include <Common/DateLUT.h>
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/Serializations/SerializationDateTime64.h>
 #include <IO/Operators.h>
@@ -18,7 +19,7 @@ namespace ErrorCodes
 
 static constexpr UInt32 max_scale = 9;
 
-DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name)
+DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, std::string_view time_zone_name)
     : DataTypeDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_),
       TimezoneMixin(time_zone_name)
 {
@@ -46,6 +47,13 @@ std::string DataTypeDateTime64::doGetName() const
     return out.str();
 }
 
+void DataTypeDateTime64::updateHashImpl(SipHash & hash) const
+{
+    Base::updateHashImpl(hash);
+    /// Do not include timezone in hash: equals() considers types with different
+    /// timezones as equal (only scale matters), and hash must be consistent with equality.
+}
+
 bool DataTypeDateTime64::equals(const IDataType & rhs) const
 {
     if (const auto * ptype = typeid_cast<const DataTypeDateTime64 *>(&rhs))
@@ -53,7 +61,7 @@ bool DataTypeDateTime64::equals(const IDataType & rhs) const
     return false;
 }
 
-SerializationPtr DataTypeDateTime64::doGetDefaultSerialization() const
+SerializationPtr DataTypeDateTime64::doGetSerialization(const SerializationInfoSettings &) const
 {
     return std::make_shared<SerializationDateTime64>(scale, *this);
 }

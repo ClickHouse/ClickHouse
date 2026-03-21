@@ -139,6 +139,8 @@ std::vector<int> parseShape(String shape_string)
         skipWhitespaceIfAny(buf);
         if (!tryReadIntText(value, buf))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid shape format: {}", shape_string);
+        if (value < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative shape dimension: {}, shape dimensions must be non-negative, in shape {}", value, shape_string);
         shape.push_back(value);
     }
     return shape;
@@ -256,7 +258,7 @@ void NpyRowInputFormat::readPrefix()
     header = parseHeader(*in);
 }
 
-NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, Block header_, Params params_)
+NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_)
     : IRowInputFormat(std::move(header_), in_, std::move(params_))
 {
     auto types = getPort().getHeader().getDataTypes();
@@ -441,7 +443,7 @@ void registerInputFormatNpy(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings &)
     {
-        return std::make_shared<NpyRowInputFormat>(buf, sample, std::move(params));
+        return std::make_shared<NpyRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params));
     });
 
     factory.markFormatSupportsSubsetOfColumns("Npy");

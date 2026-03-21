@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Core/Names.h>
+#include <Core/Field.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
@@ -9,13 +11,12 @@
 
 #include <list>
 #include <memory>
+#include <unordered_map>
 #include <vector>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
-
-class Block;
-using Header = Block;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -64,6 +65,15 @@ struct ExplainPlanOptions
     bool sorting = false;
     /// Show remote plans for distributed query.
     bool distributed = false;
+    /// Add input headers to step.
+    bool input_headers = false;
+    /// Print structure of columns instead of just their names and types.
+    bool column_structure = false;
+    /// Hide expression steps and detailed action info
+    bool compact = false;
+    /// Print query plan with pretty formatting
+    bool pretty = false;
+
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -84,11 +94,20 @@ public:
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
-    const Header & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
+    const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
+
+    /// Serializes the query plan and store the result
+    void ensureSerialized(size_t max_supported_version) const;
+
+    /// Get cached serialized data
+    std::string_view getSerializedData() const;
+
+    /// Check if already serialized
+    bool isSerialized() const;
 
     void resolveStorages(const ContextPtr & context);
 
@@ -106,13 +125,14 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0) const;
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t offset = 0, size_t max_description_length = 0) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
     /// Do not allow to change the table while the pipeline alive.
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<const Context> context) { resources.interpreter_context.emplace_back(std::move(context)); }
+    auto getInterpretersContexts() const { return resources.interpreter_context; }
     void addStorageHolder(StoragePtr storage) { resources.storage_holders.emplace_back(std::move(storage)); }
 
     void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
@@ -140,10 +160,13 @@ public:
 
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
-    void replaceNodeWithPlan(Node * node, QueryPlanPtr plan);
+    void replaceNodeWithPlan(Node * node, QueryPlan plan);
 
     QueryPlan extractSubplan(Node * subplan_root);
+    void cloneInplace(Node * node_to_replace, Node * subplan_root);
     QueryPlan clone() const;
+
+    static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:
     struct SerializationFlags;
@@ -164,6 +187,10 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
     bool concurrency_control = false;
+
+    /// Cached serialized representation
+    /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
+    mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
 };
 
 /// This is a structure which contains a query plan and a list of sets.
@@ -190,6 +217,7 @@ struct QueryPlanAndSets
     std::list<SetFromSubquery> sets_from_subquery;
 };
 
-std::string debugExplainStep(const IQueryPlanStep & step);
+std::string debugExplainStep(IQueryPlanStep & step);
+std::string debugExplainPlan(const QueryPlan & plan);
 
 }

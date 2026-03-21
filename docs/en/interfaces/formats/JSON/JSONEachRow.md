@@ -4,6 +4,7 @@ description: 'Documentation for the JSONEachRow format'
 keywords: ['JSONEachRow']
 slug: /interfaces/formats/JSONEachRow
 title: 'JSONEachRow'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias                 |
@@ -14,9 +15,9 @@ title: 'JSONEachRow'
 
 In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 Using a JSON file with the following data, named as `football.json`:
 
@@ -46,7 +47,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.json' FORMAT JSONEachRow;
 ```
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Read data using the `JSONEachRow` format:
 
@@ -80,4 +81,4 @@ The output will be in JSON format:
 
 Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

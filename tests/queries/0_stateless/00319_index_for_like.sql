@@ -6,6 +6,8 @@ CREATE TABLE index_for_like (s String, d Date DEFAULT today()) ENGINE = MergeTre
 
 INSERT INTO index_for_like (s) VALUES ('Hello'), ('Hello, World'), ('Hello, World 1'), ('Hello 1'), ('Goodbye'), ('Goodbye, World'), ('Goodbye 1'), ('Goodbye, World 1');
 
+-- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
+SET parallel_replicas_index_analysis_only_on_coordinator = 0;
 SET max_rows_to_read = 3;
 SELECT s FROM index_for_like WHERE s LIKE 'Hello, World%';
 

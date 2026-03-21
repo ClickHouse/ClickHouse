@@ -4,14 +4,14 @@ if(NOT USE_MONGODB)
     return()
 endif()
 
-set(libbson_VERSION_MAJOR 1)
-set(libbson_VERSION_MINOR 27)
-set(libbson_VERSION_PATCH 0)
-set(libbson_VERSION 1.27.0)
-set(libmongoc_VERSION_MAJOR 1)
-set(libmongoc_VERSION_MINOR 27)
-set(libmongoc_VERSION_PATCH 0)
-set(libmongoc_VERSION 1.27.0)
+set(libbson_VERSION_MAJOR 2)
+set(libbson_VERSION_MINOR 2)
+set(libbson_VERSION_PATCH 2)
+set(libbson_VERSION 2.2.2)
+set(libmongoc_VERSION_MAJOR 2)
+set(libmongoc_VERSION_MINOR 2)
+set(libmongoc_VERSION_PATCH 2)
+set(libmongoc_VERSION 2.2.2)
 
 set(LIBBSON_SOURCES_ROOT "${ClickHouse_SOURCE_DIR}/contrib/mongo-c-driver/src")
 set(LIBBSON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/libbson/src")
@@ -102,12 +102,12 @@ set(MONGOC_HAVE_SCHED_GETCPU 0)
 set(MONGOC_HAVE_SS_FAMILY 0)
 
 configure_file(
-        ${LIBBSON_SOURCE_DIR}/bson/bson-config.h.in
-        ${LIBBSON_BINARY_DIR}/bson/bson-config.h
+        ${LIBBSON_SOURCE_DIR}/bson/config.h.in
+        ${LIBBSON_BINARY_DIR}/bson/config.h
 )
 configure_file(
-        ${LIBBSON_SOURCE_DIR}/bson/bson-version.h.in
-        ${LIBBSON_BINARY_DIR}/bson/bson-version.h
+        ${LIBBSON_SOURCE_DIR}/bson/version.h.in
+        ${LIBBSON_BINARY_DIR}/bson/version.h
 )
 
 set(COMMON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/common/src")
@@ -136,6 +136,8 @@ set(UTF8PROC_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/utf8proc-2.8.0")
 set(UTF8PROC_SOURCES "${UTF8PROC_SOURCE_DIR}/utf8proc.c")
 set(UTHASH_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/uthash")
 
+set(MONGOC_CXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
+set(MONGOC_CXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
 configure_file(
         ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config.h.in
         ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-config.h
@@ -143,6 +145,10 @@ configure_file(
 configure_file(
         ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-version.h.in
         ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-version.h
+)
+configure_file(
+        ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config-private.h.in
+        ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-config-private.h
 )
 add_library(_libmongoc ${LIBMONGOC_SOURCES} ${COMMON_SOURCES} ${UTF8PROC_SOURCES})
 add_library(ch_contrib::libmongoc ALIAS _libmongoc)

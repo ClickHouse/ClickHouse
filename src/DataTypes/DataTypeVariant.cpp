@@ -2,14 +2,17 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeVariant.h>
+
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
-#include <Common/assert_cast.h>
-#include <IO/WriteBufferFromString.h>
+#include <DataTypes/Serializations/SerializationVariant.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/IAST.h>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -48,6 +51,13 @@ DataTypeVariant::DataTypeVariant(const DataTypes & variants_)
 
     if (variants.size() > ColumnVariant::MAX_NESTED_COLUMNS)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type with more than {} nested types is not allowed", ColumnVariant::MAX_NESTED_COLUMNS);
+}
+
+void DataTypeVariant::updateHashImpl(SipHash & hash) const
+{
+    hash.update(variants.size());
+    for (const auto & variant : variants)
+        variant->updateHash(hash);
 }
 
 std::string DataTypeVariant::doGetName() const
@@ -137,11 +147,6 @@ bool DataTypeVariant::haveMaximumSizeOfValue() const
     return std::all_of(variants.begin(), variants.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
 }
 
-bool DataTypeVariant::hasDynamicSubcolumnsDeprecated() const
-{
-    return std::any_of(variants.begin(), variants.end(), [](auto && elem) { return elem->hasDynamicSubcolumnsDeprecated(); });
-}
-
 std::optional<ColumnVariant::Discriminator> DataTypeVariant::tryGetVariantDiscriminator(const String & type_name) const
 {
     for (size_t i = 0; i != variants.size(); ++i)
@@ -161,7 +166,7 @@ size_t DataTypeVariant::getMaximumSizeOfValueInMemory() const
     return max_size;
 }
 
-SerializationPtr DataTypeVariant::doGetDefaultSerialization() const
+SerializationPtr DataTypeVariant::doGetSerialization(const SerializationInfoSettings & settings) const
 {
     SerializationVariant::VariantSerializations serializations;
     serializations.reserve(variants.size());
@@ -170,11 +175,15 @@ SerializationPtr DataTypeVariant::doGetDefaultSerialization() const
 
     for (const auto & variant : variants)
     {
-        serializations.push_back(variant->getDefaultSerialization());
+        if (settings.propagate_types_serialization_versions_to_nested_types)
+            serializations.push_back(variant->getSerialization(settings));
+        else
+            serializations.push_back(variant->getDefaultSerialization());
+
         variant_names.push_back(variant->getName());
     }
 
-    return std::make_shared<SerializationVariant>(std::move(serializations), std::move(variant_names), SerializationVariant::getVariantsDeserializeTextOrder(variants), getName());
+    return std::make_shared<SerializationVariant>(variants, serializations, variant_names, getName());
 }
 
 void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback) const

@@ -13,7 +13,7 @@ namespace ErrorCodes
 }
 
 ReadFromTableFunctionStep::ReadFromTableFunctionStep(
-    Block header,
+    SharedHeader header,
     std::string serialized_ast_,
     TableExpressionModifiers table_expression_modifiers_)
     : ISourceStep(std::move(header))
@@ -68,7 +68,7 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
 {
     UInt8 kind;
     readIntBinary(kind, ctx.in);
@@ -96,7 +96,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromTableFunctionStep::deserialize(Deseriali
         sample_offset_ratio = deserializeRational(ctx.in);
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableFunctionStep>(*ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
+    return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
 }
 
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry)

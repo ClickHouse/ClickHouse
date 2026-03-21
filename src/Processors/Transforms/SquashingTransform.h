@@ -13,7 +13,7 @@ class SquashingTransform : public ExceptionKeepingTransform
 {
 public:
     explicit SquashingTransform(
-        const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
+        SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "SquashingTransform"; }
 
@@ -33,7 +33,7 @@ private:
 class SimpleSquashingChunksTransform : public IInflatingTransform
 {
 public:
-    explicit SimpleSquashingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
+    explicit SimpleSquashingChunksTransform(SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "SimpleSquashingTransform"; }
 

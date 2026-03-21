@@ -25,7 +25,7 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-OffsetStep::OffsetStep(const Header & input_header_, size_t offset_)
+OffsetStep::OffsetStep(const SharedHeader & input_header_, size_t offset_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , offset(offset_)
 {
@@ -41,7 +41,8 @@ void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
 void OffsetStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
+    const auto & prefix = settings.detail_prefix;
+    settings.out << prefix << "Offset " << offset << '\n';
 }
 
 void OffsetStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -54,7 +55,7 @@ void OffsetStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> OffsetStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr OffsetStep::deserialize(Deserialization & ctx)
 {
     UInt64 offset;
     readVarUInt(offset, ctx.in);

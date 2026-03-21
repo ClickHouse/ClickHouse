@@ -126,15 +126,15 @@ extern "C"
 /// Some of these messages are non-actionable for the users, such as:
 /// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
+extern "C" void (*je_malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
 #elif USE_JEMALLOC
 #include <unordered_set>
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
-extern "C" void (*malloc_message)(void *, const char * s);
+extern "C" void (*je_malloc_message)(void *, const char * s);
 __attribute__((constructor(0))) void init_je_malloc_message()
 {
-    malloc_message = [](void *, const char * str)
+    je_malloc_message = [](void *, const char * str)
     {
         using namespace std::literals;
         static const std::unordered_set<std::string_view> ignore_messages{
@@ -158,7 +158,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
 __attribute__((constructor(202))) void init_ssl()
 {
-    DB::OpenSSLInitializer::initialize();
+    DB::OpenSSLInitializer::instance();
 }
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
@@ -218,8 +218,6 @@ int main(int argc_, char ** argv_)
 #if defined(SANITIZE_COVERAGE)
     dumpCoverage();
 #endif
-
-    DB::OpenSSLInitializer::cleanup();
 
     return exit_code;
 }

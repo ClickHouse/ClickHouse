@@ -11,6 +11,7 @@ namespace DB
 {
 
 class NamedCollection;
+struct StorageID;
 
 class StorageFuzzJSON final : public IStorage
 {
@@ -63,7 +64,7 @@ public:
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 
-    static StorageFuzzJSON::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
+    static StorageFuzzJSON::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, const StorageID * table_id = nullptr);
 
 private:
     const Configuration config;

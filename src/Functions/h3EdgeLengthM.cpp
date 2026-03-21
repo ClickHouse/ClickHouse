@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
@@ -18,7 +19,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
 }
@@ -44,14 +44,10 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt8())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arg->getName(), 1, getName());
+        FunctionArgumentDescriptors mandatory_args{{"resolution", &isUInt8, nullptr, "UInt8"}};
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeFloat64>();
     }
@@ -104,7 +100,32 @@ public:
 
 REGISTER_FUNCTION(H3EdgeLengthM)
 {
-    factory.registerFunction<FunctionH3EdgeLengthM>();
+    FunctionDocumentation::Description description = R"(
+Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3Indexing/) hexagon edge in meters.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3EdgeLengthM(resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"resolution", "Index resolution. Range: `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the average edge length of an [H3](#h3-index) hexagon in meters.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get edge length for maximum resolution",
+            "SELECT h3EdgeLengthM(15) AS edgeLengthM",
+            R"(
+┌─edgeLengthM─┐
+│ 0.509713273 │
+└─────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3EdgeLengthM>(documentation);
 }
 
 }

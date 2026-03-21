@@ -8,6 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 opts=(
   --enable_analyzer=1
   --enable_parallel_replicas=1
+  --automatic_parallel_replicas_mode=0
   --parallel_replicas_for_non_replicated_merge_tree=1
   --cluster_for_parallel_replicas='parallel_replicas'
   --max_parallel_replicas=3
@@ -30,6 +31,6 @@ ${CLICKHOUSE_CLIENT} -nq "
   -- Check that all data was read during PREWHERE
   SELECT sum(ProfileEvents['RowsReadByPrewhereReaders']) = sum(ProfileEvents['SelectedRows'])
     FROM system.query_log
-   WHERE event_date >= yesterday() AND NOT is_initial_query AND initial_query_id = '$query_id' AND type = 'QueryFinish' -- AND current_database = currentDatabase() 
+   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND NOT is_initial_query AND initial_query_id = '$query_id' AND type = 'QueryFinish' -- AND current_database = currentDatabase() 
 "
 

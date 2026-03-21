@@ -11,7 +11,7 @@ namespace DB
 class ConstChunkGenerator : public ISource
 {
 public:
-    ConstChunkGenerator(Block header, size_t total_num_rows, size_t max_block_size_)
+    ConstChunkGenerator(SharedHeader header, size_t total_num_rows, size_t max_block_size_)
         : ISource(std::move(header))
         , remaining_rows(total_num_rows), max_block_size(max_block_size_)
     {

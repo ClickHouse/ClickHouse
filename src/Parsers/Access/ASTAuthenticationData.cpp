@@ -17,7 +17,7 @@ namespace
 {
     void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
+        ostr << " VALID UNTIL ";
         valid_until.format(ostr, settings);
     }
 }
@@ -52,8 +52,8 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 {
     if (type && *type == AuthenticationType::NO_PASSWORD)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " no_password"
-                      << (settings.hilite ? IAST::hilite_none : "");
+        ostr << " no_password"
+                     ;
 
         if (valid_until)
         {
@@ -164,6 +164,8 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
                     scheme = true;
                 break;
             }
+            case AuthenticationType::NO_AUTHENTICATION:
+                break;
             case AuthenticationType::NO_PASSWORD: [[fallthrough]];
             case AuthenticationType::MAX:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(*type));
@@ -187,12 +189,12 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
     if (!auth_type_name.empty())
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << auth_type_name << (settings.hilite ? IAST::hilite_none : "");
+        ostr << " " << auth_type_name;
     }
 
     if (!prefix.empty())
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << (settings.hilite ? IAST::hilite_none : "");
+        ostr << " " << prefix;
     }
 
     if (password)

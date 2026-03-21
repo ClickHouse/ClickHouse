@@ -3,6 +3,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/JSONUtils.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -37,7 +38,7 @@ void registerInputFormatJSONCompactColumns(FormatFactory & factory)
            const RowInputFormatParams &,
            const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONCompactColumnsReader>(buf));
+            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, std::make_shared<const Block>(sample), settings, std::make_unique<JSONCompactColumnsReader>(buf));
         }
     );
 }

@@ -19,6 +19,16 @@ inline Int64 futexWait(void * address, UInt32 value)
     return syscall(SYS_futex, address, FUTEX_WAIT_PRIVATE, value, nullptr, nullptr, 0);
 }
 
+inline Int64 futexTimedWait(void * address, UInt32 value, UInt64 nanos)
+{
+    const UInt64 nanos_per_sec = 1'000'000'000;
+    UInt64 sec = nanos / nanos_per_sec;
+    struct timespec timeout;
+    timeout.tv_sec = time_t(std::min(sec, UInt64(std::numeric_limits<time_t>::max())));
+    timeout.tv_nsec = int64_t(nanos % nanos_per_sec);
+    return syscall(SYS_futex, address, FUTEX_WAIT_PRIVATE, value, &timeout, nullptr, 0);
+}
+
 inline Int64 futexWake(void * address, int count)
 {
     return syscall(SYS_futex, address, FUTEX_WAKE_PRIVATE, count, nullptr, nullptr, 0);
@@ -37,7 +47,7 @@ inline void futexWakeOne(std::atomic<UInt32> & address)
 
 inline void futexWakeAll(std::atomic<UInt32> & address)
 {
-     futexWake(&address, INT_MAX);
+    futexWake(&address, INT_MAX);
 }
 
 constexpr UInt32 lowerHalf(UInt64 value)

@@ -47,6 +47,10 @@ struct SnapshotDeserializationResult
     SnapshotMetadataPtr snapshot_meta;
     /// Cluster config
     ClusterConfigPtr cluster_config;
+    /// container with all the paths stored in snapshot
+    /// used if we don't want to load entire storage from snapshot
+    /// which can be useful for analyzing snapshot files
+    std::vector<std::string> paths;
 };
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be
@@ -79,7 +83,7 @@ public:
 
     static void serialize(const KeeperStorageSnapshot<Storage> & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context);
 
-    static void deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context);
+    static void deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context, bool load_full_storage = true);
 
     Storage * storage;
 
@@ -116,7 +120,6 @@ struct SnapshotFileInfo
 
     std::string path;
     DiskPtr disk;
-    mutable std::atomic<size_t> size{0};
 };
 
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
@@ -152,7 +155,7 @@ public:
     /// Serialize snapshot directly to disk
     SnapshotFileInfoPtr serializeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);
 
-    SnapshotDeserializationResult<Storage> deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
+    SnapshotDeserializationResult<Storage> deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage = true) const;
 
     /// Deserialize snapshot with log index up_to_log_idx from disk into compressed nuraft buffer.
     nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const;

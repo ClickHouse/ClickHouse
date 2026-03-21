@@ -71,4 +71,18 @@ void DataLakeStorageSettings::loadFromSettingsChanges(const SettingsChanges & ch
     }
 }
 
+void DataLakeStorageSettings::serialize(WriteBuffer & out) const
+{
+    impl->writeChangedBinary(out);
+}
+
+DataLakeStorageSettings DataLakeStorageSettings::deserialize(ReadBuffer & in)
+{
+    DataLakeStorageSettings result;
+    result.impl = std::make_unique<DataLakeStorageSettingsImpl>();
+    result.impl->readBinary(in);
+
+    return result;
+}
+
 }

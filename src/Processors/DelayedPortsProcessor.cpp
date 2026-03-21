@@ -13,7 +13,7 @@ namespace ErrorCodes
 }
 
 InputPorts createInputPorts(
-    const Block & header,
+    SharedHeader header,
     size_t num_ports,
     IProcessor::PortNumbers delayed_ports,
     bool assert_main_ports_empty)
@@ -39,7 +39,7 @@ InputPorts createInputPorts(
 }
 
 DelayedPortsProcessor::DelayedPortsProcessor(
-    const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty)
+    SharedHeader header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty)
     : IProcessor(createInputPorts(header, num_ports, delayed_ports, assert_main_ports_empty),
                  OutputPorts((assert_main_ports_empty ? delayed_ports.size() : num_ports), header))
     , num_delayed_ports(delayed_ports.size())

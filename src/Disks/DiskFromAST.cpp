@@ -15,7 +15,6 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <queue>
 
 namespace DB
 {
@@ -31,10 +30,14 @@ std::string getOrCreateCustomDisk(
     ContextPtr context,
     bool attach)
 {
+    std::string default_path = "/etc/metrika.xml";
+
     const auto & server_config = context->getConfigRef();
     std::string include_from_path;
     if (server_config.has("include_from"))
         include_from_path = server_config.getString("include_from");
+    else if (fs::exists(default_path))
+        include_from_path = default_path;
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {
@@ -50,10 +53,11 @@ std::string getOrCreateCustomDisk(
             xml_document,
             substitutions,
             include_from_path,
-            /* throw_on_bad_incl */!attach,
+            /* throw_on_bad_incl= */!attach,
             dom_parser,
             getLogger("getOrCreateCustomDisk"),
-            {}, {},
+            /*contributing_zk_paths=*/ {},
+            /*contributing_files=*/ {},
             &zk_node_cache);
 
         config->load(xml_document);
@@ -149,7 +153,7 @@ public:
             const auto & function_args = function_args_expr->children;
             auto disk_setting_string = function->formatWithSecretsOneLine();
             auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach);
-            ast = std::make_shared<ASTLiteral>(disk_name);
+            ast = make_intrusive<ASTLiteral>(disk_name);
         }
     }
 };

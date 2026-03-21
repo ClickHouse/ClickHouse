@@ -11,7 +11,7 @@ namespace DB
 struct AddSequenceNumber : ISimpleTransform
 {
 public:
-    explicit AddSequenceNumber(const Block & header_)
+    explicit AddSequenceNumber(SharedHeader header_)
         : ISimpleTransform(header_, header_, false)
     {
     }

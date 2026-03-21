@@ -4,6 +4,7 @@ sidebar_label: 'SETTING'
 sidebar_position: 38
 slug: /sql-reference/statements/alter/setting
 title: 'Table Settings Manipulations'
+doc_type: 'reference'
 ---
 
 # Table Settings Manipulations

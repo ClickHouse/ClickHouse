@@ -6,6 +6,7 @@ keywords: ['JSONCompactColumns']
 output_format: true
 slug: /interfaces/formats/JSONCompactColumns
 title: 'JSONCompactColumns'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -20,9 +21,9 @@ In this format, all data is represented as a single JSON Array.
 The `JSONCompactColumns` output format buffers all data in memory to output it as a single block which can lead to high memory consumption.
 :::
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 Using a JSON file with the following data, named as `football.json`:
 
@@ -43,7 +44,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.json' FORMAT JSONCompactColumns;
 ```
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Read data using the `JSONCompactColumns` format:
 
@@ -68,5 +69,4 @@ The output will be in JSON format:
 
 Columns that are not present in the block will be filled with default values (you can use [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
 
-## Format Settings {#format-settings}
-
+## Format settings {#format-settings}

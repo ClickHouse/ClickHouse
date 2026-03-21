@@ -54,14 +54,14 @@ ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context
     assert(create.children.size() == 1);
     assert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
-    Block sample_block;
+    SharedHeader sample_block;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
     else
         sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
 
-    return ColumnsDescription(sample_block.getNamesAndTypesList());
+    return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
 
 StoragePtr TableFunctionView::executeImpl(
@@ -75,7 +75,7 @@ StoragePtr TableFunctionView::executeImpl(
 
 void registerTableFunctionView(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionView>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionView>({}, {.allow_readonly = true});
 }
 
 }

@@ -3,1621 +3,1759 @@ syntax = "proto2";
 package BuzzHouse;
 
 enum SQLFunc {
-    FUNCabs = 1;
-    FUNCaccurateCast = 2;
-    FUNCacos = 3;
-    FUNCacosh = 4;
-    FUNCaddDate = 5;
-    FUNCaddDays = 6;
-    FUNCaddHours = 7;
-    FUNCaddInterval = 8;
-    FUNCaddMicroseconds = 9;
-    FUNCaddMilliseconds = 10;
-    FUNCaddMinutes = 11;
-    FUNCaddMonths = 12;
-    FUNCaddNanoseconds = 13;
-    FUNCaddQuarters = 14;
-    FUNCaddressToLine = 15;
-    FUNCaddressToLineWithInlines = 16;
-    FUNCaddressToSymbol = 17;
-    FUNCaddSeconds = 18;
-    FUNCaddTupleOfIntervals = 19;
-    FUNCaddWeeks = 20;
-    FUNCaddYears = 21;
-    FUNCaes_decrypt_mysql = 22;
-    FUNCaes_encrypt_mysql = 23;
-    FUNCage = 24;
-    FUNCaggThrow = 25;
-    FUNCalphaTokens = 26;
-    FUNCanalysisOfVariance = 27;
-    FUNCand = 28;
-    FUNCanova = 29;
-    FUNCany = 30;
-    FUNCany_value = 31;
-    FUNCanyHeavy = 32;
-    FUNCanyLast = 33;
-    FUNCappendTrailingCharIfAbsent = 34;
-    FUNCapprox_top_count = 35;
-    FUNCapprox_top_k = 36;
-    FUNCapprox_top_sum = 37;
-    FUNCargMax = 38;
-    FUNCargMin = 39;
-    FUNCarray = 40;
-    FUNCarray_agg = 41;
-    FUNCarray_concat_agg = 42;
-    FUNCarrayAll = 43;
-    FUNCarrayAUC = 44;
-    FUNCarrayAUCPR = 45;
-    FUNCarrayAvg = 46;
-    FUNCarrayCompact = 47;
-    FUNCarrayConcat = 48;
-    FUNCarrayCount = 49;
-    FUNCarrayCumSum = 50;
-    FUNCarrayCumSumNonNegative = 51;
-    FUNCarrayDifference = 52;
-    FUNCarrayDistinct = 53;
-    FUNCarrayDotProduct = 54;
-    FUNCarrayElement = 55;
-    FUNCarrayElementOrNull = 56;
-    FUNCarrayEnumerate = 57;
-    FUNCarrayEnumerateDense = 58;
-    FUNCarrayEnumerateDenseRanked = 59;
-    FUNCarrayEnumerateUniq = 60;
-    FUNCarrayEnumerateUniqRanked = 61;
-    FUNCarrayExists = 62;
-    FUNCarrayFill = 63;
-    FUNCarrayFilter = 64;
-    FUNCarrayFirst = 65;
-    FUNCarrayFirstIndex = 66;
-    FUNCarrayFirstOrNull = 67;
-    FUNCarrayFlatten = 68;
-    FUNCarrayFold = 69;
-    FUNCarrayIntersect = 70;
-    FUNCarrayJaccardIndex = 71;
-    FUNCarrayJoin = 72;
-    FUNCarrayLast = 73;
-    FUNCarrayLastIndex = 74;
-    FUNCarrayLastOrNull = 75;
-    FUNCarrayLevenshteinDistance = 76;
-    FUNCarrayLevenshteinDistanceWeighted = 77;
-    FUNCarrayMap = 78;
-    FUNCarrayMax = 79;
-    FUNCarrayMin = 80;
-    FUNCarrayNormalizedGini = 81;
-    FUNCarrayPartialReverseSort = 82;
-    FUNCarrayPartialShuffle = 83;
-    FUNCarrayPartialSort = 84;
-    FUNCarrayPopBack = 85;
-    FUNCarrayPopFront = 86;
-    FUNCarrayPRAUC = 87;
-    FUNCarrayProduct = 88;
-    FUNCarrayPushBack = 89;
-    FUNCarrayPushFront = 90;
-    FUNCarrayRandomSample = 91;
-    FUNCarrayReduce = 92;
-    FUNCarrayReduceInRanges = 93;
-    FUNCarrayResize = 94;
-    FUNCarrayReverse = 95;
-    FUNCarrayReverseFill = 96;
-    FUNCarrayReverseSort = 97;
-    FUNCarrayReverseSplit = 98;
-    FUNCarrayROCAUC = 99;
-    FUNCarrayRotateLeft = 100;
-    FUNCarrayRotateRight = 101;
-    FUNCarrayShiftLeft = 102;
-    FUNCarrayShiftRight = 103;
-    FUNCarrayShingles = 104;
-    FUNCarrayShuffle = 105;
-    FUNCarraySimilarity = 106;
-    FUNCarraySlice = 107;
-    FUNCarraySort = 108;
-    FUNCarraySplit = 109;
-    FUNCarrayStringConcat = 110;
-    FUNCarraySum = 111;
-    FUNCarraySymmetricDifference = 112;
-    FUNCarrayUnion = 113;
-    FUNCarrayUniq = 114;
-    FUNCarrayWithConstant = 115;
-    FUNCarrayZip = 116;
-    FUNCarrayZipUnaligned = 117;
-    FUNCascii = 118;
-    FUNCasin = 119;
-    FUNCasinh = 120;
-    FUNCassumeNotNull = 121;
-    FUNCatan = 122;
-    FUNCatan2 = 123;
-    FUNCatanh = 124;
-    FUNCavg = 125;
-    FUNCavgWeighted = 126;
-    FUNCbar = 127;
-    FUNCbase32Decode = 128;
-    FUNCbase32Encode = 129;
-    FUNCbase58Decode = 130;
-    FUNCbase58Encode = 131;
-    FUNCbase64Decode = 132;
-    FUNCbase64Encode = 133;
-    FUNCbase64URLDecode = 134;
-    FUNCbase64URLEncode = 135;
-    FUNCbasename = 136;
-    FUNCbech32Decode = 137;
-    FUNCbech32Encode = 138;
-    FUNCbin = 139;
-    FUNCBIT_AND = 140;
-    FUNCBIT_OR = 141;
-    FUNCBIT_XOR = 142;
-    FUNCbitAnd = 143;
-    FUNCbitCount = 144;
-    FUNCbitHammingDistance = 145;
-    FUNCbitmapAnd = 146;
-    FUNCbitmapAndCardinality = 147;
-    FUNCbitmapAndnot = 148;
-    FUNCbitmapAndnotCardinality = 149;
-    FUNCbitmapBuild = 150;
-    FUNCbitmapCardinality = 151;
-    FUNCbitmapContains = 152;
-    FUNCbitmapHasAll = 153;
-    FUNCbitmapHasAny = 154;
-    FUNCbitmapMax = 155;
-    FUNCbitmapMin = 156;
-    FUNCbitmapOr = 157;
-    FUNCbitmapOrCardinality = 158;
-    FUNCbitmapSubsetInRange = 159;
-    FUNCbitmapSubsetLimit = 160;
-    FUNCbitmapToArray = 161;
-    FUNCbitmapTransform = 162;
-    FUNCbitmapXor = 163;
-    FUNCbitmapXorCardinality = 164;
-    FUNCbitmaskToArray = 165;
-    FUNCbitmaskToList = 166;
-    FUNCbitNot = 167;
-    FUNCbitOr = 168;
-    FUNCbitPositionsToArray = 169;
-    FUNCbitRotateLeft = 170;
-    FUNCbitRotateRight = 171;
-    FUNCbitShiftLeft = 172;
-    FUNCbitShiftRight = 173;
-    FUNCbitSlice = 174;
-    FUNCbitTest = 175;
-    FUNCbitTestAll = 176;
-    FUNCbitTestAny = 177;
-    FUNCbitXor = 178;
-    FUNCBLAKE3 = 179;
-    FUNCblockNumber = 180;
-    FUNCblockSerializedSize = 181;
-    FUNCblockSize = 182;
-    FUNCboundingRatio = 183;
-    FUNCbuildId = 184;
-    FUNCbyteHammingDistance = 185;
-    FUNCbyteSize = 186;
-    FUNCbyteSlice = 187;
-    FUNCbyteSwap = 188;
-    FUNCcaseWithExpr = 189;
-    FUNCcaseWithExpression = 190;
-    FUNCcaseWithoutExpr = 191;
-    FUNCcaseWithoutExpression = 192;
-    FUNCCAST = 193;
-    FUNCcatboostEvaluate = 194;
-    FUNCcategoricalInformationValue = 195;
-    FUNCcbrt = 196;
-    FUNCceil = 197;
-    FUNCceiling = 198;
-    FUNCchangeDay = 199;
-    FUNCchangeHour = 200;
-    FUNCchangeMinute = 201;
-    FUNCchangeMonth = 202;
-    FUNCchangeSecond = 203;
-    FUNCchangeYear = 204;
-    FUNCchar = 205;
-    FUNCCHAR_LENGTH = 206;
-    FUNCCHARACTER_LENGTH = 207;
-    FUNCcityHash64 = 208;
-    FUNCclamp = 209;
-    FUNCcoalesce = 210;
-    FUNCcompareSubstrings = 211;
-    FUNCconcat = 212;
-    FUNCconcat_ws = 213;
-    FUNCconcatAssumeInjective = 214;
-    FUNCconcatWithSeparator = 215;
-    FUNCconcatWithSeparatorAssumeInjective = 216;
-    FUNCconnection_id = 217;
-    FUNCconnectionId = 218;
-    FUNCcontingency = 219;
-    FUNCconvertCharset = 220;
-    FUNCcorr = 221;
-    FUNCcorrMatrix = 222;
-    FUNCcorrStable = 223;
-    FUNCcos = 224;
-    FUNCcosh = 225;
-    FUNCcosineDistance = 226;
-    FUNCcount = 227;
-    FUNCcountDigits = 228;
-    FUNCcountEqual = 229;
-    FUNCcountMatches = 230;
-    FUNCcountMatchesCaseInsensitive = 231;
-    FUNCcountSubstrings = 232;
-    FUNCcountSubstringsCaseInsensitive = 233;
-    FUNCcountSubstringsCaseInsensitiveUTF8 = 234;
-    FUNCCOVAR_POP = 235;
-    FUNCCOVAR_SAMP = 236;
-    FUNCcovarPop = 237;
-    FUNCcovarPopMatrix = 238;
-    FUNCcovarPopStable = 239;
-    FUNCcovarSamp = 240;
-    FUNCcovarSampMatrix = 241;
-    FUNCcovarSampStable = 242;
-    FUNCcramersV = 243;
-    FUNCcramersVBiasCorrected = 244;
-    FUNCCRC32 = 245;
-    FUNCCRC32IEEE = 246;
-    FUNCCRC64 = 247;
-    FUNCcurdate = 248;
-    FUNCcurrent_database = 249;
-    FUNCcurrent_date = 250;
-    FUNCcurrent_schemas = 251;
-    FUNCcurrent_timestamp = 252;
-    FUNCcurrent_user = 253;
-    FUNCcurrentDatabase = 254;
-    FUNCcurrentProfiles = 255;
-    FUNCcurrentRoles = 256;
-    FUNCcurrentSchemas = 257;
-    FUNCcurrentUser = 258;
-    FUNCcutFragment = 259;
-    FUNCcutIPv6 = 260;
-    FUNCcutQueryString = 261;
-    FUNCcutQueryStringAndFragment = 262;
-    FUNCcutToFirstSignificantSubdomain = 263;
-    FUNCcutToFirstSignificantSubdomainCustom = 264;
-    FUNCcutToFirstSignificantSubdomainCustomRFC = 265;
-    FUNCcutToFirstSignificantSubdomainCustomWithWWW = 266;
-    FUNCcutToFirstSignificantSubdomainCustomWithWWWRFC = 267;
-    FUNCcutToFirstSignificantSubdomainRFC = 268;
-    FUNCcutToFirstSignificantSubdomainWithWWW = 269;
-    FUNCcutToFirstSignificantSubdomainWithWWWRFC = 270;
-    FUNCcutURLParameter = 271;
-    FUNCcutWWW = 272;
-    FUNCdamerauLevenshteinDistance = 273;
-    FUNCDATABASE = 274;
-    FUNCDATE = 275;
-    FUNCdate_add = 276;
-    FUNCdate_diff = 277;
-    FUNCDATE_FORMAT = 278;
-    FUNCdate_sub = 279;
-    FUNCDATE_TRUNC = 280;
-    FUNCdateDiff = 281;
-    FUNCdateName = 282;
-    FUNCdateTime64ToSnowflake = 283;
-    FUNCdateTime64ToSnowflakeID = 284;
-    FUNCdateTimeToSnowflake = 285;
-    FUNCdateTimeToSnowflakeID = 286;
-    FUNCdateTrunc = 287;
-    FUNCDAY = 288;
-    FUNCDAYOFMONTH = 289;
-    FUNCDAYOFWEEK = 290;
-    FUNCDAYOFYEAR = 291;
-    FUNCdecodeHTMLComponent = 292;
-    FUNCdecodeURLComponent = 293;
-    FUNCdecodeURLFormComponent = 294;
-    FUNCdecodeXMLComponent = 295;
-    FUNCdecrypt = 296;
-    FUNCdefaultProfiles = 297;
-    FUNCdefaultRoles = 298;
-    FUNCdefaultValueOfArgumentType = 299;
-    FUNCdefaultValueOfTypeName = 300;
-    FUNCdegrees = 301;
-    FUNCdeltaSum = 302;
-    FUNCdeltaSumTimestamp = 303;
-    FUNCdemangle = 304;
-    FUNCdense_rank = 305;
-    FUNCdenseRank = 306;
-    FUNCdetectCharset = 307;
-    FUNCdetectLanguage = 308;
-    FUNCdetectLanguageMixed = 309;
-    FUNCdetectLanguageUnknown = 310;
-    FUNCdetectProgrammingLanguage = 311;
-    FUNCdetectTonality = 312;
-    FUNCdictGet = 313;
-    FUNCdictGetAll = 314;
-    FUNCdictGetChildren = 315;
-    FUNCdictGetDate = 316;
-    FUNCdictGetDateTime = 317;
-    FUNCdictGetDescendants = 318;
-    FUNCdictGetFloat32 = 319;
-    FUNCdictGetFloat64 = 320;
-    FUNCdictGetHierarchy = 321;
-    FUNCdictGetInt16 = 322;
-    FUNCdictGetInt32 = 323;
-    FUNCdictGetInt64 = 324;
-    FUNCdictGetInt8 = 325;
-    FUNCdictGetIPv4 = 326;
-    FUNCdictGetIPv6 = 327;
-    FUNCdictGetString = 328;
-    FUNCdictGetUInt16 = 329;
-    FUNCdictGetUInt32 = 330;
-    FUNCdictGetUInt64 = 331;
-    FUNCdictGetUInt8 = 332;
-    FUNCdictGetUUID = 333;
-    FUNCdictHas = 334;
-    FUNCdictIsIn = 335;
-    FUNCdisplayName = 336;
-    FUNCdistanceL1 = 337;
-    FUNCdistanceL2 = 338;
-    FUNCdistanceL2Squared = 339;
-    FUNCdistanceLinf = 340;
-    FUNCdistanceLp = 341;
-    FUNCdistinctDynamicTypes = 342;
-    FUNCdistinctJSONPaths = 343;
-    FUNCdistinctJSONPathsAndTypes = 344;
-    FUNCdivide = 345;
-    FUNCdivideDecimal = 346;
-    FUNCdomain = 347;
-    FUNCdomainRFC = 348;
-    FUNCdomainWithoutWWW = 349;
-    FUNCdomainWithoutWWWRFC = 350;
-    FUNCdotProduct = 351;
-    FUNCdumpColumnStructure = 352;
-    FUNCdynamicElement = 353;
-    FUNCdynamicType = 354;
-    FUNCe = 355;
-    FUNCeditDistance = 356;
-    FUNCeditDistanceUTF8 = 357;
-    FUNCempty = 358;
-    FUNCemptyArrayDate = 359;
-    FUNCemptyArrayDateTime = 360;
-    FUNCemptyArrayFloat32 = 361;
-    FUNCemptyArrayFloat64 = 362;
-    FUNCemptyArrayInt16 = 363;
-    FUNCemptyArrayInt32 = 364;
-    FUNCemptyArrayInt64 = 365;
-    FUNCemptyArrayInt8 = 366;
-    FUNCemptyArrayString = 367;
-    FUNCemptyArrayToSingle = 368;
-    FUNCemptyArrayUInt16 = 369;
-    FUNCemptyArrayUInt32 = 370;
-    FUNCemptyArrayUInt64 = 371;
-    FUNCemptyArrayUInt8 = 372;
-    FUNCenabledProfiles = 373;
-    FUNCenabledRoles = 374;
-    FUNCencodeURLComponent = 375;
-    FUNCencodeURLFormComponent = 376;
-    FUNCencodeXMLComponent = 377;
-    FUNCencrypt = 378;
-    FUNCendsWith = 379;
-    FUNCendsWithUTF8 = 380;
-    FUNCentropy = 381;
-    FUNCequals = 382;
-    FUNCerf = 383;
-    FUNCerfc = 384;
-    FUNCerrorCodeToName = 385;
-    FUNCestimateCompressionRatio = 386;
-    FUNCevalMLMethod = 387;
-    FUNCexp = 388;
-    FUNCexp10 = 389;
-    FUNCexp2 = 390;
-    FUNCexponentialMovingAverage = 391;
-    FUNCexponentialTimeDecayedAvg = 392;
-    FUNCexponentialTimeDecayedCount = 393;
-    FUNCexponentialTimeDecayedMax = 394;
-    FUNCexponentialTimeDecayedSum = 395;
-    FUNCextract = 396;
-    FUNCextractAll = 397;
-    FUNCextractAllGroups = 398;
-    FUNCextractAllGroupsHorizontal = 399;
-    FUNCextractAllGroupsVertical = 400;
-    FUNCextractGroups = 401;
-    FUNCextractKeyValuePairs = 402;
-    FUNCextractKeyValuePairsWithEscaping = 403;
-    FUNCextractTextFromHTML = 404;
-    FUNCextractURLParameter = 405;
-    FUNCextractURLParameterNames = 406;
-    FUNCextractURLParameters = 407;
-    FUNCfactorial = 408;
-    FUNCfarmFingerprint64 = 409;
-    FUNCfarmHash64 = 410;
-    FUNCfile = 411;
-    FUNCfilesystemAvailable = 412;
-    FUNCfilesystemCapacity = 413;
-    FUNCfilesystemUnreserved = 414;
-    FUNCfinalizeAggregation = 415;
-    FUNCfirst_value = 416;
-    FUNCfirstLine = 417;
-    FUNCfirstSignificantSubdomain = 418;
-    FUNCfirstSignificantSubdomainCustom = 419;
-    FUNCfirstSignificantSubdomainCustomRFC = 420;
-    FUNCfirstSignificantSubdomainRFC = 421;
-    FUNCflameGraph = 422;
-    FUNCflatten = 423;
-    FUNCflattenTuple = 424;
-    FUNCfloor = 425;
-    FUNCformat = 426;
-    FUNCFORMAT_BYTES = 427;
-    FUNCformatDateTime = 428;
-    FUNCformatDateTimeInJodaSyntax = 429;
-    FUNCformatQuery = 430;
-    FUNCformatQuerySingleLine = 431;
-    FUNCformatReadableDecimalSize = 432;
-    FUNCformatReadableQuantity = 433;
-    FUNCformatReadableSize = 434;
-    FUNCformatReadableTimeDelta = 435;
-    FUNCformatRow = 436;
-    FUNCformatRowNoNewline = 437;
-    FUNCfqdn = 438;
-    FUNCfragment = 439;
-    FUNCFROM_BASE64 = 440;
-    FUNCFROM_DAYS = 441;
-    FUNCFROM_UNIXTIME = 442;
-    FUNCfrom_utc_timestamp = 443;
-    FUNCfromDaysSinceYearZero = 444;
-    FUNCfromDaysSinceYearZero32 = 445;
-    FUNCfromModifiedJulianDay = 446;
-    FUNCfromModifiedJulianDayOrNull = 447;
-    FUNCfromUnixTimestamp = 448;
-    FUNCfromUnixTimestamp64Micro = 449;
-    FUNCfromUnixTimestamp64Milli = 450;
-    FUNCfromUnixTimestamp64Nano = 451;
-    FUNCfromUnixTimestamp64Second = 452;
-    FUNCfromUnixTimestampInJodaSyntax = 453;
-    FUNCfromUTCTimestamp = 454;
-    FUNCfullHostName = 455;
-    FUNCfuzzBits = 456;
-    FUNCgccMurmurHash = 457;
-    FUNCgcd = 458;
-    FUNCgenerateRandomStructure = 459;
-    FUNCgenerateSnowflakeID = 460;
-    FUNCgenerateULID = 461;
-    FUNCgenerateUUIDv4 = 462;
-    FUNCgenerateUUIDv7 = 463;
-    FUNCgeoDistance = 464;
-    FUNCgeohashDecode = 465;
-    FUNCgeohashEncode = 466;
-    FUNCgeohashesInBox = 467;
-    FUNCgeoToH3 = 468;
-    FUNCgeoToS2 = 469;
-    FUNCgetClientHTTPHeader = 470;
-    FUNCgetMacro = 471;
-    FUNCgetOSKernelVersion = 472;
-    FUNCgetServerPort = 473;
-    FUNCgetSetting = 474;
-    FUNCgetSizeOfEnumType = 475;
-    FUNCgetSubcolumn = 476;
-    FUNCgetTypeSerializationStreams = 477;
-    FUNCglobalIn = 478;
-    FUNCglobalInIgnoreSet = 479;
-    FUNCglobalNotIn = 480;
-    FUNCglobalNotInIgnoreSet = 481;
-    FUNCglobalNotNullIn = 482;
-    FUNCglobalNotNullInIgnoreSet = 483;
-    FUNCglobalNullIn = 484;
-    FUNCglobalNullInIgnoreSet = 485;
-    FUNCglobalVariable = 486;
-    FUNCgreatCircleAngle = 487;
-    FUNCgreatCircleDistance = 488;
-    FUNCgreater = 489;
-    FUNCgreaterOrEquals = 490;
-    FUNCgreatest = 491;
-    FUNCgroup_concat = 492;
-    FUNCgroupArray = 493;
-    FUNCgroupArrayArray = 494;
-    FUNCgroupArrayInsertAt = 495;
-    FUNCgroupArrayIntersect = 496;
-    FUNCgroupArrayLast = 497;
-    FUNCgroupArrayMovingAvg = 498;
-    FUNCgroupArrayMovingSum = 499;
-    FUNCgroupArraySample = 500;
-    FUNCgroupArraySorted = 501;
-    FUNCgroupBitAnd = 502;
-    FUNCgroupBitmap = 503;
-    FUNCgroupBitmapAnd = 504;
-    FUNCgroupBitmapOr = 505;
-    FUNCgroupBitmapXor = 506;
-    FUNCgroupBitOr = 507;
-    FUNCgroupBitXor = 508;
-    FUNCgroupConcat = 509;
-    FUNCgrouping = 510;
-    FUNCgroupUniqArray = 511;
-    FUNCh3CellAreaM2 = 512;
-    FUNCh3CellAreaRads2 = 513;
-    FUNCh3Distance = 514;
-    FUNCh3EdgeAngle = 515;
-    FUNCh3EdgeLengthKm = 516;
-    FUNCh3EdgeLengthM = 517;
-    FUNCh3ExactEdgeLengthKm = 518;
-    FUNCh3ExactEdgeLengthM = 519;
-    FUNCh3ExactEdgeLengthRads = 520;
-    FUNCh3GetBaseCell = 521;
-    FUNCh3GetDestinationIndexFromUnidirectionalEdge = 522;
-    FUNCh3GetFaces = 523;
-    FUNCh3GetIndexesFromUnidirectionalEdge = 524;
-    FUNCh3GetOriginIndexFromUnidirectionalEdge = 525;
-    FUNCh3GetPentagonIndexes = 526;
-    FUNCh3GetRes0Indexes = 527;
-    FUNCh3GetResolution = 528;
-    FUNCh3GetUnidirectionalEdge = 529;
-    FUNCh3GetUnidirectionalEdgeBoundary = 530;
-    FUNCh3GetUnidirectionalEdgesFromHexagon = 531;
-    FUNCh3HexAreaKm2 = 532;
-    FUNCh3HexAreaM2 = 533;
-    FUNCh3HexRing = 534;
-    FUNCh3IndexesAreNeighbors = 535;
-    FUNCh3IsPentagon = 536;
-    FUNCh3IsResClassIII = 537;
-    FUNCh3IsValid = 538;
-    FUNCh3kRing = 539;
-    FUNCh3Line = 540;
-    FUNCh3NumHexagons = 541;
-    FUNCh3PointDistKm = 542;
-    FUNCh3PointDistM = 543;
-    FUNCh3PointDistRads = 544;
-    FUNCh3ToCenterChild = 545;
-    FUNCh3ToChildren = 546;
-    FUNCh3ToGeo = 547;
-    FUNCh3ToGeoBoundary = 548;
-    FUNCh3ToParent = 549;
-    FUNCh3ToString = 550;
-    FUNCh3UnidirectionalEdgeIsValid = 551;
-    FUNChalfMD5 = 552;
-    FUNChas = 553;
-    FUNChasAll = 554;
-    FUNChasAny = 555;
-    FUNChasColumnInTable = 556;
-    FUNChasSubsequence = 557;
-    FUNChasSubsequenceCaseInsensitive = 558;
-    FUNChasSubsequenceCaseInsensitiveUTF8 = 559;
-    FUNChasSubsequenceUTF8 = 560;
-    FUNChasSubstr = 561;
-    FUNChasThreadFuzzer = 562;
-    FUNChasToken = 563;
-    FUNChasTokenCaseInsensitive = 564;
-    FUNChasTokenCaseInsensitiveOrNull = 565;
-    FUNChasTokenOrNull = 566;
-    FUNChex = 567;
-    FUNChilbertDecode = 568;
-    FUNChilbertEncode = 569;
-    FUNChistogram = 570;
-    FUNChiveHash = 571;
-    FUNChop = 572;
-    FUNChopEnd = 573;
-    FUNChopStart = 574;
-    FUNChostname = 575;
-    FUNCHOUR = 576;
-    FUNChypot = 577;
-    FUNCidentity = 578;
-    FUNCidnaDecode = 579;
-    FUNCidnaEncode = 580;
-    FUNCif = 581;
-    FUNCifNotFinite = 582;
-    FUNCifNull = 583;
-    FUNCignore = 584;
-    FUNCilike = 585;
-    FUNCin = 586;
-    FUNCindexHint = 587;
-    FUNCindexOf = 588;
-    FUNCindexOfAssumeSorted = 589;
-    FUNCINET6_ATON = 590;
-    FUNCINET6_NTOA = 591;
-    FUNCINET_ATON = 592;
-    FUNCINET_NTOA = 593;
-    FUNCinIgnoreSet = 594;
-    FUNCinitcap = 595;
-    FUNCinitcapUTF8 = 596;
-    FUNCinitial_query_id = 597;
-    FUNCinitializeAggregation = 598;
-    FUNCinitialQueryID = 599;
-    FUNCinitialQueryStartTime = 600;
-    FUNCinstr = 601;
-    FUNCintDiv = 602;
-    FUNCintDivOrZero = 603;
-    FUNCintervalLengthSum = 604;
-    FUNCintExp10 = 605;
-    FUNCintExp2 = 606;
-    FUNCintHash32 = 607;
-    FUNCintHash64 = 608;
-    FUNCIPv4CIDRToRange = 609;
-    FUNCIPv4NumToString = 610;
-    FUNCIPv4NumToStringClassC = 611;
-    FUNCIPv4StringToNum = 612;
-    FUNCIPv4StringToNumOrDefault = 613;
-    FUNCIPv4StringToNumOrNull = 614;
-    FUNCIPv4ToIPv6 = 615;
-    FUNCIPv6CIDRToRange = 616;
-    FUNCIPv6NumToString = 617;
-    FUNCIPv6StringToNum = 618;
-    FUNCIPv6StringToNumOrDefault = 619;
-    FUNCIPv6StringToNumOrNull = 620;
-    FUNCisConstant = 621;
-    FUNCisDecimalOverflow = 622;
-    FUNCisDynamicElementInSharedData = 623;
-    FUNCisFinite = 624;
-    FUNCisInfinite = 625;
-    FUNCisIPAddressInRange = 626;
-    FUNCisIPv4String = 627;
-    FUNCisIPv6String = 628;
-    FUNCisNaN = 629;
-    FUNCisNotDistinctFrom = 630;
-    FUNCisNotNull = 631;
-    FUNCisNull = 632;
-    FUNCisNullable = 633;
-    FUNCisValidJSON = 634;
-    FUNCisValidUTF8 = 635;
-    FUNCisZeroOrNull = 636;
-    FUNCjaroSimilarity = 637;
-    FUNCjaroWinklerSimilarity = 638;
-    FUNCjavaHash = 639;
-    FUNCjavaHashUTF16LE = 640;
-    FUNCjoinGet = 641;
-    FUNCJSON_ARRAY_LENGTH = 642;
-    FUNCJSON_EXISTS = 643;
-    FUNCJSON_QUERY = 644;
-    FUNCJSON_VALUE = 645;
-    FUNCJSONAllPaths = 646;
-    FUNCJSONAllPathsWithTypes = 647;
-    FUNCJSONArrayLength = 648;
-    FUNCJSONDynamicPaths = 649;
-    FUNCJSONDynamicPathsWithTypes = 650;
-    FUNCJSONEmpty = 651;
-    FUNCJSONExtract = 652;
-    FUNCJSONExtractArrayRaw = 653;
-    FUNCJSONExtractBool = 654;
-    FUNCJSONExtractFloat = 655;
-    FUNCJSONExtractInt = 656;
-    FUNCJSONExtractKeys = 657;
-    FUNCJSONExtractKeysAndValues = 658;
-    FUNCJSONExtractKeysAndValuesRaw = 659;
-    FUNCJSONExtractRaw = 660;
-    FUNCJSONExtractString = 661;
-    FUNCJSONExtractUInt = 662;
-    FUNCJSONHas = 663;
-    FUNCJSONKey = 664;
-    FUNCJSONLength = 665;
-    FUNCJSONMergePatch = 666;
-    FUNCJSONSharedDataPaths = 667;
-    FUNCJSONSharedDataPathsWithTypes = 668;
-    FUNCJSONType = 669;
-    FUNCjumpConsistentHash = 670;
-    FUNCkafkaMurmurHash = 671;
-    FUNCkeccak256 = 672;
-    FUNCkolmogorovSmirnovTest = 673;
-    FUNCkostikConsistentHash = 674;
-    FUNCkql_array_sort_asc = 675;
-    FUNCkql_array_sort_desc = 676;
-    FUNCkurtPop = 677;
-    FUNCkurtSamp = 678;
-    FUNCL1Distance = 679;
-    FUNCL1Norm = 680;
-    FUNCL1Normalize = 681;
-    FUNCL2Distance = 682;
-    FUNCL2Norm = 683;
-    FUNCL2Normalize = 684;
-    FUNCL2SquaredDistance = 685;
-    FUNCL2SquaredNorm = 686;
-    FUNClagInFrame = 687;
-    FUNClargestTriangleThreeBuckets = 688;
-    FUNCLAST_DAY = 689;
-    FUNClast_value = 690;
-    FUNClcase = 691;
-    FUNClcm = 692;
-    FUNCleadInFrame = 693;
-    FUNCleast = 694;
-    FUNCleft = 695;
-    FUNCleftPad = 696;
-    FUNCleftPadUTF8 = 697;
-    FUNCleftUTF8 = 698;
-    FUNClemmatize = 699;
-    FUNClength = 700;
-    FUNClengthUTF8 = 701;
-    FUNCless = 702;
-    FUNClessOrEquals = 703;
-    FUNClevenshteinDistance = 704;
-    FUNClevenshteinDistanceUTF8 = 705;
-    FUNClgamma = 706;
-    FUNClike = 707;
-    FUNCLinfDistance = 708;
-    FUNCLinfNorm = 709;
-    FUNCLinfNormalize = 710;
-    FUNCln = 711;
-    FUNClocate = 712;
-    FUNClog = 713;
-    FUNClog10 = 714;
-    FUNClog1p = 715;
-    FUNClog2 = 716;
-    FUNClogTrace = 717;
-    FUNClowCardinalityIndices = 718;
-    FUNClowCardinalityKeys = 719;
-    FUNClower = 720;
-    FUNClowerUTF8 = 721;
-    FUNClpad = 722;
-    FUNCLpDistance = 723;
-    FUNCLpNorm = 724;
-    FUNCLpNormalize = 725;
-    FUNCltrim = 726;
-    FUNClttb = 727;
-    FUNCMACNumToString = 728;
-    FUNCMACStringToNum = 729;
-    FUNCMACStringToOUI = 730;
-    FUNCmakeDate = 731;
-    FUNCmakeDate32 = 732;
-    FUNCmakeDateTime = 733;
-    FUNCmakeDateTime64 = 734;
-    FUNCmannWhitneyUTest = 735;
-    FUNCmap = 736;
-    FUNCMAP_FROM_ARRAYS = 737;
-    FUNCmapAdd = 738;
-    FUNCmapAll = 739;
-    FUNCmapApply = 740;
-    FUNCmapConcat = 741;
-    FUNCmapContains = 742;
-    FUNCmapContainsKey = 743;
-    FUNCmapContainsKeyLike = 744;
-    FUNCmapContainsValue = 745;
-    FUNCmapContainsValueLike = 746;
-    FUNCmapExists = 747;
-    FUNCmapExtractKeyLike = 748;
-    FUNCmapExtractValueLike = 749;
-    FUNCmapFilter = 750;
-    FUNCmapFromArrays = 751;
-    FUNCmapFromString = 752;
-    FUNCmapKeys = 753;
-    FUNCmapPartialReverseSort = 754;
-    FUNCmapPartialSort = 755;
-    FUNCmapPopulateSeries = 756;
-    FUNCmapReverseSort = 757;
-    FUNCmapSort = 758;
-    FUNCmapSubtract = 759;
-    FUNCmapUpdate = 760;
-    FUNCmapValues = 761;
-    FUNCmatch = 762;
-    FUNCmaterialize = 763;
-    FUNCmax = 764;
-    FUNCmax2 = 765;
-    FUNCmaxIntersections = 766;
-    FUNCmaxIntersectionsPosition = 767;
-    FUNCmaxMap = 768;
-    FUNCmaxMappedArrays = 769;
-    FUNCMD4 = 770;
-    FUNCMD5 = 771;
-    FUNCmeanZTest = 772;
-    FUNCmedian = 773;
-    FUNCmedianBFloat16 = 774;
-    FUNCmedianBFloat16Weighted = 775;
-    FUNCmedianDD = 776;
-    FUNCmedianDeterministic = 777;
-    FUNCmedianExact = 778;
-    FUNCmedianExactHigh = 779;
-    FUNCmedianExactLow = 780;
-    FUNCmedianExactWeighted = 781;
-    FUNCmedianGK = 782;
-    FUNCmedianInterpolatedWeighted = 783;
-    FUNCmedianTDigest = 784;
-    FUNCmedianTDigestWeighted = 785;
-    FUNCmedianTiming = 786;
-    FUNCmedianTimingWeighted = 787;
-    FUNCmetroHash64 = 788;
-    FUNCmid = 789;
-    FUNCMILLISECOND = 790;
-    FUNCmin = 791;
-    FUNCmin2 = 792;
-    FUNCminMap = 793;
-    FUNCminMappedArrays = 794;
-    FUNCminSampleSizeContinous = 795;
-    FUNCminSampleSizeContinuous = 796;
-    FUNCminSampleSizeConversion = 797;
-    FUNCminus = 798;
-    FUNCMINUTE = 799;
-    FUNCmismatches = 800;
-    FUNCmod = 801;
-    FUNCmodulo = 802;
-    FUNCmoduloLegacy = 803;
-    FUNCmoduloOrZero = 804;
-    FUNCMONTH = 805;
-    FUNCmonthName = 806;
-    FUNCmortonDecode = 807;
-    FUNCmortonEncode = 808;
-    FUNCmultiFuzzyMatchAllIndices = 809;
-    FUNCmultiFuzzyMatchAny = 810;
-    FUNCmultiFuzzyMatchAnyIndex = 811;
-    FUNCmultiIf = 812;
-    FUNCmultiMatchAllIndices = 813;
-    FUNCmultiMatchAny = 814;
-    FUNCmultiMatchAnyIndex = 815;
-    FUNCmultiply = 816;
-    FUNCmultiplyDecimal = 817;
-    FUNCmultiSearchAllPositions = 818;
-    FUNCmultiSearchAllPositionsCaseInsensitive = 819;
-    FUNCmultiSearchAllPositionsCaseInsensitiveUTF8 = 820;
-    FUNCmultiSearchAllPositionsUTF8 = 821;
-    FUNCmultiSearchAny = 822;
-    FUNCmultiSearchAnyCaseInsensitive = 823;
-    FUNCmultiSearchAnyCaseInsensitiveUTF8 = 824;
-    FUNCmultiSearchAnyUTF8 = 825;
-    FUNCmultiSearchFirstIndex = 826;
-    FUNCmultiSearchFirstIndexCaseInsensitive = 827;
-    FUNCmultiSearchFirstIndexCaseInsensitiveUTF8 = 828;
-    FUNCmultiSearchFirstIndexUTF8 = 829;
-    FUNCmultiSearchFirstPosition = 830;
-    FUNCmultiSearchFirstPositionCaseInsensitive = 831;
-    FUNCmultiSearchFirstPositionCaseInsensitiveUTF8 = 832;
-    FUNCmultiSearchFirstPositionUTF8 = 833;
-    FUNCmurmurHash2_32 = 834;
-    FUNCmurmurHash2_64 = 835;
-    FUNCmurmurHash3_128 = 836;
-    FUNCmurmurHash3_32 = 837;
-    FUNCmurmurHash3_64 = 838;
-    FUNCnegate = 839;
-    FUNCneighbor = 840;
-    FUNCnested = 841;
-    FUNCnetloc = 842;
-    FUNCngramDistance = 843;
-    FUNCngramDistanceCaseInsensitive = 844;
-    FUNCngramDistanceCaseInsensitiveUTF8 = 845;
-    FUNCngramDistanceUTF8 = 846;
-    FUNCngramMinHash = 847;
-    FUNCngramMinHashArg = 848;
-    FUNCngramMinHashArgCaseInsensitive = 849;
-    FUNCngramMinHashArgCaseInsensitiveUTF8 = 850;
-    FUNCngramMinHashArgUTF8 = 851;
-    FUNCngramMinHashCaseInsensitive = 852;
-    FUNCngramMinHashCaseInsensitiveUTF8 = 853;
-    FUNCngramMinHashUTF8 = 854;
-    FUNCngrams = 855;
-    FUNCngramSearch = 856;
-    FUNCngramSearchCaseInsensitive = 857;
-    FUNCngramSearchCaseInsensitiveUTF8 = 858;
-    FUNCngramSearchUTF8 = 859;
-    FUNCngramSimHash = 860;
-    FUNCngramSimHashCaseInsensitive = 861;
-    FUNCngramSimHashCaseInsensitiveUTF8 = 862;
-    FUNCngramSimHashUTF8 = 863;
-    FUNCnonNegativeDerivative = 864;
-    FUNCnormalizedQueryHash = 865;
-    FUNCnormalizedQueryHashKeepNames = 866;
-    FUNCnormalizeL1 = 867;
-    FUNCnormalizeL2 = 868;
-    FUNCnormalizeLinf = 869;
-    FUNCnormalizeLp = 870;
-    FUNCnormalizeQuery = 871;
-    FUNCnormalizeQueryKeepNames = 872;
-    FUNCnormalizeUTF8NFC = 873;
-    FUNCnormalizeUTF8NFD = 874;
-    FUNCnormalizeUTF8NFKC = 875;
-    FUNCnormalizeUTF8NFKD = 876;
-    FUNCnormL1 = 877;
-    FUNCnormL2 = 878;
-    FUNCnormL2Squared = 879;
-    FUNCnormLinf = 880;
-    FUNCnormLp = 881;
-    FUNCnot = 882;
-    FUNCnotEmpty = 883;
-    FUNCnotEquals = 884;
-    FUNCnothing = 885;
-    FUNCnothingUInt64 = 886;
-    FUNCnotILike = 887;
-    FUNCnotIn = 888;
-    FUNCnotInIgnoreSet = 889;
-    FUNCnotLike = 890;
-    FUNCnotNullIn = 891;
-    FUNCnotNullInIgnoreSet = 892;
-    FUNCnow = 893;
-    FUNCnow64 = 894;
-    FUNCnowInBlock = 895;
-    FUNCnth_value = 896;
-    FUNCntile = 897;
-    FUNCnullIf = 898;
-    FUNCnullIn = 899;
-    FUNCnullInIgnoreSet = 900;
-    FUNCOCTET_LENGTH = 901;
-    FUNCor = 902;
-    FUNCoverlay = 903;
-    FUNCoverlayUTF8 = 904;
-    FUNCparseDateTime = 905;
-    FUNCparseDateTime32BestEffort = 906;
-    FUNCparseDateTime32BestEffortOrNull = 907;
-    FUNCparseDateTime32BestEffortOrZero = 908;
-    FUNCparseDateTime64BestEffort = 909;
-    FUNCparseDateTime64BestEffortOrNull = 910;
-    FUNCparseDateTime64BestEffortOrZero = 911;
-    FUNCparseDateTime64BestEffortUS = 912;
-    FUNCparseDateTime64BestEffortUSOrNull = 913;
-    FUNCparseDateTime64BestEffortUSOrZero = 914;
-    FUNCparseDateTimeBestEffort = 915;
-    FUNCparseDateTimeBestEffortOrNull = 916;
-    FUNCparseDateTimeBestEffortOrZero = 917;
-    FUNCparseDateTimeBestEffortUS = 918;
-    FUNCparseDateTimeBestEffortUSOrNull = 919;
-    FUNCparseDateTimeBestEffortUSOrZero = 920;
-    FUNCparseDateTimeInJodaSyntax = 921;
-    FUNCparseDateTimeInJodaSyntaxOrNull = 922;
-    FUNCparseDateTimeInJodaSyntaxOrZero = 923;
-    FUNCparseDateTimeOrNull = 924;
-    FUNCparseDateTimeOrZero = 925;
-    FUNCparseReadableSize = 926;
-    FUNCparseReadableSizeOrZero = 927;
-    FUNCparseTimeDelta = 928;
-    FUNCpartitionID = 929;
-    FUNCpath = 930;
-    FUNCpathFull = 931;
-    FUNCpercent_rank = 932;
-    FUNCpercentRank = 933;
-    FUNCpi = 934;
-    FUNCplus = 935;
-    FUNCpmod = 936;
-    FUNCpointInEllipses = 937;
-    FUNCpointInPolygon = 938;
-    FUNCpolygonAreaCartesian = 939;
-    FUNCpolygonAreaSpherical = 940;
-    FUNCpolygonConvexHullCartesian = 941;
-    FUNCpolygonPerimeterCartesian = 942;
-    FUNCpolygonPerimeterSpherical = 943;
-    FUNCpolygonsDistanceCartesian = 944;
-    FUNCpolygonsDistanceSpherical = 945;
-    FUNCpolygonsEqualsCartesian = 946;
-    FUNCpolygonsIntersectionCartesian = 947;
-    FUNCpolygonsIntersectionSpherical = 948;
-    FUNCpolygonsSymDifferenceCartesian = 949;
-    FUNCpolygonsSymDifferenceSpherical = 950;
-    FUNCpolygonsUnionCartesian = 951;
-    FUNCpolygonsUnionSpherical = 952;
-    FUNCpolygonsWithinCartesian = 953;
-    FUNCpolygonsWithinSpherical = 954;
-    FUNCport = 955;
-    FUNCportRFC = 956;
-    FUNCposition = 957;
-    FUNCpositionCaseInsensitive = 958;
-    FUNCpositionCaseInsensitiveUTF8 = 959;
-    FUNCpositionUTF8 = 960;
-    FUNCpositive_modulo = 961;
-    FUNCpositiveModulo = 962;
-    FUNCpow = 963;
-    FUNCpower = 964;
-    FUNCprintf = 965;
-    FUNCproportionsZTest = 966;
-    FUNCprotocol = 967;
-    FUNCpunycodeDecode = 968;
-    FUNCpunycodeEncode = 969;
-    FUNCquantile = 970;
-    FUNCquantileBFloat16 = 971;
-    FUNCquantileBFloat16Weighted = 972;
-    FUNCquantileDD = 973;
-    FUNCquantileDeterministic = 974;
-    FUNCquantileExact = 975;
-    FUNCquantileExactExclusive = 976;
-    FUNCquantileExactHigh = 977;
-    FUNCquantileExactInclusive = 978;
-    FUNCquantileExactLow = 979;
-    FUNCquantileExactWeighted = 980;
-    FUNCquantileExactWeightedInterpolated = 981;
-    FUNCquantileGK = 982;
-    FUNCquantileInterpolatedWeighted = 983;
-    FUNCquantiles = 984;
-    FUNCquantilesBFloat16 = 985;
-    FUNCquantilesBFloat16Weighted = 986;
-    FUNCquantilesDD = 987;
-    FUNCquantilesDeterministic = 988;
-    FUNCquantilesExact = 989;
-    FUNCquantilesExactExclusive = 990;
-    FUNCquantilesExactHigh = 991;
-    FUNCquantilesExactInclusive = 992;
-    FUNCquantilesExactLow = 993;
-    FUNCquantilesExactWeighted = 994;
-    FUNCquantilesExactWeightedInterpolated = 995;
-    FUNCquantilesGK = 996;
-    FUNCquantilesInterpolatedWeighted = 997;
-    FUNCquantilesTDigest = 998;
-    FUNCquantilesTDigestWeighted = 999;
-    FUNCquantilesTiming = 1000;
-    FUNCquantilesTimingWeighted = 1001;
-    FUNCquantileTDigest = 1002;
-    FUNCquantileTDigestWeighted = 1003;
-    FUNCquantileTiming = 1004;
-    FUNCquantileTimingWeighted = 1005;
-    FUNCQUARTER = 1006;
-    FUNCquery_id = 1007;
-    FUNCqueryID = 1008;
-    FUNCqueryString = 1009;
-    FUNCqueryStringAndFragment = 1010;
-    FUNCradians = 1011;
-    FUNCrand = 1012;
-    FUNCrand32 = 1013;
-    FUNCrand64 = 1014;
-    FUNCrandBernoulli = 1015;
-    FUNCrandBinomial = 1016;
-    FUNCrandCanonical = 1017;
-    FUNCrandChiSquared = 1018;
-    FUNCrandConstant = 1019;
-    FUNCrandExponential = 1020;
-    FUNCrandFisherF = 1021;
-    FUNCrandLogNormal = 1022;
-    FUNCrandNegativeBinomial = 1023;
-    FUNCrandNormal = 1024;
-    FUNCrandomFixedString = 1025;
-    FUNCrandomPrintableASCII = 1026;
-    FUNCrandomString = 1027;
-    FUNCrandomStringUTF8 = 1028;
-    FUNCrandPoisson = 1029;
-    FUNCrandStudentT = 1030;
-    FUNCrandUniform = 1031;
-    FUNCrange = 1032;
-    FUNCrank = 1033;
-    FUNCrankCorr = 1034;
-    FUNCreadWKTLineString = 1035;
-    FUNCreadWKTMultiLineString = 1036;
-    FUNCreadWKTMultiPolygon = 1037;
-    FUNCreadWKTPoint = 1038;
-    FUNCreadWKTPolygon = 1039;
-    FUNCreadWKTRing = 1040;
-    FUNCREGEXP_EXTRACT = 1041;
-    FUNCREGEXP_MATCHES = 1042;
-    FUNCREGEXP_REPLACE = 1043;
-    FUNCregexpExtract = 1044;
-    FUNCregexpQuoteMeta = 1045;
-    FUNCregionHierarchy = 1046;
-    FUNCregionIn = 1047;
-    FUNCregionToArea = 1048;
-    FUNCregionToCity = 1049;
-    FUNCregionToContinent = 1050;
-    FUNCregionToCountry = 1051;
-    FUNCregionToDistrict = 1052;
-    FUNCregionToName = 1053;
-    FUNCregionToPopulation = 1054;
-    FUNCregionToTopContinent = 1055;
-    FUNCreinterpret = 1056;
-    FUNCreinterpretAsDate = 1057;
-    FUNCreinterpretAsDateTime = 1058;
-    FUNCreinterpretAsFixedString = 1059;
-    FUNCreinterpretAsFloat32 = 1060;
-    FUNCreinterpretAsFloat64 = 1061;
-    FUNCreinterpretAsInt128 = 1062;
-    FUNCreinterpretAsInt16 = 1063;
-    FUNCreinterpretAsInt256 = 1064;
-    FUNCreinterpretAsInt32 = 1065;
-    FUNCreinterpretAsInt64 = 1066;
-    FUNCreinterpretAsInt8 = 1067;
-    FUNCreinterpretAsString = 1068;
-    FUNCreinterpretAsUInt128 = 1069;
-    FUNCreinterpretAsUInt16 = 1070;
-    FUNCreinterpretAsUInt256 = 1071;
-    FUNCreinterpretAsUInt32 = 1072;
-    FUNCreinterpretAsUInt64 = 1073;
-    FUNCreinterpretAsUInt8 = 1074;
-    FUNCreinterpretAsUUID = 1075;
-    FUNCrepeat = 1076;
-    FUNCreplace = 1077;
-    FUNCreplaceAll = 1078;
-    FUNCreplaceOne = 1079;
-    FUNCreplaceRegexpAll = 1080;
-    FUNCreplaceRegexpOne = 1081;
-    FUNCreplicate = 1082;
-    FUNCretention = 1083;
-    FUNCreverse = 1084;
-    FUNCreverseUTF8 = 1085;
-    FUNCrevision = 1086;
-    FUNCright = 1087;
-    FUNCrightPad = 1088;
-    FUNCrightPadUTF8 = 1089;
-    FUNCrightUTF8 = 1090;
-    FUNCRIPEMD160 = 1091;
-    FUNCround = 1092;
-    FUNCroundAge = 1093;
-    FUNCroundBankers = 1094;
-    FUNCroundDown = 1095;
-    FUNCroundDuration = 1096;
-    FUNCroundToExp2 = 1097;
-    FUNCrow_number = 1098;
-    FUNCrowNumberInAllBlocks = 1099;
-    FUNCrowNumberInBlock = 1100;
-    FUNCrpad = 1101;
-    FUNCrtrim = 1102;
-    FUNCrunningAccumulate = 1103;
-    FUNCrunningConcurrency = 1104;
-    FUNCrunningDifference = 1105;
-    FUNCrunningDifferenceStartingWithFirstValue = 1106;
-    FUNCs2CapContains = 1107;
-    FUNCs2CapUnion = 1108;
-    FUNCs2CellsIntersect = 1109;
-    FUNCs2GetNeighbors = 1110;
-    FUNCs2RectAdd = 1111;
-    FUNCs2RectContains = 1112;
-    FUNCs2RectIntersection = 1113;
-    FUNCs2RectUnion = 1114;
-    FUNCs2ToGeo = 1115;
-    FUNCscalarProduct = 1116;
-    FUNCSCHEMA = 1117;
-    FUNCSECOND = 1118;
-    FUNCsequenceCount = 1119;
-    FUNCsequenceMatch = 1120;
-    FUNCsequenceNextNode = 1121;
-    FUNCseriesDecomposeSTL = 1122;
-    FUNCseriesOutliersDetectTukey = 1123;
-    FUNCseriesPeriodDetectFFT = 1124;
-    FUNCserverTimeZone = 1125;
-    FUNCserverUUID = 1126;
-    FUNCSHA1 = 1127;
-    FUNCSHA224 = 1128;
-    FUNCSHA256 = 1129;
-    FUNCSHA384 = 1130;
-    FUNCSHA512 = 1131;
-    FUNCSHA512_256 = 1132;
-    FUNCshardCount = 1133;
-    FUNCshardNum = 1134;
-    FUNCshowCertificate = 1135;
-    FUNCsigmoid = 1136;
-    FUNCsign = 1137;
-    FUNCsimpleJSONExtractBool = 1138;
-    FUNCsimpleJSONExtractFloat = 1139;
-    FUNCsimpleJSONExtractInt = 1140;
-    FUNCsimpleJSONExtractRaw = 1141;
-    FUNCsimpleJSONExtractString = 1142;
-    FUNCsimpleJSONExtractUInt = 1143;
-    FUNCsimpleJSONHas = 1144;
-    FUNCsimpleLinearRegression = 1145;
-    FUNCsin = 1146;
-    FUNCsingleValueOrNull = 1147;
-    FUNCsinh = 1148;
-    FUNCsipHash128 = 1149;
-    FUNCsipHash128Keyed = 1150;
-    FUNCsipHash128Reference = 1151;
-    FUNCsipHash128ReferenceKeyed = 1152;
-    FUNCsipHash64 = 1153;
-    FUNCsipHash64Keyed = 1154;
-    FUNCskewPop = 1155;
-    FUNCskewSamp = 1156;
-    FUNCsleep = 1157;
-    FUNCsleepEachRow = 1158;
-    FUNCsnowflakeIDToDateTime = 1159;
-    FUNCsnowflakeIDToDateTime64 = 1160;
-    FUNCsnowflakeToDateTime = 1161;
-    FUNCsnowflakeToDateTime64 = 1162;
-    FUNCsoundex = 1163;
-    FUNCspace = 1164;
-    FUNCsparkBar = 1165;
-    FUNCsparseGrams = 1166;
-    FUNCsparseGramsHashes = 1167;
-    FUNCsparseGramsHashesUTF8 = 1168;
-    FUNCsparseGramsUTF8 = 1169;
-    FUNCsplitByAlpha = 1170;
-    FUNCsplitByChar = 1171;
-    FUNCsplitByNonAlpha = 1172;
-    FUNCsplitByRegexp = 1173;
-    FUNCsplitByString = 1174;
-    FUNCsplitByWhitespace = 1175;
-    FUNCsqid = 1176;
-    FUNCsqidDecode = 1177;
-    FUNCsqidEncode = 1178;
-    FUNCsqrt = 1179;
-    FUNCstartsWith = 1180;
-    FUNCstartsWithUTF8 = 1181;
-    FUNCSTD = 1182;
-    FUNCSTDDEV_POP = 1183;
-    FUNCSTDDEV_SAMP = 1184;
-    FUNCstddevPop = 1185;
-    FUNCstddevPopStable = 1186;
-    FUNCstddevSamp = 1187;
-    FUNCstddevSampStable = 1188;
-    FUNCstem = 1189;
-    FUNCstochasticLinearRegression = 1190;
-    FUNCstochasticLogisticRegression = 1191;
-    FUNCstr_to_date = 1192;
-    FUNCstringBytesEntropy = 1193;
-    FUNCstringBytesUniq = 1194;
-    FUNCstringCompare = 1195;
-    FUNCstringJaccardIndex = 1196;
-    FUNCstringJaccardIndexUTF8 = 1197;
-    FUNCstringToH3 = 1198;
-    FUNCstructureToCapnProtoSchema = 1199;
-    FUNCstructureToProtobufSchema = 1200;
-    FUNCstudentTTest = 1201;
-    FUNCsubBitmap = 1202;
-    FUNCsubDate = 1203;
-    FUNCsubstr = 1204;
-    FUNCsubstring = 1205;
-    FUNCSUBSTRING_INDEX = 1206;
-    FUNCsubstringIndex = 1207;
-    FUNCsubstringIndexUTF8 = 1208;
-    FUNCsubstringUTF8 = 1209;
-    FUNCsubtractDays = 1210;
-    FUNCsubtractHours = 1211;
-    FUNCsubtractInterval = 1212;
-    FUNCsubtractMicroseconds = 1213;
-    FUNCsubtractMilliseconds = 1214;
-    FUNCsubtractMinutes = 1215;
-    FUNCsubtractMonths = 1216;
-    FUNCsubtractNanoseconds = 1217;
-    FUNCsubtractQuarters = 1218;
-    FUNCsubtractSeconds = 1219;
-    FUNCsubtractTupleOfIntervals = 1220;
-    FUNCsubtractWeeks = 1221;
-    FUNCsubtractYears = 1222;
-    FUNCsum = 1223;
-    FUNCsumCount = 1224;
-    FUNCsumKahan = 1225;
-    FUNCsumMap = 1226;
-    FUNCsumMapFiltered = 1227;
-    FUNCsumMapFilteredWithOverflow = 1228;
-    FUNCsumMappedArrays = 1229;
-    FUNCsumMapWithOverflow = 1230;
-    FUNCsumWithOverflow = 1231;
-    FUNCsvg = 1232;
-    FUNCsynonyms = 1233;
-    FUNCtan = 1234;
-    FUNCtanh = 1235;
-    FUNCtcpPort = 1236;
-    FUNCtgamma = 1237;
-    FUNCtheilsU = 1238;
-    FUNCtid = 1239;
-    FUNCtimeDiff = 1240;
-    FUNCtimeSlot = 1241;
-    FUNCtimeSlots = 1242;
-    FUNCtimestamp = 1243;
-    FUNCtimestamp_add = 1244;
-    FUNCtimestamp_diff = 1245;
-    FUNCtimestamp_sub = 1246;
-    FUNCtimestampDiff = 1247;
-    FUNCtimeZone = 1248;
-    FUNCtimeZoneOf = 1249;
-    FUNCtimeZoneOffset = 1250;
-    FUNCTO_BASE64 = 1251;
-    FUNCTO_DAYS = 1252;
-    FUNCTO_UNIXTIME = 1253;
-    FUNCto_utc_timestamp = 1254;
-    FUNCtoBFloat16 = 1255;
-    FUNCtoBFloat16OrNull = 1256;
-    FUNCtoBFloat16OrZero = 1257;
-    FUNCtoBool = 1258;
-    FUNCtoColumnTypeName = 1259;
-    FUNCtoDate = 1260;
-    FUNCtoDate32 = 1261;
-    FUNCtoDate32OrDefault = 1262;
-    FUNCtoDate32OrNull = 1263;
-    FUNCtoDate32OrZero = 1264;
-    FUNCtoDateOrDefault = 1265;
-    FUNCtoDateOrNull = 1266;
-    FUNCtoDateOrZero = 1267;
-    FUNCtoDateTime = 1268;
-    FUNCtoDateTime32 = 1269;
-    FUNCtoDateTime64 = 1270;
-    FUNCtoDateTime64OrDefault = 1271;
-    FUNCtoDateTime64OrNull = 1272;
-    FUNCtoDateTime64OrZero = 1273;
-    FUNCtoDateTimeOrDefault = 1274;
-    FUNCtoDateTimeOrNull = 1275;
-    FUNCtoDateTimeOrZero = 1276;
-    FUNCtoday = 1277;
-    FUNCtoDayOfMonth = 1278;
-    FUNCtoDayOfWeek = 1279;
-    FUNCtoDayOfYear = 1280;
-    FUNCtoDaysSinceYearZero = 1281;
-    FUNCtoDecimal128 = 1282;
-    FUNCtoDecimal128OrDefault = 1283;
-    FUNCtoDecimal128OrNull = 1284;
-    FUNCtoDecimal128OrZero = 1285;
-    FUNCtoDecimal256 = 1286;
-    FUNCtoDecimal256OrDefault = 1287;
-    FUNCtoDecimal256OrNull = 1288;
-    FUNCtoDecimal256OrZero = 1289;
-    FUNCtoDecimal32 = 1290;
-    FUNCtoDecimal32OrDefault = 1291;
-    FUNCtoDecimal32OrNull = 1292;
-    FUNCtoDecimal32OrZero = 1293;
-    FUNCtoDecimal64 = 1294;
-    FUNCtoDecimal64OrDefault = 1295;
-    FUNCtoDecimal64OrNull = 1296;
-    FUNCtoDecimal64OrZero = 1297;
-    FUNCtoDecimalString = 1298;
-    FUNCtoFixedString = 1299;
-    FUNCtoFloat32 = 1300;
-    FUNCtoFloat32OrDefault = 1301;
-    FUNCtoFloat32OrNull = 1302;
-    FUNCtoFloat32OrZero = 1303;
-    FUNCtoFloat64 = 1304;
-    FUNCtoFloat64OrDefault = 1305;
-    FUNCtoFloat64OrNull = 1306;
-    FUNCtoFloat64OrZero = 1307;
-    FUNCtoHour = 1308;
-    FUNCtoInt128 = 1309;
-    FUNCtoInt128OrDefault = 1310;
-    FUNCtoInt128OrNull = 1311;
-    FUNCtoInt128OrZero = 1312;
-    FUNCtoInt16 = 1313;
-    FUNCtoInt16OrDefault = 1314;
-    FUNCtoInt16OrNull = 1315;
-    FUNCtoInt16OrZero = 1316;
-    FUNCtoInt256 = 1317;
-    FUNCtoInt256OrDefault = 1318;
-    FUNCtoInt256OrNull = 1319;
-    FUNCtoInt256OrZero = 1320;
-    FUNCtoInt32 = 1321;
-    FUNCtoInt32OrDefault = 1322;
-    FUNCtoInt32OrNull = 1323;
-    FUNCtoInt32OrZero = 1324;
-    FUNCtoInt64 = 1325;
-    FUNCtoInt64OrDefault = 1326;
-    FUNCtoInt64OrNull = 1327;
-    FUNCtoInt64OrZero = 1328;
-    FUNCtoInt8 = 1329;
-    FUNCtoInt8OrDefault = 1330;
-    FUNCtoInt8OrNull = 1331;
-    FUNCtoInt8OrZero = 1332;
-    FUNCtoInterval = 1333;
-    FUNCtoIntervalDay = 1334;
-    FUNCtoIntervalHour = 1335;
-    FUNCtoIntervalMicrosecond = 1336;
-    FUNCtoIntervalMillisecond = 1337;
-    FUNCtoIntervalMinute = 1338;
-    FUNCtoIntervalMonth = 1339;
-    FUNCtoIntervalNanosecond = 1340;
-    FUNCtoIntervalQuarter = 1341;
-    FUNCtoIntervalSecond = 1342;
-    FUNCtoIntervalWeek = 1343;
-    FUNCtoIntervalYear = 1344;
-    FUNCtoIPv4 = 1345;
-    FUNCtoIPv4OrDefault = 1346;
-    FUNCtoIPv4OrNull = 1347;
-    FUNCtoIPv4OrZero = 1348;
-    FUNCtoIPv6 = 1349;
-    FUNCtoIPv6OrDefault = 1350;
-    FUNCtoIPv6OrNull = 1351;
-    FUNCtoIPv6OrZero = 1352;
-    FUNCtoISOWeek = 1353;
-    FUNCtoISOYear = 1354;
-    FUNCtoJSONString = 1355;
-    FUNCtokens = 1356;
-    FUNCtoLastDayOfMonth = 1357;
-    FUNCtoLastDayOfWeek = 1358;
-    FUNCtoLowCardinality = 1359;
-    FUNCtoMillisecond = 1360;
-    FUNCtoMinute = 1361;
-    FUNCtoModifiedJulianDay = 1362;
-    FUNCtoModifiedJulianDayOrNull = 1363;
-    FUNCtoMonday = 1364;
-    FUNCtoMonth = 1365;
-    FUNCtoNullable = 1366;
-    FUNCtopK = 1367;
-    FUNCtopKWeighted = 1368;
-    FUNCtopLevelDomain = 1369;
-    FUNCtopLevelDomainRFC = 1370;
-    FUNCtoQuarter = 1371;
-    FUNCtoRelativeDayNum = 1372;
-    FUNCtoRelativeHourNum = 1373;
-    FUNCtoRelativeMinuteNum = 1374;
-    FUNCtoRelativeMonthNum = 1375;
-    FUNCtoRelativeQuarterNum = 1376;
-    FUNCtoRelativeSecondNum = 1377;
-    FUNCtoRelativeWeekNum = 1378;
-    FUNCtoRelativeYearNum = 1379;
-    FUNCtoSecond = 1380;
-    FUNCtoStartOfDay = 1381;
-    FUNCtoStartOfFifteenMinutes = 1382;
-    FUNCtoStartOfFiveMinute = 1383;
-    FUNCtoStartOfFiveMinutes = 1384;
-    FUNCtoStartOfHour = 1385;
-    FUNCtoStartOfInterval = 1386;
-    FUNCtoStartOfISOYear = 1387;
-    FUNCtoStartOfMicrosecond = 1388;
-    FUNCtoStartOfMillisecond = 1389;
-    FUNCtoStartOfMinute = 1390;
-    FUNCtoStartOfMonth = 1391;
-    FUNCtoStartOfNanosecond = 1392;
-    FUNCtoStartOfQuarter = 1393;
-    FUNCtoStartOfSecond = 1394;
-    FUNCtoStartOfTenMinutes = 1395;
-    FUNCtoStartOfWeek = 1396;
-    FUNCtoStartOfYear = 1397;
-    FUNCtoString = 1398;
-    FUNCtoStringCutToZero = 1399;
-    FUNCtoTime = 1400;
-    FUNCtoTimeZone = 1401;
-    FUNCtoTypeName = 1402;
-    FUNCtoUInt128 = 1403;
-    FUNCtoUInt128OrDefault = 1404;
-    FUNCtoUInt128OrNull = 1405;
-    FUNCtoUInt128OrZero = 1406;
-    FUNCtoUInt16 = 1407;
-    FUNCtoUInt16OrDefault = 1408;
-    FUNCtoUInt16OrNull = 1409;
-    FUNCtoUInt16OrZero = 1410;
-    FUNCtoUInt256 = 1411;
-    FUNCtoUInt256OrDefault = 1412;
-    FUNCtoUInt256OrNull = 1413;
-    FUNCtoUInt256OrZero = 1414;
-    FUNCtoUInt32 = 1415;
-    FUNCtoUInt32OrDefault = 1416;
-    FUNCtoUInt32OrNull = 1417;
-    FUNCtoUInt32OrZero = 1418;
-    FUNCtoUInt64 = 1419;
-    FUNCtoUInt64OrDefault = 1420;
-    FUNCtoUInt64OrNull = 1421;
-    FUNCtoUInt64OrZero = 1422;
-    FUNCtoUInt8 = 1423;
-    FUNCtoUInt8OrDefault = 1424;
-    FUNCtoUInt8OrNull = 1425;
-    FUNCtoUInt8OrZero = 1426;
-    FUNCtoUnixTimestamp = 1427;
-    FUNCtoUnixTimestamp64Micro = 1428;
-    FUNCtoUnixTimestamp64Milli = 1429;
-    FUNCtoUnixTimestamp64Nano = 1430;
-    FUNCtoUnixTimestamp64Second = 1431;
-    FUNCtoUTCTimestamp = 1432;
-    FUNCtoUUID = 1433;
-    FUNCtoUUIDOrDefault = 1434;
-    FUNCtoUUIDOrNull = 1435;
-    FUNCtoUUIDOrZero = 1436;
-    FUNCtoValidUTF8 = 1437;
-    FUNCtoWeek = 1438;
-    FUNCtoYear = 1439;
-    FUNCtoYearWeek = 1440;
-    FUNCtoYYYYMM = 1441;
-    FUNCtoYYYYMMDD = 1442;
-    FUNCtoYYYYMMDDhhmmss = 1443;
-    FUNCtransactionID = 1444;
-    FUNCtransactionLatestSnapshot = 1445;
-    FUNCtransactionOldestSnapshot = 1446;
-    FUNCtransform = 1447;
-    FUNCtranslate = 1448;
-    FUNCtranslateUTF8 = 1449;
-    FUNCtrim = 1450;
-    FUNCtrimBoth = 1451;
-    FUNCtrimLeft = 1452;
-    FUNCtrimRight = 1453;
-    FUNCtrunc = 1454;
-    FUNCtruncate = 1455;
-    FUNCtryBase32Decode = 1456;
-    FUNCtryBase58Decode = 1457;
-    FUNCtryBase64Decode = 1458;
-    FUNCtryBase64URLDecode = 1459;
-    FUNCtryDecrypt = 1460;
-    FUNCtryIdnaEncode = 1461;
-    FUNCtryPunycodeDecode = 1462;
-    FUNCtumble = 1463;
-    FUNCtumbleEnd = 1464;
-    FUNCtumbleStart = 1465;
-    FUNCtuple = 1466;
-    FUNCtupleConcat = 1467;
-    FUNCtupleDivide = 1468;
-    FUNCtupleDivideByNumber = 1469;
-    FUNCtupleElement = 1470;
-    FUNCtupleHammingDistance = 1471;
-    FUNCtupleIntDiv = 1472;
-    FUNCtupleIntDivByNumber = 1473;
-    FUNCtupleIntDivOrZero = 1474;
-    FUNCtupleIntDivOrZeroByNumber = 1475;
-    FUNCtupleMinus = 1476;
-    FUNCtupleModulo = 1477;
-    FUNCtupleModuloByNumber = 1478;
-    FUNCtupleMultiply = 1479;
-    FUNCtupleMultiplyByNumber = 1480;
-    FUNCtupleNames = 1481;
-    FUNCtupleNegate = 1482;
-    FUNCtuplePlus = 1483;
-    FUNCtupleToNameValuePairs = 1484;
-    FUNCucase = 1485;
-    FUNCULIDStringToDateTime = 1486;
-    FUNCunbin = 1487;
-    FUNCunhex = 1488;
-    FUNCuniq = 1489;
-    FUNCuniqCombined = 1490;
-    FUNCuniqCombined64 = 1491;
-    FUNCuniqExact = 1492;
-    FUNCuniqHLL12 = 1493;
-    FUNCuniqTheta = 1494;
-    FUNCuniqThetaIntersect = 1495;
-    FUNCuniqThetaNot = 1496;
-    FUNCuniqThetaUnion = 1497;
-    FUNCuniqUpTo = 1498;
-    FUNCuntuple = 1499;
-    FUNCupper = 1500;
-    FUNCupperUTF8 = 1501;
-    FUNCuptime = 1502;
-    FUNCURLHash = 1503;
-    FUNCURLHierarchy = 1504;
-    FUNCURLPathHierarchy = 1505;
-    FUNCuser = 1506;
-    FUNCUTC_timestamp = 1507;
-    FUNCUTCTimestamp = 1508;
-    FUNCUUIDNumToString = 1509;
-    FUNCUUIDStringToNum = 1510;
-    FUNCUUIDToNum = 1511;
-    FUNCUUIDv7ToDateTime = 1512;
-    FUNCvalidateNestedArraySizes = 1513;
-    FUNCVAR_POP = 1514;
-    FUNCVAR_SAMP = 1515;
-    FUNCvariantElement = 1516;
-    FUNCvariantType = 1517;
-    FUNCvarPop = 1518;
-    FUNCvarPopStable = 1519;
-    FUNCvarSamp = 1520;
-    FUNCvarSampStable = 1521;
-    FUNCvectorDifference = 1522;
-    FUNCvectorSum = 1523;
-    FUNCversion = 1524;
-    FUNCvisibleWidth = 1525;
-    FUNCvisitParamExtractBool = 1526;
-    FUNCvisitParamExtractFloat = 1527;
-    FUNCvisitParamExtractInt = 1528;
-    FUNCvisitParamExtractRaw = 1529;
-    FUNCvisitParamExtractString = 1530;
-    FUNCvisitParamExtractUInt = 1531;
-    FUNCvisitParamHas = 1532;
-    FUNCweek = 1533;
-    FUNCwelchTTest = 1534;
-    FUNCwidth_bucket = 1535;
-    FUNCwidthBucket = 1536;
-    FUNCwindowFunnel = 1537;
-    FUNCwindowID = 1538;
-    FUNCwkt = 1539;
-    FUNCwordShingleMinHash = 1540;
-    FUNCwordShingleMinHashArg = 1541;
-    FUNCwordShingleMinHashArgCaseInsensitive = 1542;
-    FUNCwordShingleMinHashArgCaseInsensitiveUTF8 = 1543;
-    FUNCwordShingleMinHashArgUTF8 = 1544;
-    FUNCwordShingleMinHashCaseInsensitive = 1545;
-    FUNCwordShingleMinHashCaseInsensitiveUTF8 = 1546;
-    FUNCwordShingleMinHashUTF8 = 1547;
-    FUNCwordShingleSimHash = 1548;
-    FUNCwordShingleSimHashCaseInsensitive = 1549;
-    FUNCwordShingleSimHashCaseInsensitiveUTF8 = 1550;
-    FUNCwordShingleSimHashUTF8 = 1551;
-    FUNCwyHash64 = 1552;
-    FUNCxor = 1553;
-    FUNCxxh3 = 1554;
-    FUNCxxHash32 = 1555;
-    FUNCxxHash64 = 1556;
-    FUNCyandexConsistentHash = 1557;
-    FUNCYEAR = 1558;
-    FUNCyearweek = 1559;
-    FUNCyesterday = 1560;
-    FUNCYYYYMMDDhhmmssToDateTime = 1561;
-    FUNCYYYYMMDDhhmmssToDateTime64 = 1562;
-    FUNCYYYYMMDDToDate = 1563;
-    FUNCYYYYMMDDToDate32 = 1564;
-    FUNCzookeeperSessionUptime = 1565;
+    FUNCBIT_AND = 1;
+    FUNCBIT_OR = 2;
+    FUNCBIT_XOR = 3;
+    FUNCBLAKE3 = 4;
+    FUNCCAST = 5;
+    FUNCCHARACTER_LENGTH = 6;
+    FUNCCHAR_LENGTH = 7;
+    FUNCCOVAR_POP = 8;
+    FUNCCOVAR_SAMP = 9;
+    FUNCCRC32 = 10;
+    FUNCCRC32IEEE = 11;
+    FUNCCRC64 = 12;
+    FUNCDATABASE = 13;
+    FUNCDATE = 14;
+    FUNCDATE_FORMAT = 15;
+    FUNCDATE_TRUNC = 16;
+    FUNCDAY = 17;
+    FUNCDAYOFMONTH = 18;
+    FUNCDAYOFWEEK = 19;
+    FUNCDAYOFYEAR = 20;
+    FUNCFORMAT_BYTES = 21;
+    FUNCFROM_BASE64 = 22;
+    FUNCFROM_DAYS = 23;
+    FUNCFROM_UNIXTIME = 24;
+    FUNCHOUR = 25;
+    FUNCINET6_ATON = 26;
+    FUNCINET6_NTOA = 27;
+    FUNCINET_ATON = 28;
+    FUNCINET_NTOA = 29;
+    FUNCIPv4CIDRToRange = 30;
+    FUNCIPv4NumToString = 31;
+    FUNCIPv4NumToStringClassC = 32;
+    FUNCIPv4StringToNum = 33;
+    FUNCIPv4StringToNumOrDefault = 34;
+    FUNCIPv4StringToNumOrNull = 35;
+    FUNCIPv4ToIPv6 = 36;
+    FUNCIPv6CIDRToRange = 37;
+    FUNCIPv6NumToString = 38;
+    FUNCIPv6StringToNum = 39;
+    FUNCIPv6StringToNumOrDefault = 40;
+    FUNCIPv6StringToNumOrNull = 41;
+    FUNCJSONAllPaths = 42;
+    FUNCJSONAllPathsWithTypes = 43;
+    FUNCJSONArrayLength = 44;
+    FUNCJSONDynamicPaths = 45;
+    FUNCJSONDynamicPathsWithTypes = 46;
+    FUNCJSONEmpty = 47;
+    FUNCJSONExtract = 48;
+    FUNCJSONExtractArrayRaw = 49;
+    FUNCJSONExtractArrayRawCaseInsensitive = 50;
+    FUNCJSONExtractBool = 51;
+    FUNCJSONExtractBoolCaseInsensitive = 52;
+    FUNCJSONExtractCaseInsensitive = 53;
+    FUNCJSONExtractFloat = 54;
+    FUNCJSONExtractFloatCaseInsensitive = 55;
+    FUNCJSONExtractInt = 56;
+    FUNCJSONExtractIntCaseInsensitive = 57;
+    FUNCJSONExtractKeys = 58;
+    FUNCJSONExtractKeysAndValues = 59;
+    FUNCJSONExtractKeysAndValuesCaseInsensitive = 60;
+    FUNCJSONExtractKeysAndValuesRaw = 61;
+    FUNCJSONExtractKeysAndValuesRawCaseInsensitive = 62;
+    FUNCJSONExtractKeysCaseInsensitive = 63;
+    FUNCJSONExtractRaw = 64;
+    FUNCJSONExtractRawCaseInsensitive = 65;
+    FUNCJSONExtractString = 66;
+    FUNCJSONExtractStringCaseInsensitive = 67;
+    FUNCJSONExtractUInt = 68;
+    FUNCJSONExtractUIntCaseInsensitive = 69;
+    FUNCJSONHas = 70;
+    FUNCJSONKey = 71;
+    FUNCJSONLength = 72;
+    FUNCJSONMergePatch = 73;
+    FUNCJSONSharedDataPaths = 74;
+    FUNCJSONSharedDataPathsWithTypes = 75;
+    FUNCJSONType = 76;
+    FUNCJSON_ARRAY_LENGTH = 77;
+    FUNCJSON_EXISTS = 78;
+    FUNCJSON_QUERY = 79;
+    FUNCJSON_VALUE = 80;
+    FUNCL1Distance = 81;
+    FUNCL1Norm = 82;
+    FUNCL1Normalize = 83;
+    FUNCL2Distance = 84;
+    FUNCL2DistanceTransposed = 85;
+    FUNCL2Norm = 86;
+    FUNCL2Normalize = 87;
+    FUNCL2SquaredDistance = 88;
+    FUNCL2SquaredNorm = 89;
+    FUNCLAST_DAY = 90;
+    FUNCLinfDistance = 91;
+    FUNCLinfNorm = 92;
+    FUNCLinfNormalize = 93;
+    FUNCLpDistance = 94;
+    FUNCLpNorm = 95;
+    FUNCLpNormalize = 96;
+    FUNCMACNumToString = 97;
+    FUNCMACStringToNum = 98;
+    FUNCMACStringToOUI = 99;
+    FUNCMAP_FROM_ARRAYS = 100;
+    FUNCMD4 = 101;
+    FUNCMD5 = 102;
+    FUNCMILLISECOND = 103;
+    FUNCMINUTE = 104;
+    FUNCMONTH = 105;
+    FUNCOCTET_LENGTH = 106;
+    FUNCQUARTER = 107;
+    FUNCREGEXP_EXTRACT = 108;
+    FUNCREGEXP_MATCHES = 109;
+    FUNCREGEXP_REPLACE = 110;
+    FUNCRIPEMD160 = 111;
+    FUNCSCHEMA = 112;
+    FUNCSECOND = 113;
+    FUNCSHA1 = 114;
+    FUNCSHA224 = 115;
+    FUNCSHA256 = 116;
+    FUNCSHA384 = 117;
+    FUNCSHA512 = 118;
+    FUNCSHA512_256 = 119;
+    FUNCSTD = 120;
+    FUNCSTDDEV_POP = 121;
+    FUNCSTDDEV_SAMP = 122;
+    FUNCSUBSTRING_INDEX = 123;
+    FUNCSVG = 124;
+    FUNCTO_BASE64 = 125;
+    FUNCTO_DAYS = 126;
+    FUNCTO_UNIXTIME = 127;
+    FUNCULIDStringToDateTime = 128;
+    FUNCURLHash = 129;
+    FUNCURLHierarchy = 130;
+    FUNCURLPathHierarchy = 131;
+    FUNCUTCTimestamp = 132;
+    FUNCUTC_timestamp = 133;
+    FUNCUUIDNumToString = 134;
+    FUNCUUIDStringToNum = 135;
+    FUNCUUIDToNum = 136;
+    FUNCUUIDv7ToDateTime = 137;
+    FUNCVAR_POP = 138;
+    FUNCVAR_SAMP = 139;
+    FUNCWKB = 140;
+    FUNCWKT = 141;
+    FUNCYEAR = 142;
+    FUNCYYYYMMDDToDate = 143;
+    FUNCYYYYMMDDToDate32 = 144;
+    FUNCYYYYMMDDhhmmssToDateTime = 145;
+    FUNCYYYYMMDDhhmmssToDateTime64 = 146;
+    FUNCabs = 147;
+    FUNCaccurateCast = 148;
+    FUNCacos = 149;
+    FUNCacosh = 150;
+    FUNCaddDate = 151;
+    FUNCaddDays = 152;
+    FUNCaddHours = 153;
+    FUNCaddInterval = 154;
+    FUNCaddMicroseconds = 155;
+    FUNCaddMilliseconds = 156;
+    FUNCaddMinutes = 157;
+    FUNCaddMonths = 158;
+    FUNCaddNanoseconds = 159;
+    FUNCaddQuarters = 160;
+    FUNCaddSeconds = 161;
+    FUNCaddTupleOfIntervals = 162;
+    FUNCaddWeeks = 163;
+    FUNCaddYears = 164;
+    FUNCaddressToLine = 165;
+    FUNCaddressToLineWithInlines = 166;
+    FUNCaddressToSymbol = 167;
+    FUNCaes_decrypt_mysql = 168;
+    FUNCaes_encrypt_mysql = 169;
+    FUNCage = 170;
+    FUNCaggThrow = 171;
+    FUNCalphaTokens = 172;
+    FUNCanalysisOfVariance = 173;
+    FUNCand = 174;
+    FUNCanova = 175;
+    FUNCany = 176;
+    FUNCanyHeavy = 177;
+    FUNCanyLast = 178;
+    FUNCany_value = 179;
+    FUNCappendTrailingCharIfAbsent = 180;
+    FUNCapprox_top_count = 181;
+    FUNCapprox_top_k = 182;
+    FUNCapprox_top_sum = 183;
+    FUNCareaCartesian = 184;
+    FUNCareaSpherical = 185;
+    FUNCargMax = 186;
+    FUNCargMin = 187;
+    FUNCarray = 188;
+    FUNCarrayAUC = 189;
+    FUNCarrayAUCPR = 190;
+    FUNCarrayAll = 191;
+    FUNCarrayAvg = 192;
+    FUNCarrayCompact = 193;
+    FUNCarrayConcat = 194;
+    FUNCarrayCount = 195;
+    FUNCarrayCumSum = 196;
+    FUNCarrayCumSumNonNegative = 197;
+    FUNCarrayDifference = 198;
+    FUNCarrayDistinct = 199;
+    FUNCarrayDotProduct = 200;
+    FUNCarrayElement = 201;
+    FUNCarrayElementOrNull = 202;
+    FUNCarrayEnumerate = 203;
+    FUNCarrayEnumerateDense = 204;
+    FUNCarrayEnumerateDenseRanked = 205;
+    FUNCarrayEnumerateUniq = 206;
+    FUNCarrayEnumerateUniqRanked = 207;
+    FUNCarrayExcept = 208;
+    FUNCarrayExists = 209;
+    FUNCarrayFill = 210;
+    FUNCarrayFilter = 211;
+    FUNCarrayFirst = 212;
+    FUNCarrayFirstIndex = 213;
+    FUNCarrayFirstOrNull = 214;
+    FUNCarrayFlatten = 215;
+    FUNCarrayFold = 216;
+    FUNCarrayIntersect = 217;
+    FUNCarrayJaccardIndex = 218;
+    FUNCarrayJoin = 219;
+    FUNCarrayLast = 220;
+    FUNCarrayLastIndex = 221;
+    FUNCarrayLastOrNull = 222;
+    FUNCarrayLevenshteinDistance = 223;
+    FUNCarrayLevenshteinDistanceWeighted = 224;
+    FUNCarrayMap = 225;
+    FUNCarrayMax = 226;
+    FUNCarrayMin = 227;
+    FUNCarrayNormalizedGini = 228;
+    FUNCarrayPRAUC = 229;
+    FUNCarrayPartialReverseSort = 230;
+    FUNCarrayPartialShuffle = 231;
+    FUNCarrayPartialSort = 232;
+    FUNCarrayPopBack = 233;
+    FUNCarrayPopFront = 234;
+    FUNCarrayProduct = 235;
+    FUNCarrayPushBack = 236;
+    FUNCarrayPushFront = 237;
+    FUNCarrayROCAUC = 238;
+    FUNCarrayRandomSample = 239;
+    FUNCarrayReduce = 240;
+    FUNCarrayReduceInRanges = 241;
+    FUNCarrayResize = 242;
+    FUNCarrayReverse = 243;
+    FUNCarrayReverseFill = 244;
+    FUNCarrayReverseSort = 245;
+    FUNCarrayReverseSplit = 246;
+    FUNCarrayRotateLeft = 247;
+    FUNCarrayRotateRight = 248;
+    FUNCarrayShiftLeft = 249;
+    FUNCarrayShiftRight = 250;
+    FUNCarrayShingles = 251;
+    FUNCarrayShuffle = 252;
+    FUNCarraySimilarity = 253;
+    FUNCarraySlice = 254;
+    FUNCarraySort = 255;
+    FUNCarraySplit = 256;
+    FUNCarrayStringConcat = 257;
+    FUNCarraySum = 258;
+    FUNCarraySymmetricDifference = 259;
+    FUNCarrayUnion = 260;
+    FUNCarrayUniq = 261;
+    FUNCarrayWithConstant = 262;
+    FUNCarrayZip = 263;
+    FUNCarrayZipUnaligned = 264;
+    FUNCarray_agg = 265;
+    FUNCarray_concat_agg = 266;
+    FUNCascii = 267;
+    FUNCasin = 268;
+    FUNCasinh = 269;
+    FUNCassumeNotNull = 270;
+    FUNCatan = 271;
+    FUNCatan2 = 272;
+    FUNCatanh = 273;
+    FUNCauthenticatedUser = 274;
+    FUNCavg = 275;
+    FUNCavgWeighted = 276;
+    FUNCbar = 277;
+    FUNCbase32Decode = 278;
+    FUNCbase32Encode = 279;
+    FUNCbase58Decode = 280;
+    FUNCbase58Encode = 281;
+    FUNCbase64Decode = 282;
+    FUNCbase64Encode = 283;
+    FUNCbase64URLDecode = 284;
+    FUNCbase64URLEncode = 285;
+    FUNCbasename = 286;
+    FUNCbech32Decode = 287;
+    FUNCbech32Encode = 288;
+    FUNCbin = 289;
+    FUNCbitAnd = 290;
+    FUNCbitCount = 291;
+    FUNCbitHammingDistance = 292;
+    FUNCbitNot = 293;
+    FUNCbitOr = 294;
+    FUNCbitPositionsToArray = 295;
+    FUNCbitRotateLeft = 296;
+    FUNCbitRotateRight = 297;
+    FUNCbitShiftLeft = 298;
+    FUNCbitShiftRight = 299;
+    FUNCbitSlice = 300;
+    FUNCbitTest = 301;
+    FUNCbitTestAll = 302;
+    FUNCbitTestAny = 303;
+    FUNCbitXor = 304;
+    FUNCbitmapAnd = 305;
+    FUNCbitmapAndCardinality = 306;
+    FUNCbitmapAndnot = 307;
+    FUNCbitmapAndnotCardinality = 308;
+    FUNCbitmapBuild = 309;
+    FUNCbitmapCardinality = 310;
+    FUNCbitmapContains = 311;
+    FUNCbitmapHasAll = 312;
+    FUNCbitmapHasAny = 313;
+    FUNCbitmapMax = 314;
+    FUNCbitmapMin = 315;
+    FUNCbitmapOr = 316;
+    FUNCbitmapOrCardinality = 317;
+    FUNCbitmapSubsetInRange = 318;
+    FUNCbitmapSubsetLimit = 319;
+    FUNCbitmapToArray = 320;
+    FUNCbitmapTransform = 321;
+    FUNCbitmapXor = 322;
+    FUNCbitmapXorCardinality = 323;
+    FUNCbitmaskToArray = 324;
+    FUNCbitmaskToList = 325;
+    FUNCblockNumber = 326;
+    FUNCblockSerializedSize = 327;
+    FUNCblockSize = 328;
+    FUNCboundingRatio = 329;
+    FUNCbuildId = 330;
+    FUNCbyteHammingDistance = 331;
+    FUNCbyteSize = 332;
+    FUNCbyteSlice = 333;
+    FUNCbyteSwap = 334;
+    FUNCcaseFoldUTF8 = 335;
+    FUNCcaseWithExpr = 336;
+    FUNCcaseWithExpression = 337;
+    FUNCcaseWithoutExpr = 338;
+    FUNCcaseWithoutExpression = 339;
+    FUNCcatboostEvaluate = 340;
+    FUNCcategoricalInformationValue = 341;
+    FUNCcbrt = 342;
+    FUNCceil = 343;
+    FUNCceiling = 344;
+    FUNCchangeDay = 345;
+    FUNCchangeHour = 346;
+    FUNCchangeMinute = 347;
+    FUNCchangeMonth = 348;
+    FUNCchangeSecond = 349;
+    FUNCchangeYear = 350;
+    FUNCchar = 351;
+    FUNCcityHash64 = 352;
+    FUNCclamp = 353;
+    FUNCcoalesce = 354;
+    FUNCcolorOKLCHToSRGB = 355;
+    FUNCcolorSRGBToOKLCH = 356;
+    FUNCcompareSubstrings = 357;
+    FUNCconcat = 358;
+    FUNCconcatAssumeInjective = 359;
+    FUNCconcatWithSeparator = 360;
+    FUNCconcatWithSeparatorAssumeInjective = 361;
+    FUNCconcat_ws = 362;
+    FUNCconnectionId = 363;
+    FUNCconnection_id = 364;
+    FUNCcontingency = 365;
+    FUNCconvertCharset = 366;
+    FUNCcorr = 367;
+    FUNCcorrMatrix = 368;
+    FUNCcorrStable = 369;
+    FUNCcos = 370;
+    FUNCcosh = 371;
+    FUNCcosineDistance = 372;
+    FUNCcosineDistanceTransposed = 373;
+    FUNCcount = 374;
+    FUNCcountDigits = 375;
+    FUNCcountEqual = 376;
+    FUNCcountMatches = 377;
+    FUNCcountMatchesCaseInsensitive = 378;
+    FUNCcountSubstrings = 379;
+    FUNCcountSubstringsCaseInsensitive = 380;
+    FUNCcountSubstringsCaseInsensitiveUTF8 = 381;
+    FUNCcovarPop = 382;
+    FUNCcovarPopMatrix = 383;
+    FUNCcovarPopStable = 384;
+    FUNCcovarSamp = 385;
+    FUNCcovarSampMatrix = 386;
+    FUNCcovarSampStable = 387;
+    FUNCcramersV = 388;
+    FUNCcramersVBiasCorrected = 389;
+    FUNCcurdate = 390;
+    FUNCcurrentDatabase = 391;
+    FUNCcurrentProfiles = 392;
+    FUNCcurrentRoles = 393;
+    FUNCcurrentSchemas = 394;
+    FUNCcurrentUser = 395;
+    FUNCcurrent_database = 396;
+    FUNCcurrent_date = 397;
+    FUNCcurrent_schemas = 398;
+    FUNCcurrent_timestamp = 399;
+    FUNCcurrent_user = 400;
+    FUNCcutFragment = 401;
+    FUNCcutIPv6 = 402;
+    FUNCcutQueryString = 403;
+    FUNCcutQueryStringAndFragment = 404;
+    FUNCcutToFirstSignificantSubdomain = 405;
+    FUNCcutToFirstSignificantSubdomainCustom = 406;
+    FUNCcutToFirstSignificantSubdomainCustomRFC = 407;
+    FUNCcutToFirstSignificantSubdomainCustomWithWWW = 408;
+    FUNCcutToFirstSignificantSubdomainCustomWithWWWRFC = 409;
+    FUNCcutToFirstSignificantSubdomainRFC = 410;
+    FUNCcutToFirstSignificantSubdomainWithWWW = 411;
+    FUNCcutToFirstSignificantSubdomainWithWWWRFC = 412;
+    FUNCcutURLParameter = 413;
+    FUNCcutWWW = 414;
+    FUNCdamerauLevenshteinDistance = 415;
+    FUNCdateDiff = 416;
+    FUNCdateName = 417;
+    FUNCdateTime64ToSnowflake = 418;
+    FUNCdateTime64ToSnowflakeID = 419;
+    FUNCdateTimeToSnowflake = 420;
+    FUNCdateTimeToSnowflakeID = 421;
+    FUNCdateTimeToUUIDv7 = 422;
+    FUNCdateTrunc = 423;
+    FUNCdate_add = 424;
+    FUNCdate_diff = 425;
+    FUNCdate_sub = 426;
+    FUNCdecodeHTMLComponent = 427;
+    FUNCdecodeURLComponent = 428;
+    FUNCdecodeURLFormComponent = 429;
+    FUNCdecodeXMLComponent = 430;
+    FUNCdecrypt = 431;
+    FUNCdefaultProfiles = 432;
+    FUNCdefaultRoles = 433;
+    FUNCdefaultValueOfArgumentType = 434;
+    FUNCdefaultValueOfTypeName = 435;
+    FUNCdegrees = 436;
+    FUNCdeltaSum = 437;
+    FUNCdeltaSumTimestamp = 438;
+    FUNCdemangle = 439;
+    FUNCdenseRank = 440;
+    FUNCdense_rank = 441;
+    FUNCdetectCharset = 442;
+    FUNCdetectLanguage = 443;
+    FUNCdetectLanguageMixed = 444;
+    FUNCdetectLanguageUnknown = 445;
+    FUNCdetectProgrammingLanguage = 446;
+    FUNCdetectTonality = 447;
+    FUNCdictGet = 448;
+    FUNCdictGetAll = 449;
+    FUNCdictGetChildren = 450;
+    FUNCdictGetDate = 451;
+    FUNCdictGetDateOrDefault = 452;
+    FUNCdictGetDateTime = 453;
+    FUNCdictGetDateTimeOrDefault = 454;
+    FUNCdictGetDescendants = 455;
+    FUNCdictGetFloat32 = 456;
+    FUNCdictGetFloat32OrDefault = 457;
+    FUNCdictGetFloat64 = 458;
+    FUNCdictGetFloat64OrDefault = 459;
+    FUNCdictGetHierarchy = 460;
+    FUNCdictGetIPv4 = 461;
+    FUNCdictGetIPv4OrDefault = 462;
+    FUNCdictGetIPv6 = 463;
+    FUNCdictGetIPv6OrDefault = 464;
+    FUNCdictGetInt16 = 465;
+    FUNCdictGetInt16OrDefault = 466;
+    FUNCdictGetInt32 = 467;
+    FUNCdictGetInt32OrDefault = 468;
+    FUNCdictGetInt64 = 469;
+    FUNCdictGetInt64OrDefault = 470;
+    FUNCdictGetInt8 = 471;
+    FUNCdictGetInt8OrDefault = 472;
+    FUNCdictGetKeys = 473;
+    FUNCdictGetOrDefault = 474;
+    FUNCdictGetOrNull = 475;
+    FUNCdictGetString = 476;
+    FUNCdictGetStringOrDefault = 477;
+    FUNCdictGetUInt16 = 478;
+    FUNCdictGetUInt16OrDefault = 479;
+    FUNCdictGetUInt32 = 480;
+    FUNCdictGetUInt32OrDefault = 481;
+    FUNCdictGetUInt64 = 482;
+    FUNCdictGetUInt64OrDefault = 483;
+    FUNCdictGetUInt8 = 484;
+    FUNCdictGetUInt8OrDefault = 485;
+    FUNCdictGetUUID = 486;
+    FUNCdictGetUUIDOrDefault = 487;
+    FUNCdictHas = 488;
+    FUNCdictIsIn = 489;
+    FUNCdisplayName = 490;
+    FUNCdistanceL1 = 491;
+    FUNCdistanceL2 = 492;
+    FUNCdistanceL2Squared = 493;
+    FUNCdistanceLinf = 494;
+    FUNCdistanceLp = 495;
+    FUNCdistinctDynamicTypes = 496;
+    FUNCdistinctJSONPaths = 497;
+    FUNCdistinctJSONPathsAndTypes = 498;
+    FUNCdivide = 499;
+    FUNCdivideDecimal = 500;
+    FUNCdivideOrNull = 501;
+    FUNCdomain = 502;
+    FUNCdomainRFC = 503;
+    FUNCdomainWithoutWWW = 504;
+    FUNCdomainWithoutWWWRFC = 505;
+    FUNCdotProduct = 506;
+    FUNCdumpColumnStructure = 507;
+    FUNCdynamicElement = 508;
+    FUNCdynamicType = 509;
+    FUNCe = 510;
+    FUNCeditDistance = 511;
+    FUNCeditDistanceUTF8 = 512;
+    FUNCempty = 513;
+    FUNCemptyArrayDate = 514;
+    FUNCemptyArrayDateTime = 515;
+    FUNCemptyArrayFloat32 = 516;
+    FUNCemptyArrayFloat64 = 517;
+    FUNCemptyArrayInt16 = 518;
+    FUNCemptyArrayInt32 = 519;
+    FUNCemptyArrayInt64 = 520;
+    FUNCemptyArrayInt8 = 521;
+    FUNCemptyArrayString = 522;
+    FUNCemptyArrayToSingle = 523;
+    FUNCemptyArrayUInt16 = 524;
+    FUNCemptyArrayUInt32 = 525;
+    FUNCemptyArrayUInt64 = 526;
+    FUNCemptyArrayUInt8 = 527;
+    FUNCenabledProfiles = 528;
+    FUNCenabledRoles = 529;
+    FUNCencodeURLComponent = 530;
+    FUNCencodeURLFormComponent = 531;
+    FUNCencodeXMLComponent = 532;
+    FUNCencrypt = 533;
+    FUNCendsWith = 534;
+    FUNCendsWithCaseInsensitive = 535;
+    FUNCendsWithCaseInsensitiveUTF8 = 536;
+    FUNCendsWithUTF8 = 537;
+    FUNCentropy = 538;
+    FUNCequals = 539;
+    FUNCerf = 540;
+    FUNCerfc = 541;
+    FUNCerrorCodeToName = 542;
+    FUNCestimateCompressionRatio = 543;
+    FUNCevalMLMethod = 544;
+    FUNCexp = 545;
+    FUNCexp10 = 546;
+    FUNCexp2 = 547;
+    FUNCexponentialMovingAverage = 548;
+    FUNCexponentialTimeDecayedAvg = 549;
+    FUNCexponentialTimeDecayedCount = 550;
+    FUNCexponentialTimeDecayedMax = 551;
+    FUNCexponentialTimeDecayedSum = 552;
+    FUNCextract = 553;
+    FUNCextractAll = 554;
+    FUNCextractAllGroups = 555;
+    FUNCextractAllGroupsHorizontal = 556;
+    FUNCextractAllGroupsVertical = 557;
+    FUNCextractGroups = 558;
+    FUNCextractKeyValuePairs = 559;
+    FUNCextractKeyValuePairsWithEscaping = 560;
+    FUNCextractTextFromHTML = 561;
+    FUNCextractURLParameter = 562;
+    FUNCextractURLParameterNames = 563;
+    FUNCextractURLParameters = 564;
+    FUNCfactorial = 565;
+    FUNCfarmFingerprint64 = 566;
+    FUNCfarmHash64 = 567;
+    FUNCfile = 568;
+    FUNCfilesystemAvailable = 569;
+    FUNCfilesystemCapacity = 570;
+    FUNCfilesystemUnreserved = 571;
+    FUNCfinalizeAggregation = 572;
+    FUNCfinancialInternalRateOfReturn = 573;
+    FUNCfinancialInternalRateOfReturnExtended = 574;
+    FUNCfinancialNetPresentValue = 575;
+    FUNCfinancialNetPresentValueExtended = 576;
+    FUNCfirstLine = 577;
+    FUNCfirstNonDefault = 578;
+    FUNCfirstSignificantSubdomain = 579;
+    FUNCfirstSignificantSubdomainCustom = 580;
+    FUNCfirstSignificantSubdomainCustomRFC = 581;
+    FUNCfirstSignificantSubdomainRFC = 582;
+    FUNCfirst_value = 583;
+    FUNCflameGraph = 584;
+    FUNCflatten = 585;
+    FUNCflattenTuple = 586;
+    FUNCflipCoordinates = 587;
+    FUNCfloor = 588;
+    FUNCformat = 589;
+    FUNCformatDateTime = 590;
+    FUNCformatDateTimeInJodaSyntax = 591;
+    FUNCformatQuery = 592;
+    FUNCformatQuerySingleLine = 593;
+    FUNCformatReadableDecimalSize = 594;
+    FUNCformatReadableQuantity = 595;
+    FUNCformatReadableSize = 596;
+    FUNCformatReadableTimeDelta = 597;
+    FUNCformatRow = 598;
+    FUNCformatRowNoNewline = 599;
+    FUNCfqdn = 600;
+    FUNCfragment = 601;
+    FUNCfromDaysSinceYearZero = 602;
+    FUNCfromDaysSinceYearZero32 = 603;
+    FUNCfromModifiedJulianDay = 604;
+    FUNCfromModifiedJulianDayOrNull = 605;
+    FUNCfromUTCTimestamp = 606;
+    FUNCfromUnixTimestamp = 607;
+    FUNCfromUnixTimestamp64Micro = 608;
+    FUNCfromUnixTimestamp64Milli = 609;
+    FUNCfromUnixTimestamp64Nano = 610;
+    FUNCfromUnixTimestamp64Second = 611;
+    FUNCfromUnixTimestampInJodaSyntax = 612;
+    FUNCfrom_utc_timestamp = 613;
+    FUNCfullHostName = 614;
+    FUNCfuzzBits = 615;
+    FUNCgccMurmurHash = 616;
+    FUNCgcd = 617;
+    FUNCgenerateRandomStructure = 618;
+    FUNCgenerateSerialID = 619;
+    FUNCgenerateSnowflakeID = 620;
+    FUNCgenerateULID = 621;
+    FUNCgenerateUUIDv4 = 622;
+    FUNCgenerateUUIDv7 = 623;
+    FUNCgeoDistance = 624;
+    FUNCgeoToH3 = 625;
+    FUNCgeoToS2 = 626;
+    FUNCgeohashDecode = 627;
+    FUNCgeohashEncode = 628;
+    FUNCgeohashesInBox = 629;
+    FUNCgetClientHTTPHeader = 630;
+    FUNCgetMacro = 631;
+    FUNCgetOSKernelVersion = 632;
+    FUNCgetServerPort = 633;
+    FUNCgetSetting = 634;
+    FUNCgetSizeOfEnumType = 635;
+    FUNCgetSubcolumn = 636;
+    FUNCgetTypeSerializationStreams = 637;
+    FUNCglobalIn = 638;
+    FUNCglobalInIgnoreSet = 639;
+    FUNCglobalNotIn = 640;
+    FUNCglobalNotInIgnoreSet = 641;
+    FUNCglobalNotNullIn = 642;
+    FUNCglobalNotNullInIgnoreSet = 643;
+    FUNCglobalNullIn = 644;
+    FUNCglobalNullInIgnoreSet = 645;
+    FUNCglobalVariable = 646;
+    FUNCgreatCircleAngle = 647;
+    FUNCgreatCircleDistance = 648;
+    FUNCgreater = 649;
+    FUNCgreaterOrEquals = 650;
+    FUNCgreatest = 651;
+    FUNCgroupArray = 652;
+    FUNCgroupArrayArray = 653;
+    FUNCgroupArrayInsertAt = 654;
+    FUNCgroupArrayIntersect = 655;
+    FUNCgroupArrayLast = 656;
+    FUNCgroupArrayLastArray = 657;
+    FUNCgroupArrayMovingAvg = 658;
+    FUNCgroupArrayMovingSum = 659;
+    FUNCgroupArraySample = 660;
+    FUNCgroupArraySorted = 661;
+    FUNCgroupBitAnd = 662;
+    FUNCgroupBitOr = 663;
+    FUNCgroupBitXor = 664;
+    FUNCgroupBitmap = 665;
+    FUNCgroupBitmapAnd = 666;
+    FUNCgroupBitmapOr = 667;
+    FUNCgroupBitmapXor = 668;
+    FUNCgroupConcat = 669;
+    FUNCgroupUniqArray = 670;
+    FUNCgroupUniqArrayArray = 671;
+    FUNCgroupUniqArrayArrayMap = 672;
+    FUNCgroup_concat = 673;
+    FUNCgrouping = 674;
+    FUNCh3CellAreaM2 = 675;
+    FUNCh3CellAreaRads2 = 676;
+    FUNCh3Distance = 677;
+    FUNCh3EdgeAngle = 678;
+    FUNCh3EdgeLengthKm = 679;
+    FUNCh3EdgeLengthM = 680;
+    FUNCh3ExactEdgeLengthKm = 681;
+    FUNCh3ExactEdgeLengthM = 682;
+    FUNCh3ExactEdgeLengthRads = 683;
+    FUNCh3GetBaseCell = 684;
+    FUNCh3GetDestinationIndexFromUnidirectionalEdge = 685;
+    FUNCh3GetFaces = 686;
+    FUNCh3GetIndexesFromUnidirectionalEdge = 687;
+    FUNCh3GetOriginIndexFromUnidirectionalEdge = 688;
+    FUNCh3GetPentagonIndexes = 689;
+    FUNCh3GetRes0Indexes = 690;
+    FUNCh3GetResolution = 691;
+    FUNCh3GetUnidirectionalEdge = 692;
+    FUNCh3GetUnidirectionalEdgeBoundary = 693;
+    FUNCh3GetUnidirectionalEdgesFromHexagon = 694;
+    FUNCh3HexAreaKm2 = 695;
+    FUNCh3HexAreaM2 = 696;
+    FUNCh3HexRing = 697;
+    FUNCh3IndexesAreNeighbors = 698;
+    FUNCh3IsPentagon = 699;
+    FUNCh3IsResClassIII = 700;
+    FUNCh3IsValid = 701;
+    FUNCh3Line = 702;
+    FUNCh3NumHexagons = 703;
+    FUNCh3PointDistKm = 704;
+    FUNCh3PointDistM = 705;
+    FUNCh3PointDistRads = 706;
+    FUNCh3ToCenterChild = 707;
+    FUNCh3ToChildren = 708;
+    FUNCh3ToGeo = 709;
+    FUNCh3ToGeoBoundary = 710;
+    FUNCh3ToParent = 711;
+    FUNCh3ToString = 712;
+    FUNCh3UnidirectionalEdgeIsValid = 713;
+    FUNCh3kRing = 714;
+    FUNChalfMD5 = 715;
+    FUNChas = 716;
+    FUNChasAll = 717;
+    FUNChasAllTokens = 718;
+    FUNChasAny = 719;
+    FUNChasAnyTokens = 720;
+    FUNChasColumnInTable = 721;
+    FUNChasSubsequence = 722;
+    FUNChasSubsequenceCaseInsensitive = 723;
+    FUNChasSubsequenceCaseInsensitiveUTF8 = 724;
+    FUNChasSubsequenceUTF8 = 725;
+    FUNChasSubstr = 726;
+    FUNChasThreadFuzzer = 727;
+    FUNChasToken = 728;
+    FUNChasTokenCaseInsensitive = 729;
+    FUNChasTokenCaseInsensitiveOrNull = 730;
+    FUNChasTokenOrNull = 731;
+    FUNChex = 732;
+    FUNChilbertDecode = 733;
+    FUNChilbertEncode = 734;
+    FUNChistogram = 735;
+    FUNChiveHash = 736;
+    FUNChop = 737;
+    FUNChopEnd = 738;
+    FUNChopStart = 739;
+    FUNChostname = 740;
+    FUNChypot = 741;
+    FUNCicebergBucket = 742;
+    FUNCicebergHash = 743;
+    FUNCicebergTruncate = 744;
+    FUNCidentity = 745;
+    FUNCidnaDecode = 746;
+    FUNCidnaEncode = 747;
+    FUNCif = 748;
+    FUNCifNotFinite = 749;
+    FUNCifNull = 750;
+    FUNCignore = 751;
+    FUNCilike = 752;
+    FUNCin = 753;
+    FUNCinIgnoreSet = 754;
+    FUNCindexHint = 755;
+    FUNCindexOf = 756;
+    FUNCindexOfAssumeSorted = 757;
+    FUNCinitcap = 758;
+    FUNCinitcapUTF8 = 759;
+    FUNCinitialQueryID = 760;
+    FUNCinitialQueryStartTime = 761;
+    FUNCinitial_query_id = 762;
+    FUNCinitializeAggregation = 763;
+    FUNCinstr = 764;
+    FUNCintDiv = 765;
+    FUNCintDivOrNull = 766;
+    FUNCintDivOrZero = 767;
+    FUNCintExp10 = 768;
+    FUNCintExp2 = 769;
+    FUNCintHash32 = 770;
+    FUNCintHash64 = 771;
+    FUNCintervalLengthSum = 772;
+    FUNCisASCII = 773;
+    FUNCisConstant = 774;
+    FUNCisDecimalOverflow = 775;
+    FUNCisDistinctFrom = 776;
+    FUNCisDynamicElementInSharedData = 777;
+    FUNCisFinite = 778;
+    FUNCisIPAddressInRange = 779;
+    FUNCisIPv4String = 780;
+    FUNCisIPv6String = 781;
+    FUNCisInfinite = 782;
+    FUNCisNaN = 783;
+    FUNCisNotDistinctFrom = 784;
+    FUNCisNotNull = 785;
+    FUNCisNull = 786;
+    FUNCisNullable = 787;
+    FUNCisValidASCII = 788;
+    FUNCisValidJSON = 789;
+    FUNCisValidUTF8 = 790;
+    FUNCisZeroOrNull = 791;
+    FUNCjaroSimilarity = 792;
+    FUNCjaroWinklerSimilarity = 793;
+    FUNCjavaHash = 794;
+    FUNCjavaHashUTF16LE = 795;
+    FUNCjoinGet = 796;
+    FUNCjoinGetOrNull = 797;
+    FUNCjumpConsistentHash = 798;
+    FUNCkafkaMurmurHash = 799;
+    FUNCkeccak256 = 800;
+    FUNCkolmogorovSmirnovTest = 801;
+    FUNCkostikConsistentHash = 802;
+    FUNCkql_array_sort_asc = 803;
+    FUNCkql_array_sort_desc = 804;
+    FUNCkurtPop = 805;
+    FUNCkurtSamp = 806;
+    FUNClagInFrame = 807;
+    FUNClargestTriangleThreeBuckets = 808;
+    FUNClast_value = 809;
+    FUNClcase = 810;
+    FUNClcm = 811;
+    FUNCleadInFrame = 812;
+    FUNCleast = 813;
+    FUNCleft = 814;
+    FUNCleftPad = 815;
+    FUNCleftPadUTF8 = 816;
+    FUNCleftUTF8 = 817;
+    FUNClemmatize = 818;
+    FUNClength = 819;
+    FUNClengthUTF8 = 820;
+    FUNCless = 821;
+    FUNClessOrEquals = 822;
+    FUNClevenshteinDistance = 823;
+    FUNClevenshteinDistanceUTF8 = 824;
+    FUNClgamma = 825;
+    FUNClike = 826;
+    FUNCln = 827;
+    FUNClocate = 828;
+    FUNClog = 829;
+    FUNClog10 = 830;
+    FUNClog1p = 831;
+    FUNClog2 = 832;
+    FUNClogTrace = 833;
+    FUNClowCardinalityIndices = 834;
+    FUNClowCardinalityKeys = 835;
+    FUNClower = 836;
+    FUNClowerUTF8 = 837;
+    FUNClpad = 838;
+    FUNCltrim = 839;
+    FUNClttb = 840;
+    FUNCmakeDate = 841;
+    FUNCmakeDate32 = 842;
+    FUNCmakeDateTime = 843;
+    FUNCmakeDateTime64 = 844;
+    FUNCmannWhitneyUTest = 845;
+    FUNCmap = 846;
+    FUNCmapAdd = 847;
+    FUNCmapAll = 848;
+    FUNCmapApply = 849;
+    FUNCmapConcat = 850;
+    FUNCmapContains = 851;
+    FUNCmapContainsKey = 852;
+    FUNCmapContainsKeyLike = 853;
+    FUNCmapContainsValue = 854;
+    FUNCmapContainsValueLike = 855;
+    FUNCmapExists = 856;
+    FUNCmapExtractKeyLike = 857;
+    FUNCmapExtractValueLike = 858;
+    FUNCmapFilter = 859;
+    FUNCmapFromArrays = 860;
+    FUNCmapFromString = 861;
+    FUNCmapKeys = 862;
+    FUNCmapPartialReverseSort = 863;
+    FUNCmapPartialSort = 864;
+    FUNCmapPopulateSeries = 865;
+    FUNCmapReverseSort = 866;
+    FUNCmapSort = 867;
+    FUNCmapSubtract = 868;
+    FUNCmapUpdate = 869;
+    FUNCmapValues = 870;
+    FUNCmatch = 871;
+    FUNCmaterialize = 872;
+    FUNCmax = 873;
+    FUNCmax2 = 874;
+    FUNCmaxIntersections = 875;
+    FUNCmaxIntersectionsPosition = 876;
+    FUNCmaxMap = 877;
+    FUNCmaxMappedArrays = 878;
+    FUNCmeanZTest = 879;
+    FUNCmedian = 880;
+    FUNCmedianBFloat16 = 881;
+    FUNCmedianBFloat16Weighted = 882;
+    FUNCmedianDD = 883;
+    FUNCmedianDeterministic = 884;
+    FUNCmedianExact = 885;
+    FUNCmedianExactHigh = 886;
+    FUNCmedianExactLow = 887;
+    FUNCmedianExactWeighted = 888;
+    FUNCmedianGK = 889;
+    FUNCmedianInterpolatedWeighted = 890;
+    FUNCmedianTDigest = 891;
+    FUNCmedianTDigestWeighted = 892;
+    FUNCmedianTiming = 893;
+    FUNCmedianTimingWeighted = 894;
+    FUNCmetroHash64 = 895;
+    FUNCmid = 896;
+    FUNCmin = 897;
+    FUNCmin2 = 898;
+    FUNCminMap = 899;
+    FUNCminMappedArrays = 900;
+    FUNCminSampleSizeContinous = 901;
+    FUNCminSampleSizeContinuous = 902;
+    FUNCminSampleSizeConversion = 903;
+    FUNCminus = 904;
+    FUNCmismatches = 905;
+    FUNCmod = 906;
+    FUNCmodulo = 907;
+    FUNCmoduloLegacy = 908;
+    FUNCmoduloOrNull = 909;
+    FUNCmoduloOrZero = 910;
+    FUNCmonthName = 911;
+    FUNCmortonDecode = 912;
+    FUNCmortonEncode = 913;
+    FUNCmultiFuzzyMatchAllIndices = 914;
+    FUNCmultiFuzzyMatchAny = 915;
+    FUNCmultiFuzzyMatchAnyIndex = 916;
+    FUNCmultiIf = 917;
+    FUNCmultiMatchAllIndices = 918;
+    FUNCmultiMatchAny = 919;
+    FUNCmultiMatchAnyIndex = 920;
+    FUNCmultiSearchAllPositions = 921;
+    FUNCmultiSearchAllPositionsCaseInsensitive = 922;
+    FUNCmultiSearchAllPositionsCaseInsensitiveUTF8 = 923;
+    FUNCmultiSearchAllPositionsUTF8 = 924;
+    FUNCmultiSearchAny = 925;
+    FUNCmultiSearchAnyCaseInsensitive = 926;
+    FUNCmultiSearchAnyCaseInsensitiveUTF8 = 927;
+    FUNCmultiSearchAnyUTF8 = 928;
+    FUNCmultiSearchFirstIndex = 929;
+    FUNCmultiSearchFirstIndexCaseInsensitive = 930;
+    FUNCmultiSearchFirstIndexCaseInsensitiveUTF8 = 931;
+    FUNCmultiSearchFirstIndexUTF8 = 932;
+    FUNCmultiSearchFirstPosition = 933;
+    FUNCmultiSearchFirstPositionCaseInsensitive = 934;
+    FUNCmultiSearchFirstPositionCaseInsensitiveUTF8 = 935;
+    FUNCmultiSearchFirstPositionUTF8 = 936;
+    FUNCmultiply = 937;
+    FUNCmultiplyDecimal = 938;
+    FUNCmurmurHash2_32 = 939;
+    FUNCmurmurHash2_64 = 940;
+    FUNCmurmurHash3_128 = 941;
+    FUNCmurmurHash3_32 = 942;
+    FUNCmurmurHash3_64 = 943;
+    FUNCnaturalSortKey = 944;
+    FUNCnegate = 945;
+    FUNCneighbor = 946;
+    FUNCnested = 947;
+    FUNCnetloc = 948;
+    FUNCngramDistance = 949;
+    FUNCngramDistanceCaseInsensitive = 950;
+    FUNCngramDistanceCaseInsensitiveUTF8 = 951;
+    FUNCngramDistanceUTF8 = 952;
+    FUNCngramMinHash = 953;
+    FUNCngramMinHashArg = 954;
+    FUNCngramMinHashArgCaseInsensitive = 955;
+    FUNCngramMinHashArgCaseInsensitiveUTF8 = 956;
+    FUNCngramMinHashArgUTF8 = 957;
+    FUNCngramMinHashCaseInsensitive = 958;
+    FUNCngramMinHashCaseInsensitiveUTF8 = 959;
+    FUNCngramMinHashUTF8 = 960;
+    FUNCngramSearch = 961;
+    FUNCngramSearchCaseInsensitive = 962;
+    FUNCngramSearchCaseInsensitiveUTF8 = 963;
+    FUNCngramSearchUTF8 = 964;
+    FUNCngramSimHash = 965;
+    FUNCngramSimHashCaseInsensitive = 966;
+    FUNCngramSimHashCaseInsensitiveUTF8 = 967;
+    FUNCngramSimHashUTF8 = 968;
+    FUNCngrams = 969;
+    FUNCnonNegativeDerivative = 970;
+    FUNCnormL1 = 971;
+    FUNCnormL2 = 972;
+    FUNCnormL2Squared = 973;
+    FUNCnormLinf = 974;
+    FUNCnormLp = 975;
+    FUNCnormalizeL1 = 976;
+    FUNCnormalizeL2 = 977;
+    FUNCnormalizeLinf = 978;
+    FUNCnormalizeLp = 979;
+    FUNCnormalizeQuery = 980;
+    FUNCnormalizeQueryKeepNames = 981;
+    FUNCnormalizeUTF8NFC = 982;
+    FUNCnormalizeUTF8NFD = 983;
+    FUNCnormalizeUTF8NFKC = 984;
+    FUNCnormalizeUTF8NFKCCasefold = 985;
+    FUNCnormalizeUTF8NFKD = 986;
+    FUNCnormalizedQueryHash = 987;
+    FUNCnormalizedQueryHashKeepNames = 988;
+    FUNCnot = 989;
+    FUNCnotEmpty = 990;
+    FUNCnotEquals = 991;
+    FUNCnotILike = 992;
+    FUNCnotIn = 993;
+    FUNCnotInIgnoreSet = 994;
+    FUNCnotLike = 995;
+    FUNCnotNullIn = 996;
+    FUNCnotNullInIgnoreSet = 997;
+    FUNCnothing = 998;
+    FUNCnothingUInt64 = 999;
+    FUNCnow = 1000;
+    FUNCnow64 = 1001;
+    FUNCnowInBlock = 1002;
+    FUNCnowInBlock64 = 1003;
+    FUNCnth_value = 1004;
+    FUNCntile = 1005;
+    FUNCnullIf = 1006;
+    FUNCnullIn = 1007;
+    FUNCnullInIgnoreSet = 1008;
+    FUNCnumericIndexedVectorAllValueSum = 1009;
+    FUNCnumericIndexedVectorBuild = 1010;
+    FUNCnumericIndexedVectorCardinality = 1011;
+    FUNCnumericIndexedVectorGetValue = 1012;
+    FUNCnumericIndexedVectorPointwiseAdd = 1013;
+    FUNCnumericIndexedVectorPointwiseDivide = 1014;
+    FUNCnumericIndexedVectorPointwiseEqual = 1015;
+    FUNCnumericIndexedVectorPointwiseGreater = 1016;
+    FUNCnumericIndexedVectorPointwiseGreaterEqual = 1017;
+    FUNCnumericIndexedVectorPointwiseLess = 1018;
+    FUNCnumericIndexedVectorPointwiseLessEqual = 1019;
+    FUNCnumericIndexedVectorPointwiseMultiply = 1020;
+    FUNCnumericIndexedVectorPointwiseNotEqual = 1021;
+    FUNCnumericIndexedVectorPointwiseSubtract = 1022;
+    FUNCnumericIndexedVectorShortDebugString = 1023;
+    FUNCnumericIndexedVectorToMap = 1024;
+    FUNCor = 1025;
+    FUNCoverlay = 1026;
+    FUNCoverlayUTF8 = 1027;
+    FUNCparseDateTime = 1028;
+    FUNCparseDateTime32BestEffort = 1029;
+    FUNCparseDateTime32BestEffortOrNull = 1030;
+    FUNCparseDateTime32BestEffortOrZero = 1031;
+    FUNCparseDateTime64BestEffort = 1032;
+    FUNCparseDateTime64BestEffortOrNull = 1033;
+    FUNCparseDateTime64BestEffortOrZero = 1034;
+    FUNCparseDateTime64BestEffortUS = 1035;
+    FUNCparseDateTime64BestEffortUSOrNull = 1036;
+    FUNCparseDateTime64BestEffortUSOrZero = 1037;
+    FUNCparseDateTimeBestEffort = 1038;
+    FUNCparseDateTimeBestEffortOrNull = 1039;
+    FUNCparseDateTimeBestEffortOrZero = 1040;
+    FUNCparseDateTimeBestEffortUS = 1041;
+    FUNCparseDateTimeBestEffortUSOrNull = 1042;
+    FUNCparseDateTimeBestEffortUSOrZero = 1043;
+    FUNCparseDateTimeInJodaSyntax = 1044;
+    FUNCparseDateTimeInJodaSyntaxOrNull = 1045;
+    FUNCparseDateTimeInJodaSyntaxOrZero = 1046;
+    FUNCparseDateTimeOrNull = 1047;
+    FUNCparseDateTimeOrZero = 1048;
+    FUNCparseReadableSize = 1049;
+    FUNCparseReadableSizeOrZero = 1050;
+    FUNCparseTimeDelta = 1051;
+    FUNCpartitionID = 1052;
+    FUNCpath = 1053;
+    FUNCpathFull = 1054;
+    FUNCpercentRank = 1055;
+    FUNCpercent_rank = 1056;
+    FUNCperimeterCartesian = 1057;
+    FUNCperimeterSpherical = 1058;
+    FUNCpi = 1059;
+    FUNCplus = 1060;
+    FUNCpmod = 1061;
+    FUNCpointInEllipses = 1062;
+    FUNCpointInPolygon = 1063;
+    FUNCpolygonAreaCartesian = 1064;
+    FUNCpolygonAreaSpherical = 1065;
+    FUNCpolygonConvexHullCartesian = 1066;
+    FUNCpolygonPerimeterCartesian = 1067;
+    FUNCpolygonPerimeterSpherical = 1068;
+    FUNCpolygonsDistanceCartesian = 1069;
+    FUNCpolygonsDistanceSpherical = 1070;
+    FUNCpolygonsEqualsCartesian = 1071;
+    FUNCpolygonsIntersectCartesian = 1072;
+    FUNCpolygonsIntersectSpherical = 1073;
+    FUNCpolygonsIntersectionCartesian = 1074;
+    FUNCpolygonsIntersectionSpherical = 1075;
+    FUNCpolygonsSymDifferenceCartesian = 1076;
+    FUNCpolygonsSymDifferenceSpherical = 1077;
+    FUNCpolygonsUnionCartesian = 1078;
+    FUNCpolygonsUnionSpherical = 1079;
+    FUNCpolygonsWithinCartesian = 1080;
+    FUNCpolygonsWithinSpherical = 1081;
+    FUNCport = 1082;
+    FUNCportRFC = 1083;
+    FUNCposition = 1084;
+    FUNCpositionCaseInsensitive = 1085;
+    FUNCpositionCaseInsensitiveUTF8 = 1086;
+    FUNCpositionUTF8 = 1087;
+    FUNCpositiveModulo = 1088;
+    FUNCpositiveModuloOrNull = 1089;
+    FUNCpositive_modulo = 1090;
+    FUNCpow = 1091;
+    FUNCpower = 1092;
+    FUNCprintf = 1093;
+    FUNCproportionsZTest = 1094;
+    FUNCprotocol = 1095;
+    FUNCpunycodeDecode = 1096;
+    FUNCpunycodeEncode = 1097;
+    FUNCquantile = 1098;
+    FUNCquantileBFloat16 = 1099;
+    FUNCquantileBFloat16Weighted = 1100;
+    FUNCquantileDD = 1101;
+    FUNCquantileDeterministic = 1102;
+    FUNCquantileExact = 1103;
+    FUNCquantileExactExclusive = 1104;
+    FUNCquantileExactHigh = 1105;
+    FUNCquantileExactInclusive = 1106;
+    FUNCquantileExactLow = 1107;
+    FUNCquantileExactWeighted = 1108;
+    FUNCquantileExactWeightedInterpolated = 1109;
+    FUNCquantileGK = 1110;
+    FUNCquantileInterpolatedWeighted = 1111;
+    FUNCquantileTDigest = 1112;
+    FUNCquantileTDigestWeighted = 1113;
+    FUNCquantileTiming = 1114;
+    FUNCquantileTimingWeighted = 1115;
+    FUNCquantiles = 1116;
+    FUNCquantilesBFloat16 = 1117;
+    FUNCquantilesBFloat16Weighted = 1118;
+    FUNCquantilesDD = 1119;
+    FUNCquantilesDeterministic = 1120;
+    FUNCquantilesExact = 1121;
+    FUNCquantilesExactExclusive = 1122;
+    FUNCquantilesExactHigh = 1123;
+    FUNCquantilesExactInclusive = 1124;
+    FUNCquantilesExactLow = 1125;
+    FUNCquantilesExactWeighted = 1126;
+    FUNCquantilesExactWeightedInterpolated = 1127;
+    FUNCquantilesGK = 1128;
+    FUNCquantilesInterpolatedWeighted = 1129;
+    FUNCquantilesTDigest = 1130;
+    FUNCquantilesTDigestWeighted = 1131;
+    FUNCquantilesTiming = 1132;
+    FUNCquantilesTimingWeighted = 1133;
+    FUNCqueryID = 1134;
+    FUNCqueryString = 1135;
+    FUNCqueryStringAndFragment = 1136;
+    FUNCquery_id = 1137;
+    FUNCradians = 1138;
+    FUNCrand = 1139;
+    FUNCrand32 = 1140;
+    FUNCrand64 = 1141;
+    FUNCrandBernoulli = 1142;
+    FUNCrandBinomial = 1143;
+    FUNCrandCanonical = 1144;
+    FUNCrandChiSquared = 1145;
+    FUNCrandConstant = 1146;
+    FUNCrandExponential = 1147;
+    FUNCrandFisherF = 1148;
+    FUNCrandLogNormal = 1149;
+    FUNCrandNegativeBinomial = 1150;
+    FUNCrandNormal = 1151;
+    FUNCrandPoisson = 1152;
+    FUNCrandStudentT = 1153;
+    FUNCrandUniform = 1154;
+    FUNCrandomFixedString = 1155;
+    FUNCrandomPrintableASCII = 1156;
+    FUNCrandomString = 1157;
+    FUNCrandomStringUTF8 = 1158;
+    FUNCrange = 1159;
+    FUNCrank = 1160;
+    FUNCrankCorr = 1161;
+    FUNCreadWKB = 1162;
+    FUNCreadWKBLineString = 1163;
+    FUNCreadWKBMultiLineString = 1164;
+    FUNCreadWKBMultiPolygon = 1165;
+    FUNCreadWKBPoint = 1166;
+    FUNCreadWKBPolygon = 1167;
+    FUNCreadWKT = 1168;
+    FUNCreadWKTLineString = 1169;
+    FUNCreadWKTMultiLineString = 1170;
+    FUNCreadWKTMultiPolygon = 1171;
+    FUNCreadWKTPoint = 1172;
+    FUNCreadWKTPolygon = 1173;
+    FUNCreadWKTRing = 1174;
+    FUNCregexpExtract = 1175;
+    FUNCregexpQuoteMeta = 1176;
+    FUNCregionHierarchy = 1177;
+    FUNCregionIn = 1178;
+    FUNCregionToArea = 1179;
+    FUNCregionToCity = 1180;
+    FUNCregionToContinent = 1181;
+    FUNCregionToCountry = 1182;
+    FUNCregionToDistrict = 1183;
+    FUNCregionToName = 1184;
+    FUNCregionToPopulation = 1185;
+    FUNCregionToTopContinent = 1186;
+    FUNCreinterpret = 1187;
+    FUNCreinterpretAsDate = 1188;
+    FUNCreinterpretAsDateTime = 1189;
+    FUNCreinterpretAsFixedString = 1190;
+    FUNCreinterpretAsFloat32 = 1191;
+    FUNCreinterpretAsFloat64 = 1192;
+    FUNCreinterpretAsInt128 = 1193;
+    FUNCreinterpretAsInt16 = 1194;
+    FUNCreinterpretAsInt256 = 1195;
+    FUNCreinterpretAsInt32 = 1196;
+    FUNCreinterpretAsInt64 = 1197;
+    FUNCreinterpretAsInt8 = 1198;
+    FUNCreinterpretAsString = 1199;
+    FUNCreinterpretAsUInt128 = 1200;
+    FUNCreinterpretAsUInt16 = 1201;
+    FUNCreinterpretAsUInt256 = 1202;
+    FUNCreinterpretAsUInt32 = 1203;
+    FUNCreinterpretAsUInt64 = 1204;
+    FUNCreinterpretAsUInt8 = 1205;
+    FUNCreinterpretAsUUID = 1206;
+    FUNCremoveDiacriticsUTF8 = 1207;
+    FUNCrepeat = 1208;
+    FUNCreplace = 1209;
+    FUNCreplaceAll = 1210;
+    FUNCreplaceOne = 1211;
+    FUNCreplaceRegexpAll = 1212;
+    FUNCreplaceRegexpOne = 1213;
+    FUNCreplicate = 1214;
+    FUNCretention = 1215;
+    FUNCreverse = 1216;
+    FUNCreverseBySeparator = 1217;
+    FUNCreverseUTF8 = 1218;
+    FUNCrevision = 1219;
+    FUNCright = 1220;
+    FUNCrightPad = 1221;
+    FUNCrightPadUTF8 = 1222;
+    FUNCrightUTF8 = 1223;
+    FUNCround = 1224;
+    FUNCroundAge = 1225;
+    FUNCroundBankers = 1226;
+    FUNCroundDown = 1227;
+    FUNCroundDuration = 1228;
+    FUNCroundToExp2 = 1229;
+    FUNCrowNumberInAllBlocks = 1230;
+    FUNCrowNumberInBlock = 1231;
+    FUNCrow_number = 1232;
+    FUNCrpad = 1233;
+    FUNCrtrim = 1234;
+    FUNCrunningAccumulate = 1235;
+    FUNCrunningConcurrency = 1236;
+    FUNCrunningDifference = 1237;
+    FUNCrunningDifferenceStartingWithFirstValue = 1238;
+    FUNCs2CapContains = 1239;
+    FUNCs2CapUnion = 1240;
+    FUNCs2CellsIntersect = 1241;
+    FUNCs2GetNeighbors = 1242;
+    FUNCs2RectAdd = 1243;
+    FUNCs2RectContains = 1244;
+    FUNCs2RectIntersection = 1245;
+    FUNCs2RectUnion = 1246;
+    FUNCs2ToGeo = 1247;
+    FUNCscalarProduct = 1248;
+    FUNCsequenceCount = 1249;
+    FUNCsequenceMatch = 1250;
+    FUNCsequenceNextNode = 1251;
+    FUNCseriesDecomposeSTL = 1252;
+    FUNCseriesOutliersDetectTukey = 1253;
+    FUNCseriesPeriodDetectFFT = 1254;
+    FUNCserverTimezone = 1255;
+    FUNCserverUUID = 1256;
+    FUNCshardCount = 1257;
+    FUNCshardNum = 1258;
+    FUNCshowCertificate = 1259;
+    FUNCsigmoid = 1260;
+    FUNCsign = 1261;
+    FUNCsimpleJSONExtractBool = 1262;
+    FUNCsimpleJSONExtractFloat = 1263;
+    FUNCsimpleJSONExtractInt = 1264;
+    FUNCsimpleJSONExtractRaw = 1265;
+    FUNCsimpleJSONExtractString = 1266;
+    FUNCsimpleJSONExtractUInt = 1267;
+    FUNCsimpleJSONHas = 1268;
+    FUNCsimpleLinearRegression = 1269;
+    FUNCsin = 1270;
+    FUNCsingleValueOrNull = 1271;
+    FUNCsinh = 1272;
+    FUNCsipHash128 = 1273;
+    FUNCsipHash128Keyed = 1274;
+    FUNCsipHash128Reference = 1275;
+    FUNCsipHash128ReferenceKeyed = 1276;
+    FUNCsipHash64 = 1277;
+    FUNCsipHash64Keyed = 1278;
+    FUNCskewPop = 1279;
+    FUNCskewSamp = 1280;
+    FUNCsleep = 1281;
+    FUNCsleepEachRow = 1282;
+    FUNCsnowflakeIDToDateTime = 1283;
+    FUNCsnowflakeIDToDateTime64 = 1284;
+    FUNCsnowflakeToDateTime = 1285;
+    FUNCsnowflakeToDateTime64 = 1286;
+    FUNCsoundex = 1287;
+    FUNCspace = 1288;
+    FUNCsparkBar = 1289;
+    FUNCsparseGrams = 1290;
+    FUNCsparseGramsHashes = 1291;
+    FUNCsparseGramsHashesUTF8 = 1292;
+    FUNCsparseGramsUTF8 = 1293;
+    FUNCsplitByAlpha = 1294;
+    FUNCsplitByChar = 1295;
+    FUNCsplitByNonAlpha = 1296;
+    FUNCsplitByRegexp = 1297;
+    FUNCsplitByString = 1298;
+    FUNCsplitByWhitespace = 1299;
+    FUNCsqid = 1300;
+    FUNCsqidDecode = 1301;
+    FUNCsqidEncode = 1302;
+    FUNCsqrt = 1303;
+    FUNCstartsWith = 1304;
+    FUNCstartsWithCaseInsensitive = 1305;
+    FUNCstartsWithCaseInsensitiveUTF8 = 1306;
+    FUNCstartsWithUTF8 = 1307;
+    FUNCstddevPop = 1308;
+    FUNCstddevPopStable = 1309;
+    FUNCstddevSamp = 1310;
+    FUNCstddevSampStable = 1311;
+    FUNCstem = 1312;
+    FUNCstochasticLinearRegression = 1313;
+    FUNCstochasticLogisticRegression = 1314;
+    FUNCstr_to_date = 1315;
+    FUNCstringBytesEntropy = 1316;
+    FUNCstringBytesUniq = 1317;
+    FUNCstringCompare = 1318;
+    FUNCstringJaccardIndex = 1319;
+    FUNCstringJaccardIndexUTF8 = 1320;
+    FUNCstringToH3 = 1321;
+    FUNCstructureToCapnProtoSchema = 1322;
+    FUNCstructureToProtobufSchema = 1323;
+    FUNCstudentTTest = 1324;
+    FUNCsubBitmap = 1325;
+    FUNCsubDate = 1326;
+    FUNCsubstr = 1327;
+    FUNCsubstring = 1328;
+    FUNCsubstringIndex = 1329;
+    FUNCsubstringIndexUTF8 = 1330;
+    FUNCsubstringUTF8 = 1331;
+    FUNCsubtractDays = 1332;
+    FUNCsubtractHours = 1333;
+    FUNCsubtractInterval = 1334;
+    FUNCsubtractMicroseconds = 1335;
+    FUNCsubtractMilliseconds = 1336;
+    FUNCsubtractMinutes = 1337;
+    FUNCsubtractMonths = 1338;
+    FUNCsubtractNanoseconds = 1339;
+    FUNCsubtractQuarters = 1340;
+    FUNCsubtractSeconds = 1341;
+    FUNCsubtractTupleOfIntervals = 1342;
+    FUNCsubtractWeeks = 1343;
+    FUNCsubtractYears = 1344;
+    FUNCsum = 1345;
+    FUNCsumCount = 1346;
+    FUNCsumKahan = 1347;
+    FUNCsumMap = 1348;
+    FUNCsumMapFiltered = 1349;
+    FUNCsumMapFilteredWithOverflow = 1350;
+    FUNCsumMapWithOverflow = 1351;
+    FUNCsumMappedArrays = 1352;
+    FUNCsumWithOverflow = 1353;
+    FUNCsynonyms = 1354;
+    FUNCtan = 1355;
+    FUNCtanh = 1356;
+    FUNCtcpPort = 1357;
+    FUNCtgamma = 1358;
+    FUNCtheilsU = 1359;
+    FUNCtid = 1360;
+    FUNCtimeDiff = 1361;
+    FUNCtimeSeriesFromGrid = 1362;
+    FUNCtimeSeriesIdToTags = 1363;
+    FUNCtimeSeriesIdToTagsGroup = 1364;
+    FUNCtimeSeriesRange = 1365;
+    FUNCtimeSeriesStoreTags = 1366;
+    FUNCtimeSeriesTagsGroupToTags = 1367;
+    FUNCtimeSlot = 1368;
+    FUNCtimeSlots = 1369;
+    FUNCtimestamp = 1370;
+    FUNCtimestampDiff = 1371;
+    FUNCtimestamp_add = 1372;
+    FUNCtimestamp_diff = 1373;
+    FUNCtimestamp_sub = 1374;
+    FUNCtimezone = 1375;
+    FUNCtimezoneOf = 1376;
+    FUNCtimezoneOffset = 1377;
+    FUNCtoBFloat16 = 1378;
+    FUNCtoBFloat16OrNull = 1379;
+    FUNCtoBFloat16OrZero = 1380;
+    FUNCtoBool = 1381;
+    FUNCtoColumnTypeName = 1382;
+    FUNCtoDate = 1383;
+    FUNCtoDate32 = 1384;
+    FUNCtoDate32OrDefault = 1385;
+    FUNCtoDate32OrNull = 1386;
+    FUNCtoDate32OrZero = 1387;
+    FUNCtoDateOrDefault = 1388;
+    FUNCtoDateOrNull = 1389;
+    FUNCtoDateOrZero = 1390;
+    FUNCtoDateTime = 1391;
+    FUNCtoDateTime32 = 1392;
+    FUNCtoDateTime64 = 1393;
+    FUNCtoDateTime64OrDefault = 1394;
+    FUNCtoDateTime64OrNull = 1395;
+    FUNCtoDateTime64OrZero = 1396;
+    FUNCtoDateTimeOrDefault = 1397;
+    FUNCtoDateTimeOrNull = 1398;
+    FUNCtoDateTimeOrZero = 1399;
+    FUNCtoDayOfMonth = 1400;
+    FUNCtoDayOfWeek = 1401;
+    FUNCtoDayOfYear = 1402;
+    FUNCtoDaysInMonth = 1403;
+    FUNCtoDaysSinceYearZero = 1404;
+    FUNCtoDecimal128 = 1405;
+    FUNCtoDecimal128OrDefault = 1406;
+    FUNCtoDecimal128OrNull = 1407;
+    FUNCtoDecimal128OrZero = 1408;
+    FUNCtoDecimal256 = 1409;
+    FUNCtoDecimal256OrDefault = 1410;
+    FUNCtoDecimal256OrNull = 1411;
+    FUNCtoDecimal256OrZero = 1412;
+    FUNCtoDecimal32 = 1413;
+    FUNCtoDecimal32OrDefault = 1414;
+    FUNCtoDecimal32OrNull = 1415;
+    FUNCtoDecimal32OrZero = 1416;
+    FUNCtoDecimal64 = 1417;
+    FUNCtoDecimal64OrDefault = 1418;
+    FUNCtoDecimal64OrNull = 1419;
+    FUNCtoDecimal64OrZero = 1420;
+    FUNCtoDecimalString = 1421;
+    FUNCtoFixedString = 1422;
+    FUNCtoFloat32 = 1423;
+    FUNCtoFloat32OrDefault = 1424;
+    FUNCtoFloat32OrNull = 1425;
+    FUNCtoFloat32OrZero = 1426;
+    FUNCtoFloat64 = 1427;
+    FUNCtoFloat64OrDefault = 1428;
+    FUNCtoFloat64OrNull = 1429;
+    FUNCtoFloat64OrZero = 1430;
+    FUNCtoHour = 1431;
+    FUNCtoIPv4 = 1432;
+    FUNCtoIPv4OrDefault = 1433;
+    FUNCtoIPv4OrNull = 1434;
+    FUNCtoIPv4OrZero = 1435;
+    FUNCtoIPv6 = 1436;
+    FUNCtoIPv6OrDefault = 1437;
+    FUNCtoIPv6OrNull = 1438;
+    FUNCtoIPv6OrZero = 1439;
+    FUNCtoISOWeek = 1440;
+    FUNCtoISOYear = 1441;
+    FUNCtoInt128 = 1442;
+    FUNCtoInt128OrDefault = 1443;
+    FUNCtoInt128OrNull = 1444;
+    FUNCtoInt128OrZero = 1445;
+    FUNCtoInt16 = 1446;
+    FUNCtoInt16OrDefault = 1447;
+    FUNCtoInt16OrNull = 1448;
+    FUNCtoInt16OrZero = 1449;
+    FUNCtoInt256 = 1450;
+    FUNCtoInt256OrDefault = 1451;
+    FUNCtoInt256OrNull = 1452;
+    FUNCtoInt256OrZero = 1453;
+    FUNCtoInt32 = 1454;
+    FUNCtoInt32OrDefault = 1455;
+    FUNCtoInt32OrNull = 1456;
+    FUNCtoInt32OrZero = 1457;
+    FUNCtoInt64 = 1458;
+    FUNCtoInt64OrDefault = 1459;
+    FUNCtoInt64OrNull = 1460;
+    FUNCtoInt64OrZero = 1461;
+    FUNCtoInt8 = 1462;
+    FUNCtoInt8OrDefault = 1463;
+    FUNCtoInt8OrNull = 1464;
+    FUNCtoInt8OrZero = 1465;
+    FUNCtoInterval = 1466;
+    FUNCtoIntervalDay = 1467;
+    FUNCtoIntervalHour = 1468;
+    FUNCtoIntervalMicrosecond = 1469;
+    FUNCtoIntervalMillisecond = 1470;
+    FUNCtoIntervalMinute = 1471;
+    FUNCtoIntervalMonth = 1472;
+    FUNCtoIntervalNanosecond = 1473;
+    FUNCtoIntervalQuarter = 1474;
+    FUNCtoIntervalSecond = 1475;
+    FUNCtoIntervalWeek = 1476;
+    FUNCtoIntervalYear = 1477;
+    FUNCtoJSONString = 1478;
+    FUNCtoLastDayOfMonth = 1479;
+    FUNCtoLastDayOfWeek = 1480;
+    FUNCtoLowCardinality = 1481;
+    FUNCtoMillisecond = 1482;
+    FUNCtoMinute = 1483;
+    FUNCtoModifiedJulianDay = 1484;
+    FUNCtoModifiedJulianDayOrNull = 1485;
+    FUNCtoMonday = 1486;
+    FUNCtoMonth = 1487;
+    FUNCtoMonthNumSinceEpoch = 1488;
+    FUNCtoNullable = 1489;
+    FUNCtoQuarter = 1490;
+    FUNCtoRelativeDayNum = 1491;
+    FUNCtoRelativeHourNum = 1492;
+    FUNCtoRelativeMinuteNum = 1493;
+    FUNCtoRelativeMonthNum = 1494;
+    FUNCtoRelativeQuarterNum = 1495;
+    FUNCtoRelativeSecondNum = 1496;
+    FUNCtoRelativeWeekNum = 1497;
+    FUNCtoRelativeYearNum = 1498;
+    FUNCtoSecond = 1499;
+    FUNCtoStartOfDay = 1500;
+    FUNCtoStartOfFifteenMinutes = 1501;
+    FUNCtoStartOfFiveMinute = 1502;
+    FUNCtoStartOfFiveMinutes = 1503;
+    FUNCtoStartOfHour = 1504;
+    FUNCtoStartOfISOYear = 1505;
+    FUNCtoStartOfInterval = 1506;
+    FUNCtoStartOfMicrosecond = 1507;
+    FUNCtoStartOfMillisecond = 1508;
+    FUNCtoStartOfMinute = 1509;
+    FUNCtoStartOfMonth = 1510;
+    FUNCtoStartOfNanosecond = 1511;
+    FUNCtoStartOfQuarter = 1512;
+    FUNCtoStartOfSecond = 1513;
+    FUNCtoStartOfTenMinutes = 1514;
+    FUNCtoStartOfWeek = 1515;
+    FUNCtoStartOfYear = 1516;
+    FUNCtoString = 1517;
+    FUNCtoStringCutToZero = 1518;
+    FUNCtoTime = 1519;
+    FUNCtoTimezone = 1520;
+    FUNCtoTypeName = 1521;
+    FUNCtoUInt128 = 1522;
+    FUNCtoUInt128OrDefault = 1523;
+    FUNCtoUInt128OrNull = 1524;
+    FUNCtoUInt128OrZero = 1525;
+    FUNCtoUInt16 = 1526;
+    FUNCtoUInt16OrDefault = 1527;
+    FUNCtoUInt16OrNull = 1528;
+    FUNCtoUInt16OrZero = 1529;
+    FUNCtoUInt256 = 1530;
+    FUNCtoUInt256OrDefault = 1531;
+    FUNCtoUInt256OrNull = 1532;
+    FUNCtoUInt256OrZero = 1533;
+    FUNCtoUInt32 = 1534;
+    FUNCtoUInt32OrDefault = 1535;
+    FUNCtoUInt32OrNull = 1536;
+    FUNCtoUInt32OrZero = 1537;
+    FUNCtoUInt64 = 1538;
+    FUNCtoUInt64OrDefault = 1539;
+    FUNCtoUInt64OrNull = 1540;
+    FUNCtoUInt64OrZero = 1541;
+    FUNCtoUInt8 = 1542;
+    FUNCtoUInt8OrDefault = 1543;
+    FUNCtoUInt8OrNull = 1544;
+    FUNCtoUInt8OrZero = 1545;
+    FUNCtoUTCTimestamp = 1546;
+    FUNCtoUUID = 1547;
+    FUNCtoUUIDOrDefault = 1548;
+    FUNCtoUUIDOrNull = 1549;
+    FUNCtoUUIDOrZero = 1550;
+    FUNCtoUnixTimestamp = 1551;
+    FUNCtoUnixTimestamp64Micro = 1552;
+    FUNCtoUnixTimestamp64Milli = 1553;
+    FUNCtoUnixTimestamp64Nano = 1554;
+    FUNCtoUnixTimestamp64Second = 1555;
+    FUNCtoValidUTF8 = 1556;
+    FUNCtoWeek = 1557;
+    FUNCtoYYYYMM = 1558;
+    FUNCtoYYYYMMDD = 1559;
+    FUNCtoYYYYMMDDhhmmss = 1560;
+    FUNCtoYear = 1561;
+    FUNCtoYearNumSinceEpoch = 1562;
+    FUNCtoYearWeek = 1563;
+    FUNCto_utc_timestamp = 1564;
+    FUNCtoday = 1565;
+    FUNCtokens = 1566;
+    FUNCtopK = 1567;
+    FUNCtopKWeighted = 1568;
+    FUNCtopLevelDomain = 1569;
+    FUNCtopLevelDomainRFC = 1570;
+    FUNCtransactionID = 1571;
+    FUNCtransactionLatestSnapshot = 1572;
+    FUNCtransactionOldestSnapshot = 1573;
+    FUNCtransform = 1574;
+    FUNCtranslate = 1575;
+    FUNCtranslateUTF8 = 1576;
+    FUNCtrim = 1577;
+    FUNCtrimBoth = 1578;
+    FUNCtrimLeft = 1579;
+    FUNCtrimRight = 1580;
+    FUNCtrunc = 1581;
+    FUNCtruncate = 1582;
+    FUNCtryBase32Decode = 1583;
+    FUNCtryBase58Decode = 1584;
+    FUNCtryBase64Decode = 1585;
+    FUNCtryBase64URLDecode = 1586;
+    FUNCtryDecrypt = 1587;
+    FUNCtryIdnaEncode = 1588;
+    FUNCtryPunycodeDecode = 1589;
+    FUNCtumble = 1590;
+    FUNCtumbleEnd = 1591;
+    FUNCtumbleStart = 1592;
+    FUNCtuple = 1593;
+    FUNCtupleConcat = 1594;
+    FUNCtupleDivide = 1595;
+    FUNCtupleDivideByNumber = 1596;
+    FUNCtupleElement = 1597;
+    FUNCtupleHammingDistance = 1598;
+    FUNCtupleIntDiv = 1599;
+    FUNCtupleIntDivByNumber = 1600;
+    FUNCtupleIntDivOrZero = 1601;
+    FUNCtupleIntDivOrZeroByNumber = 1602;
+    FUNCtupleMinus = 1603;
+    FUNCtupleModulo = 1604;
+    FUNCtupleModuloByNumber = 1605;
+    FUNCtupleMultiply = 1606;
+    FUNCtupleMultiplyByNumber = 1607;
+    FUNCtupleNames = 1608;
+    FUNCtupleNegate = 1609;
+    FUNCtuplePlus = 1610;
+    FUNCtupleToNameValuePairs = 1611;
+    FUNCucase = 1612;
+    FUNCunbin = 1613;
+    FUNCunhex = 1614;
+    FUNCuniq = 1615;
+    FUNCuniqCombined = 1616;
+    FUNCuniqCombined64 = 1617;
+    FUNCuniqExact = 1618;
+    FUNCuniqHLL12 = 1619;
+    FUNCuniqTheta = 1620;
+    FUNCuniqThetaIntersect = 1621;
+    FUNCuniqThetaNot = 1622;
+    FUNCuniqThetaUnion = 1623;
+    FUNCuniqUpTo = 1624;
+    FUNCuntuple = 1625;
+    FUNCupper = 1626;
+    FUNCupperUTF8 = 1627;
+    FUNCuptime = 1628;
+    FUNCuser = 1629;
+    FUNCvalidateNestedArraySizes = 1630;
+    FUNCvarPop = 1631;
+    FUNCvarPopStable = 1632;
+    FUNCvarSamp = 1633;
+    FUNCvarSampStable = 1634;
+    FUNCvariantElement = 1635;
+    FUNCvariantType = 1636;
+    FUNCvectorDifference = 1637;
+    FUNCvectorSum = 1638;
+    FUNCversion = 1639;
+    FUNCvisibleWidth = 1640;
+    FUNCvisitParamExtractBool = 1641;
+    FUNCvisitParamExtractFloat = 1642;
+    FUNCvisitParamExtractInt = 1643;
+    FUNCvisitParamExtractRaw = 1644;
+    FUNCvisitParamExtractString = 1645;
+    FUNCvisitParamExtractUInt = 1646;
+    FUNCvisitParamHas = 1647;
+    FUNCweek = 1648;
+    FUNCwelchTTest = 1649;
+    FUNCwidthBucket = 1650;
+    FUNCwidth_bucket = 1651;
+    FUNCwindowFunnel = 1652;
+    FUNCwindowID = 1653;
+    FUNCwordShingleMinHash = 1654;
+    FUNCwordShingleMinHashArg = 1655;
+    FUNCwordShingleMinHashArgCaseInsensitive = 1656;
+    FUNCwordShingleMinHashArgCaseInsensitiveUTF8 = 1657;
+    FUNCwordShingleMinHashArgUTF8 = 1658;
+    FUNCwordShingleMinHashCaseInsensitive = 1659;
+    FUNCwordShingleMinHashCaseInsensitiveUTF8 = 1660;
+    FUNCwordShingleMinHashUTF8 = 1661;
+    FUNCwordShingleSimHash = 1662;
+    FUNCwordShingleSimHashCaseInsensitive = 1663;
+    FUNCwordShingleSimHashCaseInsensitiveUTF8 = 1664;
+    FUNCwordShingleSimHashUTF8 = 1665;
+    FUNCwyHash64 = 1666;
+    FUNCxor = 1667;
+    FUNCxxHash32 = 1668;
+    FUNCxxHash64 = 1669;
+    FUNCxxh3 = 1670;
+    FUNCxxh3_128 = 1671;
+    FUNCyandexConsistentHash = 1672;
+    FUNCyearweek = 1673;
+    FUNCyesterday = 1674;
+    FUNCzookeeperSessionUptime = 1675;
 }
 
 enum SQLTableFunc {
-    TFazureBlobStorage = 1;
-    TFazureBlobStorageCluster = 2;
-    TFcluster = 3;
-    TFclusterAllReplicas = 4;
-    TFdeltaLake = 5;
-    TFdeltaLakeCluster = 6;
-    TFdictionary = 7;
-    TFexecutable = 8;
-    TFfile = 9;
-    TFfileCluster = 10;
-    TFformat = 11;
-    TFgcs = 12;
-    TFfuzzJSON = 13;
-    TFfuzzQuery = 14;
-    TFgenerateRandom = 15;
-    TFmergeTreeIndex = 16;
-    TFhdfs = 17;
-    TFhdfsCluster = 18;
-    TFhudi = 19;
-    TFhudiCluster = 20;
-    TFiceberg = 21;
-    TFicebergCluster = 22;
-    TFinput = 23;
-    TFjdbc = 24;
-    TFmerge = 25;
-    TFmongodb = 26;
-    TFmysql = 27;
-    TFnull = 28;
-    TFnumbers = 29;
-    TFtimeSeriesData = 30;
-    TFtimeSeriesMetrics = 31;
-    TFtimeSeriesTags = 32;
-    TFzeros = 33;
-    TFgenerateSeries = 34;
-    TFodbc = 35;
-    TFpostgresql = 36;
-    TFredis = 37;
-    TFremote = 38;
-    TFremoteSecure = 39;
-    TFS3 = 40;
-    TFS3Cluster = 41;
-    TFsqlite = 42;
-    TFurl = 43;
-    TFurlCluster = 44;
-    TFvalues = 45;
-    TFview = 46;
-    TFloop = 47;
+    TFarrowFlight = 1;
+    TFazureBlobStorage = 2;
+    TFazureBlobStorageCluster = 3;
+    TFcluster = 4;
+    TFclusterAllReplicas = 5;
+    TFdeltaLake = 6;
+    TFdeltaLakeAzure = 7;
+    TFdeltaLakeAzureCluster = 8;
+    TFdeltaLakeCluster = 9;
+    TFdeltaLakeLocal = 10;
+    TFdeltaLakeLocalCluster = 11;
+    TFdeltaLakeS3 = 12;
+    TFdeltaLakeS3Cluster = 13;
+    TFdictionary = 14;
+    TFexecutable = 15;
+    TFfile = 16;
+    TFfileCluster = 17;
+    TFformat = 18;
+    TFfuzzJSON = 19;
+    TFfuzzQuery = 20;
+    TFgcs = 21;
+    TFgenerateRandom = 22;
+    TFgenerateSeries = 23;
+    TFhdfs = 24;
+    TFhdfsCluster = 25;
+    TFhudi = 26;
+    TFhudiCluster = 27;
+    TFiceberg = 28;
+    TFicebergAzure = 29;
+    TFicebergAzureCluster = 30;
+    TFicebergCluster = 31;
+    TFicebergLocal = 32;
+    TFicebergLocalCluster = 33;
+    TFicebergS3 = 34;
+    TFicebergS3Cluster = 35;
+    TFinput = 36;
+    TFjdbc = 37;
+    TFloop = 38;
+    TFmerge = 39;
+    TFmergeTreeAnalyzeIndexes = 40;
+    TFmergeTreeAnalyzeIndexesUUID = 41;
+    TFmergeTreeIndex = 42;
+    TFmergeTreeProjection = 43;
+    TFmergeTreeTextIndex = 44;
+    TFmongodb = 45;
+    TFmysql = 46;
+    TFnull = 47;
+    TFnumbers = 48;
+    TFodbc = 49;
+    TFpaimon = 50;
+    TFpaimonAzure = 51;
+    TFpaimonAzureCluster = 52;
+    TFpaimonCluster = 53;
+    TFpaimonLocal = 54;
+    TFpaimonS3 = 55;
+    TFpaimonS3Cluster = 56;
+    TFpostgresql = 57;
+    TFprimes = 58;
+    TFprometheusQuery = 59;
+    TFprometheusQueryRange = 60;
+    TFredis = 61;
+    TFremote = 62;
+    TFremoteSecure = 63;
+    TFs3 = 64;
+    TFs3Cluster = 65;
+    TFsqlite = 66;
+    TFtimeSeriesData = 67;
+    TFtimeSeriesMetrics = 68;
+    TFtimeSeriesSelector = 69;
+    TFtimeSeriesTags = 70;
+    TFurl = 71;
+    TFurlCluster = 72;
+    TFvalues = 73;
+    TFview = 74;
+    TFytsaurus = 75;
 }
 
 message Database {
@@ -1653,8 +1791,16 @@ message Function {
     required string function = 1;
 }
 
+message Policy {
+    required string policy = 1;
+}
+
+message Role {
+    required string role = 1;
+}
+
 message Cluster {
-    required string cluster = 1;
+    optional string cluster = 1;
 }
 
 message Storage {
@@ -1718,9 +1864,13 @@ message SpecialVal {
         MAX_DATETIME = 44;
         MIN_DATETIME64 = 45;
         MAX_DATETIME64 = 46;
-        VAL_NULL_CHAR = 47;
-        VAL_DEFAULT = 48;
-        VAL_STAR = 49;
+        MIN_DOUBLE = 47;
+        MAX_DOUBLE = 48;
+        DENORM_MIN_DOUBLE = 49;
+        LOWEST_DOUBLE = 50;
+        VAL_NULL_CHAR = 51;
+        VAL_DEFAULT = 52;
+        VAL_STAR = 53;
     }
     required SpecialValEnum val = 1;
     optional bool paren = 2;
@@ -1837,7 +1987,7 @@ message FieldAccess {
         int32 array_index = 1;
         Expr array_expr = 2;
         Column array_key = 3;
-        uint32 tuple_index = 4;
+        int32 tuple_index = 4;
     }
 }
 
@@ -1860,8 +2010,9 @@ enum UnaryOperator {
 }
 
 message UnaryExpr {
-    required UnaryOperator unary_op = 1;
-    required Expr expr = 2;
+    optional bool paren = 1;
+    required UnaryOperator unary_op = 2;
+    required Expr expr = 3;
 }
 
 enum BinaryOperator {
@@ -1873,18 +2024,19 @@ enum BinaryOperator {
     BINOP_EQEQ = 6;
     BINOP_NOTEQ = 7;
     BINOP_LEGR = 8;
-    BINOP_IS_NOT_DISTINCT_FROM = 9;
-    BINOP_LEEQGR = 10;
-    BINOP_AND = 11;
-    BINOP_OR = 12;
-    BINOP_CONCAT = 13;
-    BINOP_STAR = 14;
-    BINOP_SLASH = 15;
-    BINOP_PERCENT = 16;
-    BINOP_PLUS = 17;
-    BINOP_MINUS = 18;
-    BINOP_DIV = 19;
-    BINOP_MOD = 20;
+    BINOP_LEEQGR = 9;
+    BINOP_IS_DISTINCT_FROM = 10;
+    BINOP_IS_NOT_DISTINCT_FROM = 11;
+    BINOP_AND = 12;
+    BINOP_OR = 13;
+    BINOP_CONCAT = 14;
+    BINOP_STAR = 15;
+    BINOP_SLASH = 16;
+    BINOP_PERCENT = 17;
+    BINOP_PLUS = 18;
+    BINOP_MINUS = 19;
+    BINOP_DIV = 20;
+    BINOP_MOD = 21;
 }
 
 message BinaryExpr {
@@ -1894,15 +2046,17 @@ message BinaryExpr {
 }
 
 message CastExpr {
-    required Expr expr = 1;
-    required TypeName type_name = 2;
+    optional bool simple = 1;
+    required Expr expr = 2;
+    required TypeName type_name = 3;
 }
 
 message ExprBetween {
-    required bool not = 1;
-    required Expr expr1 = 2;
-    required Expr expr2 = 3;
-    required Expr expr3 = 4;
+    optional bool paren = 1;
+    required bool not = 2;
+    required Expr expr1 = 3;
+    required Expr expr2 = 4;
+    required Expr expr3 = 5;
 }
 
 message ExprList {
@@ -1916,8 +2070,9 @@ message ExprIn {
     required bool not = 3;
     oneof in_oneof {
         Expr single_expr = 4;
-        ExprList exprs = 5;
-        ExplainQuery sel = 6;
+        ExprList array = 5;
+        ExprList tuple = 6;
+        ExplainQuery sel = 7;
     }
 }
 
@@ -1947,7 +2102,7 @@ message ExprWhenThen {
 
 message ExprExists {
     required bool not = 1;
-    required ExplainQuery select = 3;
+    required ExplainQuery select = 2;
 }
 
 message ExprLike {
@@ -1963,14 +2118,16 @@ message ExprLike {
 }
 
 message CondExpr {
-    required Expr expr1 = 1;
-    required Expr expr2 = 2;
-    required Expr expr3 = 3;
+    optional bool paren = 1;
+    required Expr expr1 = 2;
+    required Expr expr2 = 3;
+    required Expr expr3 = 4;
 }
 
 message LambdaExpr {
-    repeated Column args = 1;
-    required Expr expr = 2;
+    optional bool paren = 1;
+    repeated Column args = 2;
+    required Expr expr = 3;
 }
 
 message SQLFuncArg {
@@ -2042,8 +2199,8 @@ message FrameSpecSubRightExpr {
 
 message ExprFrameSpec {
     enum RangeRows {
-        RANGE = 0;
-        ROWS = 1;
+        RANGE = 1;
+        ROWS = 2;
     }
     required RangeRows range_rows = 1;
     required FrameSpecSubLeftExpr left_expr = 2;
@@ -2096,18 +2253,19 @@ message WindowDefn {
 }
 
 enum WindowFuncs {
-    WINdense_rank = 1;
-    WINfirst_value = 2;
-    WINlag = 3;
-    WINlagInFrame = 4;
-    WINlast_value = 5;
-    WINleadInFrame = 6;
-    WINlead = 7;
-    WINnth_value = 8;
-    WINntile = 9;
-    WINpercent_rank = 10;
-    WINrank = 11;
-    WINrow_number = 12;
+    WINcume_dist = 1;
+    WINdense_rank = 2;
+    WINfirst_value = 3;
+    WINlag = 4;
+    WINlagInFrame = 5;
+    WINlast_value = 6;
+    WINleadInFrame = 7;
+    WINlead = 8;
+    WINnth_value = 9;
+    WINntile = 10;
+    WINpercent_rank = 11;
+    WINrank = 12;
+    WINrow_number = 13;
 }
 
 message SQLWindowCall {
@@ -2174,6 +2332,7 @@ message ComplicatedExpr {
         ExprList array = 19;
         ExprList tuple = 20;
         Table table = 21;
+        LambdaExpr lambda = 22;
     }
 }
 
@@ -2182,7 +2341,7 @@ message Expr {
         LiteralValue lit_val = 1;
         ComplicatedExpr comp_expr = 2;
     }
-    optional FieldAccess field = 3;
+    repeated FieldAccess fields = 3;
 }
 
 message ExprColAlias {
@@ -2209,60 +2368,67 @@ enum InFormat {
     IN_Avro = 3;
     IN_AvroConfluent = 4;
     IN_BSONEachRow = 5;
-    IN_CapnProto = 6;
-    IN_CSV = 7;
-    IN_CSVWithNames = 8;
-    IN_CSVWithNamesAndTypes = 9;
-    IN_CustomSeparated = 10;
-    IN_CustomSeparatedWithNames = 11;
-    IN_CustomSeparatedWithNamesAndTypes = 12;
-    IN_DWARF = 13;
-    IN_Form = 14;
-    IN_JSON = 15;
-    IN_JSONAsObject = 16;
-    IN_JSONAsString = 17;
-    IN_JSONColumns = 18;
-    IN_JSONColumnsWithMetadata = 19;
-    IN_JSONCompact = 20;
-    IN_JSONCompactColumns = 21;
-    IN_JSONCompactEachRow = 22;
-    IN_JSONCompactEachRowWithNames = 23;
-    IN_JSONCompactEachRowWithNamesAndTypes = 24;
-    IN_JSONCompactStringsEachRow = 25;
-    IN_JSONCompactStringsEachRowWithNames = 26;
-    IN_JSONCompactStringsEachRowWithNamesAndTypes = 27;
-    IN_JSONEachRow = 28;
-    IN_JSONObjectEachRow = 29;
-    IN_JSONStrings = 30;
-    IN_JSONStringsEachRow = 31;
-    IN_LineAsString = 32;
-    IN_MsgPack = 33;
-    IN_MySQLDump = 34;
-    IN_Native = 35;
-    IN_Npy = 36;
-    IN_One = 37;
-    IN_ORC = 38;
-    IN_Parquet = 39;
-    IN_ParquetMetadata = 40;
-    IN_Protobuf = 41;
-    IN_ProtobufList = 42;
-    IN_ProtobufSingle = 43;
-    IN_RawBLOB = 44;
-    IN_Regexp = 45;
-    IN_RowBinary = 46;
-    IN_RowBinaryWithDefaults = 47;
-    IN_RowBinaryWithNames = 48;
-    IN_RowBinaryWithNamesAndTypes = 49;
-    IN_TabSeparated = 50;
-    IN_TabSeparatedRaw = 51;
-    IN_TabSeparatedRawWithNames = 52;
-    IN_TabSeparatedRawWithNamesAndTypes = 53;
-    IN_TabSeparatedWithNames = 54;
-    IN_TabSeparatedWithNamesAndTypes = 55;
-    IN_Template = 56;
-    IN_TemplateIgnoreSpaces = 57;
-    IN_TSKV = 58;
-    IN_Values = 59;
+    IN_Buffers = 6;
+    IN_CapnProto = 7;
+    IN_CSV = 8;
+    IN_CSVWithNames = 9;
+    IN_CSVWithNamesAndTypes = 10;
+    IN_CustomSeparated = 11;
+    IN_CustomSeparatedIgnoreSpaces = 12;
+    IN_CustomSeparatedIgnoreSpacesWithNames = 13;
+    IN_CustomSeparatedIgnoreSpacesWithNamesAndTypes = 14;
+    IN_CustomSeparatedWithNames = 15;
+    IN_CustomSeparatedWithNamesAndTypes = 16;
+    IN_DWARF = 17;
+    IN_Form = 18;
+    IN_JSON = 19;
+    IN_JSONAsObject = 20;
+    IN_JSONAsString = 21;
+    IN_JSONColumns = 22;
+    IN_JSONColumnsWithMetadata = 23;
+    IN_JSONCompact = 24;
+    IN_JSONCompactColumns = 25;
+    IN_JSONCompactEachRow = 26;
+    IN_JSONCompactEachRowWithNames = 27;
+    IN_JSONCompactEachRowWithNamesAndTypes = 28;
+    IN_JSONCompactStringsEachRow = 29;
+    IN_JSONCompactStringsEachRowWithNames = 30;
+    IN_JSONCompactStringsEachRowWithNamesAndTypes = 31;
+    IN_JSONEachRow = 32;
+    IN_JSONLines = 33;
+    IN_JSONObjectEachRow = 34;
+    IN_JSONStrings = 35;
+    IN_JSONStringsEachRow = 36;
+    IN_LineAsString = 37;
+    IN_MsgPack = 38;
+    IN_MySQLDump = 39;
+    IN_MySQLWire = 40;
+    IN_Native = 41;
+    IN_Npy = 42;
+    IN_One = 43;
+    IN_ORC = 44;
+    IN_Parquet = 45;
+    IN_ParquetMetadata = 46;
+    IN_PostgreSQLWire = 47;
+    IN_Protobuf = 48;
+    IN_ProtobufList = 49;
+    IN_ProtobufSingle = 50;
+    IN_RawBLOB = 51;
+    IN_Regexp = 52;
+    IN_RowBinary = 53;
+    IN_RowBinaryWithDefaults = 54;
+    IN_RowBinaryWithNames = 55;
+    IN_RowBinaryWithNamesAndTypes = 56;
+    IN_TabSeparated = 57;
+    IN_TabSeparatedRaw = 58;
+    IN_TabSeparatedRawWithNames = 59;
+    IN_TabSeparatedRawWithNamesAndTypes = 60;
+    IN_TabSeparatedWithNames = 61;
+    IN_TabSeparatedWithNamesAndTypes = 62;
+    IN_Template = 63;
+    IN_TemplateIgnoreSpaces = 64;
+    IN_TSKV = 65;
+    IN_Values = 66;
 }
 
 enum OutFormat {
@@ -2270,72 +2436,78 @@ enum OutFormat {
     OUT_ArrowStream = 2;
     OUT_Avro = 3;
     OUT_BSONEachRow = 4;
-    OUT_CapnProto = 5;
-    OUT_CSV = 6;
-    OUT_CSVWithNames = 7;
-    OUT_CSVWithNamesAndTypes = 8;
-    OUT_CustomSeparated = 9;
-    OUT_CustomSeparatedWithNames = 10;
-    OUT_CustomSeparatedWithNamesAndTypes = 11;
-    OUT_JSON = 12;
-    OUT_JSONColumns = 13;
-    OUT_JSONColumnsWithMetadata = 14;
-    OUT_JSONCompact = 15;
-    OUT_JSONCompactColumns = 16;
-    OUT_JSONCompactEachRow = 17;
-    OUT_JSONCompactEachRowWithNames = 18;
-    OUT_JSONCompactEachRowWithNamesAndTypes = 19;
-    OUT_JSONCompactStrings = 20;
-    OUT_JSONCompactStringsEachRow = 21;
-    OUT_JSONCompactStringsEachRowWithNames = 22;
-    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 23;
-    OUT_JSONEachRow = 24;
-    OUT_JSONEachRowWithProgress = 25;
-    OUT_JSONObjectEachRow = 26;
-    OUT_JSONStrings = 27;
-    OUT_JSONStringsEachRow = 28;
-    OUT_JSONStringsEachRowWithProgress = 29;
-    OUT_LineAsString = 30;
-    OUT_Markdown = 31;
-    OUT_MsgPack = 32;
-    OUT_Native = 33;
-    OUT_Npy = 34;
-    OUT_Null = 35;
-    OUT_ORC = 36;
-    OUT_Parquet = 37;
-    OUT_Pretty = 38;
-    OUT_PrettyCompact = 39;
-    OUT_PrettyCompactMonoBlock = 40;
-    OUT_PrettyCompactNoEscapes = 41;
-    OUT_PrettyCompactNoEscapesMonoBlock = 42;
-    OUT_PrettyJSONEachRow = 43;
-    OUT_PrettyMonoBlock = 44;
-    OUT_PrettyNoEscapes = 45;
-    OUT_PrettyNoEscapesMonoBlock = 46;
-    OUT_PrettySpace = 47;
-    OUT_PrettySpaceMonoBlock = 48;
-    OUT_PrettySpaceNoEscapes = 49;
-    OUT_PrettySpaceNoEscapesMonoBlock = 50;
-    OUT_Prometheus = 51;
-    OUT_Protobuf = 52;
-    OUT_ProtobufList = 53;
-    OUT_ProtobufSingle = 54;
-    OUT_RawBLOB = 55;
-    OUT_RowBinary = 56;
-    OUT_RowBinaryWithNames = 57;
-    OUT_RowBinaryWithNamesAndTypes = 58;
-    OUT_SQLInsert = 59;
-    OUT_TabSeparated = 60;
-    OUT_TabSeparatedRaw = 61;
-    OUT_TabSeparatedRawWithNames = 62;
-    OUT_TabSeparatedRawWithNamesAndTypes = 63;
-    OUT_TabSeparatedWithNames = 64;
-    OUT_TabSeparatedWithNamesAndTypes = 65;
-    OUT_Template = 66;
-    OUT_TSKV = 67;
-    OUT_Values = 68;
-    OUT_Vertical = 69;
-    OUT_XML = 70;
+    OUT_Buffers = 5;
+    OUT_CapnProto = 6;
+    OUT_CSV = 7;
+    OUT_CSVWithNames = 8;
+    OUT_CSVWithNamesAndTypes = 9;
+    OUT_CustomSeparated = 10;
+    OUT_CustomSeparatedWithNames = 11;
+    OUT_CustomSeparatedWithNamesAndTypes = 12;
+    OUT_Hash = 13;
+    OUT_JSON = 14;
+    OUT_JSONColumns = 15;
+    OUT_JSONColumnsWithMetadata = 16;
+    OUT_JSONCompact = 17;
+    OUT_JSONCompactColumns = 18;
+    OUT_JSONCompactEachRow = 19;
+    OUT_JSONCompactEachRowWithNames = 20;
+    OUT_JSONCompactEachRowWithNamesAndTypes = 21;
+    OUT_JSONCompactStrings = 22;
+    OUT_JSONCompactStringsEachRow = 23;
+    OUT_JSONCompactStringsEachRowWithNames = 24;
+    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 25;
+    OUT_JSONEachRow = 26;
+    OUT_JSONEachRowWithProgress = 27;
+    OUT_JSONLines = 28;
+    OUT_JSONObjectEachRow = 29;
+    OUT_JSONStrings = 30;
+    OUT_JSONStringsEachRow = 31;
+    OUT_JSONStringsEachRowWithProgress = 32;
+    OUT_LineAsString = 33;
+    OUT_LineAsStringWithNames = 34;
+    OUT_LineAsStringWithNamesAndTypes = 35;
+    OUT_Markdown = 36;
+    OUT_MsgPack = 37;
+    OUT_Native = 38;
+    OUT_Npy = 39;
+    OUT_Null = 40;
+    OUT_ODBCDriver2 = 41;
+    OUT_ORC = 42;
+    OUT_Parquet = 43;
+    OUT_Pretty = 44;
+    OUT_PrettyCompact = 45;
+    OUT_PrettyCompactMonoBlock = 46;
+    OUT_PrettyCompactNoEscapes = 47;
+    OUT_PrettyCompactNoEscapesMonoBlock = 48;
+    OUT_PrettyJSONEachRow = 49;
+    OUT_PrettyMonoBlock = 50;
+    OUT_PrettyNoEscapes = 51;
+    OUT_PrettyNoEscapesMonoBlock = 52;
+    OUT_PrettySpace = 53;
+    OUT_PrettySpaceMonoBlock = 54;
+    OUT_PrettySpaceNoEscapes = 55;
+    OUT_PrettySpaceNoEscapesMonoBlock = 56;
+    OUT_Prometheus = 57;
+    OUT_Protobuf = 58;
+    OUT_ProtobufList = 59;
+    OUT_ProtobufSingle = 60;
+    OUT_RawBLOB = 61;
+    OUT_RowBinary = 62;
+    OUT_RowBinaryWithNames = 63;
+    OUT_RowBinaryWithNamesAndTypes = 64;
+    OUT_SQLInsert = 65;
+    OUT_TabSeparated = 66;
+    OUT_TabSeparatedRaw = 67;
+    OUT_TabSeparatedRawWithNames = 68;
+    OUT_TabSeparatedRawWithNamesAndTypes = 69;
+    OUT_TabSeparatedWithNames = 70;
+    OUT_TabSeparatedWithNamesAndTypes = 71;
+    OUT_Template = 72;
+    OUT_TSKV = 73;
+    OUT_Values = 74;
+    OUT_Vertical = 75;
+    OUT_XML = 76;
 }
 
 enum InOutFormat {
@@ -2343,47 +2515,55 @@ enum InOutFormat {
     INOUT_ArrowStream = 2;
     INOUT_Avro = 3;
     INOUT_BSONEachRow = 4;
-    INOUT_CSV = 5;
-    INOUT_CSVWithNames = 6;
-    INOUT_CSVWithNamesAndTypes = 7;
-    INOUT_CustomSeparated = 8;
-    INOUT_CustomSeparatedWithNames = 9;
-    INOUT_CustomSeparatedWithNamesAndTypes = 10;
-    INOUT_JSON = 11;
-    INOUT_JSONColumns = 12;
-    INOUT_JSONColumnsWithMetadata = 13;
-    INOUT_JSONCompact = 14;
-    INOUT_JSONCompactColumns = 15;
-    INOUT_JSONCompactEachRow = 16;
-    INOUT_JSONCompactEachRowWithNames = 17;
-    INOUT_JSONCompactEachRowWithNamesAndTypes = 18;
-    INOUT_JSONCompactStringsEachRow = 19;
-    INOUT_JSONCompactStringsEachRowWithNames = 20;
-    INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 21;
-    INOUT_JSONEachRow = 22;
-    INOUT_JSONObjectEachRow = 23;
-    INOUT_JSONStringsEachRow = 24;
-    INOUT_MsgPack = 25;
-    INOUT_Native = 26;
-    INOUT_Npy = 27;
-    INOUT_ORC = 28;
-    INOUT_Parquet = 29;
-    INOUT_Protobuf = 30;
-    INOUT_ProtobufList = 31;
-    INOUT_ProtobufSingle = 32;
-    INOUT_RawBLOB = 33;
-    INOUT_RowBinary = 34;
-    INOUT_RowBinaryWithNames = 35;
-    INOUT_RowBinaryWithNamesAndTypes = 36;
-    INOUT_TabSeparated = 37;
-    INOUT_TabSeparatedWithNames = 38;
-    INOUT_TabSeparatedWithNamesAndTypes = 39;
-    INOUT_TSKV = 40;
-    INOUT_Values = 41;
+    INOUT_Buffers = 5;
+    INOUT_CSV = 6;
+    INOUT_CSVWithNames = 7;
+    INOUT_CSVWithNamesAndTypes = 8;
+    INOUT_CustomSeparated = 9;
+    INOUT_CustomSeparatedWithNames = 10;
+    INOUT_CustomSeparatedWithNamesAndTypes = 11;
+    INOUT_JSON = 12;
+    INOUT_JSONColumns = 13;
+    INOUT_JSONColumnsWithMetadata = 14;
+    INOUT_JSONCompact = 15;
+    INOUT_JSONCompactColumns = 16;
+    INOUT_JSONCompactEachRow = 17;
+    INOUT_JSONCompactEachRowWithNames = 18;
+    INOUT_JSONCompactEachRowWithNamesAndTypes = 19;
+    INOUT_JSONCompactStringsEachRow = 20;
+    INOUT_JSONCompactStringsEachRowWithNames = 21;
+    INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 22;
+    INOUT_JSONEachRow = 23;
+    INOUT_JSONLines = 24;
+    INOUT_JSONObjectEachRow = 25;
+    INOUT_JSONStringsEachRow = 26;
+    INOUT_LineAsString = 27;
+    INOUT_MsgPack = 28;
+    INOUT_Native = 29;
+    INOUT_Npy = 30;
+    INOUT_ORC = 31;
+    INOUT_Parquet = 32;
+    INOUT_Protobuf = 33;
+    INOUT_ProtobufList = 34;
+    INOUT_ProtobufSingle = 35;
+    INOUT_RawBLOB = 36;
+    INOUT_RowBinary = 37;
+    INOUT_RowBinaryWithNames = 38;
+    INOUT_RowBinaryWithNamesAndTypes = 39;
+    INOUT_TabSeparated = 40;
+    INOUT_TabSeparatedRaw = 41;
+    INOUT_TabSeparatedRawWithNames = 42;
+    INOUT_TabSeparatedRawWithNamesAndTypes = 43;
+    INOUT_TabSeparatedWithNames = 44;
+    INOUT_TabSeparatedWithNamesAndTypes = 45;
+    INOUT_Template = 46;
+    INOUT_TSKV = 47;
+    INOUT_Values = 48;
 }
 
 message UsingExpr {
-    repeated ExprColumn columns = 1;
+    required ExprColumn column = 1;
+    repeated ExprColumn other_columns = 2;
 }
 
 message JoinConstraint {
@@ -2408,14 +2588,16 @@ enum JoinConst {
     J_SEMI = 3;
     J_ANTI = 4;
     J_ASOF = 5;
+    J_NATURAL = 6;
 }
 
 message JoinCore {
     optional bool global = 1;
-    optional JoinType join_op = 2;
+    optional bool const_on_right = 2;
     optional JoinConst join_const = 3;
-    required TableOrSubquery tos = 4;
-    required JoinConstraint join_constraint = 5;
+    optional JoinType join_op = 4;
+    required TableOrSubquery tos = 5;
+    required JoinConstraint join_constraint = 6;
 }
 
 message ArrayJoin {
@@ -2436,13 +2618,19 @@ message JoinClause {
     repeated JoinClauseCore clauses = 2;
 }
 
-enum FileCompression {
-    COMPgz = 1;
-    COMPbr = 2;
-    COMPxz = 3;
-    COMPzst = 4;
-    COMPlz4 = 5;
-    COMPbz2 = 6;
+message KeyValuePair {
+    required string key = 1;
+    required string value = 2;
+}
+
+message SetValue {
+    required string property = 1;
+    required string value = 2;
+}
+
+message SettingValues {
+    required SetValue set_value = 1;
+    repeated SetValue other_values = 2;
 }
 
 message FileFunc {
@@ -2456,9 +2644,10 @@ message FileFunc {
     oneof file_func_oneof {
         InFormat informat = 4;
         OutFormat outformat = 5;
+        InOutFormat inoutformat = 6;
     }
-    optional Expr structure = 6;
-    optional FileCompression fcomp = 7;
+    optional Expr structure = 7;
+    optional string fcomp = 8;
 }
 
 message FormatFunc {
@@ -2467,14 +2656,15 @@ message FormatFunc {
     required string data = 3;
 }
 
-message GenerateSeriesFunc {
-    enum GSName {
+message NumbersFunc {
+    enum NumbersName {
         generate_series = 1;
         generateSeries = 2;
         numbers = 3;
         numbers_mt = 4;
+        primes = 5;
     }
-    required GSName fname = 1;
+    required NumbersName fname = 1;
     required Expr expr1 = 2;
     optional Expr expr2 = 3;
     optional Expr expr3 = 4;
@@ -2498,6 +2688,7 @@ message RemoteFunc {
     required TableOrFunction tof = 3;
     optional string user = 4;
     optional string password = 5;
+    optional Expr sharding_key = 6;
 }
 
 message MySQLFunc {
@@ -2522,37 +2713,49 @@ message SQLiteFunc {
     required string rtable = 2;
 }
 
-message S3Func {
-    enum FName {
-        s3 = 1;
-        gcs = 2;
-        s3Cluster = 3;
-    }
-    required FName fname = 1;
-    optional Cluster cluster = 2;
-    required string resource = 3;
-    required string user = 4;
-    required string password = 5;
-    required InOutFormat format = 6;
-    required Expr structure = 7;
-    optional string fcomp = 8;
+message RedisFunc {
+    required string address = 1;
+    required Expr key = 2;
+    optional Expr structure = 3;
+    optional uint32 db_index = 4;
+    optional string password = 5;
+    optional uint32 pool_size = 6;
 }
 
-message AzureBlobStorageFunc {
+message MongoDBFunc {
+    required string address = 1;
+    required string database = 2;
+    required string collection = 3;
+    required string user = 4;
+    required string password = 5;
+    optional Expr structure = 6;
+}
+
+message ObjectStoreFunc {
     enum FName {
-        azureBlobStorage = 1;
-        azureBlobStorageCluster = 2;
+        gcs = 1;
+        s3 = 2;
+        azureBlobStorage = 3;
+        deltaLake = 4;
+        deltaLakeS3 = 5;
+        deltaLakeAzure = 6;
+        deltaLakeLocal = 7;
+        iceberg = 8;
+        icebergS3 = 9;
+        icebergAzure = 10;
+        icebergLocal = 11;
+        paimon = 12;
+        paimonS3 = 13;
+        paimonAzure = 14;
+        paimonCluster = 15;
+        paimonLocal = 16;
     }
-    required FName fname = 1;
-    optional Cluster cluster = 2;
-    required string connection_string = 3;
-    required string container = 4;
-    required string blobpath = 5;
-    optional string user = 6;
-    optional string password = 7;
-    optional InOutFormat format = 8;
-    optional string fcomp = 9;
-    optional Expr structure = 10;
+    optional bool cluster_func = 1;
+    required FName fname = 2;
+    optional Cluster cluster = 3;
+    required string credential = 4;
+    repeated KeyValuePair params = 5;
+    optional SettingValues setting_values = 6;
 }
 
 message URLFunc {
@@ -2585,12 +2788,33 @@ message ClusterFunc {
     optional bool all_replicas = 1;
     required Cluster cluster = 2;
     required TableOrFunction tof = 3;
-    optional string sharding_key = 4;
+    optional Expr sharding_key = 4;
 }
 
 message MergeTreeIndexFunc {
     required ExprSchemaTable est = 1;
     optional bool with_marks = 2;
+    optional bool with_minmax = 3;
+}
+
+message MergeTreeProjectionFunc {
+    required ExprSchemaTable est = 1;
+    required Projection proj = 2;
+}
+
+message MergeTreeTextIndexFunc {
+    required ExprSchemaTable est = 1;
+    required Index idx = 2;
+}
+
+message PartsList {
+    repeated string parts = 1;
+}
+
+message MergeTreeAnalyzeIndexesFunc {
+    required ExprSchemaTable est = 1;
+    optional Expr pred = 2;
+    optional PartsList plist = 3;
 }
 
 message GenerateRandomFunc {
@@ -2605,26 +2829,48 @@ message ValuesStatement {
     repeated ExprList extra_expr_lists = 2;
 }
 
+message ArrowFlightFunc {
+    required string address = 1;
+    required string dataset = 2;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
         FormatFunc format = 2;
-        GenerateSeriesFunc gseries = 3;
+        NumbersFunc numbers = 3;
         RemoteFunc remote = 4;
         MySQLFunc mysql = 5;
         PostgreSQLFunc postgresql = 6;
         SQLiteFunc sqite = 7;
-        S3Func s3 = 8;
-        SQLTableFuncCall func = 9;
-        MergeFunc merge = 10;
-        ClusterFunc cluster = 11;
-        MergeTreeIndexFunc mtindex = 12;
-        TableOrFunction loop = 13;
-        GenerateRandomFunc grandom = 14;
-        ValuesStatement values = 15;
-        ExprSchemaTable dictionary = 16;
-        AzureBlobStorageFunc azure = 17;
-        URLFunc url = 18;
+        ObjectStoreFunc object_func = 8;
+        MergeFunc merge = 9;
+        ClusterFunc cluster = 10;
+        TableOrFunction loop = 11;
+        GenerateRandomFunc grandom = 12;
+        ValuesStatement values = 13;
+        ExprSchemaTable dictionary = 14;
+        URLFunc url = 15;
+        RedisFunc redis = 16;
+        MongoDBFunc mongodb = 17;
+        Expr nullf = 18;
+        ArrowFlightFunc flight = 19;
+        MergeTreeIndexFunc mtindex = 20;
+        MergeTreeProjectionFunc mtproj = 21;
+        MergeTreeTextIndexFunc mttxtidx = 22;
+        MergeTreeAnalyzeIndexesFunc mtanindex = 23;
+        SQLTableFuncCall func = 24;
+    }
+}
+
+message SampleClause {
+    oneof sample_type {
+        double ratio = 1;      // SAMPLE 0.1 (between 0 and 1)
+        uint64 num_rows = 2;   // SAMPLE 1000000 (absolute number of rows)
+    }
+    oneof offset_type {
+        double offset_ratio = 3;   // OFFSET 0.05 (between 0 and 1)
+        uint64 offset_rows = 4;    // OFFSET 500000 (absolute number of rows)
     }
 }
 
@@ -2633,6 +2879,7 @@ message JoinedTableOrFunction {
     optional Table table_alias = 2;
     repeated Column col_aliases = 3;
     optional bool final = 4;
+    optional SampleClause sample = 5;
 }
 
 message TableOrSubquery {
@@ -2701,24 +2948,38 @@ message GroupByStatement {
     optional WhereStatement having_expr = 3;
 }
 
+enum RowsKeyword {
+    OFF_ROW = 1;
+    OFF_ROWS = 2;
+}
+
+message LimitByStatement {
+    required Expr limit = 1;
+    optional bool comma = 2;
+    optional Expr offset = 3;
+    oneof limit_by_oneof {
+        Expr by_expr = 4;
+        bool lall = 5;
+    }
+}
+
 message LimitStatement {
     required Expr limit = 1;
-    optional Expr offset = 2;
-    optional bool with_ties = 3;
-    optional Expr limit_by = 4;
+    optional bool with_ties = 2;
 }
 
 message FetchStatement {
     required bool first = 1;
     required Expr row_count = 2;
-    required bool rows = 3;
-    required bool only = 4;
+    required RowsKeyword rows = 3;
 }
 
 message OffsetStatement {
-    required Expr row_count = 1;
-    required bool rows = 2;
-    optional FetchStatement fetch = 3;
+    optional bool comma = 1;
+    required Expr row_count = 2;
+    optional RowsKeyword rows = 3;
+    optional FetchStatement fetch = 4;
+    optional bool with_ties = 5;
 }
 
 enum AllOrDistinct {
@@ -2737,10 +2998,9 @@ message SelectStatementCore {
     optional OrderByStatement orderby = 8;
     repeated WindowDef window_defs = 9;
     optional WhereStatement qualify_expr = 10;
-    oneof limit_oneof {
-        LimitStatement limit = 11;
-        OffsetStatement offset = 12;
-    }
+    optional LimitByStatement limit_by = 11;
+    optional LimitStatement limit = 12;
+    optional OffsetStatement offset = 13;
 }
 
 message SetQuery {
@@ -2749,15 +3009,18 @@ message SetQuery {
         EXCEPT = 2;
         INTERSECT = 3;
     }
-    required ExplainQuery sel1 = 1;
-    required SetOp set_op = 2;
-    optional AllOrDistinct s_or_d = 3;
-    required ExplainQuery sel2 = 4;
+    optional bool paren1 = 1;
+    required ExplainQuery sel1 = 2;
+    required SetOp set_op = 3;
+    optional AllOrDistinct s_or_d = 4;
+    optional bool paren2 = 5;
+    required ExplainQuery sel2 = 6;
 }
 
 message CTEquery {
-    required Table table = 1;
-    required Select query = 2;
+    optional bool recursive = 1;
+    required Table table = 2;
+    required Select query = 3;
 }
 
 message CTEexpr {
@@ -2777,16 +3040,6 @@ message CTEs {
     repeated SingleCTE other_ctes = 2;
 }
 
-message SetValue {
-    required string property = 1;
-    required string value = 2;
-}
-
-message SettingValues {
-    required SetValue set_value = 1;
-    repeated SetValue other_values = 2;
-}
-
 message Select {
     optional CTEs ctes = 1;
     oneof select_oneof {
@@ -2801,41 +3054,65 @@ enum DatabaseEngineValues {
     DMemory = 2;
     DReplicated = 3;
     DShared = 4;
-    DLazy = 5;
-    DOrdinary = 6;
+    DOrdinary = 5;
+    DDataLakeCatalog = 6;
+    DPostgreSQL = 7;
+    DMySQL = 8;
+    DSQLite = 9;
+    DBackup = 10;
+    DMaterializedPostgreSQL = 11;
 }
 
-message BackupDisk {
-    required string disk = 1;
-    required Database database = 2;
+message BackupParam {
+    oneof backup_param_oneof {
+        string svalue = 1;
+        string rvalue = 2;
+    }
+}
+
+message BackupOut {
+    enum BackupOutput {
+        Disk = 1;
+        File = 2;
+        Memory = 3;
+        Null = 4;
+        S3 = 5;
+        AzureBlobStorage = 6;
+    }
+    required BackupOutput out = 1;
+    repeated BackupParam out_params = 2;
+    /// Need to know backup number
+    required uint32 backup_number = 3;
 }
 
 message DatabaseEngineParam {
     oneof database_engine_param_oneof {
         string svalue = 1;
-        Database database = 2;
-        BackupDisk disk = 3;
+        Expr expr = 2;
+        BackupOut backup_out = 3;
     }
 }
 
 message DatabaseEngine {
     required DatabaseEngineValues engine = 1;
     repeated DatabaseEngineParam params = 2;
+    optional SettingValues setting_values = 3;
 }
 
 message CreateDatabase {
     optional bool if_not_exists = 1;
     required Database database = 2;
-    optional Cluster cluster = 3;
-    required DatabaseEngine dengine = 4;
-    optional string comment = 5;
-    optional SettingValues setting_values = 6;
+    optional string uuid = 3;
+    optional Cluster cluster = 4;
+    required DatabaseEngine dengine = 5;
+    optional string comment = 6;
 }
 
 message CreateFunction {
-    required Function function = 1;
-    optional Cluster cluster = 2;
-    required LambdaExpr lexpr = 3;
+    required CreateReplaceOption create_opt = 1;
+    required Function function = 2;
+    optional Cluster cluster = 3;
+    required LambdaExpr lexpr = 4;
 }
 
 message DecimalN {
@@ -2900,6 +3177,27 @@ message Dynamic {
     optional uint32 ntypes = 1;
 }
 
+message QBit {
+    required FloatingPoints subtype = 1;
+    required uint32 dimension = 2;
+}
+
+message AggregateFunction {
+    required bool simple = 1;
+    required SQLFunc aggr = 2;
+    repeated TopTypeName types = 3;
+}
+
+enum GeoTypes {
+    Point = 1;
+    Ring = 2;
+    LineString = 3;
+    MultiLineString = 4;
+    Polygon = 5;
+    MultiPolygon = 6;
+    Geometry = 7;
+}
+
 message BottomTypeName {
     oneof bottom_one_of {
         Integers integers = 1;
@@ -2917,6 +3215,9 @@ message BottomTypeName {
         EnumDef enum_def = 13;
         bool IPv4 = 14;
         bool IPv6 = 15;
+        QBit qbit = 16;
+        GeoTypes geo = 17;
+        AggregateFunction aggr = 18;
     }
 }
 
@@ -2939,24 +3240,16 @@ message TupleWithOutColumnNames {
 }
 
 message TupleTypeDef {
+    optional bool is_nullable = 1;
     oneof tuple_oneof {
-        TupleWithColumnNames with_names = 1;
-        TupleWithOutColumnNames no_names = 2;
+        TupleWithColumnNames with_names = 2;
+        TupleWithOutColumnNames no_names = 3;
     }
 }
 
 message NestedTypeDef {
     required TypeColumnDef type1 = 1;
     repeated TypeColumnDef others = 2;
-}
-
-enum GeoTypes {
-    Point = 1;
-    Ring = 2;
-    LineString = 3;
-    MultiLineString = 4;
-    Polygon = 5;
-    MultiPolygon = 6;
 }
 
 message TopTypeName {
@@ -2970,7 +3263,6 @@ message TopTypeName {
         TupleTypeDef tuple = 7;
         NestedTypeDef nested = 8;
         TupleWithOutColumnNames variant = 9;
-        GeoTypes geo = 10;
     }
 }
 
@@ -3002,41 +3294,28 @@ message DefaultModifier {
     optional Expr expr = 2;
 }
 
-enum CompressionCodec {
-    COMP_Default = 1;
-    COMP_NONE = 2;
-    COMP_LZ4 = 3;
-    COMP_LZ4HC = 4;
-    COMP_ZSTD = 5;
-    COMP_ZSTD_QAT = 6;
-    COMP_DEFLATE_QPL = 7;
-    COMP_Delta = 8;
-    COMP_DoubleDelta = 9;
-    COMP_GCD = 10;
-    COMP_Gorilla = 11;
-    COMP_FPC = 12;
-    COMP_T64 = 13;
-    COMP_AES_128_GCM_SIV = 14;
-    COMP_AES_256_GCM_SIV = 15;
+message IndexKeyVal {
+    required string key = 1;
+    required Expr value = 2;
 }
 
-message CodecParam {
-    required CompressionCodec codec = 1;
-    repeated uint32 params = 2;
-}
-
-message CodecList {
-    required CodecParam codec = 1;
-    repeated CodecParam other_codecs = 2;
+message IndexParam {
+    oneof index_param_oneof {
+        double dval = 1;
+        uint32 ival = 2;
+        string sval = 3;
+        string unescaped_sval = 4;
+        IndexKeyVal kval = 5;
+    }
 }
 
 message ColumnDef {
-    required Column col = 1;
+    required ColumnPath col = 1;
     required TypeName type = 2;
     optional bool nullable = 3;
     optional DefaultModifier defaultv = 4;
     optional string comment = 5;
-    optional CodecList codecs = 6;
+    optional string codecs = 6;
     optional ColumnStatistics stats = 7;
     optional Expr ttl_expr = 8;
     optional bool is_pkey = 9;
@@ -3046,34 +3325,33 @@ message ColumnDef {
 enum IndexType {
     IDX_set = 1;
     IDX_minmax = 2;
-    IDX_hypothesis = 3;
-    IDX_bloom_filter = 4;
-    IDX_vector_similarity = 5;
-    IDX_ngrambf_v1 = 6;
-    IDX_tokenbf_v1 = 7;
-    IDX_text = 8;
-}
-
-message IndexParam {
-    oneof index_param_oneof {
-        double dval = 1;
-        uint32 ival = 2;
-        string sval = 3;
-        string unescaped_sval = 4;
-    }
+    IDX_bloom_filter = 3;
+    IDX_vector_similarity = 4;
+    IDX_ngrambf_v1 = 5;
+    IDX_tokenbf_v1 = 6;
+    IDX_text = 7;
+    IDX_basic = 8;
 }
 
 message IndexDef {
-    required Index idx = 1;
+    optional Index idx = 1;
     required Expr expr = 2;
     required IndexType type = 3;
     repeated IndexParam params = 4;
     optional uint32 granularity = 5;
 }
 
+message ProjectionSelectDef {
+    required Select select = 1;
+    optional SettingValues setting_values = 2;
+}
+
 message ProjectionDef {
     required Projection proj = 1;
-    required Select select = 2;
+    oneof projection_oneof {
+        ProjectionSelectDef sel_def = 2;
+        IndexDef idx_def = 3;
+    }
 }
 
 message ConstraintDef {
@@ -3096,8 +3374,7 @@ message TableDefItem {
 }
 
 message TableDef {
-    required ColumnDef col_def = 1;
-    repeated TableDefItem other_defs = 2;
+    repeated TableDefItem table_defs = 1;
 }
 
 enum AscDesc {
@@ -3122,40 +3399,55 @@ enum TableEngineValues {
     AggregatingMergeTree = 5;
     CollapsingMergeTree = 6;
     VersionedCollapsingMergeTree = 7;
-    File = 8;
-    Null = 9;
-    Set = 10;
-    Join = 11;
-    Memory = 12;
-    StripeLog = 13;
-    Log = 14;
-    TinyLog = 15;
-    EmbeddedRocksDB = 16;
-    Buffer = 17;
-    MySQL = 18;
-    PostgreSQL = 19;
-    SQLite = 20;
-    MongoDB = 21;
-    Redis = 22;
-    S3 = 23;
-    S3Queue = 24;
-    Hudi = 25;
-    DeltaLakeS3 = 26;
-    DeltaLakeAzure = 27;
-    DeltaLakeLocal = 28;
-    IcebergS3 = 29;
-    IcebergAzure = 30;
-    IcebergLocal = 31;
-    Merge = 32;
-    Distributed = 33;
-    Dictionary = 34;
-    GenerateRandom = 35;
-    AzureBlobStorage = 36;
-    AzureQueue = 37;
-    URL = 38;
-    KeeperMap = 39;
-    ExternalDistributed = 40;
-    MaterializedPostgreSQL = 41;
+    GraphiteMergeTree = 8;
+    File = 9;
+    Null = 10;
+    Set = 11;
+    Join = 12;
+    Memory = 13;
+    StripeLog = 14;
+    Log = 15;
+    TinyLog = 16;
+    EmbeddedRocksDB = 17;
+    Buffer = 18;
+    MySQL = 19;
+    PostgreSQL = 20;
+    SQLite = 21;
+    MongoDB = 22;
+    Redis = 23;
+    S3 = 24;
+    S3Queue = 25;
+    Hudi = 26;
+    DeltaLakeS3 = 27;
+    DeltaLakeAzure = 28;
+    DeltaLakeLocal = 29;
+    IcebergS3 = 30;
+    IcebergAzure = 31;
+    IcebergLocal = 32;
+    Merge = 33;
+    Distributed = 34;
+    Dictionary = 35;
+    GenerateRandom = 36;
+    AzureBlobStorage = 37;
+    AzureQueue = 38;
+    URL = 39;
+    KeeperMap = 40;
+    ExternalDistributed = 41;
+    MaterializedPostgreSQL = 42;
+    ArrowFlight = 43;
+    Alias = 44;
+    TimeSeries = 45;
+    HDFS = 46;
+    Hive = 47;
+    JDBC = 48;
+    Kafka = 49;
+    NATS = 50;
+    ODBC = 51;
+    RabbitMQ = 52;
+    YTsaurus = 53;
+    Executable = 54;
+    ExecutablePool = 55;
+    FileLog = 56;
 }
 
 enum TableEngineOption {
@@ -3179,6 +3471,8 @@ message TableEngineParam {
         string regexp = 12;
         ExprSchemaTable est = 13;
         Expr expr = 14;
+        KeyValuePair kvalue = 15;
+        string rvalue = 16;
     }
 }
 
@@ -3189,7 +3483,7 @@ message TTLDelete {
 message TTLUpdate {
     oneof ttlupdate_oneof {
         TTLDelete del = 1;
-        CodecList codecs = 2;
+        string codecs = 2;
         Storage storage = 3;
     }
     optional WhereStatement where = 4;
@@ -3238,7 +3532,8 @@ message CreateTableAs {
 
 message CreateTableSelect {
     optional bool empty = 1;
-    required Select sel = 2;
+    optional bool paren = 2;
+    required Select select = 3;
 }
 
 enum CreateReplaceOption {
@@ -3252,15 +3547,16 @@ message CreateTable {
     optional bool is_temp = 2;
     optional bool if_not_exists = 3;
     required ExprSchemaTable est = 4;
-    optional Cluster cluster = 5;
+    optional string uuid = 5;
+    optional Cluster cluster = 6;
     oneof create_table_oneof {
-        TableDef table_def = 6;
-        CreateTableAs table_as = 7;
+        TableDef table_def = 7;
+        CreateTableAs table_as = 8;
     }
-    required TableEngine engine = 8;
-    optional TTLExpr ttl_expr = 9;
-    optional CreateTableSelect as_select_stmt = 10;
-    optional string comment = 11;
+    required TableEngine engine = 9;
+    optional TTLExpr ttl_expr = 10;
+    optional CreateTableSelect as_select_stmt = 11;
+    optional string comment = 12;
 }
 
 enum SQLObject {
@@ -3269,6 +3565,8 @@ enum SQLObject {
     FUNCTION = 3;
     TABLE = 4;
     VIEW = 5;
+    ROW_POLICY = 6;
+    MASKING_POLICY = 7;
 }
 
 message SQLObjectName {
@@ -3276,6 +3574,7 @@ message SQLObjectName {
         ExprSchemaTable est = 1;
         Database database = 2;
         Function function = 3;
+        Policy policy = 4;
     }
 }
 
@@ -3287,14 +3586,20 @@ message Drop {
     required SQLObjectName object = 5;
     repeated SQLObjectName other_objects = 6;
     optional Cluster cluster = 7;
-    optional bool sync = 8;
-    optional SettingValues setting_values = 9;
+    optional ExprSchemaTable target = 8;
+    optional bool sync = 9;
+    optional SettingValues setting_values = 10;
 }
 
 message InsertFromFile {
     required string path = 1;
-    optional FileCompression fcomp = 2;
+    optional string fcomp = 2;
     required InFormat format = 3;
+}
+
+message SelectParen {
+    optional bool paren = 1;
+    required Select select = 2;
 }
 
 message Insert {
@@ -3303,7 +3608,7 @@ message Insert {
     repeated ColumnPath cols = 3;
     oneof insert_oneof {
         ValuesStatement values = 4;
-        Select select = 5;
+        SelectParen select = 5;
         InsertFromFile insert_file = 6;
         string query = 7;
     }
@@ -3375,7 +3680,7 @@ message SelectIntoFile {
     required string path = 1;
     optional bool tstdout = 2;
     optional SelectIntoFileStep step = 3;
-    optional FileCompression compression = 4;
+    optional string compression = 4;
     optional uint32 level = 5;
 }
 
@@ -3388,17 +3693,19 @@ message TopSelect {
 message CheckTable {
     required ExprSchemaTable est = 1;
     optional SinglePartitionExpr single_partition = 2;
-    optional bool single_result = 3;
-    optional SettingValues setting_values = 4;
+    optional SettingValues setting_values = 3;
+    optional OutFormat format = 4;
 }
 
 message DescribeStatement {
+    optional bool paren = 1;
     oneof desc_oneof {
-        ExprSchemaTable est = 1;
-        ExplainQuery sel = 2;
-        SQLTableFuncCall stf = 3;
+        TableOrFunction tof = 2;
+        ExplainQuery sel = 3;
+        SQLTableFuncCall stf = 4;
     }
-    optional SettingValues setting_values = 4;
+    optional SettingValues setting_values = 5;
+    optional OutFormat format = 6;
 }
 
 message DeduplicateExpr {
@@ -3413,10 +3720,13 @@ message OptimizeTable {
     required ExprSchemaTable est = 1;
     optional Cluster cluster = 2;
     optional SinglePartitionExpr single_partition = 3;
-    optional bool final = 4;
-    optional DeduplicateExpr dedup = 5;
-    optional bool cleanup = 6;
-    optional SettingValues setting_values = 7;
+    optional bool use_force = 4;
+    repeated PartitionExpr dry_run_parts = 5;
+    optional bool final = 6;
+    optional DeduplicateExpr dedup = 7;
+    optional bool cleanup = 8;
+    optional SettingValues setting_values = 9;
+    optional OutFormat format = 10;
 }
 
 message Exchange {
@@ -3458,6 +3768,13 @@ message CommentColumn {
 message AddStatistics {
     required ColumnPathList cols = 1;
     required ColumnStatistics stats = 2;
+}
+
+message MaterializeStatistics {
+    oneof statistics_oneof {
+        ColumnPathList cols = 1;
+        bool all = 2;
+    }
 }
 
 message AddIndex {
@@ -3518,6 +3835,11 @@ message RefreshInterval {
     required RefreshUnit unit = 2;
 }
 
+message DependsList {
+    required ExprSchemaTable est = 1;
+    repeated ExprSchemaTable other_est = 2;
+}
+
 message RefreshableView {
     enum RefreshPolicy {
         EVERY = 1;
@@ -3526,8 +3848,10 @@ message RefreshableView {
     required RefreshPolicy policy = 1;
     required RefreshInterval interval = 2;
     optional RefreshInterval offset = 3;
-    required RefreshInterval randomize = 4;
-    optional bool append = 5;
+    optional RefreshInterval randomize = 4;
+    optional DependsList depends = 5;
+    optional SettingValues setting_values = 6;
+    optional bool append = 7;
 }
 
 message CreateMatViewTo {
@@ -3537,17 +3861,19 @@ message CreateMatViewTo {
 
 message CreateView {
     required CreateReplaceOption create_opt = 1;
-    optional bool if_not_exists = 2;
-    optional bool materialized = 3;
-    required ExprSchemaTable est = 4;
-    optional Cluster cluster = 5;
-    optional RefreshableView refresh = 6;
-    optional CreateMatViewTo to = 7;
-    optional TableEngine engine = 8;
-    optional bool populate = 9;
-    optional bool empty = 10;
-    required Select select = 11;
-    optional string comment = 12;
+    optional bool is_temp = 2;
+    optional bool if_not_exists = 3;
+    optional bool materialized = 4;
+    required ExprSchemaTable est = 5;
+    optional string uuid = 6;
+    optional Cluster cluster = 7;
+    optional RefreshableView refresh = 8;
+    optional CreateMatViewTo to = 9;
+    optional TableEngine engine = 10;
+    optional bool populate = 11;
+    optional bool empty = 12;
+    required SelectParen select = 13;
+    optional string comment = 14;
 }
 
 message DictionaryColumn {
@@ -3625,19 +3951,20 @@ message CreateDictionary {
     required CreateReplaceOption create_opt = 1;
     optional bool if_not_exists = 2;
     required ExprSchemaTable est = 3;
-    optional Cluster cluster = 4;
-    required DictionaryColumn col = 5;
-    repeated DictionaryColumn other_cols = 6;
-    required TableKey primary_key = 7;
-    optional DictionarySource source = 8;
-    required DictionaryLayout layout = 9;
-    optional DictionaryRange range = 10;
-    optional DictionaryLifetime lifetime = 11;
-    optional SettingValues setting_values = 12;
-    optional string comment = 13;
+    optional string uuid = 4;
+    optional Cluster cluster = 5;
+    required DictionaryColumn col = 6;
+    repeated DictionaryColumn other_cols = 7;
+    required TableKey primary_key = 8;
+    optional DictionarySource source = 9;
+    required DictionaryLayout layout = 10;
+    optional DictionaryRange range = 11;
+    optional DictionaryLifetime lifetime = 12;
+    optional SettingValues setting_values = 13;
+    optional string comment = 14;
 }
 
-message ApplyDeleteMask {
+message OptionalPartitionExpr {
     optional SinglePartitionExpr single_partition = 1;
 }
 
@@ -3666,60 +3993,104 @@ message MovePartition {
     required Storage storage = 2;
 }
 
+message ExpireSnapshots {
+    optional string positional_timestamp = 1;
+    optional string expire_before = 2;
+    optional string retention_period = 3;
+    optional uint32 retain_last = 4;
+    repeated string snapshot_ids = 5;
+    optional bool dry_run = 6;
+}
+
+message ExecuteCommand {
+    oneof command {
+        ExpireSnapshots expire_snapshots = 1;
+    }
+}
+
+message CreateRowPolicy {
+    optional bool is_restrictive = 1;
+    optional bool for_select = 2;
+}
+
+message CreateMaskingPolicy {
+    optional UpdateSet first_update = 1;
+    repeated UpdateSet other_updates = 2;
+    optional int32 priority = 3;
+}
+
+message AlterPolicyContent {
+    required ExprSchemaTable target = 1;
+    optional WhereStatement where_expr = 2;
+    optional Role role = 3;
+    oneof create_policy_oneof {
+        CreateRowPolicy row = 4;
+        CreateMaskingPolicy masking = 5;
+    }
+    optional Policy rename_to = 6;
+}
+
 message AlterItem {
+    optional bool paren = 1;
     oneof alter_oneof {
         /// For tables
-        Delete del = 1;
-        Update update = 2;
-        TableKey order = 3;
-        ColInPartition materialize_column = 4;
-        AddColumn add_column = 5;
-        ColumnPath drop_column = 6;
-        RenameCol rename_column = 7;
-        ColInPartition clear_column = 8;
-        AddColumn modify_column = 9;
-        CommentColumn comment_column = 10;
-        ApplyDeleteMask delete_mask = 11;
-        AddStatistics add_stats = 12;
-        AddStatistics mod_stats = 13;
-        ColumnPathList drop_stats = 14;
-        ColumnPathList clear_stats = 15;
-        ColumnPathList mat_stats = 16;
-        AddIndex add_index = 17;
-        IdxInPartition materialize_index = 18;
-        Index drop_index = 19;
-        IdxInPartition clear_index = 20;
-        RemoveColumnProperty column_remove_property = 21;
-        ModifyColumnSetting column_modify_setting = 22;
-        RemoveColumnSetting column_remove_setting = 23;
-        SettingValues table_modify_setting = 24;
-        SettingList table_remove_setting = 25;
-        ProjectionDef add_projection = 26;
-        Projection remove_projection = 27;
-        ProjectionInPartition materialize_projection = 28;
-        ProjectionInPartition clear_projection = 29;
-        ConstraintDef add_constraint = 30;
-        Constraint remove_constraint = 31;
-        SinglePartitionExpr detach_partition = 32;
-        SinglePartitionExpr drop_partition = 33;
-        SinglePartitionExpr drop_detached_partition = 34;
-        SinglePartitionExpr forget_partition = 35;
-        SinglePartitionExpr attach_partition = 36;
-        AttachPartitionFrom attach_partition_from = 37;
-        AttachPartitionFrom replace_partition_from = 38;
-        AttachPartitionFrom move_partition_to = 39;
-        ClearColumnInPartition clear_column_partition = 40;
-        FreezePartition freeze_partition = 41;
-        FreezePartition unfreeze_partition = 42;
-        ClearIndexInPartition clear_index_partition = 43;
-        MovePartition move_partition = 44;
-        TTLExpr modify_ttl  = 45;
-        bool remove_ttl = 46;
+        Delete del = 2;
+        Update update = 3;
+        TableKey order = 4;
+        ColInPartition materialize_column = 5;
+        AddColumn add_column = 6;
+        ColumnPath drop_column = 7;
+        RenameCol rename_column = 8;
+        ColInPartition clear_column = 9;
+        AddColumn modify_column = 10;
+        CommentColumn comment_column = 11;
+        OptionalPartitionExpr delete_mask = 12;
+        AddStatistics add_stats = 13;
+        AddStatistics mod_stats = 14;
+        ColumnPathList drop_stats = 15;
+        ColumnPathList clear_stats = 16;
+        MaterializeStatistics mat_stats = 17;
+        AddIndex add_index = 18;
+        IdxInPartition materialize_index = 19;
+        Index drop_index = 20;
+        IdxInPartition clear_index = 21;
+        RemoveColumnProperty column_remove_property = 22;
+        ModifyColumnSetting column_modify_setting = 23;
+        RemoveColumnSetting column_remove_setting = 24;
+        SettingValues table_modify_setting = 25;
+        SettingList table_remove_setting = 26;
+        ProjectionDef add_projection = 27;
+        Projection remove_projection = 28;
+        ProjectionInPartition materialize_projection = 29;
+        ProjectionInPartition clear_projection = 30;
+        ConstraintDef add_constraint = 31;
+        Constraint remove_constraint = 32;
+        SinglePartitionExpr detach_partition = 33;
+        SinglePartitionExpr drop_partition = 34;
+        SinglePartitionExpr drop_detached_partition = 35;
+        SinglePartitionExpr forget_partition = 36;
+        SinglePartitionExpr attach_partition = 37;
+        AttachPartitionFrom attach_partition_from = 38;
+        AttachPartitionFrom replace_partition_from = 39;
+        AttachPartitionFrom move_partition_to = 40;
+        ClearColumnInPartition clear_column_partition = 41;
+        FreezePartition freeze_partition = 42;
+        FreezePartition unfreeze_partition = 43;
+        ClearIndexInPartition clear_index_partition = 44;
+        MovePartition move_partition = 45;
+        TTLExpr modify_ttl  = 46;
+        bool remove_ttl = 47;
+        OptionalPartitionExpr rewrite_parts = 48;
+        OptionalPartitionExpr apply_patches = 49;
+        /// For Iceberg tables
+        ExecuteCommand execute_command = 50;
         /// For views
-        Select modify_query = 47;
-        RefreshableView refresh = 48;
-        // For tables, views and databases
-        string comment = 49;
+        SelectParen modify_query = 51;
+        RefreshableView refresh = 52;
+        /// For tables, views and databases
+        string comment = 53;
+        /// For policies
+        AlterPolicyContent alter_policy = 54;
     }
 }
 
@@ -3736,9 +4107,10 @@ message Alter {
 message Attach {
     required SQLObject sobject = 1;
     required SQLObjectName object = 2;
-    optional Cluster cluster = 3;
-    optional bool as_replicated = 4;
-    optional SettingValues setting_values = 5;
+    optional string uuid = 3;
+    optional Cluster cluster = 4;
+    optional bool as_replicated = 5;
+    optional SettingValues setting_values = 6;
 }
 
 message Detach {
@@ -3750,61 +4122,86 @@ message Detach {
     optional SettingValues setting_values = 6;
 }
 
+message LightweightSyncReplica {
+    repeated string replicas = 1;
+}
+
 message SyncReplica {
-    enum SyncPolicy {
-        STRICT = 1;
-        LIGHTWEIGHT = 2;
-        PULL = 3;
-    }
     required ExprSchemaTable est = 1;
-    required SyncPolicy policy = 2;
+    oneof sync_oneof {
+        bool strict = 2;
+        LightweightSyncReplica lightweight = 3;
+        bool pull = 4;
+    }
+}
+
+message DropReplica {
+    required string replica = 1;
+    oneof drop_oneof {
+        ExprSchemaTable est = 2;
+        Database database = 3;
+    }
+}
+
+message DropDatabaseReplica {
+    required string replica = 1;
+    optional string shard = 2;
+    optional Database database = 3;
+}
+
+enum DeltaKernelTraceLevel {
+    ERROR = 1;
+    WARN = 2;
+    INFO = 3;
+    DEBUG = 4;
+    TRACE = 5;
 }
 
 message SystemCommand {
+    optional Cluster cluster = 1;
     oneof system_cmd_oneof {
-        bool reload_embedded_dictionaries = 1;
-        bool reload_dictionaries = 2;
-        bool reload_models = 3;
-        bool reload_functions = 4;
-        Function reload_function = 5;
-        bool reload_asynchronous_metrics = 6;
-        bool drop_dns_cache = 7;
-        bool drop_mark_cache = 8;
-        bool drop_uncompressed_cache = 9;
-        bool drop_compiled_expression_cache = 10;
-        bool drop_query_cache = 11;
+        bool reload_embedded_dictionaries = 2;
+        bool reload_dictionaries = 3;
+        bool reload_models = 4;
+        bool reload_functions = 5;
+        Function reload_function = 6;
+        bool reload_asynchronous_metrics = 7;
+        bool drop_dns_cache = 8;
+        bool drop_mark_cache = 9;
+        bool drop_uncompressed_cache = 10;
+        bool drop_compiled_expression_cache = 11;
+        bool drop_query_cache = 12;
         /// The bool value is used here
-        bool drop_format_schema_cache = 12;
-        bool flush_logs = 13;
-        bool reload_config = 14;
-        bool reload_users = 15;
-        ExprSchemaTable stop_merges = 16;
-        ExprSchemaTable start_merges = 17;
-        ExprSchemaTable stop_ttl_merges = 18;
-        ExprSchemaTable start_ttl_merges = 19;
-        ExprSchemaTable stop_moves = 20;
-        ExprSchemaTable start_moves = 21;
-        ExprSchemaTable wait_loading_parts = 22;
-        ExprSchemaTable stop_fetches = 23;
-        ExprSchemaTable start_fetches = 24;
-        ExprSchemaTable stop_replicated_sends = 25;
-        ExprSchemaTable start_replicated_sends = 26;
-        ExprSchemaTable stop_replication_queues = 27;
-        ExprSchemaTable start_replication_queues = 28;
-        ExprSchemaTable stop_pulling_replication_log = 29;
-        ExprSchemaTable start_pulling_replication_log = 30;
-        SyncReplica sync_replica = 31;
-        Database sync_replicated_database = 32;
-        ExprSchemaTable restart_replica = 33;
-        ExprSchemaTable restore_replica = 34;
-        bool restart_replicas = 35;
-        bool drop_filesystem_cache = 36;
-        bool sync_file_cache = 37;
-        bool load_pks = 38;
-        ExprSchemaTable load_pk = 39;
-        bool unload_pks = 40;
-        ExprSchemaTable unload_pk = 41;
-        bool refresh_views = 42;
+        bool drop_format_schema_cache = 13;
+        bool flush_logs = 14;
+        bool reload_config = 15;
+        bool reload_users = 16;
+        ExprSchemaTable stop_merges = 17;
+        ExprSchemaTable start_merges = 18;
+        ExprSchemaTable stop_ttl_merges = 19;
+        ExprSchemaTable start_ttl_merges = 20;
+        ExprSchemaTable stop_moves = 21;
+        ExprSchemaTable start_moves = 22;
+        ExprSchemaTable wait_loading_parts = 23;
+        ExprSchemaTable stop_fetches = 24;
+        ExprSchemaTable start_fetches = 25;
+        ExprSchemaTable stop_replicated_sends = 26;
+        ExprSchemaTable start_replicated_sends = 27;
+        ExprSchemaTable stop_replication_queues = 28;
+        ExprSchemaTable start_replication_queues = 29;
+        ExprSchemaTable stop_pulling_replication_log = 30;
+        ExprSchemaTable start_pulling_replication_log = 31;
+        SyncReplica sync_replica = 32;
+        Database sync_replicated_database = 33;
+        ExprSchemaTable restart_replica = 34;
+        ExprSchemaTable restore_replica = 35;
+        bool restart_replicas = 36;
+        bool drop_filesystem_cache = 37;
+        bool sync_file_cache = 38;
+        bool load_pks = 39;
+        ExprSchemaTable load_pk = 40;
+        bool unload_pks = 41;
+        ExprSchemaTable unload_pk = 42;
         ExprSchemaTable refresh_view = 43;
         bool stop_views = 44;
         ExprSchemaTable stop_view = 45;
@@ -3830,8 +4227,39 @@ message SystemCommand {
         ExprSchemaTable stop_distributed_sends = 65;
         ExprSchemaTable start_distributed_sends = 66;
         bool drop_query_condition_cache = 67;
+        string enable_failpoint = 68;
+        string disable_failpoint = 69;
+        bool iceberg_metadata_cache = 70;
+        bool reconnect_keeper = 71;
+        bool drop_text_index_tokens_cache = 72;
+        bool drop_text_index_header_cache = 73;
+        bool drop_text_index_postings_cache = 74;
+        bool drop_text_index_caches = 75;
+        bool reset_ddl_worker = 76;
+        bool drop_parquet_metadata_cache = 77;
+        string wait_failpoint = 78;
+        string notify_failpoint = 79;
+        DeltaKernelTraceLevel reload_delta_kernel_tracing = 80;
+        Database restore_database_replica = 81;
+        ExprSchemaTable stop_replicated_view = 82;
+        ExprSchemaTable start_replicated_view = 83;
+        uint32 unfreeze = 84;
+        DropReplica drop_replica = 85;
+        DropDatabaseReplica drop_database_replica = 86;
+        ExprSchemaTable stop_cleanup = 87;
+        ExprSchemaTable start_cleanup = 88;
+        bool stop_replicated_ddl_queries = 89;
+        bool start_replicated_ddl_queries = 90;
+        bool jemalloc_purge = 91;
+        bool jemalloc_enable_profile = 92;
+        bool jemalloc_disable_profile = 93;
+        bool jemalloc_flush_profile = 94;
+        bool sync_transaction_log = 95;
+        bool start_thread_fuzzer = 96;
+        bool stop_thread_fuzzer = 97;
+        bool drop_distributed_cache = 98;
+        string unlock_snapshot = 99;
     }
-    optional Cluster cluster = 68;
 }
 
 message BackupRestoreObject {
@@ -3859,28 +4287,17 @@ message BackupRestore {
     required BackupRestoreElement backup_element = 2;
     repeated BackupRestoreElement other_elements = 3;
     optional Cluster cluster = 4;
-    enum BackupOutput {
-        Disk = 1;
-        File = 2;
-        Memory = 3;
-        Null = 4;
-        S3 = 5;
-        AzureBlobStorage = 6;
-    }
-    required BackupOutput out = 5;
-    repeated string out_params = 6;
-    optional SettingValues setting_values = 7;
+    required BackupOut out = 5;
+    optional SettingValues setting_values = 6;
     enum SyncOrAsync {
         SYNC = 1;
         ASYNC = 2;
     }
-    optional SyncOrAsync sync = 8;
+    optional SyncOrAsync sync = 7;
     oneof backup_format_oneof {
-        InFormat informat = 9;
-        OutFormat outformat = 10;
+        InFormat informat = 8;
+        OutFormat outformat = 9;
     }
-    /// Need to know backup number
-    required uint32 backup_number = 11;
 }
 
 message Rename {
@@ -3912,6 +4329,84 @@ message Kill {
     optional SettingValues setting_values = 7;
 }
 
+message ShowObject {
+    optional bool create = 1;
+    optional bool is_temp = 2;
+    required SQLObject sobject = 3;
+    required SQLObjectName object = 4;
+}
+
+message ShowTables {
+    optional bool full = 1;
+    optional bool is_temp = 2;
+    optional Database database = 3;
+}
+
+message ShowDictionaries {
+    optional Database database = 1;
+}
+
+message ShowColumns {
+    optional bool extended = 1;
+    optional bool full = 2;
+    required ExprSchemaTable est = 3;
+}
+
+message ShowIndex {
+    enum IndexShow {
+        INDEX = 1;
+        INDEXES = 2;
+        INDICES = 3;
+        KEYS = 4;
+    }
+    optional bool extended = 1;
+    required IndexShow key = 2;
+    required ExprSchemaTable est = 3;
+}
+
+message ShowStatement {
+    oneof show_oneof {
+        ShowObject object = 1;
+        bool databases = 2;
+        ShowTables tables = 3;
+        ShowColumns columns = 4;
+        ShowDictionaries dictionaries = 5;
+        ShowIndex indexes = 6;
+        bool processlist = 7;
+        bool grants = 8; /// bool is used here
+        bool users = 9;
+        bool roles = 10; /// bool is used here
+        bool profiles = 11; /// bool is used here
+        ExprSchemaTable policies = 12;
+        bool quotas = 13;
+        bool quota = 14; /// bool is used here
+        bool access = 15;
+        Cluster cluster = 16;
+        bool clusters = 17;
+        bool settings = 18; /// bool is used here
+        string setting = 19;
+        bool filesystem_caches = 20;
+        bool engines = 21;
+        bool functions = 22;
+        bool merges = 23;
+    }
+    optional SettingValues setting_values = 24;
+}
+
+message CreatePolicy {
+    required CreateReplaceOption create_opt = 1;
+    optional bool if_not_exists = 2;
+    required Policy policy = 3;
+    required ExprSchemaTable target = 4;
+    optional Cluster cluster = 5;
+    optional WhereStatement where_expr = 6;
+    optional Role role = 7;
+    oneof create_policy_oneof {
+        CreateRowPolicy row = 8;
+        CreateMaskingPolicy masking = 9;
+    }
+}
+
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -3937,6 +4432,8 @@ message SQLQueryInner {
         CreateDictionary create_dictionary = 21;
         Rename rename = 22;
         Kill kill = 23;
+        ShowStatement show = 24;
+        CreatePolicy create_policy = 25;
     }
 }
 
@@ -3962,6 +4459,9 @@ message ExplainOption {
         run_query_tree_passes = 18;
         query_tree_passes = 19;
         projections = 20;
+        input_headers = 21;
+        column_structure = 22;
+        pretty = 23;
     }
     required ExplainOpt opt = 1;
     required uint32 val = 2;
@@ -3976,11 +4476,13 @@ message ExplainQuery {
         SYNTAX = 5;
         ESTIMATE = 6;
         TABLE_OVERRIDE = 7;
+        CURRENT_TRANSACTION = 8;
     }
-    optional bool is_explain = 1;
-    optional ExplainValues expl = 2;
-    repeated ExplainOption opts = 3;
-    required SQLQueryInner inner_query = 4;
+    optional string execute_as = 1;
+    optional bool is_explain = 2;
+    optional ExplainValues expl = 3;
+    repeated ExplainOption opts = 4;
+    required SQLQueryInner inner_query = 5;
 }
 
 message SingleSQLQuery {

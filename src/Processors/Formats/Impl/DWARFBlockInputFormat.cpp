@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/DWARFBlockInputFormat.h>
+#include <Common/CurrentThread.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <llvm/DebugInfo/DWARF/DWARFFormValue.h>
@@ -9,8 +10,10 @@
 #include <base/hex.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnIndex.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnUnique.h>
@@ -19,17 +22,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/WithFileName.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric DWARFReaderThreads;
-    extern const Metric DWARFReaderThreadsActive;
-    extern const Metric DWARFReaderThreadsScheduled;
-}
 
 namespace DB
 {
@@ -142,7 +140,7 @@ static void append(C & col, llvm::StringRef s)
     col->insertData(s.data(), s.size());
 }
 
-DWARFBlockInputFormat::DWARFBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, size_t num_threads_)
+DWARFBlockInputFormat::DWARFBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, size_t num_threads_)
     : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), num_threads(num_threads_)
 {
     auto tag_names = ColumnString::create();
@@ -233,7 +231,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     auto abbrev_section = elf->findSectionByName(".debug_abbrev");
     if (!abbrev_section.has_value())
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "No .debug_abbrev section");
-    LOG_DEBUG(getLogger("DWARF"), ".debug_abbrev is {:.3f} MiB, .debug_info is {:.3f} MiB", abbrev_section->size() * 1. / (1 << 20), info_section->size() * 1. / (1 << 20));
+    LOG_DEBUG(getLogger("DWARF"), ".debug_abbrev is {:.3f} MiB, .debug_info is {:.3f} MiB", static_cast<double>(abbrev_section->size()) * 1. / (1 << 20), static_cast<double>(info_section->size()) * 1. / (1 << 20));
 
     /// (The StringRef points into Elf's mmap of the whole file, or into file_contents.)
     extractor.emplace(llvm::StringRef(info_section->begin(), info_section->size()), /*IsLittleEndian*/ true, /*AddressSize*/ 8);
@@ -263,15 +261,13 @@ void DWARFBlockInputFormat::initializeIfNeeded()
 
     LOG_DEBUG(getLogger("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 
-    pool.emplace(CurrentMetrics::DWARFReaderThreads, CurrentMetrics::DWARFReaderThreadsActive, CurrentMetrics::DWARFReaderThreadsScheduled, num_threads);
+    runner.emplace(getFormatParsingThreadPool().get(), ThreadName::DWARF_DECODER);
     for (size_t i = 0; i < num_threads; ++i)
-        pool->scheduleOrThrowOnError(
+        runner.value().enqueueAndKeepTrack(
             [this, thread_group = CurrentThread::getGroup()]()
             {
                 try
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "DWARFDecoder");
-
                     std::unique_lock lock(mutex);
                     while (!units_queue.empty() && !is_stopped)
                     {
@@ -318,8 +314,8 @@ void DWARFBlockInputFormat::stopThreads()
         is_stopped = true;
     }
     wake_up_threads.notify_all();
-    if (pool)
-        pool->wait();
+    if (runner)
+        runner->waitForAllToFinishAndRethrowFirstError();
 }
 
 static inline void throwIfError(llvm::Error & e, const char * what)
@@ -396,7 +392,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     auto col_ancestor_array_offsets = ColumnVector<UInt64>::create();
     auto col_name = ColumnString::create();
     auto col_linkage_name = ColumnString::create();
-    ColumnLowCardinality::Index col_decl_file;
+    ColumnIndex col_decl_file;
     auto col_decl_line = ColumnVector<UInt32>::create();
     auto col_ranges_start = ColumnVector<UInt64>::create();
     auto col_ranges_end = ColumnVector<UInt64>::create();
@@ -404,7 +400,10 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     auto col_attr_name = ColumnVector<UInt16>::create();
     auto col_attr_form = ColumnVector<UInt16>::create();
     auto col_attr_int = ColumnVector<UInt64>::create();
-    auto col_attr_str = ColumnLowCardinality::create(MutableColumnPtr(ColumnUnique<ColumnString>::create(ColumnString::create()->cloneResized(1), /*is_nullable*/ false)), MutableColumnPtr(ColumnVector<UInt16>::create()));
+    auto col_attr_str = ColumnLowCardinality::create(
+        MutableColumnPtr(ColumnUnique<ColumnString>::create(ColumnString::create()->cloneResized(1), /*is_nullable*/ false)),
+        MutableColumnPtr(ColumnVector<UInt16>::create()),
+        /*is_shared=*/false);
     auto col_attr_offsets = ColumnVector<UInt64>::create();
     size_t num_rows = 0;
     auto err = llvm::Error::success();
@@ -438,7 +437,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
             if (need[COL_NAME]) col_name->insertDefault();
             if (need[COL_LINKAGE_NAME]) col_linkage_name->insertDefault();
-            if (need[COL_DECL_FILE]) col_decl_file.insertPosition(0);
+            if (need[COL_DECL_FILE]) col_decl_file.insertIndex(0);
             if (need[COL_DECL_LINE]) col_decl_line->insertDefault();
             if (need[COL_RANGES]) col_ranges_offsets->insertValue(col_ranges_start->size());
             if (need[COL_ATTR_NAME]) col_attr_offsets->insertValue(col_attr_name->size());
@@ -561,12 +560,12 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         {
                             UInt64 idx = val.getRawUValue() + 1;
                             if (attr.Attr == llvm::dwarf::DW_AT_decl_file && std::exchange(need_decl_file, false))
-                                col_decl_file.insertPosition(idx);
+                                col_decl_file.insertIndex(idx);
 
                             if (need[COL_ATTR_STR])
                             {
                                 auto data = unit.filename_table->getDataAt(idx);
-                                col_attr_str->insertData(data.data, data.size);
+                                col_attr_str->insertData(data.data(), data.size());
                             }
                         }
                         else if (need[COL_ATTR_STR])
@@ -698,7 +697,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
             if (need_name) col_name->insertDefault();
             if (need_linkage_name) col_linkage_name->insertDefault();
-            if (need_decl_file) col_decl_file.insertPosition(0);
+            if (need_decl_file) col_decl_file.insertIndex(0);
             if (need_decl_line) col_decl_line->insertDefault();
 
             if (need_ranges)
@@ -757,8 +756,8 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 auto index = ColumnVector<UInt8>::create();
                 index->insert(1);
                 auto indices = index->replicate({num_rows});
-                cols.push_back(ColumnLowCardinality::create(ColumnUnique<ColumnString>::create(
-                    std::move(dict), /*is_nullable*/ false), indices));
+                cols.push_back(ColumnLowCardinality::create(
+                    ColumnUnique<ColumnString>::create(std::move(dict), /*is_nullable*/ false), indices, /*is_shared*/ false));
                 break;
             }
             case COL_UNIT_OFFSET:
@@ -769,8 +768,8 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 auto index = ColumnVector<UInt8>::create();
                 index->insert(1);
                 auto indices = index->replicate({num_rows});
-                cols.push_back(ColumnLowCardinality::create(ColumnUnique<ColumnVector<UInt64>>::create(
-                    std::move(dict), /*is_nullable*/ false), indices));
+                cols.push_back(ColumnLowCardinality::create(
+                    ColumnUnique<ColumnVector<UInt64>>::create(std::move(dict), /*is_nullable*/ false), indices, /*is_shared*/ false));
                 break;
             }
             case COL_ANCESTOR_TAGS:
@@ -787,7 +786,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 cols.push_back(std::exchange(col_linkage_name, nullptr));
                 break;
             case COL_DECL_FILE:
-                cols.push_back(ColumnLowCardinality::create(unit.filename_table, col_decl_file.detachPositions(), /*is_shared*/ true));
+                cols.push_back(ColumnLowCardinality::create(unit.filename_table, col_decl_file.detachIndexes(), /*is_shared*/ true));
                 break;
             case COL_DECL_LINE:
                 cols.push_back(std::exchange(col_decl_line, nullptr));
@@ -974,7 +973,7 @@ void DWARFBlockInputFormat::resetParser()
 {
     stopThreads();
 
-    pool.reset();
+    runner.reset();
     background_exception = nullptr;
     is_stopped = false;
     units_queue.clear();
@@ -1012,18 +1011,15 @@ void registerInputFormatDWARF(FormatFactory & factory)
     factory.registerRandomAccessInputFormat(
         "DWARF",
         [](ReadBuffer & buf,
-            const Block & sample,
-            const FormatSettings & settings,
-            const ReadSettings &,
-            bool /* is_remote_fs */,
-            size_t /* max_download_threads */,
-            size_t max_parsing_threads)
+           const Block & sample,
+           const FormatSettings & settings,
+           const ReadSettings &,
+           bool /* is_remote_fs */,
+           FormatParserSharedResourcesPtr parser_shared_resources,
+           FormatFilterInfoPtr) -> InputFormatPtr
         {
             return std::make_shared<DWARFBlockInputFormat>(
-                buf,
-                sample,
-                settings,
-                max_parsing_threads);
+                buf, std::make_shared<const Block>(sample), settings, parser_shared_resources->getParsingThreadsPerReader());
         });
     factory.markFormatSupportsSubsetOfColumns("DWARF");
 }

@@ -42,6 +42,8 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
+    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
+
     std::optional<UInt64> getTotalSpace() const override;
     std::optional<UInt64> getAvailableSpace() const override;
     std::optional<UInt64> getUnreservedSpace() const override;
@@ -55,8 +57,6 @@ public:
     void createDirectory(const String & path) override;
 
     void createDirectories(const String & path) override;
-
-    void clearDirectory(const String & path) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
@@ -81,8 +81,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -124,8 +123,6 @@ public:
     bool isBroken() const override { return false; }
 
     bool isReadOnly() const override { return true; }
-
-    void shutdown() override;
 
 private:
     const std::shared_ptr<IBackup> backup;

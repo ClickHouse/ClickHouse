@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include "config.h"
 
 #if USE_NURAFT
@@ -8,15 +9,21 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <functional>
+#include <unordered_set>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
+/// Callback invoked by setResponse and finishSession to deliver responses to clients.
+/// Must be safe for concurrent invocation: setResponse (from responseThread) and
+/// finishSession (from dead session cleaner) may invoke copies of the same callback
+/// concurrently for the same session.
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
 /// Highlevel wrapper for ClickHouse Keeper.
@@ -35,6 +42,9 @@ private:
 
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
+
+    mutable std::mutex live_sessions_mutex;
+    std::unordered_set<int64_t> live_sessions;
 
     mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
@@ -76,6 +86,10 @@ private:
 
     KeeperContextPtr keeper_context;
 
+    /// Flag to signal TCP handlers that they should close connections.
+    /// Set before the full shutdown() to allow handlers to exit promptly.
+    std::atomic<bool> shutting_down{false};
+
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
@@ -89,7 +103,8 @@ private:
     void clusterUpdateWithReconfigDisabledThread();
     void clusterUpdateThread();
 
-    void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
+    /// Returns true if response was successfully sent to client, false if session doesn't exist on this node.
+    bool setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
 
     /// Add error responses for requests to responses queue.
     /// Clears requests.
@@ -99,6 +114,13 @@ private:
     /// Clears both arguments
     nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
         RaftAppendResult & result, KeeperRequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
+
+    using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
+    void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count);
+
+    /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
+    void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
+    void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
 public:
     std::mutex read_request_queue_mutex;
@@ -132,6 +154,15 @@ public:
     void pushClusterUpdates(ClusterUpdateActions && actions);
     bool reconfigEnabled() const;
 
+    /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
+    Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
+
+    /// Signal TCP handlers to close connections before the full shutdown.
+    void signalShutdown() { shutting_down.store(true, std::memory_order_relaxed); }
+
+    /// Returns true if signalShutdown() was called.
+    bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
+
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
 
@@ -140,17 +171,21 @@ public:
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
 
+    /// Put local read request to ClickHouse Keeper
+    bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
 
-    /// Register session and subscribe for responses with callback
+    /// Register session and subscribe for responses with callback.
+    /// The callback must be safe for concurrent invocation — see ZooKeeperResponseCallback.
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
 
     /// Call if we don't need any responses for this session no more (session was expired)
     void finishSession(int64_t session_id);
 
     /// Invoked when a request completes.
-    void updateKeeperStatLatency(uint64_t process_time_ms);
+    void updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests = 1);
 
     /// Are we leader
     bool isLeader() const
@@ -161,6 +196,17 @@ public:
     bool isFollower() const
     {
         return server->isFollower();
+    }
+
+    const char * getRoleString() const
+    {
+        if (isLeader())
+            return "leader";
+        if (isFollower())
+            return "follower";
+        if (isObserver())
+            return "observer";
+        return "unknown";
     }
 
     bool hasLeader() const

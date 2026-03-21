@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -23,9 +24,11 @@ public:
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
 
     bool canBeUsedAsVersion() const override { return true; }
-    bool isSummable() const override { return true; }
+    /// Custom data types with numeric representations are not necessarily summable.
+    /// For example, the `Bool` type isn't.
+    bool isSummable() const override { return !this->hasCustomName(); }
     bool canBeUsedInBitOperations() const override { return true; }
-    bool canBeUsedInBooleanContext() const override { return true; }
+    bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
     bool canBeInsideNullable() const override { return true; }
 
     bool canBePromoted() const override { return true; }
@@ -35,7 +38,7 @@ public:
         return std::make_shared<PromotedType>();
     }
 
-    SerializationPtr doGetDefaultSerialization() const override
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
     {
         return std::make_shared<SerializationNumber<T>>();
     }
@@ -90,5 +93,9 @@ using DataTypeUInt256 = DataTypeNumber<UInt256>;
 using DataTypeInt256 = DataTypeNumber<Int256>;
 
 bool isUInt64ThatCanBeInt64(const DataTypePtr & type);
+
+/// Function helper to create a type for column that contains indexes.
+/// It chooses the smallest numeric type based on the desired number of indexes.
+DataTypePtr getSmallestIndexesType(size_t num_indexes);
 
 }

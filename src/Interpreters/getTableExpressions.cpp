@@ -88,12 +88,22 @@ static NamesAndTypesList getColumnsFromTableExpression(
     if (table_expression.subquery)
     {
         const auto & subquery = table_expression.subquery->children.at(0);
-        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context, true, is_create_parameterized_view).getNamesAndTypesList();
+        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context, true, is_create_parameterized_view)->getNamesAndTypesList();
     }
     else if (table_expression.table_function)
     {
         const auto table_function = table_expression.table_function;
         auto query_context = context->getQueryContext();
+
+        /// For parameterized views in refreshable materialized views, use the current context's database
+        /// instead of the query context's database. This ensures unqualified parameterized view
+        /// references resolve in the correct database (MV's database, not session's database).
+        if (is_create_parameterized_view)
+        {
+            query_context = Context::createCopy(query_context);
+            query_context->setCurrentDatabase(context->getCurrentDatabase());
+        }
+
         const auto & function_storage = query_context->executeTableFunction(table_function);
         auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr();
         const auto & columns = function_metadata_snapshot->getColumns();

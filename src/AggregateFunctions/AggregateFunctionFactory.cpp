@@ -194,7 +194,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
+        query_context = CurrentThread::get().tryGetQueryContext();
 
     if (found.creator)
     {
@@ -357,6 +357,20 @@ AggregateFunctionFactory & AggregateFunctionFactory::instance()
     return ret;
 }
 
+
+FunctionDocumentation AggregateFunctionFactory::getDocumentation(const String & name) const
+{
+    String canonical_name = getAliasToOrName(name);
+
+    if (auto it = aggregate_functions.find(canonical_name); it != aggregate_functions.end())
+        return it->second.documentation;
+
+    String name_lowercase = Poco::toLower(canonical_name);
+    if (auto it = case_insensitive_aggregate_functions.find(name_lowercase); it != case_insensitive_aggregate_functions.end())
+        return it->second.documentation;
+
+    return {};
+}
 
 bool AggregateUtils::isAggregateFunction(const ASTFunction & node)
 {

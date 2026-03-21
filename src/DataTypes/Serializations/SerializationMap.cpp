@@ -57,13 +57,13 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large map size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.binary.max_binary_array_size);
     field = Map();
     Map & map = field.safeGet<Map>();
     map.reserve(size);
@@ -86,6 +86,42 @@ void SerializationMap::deserializeBinary(IColumn & column, ReadBuffer & istr, co
     nested->deserializeBinary(extractNestedColumn(column), istr, settings);
 }
 
+void SerializationMap::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    nested->serializeForHashCalculation(extractNestedColumn(column), row_num, ostr);
+}
+
+void SerializationMap::readMapSafe(DB::IColumn & column, std::function<void()> && read_func)
+{
+    size_t initial_size = column.size();
+    try
+    {
+        read_func();
+    }
+    catch (...)
+    {
+        ColumnMap & column_map = assert_cast<ColumnMap &>(column);
+        ColumnArray & column_array = column_map.getNestedColumn();
+        ColumnArray::Offsets & offsets = column_array.getOffsets();
+        ColumnTuple & nested_columns = column_map.getNestedData();
+        IColumn & keys_column = nested_columns.getColumn(0);
+        IColumn & values_column = nested_columns.getColumn(1);
+
+        if (offsets.size() > initial_size)
+        {
+            chassert(offsets.size() - initial_size == 1);
+            offsets.pop_back();
+        }
+
+        if (keys_column.size() > offsets.back())
+            keys_column.popBack(keys_column.size() - offsets.back());
+
+        if (values_column.size() > offsets.back())
+            values_column.popBack(values_column.size() - offsets.back());
+
+        throw;
+    }
+}
 
 template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(
@@ -267,6 +303,12 @@ bool SerializationMap::tryDeserializeText(IColumn & column, ReadBuffer & istr, c
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    if (settings.json.write_map_as_array_of_tuples)
+    {
+        nested->serializeTextJSON(extractNestedColumn(column), row_num, ostr, settings);
+        return;
+    }
+
     serializeTextImpl(column, row_num, ostr,
         [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
         {
@@ -283,6 +325,12 @@ void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num,
 
 void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
+    if (settings.json.write_map_as_array_of_tuples)
+    {
+        nested->serializeTextJSONPretty(extractNestedColumn(column), row_num, ostr, settings, indent);
+        return;
+    }
+
     const auto & column_map = assert_cast<const ColumnMap &>(column);
 
     const auto & nested_array = column_map.getNestedColumn();
@@ -357,11 +405,20 @@ ReturnType SerializationMap::deserializeTextJSONImpl(IColumn & column, ReadBuffe
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    if (settings.json.read_map_as_array_of_tuples)
+    {
+        nested->deserializeTextJSON(extractNestedColumn(column), istr, settings);
+        return;
+    }
     deserializeTextJSONImpl<void>(column, istr, settings);
 }
 
 bool SerializationMap::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    if (settings.json.read_map_as_array_of_tuples)
+    {
+        return nested->tryDeserializeTextJSON(extractNestedColumn(column), istr, settings);
+    }
     return deserializeTextJSONImpl<bool>(column, istr, settings);
 }
 
@@ -471,8 +528,9 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto & column_map = assert_cast<ColumnMap &>(*column->assumeMutable());
-    nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), rows_offset, limit, settings, state, cache);
+    const auto & column_map = assert_cast<const ColumnMap &>(*column);
+    ColumnPtr nested_ptr = column_map.getNestedColumnPtr();
+    nested->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, state, cache);
 }
 
 }

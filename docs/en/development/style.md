@@ -4,11 +4,12 @@ sidebar_label: 'C++ Style Guide'
 sidebar_position: 70
 slug: /development/style
 title: 'C++ Style Guide'
+doc_type: 'guide'
 ---
 
-# C++ Style Guide
+# C++ style guide
 
-## General Recommendations {#general-recommendations}
+## General recommendations {#general-recommendations}
 
 The following are recommendations, not requirements.
 If you are editing code, it makes sense to follow the formatting of the existing code.
@@ -420,7 +421,7 @@ You can also use an abbreviation if the full name is included next to it in the 
 
 **17.** File names with C++ source code must have the `.cpp` extension. Header files must have the `.h` extension.
 
-## How to Write Code {#how-to-write-code}
+## How to write code {#how-to-write-code}
 
 **1.** Memory management.
 
@@ -687,7 +688,7 @@ auto s = std::string{"Hello"};
 
 **26.** For virtual functions, write `virtual` in the base class, but write `override` instead of `virtual` in descendent classes.
 
-## Unused Features of C++ {#unused-features-of-c}
+## Unused features of C++ {#unused-features-of-c}
 
 **1.** Virtual inheritance is not used.
 
@@ -746,9 +747,9 @@ But other things being equal, cross-platform or portable code is preferred.
 
 The standard library is used (`libc++`).
 
-**4.**OS: Linux Ubuntu, not older than Precise.
+**4.** OS: Linux Ubuntu, not older than Precise.
 
-**5.**Code is written for x86_64 CPU architecture.
+**5.** Code is written for x86_64 CPU architecture.
 
 The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 
@@ -794,7 +795,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **3.** Preference is always given to libraries that are already in use.
 
-## General Recommendations {#general-recommendations-1}
+## General recommendations {#general-recommendations-1}
 
 **1.** Write as little code as possible.
 
@@ -808,7 +809,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **6.** Code simplification is encouraged. Reduce the size of your code where possible.
 
-## Additional Recommendations {#additional-recommendations}
+## Additional recommendations {#additional-recommendations}
 
 **1.** Explicitly specifying `std::` for types from `stddef.h`
 

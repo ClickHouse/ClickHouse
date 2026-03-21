@@ -52,7 +52,7 @@ def test_startup_with_small_bg_pool(started_cluster):
         assert node.query("SELECT * FROM replicated_table") == "20\t30\n"
 
     assert_values()
-    node.restart_clickhouse(stop_start_wait_sec=10)
+    node.restart_clickhouse(stop_start_wait_sec=15)
     assert_values()
 
 

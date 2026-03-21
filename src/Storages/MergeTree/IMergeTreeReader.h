@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
@@ -26,6 +25,7 @@ public:
         const NamesAndTypesList & columns_,
         const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
@@ -41,6 +41,14 @@ public:
                             size_t rows_offset, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
+
+    /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
+    /// So we must always apply filter into the RangeReader.
+    virtual bool mustApplyFilter() const { return false; }
+
+    virtual size_t getResultColumnCount() const { return getColumns().size(); }
+
+    virtual bool producesFilterOnly() const { return false; }
 
     virtual ~IMergeTreeReader() = default;
 
@@ -60,8 +68,13 @@ public:
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
-    const NamesAndTypesList & getColumns() const { return requested_columns; }
-    size_t numColumnsInResult() const { return requested_columns.size(); }
+    ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
+    size_t numColumnsInResult() const { return getColumns().size(); }
+
+    /// Returns column names and types as they are stored on disk (may differ from requested types
+    /// when there are pending type-changing mutations). Used to build correct `ColumnsWithTypeAndName`
+    /// before `performRequiredConversions` is applied.
+    const NamesAndTypes & getColumnsToRead() const { return columns_to_read; }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -70,6 +83,10 @@ public:
     virtual void prefetchBeginOfRange(Priority) {}
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
+
+    virtual bool canSkipMark(size_t, size_t) { return false; }
+
+    virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
 protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
@@ -85,6 +102,7 @@ protected:
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
     /// The same as above, but for subcolumns.
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map_for_subcolumns;
+    DeserializeBinaryBulkStateMap cached_deserialize_binary_bulk_state_map_for_subcolumns;
 
    /// Actual columns description in part.
     const ColumnsDescription & part_columns;
@@ -98,9 +116,10 @@ protected:
     MarkCache * const mark_cache;
 
     MergeTreeReaderSettings settings;
+    MergeTreeSettingsPtr storage_settings;
 
     const StorageSnapshotPtr storage_snapshot;
-    const MarkRanges all_mark_ranges;
+    MarkRanges all_mark_ranges;
 
     /// Column, serialization and level (of nesting) of column
     /// which is used for reading offsets for missing nested column.
@@ -121,7 +140,15 @@ protected:
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
 
+    /// Returns true if the column at position @pos in columns_to_read was dropped
+    /// by a pending mutation that hasn't been applied to this part yet.
+    /// Such columns should not be read from the part; defaults should be used instead.
+    bool isColumnDroppedByPendingMutation(size_t pos) const;
+
 private:
+    friend class MergeTreeReaderIndex;
+    friend class MergeTreeReaderTextIndex;
+
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
     std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;
@@ -134,7 +161,7 @@ private:
     NamesAndTypesList original_requested_columns;
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
-    NamesAndTypesList requested_columns;
+    NamesAndTypesList converted_requested_columns;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
@@ -146,6 +173,7 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -155,4 +183,11 @@ MergeTreeReaderPtr createMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
+struct MergeTreeIndexWithCondition;
+
+MergeTreeReaderPtr createMergeTreeReaderIndex(
+    const IMergeTreeReader * main_reader,
+    const MergeTreeIndexWithCondition & index,
+    const NamesAndTypesList & columns_to_read,
+    bool can_skip_mark);
 }

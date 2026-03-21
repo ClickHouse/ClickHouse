@@ -15,6 +15,9 @@ namespace DB
 
 class Context;
 
+struct UnavailableShardTracker;
+using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
+
 class IThrottler;
 using ThrottlerPtr = std::shared_ptr<IThrottler>;
 
@@ -31,7 +34,6 @@ class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
-/// This is the same type as StorageS3Source::IteratorWrapper
 using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
@@ -60,45 +62,34 @@ public:
     RemoteQueryExecutor(
         ConnectionPoolPtr pool,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         ThrottlerPtr throttler = nullptr,
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::optional<Extension> extension_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
+        std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
         Connection & connection,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr,
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 
-        std::optional<Extension> extension_ = std::nullopt);
-
-    /// Takes already set connection.
-    RemoteQueryExecutor(
-        std::shared_ptr<Connection> connection,
-        const String & query_,
-        const Block & header_,
-        ContextPtr context_,
-        ThrottlerPtr throttler_ = nullptr,
-        const Scalars & scalars_ = Scalars(),
-        const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::optional<Extension> extension_ = std::nullopt);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections_,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr,
         const Scalars & scalars_ = Scalars(),
@@ -111,7 +102,7 @@ public:
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr,
         const Scalars & scalars_ = Scalars(),
@@ -222,21 +213,28 @@ public:
 
     void setLogger(LoggerPtr logger) { log = logger; }
 
-    const Block & getHeader() const { return header; }
+    void setUnavailableShardTracker(UnavailableShardTrackerPtr tracker) { unavailable_shard_tracker = std::move(tracker); }
+
+    void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
+
+    const Block & getHeader() const { return *header; }
+    const SharedHeader & getSharedHeader() const { return header; }
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard() const;
+    bool needToSkipUnavailableShard();
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
 
+    bool isFinished() const { return finished; }
+
 private:
     RemoteQueryExecutor(
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         const Scalars & scalars_,
         const Tables & external_tables_,
@@ -245,7 +243,7 @@ private:
         std::optional<Extension> extension_,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
-    Block header;
+    SharedHeader header;
     Block totals;
     Block extremes;
 
@@ -322,6 +320,12 @@ private:
     StorageID main_table = StorageID::createEmpty();
 
     LoggerPtr log = nullptr;
+
+    UnavailableShardTrackerPtr unavailable_shard_tracker;
+    bool shard_skip_reported = false;
+
+    /// Total number of remote connections across all shards, used to scale interactive_delay.
+    size_t distributed_fanout = 0;
 
     GetPriorityForLoadBalancing::Func priority_func;
 

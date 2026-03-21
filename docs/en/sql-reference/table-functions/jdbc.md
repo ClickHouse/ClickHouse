@@ -4,6 +4,7 @@ sidebar_label: 'jdbc'
 sidebar_position: 100
 slug: /sql-reference/table-functions/jdbc
 title: 'jdbc'
+doc_type: 'reference'
 ---
 
 # jdbc Table Function
@@ -21,12 +22,14 @@ It supports Nullable types (based on DDL of remote table that is queried).
 ## Syntax {#syntax}
 
 ```sql
-jdbc(datasource, schema, table)
-jdbc(datasource, table)
+jdbc(datasource, external_database, external_table)
+jdbc(datasource, external_table)
 jdbc(named_collection)
 ```
 
 ## Examples {#examples}
+
+Instead of an external database name, a schema can be specified:
 
 ```sql
 SELECT * FROM jdbc('jdbc:mysql://localhost:3306/?user=root&password=root', 'schema', 'table')

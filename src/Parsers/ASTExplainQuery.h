@@ -70,7 +70,7 @@ public:
     ExplainKind getKind() const { return kind; }
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTExplainQuery>(*this);
+        auto res = make_intrusive<ASTExplainQuery>(*this);
         res->children.clear();
         if (!children.empty())
             res->children.push_back(children[0]->clone());
@@ -114,7 +114,7 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "");
+        ostr << toString(kind);
 
         if (ast_settings)
         {
@@ -125,7 +125,20 @@ protected:
         if (query)
         {
             ostr << settings.nl_or_ws;
+
+            /// When trailing output options (SETTINGS, FORMAT, etc.) follow the EXPLAIN body,
+            /// and the inner query is not an ASTQueryWithOutput (e.g. a bare SELECT or UNION),
+            /// we must wrap it in parentheses. Otherwise the trailing SETTINGS clause would be
+            /// consumed by the inner SELECT during re-parsing.
+            /// For inner ASTQueryWithOutput queries (like CREATE TABLE), the flag propagates
+            /// through the frame and is handled by each query's own `formatQueryImpl`.
+            bool need_parens = frame.has_trailing_output_options
+                && !dynamic_cast<const ASTQueryWithOutput *>(query.get());
+            if (need_parens)
+                ostr << "(";
             query->format(ostr, settings, state, frame);
+            if (need_parens)
+                ostr << ")";
         }
         if (table_function)
         {

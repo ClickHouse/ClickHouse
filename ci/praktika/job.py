@@ -1,9 +1,11 @@
 import copy
 import fnmatch
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from pathlib import Path
+from typing import Any, Iterable, List, Optional
 
 from . import Artifact
 from .utils import Shell, Utils
@@ -23,6 +25,14 @@ class Job:
         with_git_submodules: bool = False
 
     @dataclass
+    class ParamSet:
+        parameter: Optional[Any] = None
+        runs_on: Optional[List[str]] = None
+        provides: Optional[List[str]] = None
+        requires: Optional[List[str]] = None
+        timeout: Optional[int] = None
+
+    @dataclass
     class Config:
         # Job Name
         name: str
@@ -34,16 +44,23 @@ class Job:
         command: str
 
         # What job requires
-        #   May be phony or physical names
+        #   May be `Artifact.Config.name` (for physical artifacts) or `Job.Config.name` (for ordering only)
         requires: List[str] = field(default_factory=list)
 
+        # If True, jobs listed in `requires` by `Job.Config.name` are treated as
+        # hard dependencies: they must run (and cannot be skipped as unaffected)
+        # unless their artifacts are already cached by CI.
+        needs_jobs_from_requires: bool = False
+
         # What job provides
-        #   May be phony or physical names
+        #   May be only `Artifact.Config.name`
         provides: List[str] = field(default_factory=list)
 
         job_requirements: Optional["Job.Requirements"] = None
 
         timeout: int = 5 * 3600
+
+        timeout_shell_cleanup: Optional[str] = None
 
         digest_config: Optional["Job.CacheDigestConfig"] = None
 
@@ -55,70 +72,43 @@ class Job:
 
         enable_commit_status: bool = False
 
+        enable_gh_auth: bool = False
+
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
 
         parameter: Any = None
 
+        # Per-job secrets (exported only for this job, not all jobs in the workflow)
+        secrets: list = field(default_factory=list)
+
         # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
 
-        def parametrize(
-            self,
-            parameter: Optional[List[Any]] = None,
-            runs_on: Optional[List[List[str]]] = None,
-            provides: Optional[List[List[str]]] = None,
-            requires: Optional[List[List[str]]] = None,
-            timeout: Optional[List[int]] = None,
-        ):
-            assert (
-                parameter or runs_on
-            ), "Either :parameter or :runs_on must be non empty list for parametrisation"
-            if runs_on:
-                assert isinstance(runs_on, list) and isinstance(runs_on[0], list)
-            if not parameter:
-                parameter = [None] * len(runs_on)
-            if not runs_on:
-                runs_on = [None] * len(parameter)
-            if not timeout:
-                timeout = [None] * len(parameter)
-            if not provides:
-                provides = [None] * len(parameter)
-            if not requires:
-                requires = [None] * len(parameter)
-            assert (
-                len(parameter)
-                == len(runs_on)
-                == len(timeout)
-                == len(provides)
-                == len(requires)
-            ), f"Parametrization lists for job [{self.name}] must be of the same size [{len(parameter)}, {len(runs_on)}, {len(timeout)}, {len(provides)}, {len(requires)}]"
-
+        def parametrize(self, *param_sets: "Job.ParamSet"):
             res = []
-            for parameter_, runs_on_, timeout_, provides_, requires_ in zip(
-                parameter, runs_on, timeout, provides, requires
-            ):
+            for param_set in param_sets:
                 obj = copy.deepcopy(self)
                 assert (
                     not obj.provides
                 ), "Job.Config.provides must be empty for parametrized jobs"
-                if parameter_:
-                    obj.parameter = parameter_
-                    obj.command = obj.command.format(PARAMETER=parameter_)
-                if runs_on_:
-                    obj.runs_on = runs_on_
-                if timeout_:
-                    obj.timeout = timeout_
-                if provides_:
+                if param_set.parameter:
+                    obj.parameter = param_set.parameter
+                    obj.command = obj.command.format(PARAMETER=param_set.parameter)
+                if param_set.runs_on:
+                    obj.runs_on = param_set.runs_on
+                if param_set.timeout:
+                    obj.timeout = param_set.timeout
+                if param_set.provides:
                     assert (
                         not obj.provides
                     ), "Job.Config.provides must be empty for parametrized jobs"
-                    obj.provides = provides_
-                if requires_:
+                    obj.provides = param_set.provides
+                if param_set.requires:
                     assert (
                         not obj.requires
                     ), "Job.Config.requires and parametrize(requires=...) are both set"
-                    obj.requires = requires_
+                    obj.requires = param_set.requires
                 obj.name = obj.get_job_name_with_parameter()
                 res.append(obj)
             return res
@@ -154,6 +144,11 @@ class Job:
             """
             return copy.deepcopy(self)
 
+        def set_name(self, name):
+            res = copy.deepcopy(self)
+            res.name = name
+            return res
+
         def set_dependency(self, job, reset=False):
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
@@ -188,6 +183,16 @@ class Job:
                     )
             return res
 
+        def set_runs_on(self, runs_on):
+            res = copy.deepcopy(self)
+            res.runs_on = runs_on
+            return res
+
+        def set_command(self, command):
+            res = copy.deepcopy(self)
+            res.command = command
+            return res
+
         def unset_provides(self, artifact_keyword):
             """
             removes artifact matching artifact_keyword
@@ -202,9 +207,14 @@ class Job:
             res.provides = provides_res
             return res
 
-        def set_allow_merge_on_failure(self, value):
+        def set_allow_merge_on_failure(self, value=True):
             res = copy.deepcopy(self)
             res.allow_merge_on_failure = value
+            return res
+
+        def set_post_hooks(self, post_hooks):
+            res = copy.deepcopy(self)
+            res.post_hooks = post_hooks
             return res
 
         @staticmethod
@@ -255,3 +265,15 @@ class Job:
                     print(f"Warning: failed to check git submodules: {e}")
 
             return False
+
+        def __post_init__(self):
+            if self.timeout_shell_cleanup:
+                return
+            if self.run_in_docker:
+                container_name = (
+                    "praktika_"
+                    + hashlib.sha1(
+                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
+                    ).hexdigest()[:12]
+                )
+                self.timeout_shell_cleanup = f"docker rm -f {container_name}"

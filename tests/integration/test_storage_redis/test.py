@@ -461,3 +461,6 @@ def test_get_keys(started_cluster):
     check_query("SELECT * FROM test_get_keys", "FullScan", 0, 3)
     check_query("SELECT * FROM test_get_keys WHERE k = 1", "GetKeys", 1, 1)
     check_query("SELECT * FROM test_get_keys WHERE k in (3, 5)", "GetKeys", 2, 1)
+
+    plan = node.query("EXPLAIN actions=1, optimize=0 SELECT * FROM test_get_keys")
+    assert 'ReadType: FullScan' in plan

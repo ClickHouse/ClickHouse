@@ -5,6 +5,7 @@ sidebar_label: 'zeros'
 sidebar_position: 145
 slug: /sql-reference/table-functions/zeros
 title: 'zeros'
+doc_type: 'reference'
 ---
 
 # zeros Table Function

@@ -811,8 +811,7 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 --
 create view test_runs as
     select test,
-        -- Default to 7 runs if there are only 'short' queries in the test, and
-        -- we can't determine the number of runs.
+        -- Default to 7 runs if we can't determine the number of runs.
         if((ceil(median(t.runs), 0) as r) != 0, r, 7) runs
     from (
         select
@@ -1045,7 +1044,7 @@ do
             | cut -f 5- \
             | sed 's/\t/ /g' \
             | tee "report/tmp/$query_file.stacks.$version.tsv" \
-            | /fg/flamegraph.pl --hash > "$query_file.$version.svg" &
+            | flamegraph.pl --hash > "$query_file.$version.svg" &
     done
 done
 wait
@@ -1054,10 +1053,10 @@ unset IFS
 # Create differential flamegraphs.
 while IFS= read -r query_file
 do
-    /fg/difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
+    difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
             "report/tmp/$query_file.stacks.right.tsv" \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
-        | /fg/flamegraph.pl > "$query_file.diff.svg" &
+        | flamegraph.pl > "$query_file.diff.svg" &
 done < report/query-files.txt
 wait
 
@@ -1189,21 +1188,21 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         union all
             select
                 test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
-                'slower' test_status,
+                multiIf(
+                    changed_fail != 0 and diff > 0, 'slower',
+                    unstable_fail != 0, 'unstable',
+                    'success'
+                ) test_status,
                 test_desc_.2*1e3 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#changes-in-performance.' || test || '.' || toString(query_index) report_url
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/'
+                    || multiIf(
+                        changed_fail != 0 and diff > 0, 'report.html#changes-in-performance.',
+                        unstable_fail != 0, 'report.html#unstable-queries.',
+                        'report.html#all-queries.'
+                    )
+                    || test || '.' || toString(query_index) report_url
             from queries
             array join map('old', left, 'new', right) as test_desc_
-            where changed_fail != 0 and diff > 0
-        union all
-            select
-                test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
-                'unstable' test_status,
-                test_desc_.2*1e3 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#unstable-queries.' || test || '.' || toString(query_index) report_url
-            from queries
-            array join map('old', left, 'new', right) as test_desc_
-            where unstable_fail != 0
     )
 ;
     "

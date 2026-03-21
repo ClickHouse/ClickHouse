@@ -45,7 +45,11 @@ public:
     bool hasStaticStructure() const override { return true; }
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "Values"; }
+    const char * getStorageEngineName() const override
+    {
+        /// It'd be StorageValues but it's not registered as a table engine
+        return "";
+    }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -176,7 +180,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
 
 void registerTableFunctionValues(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionValues>({.documentation = {}, .allow_readonly = true}, TableFunctionFactory::Case::Insensitive);
+    factory.registerFunction<TableFunctionValues>({}, {.allow_readonly = true}, TableFunctionFactory::Case::Insensitive);
 }
 
 }

@@ -33,6 +33,9 @@ struct AuthResult
     /// Session settings received from authentication server (if any)
     SettingsChanges settings{};
     AuthenticationData authentication_data {};
+    /// Username determined by the access storage during authentication,
+    /// should be treated as the authenticated user name
+    String user_name;
 };
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
@@ -60,6 +63,12 @@ public:
 
     /// Returns true if this entity is readonly.
     virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
+
+    /// Returns true if this storage is ephemeral.
+    virtual bool isEphemeral() const { return false; }
+
+    /// Returns true if this entity is ephemeral.
+    virtual bool isEphemeral(const UUID &) const { return isEphemeral(); }
 
     /// Returns true if this storage is replicated.
     virtual bool isReplicated() const { return false; }
@@ -242,13 +251,7 @@ protected:
         bool throw_if_user_not_exists,
         bool allow_no_password,
         bool allow_plaintext_password) const;
-    virtual bool areCredentialsValid(
-        const std::string & user_name,
-        const AuthenticationData & authentication_method,
-        const Credentials & credentials,
-        const ExternalAuthenticators & external_authenticators,
-        const ClientInfo & client_info,
-        SettingsChanges & settings) const;
+
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
     static UUID generateRandomID();
     LoggerPtr getLogger() const;
@@ -260,7 +263,6 @@ protected:
     [[noreturn]] void throwReadonlyCannotUpdate(AccessEntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotRemove(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
-    [[noreturn]] static void throwInvalidCredentials();
     [[noreturn]] void throwBackupNotAllowed() const;
     [[noreturn]] void throwRestoreNotAllowed() const;
 

@@ -173,7 +173,7 @@ struct AlterCommand
     /// executed. For example, cast from Date to UInt16 type can be executed
     /// without any data modifications. But column drop or modify from UInt16 to
     /// UInt32 require data modification.
-    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
+    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
 
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
@@ -239,13 +239,6 @@ public:
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);
-    /// ------------------------------------------------------------
-    /// Legacy names for text index.
-    /// Remove this block one year after full-text indexes became GA.
-    static bool hasLegacyGinIndex(const StorageInMemoryMetadata & metadata);
-    static bool hasLegacyFullTextIndex(const StorageInMemoryMetadata & metadata);
-    static bool hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata);
-/// ------------------------------------------------------------
 
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);

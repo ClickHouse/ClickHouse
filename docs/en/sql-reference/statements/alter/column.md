@@ -4,6 +4,7 @@ sidebar_label: 'COLUMN'
 sidebar_position: 37
 slug: /sql-reference/statements/alter/column
 title: 'Column Manipulations'
+doc_type: 'reference'
 ---
 
 A set of queries that allow changing the table structure.
@@ -212,6 +213,10 @@ The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
+:::note
+Please be careful when changing a Nullable column to Non-Nullable. Make sure it doesn't have any NULL values, otherwise it will cause problems when reading from it. In that case, the workaround would be to Kill the mutation and revert the column back to Nullable type.
+:::
+
 ## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
@@ -233,7 +238,6 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 **See Also**
 
 - [REMOVE TTL](ttl.md).
-
 
 ## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
@@ -332,6 +336,8 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 ## Limitations {#limitations}
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
+
+Renaming columns with dots in their names is partially supported. Dots are reserved for [Nested](/sql-reference/data-types/nested-data-structures/nested) sub-column access, so the prefix (parent name) must remain the same. Only the suffix (sub-column name) can be changed. For example, `a.b` can be renamed to `a.c`, but renaming `a.b` to `b.d` is not allowed because it changes the Nested parent prefix.
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 

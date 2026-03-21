@@ -4,6 +4,7 @@ sidebar_label: 'UPDATE'
 sidebar_position: 40
 slug: /sql-reference/statements/alter/update
 title: 'ALTER TABLE ... UPDATE Statements'
+doc_type: 'reference'
 ---
 
 # ALTER TABLE ... UPDATE Statements
@@ -29,7 +30,8 @@ The synchronicity of the query processing is defined by the [mutations_sync](/op
 - [Mutations](/sql-reference/statements/alter/index.md#mutations)
 - [Synchronicity of ALTER Queries](/sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 - [mutations_sync](/operations/settings/settings.md/#mutations_sync) setting
-
+- [Lightweight `UPDATE`](/sql-reference/statements/update) - Alternative lightweight update using patch parts
+- [`APPLY PATCHES`](/sql-reference/statements/alter/apply-patches) - Manually apply patches from lightweight updates
 
 ## Related content {#related-content}
 

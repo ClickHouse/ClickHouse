@@ -4,10 +4,11 @@ description: 'Queries data to/from a remote HTTP/HTTPS server. This engine is si
 sidebar_label: 'URL'
 sidebar_position: 80
 slug: /engines/table-engines/special/url
-title: 'URL Table Engine'
+title: 'URL table engine'
+doc_type: 'reference'
 ---
 
-# URL Table Engine
+# URL table engine
 
 Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 
@@ -96,11 +97,11 @@ SELECT * FROM url_engine_table
 
 - Reads and writes can be parallel
 - Not supported:
-    - `ALTER` and `SELECT...SAMPLE` operations.
-    - Indexes.
-    - Replication.
+  - `ALTER` and `SELECT...SAMPLE` operations.
+  - Indexes.
+  - Replication.
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
 - `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
@@ -108,7 +109,7 @@ SELECT * FROM url_engine_table
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
 
-## Storage Settings {#storage-settings}
+## Storage settings {#storage-settings}
 
 - [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 - [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.

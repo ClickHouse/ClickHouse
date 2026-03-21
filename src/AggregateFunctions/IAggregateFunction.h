@@ -12,6 +12,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <IO/ReadBuffer.h>
 #include "config.h"
@@ -40,7 +41,7 @@ class IDataType;
 class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 struct AggregateFunctionProperties;
 
@@ -91,6 +92,10 @@ public:
     virtual size_t getVersionFromRevision(size_t /* revision */) const { return 0; }
 
     virtual size_t getDefaultVersion() const { return 0; }
+
+    /// Some aggregate functions have more efficient implementation for merging final states.
+    /// See AggregateFunctionAny for example.
+    virtual AggregateFunctionPtr getAggregateFunctionForMergingFinal() const { return shared_from_this(); }
 
     ~IAggregateFunction() override = default;
 
@@ -342,10 +347,7 @@ public:
     /// For most functions if one of arguments is always NULL, we return NULL (it's implemented in combinator Null),
     /// but in some functions we can want to process this argument somehow (for example condition argument in If combinator).
     /// This method returns the set of argument indexes that can be always NULL, they will be skipped in combinator Null.
-    virtual std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const
-    {
-        return {};
-    }
+    virtual UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const { return {}; }
 
     /** Return the nested function if this is an Aggregate Function Combinator.
       * Otherwise return nullptr.
@@ -371,8 +373,6 @@ public:
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
 
-#if USE_EMBEDDED_COMPILER
-
     /// Is function JIT compilable
     virtual bool isCompilable() const { return false; }
 
@@ -380,8 +380,7 @@ public:
     virtual void compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
     /// compileAdd should generate code for updating aggregate function state stored in aggregate_data_ptr
-    virtual void
-    compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const;
+    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const;
 
     /// compileMerge should generate code for merging aggregate function states stored in aggregate_data_dst_ptr and aggregate_data_src_ptr
     virtual void compileMerge(
@@ -389,8 +388,6 @@ public:
 
     /// compileGetResult should generate code for getting result value from aggregate function state stored in aggregate_data_ptr
     virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
-
-#endif
 
 protected:
     DataTypes argument_types;
@@ -501,8 +498,9 @@ public:
         auto offset_it = column_sparse.getIterator(row_begin);
 
         for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
-                                                    &values, offset_it.getValueIndex(), arena);
+            if (places[offset_it.getCurrentRow()])
+                static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
+                                                        &values, offset_it.getValueIndex(), arena);
     }
 
     void mergeBatch(
@@ -544,13 +542,14 @@ public:
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
-        const IColumn ** columns,
+        const IColumn ** __restrict columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
         if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            alignas(32) const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (flags[i])

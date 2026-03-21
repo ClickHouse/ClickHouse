@@ -6,7 +6,6 @@
 
 #include <boost/noncopyable.hpp>
 #include <memory>
-#include <base/StringRef.h>
 #include <theta_sketch.hpp>
 #include <theta_union.hpp>
 #include <theta_intersection.hpp>
@@ -21,7 +20,9 @@ template <typename Key>
 class ThetaSketchData : private boost::noncopyable
 {
 private:
+    /// Used for insertions
     std::unique_ptr<datasketches::update_theta_sketch> sk_update;
+    /// Used for merging
     std::unique_ptr<datasketches::theta_union> sk_union;
 
     datasketches::update_theta_sketch * getSkUpdate()
@@ -45,15 +46,29 @@ public:
     ~ThetaSketchData() = default;
 
     /// Insert original value without hash, as `datasketches::update_theta_sketch.update` will do the hash internal.
-    void insertOriginal(StringRef value)
+    void insertOriginal(std::string_view value)
     {
-        getSkUpdate()->update(value.data, value.size);
+        getSkUpdate()->update(value.data(), value.size());
+        /// In case of optimization for u8 keys (see addBatchLookupTable()) it is possible to have few calls of insert() after merge(),
+        /// and we should update sk_union as well, note, that there should not be too many, so performance wise it should be OK
+        if (sk_union)
+        {
+            sk_union->update(*sk_update);
+            sk_update.reset(nullptr);
+        }
     }
 
     /// Note that `datasketches::update_theta_sketch.update` will do the hash again.
     void insert(Key value)
     {
         getSkUpdate()->update(value);
+        /// In case of optimization for u8 keys (see addBatchLookupTable()) it is possible to have few calls of insert() after merge(),
+        /// and we should update sk_union as well, note, that there should not be too many, so performance wise it should be OK
+        if (sk_union)
+        {
+            sk_union->update(*sk_update);
+            sk_update.reset(nullptr);
+        }
     }
 
     UInt64 size() const

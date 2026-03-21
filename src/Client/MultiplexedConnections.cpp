@@ -1,5 +1,6 @@
 #include <Client/MultiplexedConnections.h>
 
+#include <cmath>
 #include <Common/thread_local_rng.h>
 #include <Core/Protocol.h>
 #include <Core/ProtocolDefines.h>
@@ -19,6 +20,7 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsSeconds receive_timeout;
@@ -158,6 +160,24 @@ void MultiplexedConnections::sendQuery(
     modified_settings[Setting::dialect] = Dialect::clickhouse;
     modified_settings[Setting::dialect].changed = false;
 
+    /// Scale interactive_delay by sqrt(fanout) to reduce progress/profile event traffic
+    /// from distributed queries. Each remote server will send updates less frequently,
+    /// proportional to the square root of the total number of remote connections.
+    /// Also add per-connection jitter to avoid TCP incast and make the progress bar smooth.
+    {
+        size_t total_fanout = distributed_fanout * replica_states.size();
+        if (total_fanout > 1)
+        {
+            UInt64 delay = modified_settings[Setting::interactive_delay];
+            double scale = std::sqrt(static_cast<double>(total_fanout));
+            /// Add random jitter in range [1.0, 2.0) to desynchronize progress reports
+            /// across connections, avoiding TCP incast and making the progress bar smooth.
+            double jitter = 1.0 + (thread_local_rng() % 1000) / 1000.0;
+            delay = static_cast<UInt64>(std::ceil(static_cast<double>(delay) * scale * jitter));
+            modified_settings[Setting::interactive_delay] = delay;
+        }
+    }
+
     for (auto & replica : replica_states)
     {
         if (!replica.connection)
@@ -186,6 +206,7 @@ void MultiplexedConnections::sendQuery(
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
+    chassert(num_replicas > 0);
     if (num_replicas > 1)
     {
         if (enable_offset_parallel_processing)
@@ -362,7 +383,7 @@ UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_cal
 
     try
     {
-        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
         return current_connection->receivePacketType();
     }
     catch (Exception & e)
@@ -393,7 +414,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     Packet packet;
     try
     {
-        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
         packet = current_connection->receivePacket();
     }
     catch (Exception & e)

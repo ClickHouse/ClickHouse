@@ -38,6 +38,7 @@ void registerAggregateFunctionsQuantileBFloat16(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileDD(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory &);
+void registerAggregateFunctionsQuantilePrometheusHistogram(AggregateFunctionFactory &);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory &);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory &);
 void registerAggregateFunctionRate(AggregateFunctionFactory &);
@@ -76,6 +77,7 @@ void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory &);
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
+void registerAggregateFunctionStudentTTestOneSample(AggregateFunctionFactory &);
 void registerAggregateFunctionMeanZTest(AggregateFunctionFactory &);
 void registerAggregateFunctionCramersV(AggregateFunctionFactory &);
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory &);
@@ -96,7 +98,7 @@ void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory
 
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
-
+void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -148,6 +150,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsQuantileDD(factory);
         registerAggregateFunctionsQuantileBFloat16Weighted(factory);
         registerAggregateFunctionsQuantileApprox(factory);
+        registerAggregateFunctionsQuantilePrometheusHistogram(factory);
         registerAggregateFunctionsSequenceMatch(factory);
         registerAggregateFunctionWindowFunnel(factory);
         registerAggregateFunctionRate(factory);
@@ -191,6 +194,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionSequenceNextNode(factory);
         registerAggregateFunctionWelchTTest(factory);
         registerAggregateFunctionStudentTTest(factory);
+        registerAggregateFunctionStudentTTestOneSample(factory);
         registerAggregateFunctionMeanZTest(factory);
         registerAggregateFunctionNothing(factory);
         registerAggregateFunctionSingleValueOrNull(factory);
@@ -205,6 +209,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
         registerAggregateFunctionLast2Samples(factory);
         registerAggregateFunctionTimeseries(factory);
+        registerAggregateFunctionTimeseriesGroupArray(factory);
 
         registerWindowFunctions(factory);
     }

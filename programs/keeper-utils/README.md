@@ -111,17 +111,31 @@ Analyze Keeper snapshots and print basic information.
 
 #### Usage
 ```bash
-clickhouse-keeper-utils snapshot-analyzer --snapshot-path <path>
+clickhouse-keeper-utils snapshot-analyzer [options]
 ```
 
 #### Options
-- `--snapshot-path` (required): Path to the directory containing Keeper snapshots
-- `--help, -h`: Show help message
+- `--snapshot-path <path>`: Path to the snapshots directory or a specific snapshot file (`.bin` or `.bin.zstd`). This is a required argument.
+- `--full-storage`: If specified, the full storage (including node data) is loaded from the snapshot. This provides more detailed information like node count and digest but is slower. By default, only the node paths are loaded.
+- `--with-node-stats`: If specified (and `--full-storage` is not), it calculates and displays statistics about the biggest subtrees, such as the top 10 nodes with the most descendants.
+- `--help, -h`: Displays the help message.
 
-#### Example
-```bash
-clickhouse-keeper-utils snapshot-analyzer --snapshot-path /var/lib/clickhouse/coordination/snapshots
-```
+#### Examples
+
+1.  **Analyze all snapshots in a directory (basic info):**
+    ```bash
+    clickhouse-keeper-utils snapshot-analyzer --snapshot-path /var/lib/clickhouse/coordination/snapshots/
+    ```
+
+2.  **Analyze a specific snapshot file with subtree statistics:**
+    ```bash
+    clickhouse-keeper-utils snapshot-analyzer --snapshot-path /var/lib/clickhouse/coordination/snapshots/snapshot_123.bin --with-node-stats
+    ```
+
+3.  **Analyze a snapshot with full storage loaded:**
+    ```bash
+    clickhouse-keeper-utils snapshot-analyzer --snapshot-path /var/lib/clickhouse/coordination/snapshots/snapshot_123.bin --full-storage
+    ```
 
 ### 3. changelog-analyzer
 

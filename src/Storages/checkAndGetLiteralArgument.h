@@ -14,4 +14,7 @@ T checkAndGetLiteralArgument(const ASTPtr & arg, const String & arg_name);
 template <typename T>
 T checkAndGetLiteralArgument(const ASTLiteral & arg, const String & arg_name);
 
+template <typename T>
+std::optional<T> tryGetLiteralArgument(const ASTPtr & arg, const String & arg_name);
+
 }

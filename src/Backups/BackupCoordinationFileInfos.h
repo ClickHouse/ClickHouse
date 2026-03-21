@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Backups/BackupDataFileNameGeneratorType.h>
+#include <Backups/BackupFileInfo.h>
+
 #include <map>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
-#include <Backups/BackupFileInfo.h>
 
 
 namespace DB
@@ -19,7 +21,17 @@ class BackupCoordinationFileInfos
 public:
     /// plain_backup sets that we're writing a plain backup, which means all duplicates are written as is, and empty files are written as is.
     /// (For normal backups only the first file amongst duplicates is actually stored, and empty files are not stored).
-    explicit BackupCoordinationFileInfos(bool plain_backup_) : plain_backup(plain_backup_) {}
+    struct Config
+    {
+        bool plain_backup;
+        BackupDataFileNameGeneratorType data_file_name_generator;
+        size_t data_file_name_prefix_length;
+    };
+
+    explicit BackupCoordinationFileInfos(const Config & config_)
+        : config(config_)
+    {
+    }
 
     /// Adds file infos for the specified host.
     void addFileInfos(BackupFileInfos && file_infos, const String & host_id);
@@ -43,7 +55,8 @@ private:
     void prepare() const;
 
     /// before preparation
-    const bool plain_backup;
+    const Config config;
+
     mutable std::unordered_map<String, BackupFileInfos> file_infos;
 
     /// after preparation

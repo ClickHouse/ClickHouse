@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnReplicated.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -19,7 +20,6 @@
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Functions/FunctionsMiscellaneous.h>
-#include <Core/SettingsEnums.h>
 
 
 #if defined(MEMORY_SANITIZER)
@@ -75,7 +75,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
 {
     auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
 
-    std::unordered_map<const Node *, Node *> copy_map;
+    std::unordered_map<const Node *, const Node *> copy_map;
     copy->actions_dag = actions_dag.clone(copy_map);
     copy->actions = actions;
     for (auto & action : copy->actions)
@@ -484,11 +484,26 @@ static WriteBuffer & operator << (WriteBuffer & out, const ExpressionActions::Ar
 std::string ExpressionActions::Action::toString() const
 {
     WriteBufferFromOwnString out;
+
+    auto display_preview = [&](auto && name)
+    {
+        static constexpr size_t max_length_to_display = 100;
+        if (name.size() <= max_length_to_display)
+            out << name;
+        else
+            out << std::string_view(name).substr(0, max_length_to_display) << "...";
+        /// Note: it will cut UTF-8 strings incorrectly, but it's acceptable here.
+    };
+
     switch (node->type)
     {
         case ActionsDAG::ActionType::COLUMN:
-            out << "COLUMN "
-                << (node->column ? node->column->getName() : "(no column)");
+            out << "COLUMN ";
+
+            if (!node->column)
+                out << "(no column)";
+            else
+                display_preview(node->column->getName());
             break;
 
         case ActionsDAG::ActionType::ALIAS:
@@ -496,19 +511,30 @@ std::string ExpressionActions::Action::toString() const
             break;
 
         case ActionsDAG::ActionType::FUNCTION:
-            out << "FUNCTION " << (node->is_function_compiled ? "[compiled] " : "")
-                << (node->function_base ? node->function_base->getName() : "(no function)") << "(";
+            out << "FUNCTION ";
+            if (node->is_function_compiled)
+                out << "[compiled] ";
+
+            if (node->function_base)
+                out << node->function_base->getName();
+            else
+                out << "(no function)";
+
+            out << "(";
             for (size_t i = 0; i < node->children.size(); ++i)
             {
                 if (i)
                     out << ", ";
-                out << node->children[i]->result_name << " " << arguments[i];
+                display_preview(node->children[i]->result_name);
+                out << " " << arguments[i];
             }
             out << ")";
             break;
 
         case ActionsDAG::ActionType::ARRAY_JOIN:
-            out << "ARRAY JOIN " << node->children.front()->result_name << " " << arguments.front();
+            out << "ARRAY JOIN ";
+            display_preview(node->children.front()->result_name);
+            out << " " << arguments.front();
             break;
 
         case ActionsDAG::ActionType::INPUT:
@@ -516,13 +542,15 @@ std::string ExpressionActions::Action::toString() const
             break;
 
         case ActionsDAG::ActionType::PLACEHOLDER:
-            out << "PLACEHOLDER " << node->result_name;
+            out << "PLACEHOLDER ";
+            display_preview(node->result_name);
             break;
 
     }
 
-    out << " -> " << node->result_name
-        << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
+    out << " -> ";
+    display_preview(node->result_name);
+    out << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
     return out.str();
 }
 
@@ -592,7 +620,29 @@ namespace
     };
 }
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
+static void replicateColumns(ColumnsWithTypeAndName & columns, const IColumn::Offsets & offsets)
+{
+    for (auto & column : columns)
+        if (column.column)
+            column.column = column.column->replicate(offsets);
+}
+
+static void replicateColumnsLazily(ColumnsWithTypeAndName & columns, const IColumn::Offsets & offsets, const ColumnPtr & indexes)
+{
+    for (auto & column : columns)
+    {
+        if (column.column)
+        {
+            if (isLazyReplicationUseful(column.column))
+                column.column = ColumnReplicated::create(column.column, indexes);
+            else
+                column.column = column.column->replicate(offsets);
+        }
+    }
+}
+
+
+static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input, bool enable_lazy_columns_replication)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -664,19 +714,23 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             if (!action.arguments.front().needed_later)
                 columns[array_join_key_pos] = {};
 
-            array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
+            array_join_key.column = array_join_key.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
 
             const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", action.node->result_name);
 
-            for (auto & column : columns)
-                if (column.column)
-                    column.column = column.column->replicate(array->getOffsets());
-
-            for (auto & column : inputs)
-                if (column.column)
-                    column.column = column.column->replicate(array->getOffsets());
+            if (enable_lazy_columns_replication)
+            {
+                ColumnPtr indexes = convertOffsetsToIndexes(array->getOffsets());
+                replicateColumnsLazily(columns, array->getOffsets(), indexes);
+                replicateColumnsLazily(inputs, array->getOffsets(), indexes);
+            }
+            else
+            {
+                replicateColumns(columns, array->getOffsets());
+                replicateColumns(inputs, array->getOffsets());
+            }
 
             auto & res_column = columns[action.result_position];
 
@@ -778,7 +832,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     {
         try
         {
-            executeAction(action, execution_context, dry_run, allow_duplicates_in_input);
+            executeAction(action, execution_context, dry_run, allow_duplicates_in_input, settings.enable_lazy_columns_replication);
             checkLimits(execution_context.columns);
         }
         catch (Exception & e)
@@ -826,7 +880,7 @@ void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicat
 
     execute(block, num_rows, dry_run, allow_duplicates_in_input);
 
-    if (!block)
+    if (block.empty())
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
 }
 
