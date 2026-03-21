@@ -86,6 +86,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"llm_max_input_tokens_per_query", 1000000, 1000000, "New setting"},
             {"llm_max_output_tokens_per_query", 500000, 500000, "New setting"},
             {"llm_max_api_calls_per_query", 1000, 1000, "New setting"},
+            {"allow_experimental_ai_functions", false, false, "New setting"},
             {"embedding_max_batch_size", 100, 100, "New setting"},
             {"llm_on_quota_exceeded", "throw", "throw", "New setting"},
         });

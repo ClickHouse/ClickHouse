@@ -7764,6 +7764,9 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     \
     /* ####################################################### */ \
     /* AI function settings (LLMClassify, LLMExtract, LLMGenerateSQL, LLMTranslate, LLMGenerateContent, generateEmbedding, generateEmbeddingOrNull) */ \
+    DECLARE(Bool, allow_experimental_ai_functions, false, R"(
+Enable experimental AI functions (LLMClassify, LLMExtract, LLMGenerateSQL, LLMTranslate, LLMGenerateContent, generateEmbedding, generateEmbeddingOrNull). These functions make external HTTP calls to LLM and embedding providers.
+)", EXPERIMENTAL) \
     DECLARE(String, default_llm_resource, "", R"(
 Default named collection for AI functions (LLMClassify, LLMExtract, LLMGenerateSQL, LLMTranslate, LLMGenerateContent, generateEmbedding, generateEmbeddingOrNull). When set, functions can be called without passing a collection name as the first argument.
 )", EXPERIMENTAL) \
