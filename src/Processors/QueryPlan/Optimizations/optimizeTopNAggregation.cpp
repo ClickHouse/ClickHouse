@@ -445,7 +445,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
                 if (pruning_level >= 2 && optimization_settings.use_top_k_dynamic_filtering)
                 {
-                    threshold_tracker = std::make_shared<TopKThresholdTracker>(sort_direction);
+                    threshold_tracker = std::make_shared<TopKThresholdTracker>(sort_desc[0]);
 
                     auto new_prewhere_info = std::make_shared<PrewhereInfo>();
                     NameAndTypePair arg_name_type(order_arg_name, arg_col.type);
