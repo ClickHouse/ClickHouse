@@ -65,7 +65,7 @@ BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)
         auto log_writer = std::make_shared<BlobStorageLogWriter>(std::move(blob_storage_log));
 
         log_writer->disk_name = disk_name;
-        if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
+        if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
             log_writer->query_id = CurrentThread::getQueryId();
 
         return log_writer;

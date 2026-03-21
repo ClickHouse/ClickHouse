@@ -1,4 +1,5 @@
 #include <Disks/DiskType.h>
+#include <Common/CurrentThread.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -289,6 +290,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
+    extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
 
 namespace ServerSetting
@@ -338,6 +340,14 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+}
+
+static String getPartNameFromAST(const ASTPtr & partition)
+{
+    const auto * literal = partition->as<ASTLiteral>();
+    if (!literal)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a string literal for part name, got: {}", partition->formatForErrorMessage());
+    return literal->value.safeGet<String>();
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -3794,6 +3804,14 @@ size_t MergeTreeData::clearEmptyParts()
     if (!(*getSettings())[MergeTreeSetting::remove_empty_parts])
         return 0;
 
+    /// Do not remove empty parts while outdated data parts are still loading asynchronously.
+    /// An empty part may be covering outdated parts not yet loaded into memory — in that case
+    /// `getCoveredOutdatedParts` would return an empty list, causing the covering part to be
+    /// wrongly dropped. If the outdated parts have not been cleaned up by then, they will be
+    /// resurrected on the next ATTACH or server restart.
+    if (!outdated_data_parts_loading_finished.load(std::memory_order_relaxed))
+        return 0;
+
     std::vector<std::string> parts_names_to_drop;
 
     {
@@ -6059,7 +6077,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
 
             if (txn)
             {
-                DataPartStateAndPartitionID outdated_parts{MergeTreeDataPartState::Active, partition_id};
+                DataPartStateAndPartitionID outdated_parts{MergeTreeDataPartState::Outdated, partition_id};
 
                 insertAtEnd(
                     res,
@@ -6310,7 +6328,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
         {
             if (command.part)
             {
-                auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+                auto part_name = getPartNameFromAST(command.partition);
                 /// We are able to parse it
                 MergeTreePartInfo::fromPartName(part_name, format_version);
             }
@@ -6398,7 +6416,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     String partition_id;
 
     if (moving_part)
-        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+        partition_id = getPartNameFromAST(partition);
     else
         partition_id = getPartitionIDFromQuery(partition, local_context);
 
@@ -6468,7 +6486,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     String partition_id;
 
     if (moving_part)
-        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+        partition_id = getPartNameFromAST(partition);
     else
         partition_id = getPartitionIDFromQuery(partition, local_context);
 
@@ -6604,7 +6622,7 @@ Pipe MergeTreeData::alterPartition(
             {
                 if (command.part)
                 {
-                    auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+                    auto part_name = getPartNameFromAST(command.partition);
                     checkPartCanBeDropped(part_name, query_context);
                     dropPart(part_name, command.detach, query_context);
                 }
@@ -7696,7 +7714,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
 
     if (part)
     {
-        String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+        String part_name = getPartNameFromAST(partition);
         validateDetachedPartName(part_name);
         auto disk = getDiskForDetachedPart(part_name);
         renamed_parts.addPart(part_name, part_name, "deleting_" + part_name, disk);
@@ -7858,7 +7876,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     /// Let's compose a list of parts that should be added.
     if (command.part)
     {
-        const String part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+        const String part_name = getPartNameFromAST(command.partition);
         const String part_directory = command.from_path.empty() ? part_name : command.from_path;
         validateDetachedPartName(part_name);
         validateDetachedPartName(part_directory);
@@ -8944,6 +8962,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
         settings[MergeTreeSetting::nullable_serialization_version],
+        settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
     for (const auto & column : columns_list)
@@ -9443,6 +9462,7 @@ bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const 
 
 PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr local_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::unfreezePartitionsByMatcher");
     auto backup_path = fs::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
 
     LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());
@@ -10352,6 +10372,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         (*getSettings())[MergeTreeSetting::serialization_info_version],
         (*getSettings())[MergeTreeSetting::string_serialization_version],
         (*getSettings())[MergeTreeSetting::nullable_serialization_version],
+        (*getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
     const auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -10456,7 +10477,7 @@ StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(bool bypass_metadata_ca
     if (bypass_metadata_cache)
         return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
 
-    auto query_context = CurrentThread::get().getQueryContext();
+    auto query_context = CurrentThread::get().tryGetQueryContext();
     if (!query_context || !query_context->hasQueryContext()
         || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
         return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
@@ -10600,6 +10621,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         (*settings)[MergeTreeSetting::serialization_info_version],
         (*settings)[MergeTreeSetting::string_serialization_version],
         (*settings)[MergeTreeSetting::nullable_serialization_version],
+        (*settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
     new_data_part->setColumns(columns, SerializationInfoByName{info_settings}, metadata_snapshot->getMetadataVersion());

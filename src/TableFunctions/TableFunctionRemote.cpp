@@ -55,8 +55,8 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args = args_func.at(0)->children;
 
     /**
-     * Number of arguments for remote function is 4.
-     * Number of arguments for cluster function is 6.
+     * Number of arguments for remote function is 6.
+     * Number of arguments for cluster function is 4.
      * For now named collection can be used only for remote as cluster does not require credentials.
      */
     size_t max_args = is_cluster_function ? 4 : 6;
