@@ -35,9 +35,14 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 5)
+        if (arguments.empty() || arguments.size() > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires 1-5 arguments: [collection,] query[, tables][, database][, temperature]", name);
+                "Function {} requires 1-3 arguments: [collection,] query[, temperature]", name);
+
+        if (hasNamedCollectionArg(arguments) && arguments.size() < 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} with a named collection as first argument requires at least a query argument", name);
+
         return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
     }
 
@@ -163,8 +168,11 @@ REGISTER_FUNCTION(LLMGenerateSQL)
 {
     factory.registerFunction<FunctionLLMGenerateSQL>(FunctionDocumentation{
         .description = "Generates a ClickHouse SQL query from a natural language description using an LLM.",
-        .syntax = "LLMGenerateSQL([collection,] query[, tables][, database][, temperature])",
-        .arguments = {{"query", "Natural language description of the desired query"}},
+        .syntax = "LLMGenerateSQL([collection,] query[, temperature])",
+        .arguments = {
+            {"collection", "Optional named collection with LLM provider configuration"},
+            {"query", "Natural language description of the desired query"},
+            {"temperature", "Optional sampling temperature (default: 0.1)"}},
         .returned_value = {"Generated SQL query as String.", {"String"}},
         .examples = {{"basic", "SELECT LLMGenerateSQL('top 10 users by revenue')", ""}},
         .category = FunctionDocumentation::Category::Other});

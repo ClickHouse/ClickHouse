@@ -34,6 +34,11 @@ public:
         if (arguments.empty() || arguments.size() > 4)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires 1-4 arguments: [collection,] prompt[, system_prompt][, temperature]", name);
+
+        if (hasNamedCollectionArg(arguments) && arguments.size() < 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} with a named collection as first argument requires at least a prompt argument", name);
+
         return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
     }
 

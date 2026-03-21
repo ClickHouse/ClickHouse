@@ -228,20 +228,18 @@ LIMIT 5;
 
 ## LLMGenerateSQL {#llmgeneratesql}
 
-Generates a SQL query from a natural language description and a schema definition.
+Generates a SQL query from a natural language description using an LLM. The function automatically discovers the database schema from the ClickHouse catalog, introspecting all accessible databases and tables to build context for the LLM.
 
 **Syntax**
 
 ```sql
-LLMGenerateSQL([collection,] prompt[, tables][, database][, temperature])
+LLMGenerateSQL([collection,] prompt[, temperature])
 ```
 
 **Arguments**
 
 - `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_llm_resource`](/operations/settings/settings#default_llm_resource) is set.
 - `prompt`: Natural language description of the desired query (e.g. `'Count users by country'`). [String](../data-types/string.md).
-- `tables`: Table schema description (e.g. `'users(id Int32, name String, country String)'`). [String](../data-types/string.md). Optional.
-- `database`: Database context for the query. [String](../data-types/string.md). Optional.
 - `temperature`: Sampling temperature. Default: `0.1`. [Float64](../data-types/float.md). Optional.
 
 **Returned value**
@@ -253,8 +251,7 @@ LLMGenerateSQL([collection,] prompt[, tables][, database][, temperature])
 ```sql
 SELECT LLMGenerateSQL(
     'my_llm',
-    'Find the top 5 customers by total order amount',
-    'orders(order_id Int64, customer_id Int64, amount Decimal(10,2), created_at DateTime)'
+    'Find the top 5 customers by total order amount'
 ) AS generated_sql;
 ```
 
