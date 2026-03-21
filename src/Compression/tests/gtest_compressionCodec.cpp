@@ -1936,6 +1936,16 @@ TEST_F(ALPTest, DecompressMalformedInputWithInvalidExceptionIndex)
     verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid exception index, index: 1024, float count: 1024");
 }
 
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidReservedBitsInMetaByte)
+{
+    const std::vector<UInt8> source = {
+        0x21,       // meta byte with invalid reserved bits
+        0x08,       // float width (Float64)
+        0x00, 0x04  // block float count = 1024
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid meta byte with reserved bits set: 33");
+}
+
 TEST_F(ALPTest, DecompressMalformedInputRDWithTruncatedBlock)
 {
     const std::vector<UInt8> source = {

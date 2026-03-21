@@ -1306,6 +1306,11 @@ UInt32 CompressionCodecALP::doDecompressData(const char * source, UInt32 source_
             "Cannot decompress ALP-encoded data, unsupported codec version {}",
             static_cast<UInt32>(codec_version));
 
+    if (meta_byte & 0xE0) // Check reserved bits (bits 5, 6, 7)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+            "Cannot decompress ALP-encoded data, invalid meta byte with reserved bits set: {}",
+            static_cast<UInt32>(meta_byte));
+
     const UInt8 data_float_width = static_cast<UInt8>(*source++);
 
     const UInt16 block_float_count = unalignedLoadLittleEndian<UInt16>(source);
