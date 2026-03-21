@@ -33,12 +33,12 @@
 
 namespace ProfileEvents
 {
-    extern const Event LLMInputTokens;
-    extern const Event LLMCacheHits;
-    extern const Event LLMCacheMisses;
-    extern const Event LLMAPICalls;
-    extern const Event LLMRowsProcessed;
-    extern const Event LLMRowsSkipped;
+    extern const Event AIInputTokens;
+    extern const Event AICacheHits;
+    extern const Event AICacheMisses;
+    extern const Event AIAPICalls;
+    extern const Event AIRowsProcessed;
+    extern const Event AIRowsSkipped;
 }
 
 namespace DB
@@ -59,6 +59,7 @@ namespace Setting
     extern const SettingsUInt64 llm_max_output_tokens_per_query;
     extern const SettingsUInt64 llm_max_api_calls_per_query;
     extern const SettingsString llm_on_quota_exceeded;
+    extern const SettingsUInt64 embedding_max_batch_size;
 }
 
 namespace ErrorCodes
@@ -95,12 +96,16 @@ bool looksLikeURL(const String & s)
     return s.starts_with("http://") || s.starts_with("https://");
 }
 
-class FunctionGenerateEmbedding final : public IFunction
+/// or_null=false: generateEmbedding       -> throws on API errors
+/// or_null=true:  generateEmbeddingOrNull  -> returns empty array [] on errors instead of throwing
+/// Both return Array(Float32). Nullable(Array) is not supported in ClickHouse.
+template <bool or_null>
+class FunctionGenerateEmbeddingImpl final : public IFunction
 {
 public:
-    static constexpr auto name = "generateEmbedding";
-    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionGenerateEmbedding>(std::move(ctx)); }
-    explicit FunctionGenerateEmbedding(ContextPtr context_) : context(std::move(context_)) {}
+    static constexpr auto name = or_null ? "generateEmbeddingOrNull" : "generateEmbedding";
+    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionGenerateEmbeddingImpl>(std::move(ctx)); }
+    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_) : context(std::move(context_)) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -129,7 +134,6 @@ public:
         String endpoint_val;
         String model;
         String api_key;
-        size_t max_batch_size = DEFAULT_EMBED_BATCH_SIZE;
 
         size_t text_arg_idx = 0;
         size_t dim_arg_idx = 1;
@@ -159,7 +163,6 @@ public:
                 endpoint_val = nc->getOrDefault<String>("endpoint", "");
                 model = nc->getOrDefault<String>("model", "");
                 api_key = nc->getOrDefault<String>("api_key", "");
-                max_batch_size = nc->getOrDefault<UInt64>("max_batch_size", DEFAULT_EMBED_BATCH_SIZE);
             }
         }
         else
@@ -174,11 +177,12 @@ public:
             endpoint_val = nc->getOrDefault<String>("endpoint", "");
             model = nc->getOrDefault<String>("model", "");
             api_key = nc->getOrDefault<String>("api_key", "");
-            max_batch_size = nc->getOrDefault<UInt64>("max_batch_size", DEFAULT_EMBED_BATCH_SIZE);
         }
 
         if (endpoint_val.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM embedding endpoint is not configured");
+
+        size_t max_batch_size = settings[Setting::embedding_max_batch_size].value;
         if (max_batch_size == 0)
             max_batch_size = DEFAULT_EMBED_BATCH_SIZE;
 
@@ -195,13 +199,16 @@ public:
         UInt64 retry_delay_ms = settings[Setting::llm_retry_initial_delay_ms].value;
         UInt64 cache_ttl = settings[Setting::llm_cache_ttl_sec].value;
 
+        String on_error = or_null ? "null" : String(settings[Setting::llm_on_error].value);
+        String on_quota = or_null ? "null" : String(settings[Setting::llm_on_quota_exceeded].value);
+
         auto quota = std::make_shared<LLMQuotaTracker>(
             settings[Setting::llm_max_rows_per_query].value,
             settings[Setting::llm_max_input_tokens_per_query].value,
             settings[Setting::llm_max_output_tokens_per_query].value,
             settings[Setting::llm_max_api_calls_per_query].value,
-            String(settings[Setting::llm_on_quota_exceeded].value),
-            String(settings[Setting::llm_on_error].value));
+            on_quota,
+            on_error);
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, context->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<long>(timeout_sec), 0);
@@ -345,7 +352,28 @@ public:
                                 continue;
                             }
 
-                            if (quota->handleRowError())
+                            if constexpr (or_null)
+                            {
+                                std::lock_guard lock(results_mutex);
+                                for (const auto * item : batch_items)
+                                    results[item->key] = {};
+                                return;
+                            }
+                            else
+                            {
+                                if (quota->handleRowError())
+                                {
+                                    std::lock_guard lock(results_mutex);
+                                    for (const auto * item : batch_items)
+                                        results[item->key] = {};
+                                    return;
+                                }
+                                throw;
+                            }
+                        }
+                        catch (...)
+                        {
+                            if constexpr (or_null)
                             {
                                 std::lock_guard lock(results_mutex);
                                 for (const auto * item : batch_items)
@@ -361,10 +389,10 @@ public:
             pool->wait();
         }
 
-        ProfileEvents::increment(ProfileEvents::LLMCacheHits, cache_hits);
-        ProfileEvents::increment(ProfileEvents::LLMCacheMisses, cache_misses);
-        ProfileEvents::increment(ProfileEvents::LLMAPICalls, total_api_calls.load());
-        ProfileEvents::increment(ProfileEvents::LLMInputTokens, total_input_tokens.load());
+        ProfileEvents::increment(ProfileEvents::AICacheHits, cache_hits);
+        ProfileEvents::increment(ProfileEvents::AICacheMisses, cache_misses);
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls.load());
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens.load());
 
         auto data_col = ColumnVector<Float32>::create();
         auto offsets_col = ColumnArray::ColumnOffsets::create();
@@ -405,8 +433,8 @@ public:
             offsets_vec.push_back(current_offset);
         }
 
-        ProfileEvents::increment(ProfileEvents::LLMRowsProcessed, rows_processed_count);
-        ProfileEvents::increment(ProfileEvents::LLMRowsSkipped, rows_skipped_count);
+        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed_count);
+        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped_count);
 
         return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
@@ -419,19 +447,36 @@ private:
 
 REGISTER_FUNCTION(GenerateEmbedding)
 {
-    factory.registerFunction<FunctionGenerateEmbedding>(FunctionDocumentation{
+    factory.registerFunction<FunctionGenerateEmbeddingImpl<false>>(FunctionDocumentation{
         .description = "Generates embedding vectors for the given text using an embedding model. "
                        "Supports batch API calls for efficient processing of multiple rows. "
-                       "The first argument can be a named collection name or an inline URL.",
+                       "Throws on API errors. Returns an empty array for NULL or empty inputs.",
         .syntax = "generateEmbedding([collection_or_url,] text, dimensions)",
         .arguments = {
             {"collection_or_url", "Optional named collection name or inline URL (e.g. 'http://localhost:8080')"},
             {"text", "Input text to embed"},
             {"dimensions", "Dimensionality of the output embedding vector (must be constant)"}},
-        .returned_value = {"Embedding vector as Array(Float32). Empty array for NULL/empty inputs or on failure.", {"Array(Float32)"}},
+        .returned_value = {"Embedding vector as Array(Float32). Empty array for NULL/empty inputs.", {"Array(Float32)"}},
         .examples = {
-            {"basic", "SELECT generateEmbedding('Hello world', 256)", ""},
-            {"inline_url", "SELECT generateEmbedding('https://api.openai.com/v1/embeddings', text, 256) FROM docs", ""}},
+            {"basic", "SELECT generateEmbedding('Hello world', 256)", ""}},
+        .category = FunctionDocumentation::Category::Other});
+}
+
+REGISTER_FUNCTION(GenerateEmbeddingOrNull)
+{
+    factory.registerFunction<FunctionGenerateEmbeddingImpl<true>>(FunctionDocumentation{
+        .description = "Generates embedding vectors for the given text using an embedding model. "
+                       "Returns an empty array instead of throwing on API errors. "
+                       "Supports batch API calls for efficient processing of multiple rows.",
+        .syntax = "generateEmbeddingOrNull([collection_or_url,] text, dimensions)",
+        .arguments = {
+            {"collection_or_url", "Optional named collection name or inline URL (e.g. 'http://localhost:8080')"},
+            {"text", "Input text to embed"},
+            {"dimensions", "Dimensionality of the output embedding vector (must be constant)"}},
+        .returned_value = {"Embedding vector as Array(Float32). Empty array for NULL/empty inputs or on API failure.", {"Array(Float32)"}},
+        .examples = {
+            {"basic", "SELECT generateEmbeddingOrNull('Hello world', 256)", ""},
+            {"error_safe", "SELECT generateEmbeddingOrNull(text, 256) FROM docs", ""}},
         .category = FunctionDocumentation::Category::Other});
 }
 

@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -44,7 +45,7 @@ protected:
     {
         size_t idx = getFirstDataArgIndex(arguments);
 
-        if (arguments.size() > idx + 1)
+        if (arguments.size() > idx + 1 && isString(arguments[idx + 1].type))
         {
             String system_prompt(arguments[idx + 1].column->getDataAt(0));
             if (!system_prompt.empty())

@@ -7772,45 +7772,48 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
-    /* LLM function settings */ \
+    /* AI function settings (LLMClassify, LLMExtract, LLMGenerateSQL, LLMTranslate, LLMGenerateContent, generateEmbedding, generateEmbeddingOrNull) */ \
     DECLARE(String, default_llm_resource, "", R"(
-Default named collection for LLM functions (LLMClassify, LLMExtract, LLMGenerateSQL, LLMTranslate). Used when no collection is passed as the first argument.
+Default named collection for AI functions (LLMClassify, LLMExtract, LLMGenerateSQL, LLMTranslate, LLMGenerateContent, generateEmbedding, generateEmbeddingOrNull). When set, functions can be called without passing a collection name as the first argument.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_request_timeout_sec, 60, R"(
-Timeout in seconds for individual LLM HTTP requests. Analogous to http_receive_timeout.
+Timeout in seconds for individual HTTP requests made by AI functions (LLM chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to llm_max_retries.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_max_concurrent_requests, 16, R"(
-Maximum concurrent HTTP requests per block dispatch for LLM functions. Analogous to s3_max_connections.
+Maximum number of concurrent HTTP requests dispatched in parallel by AI functions when processing a block of rows. Higher values improve throughput but increase load on the provider.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_max_rps, 50, R"(
-Maximum requests per second to the LLM provider. Enforced via a token-bucket rate limiter. Analogous to s3_max_get_rps.
+Maximum requests per second sent to the AI provider. Enforced via a token-bucket rate limiter to stay within provider rate limits.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_max_retries, 3, R"(
-Maximum retry attempts for transient LLM errors (HTTP 5xx, 429, network errors) per request. Analogous to s3_retry_attempts.
+Maximum number of retry attempts for transient errors (HTTP 5xx, 429, network timeouts) per individual API request. Each retry uses exponential backoff starting from llm_retry_initial_delay_ms.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_retry_initial_delay_ms, 1000, R"(
-Initial backoff delay in milliseconds for LLM request retries. Doubled on each subsequent attempt (exponential backoff).
+Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_cache_ttl_sec, 86400, R"(
-TTL in seconds for cached LLM results. Default: 24 hours. Set to 0 to disable caching.
+Time-to-live in seconds for cached AI function results. Identical inputs (same text, model, parameters) within this window are served from cache without making an API call. Default is 86400 (24 hours). Set to 0 to disable caching entirely.
 )", EXPERIMENTAL) \
     DECLARE(String, llm_on_error, "throw", R"(
-Behavior when an individual row's LLM call fails permanently after retries. 'throw' fails the query. 'partial' returns NULL for that row and continues.
+Behavior when an AI function call fails permanently after exhausting all retries. Possible values: 'throw' (default) aborts the query with an exception; 'null' returns NULL (for LLM functions) or an empty array (for embedding functions) for that row and continues processing. Ignored by generateEmbeddingOrNull which always uses 'null'.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_max_rows_per_query, 100000, R"(
-Maximum number of input rows LLM functions may process per query. Enforced at planning time.
+Maximum number of input rows that AI functions may process in a single query. This limit is enforced per block before dispatching API calls. Set to 0 to disable.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_max_input_tokens_per_query, 1000000, R"(
-Maximum total prompt tokens across all LLM calls in the query.
+Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Set to 0 to disable.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_max_output_tokens_per_query, 500000, R"(
-Maximum total completion tokens across all LLM calls in the query.
+Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Set to 0 to disable.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_max_api_calls_per_query, 1000, R"(
-Maximum HTTP requests dispatched per query for LLM functions (after cache and deduplication).
+Maximum number of HTTP requests that AI functions may dispatch per query, counted after deduplication and cache lookups. Set to 0 to disable.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, embedding_max_batch_size, 100, R"(
+Maximum number of texts to include in a single HTTP request for embedding functions (generateEmbedding, generateEmbeddingOrNull). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with batch size 100 results in 5 HTTP requests.
 )", EXPERIMENTAL) \
     DECLARE(String, llm_on_quota_exceeded, "throw", R"(
-Behavior when an LLM quota limit is hit. 'throw' fails the query. 'partial' stops calling the LLM and returns NULL for remaining rows.
+Behavior when an AI function quota limit (llm_max_rows_per_query, llm_max_input_tokens_per_query, llm_max_output_tokens_per_query, or llm_max_api_calls_per_query) is exceeded. Possible values: 'throw' (default) aborts the query with an exception; 'null' stops making API calls and returns NULL (for LLM functions) or an empty array (for embedding functions) for remaining rows. Ignored by generateEmbeddingOrNull which always uses 'null'.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \

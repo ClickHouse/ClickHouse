@@ -8,8 +8,10 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -20,13 +22,13 @@
 
 namespace ProfileEvents
 {
-    extern const Event LLMInputTokens;
-    extern const Event LLMOutputTokens;
-    extern const Event LLMCacheHits;
-    extern const Event LLMCacheMisses;
-    extern const Event LLMAPICalls;
-    extern const Event LLMRowsProcessed;
-    extern const Event LLMRowsSkipped;
+    extern const Event AIInputTokens;
+    extern const Event AIOutputTokens;
+    extern const Event AICacheHits;
+    extern const Event AICacheMisses;
+    extern const Event AIAPICalls;
+    extern const Event AIRowsProcessed;
+    extern const Event AIRowsSkipped;
     extern const Event LLMTotalLatencyMicroseconds;
     extern const Event LLMThrottlerSleepMicroseconds;
 }
@@ -64,8 +66,21 @@ LLMFunctionBase::LLMFunctionBase(ContextPtr context_) : context(std::move(contex
 
 bool LLMFunctionBase::hasNamedCollectionArg(const ColumnsWithTypeAndName & arguments) const
 {
-    (void)arguments;
-    return false;
+    if (arguments.empty())
+        return false;
+
+    if (!isString(arguments[0].type))
+        return false;
+
+    const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
+    if (!col_const)
+        return false;
+
+    String first_arg = col_const->getValue<String>();
+    if (first_arg.empty())
+        return false;
+
+    return NamedCollectionFactory::instance().exists(first_arg);
 }
 
 size_t LLMFunctionBase::getFirstDataArgIndex(const ColumnsWithTypeAndName & arguments) const
@@ -73,11 +88,21 @@ size_t LLMFunctionBase::getFirstDataArgIndex(const ColumnsWithTypeAndName & argu
     return hasNamedCollectionArg(arguments) ? 1 : 0;
 }
 
-LLMFunctionBase::ResolvedConfig LLMFunctionBase::resolveConfig(const ColumnsWithTypeAndName & /*arguments*/) const
+LLMFunctionBase::ResolvedConfig LLMFunctionBase::resolveConfig(const ColumnsWithTypeAndName & arguments) const
 {
     ResolvedConfig config;
     const auto & settings = context->getSettingsRef();
-    String collection_name = settings[Setting::default_llm_resource].value;
+
+    String collection_name;
+    if (hasNamedCollectionArg(arguments))
+    {
+        const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
+        collection_name = col_const->getValue<String>();
+    }
+    else
+    {
+        collection_name = settings[Setting::default_llm_resource].value;
+    }
 
     if (collection_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -90,11 +115,7 @@ LLMFunctionBase::ResolvedConfig LLMFunctionBase::resolveConfig(const ColumnsWith
     config.model = nc->getOrDefault<String>("model", "");
     config.api_key = nc->getOrDefault<String>("api_key", "");
     config.max_tokens = nc->getOrDefault<UInt64>("max_tokens", 1024);
-
-    if (nc->has("temperature"))
-        config.temperature = static_cast<float>(nc->getOrDefault<Float64>("temperature", static_cast<Float64>(defaultTemperature())));
-    else
-        config.temperature = defaultTemperature();
+    config.temperature = defaultTemperature();
 
     if (config.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM named collection '{}' must have 'endpoint'", collection_name);
@@ -106,8 +127,23 @@ LLMFunctionBase::ResolvedConfig LLMFunctionBase::resolveConfig(const ColumnsWith
     return config;
 }
 
-float LLMFunctionBase::resolveTemperature(const ColumnsWithTypeAndName & /*arguments*/, const ResolvedConfig & config) const
+float LLMFunctionBase::resolveTemperature(const ColumnsWithTypeAndName & arguments, const ResolvedConfig & config) const
 {
+    if (arguments.empty())
+        return config.temperature;
+
+    const auto & last_arg = arguments.back();
+    WhichDataType which(last_arg.type);
+    if (which.isFloat32() || which.isFloat64())
+    {
+        const auto * col_const = typeid_cast<const ColumnConst *>(last_arg.column.get());
+        if (col_const)
+        {
+            auto field = (*col_const)[0];
+            return static_cast<float>(field.safeGet<Float64>());
+        }
+    }
+
     return config.temperature;
 }
 
@@ -276,11 +312,11 @@ ColumnPtr LLMFunctionBase::executeImpl(const ColumnsWithTypeAndName & arguments,
         pool->wait();
     }
 
-    ProfileEvents::increment(ProfileEvents::LLMCacheHits, cache_hits);
-    ProfileEvents::increment(ProfileEvents::LLMCacheMisses, cache_misses);
-    ProfileEvents::increment(ProfileEvents::LLMAPICalls, total_api_calls.load());
-    ProfileEvents::increment(ProfileEvents::LLMInputTokens, total_input_tokens.load());
-    ProfileEvents::increment(ProfileEvents::LLMOutputTokens, total_output_tokens.load());
+    ProfileEvents::increment(ProfileEvents::AICacheHits, cache_hits);
+    ProfileEvents::increment(ProfileEvents::AICacheMisses, cache_misses);
+    ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls.load());
+    ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens.load());
+    ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens.load());
 
     std::vector<String> ordered_results(input_rows_count);
     UInt64 rows_processed_count = 0;
@@ -314,8 +350,8 @@ ColumnPtr LLMFunctionBase::executeImpl(const ColumnsWithTypeAndName & arguments,
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::LLMRowsProcessed, rows_processed_count);
-    ProfileEvents::increment(ProfileEvents::LLMRowsSkipped, rows_skipped_count);
+    ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed_count);
+    ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped_count);
 
     for (size_t i = 0; i < input_rows_count; ++i)
         result_col->insertData(ordered_results[i].data(), ordered_results[i].size());
