@@ -148,7 +148,19 @@ LLMEmbeddingResponse OpenAIProvider::embed(const LLMEmbeddingRequest & request, 
     Poco::URI embedding_uri = deriveEmbeddingURI();
 
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
-    root->set("input", sanitizeTextForLLM(request.input));
+
+    if (request.inputs.size() == 1)
+    {
+        root->set("input", sanitizeTextForLLM(request.inputs[0]));
+    }
+    else
+    {
+        Poco::JSON::Array::Ptr input_array = new Poco::JSON::Array;
+        for (const auto & text : request.inputs)
+            input_array->add(sanitizeTextForLLM(text));
+        root->set("input", input_array);
+    }
+
     root->set("model", request.model);
     if (request.dimensions > 0)
         root->set("dimensions", static_cast<Int64>(request.dimensions));
@@ -164,7 +176,8 @@ LLMEmbeddingResponse OpenAIProvider::embed(const LLMEmbeddingRequest & request, 
         embedding_uri.getPathAndQuery(),
         Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    http_request.set("Authorization", "Bearer " + api_key);
+    if (!api_key.empty())
+        http_request.set("Authorization", "Bearer " + api_key);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -193,19 +206,27 @@ LLMEmbeddingResponse OpenAIProvider::embed(const LLMEmbeddingRequest & request, 
     auto json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
     LLMEmbeddingResponse response;
+    response.embeddings.resize(request.inputs.size());
 
     auto data_arr = json_obj->getArray("data");
-    if (data_arr && data_arr->size() > 0)
+    if (data_arr)
     {
-        auto first = data_arr->getObject(0);
-        if (first)
+        for (unsigned i = 0; i < data_arr->size(); ++i)
         {
-            auto embedding_arr = first->getArray("embedding");
+            auto item = data_arr->getObject(i);
+            if (!item)
+                continue;
+
+            unsigned idx = item->optValue<unsigned>("index", i);
+            if (idx >= response.embeddings.size())
+                continue;
+
+            auto embedding_arr = item->getArray("embedding");
             if (embedding_arr)
             {
-                response.embedding.reserve(embedding_arr->size());
-                for (unsigned i = 0; i < embedding_arr->size(); ++i)
-                    response.embedding.push_back(static_cast<Float32>(embedding_arr->getElement<double>(i)));
+                response.embeddings[idx].reserve(embedding_arr->size());
+                for (unsigned j = 0; j < embedding_arr->size(); ++j)
+                    response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
             }
         }
     }

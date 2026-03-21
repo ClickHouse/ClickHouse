@@ -30,14 +30,14 @@ struct LLMResponse
 
 struct LLMEmbeddingRequest
 {
-    String input;
+    std::vector<String> inputs;
     String model;
     UInt64 dimensions = 0;
 };
 
 struct LLMEmbeddingResponse
 {
-    std::vector<Float32> embedding;
+    std::vector<std::vector<Float32>> embeddings;
     UInt64 input_tokens = 0;
 };
 
