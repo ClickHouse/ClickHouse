@@ -3102,9 +3102,9 @@ document.getElementById('download-button').addEventListener('click', async funct
         terminalActive = true;
         terminalIcon.classList.add('active');
         terminalPanel.classList.add('active');
-        terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
 
         if (!terminalIframe) {
+            terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
             terminalIframe = document.createElement('iframe');
             terminalIframe.id = 'terminal-iframe';
             terminalIframe.src = getTerminalURL();
@@ -3112,12 +3112,17 @@ document.getElementById('download-button').addEventListener('click', async funct
         }
     }
 
-    function deactivateTerminal() {
+    /// Hide the terminal panel but keep the iframe alive so the session persists.
+    function hideTerminal() {
         if (!terminalActive) return;
         terminalActive = false;
         terminalIcon.classList.remove('active');
         terminalPanel.classList.remove('active');
+    }
 
+    /// Destroy the terminal: remove the iframe and hide the panel.
+    function closeTerminal() {
+        hideTerminal();
         if (terminalIframe) {
             terminalIframe.remove();
             terminalIframe = null;
@@ -3125,7 +3130,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     }
 
     function toggleTerminal() {
-        if (terminalActive) deactivateTerminal();
+        if (terminalActive) hideTerminal();
         else activateTerminal();
     }
 
@@ -3170,7 +3175,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         if (!termDrag.active) return;
         const newHeight = termDrag.startHeight + (e.clientY - termDrag.startY);
         if (newHeight < MIN_TERMINAL_HEIGHT) {
-            deactivateTerminal();
+            hideTerminal();
             termStop(e);
             return;
         }
@@ -3193,7 +3198,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     // Listen for session-ended message from the webterminal iframe
     window.addEventListener('message', function(e) {
         if (e.data && e.data.type === 'webterminal-closed') {
-            deactivateTerminal();
+            closeTerminal();
         }
     });
 }
