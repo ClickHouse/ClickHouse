@@ -206,6 +206,20 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
     }
 
+    if(shuffle())
+    {
+        ostr << s.nl_or_ws << indent_str << "SHUFFLE";
+        if (!shuffle()->children.empty())
+        {
+            auto nested_frame = frame;
+            nested_frame.expression_list_prepend_whitespace = false;
+
+            ostr << " (";
+            shuffle()->format(ostr, s, state, nested_frame);
+            ostr << ")";
+        }
+    }
+
     if (limitByLength())
     {
         ostr << s.nl_or_ws << indent_str << "LIMIT ";
@@ -536,6 +550,7 @@ void ASTSelectQuery::normalizeChildrenOrder()
         Expression::LIMIT_LENGTH,
         Expression::SETTINGS,
         Expression::INTERPOLATE,
+        Expression::SHUFFLE
     };
 
     ASTs new_children;

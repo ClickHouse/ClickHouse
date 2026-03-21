@@ -261,6 +261,18 @@ public:
         is_order_by_all = is_order_by_all_value;
     }
 
+    /// Returns true if query node has `SHUFFLE`, false otherwise
+    bool isShuffle() const
+    {
+        return is_shuffle;
+    }
+
+    /// Set query node `SHUFFLE` value
+    void setIsShuffle(bool is_shuffle_value)
+    {
+        is_shuffle = is_shuffle_value;
+    }
+
     /// Returns true if query node WITH section is not empty, false otherwise
     bool hasWith() const
     {
@@ -695,6 +707,7 @@ private:
     bool is_group_by_all = false;
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
+    bool is_shuffle = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;

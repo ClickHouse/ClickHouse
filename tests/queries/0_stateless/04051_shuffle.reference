@@ -1,0 +1,18 @@
+SELECT number
+FROM numbers(10) AS SHUFFLE
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  ReadFromSystemNumbers
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  Limit (preliminary LIMIT)
+    ReadFromSystemNumbers
+SELECT number
+FROM numbers(10)
+SHUFFLE
+Expression (Project names)
+  ShuffleStep (SHUFFLE)
+    Expression ((Projection + Change column names to column identifiers))
+      ReadFromSystemNumbers
+Expression (Project names)
+  ShuffleStep (SHUFFLE LIMIT 3)
+    Expression ((Projection + Change column names to column identifiers))
+      ReadFromSystemNumbers

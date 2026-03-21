@@ -34,6 +34,7 @@
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
+#include <Processors/QueryPlan/ShuffleStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -1158,6 +1159,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
         && query_analysis_result.fractional_limit == 0
         && query_analysis_result.fractional_offset == 0
         && !query_node.isDistinct() && !query_node.hasLimitBy()
+        && !query_node.isShuffle()
         && !settings[Setting::extremes] && !has_withfill;
     bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
     if (apply_prelimit)
@@ -1487,6 +1489,16 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
             query_plan.addStep(std::move(fractional_offset_step));
         }
     }
+}
+
+void addShuffleStep(QueryPlan & query_plan, size_t limit, size_t max_step_description_length)
+{
+    auto shuffle_step = std::make_unique<ShuffleStep>(query_plan.getCurrentHeader(), limit);
+    if (limit)
+        shuffle_step->setStepDescription(fmt::format("SHUFFLE LIMIT {}", limit), max_step_description_length);
+    else
+        shuffle_step->setStepDescription("SHUFFLE");
+    query_plan.addStep(std::move(shuffle_step));
 }
 
 void addBuildSubqueriesForSetsStepIfNeeded(
@@ -2208,12 +2220,31 @@ void Planner::buildPlanForQueryNode()
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
         const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+        bool shuffle_limit_applied = false;
+        if (query_node.isShuffle())
+        {
+            size_t shuffle_limit = 0;
+            if (apply_limit
+                && apply_offset
+                && query_node.hasLimit()
+                && !query_node.hasOffset()
+                && !query_node.isLimitWithTies()
+                && !query_analysis_result.is_limit_length_negative
+                && query_analysis_result.fractional_limit == 0)
+            {
+                shuffle_limit = static_cast<size_t>(query_analysis_result.limit_length);
+                shuffle_limit_applied = true;
+            }
+
+            addShuffleStep(query_plan, shuffle_limit, select_query_options.max_step_description_length);
+        }
+
         if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 
         addExtremesStepIfNeeded(query_plan, planner_context);
 
-        bool limit_applied = applied_prelimit || (query_node.isLimitWithTies() && apply_offset);
+        bool limit_applied = applied_prelimit || (query_node.isLimitWithTies() && apply_offset) || shuffle_limit_applied;
 
         /** Limit is no longer needed if there is prelimit.
           *
@@ -2277,4 +2308,3 @@ void Planner::addStorageLimits(const StorageLimitsList & limits)
 }
 
 }
-

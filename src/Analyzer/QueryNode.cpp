@@ -17,6 +17,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
@@ -205,6 +206,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_limit_by_all)
         buffer << ", is_limit_by_all: " << is_limit_by_all;
 
+    if (is_shuffle)
+        buffer << ", is_shuffle: " << is_shuffle;
+
     std::string group_by_type;
     if (is_group_by_with_rollup)
         group_by_type = "rollup";
@@ -358,6 +362,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
+        is_shuffle == rhs_typed.is_shuffle &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes;
 }
@@ -404,6 +409,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_all);
     state.update(is_order_by_all);
     state.update(is_limit_by_all);
+    state.update(is_shuffle);
 
     state.update(settings_changes.size());
 
@@ -434,6 +440,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
+    result_query_node->is_shuffle = is_shuffle;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
@@ -554,6 +561,9 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (hasOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));
+
+    if (is_shuffle)
+        select_query->setExpression(ASTSelectQuery::Expression::SHUFFLE, make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)}));
 
     if (hasSettingsChanges())
     {

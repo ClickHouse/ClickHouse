@@ -66,6 +66,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_first(Keyword::FIRST);
     ParserKeyword s_next(Keyword::NEXT);
     ParserKeyword s_interpolate(Keyword::INTERPOLATE);
+    ParserKeyword s_shuffle(Keyword::SHUFFLE);
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -100,6 +101,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr limit_length;
     ASTPtr top_length;
     ASTPtr settings;
+    ASTPtr shuffle;
 
     /// WITH expr_list
     {
@@ -396,6 +398,15 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    //SHUFFLE expr
+    if (s_shuffle.ignore(pos, expected))
+    {
+        if (order_expression_list)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot use SHUFFLE together with ORDER BY");
+
+        shuffle = make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)}); // flag: shuffle is present
+    }
+
     /// This is needed for TOP expression, because it can also use WITH TIES.
     bool limit_with_ties_occurred = false;
 
@@ -607,6 +618,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
     select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_expression_list));
+    select_query->setExpression(ASTSelectQuery::Expression::SHUFFLE, std::move(shuffle));
     return true;
 }
 

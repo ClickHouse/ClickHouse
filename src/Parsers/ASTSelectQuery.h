@@ -35,7 +35,8 @@ public:
         LIMIT_OFFSET,
         LIMIT_LENGTH,
         SETTINGS,
-        INTERPOLATE
+        INTERPOLATE,
+        SHUFFLE
     };
 
     static String expressionToString(Expression expr)
@@ -80,6 +81,8 @@ public:
                 return "SETTINGS";
             case Expression::INTERPOLATE:
                 return "INTERPOLATE";
+            case Expression::SHUFFLE:
+                return "SHUFFLE";
         }
         return "";
     }
@@ -129,6 +132,7 @@ public:
     ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
     ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
     ASTPtr interpolate()    const { return getExpression(Expression::INTERPOLATE); }
+    ASTPtr shuffle()        const { return getExpression(Expression::SHUFFLE); }
 
     bool hasFiltration() const { return where() || prewhere() || having() || qualify(); }
 
