@@ -708,7 +708,6 @@ void DiskLocal::checkAccessImpl(const String & path)
 
 void DiskLocal::setup()
 {
-    fs::create_directories(disk_path);
     try
     {
         if (!FS::canRead(disk_path))

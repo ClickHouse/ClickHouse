@@ -1,13 +1,13 @@
 #pragma once
-
+#include <memory>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
 {
 
-class TextIndexTokensCache;
-using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
+class TextIndexDictionaryBlockCache;
+using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
 
 class TextIndexHeaderCache;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
@@ -83,7 +83,7 @@ public:
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
-    TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
+    TextIndexDictionaryBlockCachePtr dictionaryBlockCache() const { return dictionary_block_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
 
@@ -98,7 +98,9 @@ private:
         {
             /// Atoms
             FUNCTION_EQUALS,
+            FUNCTION_NOT_EQUALS,
             FUNCTION_IN,
+            FUNCTION_NOT_IN,
             FUNCTION_MATCH,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
@@ -162,11 +164,11 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
-    /// Cache for tokens and their infos (cardinality, etc.)
-    TextIndexTokensCachePtr tokens_cache;
-    /// Cache for headers of the text index
+    /// Instance of the text index dictionary block cache
+    TextIndexDictionaryBlockCachePtr dictionary_block_cache;
+    /// Instance of the text index dictionary block cache
     TextIndexHeaderCachePtr header_cache;
-    /// Cache for posting lists of tokens.
+    /// Instance of the text index dictionary block cache
     TextIndexPostingsCachePtr postings_cache;
 };
 

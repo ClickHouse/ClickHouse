@@ -44,7 +44,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_statistics;
+    extern const SettingsBool allow_experimental_statistics;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
@@ -181,16 +181,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
-    std::vector<const ASTAlterCommand *> execute_commands;
 
     for (const auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
-        if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
-        {
-            execute_commands.push_back(command_ast);
-        }
-        else if (auto alter_command = AlterCommand::parse(command_ast))
+        if (auto alter_command = AlterCommand::parse(command_ast))
         {
             alter_commands.emplace_back(std::move(*alter_command));
         }
@@ -220,11 +215,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 
-        if (!settings[Setting::allow_statistics] && (
+        if (!settings[Setting::allow_experimental_statistics] && (
             command_ast->type == ASTAlterCommand::ADD_STATISTICS ||
             command_ast->type == ASTAlterCommand::DROP_STATISTICS ||
             command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is disabled. Turn on allow_statistics");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is now disabled. Turn on allow_experimental_statistics");
     }
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))
@@ -355,14 +350,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         auto partition_commands_pipe = table->alterPartition(metadata_snapshot, partition_commands, getContext());
         if (!partition_commands_pipe.empty())
             res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
-    }
-
-    for (const auto * execute_command : execute_commands)
-    {
-        ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
-        auto execute_pipe = table->executeCommand(execute_command->execute_command_name, args_ast, getContext());
-        if (!execute_pipe.empty())
-            res.pipeline = QueryPipeline(std::move(execute_pipe));
     }
 
     return res;
@@ -688,11 +675,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::APPLY_PATCHES:
         {
             required_access.emplace_back(AccessType::ALTER_UPDATE, database, table);
-            break;
-        }
-        case ASTAlterCommand::EXECUTE_COMMAND:
-        {
-            required_access.emplace_back(AccessType::ALTER_EXECUTE, database, table);
             break;
         }
     }

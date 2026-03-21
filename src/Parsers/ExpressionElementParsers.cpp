@@ -1,8 +1,7 @@
 #include <cerrno>
-#include <cmath>
 #include <cstdlib>
-#include <limits>
 #include <Poco/String.h>
+#include <cmath>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -14,7 +13,6 @@
 #include <Common/typeid_cast.h>
 
 #include <Parsers/ASTAssignment.h>
-#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
@@ -1103,12 +1101,6 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (negative)
                 float_value = -float_value;
 
-            /// Canonicalize NaN to a single representation, because negative NaN has
-            /// a different bit pattern but formats identically to positive NaN ("nan"),
-            /// breaking the AST formatting roundtrip consistency check.
-            if (std::isnan(float_value))
-                float_value = std::numeric_limits<Float64>::quiet_NaN();
-
             res = float_value;
 
             auto literal = make_intrusive<ASTLiteral>(res);
@@ -1640,7 +1632,6 @@ const char * ParserAlias::restricted_keywords[] =
     "LEFT",
     "LIKE",
     "LIMIT",
-    "NATURAL",
     "NOT",
     "OFFSET",
     "ON",

@@ -150,7 +150,7 @@ private:
         {
             attributes.emplace_back(name, value);
         }
-        catch (...) // Ok: noexcept, allocation failure
+        catch (...)
         {
             return false;
         }

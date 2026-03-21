@@ -126,10 +126,7 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
     String regex = getConvertedArgument(fn_name, pos);
 
     ++pos;
-    String capture_group_str = getConvertedArgument(fn_name, pos);
-    if (capture_group_str.empty())
-        return false;
-    size_t capture_group = stoi(capture_group_str);
+    size_t capture_group = stoi(getConvertedArgument(fn_name, pos));
 
     ++pos;
     String source = getConvertedArgument(fn_name, pos);
@@ -346,26 +343,17 @@ bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
     if (pos->type == TokenType::Comma)
     {
         ++pos;
-        String start_index_str = getConvertedArgument(fn_name, pos);
-        if (start_index_str.empty())
-            return false;
-        start_index = stoi(start_index_str);
+        start_index = stoi(getConvertedArgument(fn_name, pos));
 
         if (pos->type == TokenType::Comma)
         {
             ++pos;
-            String length_str = getConvertedArgument(fn_name, pos);
-            if (length_str.empty())
-                return false;
-            length = stoi(length_str);
+            length = stoi(getConvertedArgument(fn_name, pos));
 
             if (pos->type == TokenType::Comma)
             {
                 ++pos;
-                String occurrence_str = getConvertedArgument(fn_name, pos);
-                if (occurrence_str.empty())
-                    return false;
-                occurrence = stoi(occurrence_str);
+                occurrence = stoi(getConvertedArgument(fn_name, pos));
             }
         }
     }

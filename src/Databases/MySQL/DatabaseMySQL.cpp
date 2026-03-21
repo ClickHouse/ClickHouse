@@ -1,4 +1,3 @@
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
 #if USE_MYSQL
@@ -539,7 +538,6 @@ void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_nam
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");
 
-    auto component_guard = Coordination::setCurrentComponent("DatabaseMySQL::dropTable");
     detachTablePermanently(local_context, table_name);
 }
 
