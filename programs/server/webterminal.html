@@ -20,14 +20,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
 
     <style>
-        :root {
-            --background-color: #1e1e1e;
-            --status-bar-bg: #007acc;
-            --status-bar-text: #fff;
-            --overlay-bg: rgba(30, 30, 30, 0.9);
-            --overlay-text: #ccc;
-        }
-
         * {
             margin: 0;
             padding: 0;
@@ -35,180 +27,59 @@
         }
 
         body {
-            background: var(--background-color);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #1e1e1e;
             overflow: hidden;
             height: 100vh;
             width: 100vw;
-            display: flex;
-            flex-direction: column;
         }
 
         #terminal-container {
-            flex: 1;
-            padding: 4px;
-            overflow: hidden;
-        }
-
-        #status-bar {
-            height: 22px;
-            background: var(--status-bar-bg);
-            color: var(--status-bar-text);
-            font-size: 12px;
-            line-height: 22px;
-            padding: 0 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-shrink: 0;
-        }
-
-        #status-bar .status-left,
-        #status-bar .status-right {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        #status-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #f44;
-            margin-right: 4px;
-        }
-
-        #status-indicator.connected {
-            background: #4c4;
-        }
-
-        #connect-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
             height: 100%;
-            background: var(--overlay-bg);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 100;
+            width: 100%;
         }
 
-        #connect-overlay.hidden {
+        /* Hide scrollbar but keep scrollable */
+        .xterm-viewport::-webkit-scrollbar {
             display: none;
         }
-
-        .connect-form {
-            background: #2d2d2d;
-            border: 1px solid #444;
-            border-radius: 6px;
-            padding: 24px;
-            width: 360px;
-            color: #ccc;
-        }
-
-        .connect-form h2 {
-            margin-bottom: 16px;
-            font-size: 16px;
-            font-weight: 500;
-            color: #fff;
-        }
-
-        .connect-form label {
-            display: block;
-            margin-bottom: 4px;
-            font-size: 13px;
-        }
-
-        .connect-form input {
-            width: 100%;
-            padding: 6px 8px;
-            margin-bottom: 12px;
-            background: #1e1e1e;
-            border: 1px solid #555;
-            border-radius: 3px;
-            color: #fff;
-            font-size: 13px;
-            font-family: inherit;
-        }
-
-        .connect-form input:focus {
-            outline: none;
-            border-color: #007acc;
-        }
-
-        .connect-form button {
-            width: 100%;
-            padding: 8px;
-            background: #007acc;
-            color: #fff;
-            border: none;
-            border-radius: 3px;
-            font-size: 13px;
-            cursor: pointer;
-        }
-
-        .connect-form button:hover {
-            background: #005f9e;
-        }
-
-        .connect-form .error {
-            color: #f44;
-            font-size: 12px;
-            margin-bottom: 8px;
-            display: none;
+        .xterm-viewport {
+            scrollbar-width: none;
         }
     </style>
 </head>
 <body>
-    <div id="connect-overlay">
-        <div class="connect-form">
-            <h2>ClickHouse Web Terminal</h2>
-            <div class="error" id="connect-error"></div>
-            <label for="user-input">User</label>
-            <input type="text" id="user-input" value="default" autofocus>
-            <label for="password-input">Password</label>
-            <input type="password" id="password-input">
-            <button id="connect-btn" onclick="connectTerminal()">Connect</button>
-        </div>
-    </div>
-
     <div id="terminal-container"></div>
-
-    <div id="status-bar">
-        <div class="status-left">
-            <span><span id="status-indicator"></span><span id="status-text">Disconnected</span></span>
-        </div>
-        <div class="status-right">
-            <span id="terminal-size"></span>
-        </div>
-    </div>
 
     <script>
     'use strict';
 
-    let term = null;
-    let fitAddon = null;
-    let ws = null;
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 0; // No auto-reconnect, user must click connect
+    var term = null;
+    var fitAddon = null;
+    var ws = null;
+    var dataHandler = null;
+
+    // State: 'connecting', 'prompt_user', 'prompt_password', 'active', 'closed'
+    var state = 'connecting';
+    var inputBuffer = '';
+
+    // Credentials from URL or defaults
+    var params = new URLSearchParams(window.location.search);
+    var currentUser = params.get('user') || 'default';
+    var currentPassword = params.get('password') || '';
+    var userFromURL = params.has('user');
 
     function getWebSocketURL(user, password) {
-        const loc = window.location;
-        const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-        let url = protocol + '//' + loc.host + '/webterminal';
-        const params = [];
-        if (user) params.push('user=' + encodeURIComponent(user));
-        if (password) params.push('password=' + encodeURIComponent(password));
-        if (params.length > 0) url += '?' + params.join('&');
+        var loc = window.location;
+        var protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+        var url = protocol + '//' + loc.host + '/webterminal';
+        var p = [];
+        if (user) p.push('user=' + encodeURIComponent(user));
+        if (password) p.push('password=' + encodeURIComponent(password));
+        if (p.length > 0) url += '?' + p.join('&');
         return url;
     }
 
     function initTerminal() {
-        if (term) return;
-
         term = new Terminal({
             cursorBlink: true,
             fontSize: 14,
@@ -246,63 +117,35 @@
         term.open(document.getElementById('terminal-container'));
         fitAddon.fit();
 
-        updateTerminalSize();
-
         window.addEventListener('resize', function() {
-            if (fitAddon) {
+            fitAddon.fit();
+            sendResize();
+        });
+
+        var container = document.getElementById('terminal-container');
+        if (window.ResizeObserver) {
+            new ResizeObserver(function() {
                 fitAddon.fit();
                 sendResize();
-                updateTerminalSize();
+            }).observe(container);
+        }
+
+        // Single onData handler that dispatches based on state
+        term.onData(function(data) {
+            if (state === 'prompt_user' || state === 'prompt_password') {
+                handlePromptInput(data);
+            } else if (state === 'active') {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(new TextEncoder().encode(data));
+                }
             }
         });
 
-        // Use a ResizeObserver for more reliable resize detection
-        const container = document.getElementById('terminal-container');
-        if (window.ResizeObserver) {
-            new ResizeObserver(function() {
-                if (fitAddon) {
-                    fitAddon.fit();
-                    sendResize();
-                    updateTerminalSize();
-                }
-            }).observe(container);
-        }
-    }
+        term.onResize(function() {
+            sendResize();
+        });
 
-    function updateTerminalSize() {
-        if (term) {
-            document.getElementById('terminal-size').textContent = term.cols + ' x ' + term.rows;
-        }
-    }
-
-    function setStatus(connected, text) {
-        const indicator = document.getElementById('status-indicator');
-        const statusText = document.getElementById('status-text');
-        if (connected) {
-            indicator.className = 'connected';
-        } else {
-            indicator.className = '';
-        }
-        statusText.textContent = text || (connected ? 'Connected' : 'Disconnected');
-    }
-
-    function showOverlay() {
-        document.getElementById('connect-overlay').classList.remove('hidden');
-        document.getElementById('user-input').focus();
-    }
-
-    function hideOverlay() {
-        document.getElementById('connect-overlay').classList.add('hidden');
-    }
-
-    function showError(msg) {
-        const el = document.getElementById('connect-error');
-        el.textContent = msg;
-        el.style.display = 'block';
-    }
-
-    function hideError() {
-        document.getElementById('connect-error').style.display = 'none';
+        term.focus();
     }
 
     function sendResize() {
@@ -315,39 +158,101 @@
         }
     }
 
-    function connectTerminal() {
-        const user = document.getElementById('user-input').value;
-        const password = document.getElementById('password-input').value;
+    function handlePromptInput(data) {
+        for (var i = 0; i < data.length; i++) {
+            var ch = data[i];
+            var code = data.charCodeAt(i);
 
-        hideError();
-        initTerminal();
+            if (ch === '\r' || ch === '\n') {
+                // Enter - submit
+                term.write('\r\n');
+                var value = inputBuffer;
+                inputBuffer = '';
+
+                if (state === 'prompt_user') {
+                    currentUser = value || 'default';
+                    promptPassword();
+                } else if (state === 'prompt_password') {
+                    currentPassword = value;
+                    attemptConnect();
+                }
+                return;
+            } else if (code === 127 || code === 8) {
+                // Backspace
+                if (inputBuffer.length > 0) {
+                    inputBuffer = inputBuffer.slice(0, -1);
+                    if (state === 'prompt_user') {
+                        term.write('\b \b');
+                    }
+                    // For password, nothing visible to erase
+                }
+            } else if (code === 3) {
+                // Ctrl+C - reset to user prompt
+                term.write('^C\r\n');
+                inputBuffer = '';
+                promptUser();
+                return;
+            } else if (code >= 32) {
+                // Printable character
+                inputBuffer += ch;
+                if (state === 'prompt_user') {
+                    term.write(ch);
+                }
+                // For password, don't echo
+            }
+        }
+    }
+
+    function promptUser() {
+        state = 'prompt_user';
+        inputBuffer = '';
+        term.write('Username: ');
+    }
+
+    function promptPassword() {
+        state = 'prompt_password';
+        inputBuffer = '';
+        term.write('Password: ');
+    }
+
+    function promptCredentials(message) {
+        if (message) {
+            term.write('\x1b[31m' + message + '\x1b[0m\r\n');
+        }
+        if (userFromURL) {
+            // User was given in URL, only ask for password
+            promptPassword();
+        } else {
+            promptUser();
+        }
+    }
+
+    function attemptConnect() {
+        state = 'connecting';
+        term.write('\x1b[90mConnecting...\x1b[0m\r\n');
 
         if (ws) {
             ws.onclose = null;
+            ws.onerror = null;
             ws.close();
             ws = null;
         }
 
-        term.clear();
-
-        const url = getWebSocketURL(user, password);
-        setStatus(false, 'Connecting...');
+        var url = getWebSocketURL(currentUser, currentPassword);
+        var opened = false;
 
         try {
             ws = new WebSocket(url);
         } catch (e) {
-            showError('Failed to create WebSocket: ' + e.message);
-            setStatus(false, 'Error');
+            promptCredentials('Connection failed: ' + e.message);
             return;
         }
 
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = function() {
-            setStatus(true, 'Connected');
-            hideOverlay();
-            term.focus();
-            // Send initial terminal size
+            opened = true;
+            state = 'active';
             sendResize();
         };
 
@@ -355,69 +260,34 @@
             if (event.data instanceof ArrayBuffer) {
                 term.write(new Uint8Array(event.data));
             } else {
-                // Text message - could be error or control message from server
-                try {
-                    const msg = JSON.parse(event.data);
-                    if (msg.type === 'error') {
-                        term.write('\r\n\x1b[31mError: ' + msg.message + '\x1b[0m\r\n');
-                    }
-                } catch (e) {
-                    term.write(event.data);
-                }
+                term.write(event.data);
             }
         };
 
-        ws.onclose = function(event) {
-            setStatus(false, 'Disconnected');
-            if (event.code === 4001) {
-                // Authentication failure
-                showError('Authentication failed. Check your credentials.');
-                showOverlay();
-            } else if (event.code === 4002) {
-                showError('Server error: ' + (event.reason || 'Unknown error'));
-                showOverlay();
+        ws.onclose = function() {
+            if (!opened) {
+                // Handshake failed - likely authentication error
+                ws = null;
+                promptCredentials('Authentication failed.');
             } else {
-                term.write('\r\n\x1b[90m--- Connection closed ---\x1b[0m\r\n');
-                showOverlay();
+                // Normal disconnect after session was active
+                ws = null;
+                state = 'closed';
+                term.write('\r\n\x1b[90m--- Session ended ---\x1b[0m\r\n\r\n');
+                // Allow reconnecting
+                userFromURL = false;
+                promptCredentials(null);
             }
         };
 
         ws.onerror = function() {
-            setStatus(false, 'Error');
+            // onerror always fires before onclose, handled there
         };
-
-        term.onData(function(data) {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                // Send terminal input as binary
-                const encoder = new TextEncoder();
-                ws.send(encoder.encode(data));
-            }
-        });
-
-        term.onResize(function(size) {
-            sendResize();
-            updateTerminalSize();
-        });
     }
 
-    // Handle Enter key in the connect form
-    document.getElementById('password-input').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') connectTerminal();
-    });
-    document.getElementById('user-input').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') document.getElementById('password-input').focus();
-    });
-
-    // Check URL params for auto-connect
-    (function() {
-        const params = new URLSearchParams(window.location.search);
-        if (params.has('user')) {
-            document.getElementById('user-input').value = params.get('user');
-        }
-        if (params.has('password')) {
-            document.getElementById('password-input').value = params.get('password');
-        }
-    })();
+    // Start
+    initTerminal();
+    attemptConnect();
     </script>
 </body>
 </html>
