@@ -56,6 +56,7 @@ String computeWebSocketAccept(const String & key)
 }
 
 /// Send a WebSocket frame. Server-to-client frames are not masked.
+/// Header and payload are combined into a single buffer to avoid partial frame writes.
 void sendWebSocketFrame(Poco::Net::StreamSocket & socket, uint8_t opcode, const char * data, size_t len)
 {
     uint8_t header[10];
@@ -82,9 +83,13 @@ void sendWebSocketFrame(Poco::Net::StreamSocket & socket, uint8_t opcode, const 
         header_len = 10;
     }
 
-    socket.sendBytes(header, static_cast<int>(header_len));
+    /// Combine header and payload into a single send to avoid partial frame writes
+    String buf;
+    buf.reserve(header_len + len);
+    buf.append(reinterpret_cast<const char *>(header), header_len);
     if (len > 0)
-        socket.sendBytes(data, static_cast<int>(len));
+        buf.append(data, len);
+    socket.sendBytes(buf.data(), static_cast<int>(buf.size()));
 }
 
 void sendWebSocketBinary(Poco::Net::StreamSocket & socket, const char * data, size_t len)
@@ -192,6 +197,8 @@ bool parseResizeMessage(const String & json, int & cols, int & rows)
     if (json.find("\"resize\"") == String::npos)
         return false;
 
+    static constexpr int MAX_TERMINAL_DIMENSION = 500;
+
     auto extract_int = [&](const char * key) -> int
     {
         auto pos = json.find(key);
@@ -209,6 +216,8 @@ bool parseResizeMessage(const String & json, int & cols, int & rows)
         while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9')
         {
             value = value * 10 + (json[pos] - '0');
+            if (value > MAX_TERMINAL_DIMENSION)
+                return MAX_TERMINAL_DIMENSION;
             ++pos;
         }
         return value;
@@ -240,21 +249,21 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
 {
     auto log = getLogger("WebTerminalHandler");
 
-    /// Validate WebSocket upgrade headers
-    String upgrade = request.get("Upgrade", "");
-    std::transform(upgrade.begin(), upgrade.end(), upgrade.begin(), ::tolower);
-    if (upgrade != "websocket")
-    {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        *response.send() << "Expected WebSocket upgrade.\n";
-        return;
-    }
-
+    /// Validate WebSocket upgrade headers per RFC 6455
     String ws_key = request.get("Sec-WebSocket-Key", "");
     if (ws_key.empty())
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         *response.send() << "Missing Sec-WebSocket-Key.\n";
+        return;
+    }
+
+    String ws_version = request.get("Sec-WebSocket-Version", "");
+    if (ws_version != "13")
+    {
+        response.set("Sec-WebSocket-Version", "13");
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+        *response.send() << "Unsupported WebSocket version.\n";
         return;
     }
 
@@ -311,24 +320,24 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     auto server_descriptors = client_runner->getDescriptorsForServer();
     int pty_master_fd = server_descriptors.out;
 
-    /// Set socket to non-blocking for polling
-    socket.setBlocking(false);
+    /// Keep the socket in blocking mode. We use poll() to check for data availability
+    /// before reading, and send operations are always blocking.
+    /// This avoids exception-safety issues with toggling blocking mode.
 
     /// Make PTY master non-blocking for polling
     int flags = fcntl(pty_master_fd, F_GETFL, 0);
     fcntl(pty_master_fd, F_SETFL, flags | O_NONBLOCK);
 
     /// Main I/O loop: bridge WebSocket <-> PTY
-    /// We use poll() to multiplex between the WebSocket socket and the PTY master FD
     bool running = true;
     char pty_buf[4096];
 
-    /// Buffer for partial WebSocket frames read from socket
-    /// Since we made the socket non-blocking, we need to handle
-    /// the case where a WebSocket frame arrives in parts.
-    /// For simplicity, switch to blocking reads for WebSocket frames
-    /// on a separate approach: use poll() to know when data is available,
-    /// then do blocking reads of complete frames.
+    /// State for WebSocket frame reassembly (RFC 6455 fragmentation)
+    String fragment_buffer;
+    uint8_t fragment_opcode = 0;
+
+    /// Set a receive timeout so readWebSocketFrame doesn't block forever
+    socket.setReceiveTimeout(Poco::Timespan(0, 200000)); /// 200ms
 
     while (running && !server.isCancelled() && !client_runner->hasFinished())
     {
@@ -356,9 +365,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
             {
                 try
                 {
-                    socket.setBlocking(true);
                     sendWebSocketBinary(socket, pty_buf, static_cast<size_t>(n));
-                    socket.setBlocking(false);
                 }
                 catch (...)
                 {
@@ -377,11 +384,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         {
             try
             {
-                socket.setBlocking(true);
-                /// Set a short timeout so we don't block forever
-                socket.setReceiveTimeout(Poco::Timespan(1, 0)); /// 1 second
                 WebSocketFrame frame = readWebSocketFrame(socket);
-                socket.setBlocking(false);
 
                 if (!frame.valid)
                 {
@@ -389,13 +392,48 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                     continue;
                 }
 
-                switch (frame.opcode)
+                /// Handle control frames (can appear between fragmented data frames)
+                if (frame.opcode >= 0x08)
                 {
-                    case 0x01: /// Text frame - control message
+                    switch (frame.opcode)
+                    {
+                        case 0x08: /// Close frame
+                            sendWebSocketClose(socket, 1000, "Bye");
+                            running = false;
+                            break;
+                        case 0x09: /// Ping
+                            sendWebSocketFrame(socket, 0x0A, frame.payload.data(), frame.payload.size());
+                            break;
+                        default:
+                            break;
+                    }
+                    continue;
+                }
+
+                /// Handle data frames with fragmentation support (RFC 6455 Section 5.4)
+                if (frame.opcode != 0x00)
+                {
+                    /// First frame of a message (text or binary)
+                    fragment_opcode = frame.opcode;
+                    fragment_buffer = std::move(frame.payload);
+                }
+                else
+                {
+                    /// Continuation frame
+                    fragment_buffer.append(frame.payload);
+                }
+
+                if (!frame.fin)
+                    continue; /// More fragments to come
+
+                /// Complete message assembled
+                switch (fragment_opcode)
+                {
+                    case 0x01: /// Text message - control message
                     {
                         int cols = 0;
                         int rows = 0;
-                        if (parseResizeMessage(frame.payload, cols, rows))
+                        if (parseResizeMessage(fragment_buffer, cols, rows))
                         {
                             try
                             {
@@ -408,10 +446,10 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                         }
                         break;
                     }
-                    case 0x02: /// Binary frame - terminal input
+                    case 0x02: /// Binary message - terminal input
                     {
-                        const char * write_ptr = frame.payload.data();
-                        size_t remaining = frame.payload.size();
+                        const char * write_ptr = fragment_buffer.data();
+                        size_t remaining = fragment_buffer.size();
                         while (remaining > 0)
                         {
                             ssize_t written = write(server_descriptors.in, write_ptr, remaining);
@@ -425,28 +463,14 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                         }
                         break;
                     }
-                    case 0x08: /// Close frame
-                    {
-                        socket.setBlocking(true);
-                        sendWebSocketClose(socket, 1000, "Bye");
-                        running = false;
-                        break;
-                    }
-                    case 0x09: /// Ping
-                    {
-                        socket.setBlocking(true);
-                        sendWebSocketFrame(socket, 0x0A, frame.payload.data(), frame.payload.size()); /// Pong
-                        socket.setBlocking(false);
-                        break;
-                    }
                     default:
                         break;
                 }
+                fragment_buffer.clear();
             }
             catch (const Poco::TimeoutException &)
             {
-                socket.setBlocking(false);
-                /// Timeout reading frame, continue
+                /// Timeout reading frame, continue polling
             }
             catch (...)
             {
@@ -456,12 +480,8 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         }
 
         /// Check for socket errors
-        if ((fds[0].revents & (POLLERR | POLLHUP)) || (fds[1].revents & (POLLERR | POLLHUP)))
-        {
-            /// Only break on socket error/hangup, not PTY - PTY POLLHUP is normal when process exits
-            if (fds[0].revents & (POLLERR | POLLHUP))
-                running = false;
-        }
+        if (fds[0].revents & (POLLERR | POLLHUP))
+            running = false;
     }
 
     /// Drain remaining PTY output
@@ -477,7 +497,6 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
             break;
         try
         {
-            socket.setBlocking(true);
             sendWebSocketBinary(socket, pty_buf, static_cast<size_t>(n));
         }
         catch (...)
@@ -489,7 +508,6 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// Send WebSocket close frame
     try
     {
-        socket.setBlocking(true);
         sendWebSocketClose(socket, 1000, "Session ended");
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -513,12 +531,12 @@ void WebTerminalRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
 {
     /// Check if this is a WebSocket upgrade request
     String connection = request.get("Connection", "");
-    bool is_upgrade = false;
-    /// Connection header can be "Upgrade" or "keep-alive, Upgrade" etc.
     std::transform(connection.begin(), connection.end(), connection.begin(), ::tolower);
-    is_upgrade = connection.find("upgrade") != String::npos;
 
-    if (is_upgrade && request.get("Upgrade", "") != "")
+    String upgrade = request.get("Upgrade", "");
+    std::transform(upgrade.begin(), upgrade.end(), upgrade.begin(), ::tolower);
+
+    if (connection.find("upgrade") != String::npos && upgrade == "websocket")
     {
         handleWebSocket(request, response);
     }
