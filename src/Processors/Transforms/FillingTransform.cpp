@@ -87,9 +87,9 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             if (common::mulOverflow(step_value, static_cast<Int64>(step_kind->toAvgSeconds()), avg_seconds))
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                                 "Overflow in WITH FILL step value");
-            if (std::abs(avg_seconds) < 86400)
+            if (avg_seconds > -86400 && avg_seconds < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                                "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
+                                "Value of step is too low ({} seconds). Must be >= 1 day", avg_seconds);
         }
 
         if (which.isDate())

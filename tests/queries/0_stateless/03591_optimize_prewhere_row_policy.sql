@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS 03591_test;
 
 DROP ROW POLICY IF EXISTS 03591_rp ON 03591_test;
 
-CREATE TABLE 03591_test (a Int32, b Int32) ENGINE=MergeTree ORDER BY tuple();
+CREATE TABLE 03591_test (a Int32, b Int32) ENGINE=MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO 03591_test VALUES (3, 1), (2, 2), (3, 2);
 
