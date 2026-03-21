@@ -67,7 +67,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -75,7 +74,7 @@ namespace ErrorCodes
 namespace
 {
 
-static constexpr size_t DEFAULT_EMBED_BATCH_SIZE = 100;
+constexpr size_t DEFAULT_EMBED_BATCH_SIZE = 100;
 
 String serializeEmbedding(const std::vector<Float32> & vec)
 {
@@ -102,7 +101,7 @@ bool looksLikeURL(const String & s)
 /// or_null=true:  generateEmbeddingOrNull  -> returns empty array [] on errors instead of throwing
 /// Both return Array(Float32). Nullable(Array) is not supported in ClickHouse.
 template <bool or_null>
-class FunctionGenerateEmbeddingImpl final : public IFunction
+class FunctionGenerateEmbeddingImpl final : public IFunction, public WithContext
 {
 public:
     static constexpr auto name = or_null ? "generateEmbeddingOrNull" : "generateEmbedding";
@@ -113,7 +112,7 @@ public:
                 "AI function '{}' is experimental. Set `allow_experimental_ai_functions` setting to enable it", name);
         return std::make_shared<FunctionGenerateEmbeddingImpl>(std::move(ctx));
     }
-    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_) : context(std::move(context_)) {}
+    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_) : WithContext(std::move(context_)) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -136,7 +135,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const auto & settings = context->getSettingsRef();
+        const auto & settings = getContext()->getSettingsRef();
 
         String provider_name;
         String endpoint_val;
@@ -218,8 +217,8 @@ public:
             on_quota,
             on_error);
 
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, context->getServerSettings());
-        timeouts.receive_timeout = Poco::Timespan(static_cast<long>(timeout_sec), 0);
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
+        timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec), 0);
 
         std::unordered_map<UInt128, std::vector<size_t>, UInt128Hash> dedup_map;
         std::unordered_set<size_t> null_input_rows;
@@ -448,7 +447,6 @@ public:
     }
 
 private:
-    ContextPtr context;
 };
 
 }

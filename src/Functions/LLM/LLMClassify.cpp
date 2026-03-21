@@ -21,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -60,10 +59,12 @@ protected:
         auto field = (*cat_col->getDataColumnPtr())[0];
         const auto & arr = field.safeGet<Array>();
         String categories;
-        for (size_t i = 0; i < arr.size(); ++i)
+        bool first = true;
+        for (const auto & elem : arr)
         {
-            if (i > 0) categories += ", ";
-            categories += arr[i].safeGet<String>();
+            if (!first) categories += ", ";
+            first = false;
+            categories += elem.safeGet<String>();
         }
         return "You are a text classifier. Classify the given text into exactly one of these categories: "
             + categories
@@ -112,7 +113,7 @@ protected:
                 if (obj && obj->has("category"))
                     return obj->getValue<String>("category");
             }
-            catch (...)
+            catch (...) // Ok: best-effort JSON extraction
             {
             }
         }

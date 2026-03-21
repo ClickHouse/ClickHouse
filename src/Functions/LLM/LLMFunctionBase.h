@@ -6,11 +6,12 @@
 #include <Functions/LLM/LLMResultCache.h>
 #include <Functions/LLM/LLMQuotaTracker.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
-class LLMFunctionBase : public IFunction
+class LLMFunctionBase : public IFunction, public WithContext
 {
 public:
     explicit LLMFunctionBase(ContextPtr context_);
@@ -36,7 +37,6 @@ protected:
     virtual bool hasNamedCollectionArg(const ColumnsWithTypeAndName & arguments) const;
     size_t getFirstDataArgIndex(const ColumnsWithTypeAndName & arguments) const;
 
-    ContextPtr context;
 
 private:
     struct ResolvedConfig

@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -79,7 +78,7 @@ protected:
         {
             Poco::JSON::Parser parser;
             auto parsed = parser.parse(instruction);
-            auto user_obj = parsed.extract<Poco::JSON::Object::Ptr>();
+            const auto & user_obj = parsed.extract<Poco::JSON::Object::Ptr>();
 
             Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
             Poco::JSON::Array::Ptr required_arr = new Poco::JSON::Array;

@@ -29,8 +29,6 @@ namespace ProfileEvents
     extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
-    extern const Event LLMTotalLatencyMicroseconds;
-    extern const Event LLMThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -58,13 +56,12 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
 }
 
-LLMFunctionBase::LLMFunctionBase(ContextPtr context_) : context(std::move(context_))
+LLMFunctionBase::LLMFunctionBase(ContextPtr context_) : WithContext(std::move(context_))
 {
-    if (!context->getSettingsRef()[Setting::allow_experimental_ai_functions])
+    if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
 }
@@ -96,7 +93,7 @@ size_t LLMFunctionBase::getFirstDataArgIndex(const ColumnsWithTypeAndName & argu
 LLMFunctionBase::ResolvedConfig LLMFunctionBase::resolveConfig(const ColumnsWithTypeAndName & arguments) const
 {
     ResolvedConfig config;
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = getContext()->getSettingsRef();
 
     String collection_name;
     if (hasNamedCollectionArg(arguments))
@@ -158,7 +155,7 @@ ColumnPtr LLMFunctionBase::executeImpl(const ColumnsWithTypeAndName & arguments,
     auto provider = createLLMProvider(config.provider, config.endpoint, config.api_key);
     float temperature = resolveTemperature(arguments, config);
 
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = getContext()->getSettingsRef();
     UInt64 timeout_sec = settings[Setting::llm_request_timeout_sec].value;
     UInt64 max_concurrent = settings[Setting::llm_max_concurrent_requests].value;
     UInt64 max_rps = settings[Setting::llm_max_rps].value;
@@ -174,8 +171,8 @@ ColumnPtr LLMFunctionBase::executeImpl(const ColumnsWithTypeAndName & arguments,
         String(settings[Setting::llm_on_quota_exceeded].value),
         String(settings[Setting::llm_on_error].value));
 
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, context->getServerSettings());
-    timeouts.receive_timeout = Poco::Timespan(static_cast<long>(timeout_sec), 0);
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
+    timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec), 0);
 
     auto throttler = std::make_shared<Throttler>(max_rps);
 

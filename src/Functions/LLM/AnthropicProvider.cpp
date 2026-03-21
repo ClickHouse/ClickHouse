@@ -15,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
@@ -51,7 +50,7 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
         tool->set("description", "Return the result in the specified format");
 
         auto schema_result = fmt_parser.parse(request.response_format_json);
-        auto schema_obj = schema_result.extract<Poco::JSON::Object::Ptr>();
+        const auto & schema_obj = schema_result.extract<Poco::JSON::Object::Ptr>();
         if (schema_obj->has("json_schema"))
         {
             auto json_schema = schema_obj->getObject("json_schema");
@@ -103,7 +102,7 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
 
     Poco::JSON::Parser parser;
     auto json_result = parser.parse(response_body);
-    auto json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
+    const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
     LLMResponse response;
 

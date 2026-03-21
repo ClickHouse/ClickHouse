@@ -7,10 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LIMIT_EXCEEDED;
-}
 
 class LLMQuotaTracker
 {

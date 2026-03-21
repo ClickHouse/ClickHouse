@@ -111,7 +111,7 @@ LIMIT 10;
 
 ## LLMExtract {#llmextract}
 
-Extracts informations from text.
+Extracts information from text.
 
 **Syntax**
 

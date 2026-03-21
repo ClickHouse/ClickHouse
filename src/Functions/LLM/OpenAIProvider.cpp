@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
@@ -94,7 +93,7 @@ LLMResponse OpenAIProvider::call(const LLMRequest & request, const ConnectionTim
 
     Poco::JSON::Parser parser;
     auto json_result = parser.parse(response_body);
-    auto json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
+    const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
     LLMResponse response;
 
@@ -203,7 +202,7 @@ LLMEmbeddingResponse OpenAIProvider::embed(const LLMEmbeddingRequest & request, 
 
     Poco::JSON::Parser parser;
     auto json_result = parser.parse(response_body);
-    auto json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
+    const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
     LLMEmbeddingResponse response;
     response.embeddings.resize(request.inputs.size());
