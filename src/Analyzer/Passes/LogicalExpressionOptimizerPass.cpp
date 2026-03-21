@@ -377,6 +377,8 @@ static BoundaryCheckResult checkBoundaryImpl(const Field & value)
         return check(value.safeGet<UInt64>());
     case Field::Types::Int64:
         return check(value.safeGet<Int64>());
+    case Field::Types::Float64:
+        return check(value.safeGet<Float64>());
     default:
         return BoundaryCheckResult::IN_RANGE;
     }
@@ -508,7 +510,7 @@ static std::optional<AddComparisonFilterResult> tryFoldBoundaryOrRewriteFloatFor
         return fold_boundary(value);
 
     const Float64 float_val = value.safeGet<Float64>();
-    if (std::isnan(float_val) || std::isinf(float_val))
+    if (std::isnan(float_val))
         return std::nullopt;
 
     auto make_int_field = [&](Float64 v) -> Field
@@ -519,6 +521,9 @@ static std::optional<AddComparisonFilterResult> tryFoldBoundaryOrRewriteFloatFor
     const Float64 floored = std::floor(float_val);
     if (float_val == floored)
     {
+        if (auto result = fold_boundary(Field(floored)))
+            return result;
+
         filter.converted_value = make_int_field(floored);
         return fold_boundary(*filter.converted_value);
     }
@@ -531,14 +536,23 @@ static std::optional<AddComparisonFilterResult> tryFoldBoundaryOrRewriteFloatFor
         return AddComparisonFilterResult::REDUNDANT;
     case ComparisonFunction::LESS:
     case ComparisonFunction::LESS_OR_EQUALS:
+    {
         filter.function = ComparisonFunction::LESS_OR_EQUALS;
+        if (auto result = fold_boundary(Field(floored)))
+            return result;
         filter.converted_value = make_int_field(floored);
         break;
+    }
     case ComparisonFunction::GREATER:
     case ComparisonFunction::GREATER_OR_EQUALS:
+    {
         filter.function = ComparisonFunction::GREATER_OR_EQUALS;
-        filter.converted_value = make_int_field(std::ceil(float_val));
+        const Float64 ceiled = std::ceil(float_val);
+        if (auto result = fold_boundary(Field(ceiled)))
+            return result;
+        filter.converted_value = make_int_field(ceiled);
         break;
+    }
     }
 
     return fold_boundary(*filter.converted_value);
