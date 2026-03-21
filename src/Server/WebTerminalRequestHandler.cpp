@@ -11,20 +11,17 @@
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Access/Credentials.h>
 #include <Core/Settings.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/Base64.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/SHA1Engine.h>
-#include <Poco/Base64Encoder.h>
 
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
-
-#include <sstream>
 
 
 /// Embedded HTML page
@@ -47,12 +44,7 @@ String computeWebSocketAccept(const String & key)
     Poco::SHA1Engine sha1;
     sha1.update(key + magic);
     auto digest = sha1.digest();
-
-    std::ostringstream oss;
-    Poco::Base64Encoder encoder(oss);
-    encoder.write(reinterpret_cast<const char *>(digest.data()), static_cast<std::streamsize>(digest.size()));
-    encoder.close();
-    return oss.str();
+    return base64Encode(String(reinterpret_cast<const char *>(digest.data()), digest.size()));
 }
 
 /// Send a WebSocket frame. Server-to-client frames are not masked.
@@ -296,13 +288,11 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     Poco::Net::StreamSocket & socket = response.getSocket();
     String accept_key = computeWebSocketAccept(ws_key);
 
-    std::ostringstream handshake;
-    handshake << "HTTP/1.1 101 Switching Protocols\r\n"
-              << "Upgrade: websocket\r\n"
-              << "Connection: Upgrade\r\n"
-              << "Sec-WebSocket-Accept: " << accept_key << "\r\n"
-              << "\r\n";
-    String handshake_str = handshake.str();
+    String handshake_str = "HTTP/1.1 101 Switching Protocols\r\n"
+                           "Upgrade: websocket\r\n"
+                           "Connection: Upgrade\r\n"
+                           "Sec-WebSocket-Accept: " + accept_key + "\r\n"
+                           "\r\n";
     socket.sendBytes(handshake_str.data(), static_cast<int>(handshake_str.size()));
 
     LOG_INFO(log, "WebSocket connection established for user {}", session->getClientInfo().current_user);
@@ -499,7 +489,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         {
             sendWebSocketBinary(socket, pty_buf, static_cast<size_t>(n));
         }
-        catch (...)
+        catch (...) /// Ok: best-effort drain, socket may be closed
         {
             break;
         }
@@ -510,7 +500,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     {
         sendWebSocketClose(socket, 1000, "Session ended");
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...) /// Ok: best-effort close, socket may already be closed
     {
     }
 
@@ -519,7 +509,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     {
         socket.shutdown();
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...) /// Ok: best-effort shutdown
     {
     }
 

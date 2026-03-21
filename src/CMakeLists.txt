@@ -360,9 +360,9 @@ set_source_files_properties(Server/WebTerminalRequestHandler.cpp PROPERTIES OBJE
 set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
 
-set_source_files_properties(Common/FrequencyHolder.cpp PROPERTIES OBJECT_DEPENDS
-    "${CMAKE_SOURCE_DIR}/contrib/nlp-data/charset.zst;\
-${CMAKE_SOURCE_DIR}/contrib/nlp-data/tonality_ru.zst")
+# Note: Common/FrequencyHolder.cpp embeds files from contrib/nlp-data/ via #embed,
+# but that submodule is not always checked out, so we cannot add OBJECT_DEPENDS for it.
+
 if (ENABLE_SSL)
     add_object_library(clickhouse_server_acme Server/ACME)
 endif()
