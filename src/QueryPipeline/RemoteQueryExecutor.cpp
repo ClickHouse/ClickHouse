@@ -434,6 +434,9 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
     }
 
+    if (distributed_fanout > 0)
+        connections->setDistributedFanout(distributed_fanout);
+
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, local_granted_roles);
 
     established = false;

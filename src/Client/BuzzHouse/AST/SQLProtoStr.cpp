@@ -2,6 +2,8 @@
 #include <cctype>
 #include <cstdint>
 
+#include <fmt/format.h>
+
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
@@ -1893,8 +1895,8 @@ CONV_FN(JoinConstraint, jc)
 
 CONV_FN(JoinCore, jcc)
 {
-    const bool has_cross_or_paste = jcc.join_op() > JoinType::J_FULL;
-    const bool has_join_const = !has_cross_or_paste && jcc.has_join_const();
+    const bool no_clause = (jcc.join_op() > JoinType::J_FULL) || (jcc.has_join_const() && jcc.join_const() == JoinConst::J_NATURAL);
+    const bool has_join_const = jcc.join_op() <= JoinType::J_FULL && jcc.has_join_const();
 
     if (jcc.global())
     {
@@ -1917,7 +1919,7 @@ CONV_FN(JoinCore, jcc)
     }
     ret += " JOIN ";
     TableOrSubqueryToString(ret, jcc.tos());
-    if (!has_cross_or_paste)
+    if (!no_clause)
     {
         JoinConstraintToString(ret, jcc.join_constraint());
     }
@@ -2554,6 +2556,34 @@ CONV_FN(TableFunction, tf)
     }
 }
 
+CONV_FN(SampleClause, sc)
+{
+    ret += " SAMPLE ";
+    if (sc.has_ratio())
+    {
+        /// Format ratio as decimal (e.g., 0.1)
+        ret += fmt::format("{:.6f}", sc.ratio());
+    }
+    else if (sc.has_num_rows())
+    {
+        /// Format as number of rows
+        ret += std::to_string(sc.num_rows());
+    }
+    /// Add OFFSET if present
+    if (sc.has_offset_ratio() || sc.has_offset_rows())
+    {
+        ret += " OFFSET ";
+        if (sc.has_offset_ratio())
+        {
+            ret += fmt::format("{:.6f}", sc.offset_ratio());
+        }
+        else
+        {
+            ret += std::to_string(sc.offset_rows());
+        }
+    }
+}
+
 CONV_FN(JoinedTableOrFunction, jtf)
 {
     const TableOrFunction & tof = jtf.tof();
@@ -2580,6 +2610,10 @@ CONV_FN(JoinedTableOrFunction, jtf)
     if (jtf.final())
     {
         ret += " FINAL";
+    }
+    if (jtf.has_sample())
+    {
+        SampleClauseToString(ret, jtf.sample());
     }
 }
 
@@ -4569,6 +4603,50 @@ static void MaskingPolicyClausesToString(
     }
 }
 
+CONV_FN(ExpireSnapshots, es)
+{
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+
+    ret += "expire_snapshots(";
+    if (es.has_positional_timestamp())
+        ret += sep() + "'" + es.positional_timestamp() + "'";
+    if (es.has_expire_before())
+        ret += sep() + "expire_before = '" + es.expire_before() + "'";
+    if (es.has_retention_period())
+        ret += sep() + "retention_period = '" + es.retention_period() + "'";
+    if (es.has_retain_last())
+        ret += sep() + "retain_last = " + std::to_string(es.retain_last());
+    if (es.snapshot_ids_size() > 0)
+    {
+        ret += sep() + "snapshot_ids = [";
+        for (int j = 0; j < es.snapshot_ids_size(); j++)
+        {
+            if (j > 0)
+                ret += ", ";
+            ret += es.snapshot_ids(j);
+        }
+        ret += "]";
+    }
+    if (es.has_dry_run() && es.dry_run())
+        ret += sep() + "dry_run = 1";
+    ret += ")";
+}
+
+CONV_FN(ExecuteCommand, ec)
+{
+    ret += "EXECUTE ";
+    using CommandType = ExecuteCommand::CommandCase;
+    switch (ec.command_case())
+    {
+        case CommandType::kExpireSnapshots:
+            ExpireSnapshotsToString(ret, ec.expire_snapshots());
+            break;
+        default:
+            break;
+    }
+}
+
 CONV_FN(AlterItem, alter)
 {
     ret += alter.paren() ? "(" : "";
@@ -4848,6 +4926,9 @@ CONV_FN(AlterItem, alter)
                 ret += " IN ";
                 SinglePartitionExprToString(ret, alter.apply_patches().single_partition());
             }
+            break;
+        case AlterType::kExecuteCommand:
+            ExecuteCommandToString(ret, alter.execute_command());
             break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
@@ -5945,7 +6026,10 @@ CONV_FN(ExplainQuery, explain)
             ret += " ";
         }
     }
-    SQLQueryInnerToString(ret, explain.inner_query());
+    if (!explain.has_expl() || explain.expl() != ExplainQuery_ExplainValues_CURRENT_TRANSACTION)
+    {
+        SQLQueryInnerToString(ret, explain.inner_query());
+    }
 }
 
 CONV_FN(SingleSQLQuery, query)

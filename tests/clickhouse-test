@@ -78,6 +78,9 @@ MESSAGES_TO_RETRY = [
 
 IGNORED_SANITIZER_ERRORS = [
     "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!",
+    # This warning appears when the virtual stack size is too large for ASan to track __asan_handle_no_return.
+    # It is a known limitation (https://github.com/google/sanitizers/issues/189) and not a real error.
+    "ASan is ignoring requested __asan_handle_no_return",
     # Note, usually such error means that sanitizer has found something but failed to print, so it should not be ignored
     # "LLVM ERROR: IO failure on output stream: Broken pipe",
 ]
