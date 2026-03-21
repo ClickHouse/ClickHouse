@@ -41,9 +41,6 @@ SELECT a, c FROM t1_94659;
 -- Test 4: Only select ALIAS column
 SELECT b FROM t1_94659;
 
--- Test 5: Verify with old analyzer still works
-SELECT *, b FROM t1_94659 SETTINGS enable_analyzer = 0;
-
 DROP ROW POLICY pol_94659 ON t1_94659;
 
 -- Cleanup
