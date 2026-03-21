@@ -104,9 +104,6 @@ class ITokenizerHelper : public ITokenizer
 protected:
     explicit ITokenizerHelper(Type type_) : ITokenizer(type_) {}
 
-    const char * getTokenizerName() const override { return Derived::getName(); }
-    const char * getTokenizerExternalName() const override { return Derived::getExternalName(); }
-
     std::unique_ptr<ITokenizer> clone() const override
     {
         return std::make_unique<Derived>(*static_cast<const Derived *>(this));
