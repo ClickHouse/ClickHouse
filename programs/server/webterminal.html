@@ -285,8 +285,13 @@
                 term.write('\r\x1b[2K');
                 promptCredentials('Authentication failed.');
             } else {
-                // Normal disconnect after session was active - redirect to ClickHouse repo
-                window.location.href = 'https://github.com/ClickHouse/ClickHouse';
+                // Normal disconnect after session was active
+                if (window.parent !== window) {
+                    // Inside an iframe - notify parent to deactivate terminal
+                    window.parent.postMessage({type: 'webterminal-closed'}, '*');
+                } else {
+                    window.location.href = 'https://github.com/ClickHouse/ClickHouse';
+                }
             }
         };
 
