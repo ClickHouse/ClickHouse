@@ -273,13 +273,8 @@
                 term.write('\r\x1b[2K');
                 promptCredentials('Authentication failed.');
             } else {
-                // Normal disconnect after session was active
-                ws = null;
-                state = 'closed';
-                term.write('\r\n\x1b[90m--- Session ended ---\x1b[0m\r\n\r\n');
-                // Allow reconnecting
-                userFromURL = false;
-                promptCredentials(null);
+                // Normal disconnect after session was active - redirect to ClickHouse repo
+                window.location.href = 'https://github.com/ClickHouse/ClickHouse';
             }
         };
 
