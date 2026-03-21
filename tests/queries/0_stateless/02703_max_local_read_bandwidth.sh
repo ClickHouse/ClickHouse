@@ -25,7 +25,7 @@ read_methods=(
 )
 for read_method in "${read_methods[@]}"; do
     query_id=$(random_str 10)
-    $CLICKHOUSE_CLIENT --query_id "$query_id" -q "select * from data format Null settings max_local_read_bandwidth='1M', local_filesystem_read_method='$read_method'"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" -q "select * from data format Null settings max_local_read_bandwidth='1M', local_filesystem_read_method='$read_method', use_uncompressed_cache=0"
     $CLICKHOUSE_CLIENT -m -q "
         SYSTEM FLUSH LOGS query_log;
         SELECT
