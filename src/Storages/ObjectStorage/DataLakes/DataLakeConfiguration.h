@@ -1,5 +1,12 @@
 #pragma once
+
 #include "config.h"
+
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -398,10 +405,10 @@ public:
     }
 
 private:
-    DataLakeMetadataPtr current_metadata;
-    LoggerPtr log = getLogger("DataLakeConfiguration");
     const DataLakeStorageSettingsPtr settings;
     ObjectStoragePtr ready_object_storage;
+    DataLakeMetadataPtr current_metadata;
+    LoggerPtr log = getLogger("DataLakeConfiguration");
 
     void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
     {

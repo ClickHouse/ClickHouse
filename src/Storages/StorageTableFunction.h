@@ -3,7 +3,6 @@
 #include <TableFunctions/ITableFunction.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
-#include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>

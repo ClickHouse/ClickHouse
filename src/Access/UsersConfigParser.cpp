@@ -165,12 +165,20 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "One-time password can be used only with password based authentication for user {}.", user_name);
 
             String otp_secret_key = config.getString(user_config + ".time_based_one_time_password.secret");
-            OneTimePasswordParams otp_config(
-                config.getInt(user_config + ".time_based_one_time_password.digits", {}),
-                config.getInt(user_config + ".time_based_one_time_password.period", {}),
-                config.getString(user_config + ".time_based_one_time_password.algorithm", {}));
 
-            otp_secret.emplace(otp_secret_key, otp_config);
+            std::optional<Int32> num_digits;
+            if (config.has(user_config + ".time_based_one_time_password.digits"))
+                num_digits = config.getInt(user_config + ".time_based_one_time_password.digits");
+
+            std::optional<Int32> period;
+            if (config.has(user_config + ".time_based_one_time_password.period"))
+                period = config.getInt(user_config + ".time_based_one_time_password.period");
+
+            std::optional<String> algorithm_name;
+            if (config.has(user_config + ".time_based_one_time_password.algorithm"))
+                algorithm_name = config.getString(user_config + ".time_based_one_time_password.algorithm");
+
+            otp_secret.emplace(otp_secret_key, OneTimePasswordParams(num_digits, period, algorithm_name));
         }
 
         if (has_no_password && otp_secret)
