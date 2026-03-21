@@ -300,6 +300,14 @@
         };
     }
 
+    // Listen for refit requests from the parent (when iframe becomes visible again)
+    window.addEventListener('message', function(e) {
+        if (e.data && e.data.type === 'webterminal-refit' && fitAddon && term) {
+            fitAddon.fit();
+            sendResize();
+        }
+    });
+
     // Start
     initTerminal();
     attemptConnect();

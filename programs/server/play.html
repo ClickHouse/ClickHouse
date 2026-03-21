@@ -3114,6 +3114,11 @@ document.getElementById('download-button').addEventListener('click', async funct
             terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
         }
         terminalHiddenByResize = false;
+
+        // Tell the iframe to refit the terminal after becoming visible again
+        if (terminalIframe && terminalIframe.contentWindow) {
+            terminalIframe.contentWindow.postMessage({type: 'webterminal-refit'}, '*');
+        }
     }
 
     /// Hide the terminal panel but keep the iframe alive so the session persists.
