@@ -271,13 +271,22 @@ def check_labels(category, info):
         info.remove_pr_label(label)
 
 
+BOT_AUTHORS = {"dependabot[bot]"}
+
+
 if __name__ == "__main__":
     info = Info()
     if Labels.RELEASE in info.pr_labels or Labels.RELEASE_LTS in info.pr_labels:
         print("NOTE: Release PR detected, skipping changelog category check")
         sys.exit(0)
-    error, category = get_category(info.pr_body)
-    if not category or error:
-        print(f"ERROR: {error}")
-        sys.exit(1)
+    if info.user_name in BOT_AUTHORS:
+        print(
+            f"NOTE: PR by bot author '{info.user_name}', treating as 'Not for changelog'"
+        )
+        category = LABEL_CATEGORIES["pr-not-for-changelog"][0]
+    else:
+        error, category = get_category(info.pr_body)
+        if not category or error:
+            print(f"ERROR: {error}")
+            sys.exit(1)
     check_labels(category, info)
