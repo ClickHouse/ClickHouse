@@ -117,7 +117,7 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
     "create_query_generator, do_direct_read",
     [
         (k.generate_old_create_table_query, True),
-        (k.generate_new_create_table_query, False),
+        (k.generate_new_create_table_query, True),
     ],
 )
 def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read):

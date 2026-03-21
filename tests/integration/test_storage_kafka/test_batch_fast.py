@@ -81,7 +81,7 @@ def kafka_setup_teardown():
     "create_query_generator, do_direct_read",
     [
         (k.generate_old_create_table_query, True),
-        (k.generate_new_create_table_query, False),
+        (k.generate_new_create_table_query, True),
     ],
 )
 def test_kafka_column_types(kafka_cluster, create_query_generator, do_direct_read):
@@ -1770,7 +1770,7 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
     "create_query_generator, do_direct_read",
     [
         (k.generate_old_create_table_query, True),
-        (k.generate_new_create_table_query, False),
+        (k.generate_new_create_table_query, True),
     ],
 )
 def test_kafka_producer_consumer_separate_settings(
