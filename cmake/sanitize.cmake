@@ -48,6 +48,16 @@ if (SANITIZE)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
 
+    elseif (SANITIZE STREQUAL "address,undefined")
+        set (ASAN_UBSAN_FLAGS "-fsanitize=address,undefined -fsanitize-address-use-after-scope -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
+        if (ENABLE_FUZZING)
+            set (ASAN_UBSAN_FLAGS "${ASAN_UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
+        endif()
+        set (ASAN_UBSAN_FLAGS "${ASAN_UBSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/ubsan_ignorelist.txt")
+
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${ASAN_UBSAN_FLAGS}")
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${ASAN_UBSAN_FLAGS}")
+
     else ()
         message (FATAL_ERROR "Unknown sanitizer type: ${SANITIZE}")
     endif ()

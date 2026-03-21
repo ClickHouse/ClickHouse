@@ -1817,6 +1817,8 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
             size_t remaining = input_rows_count - i;
 
 #if !defined(OS_DARWIN)
+            _Pragma("clang diagnostic push")
+            _Pragma("clang diagnostic ignored \"-Wpass-failed\"")
             _Pragma("clang loop vectorize_width(4) interleave_count(2)")
 #endif
             for (size_t j = 0; j < remaining; ++j)
@@ -1825,6 +1827,9 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
                 float f = static_cast<float>(tmp);
                 d[j] = BFloat16(f);
             }
+#if !defined(OS_DARWIN)
+            _Pragma("clang diagnostic pop")
+#endif
 
             i += remaining - 1;
         }
@@ -1836,6 +1841,8 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
             size_t remaining = input_rows_count - i;
 
 #if !defined(OS_DARWIN)
+            _Pragma("clang diagnostic push")
+            _Pragma("clang diagnostic ignored \"-Wpass-failed\"")
             _Pragma("clang loop vectorize_width(4) interleave_count(2)")
 #endif
             for (size_t j = 0; j < remaining; ++j)
@@ -1843,6 +1850,9 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
                 double tmp = static_cast<double>(s[j]);
                 d[j] = Float32(tmp);
             }
+#if !defined(OS_DARWIN)
+            _Pragma("clang diagnostic pop")
+#endif
 
             i += remaining - 1;
         }
@@ -2528,25 +2538,33 @@ struct ConvertImpl
                 return arguments[0].column;
 
             Int64 conversion_factor = 1;
-            Int64 result_value;
 
             int from_position = static_cast<int>(from.kind);
             int to_position = static_cast<int>(to.kind); /// Positions of each interval according to granularity map
+
+            bool is_const = isColumnConst(*arguments[0].column);
+            size_t calc_num_rows = is_const ? 1 : input_rows_count;
+            auto res_col = IColumn::mutate(ColumnInt64::create(calc_num_rows));
+            auto & res_data = assert_cast<ColumnInt64 &>(*res_col).getData();
 
             if (from_position < to_position)
             {
                 for (int i = from_position; i < to_position; ++i)
                     conversion_factor *= interval_conversions[i];
-                result_value = arguments[0].column->getInt(0) / conversion_factor;
+                for (size_t row = 0; row < calc_num_rows; ++row)
+                    res_data[row] = arguments[0].column->getInt(row) / conversion_factor;
             }
             else
             {
                 for (int i = from_position; i > to_position; --i)
                     conversion_factor *= interval_conversions[i];
-                result_value = arguments[0].column->getInt(0) * conversion_factor;
+                for (size_t row = 0; row < calc_num_rows; ++row)
+                    res_data[row] = arguments[0].column->getInt(row) * conversion_factor;
             }
 
-            return ColumnConst::create(ColumnInt64::create(1, result_value), input_rows_count);
+            if (is_const)
+                res_col = ColumnConst::create(std::move(res_col), input_rows_count);
+            return std::move(res_col);
         }
         else
         {
@@ -3624,8 +3642,33 @@ private:
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
+        /// Interval values are stored as Int64. If the source type is wider than Int64
+        /// (e.g., UInt128, Int128, UInt256, Int256) or unsigned and wider than Int64's
+        /// positive range, the conversion can overflow, breaking monotonicity.
+        if (!type.isValueRepresentedByNumber())
+            return {};
+
+        size_t size_of_from = type.getSizeOfValueInMemory();
+
+        /// Types wider than 8 bytes (Int128, UInt128, Int256, UInt256) can overflow Int64.
+        if (size_of_from > sizeof(Int64))
+            return {};
+
+        /// UInt64 can overflow Int64 for values > INT64_MAX.
+        if (size_of_from == sizeof(Int64) && type.isValueRepresentedByUnsignedInteger())
+        {
+            if (left.isNull() || right.isNull())
+                return {};
+
+            /// Only monotonic if both values fit in Int64 (i.e., are non-negative when cast to Int64).
+            Int64 left_val = static_cast<Int64>(left.safeGet<UInt64>());
+            Int64 right_val = static_cast<Int64>(right.safeGet<UInt64>());
+            if (left_val < 0 || right_val < 0)
+                return {};
+        }
+
         return { .is_monotonic = true };
     }
 };
@@ -3755,6 +3798,24 @@ struct ToNumberMonotonicity
             if (from_is_unsigned == to_is_unsigned)
                 return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
 
+            /// When converting between signed and unsigned of the same size,
+            /// monotonicity holds only when both endpoints are in the same "half"
+            /// of the type's range (i.e., the conversion does not wrap around).
+            /// For unsigned->signed: values in [0, 2^(N-1)-1] map monotonically,
+            /// and values in [2^(N-1), 2^N-1] also map monotonically (to negative),
+            /// but crossing the boundary breaks monotonicity.
+            if (from_is_unsigned && !to_is_unsigned)
+            {
+                if (left.isNull() || right.isNull())
+                    return {};
+
+                /// Check if both values, when reinterpreted as signed T, have the same sign.
+                const bool is_monotonic = (T(left.safeGet<UInt64>()) >= 0) == (T(right.safeGet<UInt64>()) >= 0);
+                return { .is_monotonic = is_monotonic };
+            }
+
+            /// signed -> unsigned of the same size
+            /// `left_in_first_half` already handles NULL bounds via a heuristic.
             if (left_in_first_half == right_in_first_half)
                 return { .is_monotonic = true };
 

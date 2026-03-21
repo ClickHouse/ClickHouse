@@ -78,6 +78,9 @@ MESSAGES_TO_RETRY = [
 
 IGNORED_SANITIZER_ERRORS = [
     "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!",
+    # This warning appears when the virtual stack size is too large for ASan to track __asan_handle_no_return.
+    # It is a known limitation (https://github.com/google/sanitizers/issues/189) and not a real error.
+    "ASan is ignoring requested __asan_handle_no_return",
     # Note, usually such error means that sanitizer has found something but failed to print, so it should not be ignored
     # "LLVM ERROR: IO failure on output stream: Broken pipe",
 ]
@@ -1084,6 +1087,7 @@ class FailureReason(enum.Enum):
         f"Test runs too long (> {TEST_MAX_RUN_TIME_IN_SECONDS}s). Make it faster."
     )
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
+    CONNECTION_ERROR = "Connection error: "
 
     # SKIPPED reasons
     NOT_SUPPORTED = "not supported"
@@ -3011,7 +3015,7 @@ class TestCase:
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
-                FailureReason.EXIT_CODE,
+                FailureReason.CONNECTION_ERROR,
                 total_time,
                 exc_description,
             )
@@ -3813,25 +3817,28 @@ SANITIZED = False
 
 def collect_build_flags(args):
     global RELEASE_NON_SANITIZED
+    global SANITIZED
 
     result = []
 
     value = clickhouse_execute(
         args, "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
     )
-    if b"-fsanitize=thread" in value:
-        result.append(BuildFlags.THREAD)
-        SANITIZED = True
-    elif b"-fsanitize=address" in value:
-        result.append(BuildFlags.ADDRESS)
-        SANITIZED = True
-    elif b"-fsanitize=undefined" in value:
-        result.append(BuildFlags.UNDEFINED)
-        SANITIZED = True
-    elif b"-fsanitize=memory" in value:
-        result.append(BuildFlags.MEMORY)
-        SANITIZED = True
-    elif b"-DSANITIZE_COVERAGE=1" in value:
+    sanitize_flag_map = {
+        b"thread": BuildFlags.THREAD,
+        b"address": BuildFlags.ADDRESS,
+        b"undefined": BuildFlags.UNDEFINED,
+        b"memory": BuildFlags.MEMORY,
+    }
+    import re as _re
+    m = _re.search(rb"-fsanitize=([\w,]+)", value)
+    if m:
+        for san in m.group(1).split(b","):
+            flag = sanitize_flag_map.get(san)
+            if flag is not None:
+                result.append(flag)
+        SANITIZED = bool(result)
+    if b"-DSANITIZE_COVERAGE=1" in value:
         result.append(BuildFlags.SANITIZE_COVERAGE)
 
     value = clickhouse_execute(

@@ -331,6 +331,10 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     /// NOTE: It does not protect from all cases of query duplication, see also comments in processTask(...)
     if (reinitialized)
     {
+        /// We are reloading the queue after connection loss, so reset the flag.
+        /// It will be set back to true once we successfully initialize a new task.
+        queue_fully_loaded_after_initialization_debug_helper = false;
+
         if (current_tasks.empty())
             LOG_TRACE(log, "Don't have unfinished tasks after restarting");
         else
@@ -466,6 +470,14 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         {
             /// If connection was lost during queue loading
             /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
+            return false;
+        }
+
+        if (first_failed_task_name.has_value())
+        {
+            /// During reinitialization, begin_node is moved back to first_failed_task_name.
+            /// With parallel execution, tasks after first_failed_task_name may already be
+            /// completed or still in current_tasks — that's expected, not a violation.
             return false;
         }
 

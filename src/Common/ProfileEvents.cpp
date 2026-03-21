@@ -418,6 +418,7 @@
     M(MergeWrittenRows, "Number of rows written during the merge.", ValueType::Number) \
     M(MergeTotalMilliseconds, "Total time spent for background merges", ValueType::Milliseconds) \
     M(MergeExecuteMilliseconds, "Total busy time spent for execution of background merges", ValueType::Milliseconds) \
+    M(MergeCommitMilliseconds, "Total time spent for committing merge results (part renaming, checksum verification, ZooKeeper updates)", ValueType::Milliseconds) \
     M(MergeHorizontalStageTotalMilliseconds, "Total time spent for horizontal stage of background merges", ValueType::Milliseconds) \
     M(MergeHorizontalStageExecuteMilliseconds, "Total busy time spent for execution of horizontal stage of background merges", ValueType::Milliseconds) \
     M(MergeVerticalStageTotalMilliseconds, "Total time spent for vertical stage of background merges", ValueType::Milliseconds) \
@@ -447,6 +448,7 @@
     M(MutationAffectedRowsUpperBound, "The upper bound of number of rows that were affected by mutation (e.g. number of rows that satisfy the predicate of UPDATE or DELETE mutation). The actual number may be slightly less", ValueType::Number) \
     M(MutationTotalMilliseconds, "Total time spent for mutations.", ValueType::Milliseconds) \
     M(MutationExecuteMilliseconds, "Total busy time spent for execution of mutations.", ValueType::Milliseconds) \
+    M(MutationCommitMilliseconds, "Total time spent for committing mutation results (part renaming, checksum verification, ZooKeeper updates)", ValueType::Milliseconds) \
     M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created", ValueType::Number) \
     M(MutationSomePartColumns, "Number of times when task to mutate some columns in part was created", ValueType::Number) \
     M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections in mutations", ValueType::Microseconds) \
@@ -985,8 +987,9 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperRemoveWatchRequest, "Number of remove watches requests", ValueType::Number) \
     M(KeeperCheckWatchRequest, "Number of remove watches requests", ValueType::Number) \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
-    M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session was already finished", ValueType::Number) \
-    M(KeeperFinishedSessionsCacheFull, "Number of times a finished session could not be tracked because the cache reached its size limit", ValueType::Number) \
+    M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session is no longer live", ValueType::Number) \
+    M(KeeperLiveSessionsLockWaitMicroseconds, "Time spent waiting to acquire Keeper live sessions lock", ValueType::Microseconds) \
+    M(KeeperLiveSessionsLockHoldMicroseconds, "Time spent holding Keeper live sessions lock", ValueType::Microseconds) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \

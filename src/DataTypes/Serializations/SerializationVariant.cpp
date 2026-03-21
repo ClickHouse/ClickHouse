@@ -261,7 +261,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     size_t limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state,
-    std::unordered_map<String, size_t> & variants_statistics,
+    UnorderedMapWithMemoryTracking<String, size_t> & variants_statistics,
     size_t & total_size_of_variants) const
 {
     const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
@@ -486,7 +486,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
     DB::ISerialization::SerializeBinaryBulkSettings & settings,
     DB::ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
-    std::unordered_map<String, size_t> tmp_statistics;
+    UnorderedMapWithMemoryTracking<String, size_t> tmp_statistics;
     size_t tmp_size;
     serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics, tmp_size);
 }

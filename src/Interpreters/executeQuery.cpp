@@ -2036,10 +2036,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     for (size_t i = 0; i < num_runs; ++i)
     {
         ASTPtr fuzzed_ast;
+        NameToNameMap fuzzed_query_params;
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
+            fuzzed_query_params = fuzzer->getLastQueryParameters();
         }
 
         WriteBufferFromOwnString fuzzed_query_buf;
@@ -2068,6 +2070,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->makeQueryContext();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
+            if (!fuzzed_query_params.empty())
+                fuzz_context->setQueryParameters(fuzzed_query_params);
 
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 

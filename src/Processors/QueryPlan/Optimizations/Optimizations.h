@@ -46,6 +46,7 @@ struct Optimization
         bool use_top_k_dynamic_filtering;
         size_t max_limit_for_top_k_optimization;
         bool use_skip_indexes_on_data_read;
+        bool read_in_order;
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
@@ -216,6 +217,11 @@ std::optional<String> optimizeUseNormalProjections(
     size_t max_step_description_length);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+
+/// Resolve all DelayedMaterializingCTEsStep nodes in the plan tree.
+/// Must be called after the second optimization pass so that is_planned flags
+/// set by buildOrderedSetInplace are already visible.
+void resolveMaterializingCTEs(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & root_plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Enable memory bound merging of aggregation states for remote queries
 /// in case it was enabled for local plan

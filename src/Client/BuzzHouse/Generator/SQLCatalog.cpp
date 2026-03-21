@@ -597,6 +597,20 @@ String SQLBase::getSparkCatalogName() const
 }
 
 static const constexpr String PARTITION_STR = "{_partition_id}";
+static const constexpr String SCHEMA_HASH_STR = "{_schema_hash}";
+
+/// Returns the placeholder suffix to append to an S3/Azure path component.
+/// Both placeholders may appear in either order, chosen randomly.
+static String placeholders(RandomGenerator & rg, bool want_partition, bool want_hash)
+{
+    if (want_partition && want_hash)
+        return rg.nextBool() ? PARTITION_STR + SCHEMA_HASH_STR : SCHEMA_HASH_STR + PARTITION_STR;
+    if (want_partition)
+        return PARTITION_STR;
+    if (want_hash)
+        return SCHEMA_HASH_STR;
+    return {};
+}
 
 void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool has_dolor)
 {
@@ -680,16 +694,18 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             bool used_partition = false;
 
             chassert(isAnyS3Engine() || isAnyAzureEngine());
+            bool used_schema_hash = false;
+
             if (rg.nextBool())
             {
                 /// Use a subdirectory
                 next_bucket_path += "subdir";
                 next_bucket_path += rg.nextBool() ? std::to_string(tname) : "";
-                if (has_partition_by && rg.nextBool())
-                {
-                    next_bucket_path += PARTITION_STR;
-                    used_partition = true;
-                }
+                const bool want_partition = has_partition_by && rg.nextBool();
+                const bool want_hash = rg.nextBool();
+                next_bucket_path += placeholders(rg, want_partition, want_hash);
+                used_partition |= want_partition;
+                used_schema_hash |= want_hash;
                 next_bucket_path += "/";
             }
             if (rg.nextBool())
@@ -698,10 +714,8 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 
                 next_bucket_path += "file";
                 next_bucket_path += add_before ? std::to_string(tname) : "";
-                if (has_partition_by && !used_partition && rg.nextBool())
-                {
-                    next_bucket_path += PARTITION_STR;
-                }
+                next_bucket_path
+                    += placeholders(rg, has_partition_by && !used_partition && rg.nextBool(), !used_schema_hash && rg.nextBool());
                 next_bucket_path += !add_before ? std::to_string(tname) : "";
                 if ((isS3QueueEngine() || isAzureQueueEngine()) && rg.nextMediumNumber() < 81)
                 {
@@ -714,7 +728,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             }
             if (rg.nextBool())
             {
-                next_bucket_path += ".data";
+                /// Either a generic .data extension or a compression-recognized extension
+                /// (exercises ClickHouse's extension-based compression auto-detection)
+                static const DB::Strings comp_extensions
+                    = {"gz", "gzip", "bz2", "lz4", "xz", "zst", "zstd", "lzma", "br", "brotli", "deflate", "snappy", "7z"};
+                next_bucket_path += rg.nextSmallNumber() < 4 ? ".data" : ("." + rg.pickRandomly(comp_extensions));
             }
         }
         bucket_path = std::move(next_bucket_path);
@@ -832,6 +850,15 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
             res.replace(
                 partition_pos,
                 PARTITION_STR.length(),
+                rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
+        }
+        /// Replace schema hash str
+        const size_t schema_hash_pos = res.find(SCHEMA_HASH_STR);
+        if (schema_hash_pos != std::string::npos && rg.nextMediumNumber() < 81)
+        {
+            res.replace(
+                schema_hash_pos,
+                SCHEMA_HASH_STR.length(),
                 rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
         }
         /// Replace glob for number
