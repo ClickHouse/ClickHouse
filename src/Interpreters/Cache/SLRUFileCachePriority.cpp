@@ -500,7 +500,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                 auto new_iterator = probationary_queue.add(std::move(empty_entry), lk, /* state_lock */nullptr);
                 downgraded_entries->add(DowngradedEntryInfo{
                     .slru_iterator = iterator,
-                    .entry_size = entry->getSize(),
+                    .entry_size = entry->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED),
                     .prev_nested_iterator = slru_iterator->lru_iterator,
                     .new_nested_iterator = new_iterator
                 });
