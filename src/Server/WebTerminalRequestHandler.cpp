@@ -410,6 +410,13 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                 else
                 {
                     /// Continuation frame
+                    static constexpr size_t MAX_FRAGMENT_BUFFER_SIZE = 16 * 1024 * 1024;
+                    if (fragment_buffer.size() + frame.payload.size() > MAX_FRAGMENT_BUFFER_SIZE)
+                    {
+                        LOG_WARNING(log, "WebSocket fragment buffer exceeded limit");
+                        running = false;
+                        continue;
+                    }
                     fragment_buffer.append(frame.payload);
                 }
 
@@ -443,7 +450,14 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                         while (remaining > 0)
                         {
                             ssize_t written = write(server_descriptors.in, write_ptr, remaining);
-                            if (written <= 0)
+                            if (written < 0)
+                            {
+                                if (errno == EINTR)
+                                    continue;
+                                running = false;
+                                break;
+                            }
+                            if (written == 0)
                             {
                                 running = false;
                                 break;
@@ -458,7 +472,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                 }
                 fragment_buffer.clear();
             }
-            catch (const Poco::TimeoutException &)
+            catch (const Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
             {
                 /// Timeout reading frame, continue polling
             }
@@ -500,8 +514,9 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     {
         sendWebSocketClose(socket, 1000, "Session ended");
     }
-    catch (...) /// Ok: best-effort close, socket may already be closed
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
+        /// Best-effort close, socket may already be closed
     }
 
     /// Shutdown the socket so the HTTP connection loop exits cleanly
@@ -509,8 +524,9 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     {
         socket.shutdown();
     }
-    catch (...) /// Ok: best-effort shutdown
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
+        /// Best-effort shutdown
     }
 
     LOG_INFO(log, "WebSocket connection closed");
