@@ -37,10 +37,37 @@ def test_cast_keep_nullable(started_cluster):
     error = node1.query_and_get_error(
         """
         SET mutations_sync = 1;
-        ALTER TABLE t UPDATE x = x % 3 = 0 ? NULL : x WHERE x % 2 = 1;　
+        ALTER TABLE t UPDATE x = x % 3 = 0 ? NULL : x WHERE x % 2 = 1 SETTINGS validate_mutation_query = 0;　
     """
     )
     assert "DB::Exception: Cannot convert NULL value to non-Nullable type" in error
+
+    result = node1.query("SELECT * FROM t;")
+    assert result.strip() == "0\n1\n2\n3\n4\n5\n6\n7\n8\n9"
+
+def test_cast_prevent_nullable(started_cluster):
+    setting = node1.query(
+        "SELECT value FROM system.settings WHERE name='cast_keep_nullable'"
+    )
+    assert setting.strip() == "1"
+
+    result = node1.query(
+        """
+        DROP TABLE IF EXISTS t;
+        CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY tuple();
+        INSERT INTO t SELECT number FROM numbers(10);
+        SELECT * FROM t;
+    """
+    )
+    assert result.strip() == "0\n1\n2\n3\n4\n5\n6\n7\n8\n9"
+
+    error = node1.query_and_get_error(
+        """
+        SET mutations_sync = 1;
+        ALTER TABLE t UPDATE x = x % 3 = 0 ? NULL : x WHERE x % 2 = 1;　
+    """
+    )
+    assert "DB::Exception: Prevent converting Nullable type to non-Nullable type inside mutation" in error
 
     result = node1.query("SELECT * FROM t;")
     assert result.strip() == "0\n1\n2\n3\n4\n5\n6\n7\n8\n9"
