@@ -141,14 +141,14 @@ private:
     std::vector<Port::Data> abandoned_chunks;
 };
 
-/** Like StrictResizeProcessor, but gradually activates output ports as data volume grows.
+/** Like ResizeProcessor, but gradually activates output ports as data volume grows.
   * Starts by routing data to only 1 output port, and activates more as total_rows or total_bytes
   * exceed thresholds (min_rows_per_output * num_active_outputs, min_bytes_per_output * num_active_outputs).
   * For small datasets, only a few aggregating threads receive data; for large datasets, all are used.
   *
-  * Uses the same demand-driven flow control as StrictResizeProcessor: each input is paired 1:1
-  * with an output, inputs are disabled after delivering data, and backpressure is maintained.
-  * Once all outputs are activated, behaves identically to StrictResizeProcessor with zero overhead.
+  * All inputs are kept active at all times so upstream parallelism is never throttled.
+  * Data from inputs is collected and routed only to active output ports.
+  * Once all outputs are activated, behaves identically to ResizeProcessor with zero overhead.
   */
 class GradualResizeProcessor : public IProcessor
 {
@@ -164,6 +164,7 @@ private:
     size_t num_finished_outputs = 0;
     bool initialized = false;
     bool all_outputs_active = false;
+    bool is_reading_started = false;
 
     size_t num_active_outputs = 1;
     size_t total_rows_pushed = 0;
@@ -175,10 +176,8 @@ private:
     std::queue<UInt64> waiting_outputs;
     /// Outputs that reported canPush() but are not yet activated (index >= num_active_outputs).
     std::queue<UInt64> inactive_waiting_outputs;
-    /// Inputs not currently paired with any output.
-    std::queue<UInt64> disabled_input_ports;
-
-    std::vector<Port::Data> abandoned_chunks;
+    /// Inputs that have data ready.
+    std::queue<UInt64> inputs_with_data;
 
     enum class OutputStatus : uint8_t
     {
@@ -190,7 +189,7 @@ private:
     enum class InputStatus : uint8_t
     {
         NotActive,
-        NeedData,
+        HasData,
         Finished,
     };
 
@@ -198,7 +197,6 @@ private:
     {
         InputPort * port;
         InputStatus status;
-        Int64 waiting_output = -1;
     };
 
     struct OutputPortWithStatus
