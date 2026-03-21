@@ -336,6 +336,29 @@ endif()
 
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+
+# Track dependencies for #embed directives so that changes to embedded files trigger recompilation.
+set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/play.html;\
+${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
+${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
+${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
+${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
+${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+
+set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/index.html")
+
+set_source_files_properties(Server/WebTerminalRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/webterminal.html")
+
+set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
+
+set_source_files_properties(Common/FrequencyHolder.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/contrib/nlp-data/charset.zst;\
+${CMAKE_SOURCE_DIR}/contrib/nlp-data/tonality_ru.zst")
 if (ENABLE_SSL)
     add_object_library(clickhouse_server_acme Server/ACME)
 endif()
