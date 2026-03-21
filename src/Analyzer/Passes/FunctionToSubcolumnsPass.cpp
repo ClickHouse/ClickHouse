@@ -356,6 +356,19 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
                 return;
+
+            /// When the column is inside a Nullable(Tuple(...)), the .null subcolumn/nullmap
+            /// in storage is Nullable(UInt8), not UInt8, because the type system wraps all
+            /// subcolumns of a Nullable(Tuple(...)) with the outer nullability. Using it with
+            /// a hardcoded UInt8 type causes a type mismatch at runtime. Skip the optimization.
+            if (auto * table_node = ctx.column_source->as<TableNode>())
+            {
+                auto actual = table_node->getStorageSnapshot()->tryGetColumn(
+                    GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
+                if (actual && actual->type->isNullable())
+                    return;
+            }
+
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);

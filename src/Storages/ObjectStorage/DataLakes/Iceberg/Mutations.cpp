@@ -548,7 +548,7 @@ void mutate(
     StorageID storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    PersistentTableComponents & persistent_table_components,
+    const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog,
@@ -684,7 +684,7 @@ void alter(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    PersistentTableComponents & persistent_table_components,
+    const PersistentTableComponents & persistent_table_components,
     const String & write_format)
 {
     if (params.size() != 1)
@@ -962,7 +962,7 @@ static void collectAllFilePaths(
 static void collectRetainedFiles(
     const Poco::JSON::Array::Ptr & retained_snapshots,
     ObjectStoragePtr object_storage,
-    PersistentTableComponents & persistent_table_components,
+    const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
     Int32 current_schema_id,
@@ -1013,7 +1013,7 @@ static ExpiredFiles collectExpiredFiles(
     const std::set<String> & retained_manifest_paths,
     const std::set<String> & retained_data_file_paths,
     ObjectStoragePtr object_storage,
-    PersistentTableComponents & persistent_table_components,
+    const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
     Int32 current_schema_id)
@@ -1273,7 +1273,7 @@ ExpireSnapshotsResult expireSnapshots(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    PersistentTableComponents & persistent_table_components,
+    const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
     const String & blob_storage_type_name,
