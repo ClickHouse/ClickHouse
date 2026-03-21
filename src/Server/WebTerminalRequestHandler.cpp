@@ -503,8 +503,9 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         {
             sendWebSocketBinary(socket, pty_buf, static_cast<size_t>(n));
         }
-        catch (...) /// Ok: best-effort drain, socket may be closed
+        catch (...)
         {
+            tryLogCurrentException(log, "Failed to drain PTY output to WebSocket");
             break;
         }
     }
@@ -514,8 +515,9 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     {
         sendWebSocketClose(socket, 1000, "Session ended");
     }
-    catch (...) /// Ok: best-effort close, socket may already be closed
+    catch (...)
     {
+        tryLogCurrentException(log, "Failed to send WebSocket close frame");
     }
 
     /// Shutdown the socket so the HTTP connection loop exits cleanly
@@ -523,8 +525,9 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     {
         socket.shutdown();
     }
-    catch (...) /// Ok: best-effort shutdown
+    catch (...)
     {
+        tryLogCurrentException(log, "Failed to shutdown WebSocket");
     }
 
     LOG_INFO(log, "WebSocket connection closed");
