@@ -7,7 +7,7 @@
 --
 -- Covered functions:
 --   LLMClassify, LLMExtract, LLMTranslate, LLMGenerateSQL,
---   LLMGenerateContent, LLMGenerateEmbedding
+--   LLMGenerateContent, generateEmbedding
 -- =============================================================================
 
 SET default_llm_resource = '';
@@ -17,7 +17,7 @@ SET default_llm_resource = '';
 -- =============================================================================
 
 SELECT '-- Function registration';
-SELECT name FROM system.functions WHERE name LIKE 'LLM%' ORDER BY name;
+SELECT name FROM system.functions WHERE name IN ('LLMClassify', 'LLMExtract', 'LLMGenerateContent', 'LLMGenerateSQL', 'LLMTranslate', 'generateEmbedding') ORDER BY name;
 
 -- =============================================================================
 -- 2. LLMClassify: argument validation (expects 2-4 args)
@@ -88,18 +88,18 @@ SELECT '-- LLMGenerateContent: missing named collection';
 SELECT LLMGenerateContent('hello world'); -- { serverError BAD_ARGUMENTS }
 
 -- =============================================================================
--- 7. LLMGenerateEmbedding: argument validation (expects 2-3 args)
+-- 7. generateEmbedding: argument validation (expects 2-3 args)
 -- =============================================================================
 
-SELECT '-- LLMGenerateEmbedding: too few arguments';
-SELECT LLMGenerateEmbedding(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT LLMGenerateEmbedding('text'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '-- generateEmbedding: too few arguments';
+SELECT generateEmbedding(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT generateEmbedding('text'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- LLMGenerateEmbedding: too many arguments';
-SELECT LLMGenerateEmbedding('a', 256, 'c', 'd'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '-- generateEmbedding: too many arguments';
+SELECT generateEmbedding('a', 256, 'c', 'd'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- LLMGenerateEmbedding: missing named collection';
-SELECT LLMGenerateEmbedding('text', 256); -- { serverError BAD_ARGUMENTS }
+SELECT '-- generateEmbedding: missing named collection';
+SELECT generateEmbedding('text', 256); -- { serverError BAD_ARGUMENTS }
 
 -- =============================================================================
 -- 8. Return type verification
@@ -159,23 +159,23 @@ SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_content';
 DROP TABLE IF EXISTS _03300_ret_content;
 
--- LLMGenerateEmbedding returns Array(Float32)
+-- generateEmbedding returns Array(Float32)
 DROP TABLE IF EXISTS _03300_ret_embedding;
 CREATE TABLE _03300_ret_embedding ENGINE = Memory AS
-    SELECT LLMGenerateEmbedding(x, 256) AS result FROM (SELECT 'hello' AS x WHERE 0);
-SELECT '-- LLMGenerateEmbedding return type';
+    SELECT generateEmbedding(x, 256) AS result FROM (SELECT 'hello' AS x WHERE 0);
+SELECT '-- generateEmbedding return type';
 SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_embedding';
 DROP TABLE IF EXISTS _03300_ret_embedding;
 
 -- =============================================================================
--- 9. LLMGenerateEmbedding: dimensions argument must be constant
+-- 9. generateEmbedding: dimensions argument must be constant
 -- The fake named collection lets us get past config resolution so the
 -- non-constant dimensions check is reached before any HTTP calls.
 -- =============================================================================
 
-SELECT '-- LLMGenerateEmbedding: non-constant dimensions';
-SELECT LLMGenerateEmbedding(x, number) FROM (SELECT 'text' AS x, number FROM numbers(2)); -- { serverError BAD_ARGUMENTS }
+SELECT '-- generateEmbedding: non-constant dimensions';
+SELECT generateEmbedding(x, number) FROM (SELECT 'text' AS x, number FROM numbers(2)); -- { serverError BAD_ARGUMENTS }
 
 -- =============================================================================
 -- Cleanup

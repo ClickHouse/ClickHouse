@@ -95,12 +95,12 @@ bool looksLikeURL(const String & s)
     return s.starts_with("http://") || s.starts_with("https://");
 }
 
-class FunctionLLMGenerateEmbedding final : public IFunction
+class FunctionGenerateEmbedding final : public IFunction
 {
 public:
-    static constexpr auto name = "LLMGenerateEmbedding";
-    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMGenerateEmbedding>(std::move(ctx)); }
-    explicit FunctionLLMGenerateEmbedding(ContextPtr context_) : context(std::move(context_)) {}
+    static constexpr auto name = "generateEmbedding";
+    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionGenerateEmbedding>(std::move(ctx)); }
+    explicit FunctionGenerateEmbedding(ContextPtr context_) : context(std::move(context_)) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -417,21 +417,21 @@ private:
 
 }
 
-REGISTER_FUNCTION(LLMGenerateEmbedding)
+REGISTER_FUNCTION(GenerateEmbedding)
 {
-    factory.registerFunction<FunctionLLMGenerateEmbedding>(FunctionDocumentation{
-        .description = "Generates embedding vectors for the given text using an LLM embedding model. "
+    factory.registerFunction<FunctionGenerateEmbedding>(FunctionDocumentation{
+        .description = "Generates embedding vectors for the given text using an embedding model. "
                        "Supports batch API calls for efficient processing of multiple rows. "
                        "The first argument can be a named collection name or an inline URL.",
-        .syntax = "LLMGenerateEmbedding([collection_or_url,] text, dimensions)",
+        .syntax = "generateEmbedding([collection_or_url,] text, dimensions)",
         .arguments = {
             {"collection_or_url", "Optional named collection name or inline URL (e.g. 'http://localhost:8080')"},
             {"text", "Input text to embed"},
             {"dimensions", "Dimensionality of the output embedding vector (must be constant)"}},
         .returned_value = {"Embedding vector as Array(Float32). Empty array for NULL/empty inputs or on failure.", {"Array(Float32)"}},
         .examples = {
-            {"basic", "SELECT LLMGenerateEmbedding('Hello world', 256)", ""},
-            {"inline_url", "SELECT LLMGenerateEmbedding('https://api.openai.com/v1/embeddings', text, 256) FROM docs", ""}},
+            {"basic", "SELECT generateEmbedding('Hello world', 256)", ""},
+            {"inline_url", "SELECT generateEmbedding('https://api.openai.com/v1/embeddings', text, 256) FROM docs", ""}},
         .category = FunctionDocumentation::Category::Other});
 }
 
