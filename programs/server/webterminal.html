@@ -68,6 +68,8 @@
     var currentPassword = params.get('password') || '';
     var userFromURL = params.has('user');
     var initialQuery = params.get('query') || '';
+    var inIframe = (window.parent !== window);
+    var waitingForCredentials = false;
 
     function getWebSocketURL(user, password) {
         var loc = window.location;
@@ -288,7 +290,7 @@
                 // Normal disconnect after session was active
                 if (window.parent !== window) {
                     // Inside an iframe - notify parent to deactivate terminal
-                    window.parent.postMessage({type: 'webterminal-closed'}, '*');
+                    window.parent.postMessage({type: 'webterminal-closed'}, window.location.origin);
                 } else {
                     window.location.href = 'https://github.com/ClickHouse/ClickHouse';
                 }
@@ -300,9 +302,18 @@
         };
     }
 
-    // Listen for refit requests from the parent (when iframe becomes visible again)
+    // Listen for messages from the parent (credentials, refit requests)
     window.addEventListener('message', function(e) {
-        if (e.data && e.data.type === 'webterminal-refit' && fitAddon && term) {
+        if (e.origin !== window.location.origin) return;
+        if (!e.data) return;
+
+        if (e.data.type === 'webterminal-credentials' && waitingForCredentials) {
+            waitingForCredentials = false;
+            currentUser = e.data.user || 'default';
+            currentPassword = e.data.password || '';
+            userFromURL = true;
+            attemptConnect();
+        } else if (e.data.type === 'webterminal-refit' && fitAddon && term) {
             fitAddon.fit();
             sendResize();
         }
@@ -310,7 +321,12 @@
 
     // Start
     initTerminal();
-    attemptConnect();
+    if (inIframe && !params.has('user') && !params.has('password')) {
+        // When embedded in an iframe, wait for credentials from the parent via postMessage
+        waitingForCredentials = true;
+    } else {
+        attemptConnect();
+    }
     </script>
 </body>
 </html>
