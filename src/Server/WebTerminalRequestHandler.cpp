@@ -514,9 +514,8 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     {
         sendWebSocketClose(socket, 1000, "Session ended");
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...) /// Ok: best-effort close, socket may already be closed
     {
-        /// Best-effort close, socket may already be closed
     }
 
     /// Shutdown the socket so the HTTP connection loop exits cleanly
@@ -524,9 +523,8 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     {
         socket.shutdown();
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...) /// Ok: best-effort shutdown
     {
-        /// Best-effort shutdown
     }
 
     LOG_INFO(log, "WebSocket connection closed");
