@@ -94,21 +94,19 @@ public:
         const char * begin_pos = url_begin;
         const char * end_pos = begin_pos;
 
-        do
+        const char * query_string_begin = find_first_symbols<'?', '#'>(url_begin, url_end);
+        const char * search_pos = query_string_begin + 1;
+        while (search_pos < url_end)
         {
-            const char * query_string_begin = find_first_symbols<'?', '#'>(url_begin, url_end);
-            if (query_string_begin + 1 >= url_end)
-                break;
-
-            const char * pos = static_cast<const char *>(memmem(query_string_begin + 1, url_end - (query_string_begin + 1), param_str, param_len));
+            const char * pos = static_cast<const char *>(memmem(search_pos, url_end - search_pos, param_str, param_len));
             if (pos == nullptr)
                 break;
 
             char prev_char = pos[-1];
             if (prev_char != '?' && prev_char != '#' && prev_char != '&')
             {
-                pos = nullptr;
-                break;
+                search_pos = pos + param_len;
+                continue;
             }
 
             begin_pos = pos;
@@ -122,7 +120,9 @@ public:
                 ++end_pos;
             else if (prev_char == '&')
                 --begin_pos;
-        } while (false);
+
+            break;
+        }
 
         cut_end = end_pos - url_begin;
         cut_begin = begin_pos - url_begin;
