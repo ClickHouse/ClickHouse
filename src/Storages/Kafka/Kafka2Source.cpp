@@ -19,7 +19,6 @@
 
 namespace ProfileEvents
 {
-extern const Event KafkaDirectReads;
 extern const Event KafkaMessagesRead;
 extern const Event KafkaMessagesFailed;
 extern const Event KafkaRowsRead;
@@ -27,11 +26,6 @@ extern const Event KafkaRowsRead;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 
 // with default poll timeout (500ms) it will give about 5 sec delay for doing 10 retries
 // when selecting from empty topic
@@ -120,6 +114,7 @@ Chunk Kafka2Source::generateImpl()
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
     bool is_dead_letter = false;
+    bool consumed_any_messages = false;
     auto handle_error_mode = storage.getHandleKafkaErrorMode();
 
     const KeeperHandlingConsumer::MessageInfo * current_msg_info = nullptr;
@@ -172,6 +167,7 @@ Chunk Kafka2Source::generateImpl()
 
         if (buf)
         {
+            consumed_any_messages = true;
             current_msg_info = &msg_info;
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute(*buf);
@@ -257,7 +253,7 @@ Chunk Kafka2Source::generateImpl()
                             .details = DeadLetterQueueElement::KafkaDetails{
                                 .topic_name = msg_info.currentTopic(),
                                 .partition = msg_info.currentPartition(),
-                                .offset = msg_info.currentPartition(),
+                                .offset = msg_info.currentOffset(),
                                 .key = msg_info.currentKey()}});
             }
 
@@ -287,13 +283,21 @@ Chunk Kafka2Source::generateImpl()
 
     auto maybe_guard = consumer->poll(msg_sink);
 
-    if (!maybe_guard.has_value() || total_rows == 0)
+    if (!maybe_guard.has_value() || (!consumed_any_messages && total_rows == 0))
     {
         stalled = true;
         return {};
     }
 
     offset_guard.emplace(std::move(*maybe_guard));
+
+    if (total_rows == 0)
+    {
+        /// Messages were consumed but produced no rows (e.g. all went to dead-letter queue).
+        /// We still keep the offset guard so that commit can advance offsets.
+        stalled = true;
+        return {};
+    }
 
     auto result_block = non_virtual_header.cloneWithColumns(executor.getResultColumns());
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
