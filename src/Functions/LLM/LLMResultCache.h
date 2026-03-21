@@ -67,6 +67,8 @@ public:
     };
 
     std::vector<CacheEntryInfo> getEntries() const;
+
+    void reset();
 };
 
 }

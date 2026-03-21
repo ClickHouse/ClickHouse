@@ -20,12 +20,13 @@ LLMEmbeddingResponse ILLMProvider::embed(const LLMEmbeddingRequest & /*request*/
 
 LLMProviderPtr createLLMProvider(const String & provider_name, const String & endpoint, const String & api_key)
 {
-    if (provider_name == "openai")
+    if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")
         return std::make_shared<OpenAIProvider>(endpoint, api_key);
     else if (provider_name == "anthropic")
         return std::make_shared<AnthropicProvider>(endpoint, api_key);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown LLM provider '{}'. Supported: 'openai', 'anthropic'", provider_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unknown LLM provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);
 }
 
 }

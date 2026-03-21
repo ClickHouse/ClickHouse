@@ -67,4 +67,9 @@ std::vector<LLMResultCache::CacheEntryInfo> LLMResultCache::getEntries() const
     return result;
 }
 
+void LLMResultCache::reset()
+{
+    Base::clear();
+}
+
 }

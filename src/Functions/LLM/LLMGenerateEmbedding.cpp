@@ -72,7 +72,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// Serialize a float vector as a compact string for caching.
+static constexpr size_t DEFAULT_EMBED_BATCH_SIZE = 100;
+
 String serializeEmbedding(const std::vector<Float32> & vec)
 {
     String result;
@@ -87,6 +88,11 @@ std::vector<Float32> deserializeEmbedding(const String & data)
     std::vector<Float32> vec(count);
     memcpy(vec.data(), data.data(), data.size());
     return vec;
+}
+
+bool looksLikeURL(const String & s)
+{
+    return s.starts_with("http://") || s.starts_with("https://");
 }
 
 class FunctionLLMGenerateEmbedding final : public IFunction
@@ -111,7 +117,7 @@ public:
     {
         if (arguments.size() < 2 || arguments.size() > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires 2-3 arguments: [collection,] text, dimensions", name);
+                "Function {} requires 2-3 arguments: [collection_or_url,] text, dimensions", name);
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
@@ -119,33 +125,64 @@ public:
     {
         const auto & settings = context->getSettingsRef();
 
-        String collection_name = settings[Setting::default_llm_resource].value;
-        if (collection_name.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "No LLM named collection specified and default_llm_resource is not set");
-
-        const auto & nc = NamedCollectionFactory::instance().get(collection_name);
-        String provider_name = nc->getOrDefault<String>("provider", "openai");
-        String endpoint_val = nc->getOrDefault<String>("endpoint", "");
-        String model = nc->getOrDefault<String>("model", "");
-        String api_key = nc->getOrDefault<String>("api_key", "");
-
-        if (endpoint_val.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM named collection '{}' must have 'endpoint'", collection_name);
-        if (model.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM named collection '{}' must have 'model'", collection_name);
-        if (api_key.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM named collection '{}' must have 'api_key'", collection_name);
-
-        auto provider = createLLMProvider(provider_name, endpoint_val, api_key);
+        String provider_name;
+        String endpoint_val;
+        String model;
+        String api_key;
+        size_t max_batch_size = DEFAULT_EMBED_BATCH_SIZE;
 
         size_t text_arg_idx = 0;
         size_t dim_arg_idx = 1;
+
         if (arguments.size() == 3)
         {
             text_arg_idx = 1;
             dim_arg_idx = 2;
+
+            const auto * first_const = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
+            String first_arg = first_const ? String(first_const->getDataAt(0)) : "";
+
+            if (!first_arg.empty() && looksLikeURL(first_arg))
+            {
+                provider_name = "openai";
+                endpoint_val = first_arg;
+            }
+            else
+            {
+                String collection_name = first_arg.empty() ? String(settings[Setting::default_llm_resource].value) : first_arg;
+                if (collection_name.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "No LLM named collection specified and default_llm_resource is not set");
+
+                const auto & nc = NamedCollectionFactory::instance().get(collection_name);
+                provider_name = nc->getOrDefault<String>("provider", "openai");
+                endpoint_val = nc->getOrDefault<String>("endpoint", "");
+                model = nc->getOrDefault<String>("model", "");
+                api_key = nc->getOrDefault<String>("api_key", "");
+                max_batch_size = nc->getOrDefault<UInt64>("max_batch_size", DEFAULT_EMBED_BATCH_SIZE);
+            }
         }
+        else
+        {
+            String collection_name = settings[Setting::default_llm_resource].value;
+            if (collection_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "No LLM named collection specified and default_llm_resource is not set");
+
+            const auto & nc = NamedCollectionFactory::instance().get(collection_name);
+            provider_name = nc->getOrDefault<String>("provider", "openai");
+            endpoint_val = nc->getOrDefault<String>("endpoint", "");
+            model = nc->getOrDefault<String>("model", "");
+            api_key = nc->getOrDefault<String>("api_key", "");
+            max_batch_size = nc->getOrDefault<UInt64>("max_batch_size", DEFAULT_EMBED_BATCH_SIZE);
+        }
+
+        if (endpoint_val.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM embedding endpoint is not configured");
+        if (max_batch_size == 0)
+            max_batch_size = DEFAULT_EMBED_BATCH_SIZE;
+
+        auto provider = createLLMProvider(provider_name, endpoint_val, api_key);
 
         const auto * dim_const = checkAndGetColumn<ColumnConst>(arguments[dim_arg_idx].column.get());
         if (!dim_const)
@@ -154,7 +191,6 @@ public:
 
         UInt64 timeout_sec = settings[Setting::llm_request_timeout_sec].value;
         UInt64 max_concurrent = settings[Setting::llm_max_concurrent_requests].value;
-        UInt64 max_rps = settings[Setting::llm_max_rps].value;
         UInt64 max_retries = settings[Setting::llm_max_retries].value;
         UInt64 retry_delay_ms = settings[Setting::llm_retry_initial_delay_ms].value;
         UInt64 cache_ttl = settings[Setting::llm_cache_ttl_sec].value;
@@ -169,10 +205,10 @@ public:
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, context->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<long>(timeout_sec), 0);
-        auto throttler = std::make_shared<Throttler>(max_rps);
 
         std::unordered_map<UInt128, std::vector<size_t>, UInt128Hash> dedup_map;
         std::unordered_set<size_t> null_input_rows;
+        std::unordered_set<size_t> empty_input_rows;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -184,6 +220,12 @@ public:
             }
 
             String text(text_col->getDataAt(i));
+            if (text.empty())
+            {
+                empty_input_rows.insert(i);
+                continue;
+            }
+
             std::vector<String> cache_args = {text, std::to_string(dimensions)};
             UInt128 key = LLMResultCache::buildKey(name, model, 0, cache_args);
             dedup_map[key].push_back(i);
@@ -198,7 +240,13 @@ public:
         UInt64 cache_misses = 0;
 
         auto & cache = LLMResultCache::instance();
-        std::vector<std::pair<UInt128, size_t>> to_dispatch;
+
+        struct DispatchItem
+        {
+            UInt128 key;
+            String text;
+        };
+        std::vector<DispatchItem> to_dispatch;
 
         for (auto & [key, rows] : dedup_map)
         {
@@ -213,63 +261,79 @@ public:
             }
             else
             {
-                to_dispatch.emplace_back(key, rows[0]);
+                String text(arguments[text_arg_idx].column->getDataAt(rows[0]));
+                to_dispatch.push_back({key, std::move(text)});
                 ++cache_misses;
             }
         }
 
         if (!to_dispatch.empty())
         {
+            std::vector<std::vector<DispatchItem *>> batches;
+            for (size_t i = 0; i < to_dispatch.size(); i += max_batch_size)
+            {
+                batches.emplace_back();
+                auto & batch = batches.back();
+                for (size_t j = i; j < std::min(i + max_batch_size, to_dispatch.size()); ++j)
+                    batch.push_back(&to_dispatch[j]);
+            }
+
             auto pool = std::make_unique<ThreadPool>(
                 CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(),
                 max_concurrent, max_concurrent, max_concurrent);
 
-            for (auto & [dispatch_key, representative_row] : to_dispatch)
+            for (auto & batch : batches)
             {
-                UInt64 rows_for_key = dedup_map[dispatch_key].size();
-                if (!quota->checkBeforeDispatch(0, rows_for_key))
+                UInt64 total_rows_for_batch = 0;
+                for (auto * item : batch)
+                    total_rows_for_batch += dedup_map[item->key].size();
+
+                if (!quota->checkBeforeDispatch(0, total_rows_for_batch))
                 {
                     std::lock_guard lock(results_mutex);
-                    results[dispatch_key] = {};
+                    for (auto * item : batch)
+                        results[item->key] = {};
                     continue;
                 }
 
-                pool->scheduleOrThrowOnError([&, dk = dispatch_key, row = representative_row]
+                pool->scheduleOrThrowOnError([&, batch_items = std::move(batch)]
                 {
-                    String text(arguments[text_arg_idx].column->getDataAt(row));
-
                     for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
                     {
                         try
                         {
-                            if (max_rps > 0)
-                                throttler->throttle(1, 0);
-
                             LLMEmbeddingRequest req;
-                            req.input = text;
                             req.model = model;
                             req.dimensions = dimensions;
+                            req.inputs.reserve(batch_items.size());
+                            for (const auto * item : batch_items)
+                                req.inputs.push_back(item->text);
 
                             auto resp = provider->embed(req, timeouts);
 
                             total_input_tokens.fetch_add(resp.input_tokens, std::memory_order_relaxed);
                             total_api_calls.fetch_add(1, std::memory_order_relaxed);
 
-                            if (cache_ttl > 0 && !resp.embedding.empty())
-                            {
-                                auto entry = std::make_shared<LLMCacheEntry>();
-                                entry->result = serializeEmbedding(resp.embedding);
-                                entry->function_name = name;
-                                entry->model = model;
-                                entry->result_size_bytes = entry->result.size();
-                                entry->created_at = std::chrono::system_clock::now();
-                                entry->expires_at = entry->created_at + std::chrono::seconds(cache_ttl);
-                                cache.set(dk, entry);
-                            }
-
                             {
                                 std::lock_guard lock(results_mutex);
-                                results[dk] = std::move(resp.embedding);
+                                for (size_t i = 0; i < batch_items.size(); ++i)
+                                {
+                                    auto & embedding = (i < resp.embeddings.size()) ? resp.embeddings[i] : resp.embeddings.back();
+
+                                    if (cache_ttl > 0 && !embedding.empty())
+                                    {
+                                        auto entry = std::make_shared<LLMCacheEntry>();
+                                        entry->result = serializeEmbedding(embedding);
+                                        entry->function_name = name;
+                                        entry->model = model;
+                                        entry->result_size_bytes = entry->result.size();
+                                        entry->created_at = std::chrono::system_clock::now();
+                                        entry->expires_at = entry->created_at + std::chrono::seconds(cache_ttl);
+                                        cache.set(batch_items[i]->key, entry);
+                                    }
+
+                                    results[batch_items[i]->key] = std::move(embedding);
+                                }
                             }
                             return;
                         }
@@ -284,7 +348,8 @@ public:
                             if (quota->handleRowError())
                             {
                                 std::lock_guard lock(results_mutex);
-                                results[dk] = {};
+                                for (const auto * item : batch_items)
+                                    results[item->key] = {};
                                 return;
                             }
                             throw;
@@ -355,11 +420,18 @@ private:
 REGISTER_FUNCTION(LLMGenerateEmbedding)
 {
     factory.registerFunction<FunctionLLMGenerateEmbedding>(FunctionDocumentation{
-        .description = "Generates an embedding vector for the given text using an LLM embedding model.",
-        .syntax = "LLMGenerateEmbedding([collection,] text, dimensions)",
-        .arguments = {{"text", "Input text to embed"}, {"dimensions", "Dimensionality of the output embedding vector"}},
-        .returned_value = {"Embedding vector as Array(Float32).", {"Array(Float32)"}},
-        .examples = {{"basic", "SELECT LLMGenerateEmbedding('Hello world', 256)", ""}},
+        .description = "Generates embedding vectors for the given text using an LLM embedding model. "
+                       "Supports batch API calls for efficient processing of multiple rows. "
+                       "The first argument can be a named collection name or an inline URL.",
+        .syntax = "LLMGenerateEmbedding([collection_or_url,] text, dimensions)",
+        .arguments = {
+            {"collection_or_url", "Optional named collection name or inline URL (e.g. 'http://localhost:8080')"},
+            {"text", "Input text to embed"},
+            {"dimensions", "Dimensionality of the output embedding vector (must be constant)"}},
+        .returned_value = {"Embedding vector as Array(Float32). Empty array for NULL/empty inputs or on failure.", {"Array(Float32)"}},
+        .examples = {
+            {"basic", "SELECT LLMGenerateEmbedding('Hello world', 256)", ""},
+            {"inline_url", "SELECT LLMGenerateEmbedding('https://api.openai.com/v1/embeddings', text, 256) FROM docs", ""}},
         .category = FunctionDocumentation::Category::Other});
 }
 
