@@ -63,8 +63,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int AI_EMBED_REQUEST_FAILED;
-    extern const int AI_EMBED_INVALID_RESPONSE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -87,9 +85,10 @@ UInt128 computeCacheKey(const String & model, std::string_view text)
 /// AI_EMBED(connection_name, model, input_text) → Array(Float32)
 /// AI_EMBED(model, input_text) → Array(Float32)  [Cloud-only shortcut, currently disabled for OSS]
 template <bool or_null>
-class FunctionAIEmbedImpl final : public IFunction, WithContext
+class FunctionAIEmbedImpl final : public IFunction
 {
 private:
+    ContextPtr context;
     mutable EmbeddingProviderPtr provider;
     mutable String cached_connection_name;
 
@@ -107,7 +106,7 @@ public:
         return std::make_shared<FunctionAIEmbedImpl>(context_->getGlobalContext());
     }
 
-    explicit FunctionAIEmbedImpl(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionAIEmbedImpl(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -174,7 +173,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const auto & settings = getContext()->getSettingsRef();
+        const auto & settings = context->getSettingsRef();
 
         /// Safety limit
         size_t max_rows = settings[Setting::ai_embed_max_rows_per_query];
@@ -198,7 +197,7 @@ public:
         /// Resolve provider (cached for reuse)
         if (!provider || cached_connection_name != connection_name)
         {
-            provider = resolveEmbeddingProvider(connection_name, getContext());
+            provider = resolveEmbeddingProvider(connection_name, context);
             cached_connection_name = connection_name;
         }
 
@@ -286,7 +285,7 @@ public:
         if (!to_embed_texts.empty())
         {
             /// Determine batch size from provider config
-            auto config = resolveConnectionConfig(connection_name, getContext());
+            auto config = resolveConnectionConfig(connection_name, context);
             size_t batch_size = config.max_batch_size;
 
             /// Split into sub-batches

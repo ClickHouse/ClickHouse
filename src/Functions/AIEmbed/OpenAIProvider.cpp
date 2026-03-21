@@ -110,7 +110,7 @@ std::vector<std::vector<Float32>> OpenAIProvider::doRequest(
     /// Parse response: {"data": [{"embedding": [0.1, 0.2, ...], "index": 0}, ...]}
     Poco::JSON::Parser parser;
     auto result = parser.parse(response_body);
-    auto root = result.extract<Poco::JSON::Object::Ptr>();
+    const auto & root = result.extract<Poco::JSON::Object::Ptr>();
 
     if (!root || !root->has("data"))
         throw Exception(

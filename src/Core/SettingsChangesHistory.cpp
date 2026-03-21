@@ -41,7 +41,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
-
+            {"allow_experimental_ai_functions", false, false, "New setting to enable experimental AI_EMBED functions."},
+            {"ai_embed_timeout_ms", 30000, 30000, "New setting for AI_EMBED per-batch HTTP request timeout in milliseconds."},
+            {"ai_embed_max_retries", 3, 3, "New setting for AI_EMBED max retries per sub-batch for transient errors."},
+            {"ai_embed_max_rows_per_query", 1000000, 1000000, "New setting for AI_EMBED safety limit on rows per query."},
+            {"ai_embed_max_parallel_requests", 4, 4, "New setting for AI_EMBED max concurrent sub-batch HTTP requests."},
+            {"ai_embed_cache_max_entries", 100000, 100000, "New setting for AI_EMBED cross-query cache max entries."},
+            {"ai_embed_cache_max_bytes", 536870912, 536870912, "New setting for AI_EMBED cross-query cache max memory in bytes."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

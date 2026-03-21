@@ -431,6 +431,7 @@ Hostname
 HouseOps
 Hudi
 HudiCluster
+HuggingFace
 HyperLogLog
 Hypot
 IANA
@@ -616,6 +617,7 @@ LinfDistance
 LinfNorm
 LinfNormalize
 LinksDeployment
+LiteLLM
 Linq
 ListObject
 ListObjects
@@ -1514,6 +1516,7 @@ aws
 azureBlobStorage
 azureBlobStorageCluster
 backend
+backfill
 backoff
 backoffs
 backported
@@ -3535,6 +3538,7 @@ verificationDepth
 verificationMode
 versionedcollapsingmergetree
 vhost
+vLLM
 virtualized
 visibleWidth
 visitParam

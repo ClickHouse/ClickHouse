@@ -4,6 +4,8 @@
 #include <base/extended_types.h>
 #include <Common/HashTable/Hash.h>
 
+#include <Common/SharedMutex.h>
+
 #include <atomic>
 #include <list>
 #include <mutex>
@@ -66,7 +68,7 @@ private:
     using LRUList = std::list<Entry>;
     using LRUMap = std::unordered_map<UInt128, LRUList::iterator, UInt128Hash>;
 
-    mutable std::shared_mutex mutex;
+    mutable SharedMutex mutex;
     LRUList lru_list;
     LRUMap lru_map;
     size_t max_entries;

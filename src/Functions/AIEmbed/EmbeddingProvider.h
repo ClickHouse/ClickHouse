@@ -1,20 +1,12 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/Exception.h>
 
 #include <vector>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int AI_EMBED_REQUEST_FAILED;
-    extern const int AI_EMBED_INVALID_RESPONSE;
-    extern const int AI_EMBED_RATE_LIMITED;
-}
 
 /// Interface for embedding providers (OpenAI-compatible, HuggingFace TEI, Cloud).
 /// Each provider knows how to send a batch of texts and return a vector of embeddings.
