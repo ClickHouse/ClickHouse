@@ -5,6 +5,17 @@ if(NOT ENABLE_H3)
     return()
 endif()
 
+# ENABLE_H3O is declared here (in addition to rust/workspace/CMakeLists.txt) because
+# contrib/ is processed before rust/, and CMake option() is idempotent — the first
+# call wins, so the later declaration becomes a no-op.
+# Default to ENABLE_RUST so that h3o is used whenever Rust is available.
+if(ENABLE_RUST)
+    set(_H3O_DEFAULT ${ENABLE_LIBRARIES})
+else()
+    set(_H3O_DEFAULT OFF)
+endif()
+option(ENABLE_H3O "Enable h3o (Rust H3 implementation)" ${_H3O_DEFAULT})
+
 if(ENABLE_H3O)
     message(STATUS "Not using C H3 library (Rust h3o is enabled instead)")
     return()

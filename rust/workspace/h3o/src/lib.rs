@@ -48,7 +48,37 @@ pub struct GeoPolygon {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Normalize an H3 index by setting unused digit positions to 7 (0b111).
+///
+/// The C H3 library was lenient about unused digit bits, but h3o is strict
+/// and rejects indexes with non-7 unused digits. This function fixes up
+/// such indexes to maintain backward compatibility.
+fn normalize_h3_index(h: H3Index) -> H3Index {
+    // Resolution is stored in bits 52-55
+    let res = ((h >> 52) & 0xF) as u32;
+    if res > 15 {
+        return h;
+    }
+    // Each of the 15 cell digits is 3 bits. Digits beyond the resolution
+    // must be 7 (0b111). The unused digits occupy the lowest 3*(15-res) bits.
+    let unused_bits = 3 * (15 - res);
+    if unused_bits == 0 {
+        return h;
+    }
+    let mask = (1_u64 << unused_bits) - 1;
+    h | mask
+}
+
+/// Try to parse as CellIndex after normalizing unused digits.
+/// Use this for operational functions that should gracefully handle
+/// malformed indexes.
 fn try_cell(h: H3Index) -> Option<CellIndex> {
+    CellIndex::try_from(normalize_h3_index(h)).ok()
+}
+
+/// Try to parse as CellIndex with strict validation (no normalization).
+/// Use this for `isValidCell` to match the C H3 library's strict behavior.
+fn try_cell_strict(h: H3Index) -> Option<CellIndex> {
     CellIndex::try_from(h).ok()
 }
 
@@ -59,7 +89,13 @@ fn try_resolution(res: i32) -> Option<Resolution> {
     Resolution::try_from(res as u8).ok()
 }
 
+/// Try to parse as DirectedEdgeIndex after normalizing unused digits.
 fn try_edge(h: H3Index) -> Option<DirectedEdgeIndex> {
+    DirectedEdgeIndex::try_from(normalize_h3_index(h)).ok()
+}
+
+/// Try to parse as DirectedEdgeIndex with strict validation (no normalization).
+fn try_edge_strict(h: H3Index) -> Option<DirectedEdgeIndex> {
     DirectedEdgeIndex::try_from(h).ok()
 }
 
@@ -155,7 +191,11 @@ pub unsafe extern "C" fn gridDisk(origin: H3Index, k: i32, out: *mut H3Index) {
     if k < 0 {
         return;
     }
+    let max_size = maxGridDiskSize(k) as usize;
     for (i, c) in cell.grid_disk_safe(k as u32).enumerate() {
+        if i >= max_size {
+            break;
+        }
         *out.add(i) = u64::from(c);
     }
 }
@@ -168,8 +208,12 @@ pub unsafe extern "C" fn gridDiskUnsafe(origin: H3Index, k: i32, out: *mut H3Ind
     if k < 0 {
         return -1;
     }
+    let max_size = maxGridDiskSize(k) as usize;
     let mut had_none = false;
     for (i, maybe_c) in cell.grid_disk_fast(k as u32).enumerate() {
+        if i >= max_size {
+            break;
+        }
         match maybe_c {
             Some(c) => *out.add(i) = u64::from(c),
             None => {
@@ -189,8 +233,15 @@ pub unsafe extern "C" fn gridRingUnsafe(origin: H3Index, k: i32, out: *mut H3Ind
     if k < 0 {
         return -1;
     }
+    // The ring at distance k has exactly 6*k elements (or 1 for k=0).
+    // Bound the writes to prevent buffer overflow if h3o's iterator
+    // produces more elements than expected.
+    let max_size = if k == 0 { 1 } else { 6 * k as usize };
     let mut had_none = false;
     for (i, maybe_c) in cell.grid_ring_fast(k as u32).enumerate() {
+        if i >= max_size {
+            break;
+        }
         match maybe_c {
             Some(c) => *out.add(i) = u64::from(c),
             None => {
@@ -257,7 +308,7 @@ pub extern "C" fn gridDistance(origin: H3Index, h3: H3Index) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn isValidCell(h: H3Index) -> i32 {
-    if try_cell(h).is_some() { 1 } else { 0 }
+    if try_cell_strict(h).is_some() { 1 } else { 0 }
 }
 
 #[no_mangle]
@@ -338,10 +389,9 @@ pub unsafe extern "C" fn stringToH3(str_ptr: *const c_char) -> H3Index {
     let s = s.trim();
     let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
     let s = s.strip_suffix('l').or_else(|| s.strip_suffix('L')).unwrap_or(s);
-    u64::from_str_radix(s, 16)
-        .ok()
-        .and_then(|v| CellIndex::try_from(v).ok())
-        .map_or(0, |c| u64::from(c))
+    // Parse hex to u64 without validating the index type — the original C H3
+    // stringToH3 returns the raw value so callers can use it as cell, edge, etc.
+    u64::from_str_radix(s, 16).unwrap_or(0)
 }
 
 #[no_mangle]
@@ -385,7 +435,7 @@ pub extern "C" fn cellsToDirectedEdge(origin: H3Index, destination: H3Index) -> 
 
 #[no_mangle]
 pub extern "C" fn isValidDirectedEdge(edge: H3Index) -> i32 {
-    if try_edge(edge).is_some() { 1 } else { 0 }
+    if try_edge_strict(edge).is_some() { 1 } else { 0 }
 }
 
 #[no_mangle]
@@ -691,6 +741,105 @@ mod tests {
         assert_eq!(maxGridDiskSize(0), 1);
         assert_eq!(maxGridDiskSize(1), 7);
         assert_eq!(maxGridDiskSize(2), 19);
+    }
+
+    #[test]
+    fn test_grid_ring_sizes() {
+        // Use a higher-resolution cell to avoid slow iteration at res 0
+        let cell = CellIndex::try_from(0x85283473FFFFFFF_u64).unwrap(); // res 5
+
+        // k=0: 1 element
+        let count_0: usize = cell.grid_ring_fast(0).count();
+        assert_eq!(count_0, 1, "grid_ring_fast(0) should return 1 element");
+
+        // k=1: 6 elements
+        let count_1: usize = cell.grid_ring_fast(1).count();
+        assert_eq!(count_1, 6, "grid_ring_fast(1) should return 6 elements");
+
+        // k=2: 12 elements
+        let count_2: usize = cell.grid_ring_fast(2).count();
+        assert_eq!(count_2, 12, "grid_ring_fast(2) should return 12 elements");
+    }
+
+    #[test]
+    fn test_grid_ring_unsafe_ffi() {
+        // Test the FFI function directly with the CI test values
+        let cell = 579205133326352383_u64;
+        for k in [1_i32, 2, 3] {
+            let max_size = if k == 0 { 1 } else { 6 * k as usize };
+            let mut out = vec![0_u64; max_size];
+            let err = unsafe { gridRingUnsafe(cell, k, out.as_mut_ptr()) };
+            // This might return -1 (failure) for pentagon-adjacent cells,
+            // but it must not crash
+            eprintln!("gridRingUnsafe(cell, {}) = err:{}, out={:?}", k, err, out);
+        }
+    }
+
+    #[test]
+    fn test_string_to_h3_legacy_formats() {
+        use std::ffi::CString;
+        // Standard hex
+        let s = CString::new("85283473fffffff").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr()) }, 0x85283473FFFFFFF);
+        // 0x prefix
+        let s = CString::new("0x85283473fffffffL").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr()) }, 0x85283473FFFFFFF);
+        // 0X prefix, l suffix
+        let s = CString::new("0X85283473fffffffl").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr()) }, 0x85283473FFFFFFF);
+    }
+
+    #[test]
+    fn test_normalize_h3_index() {
+        // Cell with non-7 unused digits at resolution 5
+        assert_eq!(normalize_h3_index(0x085283473FFFFFFD), 0x085283473FFFFFFF);
+        // Already valid cell — unchanged
+        assert_eq!(normalize_h3_index(0x085283473FFFFFFF), 0x085283473FFFFFFF);
+        // Edge with non-7 unused digits at resolution 5
+        assert_eq!(normalize_h3_index(0x115283473FFFFFFD), 0x115283473FFFFFFF);
+    }
+
+    #[test]
+    fn test_malformed_cell_handling() {
+        let cell_malformed = 0x085283473FFFFFFD_u64;
+        // Strict validation rejects malformed cells (matches C H3 behavior)
+        assert_eq!(isValidCell(cell_malformed), 0);
+        // But operational functions normalize and accept them
+        assert!(try_cell(cell_malformed).is_some());
+    }
+
+    #[test]
+    fn test_directed_edge_values() {
+        let edge_valid = 0x115283473FFFFFFF_u64; // 1248204388774707199
+        let edge_malformed = 0x115283473FFFFFFD_u64; // 1248204388774707197
+
+        // Strict validation: valid=1, malformed=0
+        assert_eq!(isValidDirectedEdge(edge_valid), 1);
+        assert_eq!(isValidDirectedEdge(edge_malformed), 0);
+
+        // Operational functions normalize and accept both
+        assert!(try_edge(edge_valid).is_some());
+        assert!(try_edge(edge_malformed).is_some());
+
+        // Destination of valid edge
+        assert_eq!(getDirectedEdgeDestination(edge_valid), 599686043507097599);
+
+        // Destination of malformed edge (normalizes to valid first)
+        assert_eq!(getDirectedEdgeDestination(edge_malformed), 599686043507097599);
+
+        // Origin
+        assert_eq!(getDirectedEdgeOrigin(edge_valid), 599686042433355775);
+        assert_eq!(getDirectedEdgeOrigin(edge_malformed), 599686042433355775);
+
+        // Boundary
+        let mut gb: CellBoundary = unsafe { std::mem::zeroed() };
+        unsafe { directedEdgeToBoundary(edge_valid, &mut gb) };
+        assert_eq!(gb.num_verts, 2);
+
+        // cellsToDirectedEdge
+        let cell_a = 0x85283473FFFFFFF_u64;
+        let cell_b = 0x85283477FFFFFFF_u64;
+        assert_eq!(cellsToDirectedEdge(cell_a, cell_b), 1248204388774707199);
     }
 
     #[test]
