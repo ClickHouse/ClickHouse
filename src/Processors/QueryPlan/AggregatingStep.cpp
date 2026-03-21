@@ -499,7 +499,14 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
         if (!storage_has_evenly_distributed_read && !skip_merging)
         {
-            if (settings.min_rows_per_stream_for_gradual_resize || settings.min_bytes_per_stream_for_gradual_resize)
+            /// Use gradual resize only when there are GROUP BY keys.
+            /// For global aggregates (no keys), each AggregatingTransform produces exactly 1 row,
+            /// so merging overhead is trivial regardless of parallelism. Gradual resize would only
+            /// serialize the expensive upstream scan/filter work without any benefit.
+            bool use_gradual_resize = !params.keys.empty()
+                && (settings.min_rows_per_stream_for_gradual_resize || settings.min_bytes_per_stream_for_gradual_resize);
+
+            if (use_gradual_resize)
                 pipeline.resizeGradual(pipeline.getNumStreams(),
                     settings.min_rows_per_stream_for_gradual_resize,
                     settings.min_bytes_per_stream_for_gradual_resize);
