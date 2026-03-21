@@ -138,7 +138,8 @@
             position: relative;
             display: grid;
             grid-template-columns: auto 1fr;
-            grid-template-areas: "menu main";
+            grid-template-rows: auto 1fr;
+            grid-template-areas: "terminal terminal" "menu main";
         }
 
         #menu
@@ -198,6 +199,7 @@
 
         #terminal-panel
         {
+            grid-area: terminal;
             display: none;
             position: relative;
             background: #000;
@@ -718,10 +720,10 @@
             </a>
         </div>
     </div>
+    <div id="terminal-panel">
+        <div id="terminal-resizer"></div>
+    </div>
     <div id="main">
-        <div id="terminal-panel">
-            <div id="terminal-resizer"></div>
-        </div>
         <form id="controls">
             <div id="inputs">
                 <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
@@ -3100,7 +3102,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         terminalActive = true;
         terminalIcon.classList.add('active');
         terminalPanel.classList.add('active');
-        terminalPanel.style.height = Math.round(mainEl.offsetHeight * 0.4) + 'px';
+        terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
 
         if (!terminalIframe) {
             terminalIframe = document.createElement('iframe');
