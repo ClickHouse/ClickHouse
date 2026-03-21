@@ -81,18 +81,7 @@ Chunk Kafka2Source::generateImpl()
 {
     if (!consumer)
     {
-        try
-        {
-            consumer = storage.acquireConsumer(consumer_index);
-        }
-        catch (...)
-        {
-            LOG_WARNING(log, "Failed to acquire consumer for direct read: {}", getCurrentExceptionMessage(true));
-            return {};
-        }
-
-        if (!consumer)
-            return {};
+        consumer = storage.acquireConsumer(consumer_index);
 
         if (consumer->needsNewKeeper())
             consumer->setKeeper(storage.getZooKeeperAndAssertActive());
