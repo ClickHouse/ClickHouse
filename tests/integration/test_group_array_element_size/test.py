@@ -29,6 +29,7 @@ def started_cluster():
 
 
 def test_max_exement_size(started_cluster):
+    node1.query("DROP TABLE IF EXISTS tab3")
     node1.query(
         "CREATE TABLE tab3 (x AggregateFunction(groupArray, Array(UInt8))) ENGINE = MergeTree ORDER BY tuple()"
     )
@@ -73,6 +74,7 @@ def test_max_exement_size(started_cluster):
 
 
 def test_limit_size(started_cluster):
+    node2.query("DROP TABLE IF EXISTS tab4")
     node2.query(
         "CREATE TABLE tab4 (x AggregateFunction(groupArray, Array(UInt8))) ENGINE = MergeTree ORDER BY tuple()"
     )

@@ -45,6 +45,8 @@ def same_credentials_cluster():
 
 
 def test_same_credentials(same_credentials_cluster):
+    node1.query("TRUNCATE TABLE test_table")
+    node2.query("SYSTEM SYNC REPLICA test_table", timeout=10)
     node1.query("insert into test_table values ('2017-06-16', 111, 0)")
     time.sleep(1)
 
@@ -84,6 +86,8 @@ def no_credentials_cluster():
 
 
 def test_no_credentials(no_credentials_cluster):
+    node3.query("TRUNCATE TABLE test_table")
+    node4.query("SYSTEM SYNC REPLICA test_table", timeout=10)
     node3.query("insert into test_table values ('2017-06-18', 111, 0)")
     time.sleep(1)
 
@@ -123,6 +127,8 @@ def different_credentials_cluster():
 
 
 def test_different_credentials(different_credentials_cluster):
+    node5.query("TRUNCATE TABLE test_table")
+    node6.query("TRUNCATE TABLE test_table")
     node5.query("insert into test_table values ('2017-06-20', 111, 0)")
     time.sleep(1)
 
@@ -188,6 +194,8 @@ def credentials_and_no_credentials_cluster():
 
 
 def test_credentials_and_no_credentials(credentials_and_no_credentials_cluster):
+    node7.query("TRUNCATE TABLE test_table")
+    node8.query("TRUNCATE TABLE test_table")
     node7.query("insert into test_table values ('2017-06-21', 111, 0)")
     time.sleep(1)
 
