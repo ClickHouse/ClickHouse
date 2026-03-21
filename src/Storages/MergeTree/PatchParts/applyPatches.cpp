@@ -236,9 +236,9 @@ void CombinedPatchBuilder::build()
 IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
     const String & column_name, IColumn::Versions & dst_versions, const DataTypePtr & result_type) const
 {
-    std::vector<IColumn::Patch::Source> sources;
-    std::vector<bool> source_ok(all_patch_blocks.size(), true);
-    std::vector<size_t> remap(all_patch_blocks.size());
+    VectorWithMemoryTracking<IColumn::Patch::Source> sources;
+    VectorWithMemoryTracking<bool> source_ok(all_patch_blocks.size(), true);
+    VectorWithMemoryTracking<size_t> remap(all_patch_blocks.size());
     bool need_filter = false;
 
     for (size_t i = 0; i < all_patch_blocks.size(); ++i)
