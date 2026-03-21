@@ -314,8 +314,11 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, size_t num_leading_fixed_sort_key_columns = 0);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    /// Set the limit for FINAL merge algorithms. Unlike input_order_info->limit,
+    /// this is not cleared by filters/prewhere on fixed sorting key prefix columns.
+    void setFinalLimit(UInt64 final_limit_) { final_limit = final_limit_; }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -524,10 +527,27 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
+
+    /// FINAL BY: cached validation result (computed in constructor).
+    /// `use_final_by` is true when FINAL BY has a non-identity expression or
+    /// specifies fewer expressions than sorting key columns (prefix mode).
+    /// In both cases the merge sort description must be overridden.
+    /// `final_by_has_non_identity` is true when at least one FINAL BY expression
+    /// differs from the corresponding sorting key column (requires ExpressionTransform).
+    bool use_final_by = false;
+    bool final_by_has_non_identity = false;
+    std::shared_ptr<const ActionsDAG> final_by_dag;
+    std::vector<SortColumnDescription> final_by_sort_columns;
+
     bool enable_remove_parts_from_snapshot_optimization = true;
     bool allow_query_condition_cache = true;
 
     ExpressionActionsPtr virtual_row_conversion;
+
+    /// Limit for FINAL merge algorithms (set separately from input_order_info->limit
+    /// because filters/prewhere clear that limit for storage-level TopN, but the FINAL
+    /// merge can still use it when the filter is on a fixed prefix of the sorting key).
+    UInt64 final_limit = 0;
 
     std::optional<size_t> number_of_current_replica;
 

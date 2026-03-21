@@ -74,6 +74,151 @@ SET final = 1;
 SELECT x, y FROM mytable WHERE x > 1;
 ```
 
+## FINAL BY Modifier {#final-by-modifier}
+
+`FINAL BY` is an extension of the [`FINAL`](#final-modifier) modifier that merges rows at a **coarser granularity** than the table's sorting key. Instead of merging rows that share the exact same sorting key, `FINAL BY` lets you specify monotonic functions of the sorting key columns so that rows whose transformed keys are equal get merged together.
+
+This is only supported for [`AggregatingMergeTree`](/engines/table-engines/mergetree-family/aggregatingmergetree) and [`SummingMergeTree`](/engines/table-engines/mergetree-family/summingmergetree) engines.
+
+### Syntax {#final-by-syntax}
+
+```sql
+SELECT ... FROM table FINAL BY expr1[, expr2, ...]
+```
+
+The number of expressions in the `FINAL BY` clause must exactly match the number of columns in the table's `ORDER BY` clause. Each `FINAL BY` expression must be either:
+
+- **Identity**: the same expression as the corresponding sorting key column (e.g., `ORDER BY x` → `FINAL BY x`), or
+- **A monotonic function** of the corresponding sorting key column that preserves sort order (e.g., `ORDER BY unix_time` → `FINAL BY intDiv(unix_time, 10)`).
+
+When all `FINAL BY` expressions are identity (i.e., they match the sorting key exactly), the behavior is equivalent to plain `FINAL`.
+
+### Use Cases {#final-by-use-cases}
+
+`FINAL BY` is designed for producing **bucketed aggregates** directly from `AggregatingMergeTree` or `SummingMergeTree` tables without a separate `GROUP BY`. This is useful for time-series downsampling, where you want to aggregate fine-grained data into coarser time buckets at query time.
+
+For example, a table with per-second metrics (sorted by `unix_time`) can produce per-minute aggregates with `FINAL BY intDiv(unix_time, 60)` — the merge algorithm groups consecutive rows that fall into the same minute bucket and aggregates them.
+
+### Example: Time-Series Downsampling with AggregatingMergeTree {#final-by-example-aggregating}
+
+```sql
+CREATE TABLE metrics
+(
+    unix_time UInt64,
+    val AggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY unix_time;
+
+-- Insert per-second data across multiple parts
+INSERT INTO metrics
+    SELECT number, sumState(toUInt64(1)) FROM numbers(100) GROUP BY number;
+INSERT INTO metrics
+    SELECT number, sumState(toUInt64(2)) FROM numbers(100) GROUP BY number;
+
+-- Query: aggregate into 10-second buckets
+SELECT
+    intDiv(unix_time, 10) AS bucket,
+    finalizeAggregation(val) AS total
+FROM metrics FINAL BY intDiv(unix_time, 10)
+ORDER BY bucket ASC
+LIMIT 5;
+```
+
+```text
+┌─bucket─┬─total─┐
+│      0 │    30 │
+│      1 │    30 │
+│      2 │    30 │
+│      3 │    30 │
+│      4 │    30 │
+└────────┴───────┘
+```
+
+Each bucket contains 10 rows (values 0–9, 10–19, etc.), each appearing twice with `sumState(1)` and `sumState(2)`, giving `10 × 3 = 30`.
+
+### Example: SummingMergeTree {#final-by-example-summing}
+
+```sql
+CREATE TABLE counters
+(
+    unix_time UInt64,
+    val UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY unix_time;
+
+INSERT INTO counters SELECT number, 1 FROM numbers(100);
+INSERT INTO counters SELECT number, 2 FROM numbers(100);
+
+SELECT
+    intDiv(unix_time, 10) AS bucket,
+    val AS total
+FROM counters FINAL BY intDiv(unix_time, 10)
+ORDER BY bucket ASC
+LIMIT 5;
+```
+
+```text
+┌─bucket─┬─total─┐
+│      0 │    30 │
+│      1 │    30 │
+│      2 │    30 │
+│      3 │    30 │
+│      4 │    30 │
+└────────┴───────┘
+```
+
+### Example: Composite Sorting Key {#final-by-example-composite}
+
+When the table has a composite sorting key, every column must be covered:
+
+```sql
+CREATE TABLE trades
+(
+    token String,
+    pair String,
+    unix_time UInt64,
+    val AggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (token, pair, unix_time);
+
+-- FINAL BY keeps the first two columns as identity, coarsens the last one
+SELECT
+    intDiv(unix_time, 10) AS bucket,
+    finalizeAggregation(val) AS total
+FROM trades FINAL BY token, pair, intDiv(unix_time, 10)
+PREWHERE token = 'BTC' AND pair = 'USD'
+ORDER BY bucket ASC;
+```
+
+### Example: Monotonic Function of a Sorting Key Expression {#final-by-example-expression}
+
+If the sorting key itself is an expression, `FINAL BY` can apply a monotonic function on top:
+
+```sql
+CREATE TABLE daily_stats
+(
+    ts DateTime,
+    val AggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY toDate(ts);
+
+-- toStartOfMonth(toDate(ts)) is monotonic over toDate(ts)
+SELECT
+    toStartOfMonth(toDate(ts)) AS month,
+    finalizeAggregation(val) AS total
+FROM daily_stats FINAL BY month
+ORDER BY month ASC;
+```
+
+### Restrictions {#final-by-restrictions}
+
+- **Engine support**: Only `AggregatingMergeTree` and `SummingMergeTree`. Other engines (e.g., `ReplacingMergeTree`, `CollapsingMergeTree`) will throw a `BAD_ARGUMENTS` error.
+- **Expression count**: The number of `FINAL BY` expressions must exactly match the number of sorting key columns. Omitting tail columns or adding extra ones is not allowed.
+- **Monotonicity**: Each `FINAL BY` expression must be a monotonic function of the corresponding sorting key column that preserves sort order. Direction-reversing functions (e.g., `negate`) are rejected. Expressions that reference multiple sorting key columns (e.g., `a + b`) are also rejected.
 ## Implementation Details {#implementation-details}
 
 If the `FROM` clause is omitted, data will be read from the `system.one` table.

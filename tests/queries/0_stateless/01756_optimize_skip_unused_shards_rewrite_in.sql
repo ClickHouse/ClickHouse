@@ -16,6 +16,7 @@ set prefer_localhost_replica=0;
 set force_optimize_skip_unused_shards=2;
 set optimize_skip_unused_shards=1;
 set optimize_skip_unused_shards_rewrite_in=0;
+set optimize_in_to_equal=0;
 set log_queries=1;
 
 -- { echoOn }

@@ -898,21 +898,42 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         if (need_rewrite_query_with_final)
         {
             if (table_expression_query_info.table_expression_modifiers)
-            {
-                const auto & table_expression_modifiers = table_expression_query_info.table_expression_modifiers;
-                auto sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
-                auto sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
-
-                table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
-                    sample_size_ratio,
-                    sample_offset_ratio);
-            }
+                table_expression_query_info.table_expression_modifiers->setHasFinal(true);
             else
-            {
                 table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
                     {} /*sample_size_ratio*/,
                     {} /*sample_offset_ratio*/);
+        }
+
+        /// Build FINAL BY ActionsDAG from resolved query tree nodes (new analyzer path).
+        /// This replaces the old TreeRewriter/ExpressionAnalyzer-based DAG construction
+        /// inside `validateFinalBy`, using the already-resolved expressions from QueryAnalyzer.
+        if (table_expression_query_info.table_expression_modifiers
+            && table_expression_query_info.table_expression_modifiers->hasResolvedFinalBy())
+        {
+            const auto & resolved_nodes = table_expression_query_info.table_expression_modifiers->getResolvedFinalBy();
+
+            ActionsDAG final_by_dag;
+            ColumnNodePtrWithHashSet empty_correlated_columns_set;
+            PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+
+            std::vector<const ActionsDAG::Node *> output_nodes;
+            for (const auto & node : resolved_nodes)
+            {
+                auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(final_by_dag, node);
+                correlated_subtrees.assertEmpty("in FINAL BY expressions");
+                for (const auto * expr_node : expression_nodes)
+                    output_nodes.push_back(expr_node);
             }
+
+            /// Include all INPUT nodes as pass-through outputs, matching the behavior
+            /// of `ExpressionAnalyzer::getActionsDAG(false)`. This ensures that when
+            /// ExpressionActions runs, source columns (e.g. `unix_time`) are preserved
+            /// in the stream alongside the computed FINAL BY expressions.
+            for (const auto * input_node : final_by_dag.getInputs())
+                output_nodes.push_back(input_node);
+            final_by_dag.getOutputs() = std::move(output_nodes);
+            table_expression_query_info.final_by_actions_dag = std::make_shared<const ActionsDAG>(std::move(final_by_dag));
         }
 
         /// Apply trivial_count optimization if possible

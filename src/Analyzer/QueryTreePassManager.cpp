@@ -21,6 +21,7 @@
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
 #include <Analyzer/Passes/ConvertEmptyStringComparisonToFunctionPass.h>
+#include <Analyzer/Passes/ConvertInToEqualPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
@@ -315,6 +316,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<IfChainToMultiIfPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
     manager.addPass(std::make_unique<SumIfToCountIfPass>());
+
+    manager.addPass(std::make_unique<ConvertInToEqualPass>());
 
     manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 

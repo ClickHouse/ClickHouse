@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -52,6 +53,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/MergeTree/MergeTreeFinalByValidation.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/JSONBuilder.h>
@@ -165,6 +167,8 @@ namespace Setting
     extern const SettingsBool do_not_merge_across_partitions_select_final;
     extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
+    extern const SettingsBool optimize_final_limit_pushdown;
+    extern const SettingsBool optimize_final_sequential_partitions;
     extern const SettingsBool force_aggregate_partitions_independently;
     extern const SettingsBool force_primary_key;
     extern const SettingsString ignore_data_skipping_indices;
@@ -431,6 +435,23 @@ ReadFromMergeTree::ReadFromMergeTree(
     setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+
+    /// Validate FINAL BY and cache the result so that
+    /// `spreadMarkRangesAmongStreamsFinal` can use it without re-validating.
+    /// When every expression is identity the result is equivalent to plain FINAL.
+    if (query_info.final_by_actions_dag)
+    {
+        auto final_by_ast = query_info.finalBy();
+        auto result = validateFinalBy(
+            query_info.final_by_actions_dag->clone(),
+            final_by_ast->children.size(),
+            storage_snapshot,
+            data.merging_params.mode);
+        final_by_dag = std::make_shared<const ActionsDAG>(std::move(result.dag));
+        final_by_sort_columns = std::move(result.sort_columns);
+        final_by_has_non_identity = result.has_non_identity;
+        use_final_by = result.has_non_identity || result.is_prefix;
+    }
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
@@ -1499,7 +1520,9 @@ static void addMergingFinal(
     MergeTreeData::MergingParams merging_params,
     const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
-    bool enable_vertical_final)
+    bool enable_vertical_final,
+    UInt64 limit = 0,
+    bool disable_part_level_shortcut = false)
 {
     auto header = pipe.getSharedHeader();
     size_t num_outputs = pipe.numOutputPorts();
@@ -1512,7 +1535,7 @@ static void addMergingFinal(
         {
             case MergeTreeData::MergingParams::Ordinary:
                 return std::make_shared<MergingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, SortingQueueStrategy::Batch);
+                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, SortingQueueStrategy::Batch, limit);
 
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedTransform>(header, num_outputs,
@@ -1522,12 +1545,12 @@ static void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, limit, disable_part_level_shortcut);
             }
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, limit, disable_part_level_shortcut);
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
@@ -1547,12 +1570,31 @@ static void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<CoalescingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, limit);
             }
         }
     };
 
-    pipe.addTransform(get_merging_processor());
+    auto merging_processor = get_merging_processor();
+
+    /// Expose the pushed-down limit in EXPLAIN PIPELINE output,
+    /// but only for modes that actually use it for early termination.
+    if (limit)
+    {
+        switch (merging_params.mode)
+        {
+            case MergeTreeData::MergingParams::Ordinary:
+            case MergeTreeData::MergingParams::Aggregating:
+            case MergeTreeData::MergingParams::Summing:
+            case MergeTreeData::MergingParams::Coalescing:
+                merging_processor->setDescription(fmt::format("limit {}", limit));
+                break;
+            default:
+                break;
+        }
+    }
+
+    pipe.addTransform(std::move(merging_processor));
     if (enable_vertical_final)
         pipe.addSimpleTransform([](const SharedHeader & header_)
                                 { return std::make_shared<SelectByIndicesTransform>(header_); });
@@ -1644,6 +1686,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     auto it = parts_with_ranges.begin();
     parts_to_merge_ranges.push_back(it);
 
+    /// Note: `doNotMergePartsAcrossPartitionsFinal` is intentionally NOT disabled for
+    /// FINAL BY.  When the user sets `do_not_merge_across_partitions_select_final = 1`
+    /// or the automatic decision fires, rows in different partitions will be merged
+    /// independently.  This means that if the partition boundary falls in the middle
+    /// of a FINAL BY bucket, the bucket will be split across partitions and aggregated
+    /// separately — which is the expected (and documented) behavior: the user opts in
+    /// to per-partition processing and accepts the boundary effect.
     bool do_not_merge_across_partitions_select_final = doNotMergePartsAcrossPartitionsFinal();
     if (do_not_merge_across_partitions_select_final)
     {
@@ -1662,6 +1711,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     Pipes merging_pipes;
     Pipes no_merging_pipes;
+
+    /// Per-partition minmax info for sequential partition ordering.
+    /// Collected for all minmax columns during the loop below.
+    /// partition_minmax[partition_index][minmax_col] = {min, max}.
+    struct PartitionMinMax
+    {
+        Field min_value;
+        Field max_value;
+    };
+    std::vector<std::vector<PartitionMinMax>> partition_minmax;
 
     /// If do_not_merge_across_partitions_select_final is true and num_streams > 1
     /// we will store lonely parts with level > 0 to use parallel select on them.
@@ -1683,12 +1742,29 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), columns_to_restore);
     }
 
+    /// Number of minmax index columns in the partition key. We collect min/max values
+    /// for all of them during the loop, then select the right one later when we know
+    /// which sorting key columns are fixed (constant due to WHERE).
+    size_t num_minmax_columns = 0;
+    Names minmax_column_names;
+
+    if (do_not_merge_across_partitions_select_final
+        && storage_snapshot->metadata->hasPartitionKey())
+    {
+        const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
+        minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+        num_minmax_columns = minmax_column_names.size();
+    }
+
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
         /// with level > 0 then we won't post-process this part, and if num_streams > 1 we
         /// can use parallel select on such parts.
-        bool no_merging_final = do_not_merge_across_partitions_select_final &&
+        /// When FINAL BY is active, we always need to merge even single parts because
+        /// the coarsened key means rows within a part must be re-aggregated.
+        bool no_merging_final = !use_final_by &&
+            do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
             parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
             !reader_settings.read_in_order;
@@ -1742,7 +1818,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 /// deleted rows.
                 bool split_parts_ranges_into_intersecting_and_non_intersecting_final
                     = settings[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final] &&
-                          !reader_settings.read_in_order;
+                          !reader_settings.read_in_order && !use_final_by;
 
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     storage_snapshot->metadata->getPrimaryKey(),
@@ -1753,7 +1829,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     context,
                     std::move(in_order_reading_step_getter),
                     split_parts_ranges_into_intersecting_and_non_intersecting_final,
-                    settings[Setting::split_intersecting_parts_ranges_into_layers_final]);
+                    settings[Setting::split_intersecting_parts_ranges_into_layers_final] && !use_final_by);
 
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
@@ -1801,14 +1877,87 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 sort_description.emplace_back(sort_columns[i], 1);
         }
 
+        UInt64 limit = 0;
+        if (settings[Setting::optimize_final_limit_pushdown])
+        {
+            /// Use final_limit which is set by the optimizer from the SortingStep's limit.
+            /// Unlike input_order_info->limit, final_limit is not cleared by filters/prewhere
+            /// on fixed sorting key prefix columns, enabling limit pushdown for queries like
+            /// WHERE a = 1 ORDER BY b LIMIT N on a table with key (a, b).
+            limit = final_limit;
+        }
+
+        /// Apply FINAL BY (validated earlier) — override sort description and optionally add expression transforms.
+        if (use_final_by)
+        {
+            /// When at least one expression differs from the sorting key column,
+            /// add ExpressionTransform to compute the transformed columns.
+            if (final_by_has_non_identity)
+            {
+                auto final_by_actions = std::make_shared<ExpressionActions>(final_by_dag->clone());
+
+                for (auto & pipe : pipes)
+                {
+                    pipe.addSimpleTransform([&final_by_actions](const SharedHeader & header)
+                                            { return std::make_shared<ExpressionTransform>(header, final_by_actions); });
+                }
+
+                /// Drop temporary columns introduced by the FINAL BY expression.
+                if (!pipes.empty())
+                    out_projection = createProjection(pipes.front().getHeader());
+            }
+
+            /// Override sort description — for non-identity this uses the transformed
+            /// column names; for prefix-only this truncates to the FINAL BY prefix.
+            sort_description.clear();
+            sort_description.insert(sort_description.end(), final_by_sort_columns.begin(), final_by_sort_columns.end());
+        }
+
         for (auto & pipe : pipes)
+            /// Note: `enable_vertical_final` is safe to pass through with FINAL BY because
+            /// it is only set to true for Replacing mode (see initializePipeline), which is
+            /// incompatible with FINAL BY (only Aggregating and Summing allowed).
             addMergingFinal(
                 pipe,
                 sort_description,
                 data.merging_params,
                 storage_snapshot->metadata,
                 block_size.max_block_size_rows,
-                enable_vertical_final);
+                enable_vertical_final,
+                limit,
+                use_final_by);
+
+        /// Collect minmax values for all partition key columns in this partition
+        /// (used by sequential partition optimization later).
+        if (num_minmax_columns > 0)
+        {
+            std::vector<PartitionMinMax> per_col(num_minmax_columns);
+            std::vector<bool> initialized(num_minmax_columns, false);
+            for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
+            {
+                const auto & part = part_it->data_part;
+                if (!part->minmax_idx)
+                    continue;
+                for (size_t mm = 0; mm < num_minmax_columns && mm < part->minmax_idx->hyperrectangle.size(); ++mm)
+                {
+                    const auto & range = part->minmax_idx->hyperrectangle[mm];
+                    if (!initialized[mm])
+                    {
+                        per_col[mm].min_value = range.left;
+                        per_col[mm].max_value = range.right;
+                        initialized[mm] = true;
+                    }
+                    else
+                    {
+                        if (range.left < per_col[mm].min_value)
+                            per_col[mm].min_value = range.left;
+                        if (per_col[mm].max_value < range.right)
+                            per_col[mm].max_value = range.right;
+                    }
+                }
+            }
+            partition_minmax.push_back(std::move(per_col));
+        }
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
@@ -1856,6 +2005,142 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         }
 
         no_merging_pipes.emplace_back(std::move(pipe));
+    }
+
+    /// When optimize_final_sequential_partitions is enabled, with limit pushdown,
+    /// process partitions sequentially using ConcatProcessor instead of parallel Union.
+    /// ConcatProcessor only activates one input at a time, so once the downstream Limit
+    /// is satisfied, remaining partitions are never read at all.
+    ///
+    /// The algorithm uses minmax index values to sort partitions by the partition-related
+    /// sorting key column, then verifies partitions don't overlap on that column.
+    /// This ensures correct global ordering without relying on partition_id string ordering.
+    ///
+    /// Requirements:
+    /// - optimize_final_sequential_partitions = true
+    /// - do_not_merge_across_partitions_select_final = true
+    /// - read_in_order = true (sorting key matched)
+    /// - optimize_final_limit_pushdown = true AND final_limit > 0
+    /// - More than one partition (merging_pipes.size() > 1)
+    /// - No partitions went to no_merging_pipes (all in merging_pipes)
+    /// - A non-fixed partition key column exists in the sorting key
+    /// - All sorting key columns before it are fixed (constant due to WHERE)
+    /// - The partition column is within the read-in-order prefix
+    /// - Adjacent partitions don't overlap on the partition column
+    if (do_not_merge_across_partitions_select_final
+        && reader_settings.read_in_order
+        && settings[Setting::optimize_final_sequential_partitions]
+        && settings[Setting::optimize_final_limit_pushdown]
+        && final_limit > 0
+        && merging_pipes.size() > 1
+        && no_merging_pipes.empty()
+        && num_minmax_columns > 0
+        && partition_minmax.size() == merging_pipes.size()
+        && query_info.input_order_info)
+    {
+        const size_t num_fixed = query_info.input_order_info->num_leading_fixed_sort_key_columns;
+        const size_t used_prefix = query_info.input_order_info->used_prefix_of_sorting_key_size;
+        const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+        const auto & sorting_key_reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+
+        /// Find the first non-fixed sorting key column that is also a partition key column.
+        /// Fixed columns (constant due to WHERE) have the same value in every partition and
+        /// cannot distinguish partition order, so we skip them.
+        std::optional<size_t> minmax_col_index;
+        bool partition_sort_key_reverse = false;
+
+        for (size_t sk = 0; sk < sorting_key_columns.size(); ++sk)
+        {
+            /// Only consider sorting key columns within the read-in-order prefix.
+            if (sk >= used_prefix)
+                break;
+
+            /// Skip fixed columns — they are constant and cannot order partitions.
+            if (sk < num_fixed)
+                continue;
+
+            for (size_t mm = 0; mm < num_minmax_columns; ++mm)
+            {
+                if (sorting_key_columns[sk] == minmax_column_names[mm])
+                {
+                    partition_sort_key_reverse = !sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[sk];
+                    minmax_col_index = mm;
+                    break;
+                }
+            }
+            if (minmax_col_index)
+                break;
+        }
+
+        /// The partition-related column found above must satisfy:
+        /// 1) All columns before it are fixed (guaranteed by the search starting at num_fixed)
+        /// 2) It's within the read-in-order prefix (guaranteed by the search stopping at used_prefix)
+        if (minmax_col_index)
+        {
+            /// Create sort permutation of partitions by their min values.
+            std::vector<size_t> perm(merging_pipes.size());
+            std::iota(perm.begin(), perm.end(), 0);
+
+            const size_t mm_idx = *minmax_col_index;
+
+            /// Sort ascending (or descending if sorting key has reverse_flag).
+            if (partition_sort_key_reverse)
+            {
+                std::sort(perm.begin(), perm.end(), [&](size_t a, size_t b)
+                {
+                    return partition_minmax[b][mm_idx].min_value < partition_minmax[a][mm_idx].min_value;
+                });
+            }
+            else
+            {
+                std::sort(perm.begin(), perm.end(), [&](size_t a, size_t b)
+                {
+                    return partition_minmax[a][mm_idx].min_value < partition_minmax[b][mm_idx].min_value;
+                });
+            }
+
+            /// Verify non-overlapping: for ascending order, partition[i].max < partition[i+1].min.
+            /// For descending: partition[i].min > partition[i+1].max (which is the same check
+            /// on the sorted permutation since we sorted by min descending).
+            bool non_overlapping = true;
+            for (size_t i = 0; i + 1 < perm.size(); ++i)
+            {
+                const auto & current = partition_minmax[perm[i]][mm_idx];
+                const auto & next = partition_minmax[perm[i + 1]][mm_idx];
+                if (partition_sort_key_reverse)
+                {
+                    /// Descending order: current.min should be > next.max
+                    if (!(next.max_value < current.min_value))
+                    {
+                        non_overlapping = false;
+                        break;
+                    }
+                }
+                else
+                {
+                    /// Ascending order: current.max should be < next.min
+                    if (!(current.max_value < next.min_value))
+                    {
+                        non_overlapping = false;
+                        break;
+                    }
+                }
+            }
+
+            if (non_overlapping)
+            {
+                /// Reorder merging_pipes according to the sorted permutation.
+                Pipes sorted_pipes;
+                sorted_pipes.reserve(merging_pipes.size());
+                for (size_t idx : perm)
+                    sorted_pipes.emplace_back(std::move(merging_pipes[idx]));
+
+                Pipe result = Pipe::unitePipes(std::move(sorted_pipes));
+                auto concat = std::make_shared<ConcatProcessor>(result.getSharedHeader(), result.numOutputPorts());
+                result.addTransform(std::move(concat));
+                return result;
+            }
+        }
     }
 
     if (!merging_pipes.empty() && !no_merging_pipes.empty())
@@ -2782,7 +3067,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
         && context->canUseParallelReplicasOnInitiator();
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t num_leading_fixed_sort_key_columns)
 {
     /// if dirction is not set, use current one
     if (!direction)
@@ -2793,7 +3078,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (direction != 1 && query_info.isFinal())
         return false;
 
-    query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
+    query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit, num_leading_fixed_sort_key_columns);
     reader_settings.read_in_order = true;
 
     /// In case or read-in-order, don't create too many reading streams.
@@ -2828,7 +3113,6 @@ bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversi
     virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(virtual_row_conversion_));
     return true;
 }
-
 
 bool ReadFromMergeTree::readsInOrder() const
 {
