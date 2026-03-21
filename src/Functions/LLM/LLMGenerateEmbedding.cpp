@@ -46,6 +46,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_ai_functions;
     extern const SettingsString default_llm_resource;
     extern const SettingsUInt64 llm_request_timeout_sec;
     extern const SettingsUInt64 llm_max_concurrent_requests;
@@ -68,6 +69,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -104,7 +106,13 @@ class FunctionGenerateEmbeddingImpl final : public IFunction
 {
 public:
     static constexpr auto name = or_null ? "generateEmbeddingOrNull" : "generateEmbedding";
-    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionGenerateEmbeddingImpl>(std::move(ctx)); }
+    static FunctionPtr create(ContextPtr ctx)
+    {
+        if (!ctx->getSettingsRef()[Setting::allow_experimental_ai_functions])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "AI function '{}' is experimental. Set `allow_experimental_ai_functions` setting to enable it", name);
+        return std::make_shared<FunctionGenerateEmbeddingImpl>(std::move(ctx));
+    }
     explicit FunctionGenerateEmbeddingImpl(ContextPtr context_) : context(std::move(context_)) {}
 
     String getName() const override { return name; }

@@ -10,6 +10,7 @@
 --   LLMGenerateContent, generateEmbedding, generateEmbeddingOrNull
 -- =============================================================================
 
+SET allow_experimental_ai_functions = 1;
 SET default_llm_resource = '';
 
 -- =============================================================================
@@ -204,5 +205,6 @@ SELECT generateEmbedding(x, number) FROM (SELECT 'text' AS x, number FROM number
 -- Cleanup
 -- =============================================================================
 
+SET allow_experimental_ai_functions = 1;
 SET default_llm_resource = '';
 DROP NAMED COLLECTION IF EXISTS _03300_test_nc;
