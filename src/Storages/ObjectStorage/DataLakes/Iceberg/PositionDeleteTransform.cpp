@@ -12,6 +12,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Planner/AnalyzeExpression.h>
 #include <Parsers/ASTFunction.h>

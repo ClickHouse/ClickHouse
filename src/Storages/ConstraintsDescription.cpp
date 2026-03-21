@@ -143,7 +143,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
         {
             ASTPtr expr = constraint_ptr->expr->clone();
-            res.push_back(analyzeExpressionToActions(expr, source_columns_, context));
+            res.push_back(analyzeExpressionToActions(expr, source_columns_, context, false, CompileExpressions::yes));
         }
     }
     return res;

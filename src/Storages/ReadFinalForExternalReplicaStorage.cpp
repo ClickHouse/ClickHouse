@@ -78,7 +78,7 @@ void readFinalFromNestedStorage(
     if (!expressions->children.empty())
     {
         const auto & header = query_plan.getCurrentHeader();
-        auto actions = analyzeExpressionToActionsDAG(expressions, header->getNamesAndTypesList(), context, true);
+        auto actions = analyzeExpressionToActionsDAG(expressions, header->getNamesAndTypesList(), context, true, false);
 
         auto step = std::make_unique<FilterStep>(
             query_plan.getCurrentHeader(),

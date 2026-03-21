@@ -1,6 +1,7 @@
 #include <Storages/IPartitionStrategy.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Planner/AnalyzeExpression.h>
 #include <Storages/PartitionedSink.h>
 #include <Functions/generateSnowflakeID.h>

@@ -1,5 +1,8 @@
 #include <Planner/AnalyzeExpression.h>
 
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
+
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -32,7 +35,8 @@ ActionsDAG analyzeExpressionToActionsDAG(
     const ASTPtr & expression_ast,
     const NamesAndTypesList & available_columns,
     const ContextPtr & context,
-    bool add_aliases)
+    bool add_aliases,
+    bool project_result)
 {
     /// Ensure the AST is an expression list, because QueryNode projection expects a ListNode.
     ASTPtr expr_list_ast = expression_ast;
@@ -193,7 +197,7 @@ ActionsDAG analyzeExpressionToActionsDAG(
             ast_column_names.push_back(output->result_name);
     }
 
-    if (add_aliases)
+    if (add_aliases && project_result)
     {
         /// Project to only the expression columns, renamed to match AST column names.
         NamesWithAliases rename_pairs;
@@ -203,6 +207,18 @@ ActionsDAG analyzeExpressionToActionsDAG(
             rename_pairs.emplace_back(outputs[i]->result_name, ast_column_names[i]);
 
         actions.project(rename_pairs);
+    }
+    else if (add_aliases && !project_result)
+    {
+        /// Add aliases but keep source columns in the output — matches the old
+        /// ExpressionAnalyzer::getActionsDAG(true, false) behavior.
+        NamesWithAliases rename_pairs;
+        rename_pairs.reserve(outputs.size());
+
+        for (size_t i = 0; i != outputs.size(); ++i)
+            rename_pairs.emplace_back(outputs[i]->result_name, ast_column_names[i]);
+
+        actions.addAliases(rename_pairs);
     }
     else
     {
@@ -276,10 +292,11 @@ ExpressionActionsPtr analyzeExpressionToActions(
     const ASTPtr & expression_ast,
     const NamesAndTypesList & available_columns,
     const ContextPtr & context,
-    bool add_aliases)
+    bool add_aliases,
+    CompileExpressions compile_expressions)
 {
     auto dag = analyzeExpressionToActionsDAG(expression_ast, available_columns, context, add_aliases);
-    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context, compile_expressions));
 }
 
 }
