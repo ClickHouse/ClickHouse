@@ -436,6 +436,9 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     allow_distributed_ddl_queries = config.getBool(config_prefix + "allow_distributed_ddl_queries", true);
     std::erase(config_keys, "allow_distributed_ddl_queries");
 
+    active_insert_shard_nums = config.getInt(config_prefix + "active_insert_shard_nums", 0);
+    std::erase(config_keys, "active_insert_shard_nums");
+
     if (config_keys.empty())
         throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No cluster elements (shard, node) specified in config at path {}", config_prefix);
 

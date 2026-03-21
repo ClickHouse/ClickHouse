@@ -21,6 +21,7 @@ namespace DB
 template <typename T>
 IColumn::Selector createBlockSelector(
     const IColumn & column,
-    const std::vector<UInt64> & slots);
+    const std::vector<UInt64> & slots,
+    const size_t num_shards);
 
 }
