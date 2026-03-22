@@ -80,6 +80,9 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         nullptr, // read_keys
         {} // file_progress_callback
     );
+    /// This iterator is used only to get a sample path for hive partitioning,
+    /// not for actual data reading, so do not emit ProfileEvents.
+    file_iterator->setEmitProfileEvents(false);
 
     const auto path = configuration->getRawPath();
 

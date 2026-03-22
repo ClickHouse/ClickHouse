@@ -2,6 +2,7 @@
 
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
@@ -82,6 +83,14 @@ namespace
                 const auto * unary_operator = static_cast<const PQT::UnaryOperator *>(node);
                 SQLQueryPiece argument = visitNode(unary_operator->getArgument(), context);
                 return applyUnaryOperator(unary_operator, std::move(argument), context);
+            }
+
+            case NodeType::BinaryOperator:
+            {
+                const auto * binary_operator = static_cast<const PQT::BinaryOperator *>(node);
+                SQLQueryPiece left_argument = visitNode(binary_operator->getLeftArgument(), context);
+                SQLQueryPiece right_argument = visitNode(binary_operator->getRightArgument(), context);
+                return applyBinaryOperator(binary_operator, std::move(left_argument), std::move(right_argument), context);
             }
 
             default:

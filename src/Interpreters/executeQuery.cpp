@@ -37,6 +37,7 @@
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
@@ -119,6 +120,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_kusto_dialect;
+    extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
@@ -155,6 +157,7 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
@@ -1168,6 +1171,21 @@ static BlockIO executeQueryImpl(
             ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
+        else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
+        {
+            /// Pass through to `ParserPolyglotQuery` which handles SET queries
+            /// internally (via the standard parser) even when the feature gate
+            /// is off.  This lets users recover from misconfigured profiles
+            /// (e.g. `SET dialect = 'clickhouse'`) without being locked out.
+            ParserPolyglotQuery parser(
+                max_query_size,
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks],
+                settings[Setting::polyglot_dialect],
+                end,
+                settings[Setting::allow_experimental_polyglot_dialect]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
         else
         {
             ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
@@ -2018,10 +2036,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     for (size_t i = 0; i < num_runs; ++i)
     {
         ASTPtr fuzzed_ast;
+        NameToNameMap fuzzed_query_params;
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
+            fuzzed_query_params = fuzzer->getLastQueryParameters();
         }
 
         WriteBufferFromOwnString fuzzed_query_buf;
@@ -2050,6 +2070,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->makeQueryContext();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
+            if (!fuzzed_query_params.empty())
+                fuzz_context->setQueryParameters(fuzzed_query_params);
 
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 
