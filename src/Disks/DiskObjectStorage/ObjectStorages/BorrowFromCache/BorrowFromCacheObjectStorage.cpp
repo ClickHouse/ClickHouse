@@ -49,7 +49,7 @@ ReadSettings BorrowFromCacheObjectStorage::patchSettings(const ReadSettings & re
     return IObjectStorage::patchSettings(modified_settings);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BorrowFromCacheObjectStorage::readObject(
+std::unique_ptr<ReadBufferFromFileBase> BorrowFromCacheObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint) const
@@ -67,7 +67,7 @@ std::unique_ptr<ReadBufferFromFileBase> BorrowFromCacheObjectStorage::readObject
     return createReadBufferFromFileBase(cache_path, patchSettings(read_settings), read_hint);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> BorrowFromCacheObjectStorage::writeObject(
+std::unique_ptr<WriteBufferFromFileBase> BorrowFromCacheObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode,
     std::optional<ObjectAttributes> /* attributes */,
@@ -155,7 +155,7 @@ std::optional<ObjectMetadata> BorrowFromCacheObjectStorage::tryGetObjectMetadata
     return metadata;
 }
 
-void BorrowFromCacheObjectStorage::copyObject(
+void BorrowFromCacheObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,

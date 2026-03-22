@@ -31,17 +31,17 @@ public:
 
     bool exists(const StoredObject & object) const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readObject(
+    std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint) const override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeObject(
+    std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
         WriteMode mode,
-        std::optional<ObjectAttributes> attributes = {},
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        const WriteSettings & write_settings = {}) override;
+        std::optional<ObjectAttributes> attributes,
+        size_t buf_size,
+        const WriteSettings & write_settings) override;
 
     void removeObjectIfExists(const StoredObject & object) override;
 
@@ -51,12 +51,12 @@ public:
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
-    void copyObject(
+    void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
-        std::optional<ObjectAttributes> object_to_attributes = {}) override;
+        std::optional<ObjectAttributes> object_to_attributes) override;
 
     void shutdown() override;
 

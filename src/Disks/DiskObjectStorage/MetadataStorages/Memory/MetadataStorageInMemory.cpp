@@ -17,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int DIRECTORY_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -331,7 +330,7 @@ void MetadataStorageInMemoryTransaction::removeRecursive(
         {
             if (it->first.starts_with(prefix) || it->first == path)
             {
-                if (should_remove_objects(it->first))
+                if (!should_remove_objects || should_remove_objects(fs::relative(it->first, path)))
                 {
                     for (const auto & obj : it->second.objects)
                         objects_to_remove.push_back(obj);
