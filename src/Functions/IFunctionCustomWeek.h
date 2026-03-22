@@ -42,7 +42,7 @@ public:
         return true;
     }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
+    bool hasInformationAboutMonotonicity() const override { return Transform::hasMonotonicity(); }
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
