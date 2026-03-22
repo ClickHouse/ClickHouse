@@ -14,6 +14,7 @@
 #include <Poco/Util/JSONConfiguration.h>
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
@@ -765,6 +766,7 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
         case Coordination::OpNum::Reconfig:
         case Coordination::OpNum::Auth:
         case Coordination::OpNum::SessionID:
+        case Coordination::OpNum::CreateTTL: // TODO: create feature flag
             return true;
     }
 }

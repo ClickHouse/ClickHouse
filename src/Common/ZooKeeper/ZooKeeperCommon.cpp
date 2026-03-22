@@ -215,6 +215,17 @@ std::string ZooKeeperAuthRequest::toStringImpl(bool /*short_format*/) const
         scheme);
 }
 
+enum class CreateMode
+{
+    PERSISTENT = 0,
+    EPHEMERAL = 1,
+    PERSISTENT_SEQUENTIAL = 2,
+    EPHEMERAL_SEQUENTIAL = 3,
+    CONTAINER = 4,
+    PERSISTENT_WITH_TTL = 5,
+    PERSISTENT_SEQUENTIAL_WITH_TTL = 6
+};
+
 void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 {
     /// See https://github.com/ClickHouse/clickhouse-private/issues/3029
@@ -227,20 +238,34 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(data, out);
     Coordination::write(acls, out);
 
-    int32_t flags = 0;
+    CreateMode flags;
+    if (include_ttl)
+    {
+        chassert(!is_ephemeral);
+        flags = is_sequential ? CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL : CreateMode::PERSISTENT_WITH_TTL; /// PERSISTENT_SEQUENTIAL_WITH_TTL : PERSISTENT_WITH_TTL
+    }
+    else if (is_ephemeral && is_sequential)
+        flags = CreateMode::EPHEMERAL_SEQUENTIAL;
+    else if (is_ephemeral)
+        flags = CreateMode::EPHEMERAL;
+    else if (is_sequential)
+        flags = CreateMode::PERSISTENT_SEQUENTIAL;
+    else
+        flags = CreateMode::PERSISTENT;
 
-    if (is_ephemeral)
-        flags |= 1;
-    if (is_sequential)
-        flags |= 2;
+    Coordination::write(static_cast<Int32>(flags), out);
 
-    Coordination::write(flags, out);
+    if (include_ttl)
+        Coordination::write(ttl, out);
 }
 
 size_t ZooKeeperCreateRequest::sizeImpl() const
 {
     int32_t flags = 0;
-    return Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
+    auto size = Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
+    if (include_ttl)
+        size += sizeof(ttl);
+    return size;
 }
 
 void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
@@ -249,13 +274,42 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
     Coordination::read(data, in);
     Coordination::read(acls, in);
 
-    int32_t flags = 0;
-    Coordination::read(flags, in);
+    int32_t flags_read = 0;
+    Coordination::read(flags_read, in);
 
-    if (flags & 1)
-        is_ephemeral = true;
-    if (flags & 2)
-        is_sequential = true;
+    is_ephemeral = false;
+    is_sequential = false;
+    include_ttl = false;
+
+    /// org.apache.zookeeper.CreateMode.fromFlag.
+    auto flags = static_cast<CreateMode>(flags_read);
+    switch (flags)
+    {
+        case CreateMode::PERSISTENT:
+            break;
+        case CreateMode::EPHEMERAL:
+            is_ephemeral = true;
+            break;
+        case CreateMode::PERSISTENT_SEQUENTIAL:
+            is_sequential = true;
+            break;
+        case CreateMode::EPHEMERAL_SEQUENTIAL:
+            is_ephemeral = true;
+            is_sequential = true;
+            break;
+        case CreateMode::CONTAINER:
+            break;
+        case CreateMode::PERSISTENT_WITH_TTL:
+            include_ttl = true;
+            break;
+        case CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL:
+            include_ttl = true;
+            is_sequential = true;
+            break;
+    }
+
+    if (include_ttl)
+        Coordination::read(ttl, in);
 }
 
 std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
@@ -282,6 +336,23 @@ void ZooKeeperCreateResponse::writeImpl(WriteBuffer & out) const
 size_t ZooKeeperCreateResponse::sizeImpl() const
 {
     return Coordination::size(path_created);
+}
+
+void ZooKeeperCreateTTLResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path_created, in);
+    Coordination::read(zstat, in);
+}
+
+void ZooKeeperCreateTTLResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path_created, out);
+    Coordination::write(zstat, out);
+}
+
+size_t ZooKeeperCreateTTLResponse::sizeImpl() const
+{
+    return Coordination::size(path_created) + Coordination::size(zstat);
 }
 
 void ZooKeeperCreate2Response::writeImpl(WriteBuffer & out) const
@@ -1355,6 +1426,8 @@ ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
         return std::make_shared<ZooKeeperCreate2Response>();
     if (not_exists)
         return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
+    if (include_ttl)
+        return std::make_shared<ZooKeeperCreateTTLResponse>();
     return std::make_shared<ZooKeeperCreateResponse>();
 }
 
@@ -1528,6 +1601,15 @@ void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) 
     elem.stat = zstat;
 }
 
+void ZooKeeperCreateTTLResponse::fillLogElements(LogElements & elems, size_t idx) const
+{
+    ZooKeeperResponse::fillLogElements(elems, idx);
+    auto & elem =  elems[idx];
+    elem.path_created = path_created;
+    elem.stat = zstat;
+}
+
+
 void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
@@ -1674,6 +1756,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->not_exists = true;
         else if constexpr (num == OpNum::Create2)
             res->include_stats = true;
+        else if constexpr (num == OpNum::CreateTTL)
+            res->include_ttl = true;
         else if constexpr (num == OpNum::CheckStat)
             res->stat_to_check.emplace();
         else if constexpr (num == OpNum::TryRemove)
@@ -1691,6 +1775,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Create2, ZooKeeperCreateRequest>(*this);
+    registerZooKeeperRequest<OpNum::CreateTTL, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::TryRemove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);

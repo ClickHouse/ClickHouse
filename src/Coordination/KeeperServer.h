@@ -162,6 +162,8 @@ public:
     void recalculateStorageStats();
 
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
+
+    std::vector<std::string> getExpiredTTLPathsForGarbageCollector() const;
 };
 
 }

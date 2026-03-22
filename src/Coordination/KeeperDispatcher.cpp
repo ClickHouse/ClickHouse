@@ -1,3 +1,4 @@
+#include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Common/ProfiledLocks.h>
 #include <libnuraft/async.hxx>
@@ -75,6 +76,8 @@ namespace DB
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
+    extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
+    extern const CoordinationSettingsUInt64 max_finished_sessions_cache_size;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
@@ -598,6 +601,49 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
+void KeeperDispatcher::garbageCollectorThread()
+{
+    DB::setThreadName(ThreadName::KEEPER_TTL_GARBAGE_COLLECTOR);
+
+    while (!keeper_context->isShutdownCalled())
+    {
+        try
+        {
+            if (server->checkInit() && isLeader())
+            {
+                std::vector<std::string> paths = server->getExpiredTTLPathsForGarbageCollector();
+                for (auto & path : paths)
+                {
+                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::TryRemove);
+                    auto & rem = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*request);
+                    rem.path = std::move(path);
+                    rem.version = -1;
+                    rem.try_remove = true;
+                    rem.xid = Coordination::CLOSE_XID;
+                    using namespace std::chrono;
+
+                    KeeperRequestForSession info;
+
+                    info.session_id = keeper_internal_ttl_garbage_collector_session_id;
+                    info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+                    info.request = std::move(request);
+
+                    if (!requests_queue->push(std::move(info)))
+                        LOG_WARNING(log, "Garbage collector: queue full, drop path retry next tick");
+                    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+                }
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(
+            configuration_and_settings->coordination_settings[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds()));
+    }
+
+}
+
 bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
 {
     /// Extract callback under lock, invoke outside to avoid serializing callback
@@ -838,6 +884,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
+    ttl_garbage_collector_thread = ThreadFromGlobalPool([this] { garbageCollectorThread(); });
 
     update_configuration_thread = reconfigEnabled()
         ? ThreadFromGlobalPool([this] { clusterUpdateThread(); })
@@ -855,6 +902,9 @@ void KeeperDispatcher::shutdown()
                 return;
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
+
+            if (ttl_garbage_collector_thread.joinable())
+                ttl_garbage_collector_thread.join();
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();

@@ -1657,6 +1657,15 @@ void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
     }
 }
 
+template<typename Storage>
+std::vector<std::string> KeeperStateMachine<Storage>::getExpiredTTLPathsForGarbageCollector() const
+{
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    return storage->collectExpiredTTLPaths(now_ms);
+}
+
 template class KeeperStateMachine<KeeperMemoryStorage>;
 #if USE_ROCKSDB
 template class KeeperStateMachine<KeeperRocksStorage>;

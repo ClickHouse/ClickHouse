@@ -125,6 +125,16 @@ namespace
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
             writeBinary(node.sizeInBytes(), out);
+
+        if (version >= SnapshotVersion::V7)
+        {
+            writeBinary(node.destroy_time.has_value(), out);
+            if (node.destroy_time.has_value())
+                writeBinary(*node.destroy_time, out);
+            writeBinary(node.ttl.has_value(), out);
+            if (node.ttl.has_value())
+                writeBinary(*node.ttl, out);
+        }
     }
 
     template<typename Node>
@@ -232,6 +242,26 @@ namespace
         {
             uint64_t size_bytes = 0;
             readBinary(size_bytes, in);
+        }
+
+        if (version >= SnapshotVersion::V7)
+        {
+            bool has_destroy_time = false;
+            readBinary(has_destroy_time, in);
+            if (has_destroy_time)
+            {
+                int64_t destroy_time_ms = 0;
+                readBinary(destroy_time_ms, in);
+                node.destroy_time = destroy_time_ms;
+            }
+            bool has_ttl = false;
+            readBinary(has_ttl, in);
+            if (has_ttl)
+            {
+                int64_t ttl_ms = 0;
+                readBinary(ttl_ms, in);
+                node.ttl = ttl_ms;
+            }
         }
     }
 
@@ -532,6 +562,15 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
             storage.nodes_digest += node.getDigest(path);
 
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
+    }
+
+    if (load_full_storage)
+    {
+        for (const auto & itr : storage.container)
+        {
+            if (itr.value.destroy_time.has_value())
+                storage.ttl_paths.insert(std::string{itr.key});
+        }
     }
 
     if constexpr (use_rocksdb)

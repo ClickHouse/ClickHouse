@@ -256,7 +256,7 @@ public:
         return true;
     }
 
-    const_iterator find(std::string_view key)
+    const_iterator find(std::string_view key) const
     {
         /// rocksdb::PinnableSlice slice;
         std::string buffer_str;

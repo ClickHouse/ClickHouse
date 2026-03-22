@@ -35,9 +35,10 @@ enum SnapshotVersion : uint8_t
     V5 = 5, /// add ZXID and digest to snapshots
     V6 = 6, /// remove is_sequential, per node size, data length
     V7 = 7, /// acl_id narrowed from uint64_t to uint32_t, seq_num widened from int32_t to int64_t
+    V8 = 8, /// add destroy_time and ttl for TTL nodes
 };
 
-static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V7;
+static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V8;
 
 /// What is stored in binary snapshot
 template<typename Storage>

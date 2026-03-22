@@ -168,6 +168,8 @@ struct KeeperRocksNode : public KeeperRocksNodeInfo
         stats = other.stats;
         acl_id = other.acl_id;
         num_children = other.num_children;
+        destroy_time = other.destroy_time;
+        ttl = other.ttl;
         if (stats.data_size != 0)
         {
             data = std::unique_ptr<char[]>(new char[stats.data_size]);
@@ -195,6 +197,10 @@ struct KeeperRocksNode : public KeeperRocksNodeInfo
     }
     std::unique_ptr<char[]> data{nullptr};
     mutable UInt64 cached_digest = 0; /// we cached digest for this node.
+    /// Absolute expiry for TTL
+    mutable std::optional<int64_t> destroy_time;
+    /// TTL interval in ms
+    std::optional<int64_t> ttl;
 private:
     bool serialized = false;
 };
@@ -210,6 +216,10 @@ struct KeeperMemNode
 
     ACLId acl_id = 0; /// 0 -- no ACL by default
     int32_t num_children = 0;
+    /// Absolute expiry for TTL GC
+    mutable std::optional<int64_t> destroy_time;
+    /// TTL interval in ms
+    std::optional<int64_t> ttl;
 
     int32_t numChildren() const
     {
@@ -494,10 +504,10 @@ public:
 
 #if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
     static_assert(sizeof(CompactChildrenSet) == 16);
-    static_assert(sizeof(KeeperMemNode) == 104);
+    static_assert(sizeof(KeeperMemNode) == 136);
     static_assert(
-        sizeof(ListNode<Node>) <= 128,
-        "std::list node containing ListNode<Node> is > 144 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
+        sizeof(ListNode<Node>) <= 200,
+        "std::list node containing ListNode<Node> is > 200 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
         "memory consumption");
     static_assert(std::is_nothrow_move_assignable_v<CompactChildrenSet>);
     static_assert(std::is_nothrow_move_constructible_v<CompactChildrenSet>);
@@ -514,6 +524,13 @@ public:
     /// All other structures expect session_and_timeout can be restored from
     /// container.
     Container container;
+
+    /// Paths of nodes that may carry TTL
+    mutable std::unordered_set<
+        String,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>
+        ttl_paths;
 
     struct UncommittedState
     {
@@ -603,7 +620,14 @@ public:
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool
-    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest);
+    createNode(
+        const std::string & path,
+        String data,
+        const Coordination::Stat & stat,
+        Coordination::ACLs node_acls,
+        bool update_digest,
+        std::optional<int64_t> destroy_time,
+        std::optional<int64_t> ttl);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
@@ -668,6 +692,8 @@ public:
     uint64_t getApproximateDataSize() const;
 
     uint64_t getArenaDataSize() const;
+
+    std::vector<std::string> collectExpiredTTLPaths(int64_t now_ms) const;
 
     void updateStats();
 

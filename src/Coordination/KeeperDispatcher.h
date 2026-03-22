@@ -65,6 +65,8 @@ private:
     ThreadFromGlobalPool responses_thread;
     /// Cleaning old dead sessions
     ThreadFromGlobalPool session_cleaner_thread;
+    /// TTL expiry: leader enqueues TryRemove for expired empty nodes
+    ThreadFromGlobalPool ttl_garbage_collector_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
     /// Apply or wait for configuration changes
@@ -124,6 +126,7 @@ private:
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
+    void garbageCollectorThread();
 public:
     using SessionAndXID = std::pair</*session ID*/ int64_t, Coordination::XID>;
 

@@ -408,6 +408,8 @@ struct CreateRequest : virtual Request
     bool is_sequential = false;
     ACLs acls;
     bool include_stats = false;
+    bool include_ttl = false;
+    int64_t ttl;
 
     /// should it succeed if node already exists
     bool not_exists = false;
@@ -415,8 +417,14 @@ struct CreateRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + data.size()
-            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL); }
+    size_t bytesSize() const override
+    {
+        auto base_size = path.size() + data.size()
+            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL);
+        if (include_ttl)
+            base_size += sizeof(ttl);
+        return base_size;
+    }
 };
 
 struct CreateResponse : virtual Response
