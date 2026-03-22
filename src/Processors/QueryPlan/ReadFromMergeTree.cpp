@@ -219,6 +219,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_before_external_sort;
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsFloat read_in_order_max_primary_key_ratio;
     extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
@@ -3043,9 +3044,10 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         /// (e.g., because the WHERE clause uses a pattern like LIKE '%...' that can't use the index),
         /// read-in-order kills parallelism: each part is read by a single stream instead of many.
         /// In such cases, parallel reading with a per-stream sort is much faster.
+        const double max_pk_ratio = context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio];
         const bool has_limit = query_info.input_order_info->limit > 0;
         const bool pk_filtering_is_poor = result.total_marks_pk > 0
-            && result.selected_marks_pk > result.total_marks_pk / 2;
+            && static_cast<double>(result.selected_marks_pk) > static_cast<double>(result.total_marks_pk) * max_pk_ratio;
 
         if (!has_limit && pk_filtering_is_poor)
         {

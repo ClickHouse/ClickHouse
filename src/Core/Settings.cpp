@@ -3833,6 +3833,13 @@ Possible values:
     DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
 )", 0) \
+    DECLARE(Float, read_in_order_max_primary_key_ratio, 0.5, R"(
+Maximum ratio of selected to total primary key granules for `optimize_read_in_order` to stay enabled.
+When the primary key index selects more than this fraction of granules (i.e., filtering is poor),
+the read-in-order optimization is disabled at runtime and replaced with parallel reading plus
+per-stream sorting. This avoids the parallelism loss inherent in sequential in-order reading.
+Set to 1.0 to never disable read-in-order based on PK selectivity.
+)", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
