@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.4",
         {
             {"enable_materialized_cte", false, false, "New setting"},
+            {"allow_experimental_detach_non_readonly_queries", false, false, "New setting to detach non-readonly queries (run in background thread) and return query_id immediately."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -74,7 +75,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
-            {"allow_experimental_detach_non_readonly_queries", false, false, "New setting to detach non-readonly queries (run in background thread) and return query_id immediately."},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
