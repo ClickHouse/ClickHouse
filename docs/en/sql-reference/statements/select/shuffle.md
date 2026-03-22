@@ -34,7 +34,8 @@ Randomize all rows:
 ```sql
 SELECT number
 FROM numbers(10)
-SHUFFLE;
+SHUFFLE
+SETTINGS allow_experimental_shuffle_query = 1;
 ```
 
 Randomize rows and return only `n` rows:
