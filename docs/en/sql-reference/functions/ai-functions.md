@@ -3,6 +3,7 @@ description: 'Documentation for LLM (Large Language Model) Functions'
 sidebar_label: 'AI'
 slug: /sql-reference/functions/ai-functions
 title: 'AI Functions'
+doc_type: 'reference'
 ---
 
 # AI functions
