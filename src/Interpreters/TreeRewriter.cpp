@@ -1462,9 +1462,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         if (!settings[Setting::allow_experimental_shuffle_query])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
 
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "`SHUFFLE` is supported only with the analyzer (turn on setting `allow_experimental_analyzer = 1`)");
+        if (!select_options.only_analyze)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "`SHUFFLE` is supported only with the analyzer (turn on setting `allow_experimental_analyzer = 1`)");
     }
 
     /// Remove unneeded columns according to 'required_result_columns'.

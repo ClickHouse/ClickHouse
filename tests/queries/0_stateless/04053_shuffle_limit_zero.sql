@@ -6,5 +6,5 @@ FROM
     WHERE 1
     SHUFFLE
     LIMIT 0
-    SETTINGS allow_experimental_shuffle_query = 1
+    SETTINGS allow_experimental_shuffle_query = 1, allow_experimental_analyzer = 1
 );
