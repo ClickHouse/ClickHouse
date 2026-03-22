@@ -30,13 +30,17 @@ SELECT count() > 0 FROM (
 
 -- merge_only / partial_only modes only appear with the new analyzer because the
 -- old analyzer builds a different plan structure for parallel replicas (no
--- MergingAggregatedStep), so force the new analyzer for these EXPLAIN checks.
+-- MergingAggregatedStep), so force the new analyzer at the session level for
+-- these EXPLAIN checks (setting it inside a subquery is disallowed when the
+-- top-level value differs).
+SET allow_experimental_analyzer = 1;
+
 SELECT '-- EXPLAIN: has Merge only true';
 SELECT count() > 0 FROM (
     EXPLAIN actions=1
     SELECT grp, max(val) AS m FROM t_topn_pr
     GROUP BY grp ORDER BY m DESC LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1, allow_experimental_analyzer = 1
+    SETTINGS optimize_topn_aggregation = 1
 ) WHERE explain LIKE '%Merge only: true%';
 
 SELECT '-- EXPLAIN: has Partial only true';
@@ -44,8 +48,10 @@ SELECT count() > 0 FROM (
     EXPLAIN actions=1
     SELECT grp, max(val) AS m FROM t_topn_pr
     GROUP BY grp ORDER BY m DESC LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1, allow_experimental_analyzer = 1
+    SETTINGS optimize_topn_aggregation = 1
 ) WHERE explain LIKE '%Partial only: true%';
+
+SET allow_experimental_analyzer = 0;
 
 SELECT '-- EXPLAIN: has Threshold pruning true';
 SELECT count() > 0 FROM (

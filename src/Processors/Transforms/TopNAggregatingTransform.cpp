@@ -312,7 +312,7 @@ void TopNAggregatingTransform::maybeRefreshThreshold()
         return;
     }
 
-    if (groups > limit * 10000)
+    if (groups / 10000 > limit)
         return;
 
     /// Start frequent, then gradually reduce refresh frequency as more chunks arrive.
