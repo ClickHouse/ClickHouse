@@ -16,7 +16,6 @@ CREATE TABLE 04028_data (key UInt64, val String) ENGINE = MergeTree ORDER BY key
 INSERT INTO 04028_data SELECT number, randomString(2048) FROM numbers(10000);
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SYSTEM ENABLE FAILPOINT parallel_replicas_check_read_mode_always;
 
 SELECT key, length(val) FROM (
     SELECT * FROM 04028_data WHERE key GLOBAL IN (04028_filter)
