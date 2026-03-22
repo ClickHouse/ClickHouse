@@ -12,10 +12,14 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Set.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -41,31 +45,97 @@ namespace
         return enum_values;
     }
 
-    /// If the predicate is a simple `name = 'literal'`, extract the literal string.
-    /// Returns std::nullopt for any other predicate shape — the caller falls back to the full scan.
-    std::optional<String> tryExtractNameFromPredicate(const ActionsDAG::Node * predicate)
+    bool isNameNode(const ActionsDAG::Node * node)
     {
-        if (!predicate
-            || predicate->type != ActionsDAG::ActionType::FUNCTION
-            || predicate->function_base->getName() != "equals"
-            || predicate->children.size() != 2)
-            return {};
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.at(0);
+        return node->result_name == "name";
+    }
 
-        const ActionsDAG::Node * name_node = nullptr;
-        const ActionsDAG::Node * const_node = nullptr;
+    /// Extract user names from the predicate for O(1) lookups.
+    /// Handles `name = 'literal'`, `name IN ('a', 'b')`, and `AND` conjunctions.
+    /// Returns std::nullopt for any other predicate shape — the caller falls back to the full scan.
+    void extractNamesFromPredicateImpl(const ActionsDAG::Node & node, std::unordered_set<String> & names, ContextPtr context)
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION)
+            return;
 
-        for (const auto * child : predicate->children)
+        auto function_name = node.function_base->getName();
+
+        if (function_name == "and")
         {
-            if (child->type == ActionsDAG::ActionType::INPUT && child->result_name == "name")
-                name_node = child;
-            else if (child->type == ActionsDAG::ActionType::COLUMN && child->column && isColumnConst(*child->column))
-                const_node = child;
+            for (const auto * child : node.children)
+                extractNamesFromPredicateImpl(*child, names, context);
+            return;
         }
 
-        if (!name_node || !const_node || !isString(const_node->result_type))
+        if (node.children.size() != 2)
+            return;
+
+        if (function_name == "equals")
+        {
+            const ActionsDAG::Node * value = nullptr;
+
+            if (isNameNode(node.children.at(0)))
+                value = node.children.at(1);
+            else if (isNameNode(node.children.at(1)))
+                value = node.children.at(0);
+
+            if (!value || !value->column || value->column->size() != 1)
+                return;
+
+            if (!isString(removeNullable(removeLowCardinality(value->result_type))))
+                return;
+
+            names.insert(String(value->column->getDataAt(0)));
+        }
+        else if (function_name == "in")
+        {
+            if (!isNameNode(node.children.at(0)))
+                return;
+
+            auto value = node.children.at(1)->column;
+            if (!value)
+                return;
+
+            const IColumn * column = value.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+
+            const auto * column_set = typeid_cast<const ColumnSet *>(column);
+            if (!column_set)
+                return;
+
+            auto future_set = column_set->getData();
+            if (!future_set)
+                return;
+
+            auto set = future_set->buildOrderedSetInplace(context);
+            if (!set || !set->hasExplicitSetElements())
+                return;
+
+            set->checkColumnsNumber(1);
+            auto type = set->getElementsTypes()[0];
+            if (!isString(removeNullable(removeLowCardinality(type))))
+                return;
+
+            auto elements = set->getSetElements()[0];
+            for (size_t i = 0; i < elements->size(); ++i)
+                names.insert(String(elements->getDataAt(i)));
+        }
+    }
+
+    std::optional<std::unordered_set<String>> extractNamesFromPredicate(const ActionsDAG::Node * predicate, ContextPtr context)
+    {
+        if (!predicate)
             return {};
 
-        return (*const_node->column)[0].safeGet<String>();
+        std::unordered_set<String> names;
+        extractNamesFromPredicateImpl(*predicate, names, context);
+
+        if (names.empty())
+            return {};
+        return names;
     }
 }
 
@@ -291,27 +361,31 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         column_default_database.insertData(default_database.data(),default_database.length());
     };
 
-    /// Fast path: if predicate is `name = 'literal'`, do an O(1) lookup instead of iterating all users.
-    if (auto name_literal = tryExtractNameFromPredicate(predicate))
+    /// Fast path: if predicate contains `name = 'literal'` or `name IN (...)`,
+    /// do O(1) lookups instead of iterating all users.
+    if (auto names = extractNamesFromPredicate(predicate, context))
     {
-        auto id = access_control.find<User>(*name_literal);
-        if (!id)
-            return;
+        for (const auto & name : *names)
+        {
+            auto id = access_control.find<User>(name);
+            if (!id)
+                continue;
 
-        auto user = access_control.tryRead<User>(*id);
-        if (!user)
-            return;
+            auto user = access_control.tryRead<User>(*id);
+            if (!user)
+                continue;
 
-        auto storage = access_control.findStorage(*id);
-        if (!storage)
-            return;
+            auto storage = access_control.findStorage(*id);
+            if (!storage)
+                continue;
 
-        add_row(user->getName(), *id, storage->getStorageName(), user->authentication_methods, user->allowed_client_hosts,
-                user->default_roles, user->grantees, user->default_database);
+            add_row(user->getName(), *id, storage->getStorageName(), user->authentication_methods, user->allowed_client_hosts,
+                    user->default_roles, user->grantees, user->default_database);
+        }
         return;
     }
 
-    /// Fallback: iterate all users when the predicate is not a simple name equality.
+    /// Fallback: iterate all users when names cannot be extracted from the predicate.
     std::vector<UUID> ids = access_control.findAll<User>();
     for (const auto & id : ids)
     {
