@@ -41,7 +41,7 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnNullable>, ColumnNullable>;
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & null_map_)
     {
-        return ColumnNullable::create(nested_column_->shallowMutate(), null_map_->shallowMutate());
+        return ColumnNullable::create(nested_column_->assumeMutableForCreation(), null_map_->assumeMutableForCreation());
     }
 
     template <typename ... Args>

@@ -220,7 +220,7 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
 namespace
 {
 
-MutableColumns shallowMutateVariants(const Columns & variants)
+MutableColumns getVariantsForCreation(const Columns & variants)
 {
     MutableColumns mutable_variants;
 
@@ -228,7 +228,7 @@ MutableColumns shallowMutateVariants(const Columns & variants)
     {
         if (isColumnConst(*variant))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnVariant cannot have ColumnConst as its element");
-        mutable_variants.emplace_back(variant->shallowMutate());
+        mutable_variants.emplace_back(variant->assumeMutableForCreation());
     }
 
     return mutable_variants;
@@ -238,17 +238,17 @@ MutableColumns shallowMutateVariants(const Columns & variants)
 
 ColumnVariant::Ptr ColumnVariant::create(const Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
 {
-    return ColumnVariant::create(shallowMutateVariants(variants), local_to_global_discriminators);
+    return ColumnVariant::create(getVariantsForCreation(variants), local_to_global_discriminators);
 }
 
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
 {
-    return ColumnVariant::create(local_discriminators->shallowMutate(), shallowMutateVariants(variants), local_to_global_discriminators);
+    return ColumnVariant::create(local_discriminators->assumeMutableForCreation(), getVariantsForCreation(variants), local_to_global_discriminators);
 }
 
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::ColumnPtr & offsets, const DB::Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
 {
-    return ColumnVariant::create(local_discriminators->shallowMutate(), offsets->shallowMutate(), shallowMutateVariants(variants), local_to_global_discriminators);
+    return ColumnVariant::create(local_discriminators->assumeMutableForCreation(), offsets->assumeMutableForCreation(), getVariantsForCreation(variants), local_to_global_discriminators);
 }
 
 

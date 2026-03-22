@@ -171,14 +171,12 @@ public:
     Ptr getPtr() const { return static_cast<Ptr>(derived()); }
     MutablePtr getPtr() { return static_cast<MutablePtr>(derived()); }
 
-public:
     MutablePtr shallowMutate() const
     {
         if (this->use_count() > 1)
             return derived()->clone();
         return assumeMutable();
     }
-
 
     static MutablePtr mutate(Ptr ptr)
     {
@@ -189,6 +187,14 @@ public:
     {
         chassert(this->use_count() == 1);
         return const_cast<COW*>(this)->getPtr();
+    }
+
+    /// Type conversion from immutable to mutable pointer for creating immutable composite objects.
+    /// Unlike assumeMutable, does not check use_count because the sub-objects may be shared,
+    /// which is expected when constructing immutable wrappers (e.g. ColumnArray from shared data+offsets).
+    MutablePtr assumeMutableForCreation() const
+    {
+        return const_cast<COW *>(this)->getPtr();
     }
 
     Derived & assumeMutableRef() const

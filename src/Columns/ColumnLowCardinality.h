@@ -36,7 +36,7 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
     static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared)
     {
-        return ColumnLowCardinality::create(column_unique_->shallowMutate(), indexes_->shallowMutate(), is_shared);
+        return ColumnLowCardinality::create(column_unique_->assumeMutableForCreation(), indexes_->assumeMutableForCreation(), is_shared);
     }
 
     static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared)
