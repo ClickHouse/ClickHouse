@@ -174,7 +174,7 @@ ColumnPtr LLMFunctionBase::executeImpl(const ColumnsWithTypeAndName & arguments,
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec), 0);
 
-    auto throttler = std::make_shared<Throttler>(max_rps);
+    auto throttler = std::make_shared<Throttler>("llm_rps", max_rps);
 
     String system_prompt = buildSystemPrompt(arguments);
     String response_format = buildResponseFormatJSON(arguments);
