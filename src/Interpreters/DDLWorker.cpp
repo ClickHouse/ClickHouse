@@ -331,6 +331,10 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     /// NOTE: It does not protect from all cases of query duplication, see also comments in processTask(...)
     if (reinitialized)
     {
+        /// We are reloading the queue after connection loss, so reset the flag.
+        /// It will be set back to true once we successfully initialize a new task.
+        queue_fully_loaded_after_initialization_debug_helper = false;
+
         if (current_tasks.empty())
             LOG_TRACE(log, "Don't have unfinished tasks after restarting");
         else
@@ -387,6 +391,13 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             }
         }
     }
+    else
+    {
+        /// `first_failed_task_name` is only meaningful during the recovery pass after reinitialization.
+        /// If the failed entry was removed from the queue before being rescheduled, keeping it here makes
+        /// the debug invariant below start from a stale position on the next normal scheduling pass.
+        first_failed_task_name.reset();
+    }
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
     size_t size_before_filtering = queue_nodes.size();
@@ -414,7 +425,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     if (first_failed_task_name)
     {
         /// If we had failed tasks, then we should start from the first failed task.
-        chassert(reinitialized);
+        chassert(reinitialized, fmt::format("Stale first_failed_task_name={}", *first_failed_task_name));
         begin_node = std::lower_bound(queue_nodes.begin(), queue_nodes.end(), first_failed_task_name);
     }
     else
@@ -459,6 +470,14 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         {
             /// If connection was lost during queue loading
             /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
+            return false;
+        }
+
+        if (first_failed_task_name.has_value())
+        {
+            /// During reinitialization, begin_node is moved back to first_failed_task_name.
+            /// With parallel execution, tasks after first_failed_task_name may already be
+            /// completed or still in current_tasks — that's expected, not a violation.
             return false;
         }
 
@@ -520,6 +539,11 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     assert(!worker_pool || current_tasks.size() <= pool_size);
 
     current_tasks.emplace_back(std::move(task));
+
+    if (worker_pool && current_tasks.size() > pool_size)
+    {
+        LOG_TEST(log, "Task {} is queued in memory waiting for a free DDL worker slot", current_tasks.back()->entry_name);
+    }
 
     if (first_failed_task_name && *first_failed_task_name == current_tasks.back()->entry_name)
         first_failed_task_name.reset();
@@ -1224,6 +1248,7 @@ void DDLWorker::runMainThread()
         mark_reinitializing();
         /// Clear other in-memory state, like server just started.
         current_tasks.clear();
+        first_failed_task_name.reset();
         last_skipped_entry_name.reset();
         max_id = 0;
         LOG_INFO(log, "Cleaned DDLWorker state");

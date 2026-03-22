@@ -14,6 +14,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/enableAllExperimentalSettings.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
@@ -139,7 +140,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
-    extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
@@ -890,8 +890,22 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
-        case Type::RESTART_DISK:
-            restartDisk(query.disk);
+        case Type::WAIT_BLOBS_CLEANUP:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_WAIT_BLOBS_CLEANUP);
+
+            auto disk_ptr = getContext()->getDisk(query.disk);
+            auto * object_disk = dynamic_cast<DiskObjectStorage *>(disk_ptr.get());
+            if (!object_disk)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not an object storage disk", query.disk);
+
+            /// We wait 2 times here because a background blob cleanup round may already be running
+            /// and this query must guarantee that after it returns, all expected blobs have been cleaned up.
+            object_disk->waitBlobsCleanup();
+            object_disk->waitBlobsCleanup();
+
+            break;
+        }
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -2061,12 +2075,6 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
 
-[[noreturn]] void InterpreterSystemQuery::restartDisk(String &)
-{
-    getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
-}
-
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
@@ -2422,8 +2430,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::RESTART_DISK:
+        case Type::WAIT_BLOBS_CLEANUP:
         {
-            required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
+            required_access.emplace_back(AccessType::SYSTEM_WAIT_BLOBS_CLEANUP);
             break;
         }
         case Type::UNFREEZE:

@@ -43,7 +43,7 @@ FiberStack::FiberStack(size_t stack_size_)
 {
 }
 
-boost::context::stack_context FiberStack::allocate() const
+boost::context::stack_context FiberStack::allocate()
 {
     size_t num_pages = 1 + (stack_size - 1) / page_size;
 
@@ -71,6 +71,10 @@ boost::context::stack_context FiberStack::allocate() const
             throw;
         }
     }
+
+    /// Remember the allocation for ASan unpoisoning in beforeResume().
+    stack_base = data;
+    stack_allocation_size = num_bytes;
 
     boost::context::stack_context sctx;
     sctx.size = num_bytes;

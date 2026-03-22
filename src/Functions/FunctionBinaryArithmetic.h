@@ -1802,7 +1802,7 @@ public:
             return arguments[0];
         }
 
-        /// Special case - one argument is IPv4 and the other is Ipv4 or an integer
+        /// Special case - one argument is IPv4 and the other is IPv4 or an integer
         if ((isIPv4(arguments[0]) && (isIPv4(arguments[1]) || isInteger(arguments[1])))
             || (isIPv4(arguments[1]) && isInteger(arguments[0])))
         {
@@ -2250,7 +2250,7 @@ public:
 
                 auto res = OpImpl::constConst(a, b);
 
-                return DataTypeUInt64{}.createColumnConst(1, res);
+                return DataTypeUInt64{}.createColumnConst(col_left_const->size(), res);
             }
         }
 
@@ -2911,6 +2911,10 @@ public:
     Monotonicity getMonotonicityForRange(const IDataType &, const Field & left_point, const Field & right_point) const override
     {
         const std::string_view name_view = Name::name;
+
+        // NaN breaks monotonicity for floating-point types.
+        if (isNaNField(left_point) || isNaNField(right_point))
+            return {false, true, false, false};
 
         // For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
         if (left_point.isNull() || right_point.isNull())

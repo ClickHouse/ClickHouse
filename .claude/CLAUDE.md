@@ -8,23 +8,33 @@ When writing text such as documentation, comments, or commit messages, write nam
 
 When mentioning logical errors, say "exception" instead of "crash", because they don't crash the server in the release build.
 
-Links to ClickHouse CI, such as `https://s3.amazonaws.com/clickhouse-test-reports/json.html?...` should be analyzed using the tool at `.claude/tools/fetch_ci_report.js`, which directly fetches the underlying JSON data without requiring a browser:
+Links to ClickHouse CI should be analyzed using the tool at `.claude/tools/fetch_ci_report.js`, which directly fetches the underlying JSON data without requiring a browser. It accepts GitHub PR URLs (fetches all CI reports) or direct S3/CI HTML URLs.
 
 ```bash
-# Fetch and analyze CI report
-node /path/to/ClickHouse/.claude/tools/fetch_ci_report.js "<ci-url>" [options]
+# Fetch all CI reports for a PR
+node .claude/tools/fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/12345"
+
+# Show only failed tests with CIDB links
+node .claude/tools/fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/12345" --failed --cidb
+
+# Fetch only a specific report from a PR (by index)
+node .claude/tools/fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/12345" --report 2
+
+# Filter by test name, show artifact links
+node .claude/tools/fetch_ci_report.js "<url>" --test peak_memory --links
+
+# Download logs and show failed tests
+node .claude/tools/fetch_ci_report.js "<url>" --failed --download-logs
 
 # Options:
-#   --test <name>    Filter tests by name
-#   --failed         Show only failed tests
-#   --all            Show all test results
-#   --links          Show artifact links (logs.tar.gz, etc.)
-#   --download-logs  Download logs.tar.gz to /tmp/ci_logs.tar.gz
+#   --test <name>               Filter tests by name
+#   --failed                    Show only failed tests
+#   --all                       Show all test results
+#   --links                     Show artifact links (logs.tar.gz, etc.)
+#   --cidb                      Show CIDB links for failed tests
+#   --report <number>           For PR URLs: fetch only one specific report
+#   --download-logs             Download logs.tar.gz to /tmp/ci_logs.tar.gz
 #   --credentials <user,password>  HTTP Basic Auth for private repositories
-
-# Examples:
-node .claude/tools/fetch_ci_report.js "https://s3.amazonaws.com/..." --failed --links
-node .claude/tools/fetch_ci_report.js "https://s3.amazonaws.com/..." --test peak_memory --download-logs
 ```
 
 After downloading logs, extract specific test logs:
@@ -128,10 +138,7 @@ When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly 
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
-When adding a new test, first run the following command to find the current test with the last prefix index, then increment the resulting index by 1, and use this as the prefix for the new test name:
-```
-ls tests/queries/0_stateless/[0-9]*.reference | tail -n 1
-```
+When adding a new test, consult `./tests/queries/0_stateless/add-test` to determine the correct name prefix for the new test.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
@@ -155,11 +162,3 @@ ARM machines in CI are not slow. They are similar to x86 in performance.
 
 Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
 
-When there are crucial findings (when I corrected your behavior, you when you found a crucial insight about the code), append them to `.claude/learnings.md`, but be concise. You can commit the changes in learnings.md along with the other changes. Read this file at start.
-
-Always load and apply the following skills:
-
-- .claude/skills/fix-sync
-- .claude/skills/alloc-profile
-- .claude/skills/bisect
-- .claude/skills/create-worktree

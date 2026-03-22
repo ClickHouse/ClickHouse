@@ -766,7 +766,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
     const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < (this->inside_projection ? 3 : 7));
     const uint32_t nfuncs = static_cast<uint32_t>(
         (nallow_funcs ? funcs_size : 0)
-        + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : (CHAggrs.size() - this->deterministic_aggrs_limit)) : 0));
+        + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : this->deterministic_aggrs_limit) : 0));
     std::uniform_int_distribution<uint32_t> next_dist(0, nfuncs - 1);
     uint32_t generated_params = 0;
     uint32_t n_lambda = 0;
