@@ -1,7 +1,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
-#include <QueryPipeline/UnavailableShardTracker.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
@@ -45,6 +44,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_estimated_execution_time;
     extern const SettingsBool skip_unavailable_shards;
@@ -439,7 +439,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     established = false;
     sent_query = true;
 
-    sendScalars();
+    if (settings[Setting::enable_scalar_subquery_optimization])
+        sendScalars();
 
     if (query_plan)
         connections->sendQueryPlan(*query_plan);
@@ -987,18 +988,9 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     profile_info_callback = std::move(callback);
 }
 
-bool RemoteQueryExecutor::needToSkipUnavailableShard()
+bool RemoteQueryExecutor::needToSkipUnavailableShard() const
 {
-    if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
-    {
-        if (!shard_skip_reported && unavailable_shard_tracker)
-        {
-            shard_skip_reported = true;
-            unavailable_shard_tracker->onShardSkipped();
-        }
-        return true;
-    }
-    return false;
+    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()

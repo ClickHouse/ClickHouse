@@ -1,5 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -528,7 +529,7 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-void ColumnAggregateFunction::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (options.notFull(name_buf))
     {
@@ -536,6 +537,8 @@ void ColumnAggregateFunction::getValueNameImpl(WriteBufferFromOwnString & name_b
         func->serialize(data[n], buffer, version);
         writeQuoted(buffer.str(), name_buf);
     }
+
+    return DataTypeFactory::instance().get(type_string);
 }
 
 std::string_view ColumnAggregateFunction::getDataAt(size_t n) const
@@ -727,11 +730,12 @@ MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColum
 
     size_t num_rows = size();
 
-    const auto counts = countColumnsSizeInSelector(num_columns, selector);
-    for (size_t i = 0; i < num_columns; ++i)
     {
-        if (counts[i] > 1)
-            columns[i]->reserve(counts[i]);
+        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) / static_cast<double>(num_columns) * 1.1); /// 1.1 is just a guess. Better to use n-sigma rule.
+
+        if (reserve_size > 1)
+            for (auto & column : columns)
+                column->reserve(reserve_size);
     }
 
     for (size_t i = 0; i < num_rows; ++i)

@@ -712,11 +712,6 @@ IcebergStorageSink::IcebergStorageSink(
     }
 }
 
-IcebergStorageSink::~IcebergStorageSink()
-{
-    cancelBuffers();
-}
-
 void IcebergStorageSink::consume(Chunk & chunk)
 {
     if (isCancelled())
@@ -820,10 +815,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
 void IcebergStorageSink::onFinish()
 {
     if (isCancelled())
-    {
-        cancelBuffers();
         return;
-    }
 
     finalizeBuffers();
     releaseBuffers();

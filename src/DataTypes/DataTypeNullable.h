@@ -55,7 +55,7 @@ public:
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
-    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
 
     DataTypePtr nested_data_type;
 };

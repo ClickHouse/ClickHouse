@@ -432,9 +432,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     if (select_streams != 1)
         pipeline.resize(1);
 
-    auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(
-        select_query_sorted, context->getSettingsRef(),
-        context->getSettingsRef()[Setting::insert_deduplication_token].value, logger);
+    auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(select_query_sorted, context->getSettingsRef(), logger);
 
     if (deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef()))
     {
@@ -926,9 +924,6 @@ BlockIO InterpreterInsertQuery::execute()
     {
         if (settings[Setting::parallel_distributed_insert_select])
         {
-            /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
-            auto saved_select = query.select->clone();
-
             auto distributed = table->distributedWrite(query, context);
             if (distributed)
             {
@@ -945,8 +940,6 @@ BlockIO InterpreterInsertQuery::execute()
                 if (pipeline)
                     res.pipeline = std::move(*pipeline);
             }
-
-            query.select = std::move(saved_select);
         }
         if (!res.pipeline.initialized())
             res.pipeline = buildInsertSelectPipeline(query, table);

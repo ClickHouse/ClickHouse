@@ -20,7 +20,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
-#include <Common/QueryScope.h>
 
 #include <filesystem>
 
@@ -92,10 +91,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         query_context->makeQueryContext();
         query_context->setCurrentQueryId({});
 
-        QueryScope query_scope;
+        CurrentThread::QueryScope query_scope;
         if (!CurrentThread::getGroup())
         {
-            query_scope = QueryScope::create(query_context);
+            query_scope = CurrentThread::QueryScope::create(query_context);
         }
 
         auto io = DB::executeQuery(input, std::move(query_context), QueryFlags{ .internal = true }, QueryProcessingStage::Complete).second;
@@ -118,7 +117,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     }
     catch (...)
     {
-        // Ok
     }
 
     return 0;

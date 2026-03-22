@@ -60,7 +60,7 @@ void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
 
 void ArrayJoinStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
     bool first = true;
 
     settings.out << prefix << (array_join.is_left ? "LEFT " : "") << "ARRAY JOIN ";

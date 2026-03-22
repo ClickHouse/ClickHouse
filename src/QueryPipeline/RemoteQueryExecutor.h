@@ -15,9 +15,6 @@ namespace DB
 
 class Context;
 
-struct UnavailableShardTracker;
-using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
-
 class IThrottler;
 using ThrottlerPtr = std::shared_ptr<IThrottler>;
 
@@ -213,14 +210,12 @@ public:
 
     void setLogger(LoggerPtr logger) { log = logger; }
 
-    void setUnavailableShardTracker(UnavailableShardTrackerPtr tracker) { unavailable_shard_tracker = std::move(tracker); }
-
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard();
+    bool needToSkipUnavailableShard() const;
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
@@ -318,9 +313,6 @@ private:
     StorageID main_table = StorageID::createEmpty();
 
     LoggerPtr log = nullptr;
-
-    UnavailableShardTrackerPtr unavailable_shard_tracker;
-    bool shard_skip_reported = false;
 
     GetPriorityForLoadBalancing::Func priority_func;
 

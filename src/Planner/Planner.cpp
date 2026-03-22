@@ -1284,10 +1284,6 @@ void addWindowSteps(QueryPlan & query_plan,
         {
             SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
-            /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
-            /// would produce incomplete data and cause the pipeline to get stuck.
-            sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
-
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window_description.full_sort_description,
@@ -1513,7 +1509,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, collectFiltersForAnalysis(query_tree, subquery_options, nullptr)));
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
 
         auto subquery_plan = std::move(subquery_planner).extractQueryPlan();

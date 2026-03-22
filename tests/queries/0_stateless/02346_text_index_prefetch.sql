@@ -28,6 +28,6 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['RemoteFSPrefetchedReads'] > 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query LIKE '%SELECT count(), sum(id) FROM tab%' AND type = 'QueryFinish';
+WHERE current_database = currentDatabase() AND query LIKE '%SELECT count(), sum(id) FROM tab%' AND type = 'QueryFinish';
 
 DROP TABLE tab;
