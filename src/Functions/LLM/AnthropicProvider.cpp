@@ -37,7 +37,7 @@ static String extractProviderError(const std::string & response_body, int status
             }
         }
     }
-    catch (...) {} // Ok: best-effort JSON parsing
+    catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort JSON parsing
     size_t max_len = 256;
     return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
         response_body.substr(0, std::min(response_body.size(), max_len)));

@@ -113,7 +113,7 @@ protected:
                 if (obj && obj->has("category"))
                     return obj->getValue<String>("category");
             }
-            catch (...) {} // Ok: best-effort JSON extraction
+            catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort JSON extraction
         }
         return raw_response;
     }
