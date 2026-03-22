@@ -1,7 +1,6 @@
--- Test that read-in-order optimization is disabled when primary key selectivity is poor.
+-- Test that read-in-order optimization is rejected when primary key selectivity is poor.
 -- When the WHERE clause cannot use the primary key (e.g., LIKE '%...'),
--- parallel reading with sorting should be used instead of read-in-order,
--- because read-in-order kills parallelism.
+-- the optimizer should not apply read-in-order because it kills parallelism.
 
 DROP TABLE IF EXISTS t_read_in_order_pk;
 
@@ -9,11 +8,10 @@ CREATE TABLE t_read_in_order_pk (path String, value UInt64)
 ENGINE = MergeTree ORDER BY path
 AS SELECT concat('path/', toString(number % 1000), '/file.log'), number FROM numbers(100000);
 
--- With poor primary key selectivity (leading wildcard LIKE), the optimizer should fall back
--- from read-in-order to parallel reading with sorting.
--- We detect the fallback by the presence of PartialSortingTransform and MergeSortingTransform
--- inside the ReadFromMergeTree step.
-SELECT 'poor_pk_selectivity_has_sorting';
+-- With poor primary key selectivity (leading wildcard LIKE), read-in-order should be rejected.
+-- The SortingStep should do a full sort (PartialSortingTransform + MergeSortingTransform)
+-- instead of just MergingSorted.
+SELECT 'poor_pk_selectivity_full_sort';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_read_in_order_pk
     WHERE path LIKE '%file.log'
@@ -21,8 +19,8 @@ SELECT count() > 0 FROM (
     SETTINGS enable_parallel_replicas = 0
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
--- With good primary key selectivity, read-in-order should still be used and no extra sorting is needed.
-SELECT 'good_pk_selectivity_no_sorting';
+-- With good primary key selectivity, read-in-order should be used (no PartialSortingTransform).
+SELECT 'good_pk_selectivity_in_order';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_read_in_order_pk
     WHERE path LIKE 'path/1%'
@@ -30,7 +28,7 @@ SELECT count() > 0 FROM (
     SETTINGS enable_parallel_replicas = 0
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
--- Verify that results are correct (sorted) when falling back from read-in-order.
+-- Verify that results are correct (sorted) when read-in-order is rejected.
 SELECT 'correctness';
 SELECT count() FROM (
     SELECT * FROM t_read_in_order_pk
@@ -38,7 +36,7 @@ SELECT count() FROM (
     ORDER BY path
 );
 
--- Setting `read_in_order_max_primary_key_ratio` = 1.0 should disable the fallback.
+-- Setting `read_in_order_max_primary_key_ratio` = 1.0 should disable the rejection.
 SELECT 'setting_disabled';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_read_in_order_pk
