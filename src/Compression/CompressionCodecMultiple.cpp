@@ -96,7 +96,7 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
                             source_size);
 
         {
-            UInt32 bytes_to_resize;
+            UInt32 bytes_to_resize = 0;
             if (common::addOverflow(static_cast<UInt32>(compressed_buf.size()), additional_size_at_the_end_of_buffer, bytes_to_resize))
                 throw Exception(decompression_error_code, "Too large compressed size: {}", compressed_buf.size());
 
@@ -113,7 +113,7 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
                 uncompressed_size, decompressed_size);
 
         {
-            UInt32 bytes_to_resize;
+            UInt32 bytes_to_resize = 0;
             if (common::addOverflow(uncompressed_size, additional_size_at_the_end_of_buffer, bytes_to_resize))
                 throw Exception(decompression_error_code, "Too large uncompressed size: {}", uncompressed_size);
 

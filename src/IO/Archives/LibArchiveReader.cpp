@@ -79,7 +79,7 @@ public:
 
     std::unique_ptr<SeekableReadBuffer> read_buffer;
     size_t archive_size;
-    char buf[DBMS_DEFAULT_BUFFER_SIZE];
+    char buf[DBMS_DEFAULT_BUFFER_SIZE]{};
     std::exception_ptr stored_exception;
 };
 

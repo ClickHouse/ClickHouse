@@ -439,7 +439,7 @@ void ConfigProcessor::doIncludesRecursive(
             std::string value = node->nodeValue();
 
             bool replace_occurred = false;
-            size_t pos;
+            size_t pos = 0;
             while ((pos = value.find(substitution.first)) != std::string::npos)
             {
                 value.replace(pos, substitution.first.length(), substitution.second);
@@ -888,7 +888,7 @@ void ConfigProcessor::processIncludes(
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes, bool is_config_changed)
 {
-    bool has_zk_includes;
+    bool has_zk_includes = false;
     XMLDocumentPtr config_xml = processConfig(&has_zk_includes, nullptr, nullptr, is_config_changed);
 
     if (has_zk_includes && !allow_zk_includes)
@@ -906,7 +906,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     bool is_config_changed)
 {
     XMLDocumentPtr config_xml;
-    bool has_zk_includes;
+    bool has_zk_includes = false;
     bool processed_successfully = false;
     try
     {

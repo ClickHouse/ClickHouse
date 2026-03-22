@@ -298,7 +298,7 @@ private:
 
         auto * encrypted = encrypted_result_column_data.data();
 
-        KeyHolder<mode> key_holder;
+        KeyHolder<mode> key_holder{};
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -581,7 +581,7 @@ private:
 
         auto * decrypted = decrypted_result_column_data.data();
 
-        KeyHolder<mode> key_holder;
+        KeyHolder<mode> key_holder{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             // 0: prepare key if required

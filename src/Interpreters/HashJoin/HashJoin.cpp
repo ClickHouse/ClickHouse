@@ -233,7 +233,7 @@ HashJoin::HashJoin(
             if (key_columns.size() <= 1)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join with hash algorithm needs at least one equi-join column");
 
-            size_t asof_size;
+            size_t asof_size = 0;
             asof_type = SortedLookupVectorBase::getTypeSize(*key_columns.back(), asof_size);
             key_columns.pop_back();
 

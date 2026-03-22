@@ -107,9 +107,9 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
 
 inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer)
 {
-    Float64 x;
-    Float64 y;
-    char ch;
+    Float64 x = 0;
+    Float64 y = 0;
+    char ch = 0;
     while (true)
     {
         if (!in_buffer.peek(ch))
@@ -128,7 +128,7 @@ inline void readOpenBracket(ReadBuffer & in_buffer)
 {
     while (true)
     {
-        char ch;
+        char ch = 0;
         readBinary(ch, in_buffer);
         if (ch == '(')
             break;
@@ -137,7 +137,7 @@ inline void readOpenBracket(ReadBuffer & in_buffer)
 
 inline bool readItemEnding(ReadBuffer & in_buffer)
 {
-    char ch;
+    char ch = 0;
     while (true)
     {
         readBinary(ch, in_buffer);
@@ -216,7 +216,7 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
     std::string type;
     while (true)
     {
-        char current_symbol;
+        char current_symbol = 0;
         if (!in_buffer.peek(current_symbol))
             break;
         if (current_symbol == '(')
@@ -352,7 +352,7 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
         case GeoType::Mixed:
         {
             auto & variant_col = assert_cast<ColumnVariant &>(col);
-            ColumnVariant::Discriminator global_discr;
+            ColumnVariant::Discriminator global_discr = 0;
 
             if (std::holds_alternative<CartesianPoint>(object))
                 global_discr = kPointDiscriminator;

@@ -57,7 +57,7 @@ std::optional<UInt128> BackupEntryWithChecksumCalculation::getPartialChecksum(UI
     if (limit >= size)
         return getChecksum(read_settings);
 
-    bool has_calculated_full_checksum;
+    bool has_calculated_full_checksum = false;
 
     {
         std::lock_guard lock{mutex};

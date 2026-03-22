@@ -489,7 +489,7 @@ private:
     /// Store and use pointer to ColumnVariant to avoid virtual calls.
     /// ColumnDynamic is widely used inside ColumnObject for each path and
     /// with hundreds of paths these virtual calls are noticeable.
-    ColumnVariant * variant_column_ptr;
+    ColumnVariant * variant_column_ptr{};
     /// Store the type of current variant with some additional information.
     VariantInfo variant_info;
     /// The maximum number of different types that can be stored in this Dynamic column.

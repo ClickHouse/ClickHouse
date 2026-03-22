@@ -239,7 +239,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
-    bool have_eq;
+    bool have_eq = false;
 
     if (!name_p.parse(pos, node, expected))
         return false;

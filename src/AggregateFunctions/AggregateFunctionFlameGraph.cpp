@@ -260,8 +260,8 @@ struct AggregateFunctionFlameGraphData
 {
     struct Entry
     {
-        AggregateFunctionFlameGraphTree::TreeNode * trace;
-        UInt64 size;
+        AggregateFunctionFlameGraphTree::TreeNode * trace{};
+        UInt64 size{};
         Entry * next = nullptr;
     };
 

@@ -440,7 +440,7 @@ public:
         {
             va_list backup_ap;
             va_copy(backup_ap, ap);
-            std::array<char, 1024> stack;
+            std::array<char, 1024> stack{};
             if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
             {
                 va_end(backup_ap);
@@ -592,7 +592,7 @@ void StorageEmbeddedRocksDB::initDB()
 
     if (ttl > 0)
     {
-        rocksdb::DBWithTTL * db;
+        rocksdb::DBWithTTL * db = nullptr;
         status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
         if (!status.ok())
         {
@@ -602,7 +602,7 @@ void StorageEmbeddedRocksDB::initDB()
     }
     else
     {
-        rocksdb::DB * db;
+        rocksdb::DB * db = nullptr;
         if (read_only)
             status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
         else
@@ -961,7 +961,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
-    UInt64 estimated_rows;
+    UInt64 estimated_rows = 0;
     if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
         return {};
     return estimated_rows;
@@ -972,7 +972,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
-    UInt64 estimated_bytes;
+    UInt64 estimated_bytes = 0;
     if (!rocksdb_ptr->GetAggregatedIntProperty("rocksdb.estimate-live-data-size", &estimated_bytes))
         return {};
     return estimated_bytes;

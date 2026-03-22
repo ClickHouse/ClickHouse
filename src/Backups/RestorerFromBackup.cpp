@@ -532,7 +532,7 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
 
         ASTPtr database_def_from_backup;
-        bool is_predefined_database;
+        bool is_predefined_database = false;
 
         {
             std::lock_guard lock{mutex};
@@ -610,8 +610,8 @@ void RestorerFromBackup::removeUnresolvedDependencies()
                 table_id);
         }
 
-        size_t num_dependencies;
-        size_t num_dependents;
+        size_t num_dependencies = 0;
+        size_t num_dependents = 0;
         tables_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
             throw Exception(
@@ -790,7 +790,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         ASTPtr table_def_from_backup;
-        bool is_predefined_table;
+        bool is_predefined_table = false;
 
         {
             std::lock_guard lock{mutex};

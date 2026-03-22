@@ -22,10 +22,10 @@ struct ZooKeeperConnectionLogElement
 
     String cluster_name;
     String host;
-    UInt16 port;
-    UInt8 index;
-    Int64 client_id;
-    UInt8 keeper_api_version;
+    UInt16 port{};
+    UInt8 index{};
+    Int64 client_id{};
+    UInt8 keeper_api_version{};
     Array enabled_feature_flags;
     String availability_zone;
     String reason;

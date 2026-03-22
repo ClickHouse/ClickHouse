@@ -796,7 +796,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
     auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpression());
 
     JoinClausesAndActions result;
-    bool has_residual_filters;
+    bool has_residual_filters = false;
 
     std::tie(result.join_clauses, has_residual_filters) = buildAllJoinClauses(
         left_join_actions,

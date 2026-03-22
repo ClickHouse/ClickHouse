@@ -468,7 +468,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     if (shards.empty())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No active replicas");
 
-    UInt16 default_port;
+    UInt16 default_port = 0;
     if (cluster_auth_info.cluster_secure_connection)
         default_port = getContext()->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
     else

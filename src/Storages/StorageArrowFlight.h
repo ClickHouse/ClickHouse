@@ -19,7 +19,7 @@ public:
     struct Configuration
     {
         String host;
-        int port;
+        int port{};
         String dataset_name;
         /// Whether the client should authenticate to the server with HTTP basic authentication.
         bool use_basic_authentication = false;

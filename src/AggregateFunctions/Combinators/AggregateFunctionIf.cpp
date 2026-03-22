@@ -457,7 +457,7 @@ private:
 
     static constexpr size_t MAX_ARGS = 8;
     size_t number_of_arguments = 0;
-    std::array<char, MAX_ARGS> is_nullable;    /// Plain array is better than std::vector due to one indirection less.
+    std::array<char, MAX_ARGS> is_nullable{};    /// Plain array is better than std::vector due to one indirection less.
 };
 
 

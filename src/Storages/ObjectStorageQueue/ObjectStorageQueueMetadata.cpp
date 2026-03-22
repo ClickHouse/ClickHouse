@@ -1097,7 +1097,7 @@ private:
     const size_t total_nodes;
     LoggerPtr log;
     std::map<UInt128, std::string> virtual_nodes;
-    size_t nodes_num;
+    size_t nodes_num{};
 };
 
 std::string ObjectStorageQueueMetadata::getProcessorID(const StorageID & storage_id)

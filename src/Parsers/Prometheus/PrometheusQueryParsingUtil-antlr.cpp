@@ -68,7 +68,7 @@ namespace
         {
             chassert(!msg.empty());
 
-            size_t pos;
+            size_t pos = 0;
             if (offending_symbol)
                 pos = offending_symbol->getStartIndex();
             else  /// `offending_symbol` can be null if `recognizer` is a lexer.
@@ -154,7 +154,7 @@ namespace
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {
             String error_message;
-            size_t error_pos;
+            size_t error_pos = 0;
             if (!PrometheusQueryParsingUtil::tryParseStringLiteral(getText(ctx), result, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
@@ -166,7 +166,7 @@ namespace
         bool parseScalar(const antlr4::tree::TerminalNode * ctx, ScalarType & result)
         {
             String error_message;
-            size_t error_pos;
+            size_t error_pos = 0;
             if (!PrometheusQueryParsingUtil::tryParseScalar(getText(ctx), result, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
@@ -178,7 +178,7 @@ namespace
         bool parseTimestamp(const antlr4::tree::TerminalNode * ctx, TimestampType & result)
         {
             String error_message;
-            size_t error_pos;
+            size_t error_pos = 0;
             if (!PrometheusQueryParsingUtil::tryParseTimestamp(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
@@ -190,7 +190,7 @@ namespace
         bool parseDuration(const antlr4::tree::TerminalNode * ctx, DurationType & result)
         {
             String error_message;
-            size_t error_pos;
+            size_t error_pos = 0;
             if (!PrometheusQueryParsingUtil::tryParseDuration(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
@@ -202,7 +202,7 @@ namespace
         bool parseSelectorRange(const antlr4::tree::TerminalNode * ctx, DurationType & res_range)
         {
             String error_message;
-            size_t error_pos;
+            size_t error_pos = 0;
             if (!PrometheusQueryParsingUtil::tryParseSelectorRange(getText(ctx), timestamp_scale, res_range, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
@@ -214,7 +214,7 @@ namespace
         bool parseSubqueryRange(const antlr4::tree::TerminalNode * ctx, DurationType & res_range, std::optional<DurationType> & res_step)
         {
             String error_message;
-            size_t error_pos;
+            size_t error_pos = 0;
             if (!PrometheusQueryParsingUtil::tryParseSubqueryRange(getText(ctx), timestamp_scale, res_range, res_step, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
@@ -252,7 +252,7 @@ namespace
         /// Makes a node for a scalar or an interval literal after parsing it.
         Node * makeScalar(antlr4::tree::TerminalNode * ctx)
         {
-            ScalarType scalar;
+            ScalarType scalar = 0;
             if (!parseScalar(ctx, scalar))
             {
                 chassert(error_listener.hasError());

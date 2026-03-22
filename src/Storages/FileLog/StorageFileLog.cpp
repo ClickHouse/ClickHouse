@@ -417,7 +417,7 @@ void StorageFileLog::deserialize()
 
 UInt64 StorageFileLog::getInode(const String & file_name)
 {
-    struct stat file_stat;
+    struct stat file_stat{};
     if (stat(file_name.c_str(), &file_stat))
     {
         throw Exception(ErrorCodes::CANNOT_STAT, "Can not get stat info of file {}", file_name);
@@ -592,8 +592,8 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
     read_settings.local_fs_method = LocalFSReadMethod::pread;
     auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
-    UInt64 inode;
-    UInt64 last_written_pos;
+    UInt64 inode = 0;
+    UInt64 last_written_pos = 0;
 
     if (in->eof()) /// File is empty.
     {

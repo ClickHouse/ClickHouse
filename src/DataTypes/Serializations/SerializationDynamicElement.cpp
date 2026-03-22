@@ -25,7 +25,7 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
     SerializationPtr variant_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
-    bool read_from_shared_variant;
+    bool read_from_shared_variant{};
     ColumnPtr shared_variant;
     size_t shared_variant_size = 0;
 

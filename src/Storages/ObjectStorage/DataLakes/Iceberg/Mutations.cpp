@@ -69,8 +69,8 @@ static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 struct DeleteFileWriteResult
 {
     FileNamesGenerator::Result path;
-    Int32 total_rows;
-    Int32 total_bytes;
+    Int32 total_rows{};
+    Int32 total_bytes{};
 };
 
 using DataFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;

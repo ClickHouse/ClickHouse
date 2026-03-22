@@ -15,7 +15,7 @@ ASTPtr makeASTForBinaryOperatorJoinGroup(
     bool metric_name_dropped_from_group,
     bool * metric_name_dropped_from_join_group)
 {
-    bool dummy;
+    bool dummy = false;
     if (!metric_name_dropped_from_join_group)
         metric_name_dropped_from_join_group = &dummy;
 

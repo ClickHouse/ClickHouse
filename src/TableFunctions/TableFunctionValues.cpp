@@ -57,7 +57,7 @@ private:
     static DataTypes getTypesFromArgument(const ASTPtr & arg, ContextPtr context);
 
     ColumnsDescription structure;
-    bool has_structure_in_arguments;
+    bool has_structure_in_arguments{};
 };
 
 void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)

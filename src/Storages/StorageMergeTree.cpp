@@ -803,7 +803,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
-    Int64 version;
+    Int64 version = 0;
     {
         /// It's important to serialize order of mutations with alter queries because
         /// they can depend on each other.
@@ -2901,7 +2901,7 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
     {
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         static constexpr auto checksums_path = "checksums.txt";
-        bool noop;
+        bool noop = false;
         if (!part->getDataPartStorage().existsFile(checksums_path))
         {
             try

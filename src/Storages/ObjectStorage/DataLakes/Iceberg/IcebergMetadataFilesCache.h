@@ -36,7 +36,7 @@ namespace Iceberg
 {
 struct MetadataFileWithInfo
 {
-    Int32 version;
+    Int32 version{};
     String path;
     CompressionMethod compression_method;
 };

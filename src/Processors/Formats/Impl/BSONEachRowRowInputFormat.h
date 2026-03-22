@@ -95,8 +95,8 @@ private:
 
     DataTypes types;
 
-    size_t current_document_start;
-    BSONSizeT current_document_size;
+    size_t current_document_start{};
+    BSONSizeT current_document_size{};
 };
 
 class BSONEachRowSchemaReader : public IRowWithNamesSchemaReader

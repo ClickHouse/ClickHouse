@@ -81,7 +81,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
 
     constexpr cctz::civil_day epoch{1970, 1, 1};
     constexpr cctz::civil_day lut_start{DATE_LUT_MIN_YEAR, 1, 1};
-    time_t start_of_day;
+    time_t start_of_day = 0;
 
     /// Note: it's validated against all timezones in the system.
     static_assert((epoch - lut_start) == daynum_offset_epoch);

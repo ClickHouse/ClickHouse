@@ -203,7 +203,7 @@ AsynchronousReadBufferFromFileDescriptor::~AsynchronousReadBufferFromFileDescrip
 /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
 off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
-    size_t new_pos;
+    size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
         assert(offset >= 0);

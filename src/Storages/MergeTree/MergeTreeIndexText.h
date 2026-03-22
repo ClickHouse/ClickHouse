@@ -125,7 +125,7 @@ private:
 
     union
     {
-        SmallContainer small;
+        SmallContainer small{};
         PostingListWithContext large;
     };
 

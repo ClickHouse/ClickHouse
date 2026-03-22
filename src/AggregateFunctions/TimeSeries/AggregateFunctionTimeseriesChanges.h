@@ -93,7 +93,7 @@ public:
 
     void deserializeBucket(Bucket & bucket, ReadBuffer & buf, const size_t bucket_index) const
     {
-        size_t sample_count;
+        size_t sample_count = 0;
         readBinaryLittleEndian(sample_count,buf);
         bucket.samples.reserve(sample_count);
 

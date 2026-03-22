@@ -197,8 +197,8 @@ private:
     StorageListWithLocks selected_tables;
     Names all_column_names;
     Names column_names;
-    bool has_database_virtual_column;
-    bool has_table_virtual_column;
+    bool has_database_virtual_column{};
+    bool has_table_virtual_column{};
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 

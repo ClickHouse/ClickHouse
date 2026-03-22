@@ -50,7 +50,7 @@ template <is_decimal T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
 {
     ReadBufferFromMemory buf(str);
-    T x;
+    T x{};
     UInt32 unread_scale = this->scale;
     readDecimalText(buf, x, this->precision, unread_scale, true);
 

@@ -246,7 +246,7 @@ public:
         if (overload == Overload::Origin)
             origin_column = arguments[2];
 
-        const DateLUTImpl * time_zone_tmp;
+        const DateLUTImpl * time_zone_tmp = nullptr;
 
         if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
         {

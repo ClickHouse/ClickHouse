@@ -134,7 +134,7 @@ public:
             if (!this->buf[i].isZero(*this))
             {
                 typename Self::LookupResult res_it;
-                bool inserted;
+                bool inserted = false;
                 that.emplace(static_cast<Key>(i), res_it, inserted, i);
                 func(res_it->getMapped(), this->buf[i].getMapped(), inserted);
             }
@@ -147,7 +147,7 @@ public:
         for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
             typename Self::LookupResult res_it;
-            bool inserted;
+            bool inserted = false;
             that.emplace(it->getKey(), res_it, inserted, it.getHash());
             func(res_it->getMapped(), it->getMapped(), inserted);
         }
@@ -193,7 +193,7 @@ public:
     Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted;
+        bool inserted = false;
         this->emplace(x, it, inserted);
         if (inserted)
             new (&it->getMapped()) Mapped();

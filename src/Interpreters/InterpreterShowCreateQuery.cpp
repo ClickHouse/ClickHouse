@@ -48,7 +48,7 @@ Block InterpreterShowCreateQuery::getSampleBlock()
 QueryPipeline InterpreterShowCreateQuery::executeImpl()
 {
     ASTPtr create_query;
-    ASTQueryWithTableAndOutput * show_query;
+    ASTQueryWithTableAndOutput * show_query = nullptr;
     if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()) ||
         (show_query = query_ptr->as<ASTShowCreateViewQuery>()) ||
         (show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))

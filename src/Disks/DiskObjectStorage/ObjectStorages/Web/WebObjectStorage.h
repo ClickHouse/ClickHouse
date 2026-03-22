@@ -135,7 +135,7 @@ private:
 
     const String url;
     LoggerPtr log;
-    size_t min_bytes_for_seek;
+    size_t min_bytes_for_seek{};
 };
 
 }

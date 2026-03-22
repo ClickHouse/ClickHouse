@@ -68,7 +68,7 @@ private:
     {
         ReadStage stage;
         size_t step_idx = 0; /// 0 = main step, (>=1) = prewhere steps
-        size_t row_group_idx;
+        size_t row_group_idx{};
         size_t row_subgroup_idx = UINT64_MAX;
         size_t column_idx = UINT64_MAX;
         size_t cost_estimate_bytes = 0;

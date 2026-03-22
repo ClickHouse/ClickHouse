@@ -223,8 +223,8 @@ private:
         std::vector<std::vector<LatLng>> holeVerts;
 
         // Temporary storage for C-style structs
-        mutable GeoLoop mutableMainLoop;
-        mutable GeoPolygon mutablePolygon;
+        mutable GeoLoop mutableMainLoop{};
+        mutable GeoPolygon mutablePolygon{};
         mutable std::vector<GeoLoop> mutableHoles;
 
     public:

@@ -113,7 +113,7 @@ public:
 
     void read(DB::ReadBuffer & in)
     {
-        UInt8 kind;
+        UInt8 kind = 0;
         readBinary(kind, in);
 
         if (BitmapKind::Small == kind)
@@ -122,7 +122,7 @@ public:
         }
         else if (BitmapKind::Bitmap == kind)
         {
-            size_t size;
+            size_t size = 0;
             readVarUInt(size, in);
 
             static constexpr size_t max_size = 100_GiB;
@@ -788,8 +788,8 @@ public:
     {
         if (isSmall() || rhs->isSmall())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported SmallSet");
-        uint8_t type1;
-        uint8_t type2;
+        uint8_t type1 = 0;
+        uint8_t type2 = 0;
         roaring::internal::container_t * c1 = this->ra_get_container(container_id, &type1);
         roaring::internal::container_t * c2 = rhs->ra_get_container(container_id, &type2);
         if (!c1 || !c2)
@@ -839,7 +839,7 @@ public:
             const auto & small_set = lhs_small ? *this : *rhs;
             const auto & large_bm = lhs_small ? *rhs : *this;
 
-            uint8_t large_bm_c_typecode;
+            uint8_t large_bm_c_typecode = 0;
             roaring::internal::container_t * large_bm_c = large_bm.ra_get_container(container_id, &large_bm_c_typecode);
             if (!large_bm_c)
                 return 0;
@@ -858,7 +858,7 @@ public:
         else
         {
             /// Case 3: Both are roaring bitmaps
-            uint8_t result_type;
+            uint8_t result_type = 0;
             roaring::internal::container_t * c = this->container_and(rhs, container_id, &result_type);
             if (!c)
                 return 0;

@@ -198,7 +198,7 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
     }
     else
     {
-        size_t num_bytes;
+        size_t num_bytes = 0;
         readVarUInt(num_bytes, istr);
 
         /// If the posting list is completely in the buffer, avoid copying.
@@ -911,13 +911,13 @@ DictionarySparseIndex TextIndexSerialization::deserializeSparseIndex(ReadBuffer 
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
 
-    UInt64 version;
+    UInt64 version = 0;
     readVarUInt(version, istr);
 
     if (version != static_cast<UInt64>(SparseIndexVersion::Initial))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
-    size_t num_sparse_index_tokens;
+    size_t num_sparse_index_tokens = 0;
     readVarUInt(num_sparse_index_tokens, istr);
 
     auto tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
@@ -962,8 +962,8 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
 
         for (size_t j = 0; j < num_postings_blocks; ++j)
         {
-            UInt64 offset_in_file;
-            RowsRange rows_range;
+            UInt64 offset_in_file = 0;
+            RowsRange rows_range{};
 
             readVarUInt(offset_in_file, istr);
             readVarUInt(rows_range.begin, istr);
@@ -980,8 +980,8 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
 {
     using enum PostingsSerialization::Flags;
 
-    UInt64 header;
-    UInt64 cardinality;
+    UInt64 header = 0;
+    UInt64 cardinality = 0;
 
     readVarUInt(header, istr);
     readVarUInt(cardinality, istr);
@@ -1010,7 +1010,7 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
 
 std::pair<ColumnPtr, UInt64> TextIndexSerialization::deserializeTokens(ReadBuffer & istr)
 {
-    UInt64 tokens_format;
+    UInt64 tokens_format = 0;
     readVarUInt(tokens_format, istr);
 
     size_t num_tokens = 0;
@@ -1234,7 +1234,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
-            bool inserted;
+            bool inserted = false;
             TokenToPostingsBuilderMap::LookupResult it;
 
             ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};

@@ -226,12 +226,12 @@ private:
     // provide a description of a corresponding entity in the source program.
     struct Die
     {
-        bool is64Bit; /// NOLINT
+        bool is64Bit{}; /// NOLINT
         // Offset from start to first attribute
-        uint8_t attr_offset;
+        uint8_t attr_offset{};
         // Offset within debug info.
-        uint64_t offset;
-        uint64_t code;
+        uint64_t offset{};
+        uint64_t code{};
         DIEAbbreviation abbr;
     };
 
@@ -340,7 +340,7 @@ private:
             std::string_view relativeName; /// NOLINT
             // 0 = current compilation directory
             // otherwise, 1-based index in the list of include directories
-            uint64_t directoryIndex; /// NOLINT
+            uint64_t directoryIndex{}; /// NOLINT
         };
         // Read one FileName object, remove_prefix program
         static bool readFileName(std::string_view & program, FileName & fn);
@@ -365,48 +365,48 @@ private:
         std::string_view debugLineStr_; // DWARF 5        /// NOLINT
 
         // Header
-        uint16_t version_;   /// NOLINT
-        uint8_t minLength_;  /// NOLINT
-        bool defaultIsStmt_; /// NOLINT
-        int8_t lineBase_;    /// NOLINT
-        uint8_t lineRange_;  /// NOLINT
-        uint8_t opcodeBase_; /// NOLINT
-        const uint8_t * standardOpcodeLengths_; /// NOLINT
+        uint16_t version_{};   /// NOLINT
+        uint8_t minLength_{};  /// NOLINT
+        bool defaultIsStmt_{}; /// NOLINT
+        int8_t lineBase_{};    /// NOLINT
+        uint8_t lineRange_{};  /// NOLINT
+        uint8_t opcodeBase_{}; /// NOLINT
+        const uint8_t * standardOpcodeLengths_{}; /// NOLINT
 
         // 6.2.4 The Line Number Program Header.
         struct
         {
-            size_t includeDirectoryCount;
+            size_t includeDirectoryCount{};
             std::string_view includeDirectories;
-            size_t fileNameCount;
+            size_t fileNameCount{};
             std::string_view fileNames;
         } v4_;
 
         struct
         {
-            uint8_t directoryEntryFormatCount;
+            uint8_t directoryEntryFormatCount{};
             std::string_view directoryEntryFormat;
-            uint64_t directoriesCount;
+            uint64_t directoriesCount{};
             std::string_view directories;
 
-            uint8_t fileNameEntryFormatCount;
+            uint8_t fileNameEntryFormatCount{};
             std::string_view fileNameEntryFormat;
-            uint64_t fileNamesCount;
+            uint64_t fileNamesCount{};
             std::string_view fileNames;
         } v5_;
 
         // State machine registers
-        uint64_t address_; /// NOLINT
-        uint64_t file_; /// NOLINT
-        uint64_t line_; /// NOLINT
-        uint64_t column_; /// NOLINT
-        bool isStmt_; /// NOLINT
-        bool basicBlock_; /// NOLINT
-        bool endSequence_; /// NOLINT
-        bool prologueEnd_; /// NOLINT
-        bool epilogueBegin_; /// NOLINT
-        uint64_t isa_; /// NOLINT
-        uint64_t discriminator_; /// NOLINT
+        uint64_t address_{}; /// NOLINT
+        uint64_t file_{}; /// NOLINT
+        uint64_t line_{}; /// NOLINT
+        uint64_t column_{}; /// NOLINT
+        bool isStmt_{}; /// NOLINT
+        bool basicBlock_{}; /// NOLINT
+        bool endSequence_{}; /// NOLINT
+        bool prologueEnd_{}; /// NOLINT
+        bool epilogueBegin_{}; /// NOLINT
+        uint64_t isa_{}; /// NOLINT
+        uint64_t discriminator_{}; /// NOLINT
     };
 
     /**

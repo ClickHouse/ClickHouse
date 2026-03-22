@@ -312,7 +312,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     /// but not in case of vertical part of vertical merge)
     if (compute_granularity)
     {
-        size_t index_granularity_for_block;
+        size_t index_granularity_for_block = 0;
         if (auto constant_granularity = index_granularity->getConstantGranularity())
             index_granularity_for_block = *constant_granularity;
         else
@@ -619,7 +619,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     UInt64 offset_in_decompressed_block = 0;
     UInt64 index_granularity_rows = index_granularity_info.fixed_index_granularity;
 
-    size_t mark_num;
+    size_t mark_num = 0;
 
     for (mark_num = 0; !mrk_in->eof(); ++mark_num)
     {

@@ -38,8 +38,8 @@ struct BlobStorageLogElement
     String remote_path;
     String local_path;
 
-    size_t data_size;
-    size_t elapsed_microseconds;
+    size_t data_size{};
+    size_t elapsed_microseconds{};
 
     Int32 error_code = 0; /// 0 if no error
     String error_message;

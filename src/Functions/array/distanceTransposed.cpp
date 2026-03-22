@@ -429,7 +429,7 @@ private:
 
         /// For the sake of speed, downcast the reference vector to CalcT if `precision` is low enough
         const auto & array_data = static_cast<const ColumnVector<RefT> &>(col_y.getData()).getData();
-        const PaddedPODArray<CalcT> * data_ptr;
+        const PaddedPODArray<CalcT> * data_ptr = nullptr;
         PaddedPODArray<CalcT> array_data_downcasted;
         if constexpr (!std::is_same_v<RefT, CalcT>)
         {

@@ -137,7 +137,7 @@ struct StringHashTableEmpty
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]{}; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
@@ -330,7 +330,7 @@ public:
         const char * p = x.data();
         // pending bits that needs to be shifted out
         const char s = (-sz & 7) * 8;
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init)
         {
             StringKey8 k8;
             StringKey16 k16;

@@ -166,7 +166,7 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 {
     using Base = HashMapCell<Key, TMapped, Hash, TState>;
 
-    size_t saved_hash;
+    size_t saved_hash{};
 
     using Base::Base;
 
@@ -228,7 +228,7 @@ public:
             }
 
             typename Self::LookupResult res_it;
-            bool inserted;
+            bool inserted = false;
             that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
             func(res_it->getMapped(), it->getMapped(), inserted);
         }
@@ -292,7 +292,7 @@ public:
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted;
+        bool inserted = false;
         this->emplace(x, it, inserted);
 
         /** It may seem that initialization is not necessary for POD-types (or __has_trivial_constructor),
@@ -319,7 +319,7 @@ public:
     void ALWAYS_INLINE insertIfNotPresent(const Key & x, const typename Cell::Mapped & value)
     {
         LookupResult it;
-        bool inserted;
+        bool inserted = false;
         this->emplace(x, it, inserted);
         if (inserted)
         {
@@ -331,7 +331,7 @@ public:
     void ALWAYS_INLINE insertIfNotPresent(const Key & x, size_t hash, const typename Cell::Mapped & value)
     {
         LookupResult it;
-        bool inserted;
+        bool inserted = false;
         this->emplace(x, it, inserted, hash);
         if (inserted)
         {

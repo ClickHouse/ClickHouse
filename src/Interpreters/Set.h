@@ -202,8 +202,8 @@ public:
       */
     struct KeyTuplePositionMapping
     {
-        size_t tuple_index;
-        size_t key_index;
+        size_t tuple_index{};
+        size_t key_index{};
         std::vector<FunctionBasePtr> functions;
     };
 

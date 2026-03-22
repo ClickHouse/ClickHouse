@@ -845,7 +845,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 {
     postgres::Connection connection(connection_info);
     std::set<String> result_tables;
-    bool publication_exists_before_startup;
+    bool publication_exists_before_startup = false;
 
     {
         pqxx::nontransaction tx(connection.getRef());

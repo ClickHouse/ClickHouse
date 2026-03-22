@@ -354,8 +354,8 @@ struct BlockMyersEditDistance
             UInt32 num_unique = 0;
             for (UInt32 i = 0; i < m; ++i)
             {
-                Map::LookupResult it;
-                bool inserted;
+                Map::LookupResult it = nullptr;
+                bool inserted = false;
                 offset_map.emplace(needle[i], it, inserted);
                 if (inserted)
                 {

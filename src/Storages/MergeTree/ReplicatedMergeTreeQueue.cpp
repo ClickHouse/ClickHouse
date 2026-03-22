@@ -816,7 +816,7 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
         throw Exception(ErrorCodes::ABORTED, "Log pulling is cancelled");
 
     String index_str = zookeeper->get(fs::path(replica_path) / "log_pointer");
-    UInt64 index;
+    UInt64 index = 0;
 
     /// The version of "/log" is modified when new entries to merge/mutate/drop appear.
     Coordination::Stat stat;
@@ -2773,7 +2773,7 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
 
 void ReplicatedMergeTreeQueue::notifySubscribersOnPartialShutdown()
 {
-    size_t queue_size;
+    size_t queue_size = 0;
     {
         std::lock_guard<std::mutex> lock(state_mutex);
         queue_size = queue.size();

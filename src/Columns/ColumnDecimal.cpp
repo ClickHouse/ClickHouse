@@ -86,7 +86,7 @@ Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 template <is_decimal T>
 void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
-    T dec;
+    T dec{};
     readBinaryLittleEndian(dec, in);
     data.push_back(std::move(dec));
 }
@@ -372,7 +372,7 @@ bool ColumnDecimal<T>::tryInsert(const Field & x)
 template <is_decimal T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    T tmp;
+    T tmp{};
     memcpy(&tmp, src, sizeof(T));
     data.emplace_back(tmp);
 }

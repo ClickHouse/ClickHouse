@@ -179,7 +179,7 @@ bool PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
     size_t cache_size = sizeInBytes();
     size_t memory_usage = size_t(std::max(memory_usage_signed, Int64(0)));
 
-    size_t peak;
+    size_t peak = 0;
     {
         std::lock_guard lock(mutex);
         size_t usage_excluding_cache = memory_usage - std::min(cache_size, memory_usage);

@@ -512,7 +512,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
         if (!skip_row)
         {
-            bool row_acceptable;
+            bool row_acceptable = false;
             if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllFalse)
                 row_acceptable = false;
             else if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllTrue)
@@ -629,7 +629,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
             if (!skip_row)
             {
-                bool row_acceptable;
+                bool row_acceptable = false;
                 if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllFalse)
                     row_acceptable = false;
                 else if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllTrue)

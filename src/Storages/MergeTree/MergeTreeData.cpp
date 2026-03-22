@@ -2066,7 +2066,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     res.part->setState(to_state);
 
     DataPartIteratorByInfo it;
-    bool inserted;
+    bool inserted = false;
 
     {
         std::lock_guard lock(part_loading_mutex);

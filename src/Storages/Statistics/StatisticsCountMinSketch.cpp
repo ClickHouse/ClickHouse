@@ -77,7 +77,7 @@ void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
 
 void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
 {
-    UInt64 size;
+    UInt64 size = 0;
     readIntBinary(size, buf);
 
     Sketch::vector_bytes bytes;

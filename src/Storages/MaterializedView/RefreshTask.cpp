@@ -879,7 +879,7 @@ void RefreshTask::updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock
 
 static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
 {
-    UInt64 delay_ms;
+    UInt64 delay_ms = 0;
     UInt64 multiplier = UInt64(1) << std::min(retry_idx, Int64(62));
     /// Overflow check: a*b <= c iff a <= c/b iff a <= floor(c/b).
     if (refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] <= refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms] / multiplier)
@@ -1189,10 +1189,10 @@ String RefreshTask::CoordinationZnode::toString() const
 void RefreshTask::CoordinationZnode::parse(const String & data)
 {
     ReadBufferFromString in(data);
-    Int64 last_completed_timeslot_int;
-    Int64 last_success_time_int;
-    Int64 last_success_duration_int;
-    Int64 last_attempt_time_int;
+    Int64 last_completed_timeslot_int = 0;
+    Int64 last_success_time_int = 0;
+    Int64 last_success_duration_int = 0;
+    Int64 last_attempt_time_int = 0;
     in >> "format version: 1\n"
        >> "last_completed_timeslot: " >> last_completed_timeslot_int >> "\n"
        >> "last_success_time: " >> last_success_time_int >> "\n"

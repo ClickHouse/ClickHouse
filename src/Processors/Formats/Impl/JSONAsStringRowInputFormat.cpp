@@ -98,7 +98,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     ++buf->position();
     ++balance;
 
-    char * pos;
+    char * pos = nullptr;
 
     while (balance)
     {

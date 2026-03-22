@@ -251,15 +251,15 @@ namespace detail
     {
     private:
         /// Total number of values.
-        UInt64 count;
+        UInt64 count{};
         /// Use of UInt64 is very wasteful.
         /// But UInt32 is definitely not enough, and it's too hard to invent 6-byte values.
 
         /// Number of values for each value is smaller than `small_threshold`.
-        UInt64 count_small[SMALL_THRESHOLD];
+        UInt64 count_small[SMALL_THRESHOLD]{};
 
         /// The number of values for each value from `small_threshold` to `big_threshold`, rounded to `big_precision`.
-        UInt64 count_big[BIG_SIZE];
+        UInt64 count_big[BIG_SIZE]{};
 
         /// Get value of quantile by index in array `count_big`.
         static UInt16 indexInBigToValue(size_t i)
@@ -494,7 +494,7 @@ class QuantileTiming : private boost::noncopyable
 private:
     union
     {
-        detail::QuantileTimingTiny tiny;
+        detail::QuantileTimingTiny tiny{};
         detail::QuantileTimingMedium medium;
         detail::QuantileTimingLarge * large;
     };

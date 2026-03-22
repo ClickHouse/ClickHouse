@@ -508,7 +508,7 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     /// 2. `autodelete` (auto delete in case of queue bindings are dropped).
 
     std::string error;
-    int error_code;
+    int error_code = 0;
     rabbit_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
     .onError([&](const char * message)
     {

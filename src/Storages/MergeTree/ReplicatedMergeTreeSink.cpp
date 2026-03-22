@@ -348,7 +348,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         profile_events_scope.reset();
         UInt64 elapsed_ns = watch.elapsed();
 
-        size_t max_insert_delayed_streams_for_parallel_write;
+        size_t max_insert_delayed_streams_for_parallel_write = 0;
         if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
             max_insert_delayed_streams_for_parallel_write = settings[Setting::max_insert_delayed_streams_for_parallel_write];
         else if (support_parallel_write)

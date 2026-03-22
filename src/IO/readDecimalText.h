@@ -152,7 +152,7 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     uint32_t digits = precision;
-    int32_t exponent;
+    int32_t exponent = 0;
     auto ok = readDigits<throw_exception>(buf, x, digits, exponent, digits_only);
 
     if (!throw_exception && !ok)

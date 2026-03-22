@@ -104,7 +104,7 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         {
             /// Can't use CompressionMethod::Snappy because it dispatches to HadoopSnappyReadBuffer,
             /// which expects some additional header before the compressed block.
-            size_t actual_uncompressed_size;
+            size_t actual_uncompressed_size = 0;
             if (!snappy::GetUncompressedLength(data, compressed_size, &actual_uncompressed_size))
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Malformed snappy compressed page (couldn't get uncompressed length)");
             if (actual_uncompressed_size != uncompressed_size)
@@ -190,7 +190,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     if (memcmp(buf.data() + initial_read_size - 4, "PAR1", 4) != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not a Parquet file (wrong magic bytes at the end of file)");
 
-    int32_t metadata_size_i32;
+    int32_t metadata_size_i32 = 0;
     memcpy(&metadata_size_i32, buf.data() + initial_read_size - 8, 4);
     if (metadata_size_i32 <= 0 || size_t(metadata_size_i32) + 8 > file_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Bad metadata size in parquet file: {} bytes", metadata_size_i32);
@@ -1235,7 +1235,7 @@ void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & 
 
 double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const
 {
-    double column_chunk_bytes;
+    double column_chunk_bytes = 0;
     if (column.meta->meta_data.__isset.size_statistics &&
         column.meta->meta_data.size_statistics.__isset.unencoded_byte_array_data_bytes)
     {
@@ -1246,7 +1246,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
     else if (column.meta->meta_data.__isset.dictionary_page_offset)
     {
         /// Dictionary-encoded strings. No way to know the decoded length in advance.
-        double avg_string_length;
+        double avg_string_length = 0;
         if (column.dictionary.isInitialized())
         {
             /// We've read the dictionary. Use the average string length in the dictionary as a guess
@@ -1271,7 +1271,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
 
 double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const
 {
-    double res;
+    double res = 0;
     if (column_info.output_type->haveMaximumSizeOfValue())
         /// Fixed-size values, e.g. numbers or FixedString.
         res = 1. * static_cast<double>(column_info.output_type->getMaximumSizeOfValueInMemory())
@@ -1295,7 +1295,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 {
     /// Allocate columns for values, null map, and array offsets.
 
-    size_t output_num_values_estimate;
+    size_t output_num_values_estimate = 0;
     if (column_info.levels.back().rep == 0)
         output_num_values_estimate = row_subgroup.filter.rows_pass; // no arrays, rows == values
     else if (row_subgroup.filter.rows_pass == size_t(row_group.meta->num_rows))
@@ -1608,7 +1608,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
             /// <def length> <def> [<rep length> <rep>] <values>
             decompressPageIfCompressed(page);
 
-            UInt32 n;
+            UInt32 n = 0;
             if (column_info.levels.back().rep > 0)
             {
                 if (page.data.size() < 4)

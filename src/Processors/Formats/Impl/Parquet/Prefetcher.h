@@ -122,8 +122,8 @@ private:
             Deallocated,
         };
 
-        size_t offset;
-        size_t length;
+        size_t offset{};
+        size_t length{};
         double memory_amplification = 1;
 
         /// TODO [parquet]: If the range is long, it may make sense to have multiple subtasks reading parts of
@@ -162,9 +162,9 @@ private:
     SeekableReadBuffer * reader = nullptr;
     PaddedPODArray<char> entire_file;
 
-    size_t file_size;
-    size_t min_bytes_for_seek;
-    size_t bytes_per_read_task;
+    size_t file_size{};
+    size_t min_bytes_for_seek{};
+    size_t bytes_per_read_task{};
 
     std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
 

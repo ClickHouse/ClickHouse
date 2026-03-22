@@ -67,8 +67,8 @@ public:
         ~QueryContextHolder();
 
         String query_id;
-        FileCache * cache;
-        FileCacheQueryLimit * query_limit;
+        FileCache * cache{};
+        FileCacheQueryLimit * query_limit{};
         QueryContextPtr context;
     };
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;

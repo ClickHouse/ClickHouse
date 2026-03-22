@@ -71,7 +71,7 @@ inline int get_cpuid()
 
 union CPUInfo
 {
-    UInt32 info[4];
+    UInt32 info[4]{};
 
     struct Registers
     {

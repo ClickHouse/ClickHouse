@@ -602,7 +602,7 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
-    bool do_commit_on_select;
+    bool do_commit_on_select = false;
     {
         std::lock_guard lock(mutex);
         do_commit_on_select = commit_on_select;
@@ -676,7 +676,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
-    bool add_deduplication_info;
+    bool add_deduplication_info = false;
     {
         std::lock_guard lock(mutex);
         commit_settings_copy = commit_settings;
@@ -776,7 +776,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     if (!shutdown_called)
     {
-        UInt64 reschedule_interval_ms;
+        UInt64 reschedule_interval_ms = 0;
         {
             std::lock_guard lock(mutex);
             reschedule_interval_ms = reschedule_processing_interval_ms;
@@ -816,9 +816,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
 
-    size_t min_insert_block_size_rows;
-    size_t min_insert_block_size_bytes;
-    bool is_deduplication_v2;
+    size_t min_insert_block_size_rows = 0;
+    size_t min_insert_block_size_bytes = 0;
+    bool is_deduplication_v2 = false;
     {
         std::lock_guard lock(mutex);
         min_insert_block_size_rows = min_insert_block_size_rows_for_materialized_views;
@@ -1537,8 +1537,8 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
     bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
 
-    size_t list_objects_batch_size_copy;
-    bool enable_hash_ring_filtering_copy;
+    size_t list_objects_batch_size_copy = 0;
+    bool enable_hash_ring_filtering_copy = false;
     {
         std::lock_guard lock(mutex);
         list_objects_batch_size_copy = list_objects_batch_size;

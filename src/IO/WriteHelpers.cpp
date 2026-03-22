@@ -31,7 +31,7 @@ void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
 
 std::array<char, 36> formatUUID(const UUID & uuid)
 {
-    std::array<char, 36> dst;
+    std::array<char, 36> dst{};
     auto * dst_ptr = dst.data();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__

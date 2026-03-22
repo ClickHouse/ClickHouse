@@ -1041,7 +1041,7 @@ void obfuscateLiteral(
                 else
                 {
                     ReadBufferFromMemory in(src_pos, src_end - src_pos);
-                    uint64_t num;
+                    uint64_t num = 0;
                     readIntText(num, in);
                     SipHash hash_func_num = hash_func;
                     hash_func_num.update(src_pos, in.count());
@@ -1068,7 +1068,7 @@ void obfuscateLiteral(
             ++src_pos;
 
             ReadBufferFromMemory in(src_pos, src_end - src_pos);
-            int16_t num;
+            int16_t num = 0;
             readIntText(num, in);
             writeIntText(num, result);
             src_pos += in.count();

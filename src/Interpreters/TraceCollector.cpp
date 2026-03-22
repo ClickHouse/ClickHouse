@@ -117,7 +117,7 @@ void TraceCollector::run()
     {
         while (true)
         {
-            char is_last;
+            char is_last = 0;
             readChar(is_last, in);
             if (is_last)
                 break;
@@ -152,37 +152,37 @@ void TraceCollector::run()
             TraceType trace_type;
             readPODBinary(trace_type, in);
 
-            UInt64 cpu_id;
+            UInt64 cpu_id = 0;
             readPODBinary(cpu_id, in);
 
-            UInt64 thread_id;
+            UInt64 thread_id = 0;
             readPODBinary(thread_id, in);
 
             UInt8 thread_name_id = 0;
             readPODBinary(thread_name_id, in);
 
-            Int64 size;
+            Int64 size = 0;
             readPODBinary(size, in);
 
-            UInt64 ptr;
+            UInt64 ptr = 0;
             readPODBinary(ptr, in);
 
-            Int8 memory_context;
+            Int8 memory_context = 0;
             readPODBinary(memory_context, in);
-            Int8 memory_blocked_context;
+            Int8 memory_blocked_context = 0;
             readPODBinary(memory_blocked_context, in);
 
             ProfileEvents::Event event;
             readPODBinary(event, in);
 
-            ProfileEvents::Count increment;
+            ProfileEvents::Count increment = 0;
             readPODBinary(increment, in);
 
             if (auto trace_log = getTraceLog())
             {
                 // time and time_in_microseconds are both being constructed from the same timespec so that the
                 // times will be equal up to the precision of a second.
-                struct timespec ts;
+                struct timespec ts{};
                 clock_gettime(CLOCK_REALTIME, &ts); /// NOLINT(cert-err33-c)
 
                 UInt64 timestamp_ns = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);

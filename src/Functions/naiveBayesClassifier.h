@@ -244,7 +244,7 @@ public:
             DB::readBinary(count, in); // read the 4-byte count
 
             ArenaKeyHolder key_holder{std::string_view(ngram.data(), ngram_length), pool};
-            NGramIndexMap::LookupResult it;
+            NGramIndexMap::LookupResult it = nullptr;
             bool inserted = false;
 
             ngram_to_class_count_index.emplace(key_holder, it, inserted);

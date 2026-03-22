@@ -1129,7 +1129,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             QueryTreeNodePtr join_node;
             if (result_join_kind == JoinKind::Cross || result_join_kind == JoinKind::Comma)
             {
-                CrossJoinNode * cross_join;
+                CrossJoinNode * cross_join = nullptr;
                 if (auto * left_cross_join = left_table_expression->as<CrossJoinNode>())
                     cross_join = left_cross_join;
                 else

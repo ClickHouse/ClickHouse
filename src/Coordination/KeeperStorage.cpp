@@ -2877,7 +2877,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
         {
             using enum Coordination::ListRequestType;
 
-            bool is_ephemeral;
+            bool is_ephemeral = false;
             if constexpr (!Storage::use_rocksdb)
             {
                 auto child_path = (std::filesystem::path(zk_request.path) / child).generic_string();
@@ -3525,7 +3525,7 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
-    TransactionInfo * transaction;
+    TransactionInfo * transaction = nullptr;
     uint64_t new_digest = 0;
 
     {

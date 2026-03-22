@@ -70,7 +70,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
     std::string_view query_id;
     UInt64 cpu_id = CPU::get_cpuid();
-    UInt64 thread_id;
+    UInt64 thread_id = 0;
 
     if (CurrentThread::isInitialized())
     {

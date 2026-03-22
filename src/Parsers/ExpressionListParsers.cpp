@@ -249,7 +249,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
         else
         {
             /// try to find any of the valid operators
-            const char ** it;
+            const char ** it = nullptr;
             for (it = operators; *it; it += 2)
                 if (parseOperator(pos, *it, expected))
                     break;
@@ -512,8 +512,8 @@ struct Operator
         : type(type_), priority(priority_), arity(arity_), function_name(function_name_) {}
 
     OperatorType type;
-    int priority;
-    int arity;
+    int priority{};
+    int arity{};
     std::string function_name;
 };
 
@@ -1253,8 +1253,8 @@ private:
     bool has_all = false;
     bool has_distinct = false;
 
-    const char * contents_begin;
-    const char * contents_end;
+    const char * contents_begin{};
+    const char * contents_end{};
 
     String function_name;
     ASTPtr parameters;
@@ -2289,7 +2289,7 @@ public:
     }
 
 private:
-    bool has_case_expr;
+    bool has_case_expr{};
 };
 
 /// Layer for table function 'view' and 'viewIfPermitted'

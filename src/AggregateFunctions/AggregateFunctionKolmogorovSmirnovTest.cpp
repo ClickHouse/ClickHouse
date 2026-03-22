@@ -45,7 +45,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         Float64 now_s = 0;
         UInt64 pos_x = 0;
         UInt64 pos_y = 0;
-        UInt64 pos_tmp;
+        UInt64 pos_tmp = 0;
         UInt64 n1 = x.size();
         UInt64 n2 = y.size();
 
@@ -166,11 +166,11 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                  * J.DURBIN
                  * Distribution theory for tests based on the sample distribution function
                  */
-                Float64 new_val;
-                Float64 old_val;
-                Float64 s;
-                Float64 w;
-                Float64 z;
+                Float64 new_val = 0;
+                Float64 old_val = 0;
+                Float64 s = 0;
+                Float64 w = 0;
+                Float64 z = 0;
                 UInt64 k_max = static_cast<UInt64>(sqrt(2 - log(tol)));
 
                 if (p < 1)

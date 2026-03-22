@@ -115,7 +115,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
     skipWhitespaceIfAny(in);
     in >> "{";
     skipWhitespaceIfAny(in);
-    char c;
+    char c = 0;
     while (in.peek(c) && c != '}')
     {
         String name;

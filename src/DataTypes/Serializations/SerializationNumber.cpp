@@ -24,7 +24,7 @@ void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_nu
 template <typename T>
 void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    T x;
+    T x{};
 
     if constexpr (is_integer<T> && is_arithmetic_v<T>)
     {
@@ -46,7 +46,7 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
 template <typename T>
 bool SerializationNumber<T>::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
 {
-    T x;
+    T x{};
 
     if (!tryReadText(x, istr) || (whole && !istr.eof()))
         return false;
@@ -73,7 +73,7 @@ ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const Fo
         ++istr.position();
     }
 
-    T x;
+    T x{};
 
     /// null
     if (!has_quote && !istr.eof() && *istr.position() == 'n')

@@ -202,14 +202,14 @@ void UpdateAffectedColumns::fromString(const String & str)
 {
     ReadBufferFromString in(str);
 
-    size_t version;
+    size_t version = 0;
     in >> "format version: " >> version >> "\n";
     if (version != VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown version of affected columns serializaiton: {}", version);
 
     auto read_columns = [&](auto & columns, const char * suffix)
     {
-        size_t count;
+        size_t count = 0;
         in >> count >> " " >> suffix >> "\n";
 
         String column_name;

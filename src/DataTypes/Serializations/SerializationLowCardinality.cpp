@@ -145,7 +145,7 @@ struct IndexesSerializationType
 
     void deserialize(ReadBuffer & buffer, const ISerialization::DeserializeBinaryBulkSettings & settings)
     {
-        SerializationType val;
+        SerializationType val = 0;
         readBinaryLittleEndian(val, buffer);
 
         checkType(val);
@@ -214,7 +214,7 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     KeysSerializationVersion key_version;
     ColumnUniquePtr global_dictionary;
 
-    IndexesSerializationType index_type;
+    IndexesSerializationType index_type{};
     ColumnPtr additional_keys;
     ColumnPtr null_map;
     UInt64 num_pending_rows = 0;
@@ -297,7 +297,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     if (!stream)
         return;
 
-    UInt64 keys_version;
+    UInt64 keys_version = 0;
     readBinaryLittleEndian(keys_version, *stream);
 
     state = std::make_shared<DeserializeStateLowCardinality>(keys_version);
@@ -564,7 +564,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
     auto read_dictionary = [this, low_cardinality_state, keys_stream]()
     {
-        UInt64 num_keys;
+        UInt64 num_keys = 0;
         readBinaryLittleEndian(num_keys, *keys_stream);
 
         auto keys_type = removeNullable(dictionary_type);
@@ -577,7 +577,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
     auto read_additional_keys = [this, low_cardinality_state, indexes_stream]()
     {
-        UInt64 num_keys;
+        UInt64 num_keys = 0;
         readBinaryLittleEndian(num_keys, *indexes_stream);
 
         auto keys_type = removeNullable(dictionary_type);

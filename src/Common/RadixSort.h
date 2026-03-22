@@ -243,7 +243,7 @@ private:
         {
             if (Traits::less(Traits::extractKey(*i), Traits::extractKey(*(i - 1))))
             {
-                Element * j;
+                Element * j = nullptr;
                 Element tmp = *i;
                 *i = *(i - 1);
                 for (j = i - 1; j > arr && Traits::less(Traits::extractKey(tmp), Traits::extractKey(*(j - 1))); --j)

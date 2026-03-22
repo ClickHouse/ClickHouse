@@ -109,13 +109,13 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
 
-    UInt64 num_columns;
+    UInt64 num_columns = 0;
     readVarUInt(num_columns, ctx.in);
 
     ArrayJoin array_join;

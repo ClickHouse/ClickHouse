@@ -191,13 +191,13 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     if (!indexes_stream)
         return;
 
-    size_t num_rows;
+    size_t num_rows = 0;
     readVarUInt(num_rows, *indexes_stream);
     /// In Native format we always read the whole serialized column.
     if (num_rows != limit)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in indexes column in ColumnReplicated in Native format: {}. Expected {}", num_rows, limit);
 
-    UInt8 size_of_indexes_type;
+    UInt8 size_of_indexes_type = 0;
     readBinary(size_of_indexes_type, *indexes_stream);
 
     MutableColumnPtr indexes;
@@ -233,7 +233,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     if (!elements_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationReplicated elements.");
 
-    size_t num_elements;
+    size_t num_elements = 0;
     readVarUInt(num_elements, *elements_stream);
     nested->deserializeBinaryBulkWithMultipleStreams(column_replicated.getNestedColumn(), 0, num_elements, settings, state, cache);
 }

@@ -217,7 +217,7 @@ struct SocketInterruptablePollWrapper
         result.has_requests = socket_ready;
         if (fd_ready)
         {
-            UInt8 dummy;
+            UInt8 dummy = 0;
             readIntBinary(dummy, response_in);
             result.responses_count = 1;
             auto available = response_in.available();
@@ -297,9 +297,9 @@ void KeeperTCPHandler::run()
 
 Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool & use_compression)
 {
-    int32_t protocol_version;
-    int64_t last_zxid_seen;
-    int32_t timeout_ms;
+    int32_t protocol_version = 0;
+    int64_t last_zxid_seen = 0;
+    int32_t timeout_ms = 0;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
 
@@ -377,7 +377,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Wrong password specified, authentication failed");
     }
 
-    int8_t readonly;
+    int8_t readonly = 0;
     if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
         Coordination::read(readonly, *in);
 
@@ -406,7 +406,7 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    int32_t header;
+    int32_t header = 0;
     try
     {
         Coordination::read(header, *in);
@@ -737,17 +737,17 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         return *limited_buffer_holder;
     };
     auto & read_buffer = get_read_buffer_with_limit();
-    int32_t length;
+    int32_t length = 0;
     Coordination::read(length, read_buffer);
     if (length < 0 || (max_request_size > 0 && static_cast<uint32_t>(length) > max_request_size))
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Request size {} is too big request (limit: {})", length, max_request_size);
 
-    int64_t xid;
+    int64_t xid = 0;
     if (use_xid_64)
         Coordination::read(xid, read_buffer);
     else
     {
-        int32_t read_xid;
+        int32_t read_xid = 0;
         Coordination::read(read_xid, read_buffer);
         xid = read_xid;
     }
@@ -776,7 +776,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
     if (expect_opentelemetry_tracing_context)
     {
-        uint8_t has_tracing_context;
+        uint8_t has_tracing_context = 0;
         Coordination::read(has_tracing_context, read_buffer);
 
         if (has_tracing_context)

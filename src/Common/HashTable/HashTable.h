@@ -363,7 +363,7 @@ struct ZeroValueStorage<true, Cell>
 {
 private:
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]{}; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }

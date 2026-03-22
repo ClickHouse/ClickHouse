@@ -55,7 +55,7 @@ namespace ErrorCodes
 template <typename T>
 void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
-    T element;
+    T element{};
     readBinaryLittleEndian<T>(element, in);
     data.emplace_back(std::move(element));
 }
@@ -588,7 +588,7 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
         if constexpr (std::is_same_v<T, UInt8>)
         {
             /// It's also possible to insert boolean values into UInt8 column.
-            bool boolean_value;
+            bool boolean_value = false;
             if (x.tryGet<bool>(boolean_value))
             {
                 data.push_back(static_cast<T>(boolean_value));

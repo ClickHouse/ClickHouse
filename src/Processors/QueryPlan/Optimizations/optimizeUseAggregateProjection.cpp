@@ -784,7 +784,7 @@ std::optional<String> optimizeUseAggregateProjections(
     }
 
     QueryPlanStepPtr projection_reading;
-    bool has_parent_parts;
+    bool has_parent_parts = false;
     String selected_projection_name;
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;

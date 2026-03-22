@@ -134,7 +134,7 @@ namespace
         else if (version == SnapshotVersion::V0)
         {
             /// Deserialize ACL
-            size_t acls_size;
+            size_t acls_size = 0;
             readBinary(acls_size, in);
             Coordination::ACLs acls;
             for (size_t i = 0; i < acls_size; ++i)
@@ -165,7 +165,7 @@ namespace
         /// Deserialize stat
         readBinary(node.stats.czxid, in);
         readBinary(node.stats.mzxid, in);
-        int64_t ctime;
+        int64_t ctime = 0;
         readBinary(ctime, in);
         node.stats.setCtime(ctime);
         readBinary(node.stats.mtime, in);
@@ -210,7 +210,7 @@ namespace
 
     SnapshotMetadataPtr deserializeSnapshotMetadata(ReadBuffer & in)
     {
-        size_t data_size;
+        size_t data_size = 0;
         readVarUInt(data_size, in);
         auto buffer = nuraft::buffer::alloc(data_size);
         in.readStrict(reinterpret_cast<char *>(buffer->data_begin()), data_size);
@@ -330,7 +330,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
 template<typename Storage>
 void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context, bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    uint8_t version;
+    uint8_t version = 0;
     readBinary(version, in);
     SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
     if (current_version > CURRENT_SNAPSHOT_VERSION)
@@ -343,11 +343,11 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     if (version >= SnapshotVersion::V5)
     {
         readBinary(storage.zxid, in);
-        uint8_t digest_version;
+        uint8_t digest_version = 0;
         readBinary(digest_version, in);
         if (digest_version != static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST))
         {
-            uint64_t nodes_digest;
+            uint64_t nodes_digest = 0;
             readBinary(nodes_digest, in);
             if (digest_version == static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION))
             {
@@ -364,7 +364,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         storage.old_snapshot_zxid = storage.zxid;
     }
 
-    int64_t session_id;
+    int64_t session_id = 0;
     readBinary(session_id, in);
 
     storage.session_id_counter = session_id;
@@ -372,16 +372,16 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     /// Before V1 we serialized ACL without acl_map
     if (current_version >= SnapshotVersion::V1)
     {
-        size_t acls_map_size;
+        size_t acls_map_size = 0;
 
         readBinary(acls_map_size, in);
         size_t current_map_size = 0;
         while (current_map_size < acls_map_size)
         {
-            uint64_t acl_id;
+            uint64_t acl_id = 0;
             readBinary(acl_id, in);
 
-            size_t acls_size;
+            size_t acls_size = 0;
             readBinary(acls_size, in);
             Coordination::ACLs acls;
             for (size_t i = 0; i < acls_size; ++i)
@@ -399,7 +399,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         }
     }
 
-    size_t snapshot_container_size;
+    size_t snapshot_container_size = 0;
     readBinary(snapshot_container_size, in);
     if constexpr (!use_rocksdb)
         storage.container.reserve(snapshot_container_size);
@@ -534,21 +534,21 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         }
     }
 
-    size_t active_sessions_size;
+    size_t active_sessions_size = 0;
     readBinary(active_sessions_size, in);
 
     size_t current_session_size = 0;
     while (current_session_size < active_sessions_size)
     {
-        int64_t active_session_id;
-        int64_t timeout;
+        int64_t active_session_id = 0;
+        int64_t timeout = 0;
         readBinary(active_session_id, in);
         readBinary(timeout, in);
         storage.addSessionID(active_session_id, timeout);
 
         if (current_version >= SnapshotVersion::V1)
         {
-            size_t session_auths_size;
+            size_t session_auths_size = 0;
             readBinary(session_auths_size, in);
 
             typename Storage::AuthIDs ids;
@@ -573,7 +573,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     ClusterConfigPtr cluster_config = nullptr;
     if (!in.eof())
     {
-        size_t data_size;
+        size_t data_size = 0;
         readVarUInt(data_size, in);
         auto buffer = nuraft::buffer::alloc(data_size);
         in.readStrict(reinterpret_cast<char *>(buffer->data_begin()), data_size);

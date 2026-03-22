@@ -53,7 +53,7 @@ void writeRecord(const MergeTreeDeduplicationLogRecord & record, WriteBuffer & o
 
 void readRecord(MergeTreeDeduplicationLogRecord & record, ReadBuffer & in)
 {
-    uint8_t op;
+    uint8_t op = 0;
     readIntText(op, in);
     record.operation = static_cast<MergeTreeDeduplicationOp>(op);
     assertChar('\t', in);

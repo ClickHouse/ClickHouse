@@ -219,7 +219,7 @@ private:
 
     static Int32 hashUnderlyingIntBigEndian(UInt128 value, bool reduce_two_complement)
     {
-        std::array<char, 16> big_endian_representation;
+        std::array<char, 16> big_endian_representation{};
         size_t taken = 1;
         signed char prev = 0;
         for (size_t i = 0; i < 16; ++i)
@@ -256,7 +256,7 @@ private:
         {
             Float64 d;
             UInt64 bits;
-        } converter;
+        } converter{};
 
         converter.d = value;
         if (converter.bits == 0x8000000000000000ULL)

@@ -1324,7 +1324,7 @@ bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAc
 
 Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 {
-    Keeper4LWInfo result;
+    Keeper4LWInfo result{};
     result.is_leader = raft_instance->is_leader();
 
     auto srv_config = state_manager->get_srv_config();

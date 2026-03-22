@@ -8,7 +8,7 @@ namespace DB
 struct VirtualColumnDescription : public ColumnDescription
 {
     using Self = VirtualColumnDescription;
-    VirtualsKind kind;
+    VirtualsKind kind{};
 
     VirtualColumnDescription() = default;
     VirtualColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_);

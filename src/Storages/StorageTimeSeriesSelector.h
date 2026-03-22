@@ -24,8 +24,8 @@ public:
         PrometheusQueryTree selector;
 
         /// The scale of these fields is the same as the scale used in `timestamp_data_type`.
-        DateTime64 min_time;
-        DateTime64 max_time;
+        DateTime64 min_time{};
+        DateTime64 max_time{};
     };
 
     static Configuration getConfiguration(ASTs & args, const ContextPtr & context);

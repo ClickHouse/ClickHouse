@@ -98,15 +98,15 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
-    size_t skipped_bytes;
+    size_t skipped_bytes = 0;
 
     if (unlikely(__builtin_mul_overflow(rows_offset, n, &skipped_bytes)))
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
     istr.ignore(skipped_bytes);
 
     size_t initial_size = data.size();
-    size_t max_bytes;
-    size_t new_data_size;
+    size_t max_bytes = 0;
+    size_t new_data_size = 0;
 
     if (unlikely(__builtin_mul_overflow(limit, n, &max_bytes)))
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");

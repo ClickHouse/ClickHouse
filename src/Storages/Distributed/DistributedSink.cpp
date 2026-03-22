@@ -830,7 +830,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     };
 
     auto sleep_ms = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms].totalMilliseconds();
-    size_t file_size;
+    size_t file_size = 0;
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent

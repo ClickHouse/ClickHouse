@@ -318,7 +318,7 @@ protected:
 
     String default_database;
     String query_id;
-    Int32 suggestion_limit;
+    Int32 suggestion_limit{};
     bool enable_highlight = true;
     bool multiline = false;
 
@@ -397,7 +397,7 @@ protected:
 
     fs::path home_path;
     fs::path history_file; /// Path to a file containing command history.
-    UInt32 history_max_entries; /// Maximum number of entries in the history file.
+    UInt32 history_max_entries{}; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
     String server_version;

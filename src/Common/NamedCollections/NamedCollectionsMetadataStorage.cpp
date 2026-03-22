@@ -437,7 +437,7 @@ public:
 
 private:
     std::string key;
-    UInt128 key_fingerprint;
+    UInt128 key_fingerprint{};
     FileEncryption::Algorithm algorithm;
 };
 

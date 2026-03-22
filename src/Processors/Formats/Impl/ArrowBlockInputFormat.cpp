@@ -152,7 +152,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
 
     if (in.available() >= sizeof(int32_t))
     {
-        int32_t first_int;
+        int32_t first_int = 0;
         memcpy(&first_int, in.position(), sizeof(int32_t));
         /// Arrow IPC uses little-endian byte order on the wire.
         first_int = DB::fromLittleEndian(first_int);

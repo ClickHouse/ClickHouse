@@ -156,7 +156,7 @@ namespace
                     return false;
             }
 
-            QuotaValue max_value;
+            QuotaValue max_value = 0;
             if (!parseMaxValue(pos, expected, quota_type, max_value))
                 return false;
 

@@ -322,7 +322,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         IMergeTreeDataPart::Checksums projection_checksums;
         try
         {
-            bool noop;
+            bool noop = false;
             projection_checksums = checkDataPart(
                 projection, *data_part_storage.getProjection(projection_file),
                 projection->getColumns(), projection->getType(),

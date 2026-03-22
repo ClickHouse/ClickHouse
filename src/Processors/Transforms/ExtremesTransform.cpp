@@ -111,7 +111,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
             {
                 if (value.isNull())
                     return true;
-                Float64 rawVal;
+                Float64 rawVal = 0;
                 return value.tryGet<Float64>(rawVal) && isNaN(rawVal);
             };
             if (isNullORNaN(min_value) || (!isNullORNaN(cur_min_value) && cur_min_value < min_value))

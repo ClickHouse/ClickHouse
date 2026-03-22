@@ -587,9 +587,9 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
     /// If the rest of the larger string is zero bytes then the strings are
     /// considered equal.
 
-    size_t max_size;
-    const Char * longest;
-    int cmp;
+    size_t max_size = 0;
+    const Char * longest = nullptr;
+    int cmp = 0;
 
     if (a_size == b_size)
     {

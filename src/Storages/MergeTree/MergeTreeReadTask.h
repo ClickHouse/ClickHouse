@@ -95,9 +95,9 @@ struct MergeTreeReadTaskInfo
     /// Parent part of the projection part
     DataPartPtr parent_part;
     /// For `part_index` virtual column
-    size_t part_index_in_query;
+    size_t part_index_in_query{};
     /// For `part_starting_offset` virtual column
-    size_t part_starting_offset_in_query;
+    size_t part_starting_offset_in_query{};
     /// Alter converversionss that should be applied on-fly for part.
     AlterConversionsPtr alter_conversions;
     /// `_part_offset` mapping used to merge projections with `_part_offset`.

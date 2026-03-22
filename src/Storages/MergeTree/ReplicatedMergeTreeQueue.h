@@ -508,20 +508,20 @@ public:
     struct Status
     {
         /// TODO: consider using UInt64 here
-        UInt32 future_parts;
-        UInt32 queue_size;
-        UInt32 inserts_in_queue;
-        UInt32 merges_in_queue;
-        UInt32 part_mutations_in_queue;
-        UInt32 metadata_alters_in_queue;
-        UInt32 queue_oldest_time;
-        UInt32 inserts_oldest_time;
-        UInt32 merges_oldest_time;
-        UInt32 part_mutations_oldest_time;
+        UInt32 future_parts{};
+        UInt32 queue_size{};
+        UInt32 inserts_in_queue{};
+        UInt32 merges_in_queue{};
+        UInt32 part_mutations_in_queue{};
+        UInt32 metadata_alters_in_queue{};
+        UInt32 queue_oldest_time{};
+        UInt32 inserts_oldest_time{};
+        UInt32 merges_oldest_time{};
+        UInt32 part_mutations_oldest_time{};
         String oldest_part_to_get;
         String oldest_part_to_merge_to;
         String oldest_part_to_mutate_to;
-        UInt32 last_queue_update;
+        UInt32 last_queue_update{};
     };
 
     /// Get information about the queue.

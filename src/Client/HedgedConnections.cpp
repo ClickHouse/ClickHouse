@@ -406,7 +406,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             return location;
     }
 
-    int event_fd;
+    int event_fd = 0;
     while (true)
     {
         /// Get ready file descriptor from epoll and process it.
@@ -471,7 +471,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
 
 int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 {
-    epoll_event event;
+    epoll_event event{};
     event.data.fd = -1;
     size_t events_count = 0;
     bool blocking = !static_cast<bool>(async_callback);

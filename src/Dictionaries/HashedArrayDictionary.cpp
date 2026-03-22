@@ -901,7 +901,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
-        ssize_t element_index;
+        ssize_t element_index = 0;
         if constexpr (sharded)
         {
             element_index = key_index_to_element_index[key_index].first;
@@ -948,7 +948,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
-        ssize_t element_index;
+        ssize_t element_index = 0;
         if constexpr (sharded)
         {
             element_index = key_index_to_element_index[key_index].first;

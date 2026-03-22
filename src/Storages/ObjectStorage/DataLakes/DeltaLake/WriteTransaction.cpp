@@ -230,8 +230,8 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Will commit {} files", files.size());
     auto write_metadata = getWriteMetadata(files, log);
 
-    ffi::FFI_ArrowArray array;
-    ffi::FFI_ArrowSchema schema;
+    ffi::FFI_ArrowArray array{};
+    ffi::FFI_ArrowSchema schema{};
     SCOPE_EXIT({
         if (schema.release)
             schema.release(&schema);

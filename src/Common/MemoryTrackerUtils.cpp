@@ -5,7 +5,7 @@
 
 std::optional<UInt64> getMostStrictAvailableSystemMemory()
 {
-    MemoryTracker * query_memory_tracker;
+    MemoryTracker * query_memory_tracker = nullptr;
     if (query_memory_tracker = DB::CurrentThread::getMemoryTracker(); !query_memory_tracker)
         return {};
     /// query-level memory tracker

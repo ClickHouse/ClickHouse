@@ -1137,7 +1137,7 @@ static BlockIO executeQueryImpl(
 
     String query;
     String query_for_logging;
-    UInt64 normalized_query_hash;
+    UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
     /// Parse the query from string.
@@ -2272,8 +2272,8 @@ void executeQuery(
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
 
     PODArray<char> parse_buf;
-    const char * begin;
-    const char * end;
+    const char * begin = nullptr;
+    const char * end = nullptr;
 
     try
     {

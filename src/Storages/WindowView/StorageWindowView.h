@@ -189,9 +189,9 @@ private:
     /// Used to fetch the data from inner storage.
     ASTPtr inner_fetch_query;
 
-    bool is_proctime;
-    bool is_time_column_func_now;
-    bool is_tumble; // false if is hop
+    bool is_proctime{};
+    bool is_time_column_func_now{};
+    bool is_tumble{}; // false if is hop
     std::atomic<bool> shutdown_called{false};
     std::atomic<bool> modifying_query{false};
     bool has_inner_table{true};
@@ -204,10 +204,10 @@ private:
     UInt32 max_timestamp = 0;
     UInt32 max_watermark = 0; // next watermark to fire
     UInt32 max_fired_watermark = 0;
-    bool is_watermark_strictly_ascending;
-    bool is_watermark_ascending;
-    bool is_watermark_bounded;
-    bool allowed_lateness;
+    bool is_watermark_strictly_ascending{};
+    bool is_watermark_ascending{};
+    bool is_watermark_bounded{};
+    bool allowed_lateness{};
     UInt32 next_fire_signal;
     std::deque<UInt32> fire_signal;
     std::list<std::weak_ptr<WindowViewSource>> watch_streams;
@@ -224,12 +224,12 @@ private:
     IntervalKind::Kind watermark_kind;
     IntervalKind::Kind lateness_kind;
     IntervalKind::Kind slide_kind;
-    Int64 window_num_units;
-    Int64 hop_num_units;
-    Int64 slice_num_units;
-    Int64 watermark_num_units;
-    Int64 lateness_num_units;
-    Int64 slide_num_units;
+    Int64 window_num_units{};
+    Int64 hop_num_units{};
+    Int64 slice_num_units{};
+    Int64 watermark_num_units{};
+    Int64 lateness_num_units{};
+    Int64 slide_num_units{};
     String window_id_name;
     String window_id_alias;
     String window_column_name;

@@ -261,9 +261,9 @@ private:
 
         Chunk chunk;
         BlockMissingValues block_missing_values;
-        size_t chunk_idx; // within row group
-        size_t row_group_batch_idx;
-        size_t approx_original_chunk_size;
+        size_t chunk_idx{}; // within row group
+        size_t row_group_batch_idx{};
+        size_t approx_original_chunk_size{};
 
         // For priority_queue.
         // In ordered mode we deliver strictly in order of increasing row group idx,

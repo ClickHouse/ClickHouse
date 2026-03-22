@@ -117,7 +117,7 @@ struct AggregateFunctionIntervalLengthSumData
     {
         readBinary(sorted, buf);
 
-        size_t size;
+        size_t size = 0;
         readBinary(size, buf);
 
         if (unlikely(size > MAX_ARRAY_SIZE))

@@ -251,7 +251,7 @@ namespace
 
         /// Column "timestamp".
         const auto & timestamp_description = get_column_description(TimeSeriesColumnNames::Timestamp);
-        UInt32 timestamp_scale;
+        UInt32 timestamp_scale = 0;
         validator.validateColumnForTimestamp(timestamp_description, timestamp_scale);
         auto & timestamp_column = make_column_for_data_block(timestamp_description);
 

@@ -18,7 +18,7 @@ public:
 
     String name;
     Type type;
-    IAST * expr;
+    IAST * expr{};
 
     String getID(char) const override { return "Constraint"; }
 

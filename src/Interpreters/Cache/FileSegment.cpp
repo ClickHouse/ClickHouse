@@ -537,9 +537,9 @@ bool FileSegment::reserve(
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
 
-    size_t current_downloaded_size;
+    size_t current_downloaded_size = 0;
 
-    bool is_file_segment_size_exceeded;
+    bool is_file_segment_size_exceeded = false;
     {
         auto lk = lock();
 
@@ -726,7 +726,7 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     chassert(downloaded_size <= range().size());
 
     const size_t background_download_max_file_segment_size = cache->getBackgroundDownloadMaxFileSegmentSize();
-    size_t desired_size;
+    size_t desired_size = 0;
     if (downloaded_size >= background_download_max_file_segment_size)
         desired_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
     else

@@ -26,7 +26,7 @@ struct AggregateFunctionAnyHeavyData
     using Self = AggregateFunctionAnyHeavyData;
 
 private:
-    SingleValueDataBaseMemoryBlock v_data;
+    SingleValueDataBaseMemoryBlock v_data{};
     UInt64 counter = 0;
 
 public:

@@ -145,7 +145,7 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 #else
         sev._sigev_un._tid = static_cast<pid_t>(thread_id);
 #endif
-        timer_t local_timer_id;
+        timer_t local_timer_id = nullptr;
         if (timer_create(clock_type, &sev, &local_timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.

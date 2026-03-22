@@ -254,7 +254,7 @@ private:
     }
 
     std::variant<Policies...> impl;
-    size_t capacity;
+    size_t capacity{};
 };
 
 // Avoid typedef and alias to facilitate forward declaration

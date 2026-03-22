@@ -1288,7 +1288,7 @@ void finalizeMutatedPart(
         new_data_part->setIndex(*source_part->getIndex());
 
     /// Load rest projections which are hardlinked
-    bool noop;
+    bool noop = false;
     new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
 
     /// All information about sizes is stored in checksums.
@@ -1306,11 +1306,11 @@ void finalizeMutatedPart(
 
 struct MutationContext
 {
-    MergeTreeData * data;
-    MergeTreeDataMergerMutator * mutator;
-    PartitionActionBlocker * merges_blocker;
-    TableLockHolder * holder;
-    MergeListEntry * mutate_entry;
+    MergeTreeData * data{};
+    MergeTreeDataMergerMutator * mutator{};
+    PartitionActionBlocker * merges_blocker{};
+    TableLockHolder * holder{};
+    MergeListEntry * mutate_entry{};
 
     LoggerPtr log{getLogger("MutateTask")};
 
@@ -1321,7 +1321,7 @@ struct MutationContext
     DiskPtr disk;
 
     MutationCommandsConstPtr commands;
-    time_t time_of_mutation;
+    time_t time_of_mutation{};
     ContextPtr context;
     ReservationSharedPtr space_reservation;
 
@@ -1366,7 +1366,7 @@ struct MutationContext
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
 
-    bool need_sync;
+    bool need_sync{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
 
     MergeTreeTransactionPtr txn;
@@ -1389,7 +1389,7 @@ struct MutationContext
     }
 
     /// Whether we need to count lightweight delete rows in this mutation
-    bool count_lightweight_deleted_rows;
+    bool count_lightweight_deleted_rows{};
     UInt64 execute_elapsed_ns = 0;
 };
 
@@ -1496,7 +1496,7 @@ private:
     /// Existing rows count calculated during part writing.
     /// It is initialized in prepare(), calculated in mutateOriginalPartAndPrepareProjections()
     /// and set to new_data_part in finalize()
-    size_t existing_rows_count;
+    size_t existing_rows_count{};
 };
 
 
@@ -2002,7 +2002,7 @@ private:
 
     void finalize()
     {
-        bool noop;
+        bool noop = false;
         ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
@@ -2608,7 +2608,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
         if (need_recalculate)
         {
-            bool inserted;
+            bool inserted = false;
             auto index_ptr = index_factory.get(index);
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))

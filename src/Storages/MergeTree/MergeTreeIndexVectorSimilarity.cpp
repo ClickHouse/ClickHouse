@@ -256,7 +256,7 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
 {
     LOG_TRACE(logger, "Start loading vector similarity index");
 
-    UInt64 file_version;
+    UInt64 file_version = 0;
     readIntBinary(file_version, istr);
     if (file_version != FILE_FORMAT_VERSION)
         throw Exception(
@@ -266,7 +266,7 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
         /// More fancy error handling would be: Set a flag on the index that it failed to load. During usage return all granules, i.e.
         /// behave as if the index does not exist. Since format changes are expected to happen only rarely and it is "only" an index, keep it simple for now.
 
-    UInt64 dimensions;
+    UInt64 dimensions = 0;
     readIntBinary(dimensions, istr);
     index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 

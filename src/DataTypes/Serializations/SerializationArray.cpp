@@ -46,7 +46,7 @@ void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr
 
 void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size;
+    size_t size = 0;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
@@ -86,7 +86,7 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
     ColumnArray & column_array = assert_cast<ColumnArray &>(column);
     ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t size;
+    size_t size = 0;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(

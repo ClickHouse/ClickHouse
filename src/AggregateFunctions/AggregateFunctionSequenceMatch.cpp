@@ -114,7 +114,7 @@ struct AggregateFunctionSequenceMatchData final
     {
         readBinary(sorted, buf);
 
-        size_t size;
+        size_t size = 0;
         readBinary(size, buf);
 
         /// If we lose these flags, functionality is broken
@@ -130,7 +130,7 @@ struct AggregateFunctionSequenceMatchData final
             Timestamp timestamp;
             readBinary(timestamp, buf);
 
-            UInt64 events;
+            UInt64 events = 0;
             readBinary(events, buf);
 
             events_list.emplace_back(timestamp, Events{events});
@@ -205,7 +205,7 @@ private:
     struct PatternAction final
     {
         PatternActionType type;
-        std::uint64_t extra;
+        std::uint64_t extra{};
 
         PatternAction() = default;
         explicit PatternAction(const PatternActionType type_, const std::uint64_t extra_ = 0) : type{type_}, extra{extra_} {}
@@ -660,7 +660,7 @@ private:
 
 protected:
     /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
-    bool pattern_has_time;
+    bool pattern_has_time{};
     /// sequenceMatch conditions met at least once in the pattern
     std::bitset<max_events> conditions_in_pattern;
 

@@ -31,22 +31,22 @@ struct Optimization
 {
     struct ExtraSettings
     {
-        size_t max_step_description_length;
+        size_t max_step_description_length{};
 
         /// Vector-search-related settings
-        size_t max_limit_for_vector_search_queries;
-        bool vector_search_with_rescoring;
+        size_t max_limit_for_vector_search_queries{};
+        bool vector_search_with_rescoring{};
         VectorSearchFilterStrategy vector_search_filter_strategy;
 
         /// Other settings
-        size_t use_index_for_in_with_subqueries_max_values;
+        size_t use_index_for_in_with_subqueries_max_values{};
         SizeLimits network_transfer_limits;
 
-        bool use_skip_indexes_for_top_k;
-        bool use_top_k_dynamic_filtering;
-        size_t max_limit_for_top_k_optimization;
-        bool use_skip_indexes_on_data_read;
-        bool read_in_order;
+        bool use_skip_indexes_for_top_k{};
+        bool use_top_k_dynamic_filtering{};
+        size_t max_limit_for_top_k_optimization{};
+        bool use_skip_indexes_on_data_read{};
+        bool read_in_order{};
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;

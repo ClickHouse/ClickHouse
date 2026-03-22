@@ -56,7 +56,7 @@ private:
     String metadata_dir;
     String storage_data_dir;
     String storage_metadata_dir;
-    bool use_uuid_in_metadata;
+    bool use_uuid_in_metadata{};
     CompressionMethod compression_method;
     String format_name;
 

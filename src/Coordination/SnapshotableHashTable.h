@@ -166,7 +166,7 @@ private:
             ListElem elem{list_key, std::move(value)};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted;
+            bool inserted = false;
             map.emplace(itr->key, it, inserted, hash_value);
             itr->setActiveInMap();
             chassert(inserted);
@@ -218,7 +218,7 @@ public:
             ListElem elem{copyStringInArena(arena, key), std::move(value)};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted;
+            bool inserted = false;
             map.emplace(itr->key, it, inserted, hash_value);
             itr->setActiveInMap();
             chassert(inserted);

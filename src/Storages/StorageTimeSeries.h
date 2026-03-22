@@ -94,7 +94,7 @@ private:
     {
         ViewTarget::Kind kind;
         StorageID table_id = StorageID::createEmpty();
-        bool is_inner_table;
+        bool is_inner_table{};
     };
 
     std::vector<Target> targets;

@@ -309,7 +309,7 @@ namespace
 
     bool parseSyncOrAsync(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
     {
-        bool async;
+        bool async = false;
         if (ParserKeyword(Keyword::ASYNC).ignore(pos, expected))
             async = true;
         else if (ParserKeyword(Keyword::SYNC).ignore(pos, expected))

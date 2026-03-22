@@ -126,7 +126,7 @@ long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWS
     chassert(attemptedRetries >= 0);
     uint64_t backoff_limited_pow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
 
-    uint64_t res;
+    uint64_t res = 0;
     if (config.jitter_factor > 0)
     {
         auto dist = std::uniform_real_distribution<double>(1.0, 1.0 + config.jitter_factor);

@@ -99,33 +99,33 @@ struct MergeTreeWriterSettings
         bool save_primary_index_in_memory_,
         bool blocks_are_granules_size_);
 
-    size_t min_compress_block_size;
-    size_t max_compress_block_size;
+    size_t min_compress_block_size{};
+    size_t max_compress_block_size{};
 
     String marks_compression_codec;
-    size_t marks_compress_block_size;
+    size_t marks_compress_block_size{};
 
-    bool compress_primary_key;
+    bool compress_primary_key{};
     String primary_key_compression_codec;
-    size_t primary_key_compress_block_size;
+    size_t primary_key_compress_block_size{};
 
-    bool can_use_adaptive_granularity;
-    bool rewrite_primary_key;
-    bool save_marks_in_cache;
-    bool save_primary_index_in_memory;
-    bool blocks_are_granules_size;
+    bool can_use_adaptive_granularity{};
+    bool rewrite_primary_key{};
+    bool save_marks_in_cache{};
+    bool save_primary_index_in_memory{};
+    bool blocks_are_granules_size{};
     WriteSettings query_write_settings;
 
-    size_t low_cardinality_max_dictionary_size;
-    bool low_cardinality_use_single_dictionary_for_part;
-    bool use_compact_variant_discriminators_serialization;
-    MergeTreeDynamicSerializationVersion dynamic_serialization_version;
-    MergeTreeObjectSerializationVersion object_serialization_version;
-    MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
+    size_t low_cardinality_max_dictionary_size{};
+    bool low_cardinality_use_single_dictionary_for_part{};
+    bool use_compact_variant_discriminators_serialization{};
+    MergeTreeDynamicSerializationVersion dynamic_serialization_version{};
+    MergeTreeObjectSerializationVersion object_serialization_version{};
+    MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version{};
     size_t object_shared_data_buckets = 1;
-    bool use_adaptive_write_buffer_for_dynamic_subcolumns;
-    size_t min_columns_to_activate_adaptive_write_buffer;
-    size_t adaptive_write_buffer_initial_size;
+    bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
+    size_t min_columns_to_activate_adaptive_write_buffer{};
+    size_t adaptive_write_buffer_initial_size{};
 };
 
 }

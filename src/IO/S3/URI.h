@@ -33,7 +33,7 @@ struct URI
     std::optional<std::string> archive_pattern;
     std::string uri_str;
 
-    bool is_virtual_hosted_style;
+    bool is_virtual_hosted_style{};
 
     URI() = default;
     explicit URI(

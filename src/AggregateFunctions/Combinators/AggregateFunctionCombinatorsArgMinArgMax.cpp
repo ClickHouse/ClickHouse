@@ -16,7 +16,7 @@ namespace
 struct AggregateFunctionCombinatorArgMinArgMaxData
 {
 private:
-    SingleValueDataBaseMemoryBlock v_data;
+    SingleValueDataBaseMemoryBlock v_data{};
 
 public:
     explicit AggregateFunctionCombinatorArgMinArgMaxData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }

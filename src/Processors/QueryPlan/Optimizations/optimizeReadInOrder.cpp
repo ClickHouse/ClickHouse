@@ -678,7 +678,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
         size_t next_pk_name = 0;
         for (const auto & info : match_infos)
         {
-            const ActionsDAG::Node * output;
+            const ActionsDAG::Node * output = nullptr;
             if (info.fixed_column)
                 output = &virtual_row_dag.addColumn({info.fixed_column->column, info.fixed_column->result_type, info.fixed_column->result_name});
             else

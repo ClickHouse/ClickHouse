@@ -375,7 +375,7 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        size_t keys_found;
+        size_t keys_found = 0;
         auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -392,7 +392,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        size_t keys_found;
+        size_t keys_found = 0;
         auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);

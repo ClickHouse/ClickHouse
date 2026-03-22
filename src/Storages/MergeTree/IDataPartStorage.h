@@ -207,7 +207,7 @@ public:
         struct ReplicatedFileDescription
         {
             InputBufferGetter input_buffer_getter;
-            size_t file_size;
+            size_t file_size{};
         };
 
         std::map<String, ReplicatedFileDescription> files;

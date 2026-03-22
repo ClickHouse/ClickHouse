@@ -466,7 +466,7 @@ void ColumnFunction::forEachSubcolumnRecursively(RecursiveColumnCallback callbac
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column)
 {
-    const ColumnFunction * column_function;
+    const ColumnFunction * column_function = nullptr;
     if ((column_function = typeid_cast<const ColumnFunction *>(column.get())) && column_function->isShortCircuitArgument())
         return column_function;
     return nullptr;

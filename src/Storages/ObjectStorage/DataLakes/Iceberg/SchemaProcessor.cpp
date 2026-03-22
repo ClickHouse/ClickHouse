@@ -127,8 +127,8 @@ bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Obj
 std::pair<size_t, size_t> parseDecimal(const String & type_name)
 {
     DB::ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-    size_t precision;
-    size_t scale;
+    size_t precision = 0;
+    size_t scale = 0;
     readIntText(precision, buf);
     skipWhitespaceIfAny(buf);
     assertChar(',', buf);
@@ -249,7 +249,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
     if (type_name.starts_with("fixed[") && type_name.ends_with(']'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 6, type_name.end() - 1));
-        size_t n;
+        size_t n = 0;
         readIntText(n, buf);
         return std::make_shared<DataTypeFixedString>(n);
     }

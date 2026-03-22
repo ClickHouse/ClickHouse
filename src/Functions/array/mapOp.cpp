@@ -88,8 +88,8 @@ private:
 
         for (const auto & arg : arguments)
         {
-            const DataTypeArray * k;
-            const DataTypeArray * v;
+            const DataTypeArray * k = nullptr;
+            const DataTypeArray * v = nullptr;
 
             const DataTypeTuple * tup = checkAndGetDataType<DataTypeTuple>(arg.get());
             if (!tup)
@@ -173,9 +173,9 @@ private:
     ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypePtr res_type) const
     {
         MutableColumnPtr res_column = res_type->createColumn();
-        IColumn *to_keys_data;
-        IColumn *to_vals_data;
-        ColumnArray::Offsets * to_keys_offset;
+        IColumn *to_keys_data = nullptr;
+        IColumn *to_vals_data = nullptr;
+        ColumnArray::Offsets * to_keys_offset = nullptr;
         ColumnArray::Offsets * to_vals_offset = nullptr;
 
         // prepare output destinations
@@ -225,7 +225,7 @@ private:
                 Field temp_val;
                 for (size_t j = 0; j < len; ++j)
                 {
-                    KeyType key;
+                    KeyType key{};
                     if constexpr (std::is_same_v<KeyType, String>)
                     {
                         if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(arg.key_column.get()))
@@ -312,7 +312,7 @@ private:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         DataTypePtr key_type;
-        size_t row_count;
+        size_t row_count = 0;
         const DataTypeTuple * tup_type = checkAndGetDataType<DataTypeTuple>((arguments[0]).type.get());
         DataTypePtr res_type;
         DataTypePtr res_value_type;
@@ -332,7 +332,7 @@ private:
 
             for (const auto & col : arguments)
             {
-                const ColumnTuple * tup;
+                const ColumnTuple * tup = nullptr;
                 bool is_const = isColumnConst(*col.column);
                 if (is_const)
                 {
@@ -367,7 +367,7 @@ private:
 
                 for (const auto & col : arguments)
                 {
-                    const ColumnMap * map;
+                    const ColumnMap * map = nullptr;
                     bool is_const = isColumnConst(*col.column);
                     if (is_const)
                     {

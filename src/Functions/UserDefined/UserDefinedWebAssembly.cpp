@@ -285,7 +285,7 @@ public:
 
         auto raw_buffer_span = compartment->getMemory(handle, sizeof(WasmBuffer));
         const auto * raw_buffer_ptr = raw_buffer_span.data();
-        WasmBuffer buffer;
+        WasmBuffer buffer{};
         if (reinterpret_cast<uintptr_t>(raw_buffer_ptr) % alignof(WasmBuffer) != 0)
         {
             std::memcpy(&buffer, raw_buffer_ptr, sizeof(WasmBuffer));
@@ -493,7 +493,7 @@ private:
 
 WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
 {
-    WebAssembly::WasmModule::Config cfg;
+    WebAssembly::WasmModule::Config cfg{};
 
     UInt64 max_fuel = context->getSettingsRef()[Setting::webassembly_udf_max_fuel];
     if (common::mulOverflow(max_fuel, 1024, cfg.fuel_limit))

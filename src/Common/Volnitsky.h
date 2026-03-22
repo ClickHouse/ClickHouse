@@ -71,7 +71,7 @@ namespace VolnitskyTraits
             UInt8 c1;
         };
 
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init)
         {
             Ngram n;
             Chars chars;
@@ -126,7 +126,7 @@ namespace VolnitskyTraits
             UInt8 c1;
         };
 
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init)
         {
             VolnitskyTraits::Ngram n;
             Chars chars;

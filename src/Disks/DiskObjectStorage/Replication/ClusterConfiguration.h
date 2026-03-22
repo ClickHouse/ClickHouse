@@ -15,8 +15,8 @@ namespace DB
 
 struct LocationInfo
 {
-    bool enabled;
-    bool local;
+    bool enabled{};
+    bool local{};
     std::string config_prefix;
 };
 

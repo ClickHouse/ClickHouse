@@ -105,7 +105,7 @@ namespace
     {
         ReadBufferFromFile in(file_path);
 
-        size_t num;
+        size_t num = 0;
         readVarUInt(num, in);
         std::vector<std::pair<UUID, String>> id_name_pairs;
         id_name_pairs.reserve(num);

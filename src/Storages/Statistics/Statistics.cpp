@@ -281,7 +281,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
 {
-    UInt16 version;
+    UInt16 version = 0;
     readIntBinary(version, buf);
 
     /// TODO: we should check the version of statistics format when we start clickhouse server, and do materialize statistics automatically.

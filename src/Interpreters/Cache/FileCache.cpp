@@ -638,7 +638,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     size_t processed_count = 0;
     auto segment_range = (*it)->range();
 
-    size_t current_pos;
+    size_t current_pos = 0;
     if (segment_range.left < range.left)
     {
         ///    [_______     -- requested range
@@ -1847,7 +1847,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
         {
             auto offset_with_suffix = offset_it->path().filename().string();
             auto delim_pos = offset_with_suffix.find('_');
-            bool parsed;
+            bool parsed = false;
             FileSegmentKind segment_kind = FileSegmentKind::Regular;
 
             if (delim_pos == std::string::npos)
@@ -1881,7 +1881,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
                 continue;
             }
 
-            bool limits_satisfied;
+            bool limits_satisfied = false;
             IFileCachePriority::IteratorPtr cache_it;
             size_t size_limit = 0;
 

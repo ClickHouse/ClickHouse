@@ -39,7 +39,7 @@ struct ACL
     static constexpr int32_t Admin = 16;
     static constexpr int32_t All = 0x1F;
 
-    int32_t permissions;
+    int32_t permissions{};
     String scheme;
     String id;
 
@@ -345,7 +345,7 @@ struct AddWatchResponse : virtual Response
 
 struct SetWatchesRequest : virtual Request
 {
-    int64_t zxid;
+    int64_t zxid{};
     std::vector<String> child_watches;
     std::vector<String> exist_watches;
     std::vector<String> data_watches;
@@ -593,7 +593,7 @@ struct ReconfigRequest : virtual Request
     String joining;
     String leaving;
     String new_members;
-    int32_t version;
+    int32_t version{};
 
     String getPath() const final { return keeper_config_path; }
 

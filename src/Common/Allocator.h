@@ -72,7 +72,7 @@ template <typename Base, size_t _initial_bytes, size_t Alignment>
 class AllocatorWithStackMemory : private Base
 {
 private:
-    alignas(Alignment) char stack_memory[_initial_bytes];
+    alignas(Alignment) char stack_memory[_initial_bytes]{};
 
 public:
     static constexpr size_t initial_bytes = _initial_bytes;

@@ -835,7 +835,7 @@ public:
             for (size_t i = 0; i < cnt; ++i)
             {
                 UInt64 val = bit_buffer[i];
-                UInt64 row;
+                UInt64 row = 0;
                 UInt64 col = val & 0x3f;
 #if defined(__BMI2__) && !defined(__e2k__)
                 ASM_SHIFT_RIGHT(val, shift, row);
@@ -950,7 +950,7 @@ public:
                 constexpr UInt64 shift = 6;
                 for (int j = 0; j < cnt[i]; ++j)
                 {
-                    UInt64 tmp_offset;
+                    UInt64 tmp_offset = 0;
                     UInt64 p = bit_buffer[i][j];
 #if defined(__BMI2__) && !defined(__e2k__)
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);

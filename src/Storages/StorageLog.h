@@ -131,7 +131,7 @@ private:
     /// Column data
     struct DataFile
     {
-        size_t index;
+        size_t index{};
         String name;
         String path;
         Marks marks;

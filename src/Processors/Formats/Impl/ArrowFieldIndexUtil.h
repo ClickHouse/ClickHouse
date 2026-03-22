@@ -70,7 +70,7 @@ public:
     // clickhouse_index = 0, parquet_indexes = {0, 1}
     struct ClickHouseIndexToParquetIndex
     {
-        std::size_t clickhouse_index;
+        std::size_t clickhouse_index{};
         std::vector<int> parquet_indexes;
     };
 

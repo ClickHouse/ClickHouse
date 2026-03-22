@@ -365,19 +365,19 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        UInt16 format_version;
+        UInt16 format_version = 0;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with different format version");
 
-        size_t size;
+        size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
         if (size != bucket_count)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot deserialize data with different bucket count");
 
-        size_t buckets_size;
+        size_t buckets_size = 0;
         readBinaryLittleEndian(buckets_size, buf);
 
         if (buckets_size > bucket_count)
@@ -387,7 +387,7 @@ public:
 
         for (size_t i = 0; i < buckets_size; ++i)
         {
-            size_t index;
+            size_t index = 0;
             readBinaryLittleEndian(index, buf);
 
             if (index >= bucket_count)

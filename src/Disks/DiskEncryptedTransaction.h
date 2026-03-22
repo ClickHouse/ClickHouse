@@ -21,7 +21,7 @@ struct DiskEncryptedSettings
     DiskPtr wrapped_disk;
     String disk_path;
     String current_key;
-    UInt128 current_key_fingerprint;
+    UInt128 current_key_fingerprint{};
     FileEncryption::Algorithm current_algorithm;
     std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
 

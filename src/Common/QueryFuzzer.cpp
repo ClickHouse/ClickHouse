@@ -2089,7 +2089,7 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
         }
         else if (!alias.empty())
         {
-            ASTIdentifier * id;
+            ASTIdentifier * id = nullptr;
             const int next_action = fuzz_rand() % 30;
 
             if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty())

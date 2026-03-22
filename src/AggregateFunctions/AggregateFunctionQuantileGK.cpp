@@ -33,8 +33,8 @@ public:
     struct Stats
     {
         T value;     // The sampled value
-        Int64 g;     // The minimum rank jump from the previous value's minimum rank
-        Int64 delta; // The maximum span of the rank
+        Int64 g{};     // The minimum rank jump from the previous value's minimum rank
+        Int64 delta{}; // The maximum span of the rank
 
         Stats() = default;
         Stats(T value_, Int64 g_, Int64 delta_) : value(value_), g(g_), delta(delta_) { }
@@ -198,7 +198,7 @@ public:
                 const Stats & other_sample = other.sampled[other_idx];
 
                 // Detect next sample
-                Stats next_sample;
+                Stats next_sample{};
                 Int64 additional_delta = 0;
                 if (self_sample.value < other_sample.value)
                 {
@@ -334,7 +334,7 @@ private:
 
             // If it is the first one to insert, of if it is the last one
             ++current_count;
-            Int64 delta;
+            Int64 delta = 0;
             if (backup_sampled.empty() || (sample_idx == sampled.size() && ops_idx == (head_sampled.size() - 1)))
                 delta = 0;
             else
@@ -397,10 +397,10 @@ private:
         std::swap(sampled, backup_sampled);
     }
 
-    double relative_error;
-    size_t compress_threshold;
-    size_t count;
-    bool compressed;
+    double relative_error{};
+    size_t compress_threshold{};
+    size_t count{};
+    bool compressed{};
 
     PaddedPODArray<Stats> sampled;
     PaddedPODArray<Stats> backup_sampled;
@@ -472,7 +472,7 @@ public:
         if (!data.isCompressed())
             data.compress();
 
-        Value res;
+        Value res{};
         size_t indice = 0;
         data.query(&level, &indice, 1, &res);
         return res;

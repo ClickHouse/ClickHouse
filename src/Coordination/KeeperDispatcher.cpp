@@ -414,7 +414,7 @@ void KeeperDispatcher::requestThread()
                 /// Read request always goes after write batch (last request)
                 if (has_read_request)
                 {
-                    bool is_live;
+                    bool is_live = false;
                     {
                         ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
                         is_live = live_sessions.contains(request.session_id);

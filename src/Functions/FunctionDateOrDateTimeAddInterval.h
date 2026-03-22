@@ -657,7 +657,7 @@ private:
     template <typename Value>
     static Int64 checkOverflow(Value val)
     {
-        Int64 result;
+        Int64 result = 0;
         if (accurate::convertNumeric<Value, Int64, false>(val, result))
             return result;
         throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");

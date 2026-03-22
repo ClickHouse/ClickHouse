@@ -162,7 +162,7 @@ EnabledQuota::Interval & EnabledQuota::Interval::operator =(const Interval & src
 /// `counters_were_reset`.
 std::chrono::system_clock::time_point EnabledQuota::Interval::getEndOfInterval(std::chrono::system_clock::time_point current_time) const
 {
-    bool counters_were_reset;
+    bool counters_were_reset = false;
     return getEndOfInterval(current_time, counters_were_reset);
 }
 

@@ -101,7 +101,7 @@ public:
                 // According to the docs, if length_value < 0, we need to take a suffix of the string starting from the position abs(length_value)
                 else
                 {
-                    Int64 abs_length_value;
+                    Int64 abs_length_value = 0;
                     if (common::subOverflow(Int64(0), length_value, abs_length_value))
                         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                             "Argument of function {} is out of bound: {}", getName(), length_value);

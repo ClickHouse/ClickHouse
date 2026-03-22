@@ -544,7 +544,7 @@ private:
 
     struct SpaceFillingCurveDescription
     {
-        size_t key_column_pos;
+        size_t key_column_pos{};
         String function_name;
         std::vector<String> arguments;
         SpaceFillingCurveType type;

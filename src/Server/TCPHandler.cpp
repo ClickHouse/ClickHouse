@@ -1178,7 +1178,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             case Protocol::Client::Data:
             case Protocol::Client::Scalar:
             {
-                bool empty_block;
+                bool empty_block = false;
                 if (state.skipping_data)
                     empty_block = !processUnexpectedData();
                 else
@@ -2025,7 +2025,7 @@ void TCPHandler::receiveAddendum()
 
 void TCPHandler::processUnexpectedHello()
 {
-    UInt64 skip_uint_64;
+    UInt64 skip_uint_64 = 0;
     String skip_string;
 
     readStringBinary(skip_string, *in);
@@ -2436,7 +2436,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
 void TCPHandler::processUnexpectedQuery()
 {
-    UInt64 skip_uint_64;
+    UInt64 skip_uint_64 = 0;
     String skip_string;
 
     readStringBinary(skip_string, *in);

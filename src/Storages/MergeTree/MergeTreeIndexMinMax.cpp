@@ -83,7 +83,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                     ///
                     /// But this is deprecated format, so this is OK.
 
-                    bool is_null;
+                    bool is_null = false;
                     readBinary(is_null, istr);
                     if (!is_null)
                     {

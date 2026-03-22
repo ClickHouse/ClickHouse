@@ -49,7 +49,7 @@ template <class ValueType>
 struct AggregateFunctionArgMinMaxDataGeneric
 {
 private:
-    SingleValueDataBaseMemoryBlock result_data;
+    SingleValueDataBaseMemoryBlock result_data{};
     ValueType value_data;
 
 public:

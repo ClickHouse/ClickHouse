@@ -35,7 +35,7 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
     SerializationPtr shared_data_path_serialization;
-    bool read_from_shared_data;
+    bool read_from_shared_data{};
     ColumnPtr shared_data;
     size_t shared_data_size = 0;
 

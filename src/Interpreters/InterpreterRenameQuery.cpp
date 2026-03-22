@@ -97,7 +97,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 continue;
         }
 
-        bool exchange_tables;
+        bool exchange_tables = false;
         if (rename.exchange)
         {
             exchange_tables = true;

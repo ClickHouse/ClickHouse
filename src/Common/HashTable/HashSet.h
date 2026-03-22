@@ -131,7 +131,7 @@ struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
 {
     using Base = HashTableCell<Key, Hash, TState>;
 
-    size_t saved_hash;
+    size_t saved_hash{};
 
     HashSetCellWithSavedHash() : Base() {}
     HashSetCellWithSavedHash(const Key & key_, const typename Base::State & state) : Base(key_, state) {}

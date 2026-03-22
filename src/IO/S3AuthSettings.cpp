@@ -273,7 +273,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
     result.impl = std::make_unique<S3AuthSettingsImpl>();
     result.impl->readBinary(in);
 
-    size_t headers_size;
+    size_t headers_size = 0;
     readVarUInt(headers_size, in);
     for (size_t i = 0; i < headers_size; ++i)
     {
@@ -284,7 +284,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         result.headers.emplace_back(name, value);
     }
 
-    size_t access_headers_size;
+    size_t access_headers_size = 0;
     readVarUInt(access_headers_size, in);
     for (size_t i = 0; i < access_headers_size; ++i)
     {
@@ -294,7 +294,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         readStringBinary(value, in);
         result.access_headers.emplace_back(name, value);
     }
-    size_t users_size;
+    size_t users_size = 0;
     readVarUInt(users_size, in);
     for (size_t i = 0; i < users_size; ++i)
     {

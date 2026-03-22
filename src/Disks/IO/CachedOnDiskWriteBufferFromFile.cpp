@@ -59,7 +59,7 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
             offset, expected_write_offset);
     }
 
-    FileSegment * file_segment;
+    FileSegment * file_segment = nullptr;
 
     if (!ignore_bytes
         && (!file_segments || file_segments->empty() || file_segments->front().isDownloaded()))

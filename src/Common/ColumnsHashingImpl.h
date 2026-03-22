@@ -19,7 +19,7 @@ namespace ColumnsHashing
 
 struct HashMethodContextSettings
 {
-    size_t max_threads;
+    size_t max_threads{};
     bool serialize_string_with_zero_byte = false;
 };
 

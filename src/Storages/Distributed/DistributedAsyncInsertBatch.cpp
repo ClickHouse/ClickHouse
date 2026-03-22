@@ -195,7 +195,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
         ReadBufferFromFile in{parent.current_batch_file_path};
         while (!in.eof())
         {
-            UInt64 idx;
+            UInt64 idx = 0;
             in >> idx >> "\n";
             files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
         }

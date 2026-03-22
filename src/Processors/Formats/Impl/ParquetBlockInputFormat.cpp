@@ -84,7 +84,7 @@ String removeListElement(const String & value)
 {
     const String pattern = ".list.element";
     String result = value;
-    size_t pos;
+    size_t pos = 0;
     while ((pos = result.find(pattern)) != std::string::npos)
         result.erase(pos, pattern.size());
     return result;
@@ -128,7 +128,7 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
     using namespace parquet;
 
     auto decode_integer = [&](bool signed_) -> UInt64 {
-        size_t size;
+        size_t size = 0;
         switch (physical_type)
         {
             case parquet::Type::type::BOOLEAN: size = 1; break;
@@ -152,7 +152,7 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
     /// Decimal.
     do // while (false)
     {
-        Int32 scale;
+        Int32 scale = 0;
         if (descr.logical_type() && descr.logical_type()->is_decimal())
             scale = assert_cast<const DecimalLogicalType &>(*descr.logical_type()).scale();
         else if (descr.converted_type() == ConvertedType::type::DECIMAL)
@@ -160,7 +160,7 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         else
             break;
 
-        size_t size;
+        size_t size = 0;
         bool big_endian = false;
         switch (physical_type)
         {
@@ -241,7 +241,7 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
     {
         if (data.size() != 4)
             throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected float size");
-        Float32 val;
+        Float32 val = 0;
         memcpy(&val, data.data(), data.size());
         return Field(val);
     }
@@ -250,7 +250,7 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
     {
         if (data.size() != 8)
             throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected float size");
-        Float64 val;
+        Float64 val = 0;
         memcpy(&val, data.data(), data.size());
         return Field(val);
     }
@@ -613,11 +613,11 @@ void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
 
 void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
 {
-    size_t size_chunks;
+    size_t size_chunks = 0;
     readVarUInt(size_chunks, buffer);
     row_group_ids = std::vector<size_t>{};
     row_group_ids.resize(size_chunks);
-    size_t bucket;
+    size_t bucket = 0;
     for (size_t i = 0; i < size_chunks; ++i)
     {
         readVarUInt(bucket, buffer);

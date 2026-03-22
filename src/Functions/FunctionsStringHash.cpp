@@ -394,7 +394,7 @@ struct MinHashImpl
             }
         }
 
-        std::map<UInt64, BytesRef, Comp> values;
+        std::map<UInt64, BytesRef, Comp> values{};
     };
 
     using MaxHeap = Heap<std::less<>>;

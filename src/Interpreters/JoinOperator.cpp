@@ -298,7 +298,7 @@ void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) 
 
 static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
 {
-    size_t num_nodes;
+    size_t num_nodes = 0;
     readVarUInt(num_nodes, in);
 
     size_t max_node_id = id_to_node.size();
@@ -308,7 +308,7 @@ static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const Act
 
     for (size_t i = 0; i < num_nodes; ++i)
     {
-        size_t node_id;
+        size_t node_id = 0;
         readVarUInt(node_id, in);
         if (node_id >= max_node_id)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Node id {} is out of range, must be less than {}", node_id, max_node_id);

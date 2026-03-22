@@ -363,7 +363,7 @@ void RegExpTreeDictionary::loadData()
         }
 
         hs_database_t * db = nullptr;
-        hs_compile_error_t * compile_error;
+        hs_compile_error_t * compile_error = nullptr;
 
         std::unique_ptr<unsigned int[]> ids;
         ids.reset(new unsigned int[patterns.size()]);

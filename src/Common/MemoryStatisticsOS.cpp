@@ -62,7 +62,7 @@ MemoryStatisticsOS::~MemoryStatisticsOS()
 
 MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
 {
-    Data data;
+    Data data{};
 
     constexpr size_t buf_size = 1024;
     char buf[buf_size];
@@ -87,7 +87,7 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
 
     ReadBufferFromMemory in(buf, res);
 
-    uint64_t unused;
+    uint64_t unused = 0;
     readIntText(data.virt, in);
     skipWhitespaceIfAny(in);
     readIntText(data.resident, in);

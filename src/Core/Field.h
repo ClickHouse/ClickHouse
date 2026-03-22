@@ -521,9 +521,9 @@ private:
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
-        > storage;
+        > storage{};
 
-    Types::Which which;
+    Types::Which which{};
 
     /// This function is prone to type punning and should never be used outside of Field class,
     /// whenever it is used within this class the stored type should be checked in advance.

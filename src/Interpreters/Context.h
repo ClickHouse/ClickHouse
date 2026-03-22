@@ -350,7 +350,7 @@ private:
 class ContextData
 {
 protected:
-    ContextSharedPart * shared;
+    ContextSharedPart * shared{};
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;

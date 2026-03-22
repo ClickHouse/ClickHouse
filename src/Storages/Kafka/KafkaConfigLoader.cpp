@@ -443,7 +443,7 @@ void updateConfigurationFromConfig(
         // This should be safe, since we wait the rdkafka object anyway.
         void * self = static_cast<void *>(&storage);
 
-        int status;
+        int status = 0;
 
         status
             = rd_kafka_conf_interceptor_add_on_new(kafka_config.get_handle(), "init", KafkaInterceptors<TKafkaStorage>::rdKafkaOnNew, self);

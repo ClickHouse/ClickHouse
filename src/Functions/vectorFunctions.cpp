@@ -606,7 +606,7 @@ public:
         const auto * first_interval = checkAndGetDataType<DataTypeInterval>(arguments[0].type.get());
         const auto * second_interval = checkAndGetDataType<DataTypeInterval>(arguments[1].type.get());
 
-        bool can_be_merged;
+        bool can_be_merged = false;
 
         if (first_interval)
         {
@@ -1143,7 +1143,7 @@ public:
         if (!isColumnConst(*p_column.column) && p_column.column->size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
 
-        double p;
+        double p = 0;
         if (isFloat(p_column.column->getDataType()))
             p = p_column.column->getFloat64(0);
         else if (isUInt(p_column.column->getDataType()))

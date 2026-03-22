@@ -98,7 +98,7 @@ private:
     {
         struct PartIndexAndRange
         {
-            size_t part_idx;
+            size_t part_idx{};
             MarkRanges ranges;
         };
 

@@ -1096,7 +1096,7 @@ bool applyFunctionChainToColumn(
         auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
         if (isDateTime64(arg_type_inner) || isTime64(arg_type_inner))
         {
-            Int64 value;
+            Int64 value = 0;
             if (isDateTime64(arg_type_inner))
                 value = (*result_column)[0].safeGet<DateTime64>().getValue();
             else
@@ -2583,7 +2583,7 @@ struct KeyCondition::RPNElement::Polygon
 
     /// Bounding box of the ring, precomputed once when the RPN element is built
     /// Useful for quick rejection to avoid costly `intersects` checks
-    BoxT bbox;
+    BoxT bbox{};
 };
 
 KeyCondition::RPNElement::RPNElement()
@@ -2970,7 +2970,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
 
             /// Looking for func(key, const) or func(const, key).
-            size_t const_arg_pos;
+            size_t const_arg_pos = 0;
             if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
                 const_arg_pos = 1;
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))

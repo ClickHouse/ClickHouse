@@ -185,8 +185,8 @@ struct TestKeeperFilteredListWithStatsAndDataRequest final : TestKeeperFilteredL
     explicit TestKeeperFilteredListWithStatsAndDataRequest(const ZooKeeperFilteredListWithStatsAndDataRequest & base)
         : TestKeeperFilteredListRequest(base), with_stat(base.with_stat), with_data(base.with_data) {}
 
-    bool with_stat;
-    bool with_data;
+    bool with_stat{};
+    bool with_data{};
 };
 
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest

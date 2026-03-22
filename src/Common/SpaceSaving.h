@@ -132,9 +132,9 @@ public:
         }
 
         TKey key;
-        size_t hash;
-        UInt64 count;
-        UInt64 error;
+        size_t hash{};
+        UInt64 count{};
+        UInt64 error{};
     };
 
     explicit SpaceSaving(size_t c = 0)

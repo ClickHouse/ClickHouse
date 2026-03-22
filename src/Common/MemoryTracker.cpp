@@ -409,7 +409,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             }
 
             /// If that wasn't enough, try to stop some query.
-            OvercommitTracker * overcommit_tracker_ptr;
+            OvercommitTracker * overcommit_tracker_ptr = nullptr;
             if (overcommit_result == OvercommitResult::NONE && ((overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))) && query_tracker != nullptr)
                 overcommit_result = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
 

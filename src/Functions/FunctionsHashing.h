@@ -80,7 +80,7 @@ namespace impl
     {
         ColumnPtr key0;
         ColumnPtr key1;
-        bool is_const;
+        bool is_const = false;
 
         size_t size() const
         {
@@ -112,8 +112,8 @@ namespace impl
     {
         const auto * col_key = key.column.get();
 
-        bool is_const;
-        const ColumnTuple * col_key_tuple;
+        bool is_const = false;
+        const ColumnTuple * col_key_tuple = nullptr;
         if (isColumnConst(*col_key))
         {
             is_const = true;
@@ -242,7 +242,7 @@ struct HalfMD5Impl
 
     static UInt64 apply(const char * begin, size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init)
         {
             unsigned char char_data[16];
             uint64_t uint64_data;
@@ -461,7 +461,7 @@ struct MurmurHash3Impl32
 
     static UInt32 apply(const char * data, const size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init)
         {
             UInt32 h;
             char bytes[sizeof(h)];
@@ -486,7 +486,7 @@ struct MurmurHash3Impl64
 
     static UInt64 apply(const char * data, const size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init)
         {
             UInt64 h[2];
             char bytes[16];
@@ -673,7 +673,7 @@ struct ImplMetroHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init)
         {
             UInt64 u64;
             uint8_t u8[sizeof(u64)];

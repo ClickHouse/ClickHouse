@@ -1714,7 +1714,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 {
                     /// Break the segment and put the result on the stack from right to left.
                     size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
-                    size_t end;
+                    size_t end = 0;
 
                     for (end = range.end; end > range.begin + step; end -= step)
                         ranges_stack.emplace_back(end - step, end);
@@ -1747,7 +1747,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         for (const auto & part_range : part_with_ranges.ranges)
         {
-            MarkRange result_range;
+            MarkRange result_range{};
 
             /// Invariant: !check_in_range(part_range.begin..searched_left).can_be_true
             ///             check_in_range(part_range.begin..searched_right).can_be_true

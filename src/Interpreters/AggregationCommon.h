@@ -182,7 +182,7 @@ static inline T ALWAYS_INLINE packFixed(
 
     for (size_t j = 0; j < keys_size; ++j)
     {
-        bool is_null;
+        bool is_null = false;
 
         if (!has_bitmap)
             is_null = false;

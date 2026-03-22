@@ -164,7 +164,7 @@ bool PeekableReadBuffer::nextImpl()
     ///        if some pointers were invalidated.
 
     checkStateCorrect();
-    bool res;
+    bool res = false;
     bool checkpoint_at_end = checkpoint && *checkpoint == working_buffer.end() && currentlyReadFromOwnMemory();
 
     if (checkpoint)

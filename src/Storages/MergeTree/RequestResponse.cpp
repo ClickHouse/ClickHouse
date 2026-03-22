@@ -53,7 +53,7 @@ String ParallelReadRequest::describe() const
 
 ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
 {
-    UInt64 version;
+    UInt64 version = 0;
     readIntBinary(version, in);
     if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
         throw Exception(
@@ -63,11 +63,11 @@ ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 rep
             DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
     CoordinationMode mode;
-    size_t replica_num;
-    size_t min_marks_per_request;
+    size_t replica_num = 0;
+    size_t min_marks_per_request = 0;
     RangesInDataPartsDescription description;
 
-    uint8_t mode_candidate;
+    uint8_t mode_candidate = 0;
     readIntBinary(mode_candidate, in);
     mode = validateAndGet(mode_candidate);
     readIntBinary(replica_num, in);
@@ -107,7 +107,7 @@ String ParallelReadResponse::describe() const
 
 void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
 {
-    UInt64 version;
+    UInt64 version = 0;
     readIntBinary(version, in);
     if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
         throw Exception(
@@ -149,7 +149,7 @@ String InitialAllRangesAnnouncement::describe()
 
 InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
 {
-    UInt64 version;
+    UInt64 version = 0;
     readIntBinary(version, in);
     if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
         throw Exception(
@@ -160,9 +160,9 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
 
     CoordinationMode mode;
     RangesInDataPartsDescription description;
-    size_t replica_num;
+    size_t replica_num = 0;
 
-    uint8_t mode_candidate;
+    uint8_t mode_candidate = 0;
     readIntBinary(mode_candidate, in);
     mode = validateAndGet(mode_candidate);
     description.deserialize(in, replica_pr_protocol_version);

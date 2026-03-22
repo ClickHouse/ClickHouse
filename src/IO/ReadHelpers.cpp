@@ -641,7 +641,7 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos;
+        char * next_pos = nullptr;
         if constexpr (support_crlf)
         {
             next_pos = find_first_symbols<'\t', '\n', '\\','\r'>(buf.position(), buf.buffer().end());
@@ -1798,7 +1798,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
         if (*buf.position() == '+')
             ++buf.position();
 
-        double v;
+        double v = 0;
         if (!tryReadFloatText(v, buf))
         {
             if constexpr (throw_exception)
@@ -2338,7 +2338,7 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
         /// It's an integer, float or decimal. They all can be parsed as float.
         auto parse_func = [](ReadBuffer & in)
         {
-            Float64 tmp;
+            Float64 tmp = 0;
             if constexpr (throw_exception)
                 readFloatText(tmp, in);
             else

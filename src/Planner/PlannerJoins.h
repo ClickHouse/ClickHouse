@@ -258,7 +258,7 @@ struct JoinAlgorithmParams
     UInt64 max_threads;
 
     String initial_query_id;
-    std::chrono::milliseconds lock_acquire_timeout;
+    std::chrono::milliseconds lock_acquire_timeout{};
 
     std::optional<UInt64> rhs_size_estimation;
 

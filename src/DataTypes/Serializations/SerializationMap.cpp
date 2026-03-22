@@ -55,7 +55,7 @@ void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, 
 
 void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size;
+    size_t size = 0;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(

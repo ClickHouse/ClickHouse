@@ -1057,7 +1057,7 @@ static auto keyViewGetter()
         for (size_t row : collections::range(0, key_ip_column.size()))
         {
             UInt8 mask = key_mask_column.getElement(row);
-            size_t str_len;
+            size_t str_len = 0;
             if constexpr (IsIPv4)
                 str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(&key_ip_column.getElement(row)), mask, true, buffer);
             else

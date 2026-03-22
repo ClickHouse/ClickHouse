@@ -42,7 +42,7 @@ ExpireSnapshotsOptions parseExpireSnapshotsOptions(const ASTPtr & args, ContextP
         auto * lit = all_args[0]->as<ASTLiteral>();
         String timestamp = lit ? lit->value.safeGet<String>() : all_args[0]->getColumnName();
         ReadBufferFromString buf(timestamp);
-        time_t expire_time;
+        time_t expire_time = 0;
         readDateTimeText(expire_time, buf);
         options.expire_before_ms = static_cast<Int64>(expire_time) * 1000;
     }
@@ -62,7 +62,7 @@ ExpireSnapshotsOptions parseExpireSnapshotsOptions(const ASTPtr & args, ContextP
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots expects 'expire_before' to be a datetime string");
             String timestamp = value.safeGet<String>();
             ReadBufferFromString buf(timestamp);
-            time_t expire_time;
+            time_t expire_time = 0;
             readDateTimeText(expire_time, buf);
             options.expire_before_ms = static_cast<Int64>(expire_time) * 1000;
         }

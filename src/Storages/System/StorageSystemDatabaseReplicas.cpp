@@ -103,7 +103,7 @@ Chunk SystemDatabaseReplicasSource::generate()
             }
         }
 
-        const TStatus * status;
+        const TStatus * status = nullptr;
         try
         {
             status = &futures[index].get();

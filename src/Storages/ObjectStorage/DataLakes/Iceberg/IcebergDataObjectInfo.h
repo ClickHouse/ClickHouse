@@ -16,9 +16,9 @@ namespace DB::Iceberg
 struct IcebergObjectSerializableInfo
 {
     String data_object_file_path_key;
-    Int32 underlying_format_read_schema_id;
-    Int32 schema_id_relevant_to_iterator;
-    Int64 sequence_number;
+    Int32 underlying_format_read_schema_id{};
+    Int32 schema_id_relevant_to_iterator{};
+    Int64 sequence_number{};
     String file_format;
     std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
     std::vector<Iceberg::EqualityDeleteObject> equality_deletes_objects;

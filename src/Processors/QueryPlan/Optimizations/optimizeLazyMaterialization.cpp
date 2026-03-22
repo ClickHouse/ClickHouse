@@ -235,8 +235,8 @@ std::unique_ptr<LazilyReadFromMergeTree> removeUnusedColumnsFromReadingStep(Read
 
 ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
 {
-    bool added_part_starting_offset;
-    bool added_part_offset;
+    bool added_part_starting_offset = false;
+    bool added_part_offset = false;
     reading_step.addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
     ActionsDAG dag;
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();

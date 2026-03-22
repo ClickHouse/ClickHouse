@@ -99,7 +99,7 @@ bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_inde
     {
         for (const auto & candidate : cell->polygon_ids)
         {
-            size_t unused;
+            size_t unused = 0;
             if (buckets[candidate].find(point, unused))
             {
                 polygon_index = candidate;

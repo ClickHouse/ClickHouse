@@ -156,7 +156,7 @@ void SerializationStringSize::deserializeWithoutStringData(
     {
         for (size_t i = 0; unlikely(i < rows_offset); ++i)
         {
-            UInt64 size;
+            UInt64 size = 0;
             readVarUInt(size, *stream);
             stream->ignore(size);
         }
@@ -171,7 +171,7 @@ void SerializationStringSize::deserializeWithoutStringData(
         {
             if (unlikely(stream->eof()))
                 break;
-            UInt64 size;
+            UInt64 size = 0;
             readVarUInt(size, *stream);
             stream->ignore(size);
             mutable_column_data[prev_size + num_read_rows] = size;

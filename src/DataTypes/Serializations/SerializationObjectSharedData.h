@@ -143,11 +143,11 @@ private:
         /// Total number of paths in this granule, not only requested ones.
         size_t num_paths = 0;
         /// Mark of the ObjectSharedDataData stream for this granule.
-        MarkInCompressedFile data_stream_mark;
+        MarkInCompressedFile data_stream_mark{};
         /// Mark of the ObjectSharedDataPathsMarks stream for this granule.
-        MarkInCompressedFile paths_marks_stream_mark;
+        MarkInCompressedFile paths_marks_stream_mark{};
         /// Mark of the ObjectSharedDataPathsSubstreamsMetadata stream for this granule.
-        MarkInCompressedFile paths_substreams_metadata_stream_mark;
+        MarkInCompressedFile paths_substreams_metadata_stream_mark{};
 
         void clear()
         {
@@ -241,11 +241,11 @@ private:
     struct PathInfo
     {
         /// Mark of the ObjectSharedDataData stream for this path.
-        MarkInCompressedFile data_mark;
+        MarkInCompressedFile data_mark{};
         /// Mark of the substreams list in ObjectSharedDataSubstreams stream for this path.
-        MarkInCompressedFile substreams_mark;
+        MarkInCompressedFile substreams_mark{};
         /// Mark of the substreams marks in ObjectSharedDataSubstreamsMarks stream for this path.
-        MarkInCompressedFile substreams_marks_mark;
+        MarkInCompressedFile substreams_marks_mark{};
         /// List of substreams for this path.
         std::vector<String> substreams;
         /// Map Substream -> its mark in ObjectSharedDataData stream.

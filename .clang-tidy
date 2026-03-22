@@ -49,6 +49,8 @@ Checks: [
   '-clang-analyzer-unix.Malloc', # fixme, false positive in contrib somehow
 
   '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
+  'cppcoreguidelines-init-variables',
+  'cppcoreguidelines-pro-type-member-init',
 
   '-darwin-*',
 
@@ -66,7 +68,7 @@ Checks: [
   '-hicpp-braces-around-statements',
   '-hicpp-explicit-conversions',
   '-hicpp-function-size',
-  '-hicpp-member-init',
+  # '-hicpp-member-init', # alias of cppcoreguidelines-pro-type-member-init, enabled
   '-hicpp-move-const-arg',
   '-hicpp-multiway-paths-covered',
   '-hicpp-named-parameter',

@@ -1355,8 +1355,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     };
     std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
 
-    size_t key_start;
-    size_t key_end;
+    size_t key_start = 0;
+    size_t key_end = 0;
     /// If all keys are const, key columns contain only 1 row.
     if  (all_keys_are_const)
     {

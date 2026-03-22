@@ -355,7 +355,7 @@ void VersionMetadata::read(ReadBuffer & buf)
 
     auto read_csn = [&]()
     {
-        UInt64 val;
+        UInt64 val = 0;
         readText(val, buf);
         return val;
     };

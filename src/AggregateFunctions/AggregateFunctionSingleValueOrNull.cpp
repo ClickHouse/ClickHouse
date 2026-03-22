@@ -28,7 +28,7 @@ struct AggregateFunctionSingleValueOrNullData
     using Self = AggregateFunctionSingleValueOrNullData;
 
 private:
-    SingleValueDataBaseMemoryBlock v_data;
+    SingleValueDataBaseMemoryBlock v_data{};
     bool first_value = true;
     bool is_null = false;
 
