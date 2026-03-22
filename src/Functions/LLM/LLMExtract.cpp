@@ -162,6 +162,7 @@ REGISTER_FUNCTION(LLMExtract)
         .arguments = {{"text", "Input text"}, {"instruction_or_schema", "Extraction instruction or JSON schema"}},
         .returned_value = {"Extracted value as String.", {"String"}},
         .examples = {{"basic", "SELECT LLMExtract(body, 'main complaint') FROM reviews", ""}},
+        .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::Other});
 }
 

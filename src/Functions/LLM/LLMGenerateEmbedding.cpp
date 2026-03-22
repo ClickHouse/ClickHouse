@@ -484,6 +484,7 @@ REGISTER_FUNCTION(GenerateEmbedding)
         .returned_value = {"Embedding vector as Array(Float32). Empty array for NULL/empty inputs.", {"Array(Float32)"}},
         .examples = {
             {"basic", "SELECT generateEmbedding('Hello world', 256)", ""}},
+        .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::Other});
 }
 
@@ -502,6 +503,7 @@ REGISTER_FUNCTION(GenerateEmbeddingOrNull)
         .examples = {
             {"basic", "SELECT generateEmbeddingOrNull('Hello world', 256)", ""},
             {"error_safe", "SELECT generateEmbeddingOrNull(text, 256) FROM docs", ""}},
+        .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::Other});
 }
 
