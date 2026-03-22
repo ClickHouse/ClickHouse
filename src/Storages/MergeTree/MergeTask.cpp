@@ -1210,16 +1210,19 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     const auto & settings = global_ctx->context->getSettingsRef();
 
-    for (const auto * projection : global_ctx->projections_to_rebuild)
+    if (!global_ctx->projections_to_rebuild.empty())
     {
         /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
-        /// projection calculation. The header will be set dynamically from the first block.
-        ctx->pre_calculate_squashes.emplace_back(
+        /// projection calculation. Shared across all projections since they all consume
+        /// the same source blocks. The header will be set dynamically from the first block.
+        ctx->pre_calculate_squash.emplace(
             std::make_shared<const Block>(),
             settings[Setting::min_insert_block_size_rows],
             settings[Setting::min_insert_block_size_bytes]);
-        ctx->pre_calculate_starting_offsets.push_back(0);
+    }
 
+    for (const auto * projection : global_ctx->projections_to_rebuild)
+    {
         /// Post-calculate squash: accumulates calculated projection blocks before writing.
         ctx->projection_squashes.emplace_back(std::make_shared<const Block>(projection->sample_block.cloneEmpty()),
             settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
@@ -1229,49 +1232,55 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Block & block, UInt64 starting_offset) const
 {
-    for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
+    if (global_ctx->projections_to_rebuild.empty())
+        return;
+
+    auto & pre_squash = *ctx->pre_calculate_squash;
+    pre_squash.setHeader(block.cloneEmpty());
+
+    /// Record the starting offset when the accumulator is empty (new batch starts).
+    if (pre_squash.empty())
+        ctx->pre_calculate_starting_offset = starting_offset;
+
+    pre_squash.add({block.getColumns(), block.rows()});
+    Chunk squashed = Squashing::squash(
+        pre_squash.generate(),
+        pre_squash.getHeader());
+    if (squashed)
     {
-        const auto & projection = *global_ctx->projections_to_rebuild[i];
-        Stopwatch projection_watch(CLOCK_MONOTONIC_COARSE);
+        Block big_block = pre_squash.getHeader()->cloneWithColumns(squashed.detachColumns());
+        UInt64 batch_offset = ctx->pre_calculate_starting_offset;
 
-        auto & pre_squash = ctx->pre_calculate_squashes[i];
-        pre_squash.setHeader(block.cloneEmpty());
+        /// If the accumulator still has data (current block was excluded from the
+        /// flush and started a new batch), record its offset now.
+        if (!pre_squash.empty())
+            ctx->pre_calculate_starting_offset = starting_offset;
 
-        /// Record the starting offset when the accumulator is empty (new batch starts).
-        if (pre_squash.empty())
-            ctx->pre_calculate_starting_offsets[i] = starting_offset;
-
-        Chunk squashed = Squashing::squash(
-            pre_squash.add({block.getColumns(), block.rows()}),
-            pre_squash.getHeader());
-        if (squashed)
-        {
-            Block big_block = pre_squash.getHeader()->cloneWithColumns(squashed.detachColumns());
-            calculateProjectionForBlock(i, std::move(big_block), ctx->pre_calculate_starting_offsets[i]);
-            /// If the accumulator still has data (current block was excluded from the
-            /// flush and started a new batch), record its offset now.
-            if (!pre_squash.empty())
-                ctx->pre_calculate_starting_offsets[i] = starting_offset;
-        }
-        ctx->projections_rebuild_elapsed_ns[projection.name] += projection_watch.elapsedNanoseconds();
+        for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
+            calculateProjectionForBlock(i, big_block, batch_offset);
     }
 }
 
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
-    size_t projection_idx, Block block, UInt64 starting_offset) const
+    size_t projection_idx, const Block & block, UInt64 starting_offset) const
 {
     const auto & projection = *global_ctx->projections_to_rebuild[projection_idx];
+    Stopwatch projection_watch(CLOCK_MONOTONIC_COARSE);
     Block block_to_squash = projection.calculate(block, starting_offset, global_ctx->context);
 
     /// Everything is deleted by lightweight delete
     if (block_to_squash.rows() == 0)
+    {
+        ctx->projections_rebuild_elapsed_ns[projection.name] += projection_watch.elapsedNanoseconds();
         return;
+    }
 
     auto & projection_squash_plan = ctx->projection_squashes[projection_idx];
     projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
+    projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()});
     Chunk squashed_chunk = Squashing::squash(
-        projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}),
+        projection_squash_plan.generate(),
         projection_squash_plan.getHeader());
 
     if (squashed_chunk)
@@ -1284,21 +1293,22 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
         tmp_part->part->getDataPartStorage().commitTransaction();
         ctx->projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
     }
+    ctx->projections_rebuild_elapsed_ns[projection.name] += projection_watch.elapsedNanoseconds();
 }
 
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
 {
-    /// First, flush any remaining pre-calculate squash buffers.
-    for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
+    /// First, flush the shared pre-calculate squash buffer.
+    if (ctx->pre_calculate_squash)
     {
-        Chunk remaining = Squashing::squash(
-            ctx->pre_calculate_squashes[i].flush(),
-            ctx->pre_calculate_squashes[i].getHeader());
+        auto & pre_squash = *ctx->pre_calculate_squash;
+        Chunk remaining = Squashing::squash(pre_squash.flush(), pre_squash.getHeader());
         if (remaining)
         {
-            Block big_block = ctx->pre_calculate_squashes[i].getHeader()->cloneWithColumns(remaining.detachColumns());
-            calculateProjectionForBlock(i, std::move(big_block), ctx->pre_calculate_starting_offsets[i]);
+            Block big_block = pre_squash.getHeader()->cloneWithColumns(remaining.detachColumns());
+            for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
+                calculateProjectionForBlock(i, big_block, ctx->pre_calculate_starting_offset);
         }
     }
 

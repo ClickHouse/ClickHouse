@@ -317,8 +317,9 @@ private:
         std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
 
         /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
-        std::vector<Squashing> pre_calculate_squashes;
-        std::vector<UInt64> pre_calculate_starting_offsets;
+        /// Shared across all projections since they all consume the same source blocks.
+        std::optional<Squashing> pre_calculate_squash;
+        UInt64 pre_calculate_starting_offset{0};
 
         /// Post-calculate squash: accumulates calculated projection blocks before writing.
         std::vector<Squashing> projection_squashes;
@@ -371,7 +372,7 @@ private:
 
         void prepareProjectionsToMergeAndRebuild() const;
         void calculateProjections(const Block & block, UInt64 starting_offset) const;
-        void calculateProjectionForBlock(size_t projection_idx, Block block, UInt64 starting_offset) const;
+        void calculateProjectionForBlock(size_t projection_idx, const Block & block, UInt64 starting_offset) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
         bool executeMergeProjections() const;
