@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest, no-parallel, no-replicated-database
 
 -- =============================================================================
 -- LLM Functions Test Suite
