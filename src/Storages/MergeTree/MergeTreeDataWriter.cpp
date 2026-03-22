@@ -478,7 +478,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (size_t col = 0; col < block.columns(); ++col)
     {
-        MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+        auto scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
         for (size_t i = 0; i < partitions_count; ++i)
             result[i].block->getByPosition(col).column = std::move(scattered[i]);
     }

@@ -133,6 +133,49 @@ String generateNextCodecString(RandomGenerator & rg)
     return res;
 }
 
+String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc)
+{
+    if (rg.nextBool())
+    {
+        return fc.getRandomIcebergHistoryValue("toUnixTimestamp64Milli(\"made_current_at\")");
+    }
+    else
+    {
+        static const std::vector<uint32_t> values = {1, 2, 3, 5, 10, 15, 20};
+        const auto now = std::chrono::system_clock::now();
+
+        /// Convert to milliseconds since epoch
+        auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        ms -= (rg.pickRandomly(values) * 1000);
+        return std::to_string(ms);
+    }
+}
+
+/// Returns a DateTime string suitable for expire_snapshots positional/expire_before arguments.
+/// The parser uses readDateTimeText (expects "YYYY-MM-DD HH:MM:SS") and then multiplies by 1000,
+/// so we must produce seconds-granularity DateTime strings, not millisecond integers.
+String getNextIcebergExpireTimestamp(RandomGenerator & rg, FuzzConfig & fc)
+{
+    if (rg.nextBool())
+    {
+        /// Convert history ms timestamp to DateTime string that readDateTimeText can parse.
+        return fc.getRandomIcebergHistoryValue("toString(toDateTime(intDiv(\"made_current_at\", 1000)))");
+    }
+    else
+    {
+        char buf[32];
+        struct tm tm_buf;
+        static const std::vector<uint32_t> offsets_sec = {1, 2, 3, 5, 10, 15, 20, 30, 60};
+        const auto now = std::chrono::system_clock::now();
+        auto secs = static_cast<time_t>(duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
+
+        secs -= rg.pickRandomly(offsets_sec);
+        if (!localtime_r(&secs, &tm_buf) || !strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_buf))
+            return {};
+        return buf;
+    }
+}
+
 std::unordered_map<String, CHSetting> performanceSettings
     = {{"allow_aggregate_partitions_independently", trueOrFalseSetting},
        {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", trueOrFalseSetting},
@@ -674,27 +717,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          false)},
     {"iceberg_snapshot_id",
      CHSetting([](RandomGenerator &, FuzzConfig & fc) { return fc.getRandomIcebergHistoryValue("\"snapshot_id\""); }, {}, false)},
-    {"iceberg_timestamp_ms",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig & fc)
-         {
-             if (rg.nextBool())
-             {
-                 return fc.getRandomIcebergHistoryValue("toUnixTimestamp64Milli(\"made_current_at\")");
-             }
-             else
-             {
-                 static const std::vector<uint32_t> values = {1, 2, 3, 5, 10, 15, 20};
-                 const auto now = std::chrono::system_clock::now();
-
-                 /// Convert to milliseconds since epoch
-                 auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-                 ms -= (rg.pickRandomly(values) * 1000);
-                 return std::to_string(ms);
-             }
-         },
-         {},
-         false)},
+    {"iceberg_timestamp_ms", CHSetting([](RandomGenerator & rg, FuzzConfig & fc) { return getNextIcebergTimestamp(rg, fc); }, {}, false)},
     /// ClickHouse cloud setting
     {"ignore_cold_parts_seconds",
      CHSetting(

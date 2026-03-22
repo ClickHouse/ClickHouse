@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
 #include <shared_mutex>
 
 namespace ProfileEvents
@@ -69,7 +70,10 @@ public:
         build();
     }
 
-    IColumn::Patch createPatchForColumn(const String & column_name, IColumn::Versions & dst_versions) const;
+    /// When @p result_type is provided, sources with a different type are
+    /// filtered out per-source so compatible updates survive schema transitions.
+    IColumn::Patch createPatchForColumn(const String & column_name, IColumn::Versions & dst_versions,
+                                        const DataTypePtr & result_type = nullptr) const;
 
 private:
     void build();
@@ -98,6 +102,11 @@ private:
     IColumn::Offsets src_row_indices;
     /// Index of row in the result block.
     IColumn::Offsets dst_row_indices;
+
+    /// Scratch space for type-filtering path in createPatchForColumn.
+    mutable IColumn::Offsets filtered_src_col_indices;
+    mutable IColumn::Offsets filtered_src_row_indices;
+    mutable IColumn::Offsets filtered_dst_row_indices;
 };
 
 void CombinedPatchBuilder::build()
@@ -224,33 +233,58 @@ void CombinedPatchBuilder::build()
     }
 }
 
-IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_name, IColumn::Versions & dst_versions) const
+IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
+    const String & column_name, IColumn::Versions & dst_versions, const DataTypePtr & result_type) const
 {
-    std::vector<IColumn::Patch::Source> sources;
+    VectorWithMemoryTracking<IColumn::Patch::Source> sources;
+    VectorWithMemoryTracking<bool> source_ok(all_patch_blocks.size(), true);
+    VectorWithMemoryTracking<size_t> remap(all_patch_blocks.size());
+    bool need_filter = false;
 
-    for (const auto & patch_block : all_patch_blocks)
+    for (size_t i = 0; i < all_patch_blocks.size(); ++i)
     {
-        const auto & patch_column = patch_block.getByName(column_name).column;
-        if (!patch_column)
+        const auto & pcol = all_patch_blocks[i].getByName(column_name);
+        if (!pcol.column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} has null data in patch block", column_name);
 
-        IColumn::Patch::Source source =
+        if (result_type && !result_type->equals(*pcol.type))
         {
-            .column = *patch_column,
-            .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
-        };
+            source_ok[i] = false;
+            need_filter = true;
+            continue;
+        }
 
-        sources.push_back(std::move(source));
+        remap[i] = sources.size();
+        sources.push_back({.column = *pcol.column,
+                           .versions = getColumnUInt64Data(all_patch_blocks[i], PartDataVersionColumn::name)});
     }
 
-    return IColumn::Patch
+    if (!need_filter)
+        return IColumn::Patch{
+            .sources = std::move(sources), .src_col_indices = &src_block_indices,
+            .src_row_indices = src_row_indices, .dst_row_indices = dst_row_indices,
+            .dst_versions = dst_versions};
+
+    filtered_src_col_indices.clear();
+    filtered_src_row_indices.clear();
+    filtered_dst_row_indices.clear();
+
+    for (size_t j = 0; j < dst_row_indices.size(); ++j)
     {
+        if (!source_ok[src_block_indices[j]])
+            continue;
+        filtered_src_col_indices.push_back(remap[src_block_indices[j]]);
+        filtered_src_row_indices.push_back(src_row_indices[j]);
+        filtered_dst_row_indices.push_back(dst_row_indices[j]);
+    }
+
+    bool single_source = sources.size() == 1;
+    return IColumn::Patch{
         .sources = std::move(sources),
-        .src_col_indices = &src_block_indices,
-        .src_row_indices = src_row_indices,
-        .dst_row_indices = dst_row_indices,
-        .dst_versions = dst_versions,
-    };
+        .src_col_indices = single_source ? nullptr : &filtered_src_col_indices,
+        .src_row_indices = filtered_src_row_indices,
+        .dst_row_indices = filtered_dst_row_indices,
+        .dst_versions = dst_versions};
 }
 
 Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_columns)
@@ -284,10 +318,19 @@ Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_c
         headers.push_back(header.sortColumns());
     }
 
+    if (headers.empty())
+        return {};
+
+    /// Schema evolution may cause type mismatches across patch headers.
+    /// Skip assertion in that case — createPatchForColumn handles filtering.
+    for (size_t i = 1; i < headers.size(); ++i)
+        if (!isCompatibleHeader(headers[i], headers[0]))
+            return headers.front();
+
     for (size_t i = 1; i < headers.size(); ++i)
         assertCompatibleHeader(headers[i], headers[0], "patch parts");
 
-    return headers.empty() ? Block{} : headers.front();
+    return headers.front();
 }
 
 bool canApplyPatchesRaw(const PatchesToApply & patches)
@@ -338,9 +381,23 @@ void applyPatchesToBlockRaw(
             if (!patch_block.has(result_column.name))
                 continue;
 
-            const auto & patch_column = patch_block.getByName(result_column.name).column;
-            if (!patch_column)
+            const auto & patch_col_with_type = patch_block.getByName(result_column.name);
+            if (!patch_col_with_type.column)
                 continue;
+
+            /// If the column type in the patch part doesn't match the result column
+            /// (e.g., due to schema evolution changing a column's type), skip the patch
+            /// for this column. Applying a patch with mismatched types would cause
+            /// undefined behavior in insertFrom (SIGSEGV in release builds).
+            if (!result_column.type->equals(*patch_col_with_type.type))
+            {
+                LOG_WARNING(getLogger("applyPatches"),
+                    "Skipping patch for column {} because column type has changed ({} -> {})",
+                    result_column.name, patch_col_with_type.type->getName(), result_column.type->getName());
+                continue;
+            }
+
+            const auto & patch_column = patch_col_with_type.column;
 
             IColumn::Patch::Source source =
             {
@@ -383,7 +440,7 @@ void applyPatchesToBlockCombined(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
-        auto multi_patch = builder.createPatchForColumn(result_column.name, result_versions);
+        auto multi_patch = builder.createPatchForColumn(result_column.name, result_versions, result_column.type);
         result_column.column = removeSpecialRepresentations(result_column.column);
 
         if (canApplyPatchInplace(*result_column.column))

@@ -2042,9 +2042,26 @@ void ReadFromMergeTree::buildIndexes(
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {
-                return top_k_filter_info && skip_index->index.isSimpleSingleColumnIndex() &&
-                       skip_index->index.type == "minmax" &&
-                       top_k_filter_info->column_name == skip_index->index.column_names[0];
+                if (!top_k_filter_info || !skip_index->index.isSimpleSingleColumnIndex()
+                    || skip_index->index.type != "minmax"
+                    || top_k_filter_info->column_name != skip_index->index.column_names[0])
+                    return false;
+
+                /// The skip-index top-k path ranks granules via raw Field comparison
+                /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
+                /// or collation. Only allow types where raw Field ordering matches
+                /// the ORDER BY semantics.
+                /// TODO: generalize MinMaxGranuleItem comparison and getTopKMarks to use
+                /// nulls_direction/collator so this restriction can be lifted.
+                if (top_k_filter_info->data_type->isNullable()
+                    || !top_k_filter_info->data_type->isValueRepresentedByNumber())
+                    return false;
+
+                if (top_k_filter_info->threshold_tracker
+                    && top_k_filter_info->threshold_tracker->getCollator())
+                    return false;
+
+                return true;
         };
 
         if (settings[Setting::use_skip_indexes_for_top_k] && can_skip_index_be_used_for_top_k_filtering(index_helper))
@@ -3354,7 +3371,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 ? CoordinationMode::WithOrder
                 : CoordinationMode::ReverseOrder;
         };
-        extension.sendInitialRequest(get_coordination_mode(), result.parts_with_ranges, /*mark_segment_size=*/1);
+        // This code is executed only if there is no parts to read, so the parameter values don't really matter
+        extension.sendInitialRequest(
+            get_coordination_mode(), result.parts_with_ranges.getDescriptions(), /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
     }
 
     if (result.parts_with_ranges.empty())
