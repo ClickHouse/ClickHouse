@@ -180,7 +180,7 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     /// Due to using of position-dependent encoding, we have to read into a temporary block and then move to the accumulating block.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto column = block_for_reading.getByPosition(i).column;
+        auto column = std::move(block_for_reading.getByPosition(i).column);
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
@@ -188,6 +188,7 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
 
         block.getByPosition(i).column->assumeMutableRef().insertRangeFrom(*column, 0, rows_to_read);
         column->assumeMutableRef().popBack(rows_to_read);
+        block_for_reading.getByPosition(i).column = std::move(column);
     }
 
     /// The last column is designating the granule

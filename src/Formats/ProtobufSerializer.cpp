@@ -227,6 +227,11 @@ namespace
             column = columns[0]->getPtr();
         }
 
+        /// Returns a mutable reference to the column for deserialization.
+        /// The column is borrowed from the caller who guarantees mutability,
+        /// but it is stored as ColumnPtr (shared with the caller), so we cannot use assumeMutableRef.
+        IColumn & columnRef() const { return const_cast<IColumn &>(*column); }
+
         template <typename NumberType>
         void writeInt(NumberType value)
         {
@@ -373,7 +378,7 @@ namespace
         void readRow(size_t row_num) override
         {
             NumberType value = read_function();
-            auto & column_vector = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
             else
@@ -382,7 +387,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_vector = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_vector.size())
                 return;
             column_vector.insertValue(getDefaultNumber());
@@ -629,7 +634,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_string = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_string = assert_cast<ColumnType &>(columnRef());
             const size_t old_size = column_string.size();
             typename ColumnType::Chars & data = column_string.getChars();
             const size_t old_data_size = data.size();
@@ -685,7 +690,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_string = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_string = assert_cast<ColumnType &>(columnRef());
             const size_t old_size = column_string.size();
             if (row_num < old_size)
                 return;
@@ -1176,7 +1181,7 @@ namespace
         void readRow(size_t row_num) override
         {
             DecimalType decimal = read_function();
-            auto & column_decimal = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_decimal = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_decimal.size())
                 column_decimal.getElement(row_num) = decimal;
             else
@@ -1185,7 +1190,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_decimal = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_decimal = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_decimal.size())
                 return;
             column_decimal.insertValue(getDefaultDecimal());
@@ -1747,7 +1752,7 @@ namespace
         void readRow(size_t row_num) override
         {
             UUID value = read_function();
-            auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<UUID> &>(columnRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
             else
@@ -1756,7 +1761,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<UUID> &>(columnRef());
             if (row_num < column_vector.size())
                 return;
             column_vector.insertDefault();
@@ -1823,7 +1828,7 @@ namespace
         void readRow(size_t row_num) override
         {
             IPv6 value = read_function();
-            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(columnRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
             else
@@ -1832,7 +1837,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(columnRef());
             if (row_num < column_vector.size())
                 return;
             column_vector.insertDefault();
@@ -1907,7 +1912,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_af = assert_cast<ColumnAggregateFunction &>(column->assumeMutableRef());
+            auto & column_af = assert_cast<ColumnAggregateFunction &>(columnRef());
             Arena & arena = column_af.createOrGetArena();
             AggregateDataPtr data;
             readStr(text_buffer);
@@ -1924,7 +1929,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_af = assert_cast<ColumnAggregateFunction &>(column->assumeMutableRef());
+            auto & column_af = assert_cast<ColumnAggregateFunction &>(columnRef());
             if (row_num < column_af.size())
                 return;
 
@@ -1992,7 +1997,7 @@ namespace
             {
                 if (i == presence_column_idx)
                 {
-                    presence_column = columns[presence_column_idx]->assumeMutable();
+                    presence_column_ptr = const_cast<IColumn *>(columns[presence_column_idx].get());
                 }
                 else
                 {
@@ -2018,19 +2023,19 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            if (presence_column)
+            if (presence_column_ptr)
             {
-                if (row_num < presence_column->size())
+                if (row_num < presence_column_ptr->size())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protobuf data: OneOf has more than one value to track via column `{}`", oneof_column_name);
-                presence_column->insert(field_tag);
+                presence_column_ptr->insert(field_tag);
             }
             nested_serializer->readRow(row_num);
         }
 
         void insertDefaults(size_t row_num) override
         {
-            if (row_num >= presence_column->size())
-                presence_column->insert(0);
+            if (row_num >= presence_column_ptr->size())
+                presence_column_ptr->insert(0);
 
             nested_serializer->insertDefaults(row_num);
         }
@@ -2046,7 +2051,7 @@ namespace
         std::string_view oneof_column_name;
         size_t presence_column_idx;
         int field_tag;
-        MutableColumnPtr presence_column;
+        IColumn * presence_column_ptr = nullptr;
     };
 
 
@@ -2087,7 +2092,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
+            auto & column_nullable = assert_cast<ColumnNullable &>(columnRef());
             auto & nested_column = column_nullable.getNestedColumn();
             auto & null_map = column_nullable.getNullMapData();
             size_t old_size = null_map.size();
@@ -2117,7 +2122,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
+            auto & column_nullable = assert_cast<ColumnNullable &>(columnRef());
             if (row_num < column_nullable.size())
                 return;
             column_nullable.insertDefault();
@@ -2125,7 +2130,7 @@ namespace
 
         void insertNestedDefaults(size_t row_num)
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
+            auto & column_nullable = assert_cast<ColumnNullable &>(columnRef());
             if (row_num < column_nullable.size())
                 return;
             column_nullable.getNestedColumn().insertDefault();
@@ -2222,7 +2227,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_lc = assert_cast<ColumnLowCardinality &>(column->assumeMutableRef());
+            auto & column_lc = assert_cast<ColumnLowCardinality &>(columnRef());
 
             if (!read_value_column_set)
             {
@@ -2250,7 +2255,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_lc = assert_cast<ColumnLowCardinality &>(column->assumeMutableRef());
+            auto & column_lc = assert_cast<ColumnLowCardinality &>(columnRef());
             if (row_num < column_lc.size())
                 return;
 
@@ -2318,7 +2323,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_array = assert_cast<ColumnArray &>(column->assumeMutableRef());
+            auto & column_array = assert_cast<ColumnArray &>(columnRef());
             auto & offsets = column_array.getOffsets();
             size_t old_size = offsets.size();
             if (row_num + 1 < old_size)
@@ -2341,7 +2346,7 @@ namespace
             catch (...)
             {
                 if (data_column->size() > old_data_size)
-                    data_column->assumeMutableRef().popBack(data_column->size() - old_data_size);
+                    const_cast<IColumn &>(*data_column).popBack(data_column->size() - old_data_size);
                 if (offsets.size() > old_size)
                     column_array.getOffsetsColumn().popBack(offsets.size() - old_size);
                 throw;
@@ -2350,7 +2355,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_array = assert_cast<ColumnArray &>(column->assumeMutableRef());
+            auto & column_array = assert_cast<ColumnArray &>(columnRef());
             if (row_num < column_array.size())
                 return;
             column_array.insertDefault();
@@ -2416,7 +2421,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_tuple = assert_cast<ColumnTuple &>(column->assumeMutableRef());
+            auto & column_tuple = assert_cast<ColumnTuple &>(columnRef());
 
             size_t old_size = column_tuple.size();
             if (row_num >= old_size)
@@ -2441,7 +2446,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_tuple = assert_cast<ColumnTuple &>(column->assumeMutableRef());
+            auto & column_tuple = assert_cast<ColumnTuple &>(columnRef());
             size_t old_size = column_tuple.size();
 
             if (row_num > old_size)
@@ -3033,12 +3038,12 @@ namespace
                 if (row_num < old_size)
                 {
                     for (auto & offset_column : offset_columns)
-                        assert_cast<ColumnArray::ColumnOffsets &>(offset_column->assumeMutableRef()).getData().back() = data_size;
+                        assert_cast<ColumnArray::ColumnOffsets &>(const_cast<IColumn &>(*offset_column)).getData().back() = data_size;
                 }
                 else
                 {
                     for (auto & offset_column : offset_columns)
-                        assert_cast<ColumnArray::ColumnOffsets &>(offset_column->assumeMutableRef()).getData().push_back(data_size);
+                        assert_cast<ColumnArray::ColumnOffsets &>(const_cast<IColumn &>(*offset_column)).getData().push_back(data_size);
                 }
             }
             catch (...)
@@ -3046,12 +3051,12 @@ namespace
                 for (auto & data_column : data_columns)
                 {
                     if (data_column->size() > old_data_size)
-                        data_column->assumeMutableRef().popBack(data_column->size() - old_data_size);
+                        const_cast<IColumn &>(*data_column).popBack(data_column->size() - old_data_size);
                 }
                 for (auto & offset_column : offset_columns)
                 {
                     if (offset_column->size() > old_size)
-                        offset_column->assumeMutableRef().popBack(offset_column->size() - old_size);
+                        const_cast<IColumn &>(*offset_column).popBack(offset_column->size() - old_size);
                 }
                 throw;
             }
@@ -3067,14 +3072,14 @@ namespace
             {
                 size_t data_size = data_columns[0]->size();
                 for (auto & offset_column : offset_columns)
-                    assert_cast<ColumnArray::ColumnOffsets &>(offset_column->assumeMutableRef()).getData().push_back(data_size);
+                    assert_cast<ColumnArray::ColumnOffsets &>(const_cast<IColumn &>(*offset_column)).getData().push_back(data_size);
             }
             catch (...)
             {
                 for (auto & offset_column : offset_columns)
                 {
                     if (offset_column->size() > old_size)
-                        offset_column->assumeMutableRef().popBack(offset_column->size() - old_size);
+                        const_cast<IColumn &>(*offset_column).popBack(offset_column->size() - old_size);
                 }
                 throw;
             }
