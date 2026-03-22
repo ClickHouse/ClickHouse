@@ -88,8 +88,8 @@ protected:
         const auto & arr = field.safeGet<Array>();
 
         Poco::JSON::Array enum_array;
-        for (size_t i = 0; i < arr.size(); ++i)
-            enum_array.add(arr[i].safeGet<String>());
+        for (const auto & elem : arr)
+            enum_array.add(elem.safeGet<String>());
 
         std::ostringstream enum_stream; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
         enum_array.stringify(enum_stream);
@@ -113,9 +113,7 @@ protected:
                 if (obj && obj->has("category"))
                     return obj->getValue<String>("category");
             }
-            catch (...) // Ok: best-effort JSON extraction
-            {
-            }
+            catch (...) {} // Ok: best-effort JSON extraction
         }
         return raw_response;
     }
