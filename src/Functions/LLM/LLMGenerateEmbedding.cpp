@@ -101,7 +101,7 @@ bool looksLikeURL(const String & s)
 /// or_null=true:  generateEmbeddingOrNull  -> returns empty array [] on errors instead of throwing
 /// Both return Array(Float32). Nullable(Array) is not supported in ClickHouse.
 template <bool or_null>
-class FunctionGenerateEmbeddingImpl final : public IFunction, public WithContext
+class FunctionGenerateEmbeddingImpl final : public IFunction
 {
 public:
     static constexpr auto name = or_null ? "generateEmbeddingOrNull" : "generateEmbedding";
@@ -112,7 +112,10 @@ public:
                 "AI function '{}' is experimental. Set `allow_experimental_ai_functions` setting to enable it", name);
         return std::make_shared<FunctionGenerateEmbeddingImpl>(std::move(ctx));
     }
-    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_) : WithContext(std::move(context_)) {}
+    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_) : context_weak(context_) {}
+
+    ContextWeakPtr context_weak;
+    ContextPtr getContext() const { return context_weak.lock(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

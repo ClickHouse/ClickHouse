@@ -59,7 +59,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-LLMFunctionBase::LLMFunctionBase(ContextPtr context_) : WithContext(std::move(context_))
+LLMFunctionBase::LLMFunctionBase(ContextPtr context_) : context_weak(context_)
 {
     if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
