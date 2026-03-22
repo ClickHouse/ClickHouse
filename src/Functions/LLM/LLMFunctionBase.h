@@ -6,12 +6,11 @@
 #include <Functions/LLM/LLMResultCache.h>
 #include <Functions/LLM/LLMQuotaTracker.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
-class LLMFunctionBase : public IFunction, public WithContext
+class LLMFunctionBase : public IFunction
 {
 public:
     explicit LLMFunctionBase(ContextPtr context_);
@@ -26,6 +25,9 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 protected:
+    ContextWeakPtr context_weak;
+    ContextPtr getContext() const { return context_weak.lock(); }
+
     virtual String functionName() const = 0;
     virtual float defaultTemperature() const = 0;
     virtual String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const = 0;
