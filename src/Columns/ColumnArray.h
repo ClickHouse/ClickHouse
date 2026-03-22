@@ -52,12 +52,12 @@ public:
       */
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
-        return ColumnArray::create(nested_column->assumeMutableForCreation(), offsets_column->assumeMutableForCreation());
+        return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());
     }
 
     static Ptr create(const ColumnPtr & nested_column)
     {
-        return ColumnArray::create(nested_column->assumeMutableForCreation());
+        return ColumnArray::create(nested_column->assumeMutable());
     }
 
     template <typename ... Args>

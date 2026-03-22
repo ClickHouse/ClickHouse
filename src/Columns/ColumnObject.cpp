@@ -144,17 +144,17 @@ ColumnObject::Ptr ColumnObject::create(
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> mutable_typed_paths;
     mutable_typed_paths.reserve(typed_paths_.size());
     for (const auto & [path, column] : typed_paths_)
-        mutable_typed_paths[path] = typed_paths_.at(path)->assumeMutableForCreation();
+        mutable_typed_paths[path] = typed_paths_.at(path)->assumeMutable();
 
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> mutable_dynamic_paths;
     mutable_dynamic_paths.reserve(dynamic_paths_.size());
     for (const auto & [path, column] : dynamic_paths_)
-        mutable_dynamic_paths[path] = dynamic_paths_.at(path)->assumeMutableForCreation();
+        mutable_dynamic_paths[path] = dynamic_paths_.at(path)->assumeMutable();
 
     return ColumnObject::create(
         std::move(mutable_typed_paths),
         std::move(mutable_dynamic_paths),
-        shared_data_->assumeMutableForCreation(),
+        shared_data_->assumeMutable(),
         max_dynamic_paths_,
         global_max_dynamic_paths_,
         max_dynamic_types_,
