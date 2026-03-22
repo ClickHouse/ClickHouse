@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <ClickStackResources.generated.h>
+#include <SQLConsoleResources.generated.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -61,6 +62,39 @@ static void handle(HTTPServerRequest & request, HTTPServerResponse & response, s
     auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
     wb.write(html.data(), html.size());
     wb.finalize();
+}
+
+template <typename EmbeddedResources>
+const typename EmbeddedResources::value_type * findEmbeddedResource(const EmbeddedResources & resources, const std::string & resource_path)
+{
+    auto it = std::lower_bound(
+        resources.begin(),
+        resources.end(),
+        resource_path,
+        [](const auto & resource, const std::string & path)
+        {
+            return resource.path < path;
+        });
+
+    if (it == resources.end() || it->path != resource_path)
+        return nullptr;
+
+    return &*it;
+}
+
+template <typename EmbeddedResource>
+void handleCompressedEmbeddedResource(
+    HTTPServerRequest & request,
+    HTTPServerResponse & response,
+    const EmbeddedResource & resource,
+    const std::unordered_map<String, String> & http_response_headers_override)
+{
+    response.setContentType(std::string(resource.mime_type));
+
+    auto headers_with_encoding = http_response_headers_override;
+    headers_with_encoding["Content-Encoding"] = "gzip";
+
+    handle(request, response, {reinterpret_cast<const char *>(resource.data), resource.size}, headers_with_encoding);
 }
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
@@ -155,34 +189,66 @@ std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri)
 
 void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    // Get the resource path from URI
     std::string resource_path = getResourcePath(request.getURI());
 
-    // Binary search in the sorted embedded_resources array
-    auto it = std::lower_bound(
-        ClickStack::embedded_resources.begin(),
-        ClickStack::embedded_resources.end(),
-        resource_path,
-        [](const ClickStack::EmbeddedResource & resource, const std::string & path)
-        {
-            return resource.path < path;
-        });
-
-    // Check if resource was found
-    if (it == ClickStack::embedded_resources.end() || it->path != resource_path)
+    const auto * resource = findEmbeddedResource(ClickStack::embedded_resources, resource_path);
+    if (!resource)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
         *response.send() << "Not found.\n";
         return;
     }
 
-    response.setContentType(std::string(it->mime_type));
+    handleCompressedEmbeddedResource(request, response, *resource, http_response_headers_override);
+}
 
-    // Add Content-Encoding header since all clickstack resources are pre-gzipped
-    auto headers_with_encoding = http_response_headers_override;
-    headers_with_encoding["Content-Encoding"] = "gzip";
+std::string SQLConsoleUIRequestHandler::getResourcePath(const std::string & uri) const
+{
+    std::string_view path = uri;
+    if (path.starts_with("/sql-console"))
+        path.remove_prefix(12); // length of "/sql-console"
 
-    handle(request, response, {reinterpret_cast<const char *>(it->data), it->size}, headers_with_encoding);
+    if (!path.empty() && path[0] == '/')
+        path.remove_prefix(1);
+
+    auto query_pos = path.find('?');
+    if (query_pos != std::string_view::npos)
+        path = path.substr(0, query_pos);
+
+    auto fragment_pos = path.find('#');
+    if (fragment_pos != std::string_view::npos)
+        path = path.substr(0, fragment_pos);
+
+    if (!path.empty() && path.back() == '/')
+        path.remove_suffix(1);
+
+    if (path.empty())
+        return "index.html";
+
+    return std::string(path);
+}
+
+void SQLConsoleUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    std::string resource_path = getResourcePath(request.getURI());
+
+    if (const auto * resource = findEmbeddedResource(SQLConsole::embedded_resources, resource_path))
+    {
+        handleCompressedEmbeddedResource(request, response, *resource, http_response_headers_override);
+        return;
+    }
+
+    if (resource_path.find('.') == std::string::npos)
+    {
+        if (const auto * resource = findEmbeddedResource(SQLConsole::embedded_resources, "index.html"))
+        {
+            handleCompressedEmbeddedResource(request, response, *resource, http_response_headers_override);
+            return;
+        }
+    }
+
+    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+    *response.send() << "Not found.\n";
 }
 
 }
