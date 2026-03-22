@@ -403,7 +403,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             return {};
         }
         /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
-        else if (!analyzer)
+        else if (analyzer)
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
