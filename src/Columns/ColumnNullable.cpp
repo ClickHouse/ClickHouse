@@ -41,8 +41,6 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
 }
 
-
-
 std::string_view ColumnNullable::getDataAt(size_t n) const
 {
     if (!isNullAt(n))

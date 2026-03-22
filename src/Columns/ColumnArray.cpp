@@ -76,8 +76,6 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column)
 }
 
 
-
-
 std::string ColumnArray::getName() const { return "Array(" + getData().getName() + ")"; }
 
 
