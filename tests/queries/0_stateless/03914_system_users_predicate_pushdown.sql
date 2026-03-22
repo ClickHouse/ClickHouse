@@ -26,14 +26,14 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT argMax(read_rows, event_time_microseconds)
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600
   AND query LIKE '%SELECT name FROM system.users WHERE name = \'test_pushdown_alice\'%'
   AND type = 'QueryFinish';
 
 -- Verify the fallback path reads more rows than the fast path
 SELECT argMax(read_rows, event_time_microseconds) >= 2
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600
   AND query LIKE '%SELECT name FROM system.users WHERE name LIKE \'test\_pushdown\_%\'%'
   AND type = 'QueryFinish';
 
