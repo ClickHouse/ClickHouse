@@ -7,6 +7,7 @@ SET remote_filesystem_read_method = 'threadpool';
 SET max_rows_to_read = 0;
 SET use_page_cache_for_disks_without_file_cache = 0;
 SET use_page_cache_for_object_storage = 0;
+SET enable_filesystem_cache_on_write_operations = 0;
 
 DROP TABLE IF EXISTS tab;
 
