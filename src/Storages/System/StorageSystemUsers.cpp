@@ -188,14 +188,6 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
 }
 
 
-Block StorageSystemUsers::getFilterSampleBlock() const
-{
-    return {
-        { {}, std::make_shared<DataTypeString>(), "name" },
-    };
-}
-
-
 void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
