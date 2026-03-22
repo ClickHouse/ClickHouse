@@ -2798,11 +2798,13 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// (e.g., because the WHERE clause uses a pattern like LIKE '%...' that can't use the index),
     /// read-in-order kills parallelism: each part is read by a single stream instead of many.
     /// In such cases, full parallel reading with sorting is much faster.
-    if (read_limit == 0)
+    /// Skip this check for parallel replicas to avoid coordination mismatches,
+    /// and for small tables where parallelism gain is negligible.
+    if (read_limit == 0 && !is_parallel_reading_from_replicas)
     {
         const double max_ratio = context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio];
         const auto & analysis_result = getAnalysisResult();
-        if (analysis_result.total_marks_pk > 0
+        if (analysis_result.total_marks_pk > requested_num_streams
             && static_cast<double>(analysis_result.selected_marks_pk)
                 > static_cast<double>(analysis_result.total_marks_pk) * max_ratio)
         {

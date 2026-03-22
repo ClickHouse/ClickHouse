@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.4",
         {
             {"enable_materialized_cte", false, false, "New setting"},
+            {"read_in_order_max_primary_key_ratio", 1.0, 0.5, "Disable read-in-order optimization when primary key selectivity is poor to preserve parallelism"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

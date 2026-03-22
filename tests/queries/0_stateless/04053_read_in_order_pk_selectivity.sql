@@ -4,8 +4,11 @@
 
 DROP TABLE IF EXISTS t_read_in_order_pk;
 
+-- Use a small index_granularity to produce enough marks for the check to trigger
+-- (the check requires total_marks > requested_num_streams).
 CREATE TABLE t_read_in_order_pk (path String, value UInt64)
 ENGINE = MergeTree ORDER BY path
+SETTINGS index_granularity = 64
 AS SELECT concat('path/', toString(number % 1000), '/file.log'), number FROM numbers(100000);
 
 -- With poor primary key selectivity (leading wildcard LIKE), read-in-order should be rejected.
@@ -16,7 +19,7 @@ SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_read_in_order_pk
     WHERE path LIKE '%file.log'
     ORDER BY path
-    SETTINGS enable_parallel_replicas = 0
+    SETTINGS enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
 -- With good primary key selectivity, read-in-order should be used (no PartialSortingTransform).
@@ -25,7 +28,7 @@ SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_read_in_order_pk
     WHERE path LIKE 'path/1%'
     ORDER BY path
-    SETTINGS enable_parallel_replicas = 0
+    SETTINGS enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
 -- Verify that results are correct (sorted) when read-in-order is rejected.
@@ -34,6 +37,7 @@ SELECT count() FROM (
     SELECT * FROM t_read_in_order_pk
     WHERE path LIKE '%file.log'
     ORDER BY path
+    SETTINGS read_in_order_max_primary_key_ratio = 0.5
 );
 
 -- Setting `read_in_order_max_primary_key_ratio` = 1.0 should disable the rejection.
