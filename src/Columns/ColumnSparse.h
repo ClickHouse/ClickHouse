@@ -33,7 +33,7 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnSparse>, ColumnSparse>;
     static Ptr create(const ColumnPtr & values_, const ColumnPtr & offsets_, size_t size_)
     {
-        return Base::create(values_->assumeMutable(), offsets_->assumeMutable(), size_);
+        return Base::create(IColumn::mutate(values_), IColumn::mutate(offsets_), size_);
     }
 
     template <typename TColumnPtr>
@@ -45,7 +45,7 @@ public:
 
     static Ptr create(const ColumnPtr & values_)
     {
-        return Base::create(values_->assumeMutable());
+        return Base::create(IColumn::mutate(values_));
     }
 
     template <typename TColumnPtr>

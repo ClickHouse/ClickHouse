@@ -51,7 +51,7 @@ ColumnLazy::Ptr ColumnLazy::create(size_t s)
 MutableColumnPtr ColumnLazy::cloneResized(size_t new_size) const
 {
     if (captured_columns.empty())
-        return ColumnLazy::create(new_size)->assumeMutable();
+        return IColumn::mutate(ColumnLazy::create(new_size));
 
     const size_t column_size = captured_columns.size();
     MutableColumns new_columns(column_size);

@@ -197,6 +197,7 @@ public:
         return const_cast<Derived &>(*derived());
     }
 
+
 protected:
     /// It works as immutable_ptr if it is const and as mutable_ptr if it is non const.
     template <typename T>
@@ -213,13 +214,13 @@ protected:
         chameleon_ptr(std::initializer_list<U> && arg) : value(std::forward<std::initializer_list<U>>(arg)) {}
 
         const T * get() const { return value.get(); }
-        T * get() { return &value->assumeMutableRef(); }
+        T * get() { return const_cast<T *>(value.get()); }
 
         const T * operator->() const { return get(); }
         T * operator->() { return get(); }
 
         const T & operator*() const { return *value; }
-        T & operator*() { return value->assumeMutableRef(); }
+        T & operator*() { return const_cast<T &>(*value); }
 
         operator const immutable_ptr<T> & () const { return value; } /// NOLINT
         operator immutable_ptr<T> & () { return value; } /// NOLINT

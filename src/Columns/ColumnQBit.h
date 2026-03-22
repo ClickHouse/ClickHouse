@@ -65,7 +65,7 @@ public:
       */
     using Base = COWHelper<IColumnHelper<ColumnQBit>, ColumnQBit>;
 
-    static Ptr create(const ColumnPtr & column, size_t dimension) { return Base::create(column->assumeMutable(), dimension); }
+    static Ptr create(const ColumnPtr & column, size_t dimension) { return Base::create(IColumn::mutate(column), dimension); }
     static MutablePtr create(MutableColumnPtr && tuple_, size_t dimension) { return Base::create(std::move(tuple_), dimension); }
 
     const char * getFamilyName() const override { return "QBit"; }

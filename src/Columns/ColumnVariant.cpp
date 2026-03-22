@@ -220,7 +220,7 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
 namespace
 {
 
-MutableColumns getVariantsAssumeMutable(const Columns & variants)
+MutableColumns mutateVariants(const Columns & variants)
 {
     MutableColumns mutable_variants;
 
@@ -228,7 +228,7 @@ MutableColumns getVariantsAssumeMutable(const Columns & variants)
     {
         if (isColumnConst(*variant))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnVariant cannot have ColumnConst as its element");
-        mutable_variants.emplace_back(variant->assumeMutable());
+        mutable_variants.emplace_back(IColumn::mutate(variant));
     }
 
     return mutable_variants;
@@ -238,17 +238,17 @@ MutableColumns getVariantsAssumeMutable(const Columns & variants)
 
 ColumnVariant::Ptr ColumnVariant::create(const Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
 {
-    return ColumnVariant::create(getVariantsAssumeMutable(variants), local_to_global_discriminators);
+    return ColumnVariant::create(mutateVariants(variants), local_to_global_discriminators);
 }
 
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
 {
-    return ColumnVariant::create(local_discriminators->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
+    return ColumnVariant::create(IColumn::mutate(local_discriminators), mutateVariants(variants), local_to_global_discriminators);
 }
 
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::ColumnPtr & offsets, const DB::Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
 {
-    return ColumnVariant::create(local_discriminators->assumeMutable(), offsets->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
+    return ColumnVariant::create(IColumn::mutate(local_discriminators), IColumn::mutate(offsets), mutateVariants(variants), local_to_global_discriminators);
 }
 
 

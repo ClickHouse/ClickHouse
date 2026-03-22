@@ -29,12 +29,12 @@ public:
 
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & indexes_)
     {
-        return Base::create(nested_column_->assumeMutable(), indexes_->assumeMutable());
+        return Base::create(IColumn::mutate(nested_column_), IColumn::mutate(indexes_));
     }
 
     static Ptr create(const ColumnPtr & nested_column_)
     {
-        return Base::create(nested_column_->assumeMutable());
+        return Base::create(IColumn::mutate(nested_column_));
     }
 
     static MutablePtr create(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_)
@@ -54,7 +54,7 @@ public:
 
     static Ptr create(ColumnPtr & nested_column_, ColumnIndex && indexes_)
     {
-        return Base::create(nested_column_->assumeMutable(), std::move(indexes_));
+        return Base::create(IColumn::mutate(nested_column_), std::move(indexes_));
     }
 
     bool isReplicated() const override { return true; }

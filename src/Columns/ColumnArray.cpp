@@ -76,6 +76,8 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column)
 }
 
 
+
+
 std::string ColumnArray::getName() const { return "Array(" + getData().getName() + ")"; }
 
 
@@ -1031,7 +1033,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i]->assumeMutable(), getOffsetsPtr()->assumeMutable())
+        temporary_arrays[i] = ColumnArray(IColumn::mutate(tuple.getColumns()[i]), IColumn::mutate(getOffsetsPtr()))
                 .filter(filt, result_size_hint);
 
     Columns tuple_columns(tuple_size);
@@ -1132,15 +1134,13 @@ void ColumnArray::filterTuple(const Filter & filt)
 
     const auto & tuple_columns = tuple.getColumns();
 
-    auto offsets_column = getOffsetsPtr();
-
     for (size_t i = 0; i < tuple_size; ++i)
     {
         MutableColumnPtr offsets_to_use;
         if (i == tuple_size - 1)
-            offsets_to_use = offsets_column->assumeMutable();
+            offsets_to_use = getOffsetsPtr()->assumeMutable();
         else
-            offsets_to_use = IColumn::mutate(offsets_column);
+            offsets_to_use = IColumn::mutate(getOffsetsPtr());
 
         ColumnArray array_column(tuple_columns[i]->assumeMutable(), std::move(offsets_to_use));
         array_column.filter(filt);
@@ -1601,9 +1601,9 @@ ColumnPtr ColumnArray::replicateNullable(const Offsets & replicate_offsets) cons
     /// Make temporary arrays for each components of Nullable. Then replicate them independently and collect back to result.
     /// NOTE Offsets are calculated twice and it is redundant.
 
-    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable())
+    auto array_of_nested = ColumnArray(IColumn::mutate(nullable.getNestedColumnPtr()), IColumn::mutate(getOffsetsPtr()))
             .replicate(replicate_offsets);
-    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable())
+    auto array_of_null_map = ColumnArray(IColumn::mutate(nullable.getNullMapColumnPtr()), IColumn::mutate(getOffsetsPtr()))
             .replicate(replicate_offsets);
 
     return ColumnArray::create(
@@ -1627,7 +1627,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i]->assumeMutable(), getOffsetsPtr()->assumeMutable())
+        temporary_arrays[i] = ColumnArray(IColumn::mutate(tuple.getColumns()[i]), IColumn::mutate(getOffsetsPtr()))
                 .replicate(replicate_offsets);
 
     Columns tuple_columns(tuple_size);

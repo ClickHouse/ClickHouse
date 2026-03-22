@@ -452,7 +452,7 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
             return ColumnNullable::create(std::move(res_column), std::move(null_map_col));
         }
 
-        return ColumnNullable::create(std::move(res_column), null_map->assumeMutable());
+        return ColumnNullable::create(std::move(res_column), IColumn::mutate(null_map));
     }
 
     return res_column;
