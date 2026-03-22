@@ -1132,13 +1132,15 @@ void ColumnArray::filterTuple(const Filter & filt)
 
     const auto & tuple_columns = tuple.getColumns();
 
+    auto offsets_column = getOffsetsPtr();
+
     for (size_t i = 0; i < tuple_size; ++i)
     {
         MutableColumnPtr offsets_to_use;
         if (i == tuple_size - 1)
-            offsets_to_use = getOffsetsPtr()->assumeMutable();
+            offsets_to_use = offsets_column->assumeMutable();
         else
-            offsets_to_use = getOffsetsPtr()->assumeMutable();
+            offsets_to_use = IColumn::mutate(offsets_column);
 
         ColumnArray array_column(tuple_columns[i]->assumeMutable(), std::move(offsets_to_use));
         array_column.filter(filt);
@@ -1154,7 +1156,7 @@ void ColumnArray::filterNullable(const Filter & filt)
 
     auto offsets_column = getOffsetsPtr();
 
-    ColumnArray array_of_nested(nullable_elems.getNestedColumnPtr()->assumeMutable(), offsets_column->assumeMutable());
+    ColumnArray array_of_nested(nullable_elems.getNestedColumnPtr()->assumeMutable(), IColumn::mutate(offsets_column));
     array_of_nested.filter(filt);
 
     Offsets & res_offsets = getOffsets();
