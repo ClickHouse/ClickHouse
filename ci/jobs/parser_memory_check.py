@@ -708,7 +708,7 @@ def generate_html_report(
   th .sort-arrow {{ font-size: 10px; margin-left: 4px; color: #aaa; }}
   td {{ padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }}
   td.num {{ text-align: right; font-variant-numeric: tabular-nums; font-family: 'SF Mono', 'Consolas', monospace; white-space: nowrap; }}
-  td.query-cell {{ font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px; overflow-wrap: break-word; word-break: break-all; }}
+  td.query-cell {{ font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px; overflow: visible; white-space: normal; overflow-wrap: break-word; word-break: break-all; }}
   tr:hover {{ background: #f8f9fa; cursor: pointer; }}
   tr.regression {{ background: #fff5f5; }}
   tr.regression:hover {{ background: #ffebee; }}
