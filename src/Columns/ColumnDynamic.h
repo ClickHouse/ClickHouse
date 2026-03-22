@@ -90,7 +90,7 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
     static Ptr create(const ColumnPtr & variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
-        return ColumnDynamic::create(IColumn::mutate(variant_column_), variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        return ColumnDynamic::create(variant_column_->shallowMutate(), variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
     static MutablePtr create(MutableColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
@@ -105,7 +105,7 @@ public:
 
     static ColumnPtr create(ColumnPtr variant_column_, const DataTypePtr & variant_type, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
-        return create(IColumn::mutate(std::move(variant_column_)), variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        return create(std::move(variant_column_)->shallowMutate(), variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
     static MutablePtr create(size_t max_dynamic_types_ = MAX_DYNAMIC_TYPES_LIMIT)

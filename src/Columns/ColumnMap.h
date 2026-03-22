@@ -29,7 +29,7 @@ public:
 
     static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets);
 
-    static Ptr create(const ColumnPtr & column) { return ColumnMap::create(IColumn::mutate(column)); }
+    static Ptr create(const ColumnPtr & column) { return ColumnMap::create(column->shallowMutate()); }
     static Ptr create(ColumnPtr && arg) { return create(arg); }
 
     template <typename ... Args>

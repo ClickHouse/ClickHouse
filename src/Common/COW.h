@@ -171,7 +171,7 @@ public:
     Ptr getPtr() const { return static_cast<Ptr>(derived()); }
     MutablePtr getPtr() { return static_cast<MutablePtr>(derived()); }
 
-protected:
+public:
     MutablePtr shallowMutate() const
     {
         if (this->use_count() > 1)
@@ -179,7 +179,7 @@ protected:
         return assumeMutable();
     }
 
-public:
+
     static MutablePtr mutate(Ptr ptr)
     {
         return ptr->shallowMutate();
