@@ -23,6 +23,32 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
+static String extractProviderError(const std::string & response_body, int status_code)
+{
+    try
+    {
+        Poco::JSON::Parser err_parser;
+        auto err_json = err_parser.parse(response_body);
+        auto err_obj = err_json.extract<Poco::JSON::Object::Ptr>();
+        if (err_obj && err_obj->has("error"))
+        {
+            auto err = err_obj->getObject("error");
+            if (err)
+            {
+                String msg = err->optValue<String>("message", "");
+                String type = err->optValue<String>("type", "");
+                if (!msg.empty())
+                    return fmt::format("HTTP {} [{}]: {}", status_code, type, msg);
+            }
+        }
+    }
+    catch (...) {} // NOLINT: best-effort JSON parsing
+    size_t max_len = 256;
+    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
+        response_body.substr(0, std::min(response_body.size(), max_len)));
+}
+
+
 OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
     : endpoint(endpoint_), api_key(api_key_), uri(endpoint_)
 {
@@ -88,7 +114,7 @@ LLMResponse OpenAIProvider::call(const LLMRequest & request, const ConnectionTim
     {
         throw Exception(
             ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "LLM provider returned HTTP {}: {}", static_cast<int>(status), response_body);
+            "LLM provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
     }
 
     Poco::JSON::Parser parser;
@@ -197,7 +223,7 @@ LLMEmbeddingResponse OpenAIProvider::embed(const LLMEmbeddingRequest & request, 
     {
         throw Exception(
             ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "LLM embedding provider returned HTTP {}: {}", static_cast<int>(status), response_body);
+            "LLM embedding provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
     }
 
     Poco::JSON::Parser parser;
