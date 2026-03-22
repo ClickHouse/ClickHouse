@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -82,6 +83,17 @@ MergeTreeReadTask::MergeTreeReadTask(
     , size_predictor(std::move(size_predictor_))
     , updater(std::move(updater_))
 {
+    if (updater)
+    {
+        dataflow_cache_update_cb
+            = [&](const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling) -> void
+        {
+            chassert(updater);
+            const auto & part_columns = info->data_part->getColumns();
+            const auto & column_sizes = info->data_part->getColumnSizes();
+            updater->recordInputColumns(columns, part_columns, column_sizes, read_bytes, should_continue_sampling);
+        };
+    }
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
@@ -231,6 +243,15 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     size_t num_readers = prewhere_actions.steps.size() + task_readers.prewhere.size() + 1;
     range_readers.reserve(num_readers);
 
+    /// Compute a combined flag: true only if ALL readers in the chain support incomplete granules.
+    /// This ensures that the first reader in the chain (which decides batch boundaries) does not
+    /// create mid-mark boundaries when a later reader cannot handle them.
+    bool can_read_incomplete_granules = task_readers.main->canReadIncompleteGranules()
+        && std::ranges::all_of(task_readers.prewhere, [](const auto & reader)
+        {
+            return reader->canReadIncompleteGranules();
+        });
+
     if (task_readers.prepared_index)
     {
         range_readers.emplace_back(
@@ -238,7 +259,8 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             Block{},
             /*prewhere_info_=*/ nullptr,
             read_steps_performance_counters.getCounterForIndexStep(),
-            /*main_reader_=*/ false);
+            /*main_reader_=*/ false,
+            can_read_incomplete_granules);
     }
 
     size_t counter_idx = 0;
@@ -249,7 +271,8 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             prewhere_actions.steps[i].get(),
             read_steps_performance_counters.getCountersForStep(counter_idx++),
-            /*main_reader_=*/ false);
+            /*main_reader_=*/ false,
+            can_read_incomplete_granules);
     }
 
     if (!task_readers.main->getColumns().empty())
@@ -259,7 +282,8 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             /*prewhere_info_=*/ nullptr,
             read_steps_performance_counters.getCountersForStep(counter_idx),
-            /*main_reader_=*/ true);
+            /*main_reader_=*/ true,
+            can_read_incomplete_granules);
     }
 
     return MergeTreeReadersChain{std::move(range_readers), task_readers.patches};
@@ -305,7 +329,10 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
     }
 
     if (index_read_result || lazy_materializing_rows)
+    {
         readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
+    }
+
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const
@@ -350,13 +377,14 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
 
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeReadTask::read");
     if (size_predictor)
         size_predictor->startBlock();
 
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges);
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)
@@ -398,10 +426,6 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         }
         block = sample_block.cloneWithColumns(read_result.columns);
     }
-
-    if (updater)
-        updater->recordInputColumns(
-            block.getColumnsWithTypeAndName(), info->data_part->getColumns(), info->data_part->getColumnSizes(), num_read_bytes);
 
     BlockAndProgress res = {
         .block = std::move(block),

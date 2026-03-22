@@ -110,8 +110,8 @@ SELECT quantileExactHigh(0.1)(number) FROM numbers(10);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExactHigh::name, {createAggregateFunctionQuantile<FuncQuantileExactHigh>, {}, documentation});
-    factory.registerFunction(NameQuantilesExactHigh::name, { createAggregateFunctionQuantile<FuncQuantilesExactHigh>, properties });
+    factory.registerFunction(NameQuantileExactHigh::name, {createAggregateFunctionQuantile<FuncQuantileExactHigh>, documentation});
+    factory.registerFunction(NameQuantilesExactHigh::name, { createAggregateFunctionQuantile<FuncQuantilesExactHigh>, {}, properties });
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianExactHigh", NameQuantileExactHigh::name);

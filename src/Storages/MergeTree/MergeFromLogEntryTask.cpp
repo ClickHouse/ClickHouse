@@ -18,6 +18,8 @@
 namespace ProfileEvents
 {
     extern const Event DataAfterMergeDiffersFromReplica;
+    extern const Event MergeCommitMilliseconds;
+    extern const Event MergeTotalMilliseconds;
     extern const Event ReplicatedPartMerges;
 }
 
@@ -391,6 +393,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 {
     part = merge_task->getFuture().get();
     auto cached_marks = merge_task->releaseCachedMarks();
+    auto cached_index_marks = merge_task->releaseCachedIndexMarks();
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
     /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
@@ -400,6 +403,8 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// temp directories which guards temporary dir from background removal. So it's right place to reset the task
     /// and it's really needed.
     merge_task.reset();
+
+    Stopwatch commit_watch;
 
     try
     {
@@ -411,6 +416,9 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
         {
             transaction_ptr->rollback();
 
+            UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
+            ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
+            ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
             Strings files_with_size;
@@ -461,18 +469,25 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
      * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
      */
+    UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
+    ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
+
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
-    size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
+    auto prewarm_caches = storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
 
-    if (auto mark_cache = storage.getMarkCacheToPrewarm(bytes_uncompressed))
-        addMarksToCache(*part, cached_marks, mark_cache.get());
+    if (prewarm_caches.mark_cache)
+        addMarksToCache(*part, cached_marks, prewarm_caches.mark_cache.get());
+
+    if (prewarm_caches.index_mark_cache)
+        addMarksToCache(*part, cached_index_marks, prewarm_caches.index_mark_cache.get());
 
     /// Move index to cache and reset it here because we need
     /// a correct part name after rename for a key of cache entry.
-    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
-        part->moveIndexToCache(*index_cache);
+    if (prewarm_caches.primary_index_cache)
+        part->moveIndexToCache(*prewarm_caches.primary_index_cache);
 
     write_part_log({});
     StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());

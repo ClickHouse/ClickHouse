@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
@@ -28,7 +29,8 @@ public:
         UInt64 blocks_to_skip_before_reenabling_,
         Float64 max_ratio_of_set_bits_in_bloom_filter_,
         bool allow_to_use_not_exact_filter_,
-        bool can_use_minmax_filter);
+        bool can_use_minmax_filter,
+        ContextPtr query_context_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
 
@@ -46,6 +48,7 @@ private:
     FunctionBasePtr cast_to_target_type;
 
     UniqueRuntimeFilterPtr built_filter;
+    ContextPtr query_context;
 
     void finish();
 };

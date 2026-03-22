@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -10,8 +10,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
-
-#include <h3api.h>
 
 
 namespace DB
@@ -30,7 +28,11 @@ class FunctionH3GetFaces : public IFunction
 public:
     static constexpr auto name = "h3GetFaces";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetFaces>(); }
+    H3Validator validator;
+
+    explicit FunctionH3GetFaces(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetFaces>(context); }
 
     std::string getName() const override { return name; }
 
@@ -79,6 +81,12 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            if (!validator.validateCell(data[row]))
+            {
+                result_offsets[row] = current_offset;
+                continue;
+            }
+
             int max_faces = maxFaceCount(data[row]);
 
             faces.resize(max_faces);

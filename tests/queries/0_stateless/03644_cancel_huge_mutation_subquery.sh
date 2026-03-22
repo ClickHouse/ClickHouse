@@ -25,6 +25,12 @@ done
 
 $CLICKHOUSE_CLIENT  --query "SYSTEM STOP MERGES cancel_huge_mutation_subquery"
 
+# SYSTEM STOP MERGES prevents scheduling of new mutations, but if the background pool
+# hasn't picked up the mutation task yet, the mutation entry stays with is_done=0 and
+# no fail reason, causing mutations_sync=2 to wait forever. KILL MUTATION removes
+# the entry from the mutation list and notifies the wait event.
+$CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE database='${CLICKHOUSE_DATABASE}' AND table='cancel_huge_mutation_subquery'" > /dev/null
+
 wait
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS cancel_huge_mutation_subquery"

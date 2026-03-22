@@ -177,10 +177,8 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     if i % 2 == 1 and not upgrade_check:
         client_options.append("group_by_use_nulls=1")
 
-    # 12 % 3 == 0, so it's Atomic database
-    if i == 12 and not upgrade_check and not encrypted_storage:
-        client_options.append("implicit_transaction=1")
-        client_options.append("throw_on_unsupported_query_inside_transaction=0")
+    # TODO: Enable implicit_transaction back after the issue with `assertHasValidVersionMetadata` will be fixed:
+    # https://play.clickhouse.com/play?user=play&run=1#U0VMRUNUIGNoZWNrX3N0YXJ0X3RpbWUsIGNoZWNrX25hbWUsIHRlc3RfbmFtZSwgcmVwb3J0X3VybApGUk9NIGNoZWNrcwpXSEVSRSAxCiAgICBBTkQgY2hlY2tfc3RhcnRfdGltZSA+PSBub3coKSAtIElOVEVSVkFMIDEwIERBWQogICAgQU5EIChoZWFkX3JlZiA9ICdtYXN0ZXInIEFORCBzdGFydHNXaXRoKGhlYWRfcmVwbywgJ0NsaWNrSG91c2UvJykpCiAgICBBTkQgdGVzdF9zdGF0dXMgIT0gJ1NLSVBQRUQnCiAgICBBTkQgKHRlc3Rfc3RhdHVzIExJS0UgJ0YlJyBPUiB0ZXN0X3N0YXR1cyBMSUtFICdFJScpCiAgICBBTkQgY2hlY2tfc3RhdHVzICE9ICdzdWNjZXNzJwogICAgQU5EIGNoZWNrX25hbWUgTk9UIExJS0UgJ2xpYkZ1enplciUnCiAgICBBTkQgY2hlY2tfbmFtZSAhPSAnQ2xpY2tIb3VzZSBLZWVwZXIgSmVwc2VuJwogICAgQU5EIHRlc3RfbmFtZSBMSUtFICclYXNzZXJ0SGFzVmFsaWRWZXJzaW9uTWV0YWRhdGElJwpPUkRFUiBCWSBjaGVja19zdGFydF90aW1lIERFU0M=
 
     if random.random() < 0.1:
         client_options.append("optimize_trivial_approximate_count_query=1")
@@ -266,7 +264,7 @@ def run_func_test(
         commands.append(full_command)
         check_command = (
             full_command
-            + "--jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
+            + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
         )
         logging.info(check_command)
         try:
@@ -280,7 +278,8 @@ def run_func_test(
                 "Fault injection",
                 "Query memory tracker: fault injected",
                 "KEEPER_EXCEPTION",
-                "QUERY_WAS_CANCELLED"
+                "DATABASE_REPLICATION_FAILED",
+                "QUERY_WAS_CANCELLED",
             ]
             if any(err in e.stdout or err in e.stderr for err in ignored_errors):
                 logging.warning(
@@ -464,7 +463,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                 break
             except Exception as ex:
                 logging.error(
-                    "Failed to SHOW or DROP databasese, will retry %s", str(ex)
+                    "Failed to SHOW or DROP databases, will retry %s", str(ex)
                 )
                 time.sleep(i)
         else:

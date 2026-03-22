@@ -8,7 +8,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -102,7 +104,8 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto streams = pipeline.getNumStreams();
-    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    pipeline.addSimpleTransform([&, query_context](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
     {
         /// Build the filter only from the main stream
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
@@ -121,7 +124,8 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             blocks_to_skip_before_reenabling,
             max_ratio_of_set_bits_in_bloom_filter,
             allow_to_use_not_exact_filter,
-            can_use_minmax_filter);
+            can_use_minmax_filter,
+            query_context);
     });
 }
 
@@ -195,7 +199,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::clone() const
 
 void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix(format_settings.offset, format_settings.indent_char);
+    const std::string & prefix = format_settings.detail_prefix;
     format_settings.out
         << prefix << "Filter id: " << filter_name << '\n'
         << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';

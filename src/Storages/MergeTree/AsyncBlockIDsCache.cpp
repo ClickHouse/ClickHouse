@@ -6,6 +6,7 @@
 #endif
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 
@@ -46,6 +47,7 @@ template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::update()
 try
 {
+    auto component_guard = Coordination::setCurrentComponent("AsyncBlockIDsCache");
     auto zookeeper = storage.getZooKeeper();
     std::vector<String> paths = zookeeper->getChildren(path);
     std::unordered_set<String> set;

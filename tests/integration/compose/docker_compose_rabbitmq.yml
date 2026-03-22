@@ -4,25 +4,37 @@ services:
         stop_grace_period: 5s
         hostname: rabbitmq1
         environment:
+            RABBITMQ_DEFAULT_USER: root
+            RABBITMQ_DEFAULT_PASS: clickhouse
+            RABBITMQ_DEFAULT_VHOST: /
             RABBITMQ_FEATURE_FLAGS: feature_flags_v2,message_containers
-        expose:
+        ports:
             - ${RABBITMQ_PORT:-5672}
             - ${RABBITMQ_SECURE_PORT:-5671}
             - ${RABBITMQ_MANAGEMENT_PORT:-15672}
+        command: >
+          sh -c "
+            mkdir -p /var/lib/rabbitmq /rabbitmq_logs &&
+            chmod 777 /rabbitmq_logs &&
+            echo 'CLICKHOUSETESTCOOKIE' > /var/lib/rabbitmq/.erlang.cookie &&
+            chmod 600 /var/lib/rabbitmq/.erlang.cookie &&
+            chown rabbitmq:rabbitmq /var/lib/rabbitmq/.erlang.cookie &&
+            rabbitmq-plugins enable rabbitmq_consistent_hash_exchange --offline &&
+            exec docker-entrypoint.sh rabbitmq-server
+          "
+        tmpfs:
+            - /rabbitmq_logs
+            - /var/lib/rabbitmq
         volumes:
-            - type: ${RABBITMQ_LOGS_FS:-tmpfs}
-              source: ${RABBITMQ_LOGS:-}
-              target: /rabbitmq_logs/
-            - "${RABBITMQ_COOKIE_FILE}:/var/lib/rabbitmq/.erlang.cookie"
             - /misc/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
             - /misc/rabbitmq/ca-cert.pem:/etc/rabbitmq/ca-cert.pem
             - /misc/rabbitmq/server-cert.pem:/etc/rabbitmq/server-cert.pem
             - /misc/rabbitmq/server-key.pem:/etc/rabbitmq/server-key.pem
-            - /misc/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins
         # https://www.rabbitmq.com/docs/monitoring#health-checks
         healthcheck:
             test: rabbitmq-diagnostics -q ping
             interval: 10s
             retries: 10
             timeout: 2s
+            start_period: 40s
         cpus: 3

@@ -125,7 +125,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
                             queries_headers[query_number]->dumpNames());
     }
 
-    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
+    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
 
     for (size_t column_number = 0; column_number < columns_size; ++column_number)
     {
@@ -657,13 +657,17 @@ bool optimizePlanForExists(QueryPlan & query_plan)
             node = node->children[0];
             continue;
         }
-        if (typeid_cast<LimitStep *>(node->step.get()))
+        if (auto * limit_step = typeid_cast<LimitStep *>(node->step.get()))
         {
-            /// TODO: Support LimitStep in decorrelation process.
-            /// For now, we just remove it, because it only increases the number of rows in the result.
-            /// It doesn't affect the result of correlated subquery.
-            node = node->children[0];
-            continue;
+            if (limit_step->getOffset() == 0 && limit_step->getLimit() > 0)
+            {
+                /// TODO: Support LimitStep in decorrelation process.
+                /// For now, we just remove it, because it only increases the number of rows in the result.
+                /// It doesn't affect the result of correlated subquery.
+                node = node->children[0];
+                continue;
+            }
+            break;
         }
         break;
     }

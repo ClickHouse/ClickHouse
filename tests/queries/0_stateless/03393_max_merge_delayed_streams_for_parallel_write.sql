@@ -29,10 +29,10 @@ insert into metric_log select * from generateRandom() limit 10;
 
 optimize table metric_log final;
 system flush logs part_log;
-select 'max_merge_delayed_streams_for_parallel_write=100' as test, * from system.part_log where table = 'metric_log' and database = currentDatabase() and event_date >= yesterday() and event_type = 'MergeParts' and peak_memory_usage > 1_000_000_000 format Vertical;
+select 'max_merge_delayed_streams_for_parallel_write=100' as test, * from system.part_log where table = 'metric_log' and database = currentDatabase() and event_date >= yesterday() AND event_time >= now() - 600 and event_type = 'MergeParts' and peak_memory_usage > 1_000_000_000 format Vertical;
 
 alter table metric_log modify setting max_merge_delayed_streams_for_parallel_write = 10000;
 
 optimize table metric_log final;
 system flush logs part_log;
-select 'max_merge_delayed_streams_for_parallel_write=1000' as test, count() as count from system.part_log where table = 'metric_log' and database = currentDatabase() and event_date >= yesterday() and event_type = 'MergeParts' and peak_memory_usage > 1_000_000_000;
+select 'max_merge_delayed_streams_for_parallel_write=1000' as test, count() as count from system.part_log where table = 'metric_log' and database = currentDatabase() and event_date >= yesterday() AND event_time >= now() - 600 and event_type = 'MergeParts' and peak_memory_usage > 1_000_000_000;
