@@ -3,7 +3,7 @@
 -- pushed down through the JOIN to the underlying tables.
 -- Tags: no-parallel-replicas
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS log_event;
 DROP TABLE IF EXISTS data_user_utm;
