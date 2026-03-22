@@ -40,22 +40,27 @@ SELECT count() > 0 FROM (
 
 DROP TABLE t_prefetching_concat;
 
--- PrefetchingConcat should NOT be used with multiple parts whose ranges
--- are in reverse order after the split (the splitting takes parts from the back).
+-- PrefetchingConcat should be used per-part for multi-part tables (with partitions).
+-- Each part gets parallel streams with PrefetchingConcat, MergingSorted merges between parts.
 DROP TABLE IF EXISTS t_prefetching_concat_multi;
 CREATE TABLE t_prefetching_concat_multi (key UInt64, value String)
-ENGINE = MergeTree ORDER BY key;
-SYSTEM STOP MERGES t_prefetching_concat_multi;
-INSERT INTO t_prefetching_concat_multi SELECT number, toString(number) FROM numbers(100000);
-INSERT INTO t_prefetching_concat_multi SELECT number + 100000, toString(number) FROM numbers(100000);
-INSERT INTO t_prefetching_concat_multi SELECT number + 200000, toString(number) FROM numbers(100000);
+ENGINE = MergeTree PARTITION BY intDiv(key, 5000000) ORDER BY key;
+INSERT INTO t_prefetching_concat_multi SELECT number, toString(number) FROM numbers(15000000);
+OPTIMIZE TABLE t_prefetching_concat_multi FINAL;
 
-SELECT 'no_prefetching_multi_part';
+SELECT 'prefetching_multi_part';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_multi
     WHERE value LIKE '%5%'
     ORDER BY key
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4
+    SETTINGS enable_parallel_replicas = 0, max_threads = 6
 ) WHERE explain LIKE '%PrefetchingConcat%';
+
+-- Correctness: output must be sorted across partitions.
+SELECT 'multi_part_correctness';
+SELECT countIf(key < prev_key) FROM (
+    SELECT key, lagInFrame(key, 1, 0) OVER (ORDER BY key) AS prev_key
+    FROM t_prefetching_concat_multi WHERE value LIKE '%5%' ORDER BY key SETTINGS max_threads = 6
+) WHERE prev_key != 0;
 
 DROP TABLE t_prefetching_concat_multi;

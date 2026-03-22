@@ -1299,164 +1299,93 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else
     {
-        const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
+        /// Split each part independently into multiple streams.
+        /// Within each part, ranges are contiguous and in ascending PK order,
+        /// so we can use PrefetchingConcatProcessor to parallelize reading.
+        /// Between parts, MergingSorted merges the sorted streams.
+        const bool can_use_per_part_prefetching =
+            !output_each_partition_through_separate_port
+            && input_order_info->limit == 0
+            && input_order_info->direction == 1
+            && num_streams > 1;
 
-        std::vector<RangesInDataParts> split_parts_and_ranges;
-        split_parts_and_ranges.reserve(num_streams);
-
-        for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
+        for (const auto & part : parts_with_ranges)
         {
-            size_t need_marks = min_marks_per_stream;
-            RangesInDataParts new_parts;
+            const size_t marks_in_part = part.getMarksCount();
 
-            /// Loop over parts.
-            /// We will iteratively take part or some subrange of a part from the back
-            ///  and assign a stream to read from it.
-            while (need_marks > 0 && !parts_with_ranges.empty())
+            /// How many streams to allocate for this part, proportional to its marks.
+            size_t part_streams = std::max<size_t>(1,
+                static_cast<size_t>(std::round(
+                    static_cast<double>(marks_in_part) / static_cast<double>(info.sum_marks) * static_cast<double>(num_streams))));
+            /// Don't create more streams than marks available for concurrent reading.
+            if (marks_in_part < part_streams * info.min_marks_for_concurrent_read)
+                part_streams = std::max<size_t>(1, marks_in_part / info.min_marks_for_concurrent_read);
+
+            if (part_streams <= 1 || !can_use_per_part_prefetching)
             {
-                RangesInDataPart part = parts_with_ranges.back();
-                parts_with_ranges.pop_back();
-                size_t & marks_in_part = info.sum_marks_in_parts.back();
-
-                /// We will not take too few rows from a part.
-                if (marks_in_part >= info.min_marks_for_concurrent_read && need_marks < info.min_marks_for_concurrent_read)
-                    need_marks = info.min_marks_for_concurrent_read;
-
-                /// Do not leave too few rows in the part.
-                if (marks_in_part > need_marks && marks_in_part - need_marks < info.min_marks_for_concurrent_read)
-                    need_marks = marks_in_part;
-
-                MarkRanges ranges_to_get_from_part;
-
-                /// We take full part if it contains enough marks or
-                /// if we know limit and part contains less than 'limit' rows.
-                bool take_full_part = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
-
-                /// We take the whole part if it is small enough.
-                if (take_full_part)
-                {
-                    ranges_to_get_from_part = part.ranges;
-
-                    need_marks -= marks_in_part;
-                    info.sum_marks_in_parts.pop_back();
-                }
-                else
-                {
-                    /// Loop through ranges in part. Take enough ranges to cover "need_marks".
-                    while (need_marks > 0)
-                    {
-                        if (part.ranges.empty())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among streams");
-
-                        MarkRange & range = part.ranges.front();
-
-                        const size_t marks_in_range = range.end - range.begin;
-                        const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
-
-                        ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
-                        range.begin += marks_to_get_from_range;
-                        marks_in_part -= marks_to_get_from_range;
-                        need_marks -= marks_to_get_from_range;
-                        if (range.begin == range.end)
-                            part.ranges.pop_front();
-                    }
-                    parts_with_ranges.emplace_back(part);
-                }
-
-                ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
-                new_parts.emplace_back(
-                    part.data_part,
-                    part.parent_part,
-                    part.part_index_in_query,
-                    part.part_starting_offset_in_query,
-                    std::move(ranges_to_get_from_part));
+                /// Single stream for this part — no splitting needed.
+                RangesInDataParts single_part_vec;
+                RangesInDataPart part_copy = part;
+                part_copy.ranges = split_ranges(part_copy.ranges, input_order_info->direction);
+                single_part_vec.emplace_back(std::move(part_copy));
+                pipes.emplace_back(readInOrder(
+                    std::move(single_part_vec), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+                continue;
             }
 
-            split_parts_and_ranges.emplace_back(std::move(new_parts));
-        }
+            /// Split this part's ranges evenly across part_streams streams.
+            const size_t marks_per_stream = (marks_in_part + part_streams - 1) / part_streams;
+            Pipes part_pipes;
+            MarkRanges remaining_ranges = part.ranges;
+            size_t marks_remaining = marks_in_part;
 
-        /// Check if we can use PrefetchingConcatProcessor instead of MergingSorted.
-        /// PrefetchingConcat outputs data from streams in order (0, 1, 2, ...),
-        /// so this is only correct when the complete sequence of ranges across all
-        /// streams is in ascending primary key order.
-        ///
-        /// The splitting takes parts from the back of parts_with_ranges, so for
-        /// multiple parts the stream order is reversed relative to part order.
-        /// We must verify the entire chain, including within-stream part transitions
-        /// (a single stream may span multiple parts).
-        auto can_use_prefetching_concat = [&]() -> bool
-        {
-            if (need_preliminary_merge
-                || output_each_partition_through_separate_port
-                || input_order_info->limit != 0
-                || input_order_info->direction != 1
-                || split_parts_and_ranges.size() <= 1)
-                return false;
-
-            const size_t num_pk_columns = storage_snapshot->metadata->getPrimaryKey().column_names.size();
-            if (num_pk_columns == 0)
-                return false;
-
-            /// Walk through every part entry across all streams in order.
-            /// At each transition to a different data_part, compare PK index values.
-            const RangesInDataPart * prev_entry = nullptr;
-
-            for (const auto & stream : split_parts_and_ranges)
+            for (size_t s = 0; s < part_streams && marks_remaining > 0; ++s)
             {
-                for (const auto & entry : stream)
+                size_t need_marks = std::min(marks_per_stream, marks_remaining);
+
+                /// Don't leave too few marks in the last stream.
+                if (marks_remaining > need_marks && marks_remaining - need_marks < info.min_marks_for_concurrent_read)
+                    need_marks = marks_remaining;
+
+                MarkRanges ranges_for_stream;
+                size_t taken = 0;
+                while (taken < need_marks && !remaining_ranges.empty())
                 {
-                    if (entry.ranges.empty())
-                        continue;
+                    MarkRange & range = remaining_ranges.front();
+                    const size_t marks_in_range = range.end - range.begin;
+                    const size_t to_take = std::min(marks_in_range, need_marks - taken);
 
-                    if (prev_entry && prev_entry->data_part != entry.data_part)
-                    {
-                        /// Different parts — compare PK index values at the boundary.
-                        const auto & prev_index = prev_entry->data_part->getIndex();
-                        const auto & curr_index = entry.data_part->getIndex();
-
-                        if (prev_index->empty() || curr_index->empty())
-                            return false;
-
-                        size_t prev_mark = prev_entry->ranges.back().end;
-                        size_t curr_mark = entry.ranges.front().begin;
-
-                        /// Use the mark before end if past the index (final mark).
-                        if (prev_mark > 0 && prev_mark >= (*prev_index)[0]->size())
-                            --prev_mark;
-
-                        size_t cols_to_check = std::min(num_pk_columns, std::min(prev_index->size(), curr_index->size()));
-
-                        for (size_t col = 0; col < cols_to_check; ++col)
-                        {
-                            int cmp = (*prev_index)[col]->compareAt(prev_mark, curr_mark, *(*curr_index)[col], 1);
-                            if (cmp < 0)
-                                break; /// prev < curr — in order.
-                            if (cmp > 0)
-                                return false; /// prev > curr — wrong order, cannot concatenate.
-                            /// cmp == 0 — equal on this column, check next.
-                        }
-                    }
-
-                    prev_entry = &entry;
+                    ranges_for_stream.emplace_back(range.begin, range.begin + to_take);
+                    range.begin += to_take;
+                    taken += to_take;
+                    if (range.begin == range.end)
+                        remaining_ranges.pop_front();
                 }
+                marks_remaining -= taken;
+
+                ranges_for_stream = split_ranges(ranges_for_stream, input_order_info->direction);
+                RangesInDataParts stream_parts;
+                stream_parts.emplace_back(
+                    part.data_part, part.parent_part,
+                    part.part_index_in_query, part.part_starting_offset_in_query,
+                    std::move(ranges_for_stream));
+                part_pipes.emplace_back(readInOrder(
+                    std::move(stream_parts), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
             }
 
-            return true;
-        };
-
-        const bool use_prefetching_concat = can_use_prefetching_concat();
-
-        for (auto && item : split_parts_and_ranges)
-            pipes.emplace_back(readInOrder(
-                std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
-
-        if (use_prefetching_concat)
-        {
-            LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams from {} parts",
-                pipes.size(), parts_with_ranges.size());
-            auto pipe = Pipe::unitePipes(std::move(pipes));
-            pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
-            return pipe;
+            /// Concatenate streams within this part using PrefetchingConcatProcessor.
+            if (part_pipes.size() > 1)
+            {
+                LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams from part {}",
+                    part_pipes.size(), part.data_part->name);
+                auto pipe = Pipe::unitePipes(std::move(part_pipes));
+                pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
+                pipes.emplace_back(std::move(pipe));
+            }
+            else if (!part_pipes.empty())
+            {
+                pipes.emplace_back(std::move(part_pipes.front()));
+            }
         }
     }
 
