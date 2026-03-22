@@ -129,6 +129,7 @@ REGISTER_FUNCTION(LLMClassify)
         .arguments = {{"text", "Input text to classify"}, {"categories", "Array of category labels"}},
         .returned_value = {"The category label from the provided array.", {"String"}},
         .examples = {{"basic", "SELECT LLMClassify(body, ['positive', 'negative']) FROM reviews", ""}},
+        .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::Other});
 }
 

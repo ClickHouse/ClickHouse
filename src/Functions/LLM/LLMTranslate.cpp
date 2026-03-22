@@ -72,6 +72,7 @@ REGISTER_FUNCTION(LLMTranslate)
         .arguments = {{"text", "Input text"}, {"target_language", "Target language name or BCP-47 code"}},
         .returned_value = {"Translated text as String.", {"String"}},
         .examples = {{"basic", "SELECT LLMTranslate(body, 'French') FROM articles", ""}},
+        .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::Other});
 }
 
