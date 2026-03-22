@@ -1,4 +1,16 @@
+EXPLAIN SYNTAX
 SELECT number
 FROM numbers(10)
+SHUFFLE
+LIMIT 1;
+
+SELECT number
+FROM numbers(3)
+SHUFFLE
+LIMIT 1;
+
+SELECT number
+FROM numbers(10)
+WHERE 1
 SHUFFLE;
 -- { serverError SUPPORT_IS_DISABLED }
