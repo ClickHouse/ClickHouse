@@ -1,4 +1,6 @@
 SET distributed_plan_optimize_exchanges = 1;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 CREATE TABLE test(src_ip UInt32, dst_ip UInt32, bytes UInt64) ENGINE MergeTree() ORDER BY src_ip settings auto_statistics_types='';
 
 INSERT INTO test SELECT number%30, (number+10)%30, number%50 FROM numbers(100);
