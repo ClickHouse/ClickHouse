@@ -180,22 +180,17 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             zk_retry.retryLoop([&]
             {
                 auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-                if (zk_retry.isRetry())
+                /// It is possible that we fail "after operation",
+                /// e.g. we successfully removed the node, but did not get confirmation,
+                /// but then if we retry - we can remove a newly recreated node,
+                /// therefore avoid this with this check.
+                /// On the first attempt, ownership can also be lost if the ZooKeeper
+                /// session expired and another processor took over.
+                if (!checkProcessingOwnership(zk_client))
                 {
-                    /// It is possible that we fail "after operation",
-                    /// e.g. we successfully removed the node, but did not get confirmation,
-                    /// but then if we retry - we can remove a newly recreated node,
-                    /// therefore avoid this with this check.
-                    if (!checkProcessingOwnership(zk_client))
-                    {
-                        LOG_TEST(log, "Will not remove processing node, ownership changed");
-                        code = Coordination::Error::ZOK;
-                        return;
-                    }
-                }
-                else
-                {
-                    chassert(checkProcessingOwnership(zk_client));
+                    LOG_TEST(log, "Will not remove processing node, ownership changed");
+                    code = Coordination::Error::ZOK;
+                    return;
                 }
                 code = zk_client->tryRemove(processing_node_path);
             });
@@ -398,22 +393,17 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-        if (zk_retry.isRetry())
+        /// It is possible that we fail "after operation",
+        /// e.g. we successfully removed the node, but did not get confirmation,
+        /// but then if we retry - we can remove a newly recreated node,
+        /// therefore avoid this with this check.
+        /// On the first attempt, ownership can also be lost if the ZooKeeper
+        /// session expired and another processor took over.
+        if (!checkProcessingOwnership(zk_client))
         {
-            /// It is possible that we fail "after operation",
-            /// e.g. we successfully removed the node, but did not get confirmation,
-            /// but then if we retry - we can remove a newly recreated node,
-            /// therefore avoid this with this check.
-            if (!checkProcessingOwnership(zk_client))
-            {
-                LOG_TEST(log, "Will not remove processing node, ownership changed");
-                code = Coordination::Error::ZOK;
-                return;
-            }
-        }
-        else
-        {
-            chassert(checkProcessingOwnership(zk_client));
+            LOG_TEST(log, "Will not remove processing node, ownership changed");
+            code = Coordination::Error::ZOK;
+            return;
         }
         code = zk_client->tryMulti(requests, responses);
     });
