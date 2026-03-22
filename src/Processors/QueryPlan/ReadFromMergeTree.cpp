@@ -1375,29 +1375,85 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             split_parts_and_ranges.emplace_back(std::move(new_parts));
         }
 
-        /// Check if all streams come from a single part (non-overlapping range groups).
-        /// In that case, PrefetchingConcatProcessor can be used instead of MergingSorted:
-        /// it marks all inputs as needed (enabling parallel IO/filtering) and concatenates
-        /// results in order, avoiding merge overhead.
-        bool all_from_single_part =
-            !need_preliminary_merge
-            && !output_each_partition_through_separate_port
-            && input_order_info->limit == 0
-            && input_order_info->direction == 1
-            && split_parts_and_ranges.size() > 1
-            && std::all_of(split_parts_and_ranges.begin(), split_parts_and_ranges.end(),
-                [](const RangesInDataParts & parts) { return parts.size() == 1; })
-            && std::all_of(split_parts_and_ranges.begin(), split_parts_and_ranges.end(),
-                [&](const RangesInDataParts & parts)
-                { return parts.front().data_part == split_parts_and_ranges.front().front().data_part; });
+        /// Check if we can use PrefetchingConcatProcessor instead of MergingSorted.
+        /// PrefetchingConcat outputs data from streams in order (0, 1, 2, ...),
+        /// so this is only correct when the complete sequence of ranges across all
+        /// streams is in ascending primary key order.
+        ///
+        /// The splitting takes parts from the back of parts_with_ranges, so for
+        /// multiple parts the stream order is reversed relative to part order.
+        /// We must verify the entire chain, including within-stream part transitions
+        /// (a single stream may span multiple parts).
+        auto can_use_prefetching_concat = [&]() -> bool
+        {
+            if (need_preliminary_merge
+                || output_each_partition_through_separate_port
+                || input_order_info->limit != 0
+                || input_order_info->direction != 1
+                || split_parts_and_ranges.size() <= 1)
+                return false;
+
+            const size_t num_pk_columns = storage_snapshot->metadata->getPrimaryKey().column_names.size();
+            if (num_pk_columns == 0)
+                return false;
+
+            /// Walk through every part entry across all streams in order.
+            /// At each transition to a different data_part, compare PK index values.
+            const RangesInDataPart * prev_entry = nullptr;
+
+            for (const auto & stream : split_parts_and_ranges)
+            {
+                for (const auto & entry : stream)
+                {
+                    if (entry.ranges.empty())
+                        continue;
+
+                    if (prev_entry && prev_entry->data_part != entry.data_part)
+                    {
+                        /// Different parts — compare PK index values at the boundary.
+                        const auto & prev_index = prev_entry->data_part->getIndex();
+                        const auto & curr_index = entry.data_part->getIndex();
+
+                        if (prev_index->empty() || curr_index->empty())
+                            return false;
+
+                        size_t prev_mark = prev_entry->ranges.back().end;
+                        size_t curr_mark = entry.ranges.front().begin;
+
+                        /// Use the mark before end if past the index (final mark).
+                        if (prev_mark > 0 && prev_mark >= (*prev_index)[0]->size())
+                            --prev_mark;
+
+                        size_t cols_to_check = std::min(num_pk_columns, std::min(prev_index->size(), curr_index->size()));
+
+                        for (size_t col = 0; col < cols_to_check; ++col)
+                        {
+                            int cmp = (*prev_index)[col]->compareAt(prev_mark, curr_mark, *(*curr_index)[col], 1);
+                            if (cmp < 0)
+                                break; /// prev < curr — in order.
+                            if (cmp > 0)
+                                return false; /// prev > curr — wrong order, cannot concatenate.
+                            /// cmp == 0 — equal on this column, check next.
+                        }
+                    }
+
+                    prev_entry = &entry;
+                }
+            }
+
+            return true;
+        };
+
+        const bool use_prefetching_concat = can_use_prefetching_concat();
 
         for (auto && item : split_parts_and_ranges)
             pipes.emplace_back(readInOrder(
                 std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
 
-        if (all_from_single_part)
+        if (use_prefetching_concat)
         {
-            LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams from single part", pipes.size());
+            LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams from {} parts",
+                pipes.size(), parts_with_ranges.size());
             auto pipe = Pipe::unitePipes(std::move(pipes));
             pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
             return pipe;

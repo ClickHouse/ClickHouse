@@ -6,8 +6,9 @@ DROP TABLE IF EXISTS t_prefetching_concat;
 
 CREATE TABLE t_prefetching_concat (path String, value UInt64)
 ENGINE = MergeTree ORDER BY path
-SETTINGS index_granularity = 64
-AS SELECT concat('path/', toString(number % 1000), '/file.log'), number FROM numbers(100000);
+AS SELECT concat('path/', toString(number % 100000), '/file.log'), number FROM numbers(5000000);
+
+OPTIMIZE TABLE t_prefetching_concat FINAL;
 
 -- Verify PrefetchingConcat appears in the pipeline for a single-part table
 -- with read-in-order and multiple threads.
@@ -38,3 +39,23 @@ SELECT count() > 0 FROM (
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 DROP TABLE t_prefetching_concat;
+
+-- PrefetchingConcat should NOT be used with multiple parts whose ranges
+-- are in reverse order after the split (the splitting takes parts from the back).
+DROP TABLE IF EXISTS t_prefetching_concat_multi;
+CREATE TABLE t_prefetching_concat_multi (key UInt64, value String)
+ENGINE = MergeTree ORDER BY key;
+SYSTEM STOP MERGES t_prefetching_concat_multi;
+INSERT INTO t_prefetching_concat_multi SELECT number, toString(number) FROM numbers(100000);
+INSERT INTO t_prefetching_concat_multi SELECT number + 100000, toString(number) FROM numbers(100000);
+INSERT INTO t_prefetching_concat_multi SELECT number + 200000, toString(number) FROM numbers(100000);
+
+SELECT 'no_prefetching_multi_part';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_multi
+    WHERE value LIKE '%5%'
+    ORDER BY key
+    SETTINGS enable_parallel_replicas = 0, max_threads = 4
+) WHERE explain LIKE '%PrefetchingConcat%';
+
+DROP TABLE t_prefetching_concat_multi;
