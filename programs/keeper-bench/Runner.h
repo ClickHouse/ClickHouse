@@ -91,8 +91,6 @@ private:
     void runBenchmarkWithGenerator();
     void runBenchmarkFromLog();
 
-    void writeOutputString(const std::string & output_string, int64_t start_timestamp_ms);
-
     void createConnections();
     std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
     std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx) const;
@@ -101,8 +99,6 @@ private:
     std::string setup_nodes_snapshot_path;
 
     size_t concurrency = 1;
-    size_t queue_depth = 1;
-    size_t pipeline_depth = 1;
 
     std::optional<ThreadPool> pool;
 
@@ -116,13 +112,10 @@ private:
     std::atomic<size_t> requests_executed = 0;
     std::atomic<bool> shutdown = false;
 
-    double warmup_seconds = 0;
-    std::atomic<bool> warmup_complete = false;
-
     std::shared_ptr<Stats> info;
-    bool print_to_stdout = false;
+    bool print_to_stdout;
     std::optional<std::filesystem::path> file_output;
-    bool output_file_with_timestamp = false;
+    bool output_file_with_timestamp;
 
     Stopwatch total_watch;
     Stopwatch delay_watch;

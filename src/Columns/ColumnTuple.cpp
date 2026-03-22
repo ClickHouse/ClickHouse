@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -148,7 +149,7 @@ void ColumnTuple::get(size_t n, Field & res) const
         res_tuple.push_back((*columns[i])[n]);
 }
 
-void ColumnTuple::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnTuple::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const size_t tuple_size = columns.size();
 
@@ -160,14 +161,20 @@ void ColumnTuple::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n
             name_buf << "tuple(";
     }
 
+    DataTypes element_types;
+    element_types.reserve(tuple_size);
+
     for (size_t i = 0; i < tuple_size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        columns[i]->getValueNameImpl(name_buf, n, options);
+        const auto & type = columns[i]->getValueNameAndTypeImpl(name_buf, n, options);
+        element_types.push_back(type);
     }
     if (options.notFull(name_buf))
         name_buf << ")";
+
+    return std::make_shared<DataTypeTuple>(element_types);
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const
@@ -553,7 +560,9 @@ MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selecto
         if (column_length != selector.size())
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column");
 
-        std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
+        std::vector<size_t> counts(num_columns);
+        for (auto idx : selector)
+            ++counts[idx];
 
         MutableColumns res(num_columns);
         for (size_t i = 0; i < num_columns; ++i)

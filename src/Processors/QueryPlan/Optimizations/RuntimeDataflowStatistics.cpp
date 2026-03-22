@@ -171,30 +171,28 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
-    const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types)
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggregator & aggregator, const Block & block)
 {
     Stopwatch watch;
-
-    const auto & columns = chunk.getColumns();
 
     auto get_key_column_sizes = [&](bool compress)
     {
         size_t sample_bytes = 0;
         size_t compressed_bytes = 0;
-        for (size_t i = 0; i < keys_positions.size(); ++i)
+        for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
         {
-            const auto & col = columns[keys_positions[i]];
+            const auto & key_column_name = aggregator.getParams().keys[i];
+            const auto & column = block.getByName(key_column_name);
             if (compress)
             {
-                auto [sample, compressed] = estimateCompressedColumnSize({col, key_types[i], ""});
+                auto [sample, compressed] = estimateCompressedColumnSize(column);
                 sample_bytes += sample;
                 compressed_bytes += compressed;
             }
             else
             {
-                sample_bytes += col->byteSize();
-                compressed_bytes += col->byteSize();
+                sample_bytes += column.column->byteSize();
+                compressed_bytes += column.column->byteSize();
             }
         }
         return std::make_pair(sample_bytes, compressed_bytes);
@@ -204,7 +202,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
     auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationKeys];
-    if (shouldSampleBlock(statistics, chunk.getNumRows()))
+    if (shouldSampleBlock(statistics, block.rows()))
         std::tie(sample_bytes, compressed_bytes) = get_key_column_sizes(/*compressed=*/true);
 
     std::lock_guard lock(statistics.mutex);

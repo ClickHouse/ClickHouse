@@ -1,17 +1,18 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-
-#include <Core/Settings.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/hasAnyAllTokens.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ITokenizer.h>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/misc.h>
+#include <Functions/hasAnyAllTokens.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Columns/ColumnSet.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/PreparedSets.h>
 
 namespace DB
 {
@@ -25,7 +26,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool query_plan_text_index_add_hint;
-    extern const SettingsBool use_text_index_tokens_cache;
+    extern const SettingsBool use_text_index_dictionary_cache;
     extern const SettingsBool use_text_index_header_cache;
     extern const SettingsBool use_text_index_postings_cache;
     extern const SettingsUInt64 max_memory_usage;
@@ -49,10 +50,7 @@ SipHash TextSearchQuery::getHash() const
     hash.update(tokens.size());
 
     for (const auto & token : tokens)
-    {
-        hash.update(token.size());
         hash.update(token);
-    }
 
     return hash;
 }
@@ -80,10 +78,10 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
     /// If usage of global text index caches is disabled, create local
     /// one to share them between threads that read the same data parts.
-    if (settings[Setting::use_text_index_tokens_cache])
-        tokens_cache = context_->getTextIndexTokensCache();
+    if (settings[Setting::use_text_index_dictionary_cache])
+        dictionary_block_cache = context_->getTextIndexDictionaryBlockCache();
     else
-        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_memory_usage, 0, 1.0);
+        dictionary_block_cache = std::make_shared<TextIndexDictionaryBlockCache>(cache_policy, max_memory_usage, 0, 1.0);
 
     if (settings[Setting::use_text_index_header_cache])
         header_cache = context_->getTextIndexHeaderCache();
@@ -587,14 +585,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
-    if (function_name == "startsWith")
+    if (function_name == "startsWith" && tokenizer->supportsStringLike())
     {
         auto tokens = substringToTokens(value_field, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
-    if (function_name == "endsWith")
+    if (function_name == "endsWith" && tokenizer->supportsStringLike())
     {
         auto tokens = substringToTokens(value_field, false, true);
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -708,6 +706,26 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!key_const_value.has_value())
         return false;
 
+    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
+    /// The Set may not be ready yet because it is built later during query execution.
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<ColumnSet>(node.column.get());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return false;
+
+        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
+        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+            return false;
+    }
+
     /// Evaluate function on the empty map. Empty map will return default value for any key.
     Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
     ExpressionActions actions(std::move(subdag));
@@ -813,9 +831,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return false;
         }
 
-        const String value = preprocessor->processConstant(String(ref));
         std::vector<String> tokens;
-        tokenizer->stringToTokens(value.data(), value.size(), tokens);
+        tokenizer->stringToTokens(ref.data(), ref.size(), tokens);
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
     }
 

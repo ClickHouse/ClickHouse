@@ -1,5 +1,4 @@
 #include <Common/DateLUTImpl.h>
-#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -37,7 +36,6 @@
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
-#include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
@@ -98,7 +96,6 @@
 namespace ProfileEvents
 {
     extern const Event Query;
-    extern const Event InsertQuery;
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
@@ -120,7 +117,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_kusto_dialect;
-    extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
@@ -157,7 +153,6 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 output_format_compression_level;
-    extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
@@ -1125,8 +1120,8 @@ static BlockIO executeQueryImpl(
         context->setInitialQueryStartTime(query_start_time);
     }
 
-    assert(internal || CurrentThread::get().tryGetQueryContext());
-    assert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+    assert(internal || CurrentThread::get().getQueryContext());
+    assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1171,21 +1166,6 @@ static BlockIO executeQueryImpl(
             ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
-        else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
-        {
-            /// Pass through to `ParserPolyglotQuery` which handles SET queries
-            /// internally (via the standard parser) even when the feature gate
-            /// is off.  This lets users recover from misconfigured profiles
-            /// (e.g. `SET dialect = 'clickhouse'`) without being locked out.
-            ParserPolyglotQuery parser(
-                max_query_size,
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks],
-                settings[Setting::polyglot_dialect],
-                end,
-                settings[Setting::allow_experimental_polyglot_dialect]);
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        }
         else
         {
             ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
@@ -1196,7 +1176,7 @@ static BlockIO executeQueryImpl(
             try
             {
                 /// Verify that AST formatting is consistent:
-                /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
+                /// If you format AST, parse it back, and format it again, you get the same string.
                 std::string_view original_query{begin, static_cast<size_t>(end - begin)};
 
                 auto format_ast = [](ASTPtr ast)
@@ -1245,18 +1225,6 @@ static BlockIO executeQueryImpl(
                 }
 
                 chassert(ast2);
-
-                if (out_ast->getTreeHash(false) != ast2->getTreeHash(false))
-                {
-                    WriteBufferFromOwnString ast_tree1;
-                    WriteBufferFromOwnString ast_tree2;
-                    out_ast->dumpTree(ast_tree1);
-                    ast2->dumpTree(ast_tree2);
-
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
-                        ast_tree1.str(), ast_tree2.str());
-                }
 
                 String formatted2 = format_ast(ast2);
 
@@ -1328,7 +1296,7 @@ static BlockIO executeQueryImpl(
             }
             catch (const Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under the debug build.
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
@@ -1600,9 +1568,6 @@ static BlockIO executeQueryImpl(
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
             {
-                // Increment InsertQuery for async insert with inline data
-                ProfileEvents::increment(ProfileEvents::InsertQuery);
-
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
@@ -2061,11 +2026,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
             context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
-            auto fuzz_session_context = Context::createCopy(context);
-            fuzz_session_context->makeSessionContext();
-
-            auto fuzz_context = Context::createCopy(fuzz_session_context);
-            fuzz_context->makeQueryContext();
+            auto fuzz_context = Context::createCopy(context);
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
 
@@ -2073,20 +2034,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
             if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pushing())
+                if (result.second.pipeline.pulling())
                 {
-                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
-                    result.second.pipeline.cancel();
+                    result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
                 }
-                else
-                {
-                    if (result.second.pipeline.pulling())
-                    {
-                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
-                    }
-                    CompletedPipelineExecutor executor(result.second.pipeline);
-                    executor.execute();
-                }
+                CompletedPipelineExecutor executor(result.second.pipeline);
+                executor.execute();
             }
 
             base_ast = fuzzed_ast;
@@ -2282,7 +2235,7 @@ void executeQuery(
         {
             set_result_details(result_details);
         }
-        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+        catch (...)
         {
             /// This exception can be ignored.
             /// because if the code goes here, it means there's already an exception raised during query execution,

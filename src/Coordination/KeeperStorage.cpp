@@ -1,6 +1,5 @@
 /// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
-#include <algorithm>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -429,7 +428,7 @@ KeeperMemNode & KeeperMemNode::operator=(KeeperMemNode && other) noexcept
 
     other.stats.data_size = 0;
 
-    static_assert(std::is_nothrow_move_assignable_v<CompactChildrenSet>);
+    static_assert(std::is_nothrow_move_assignable_v<ChildrenSet>);
     children = std::move(other.children);
 
     return *this;
@@ -467,7 +466,7 @@ void KeeperMemNode::setResponseStat(Coordination::Stat & response_stat) const
 
 uint64_t KeeperMemNode::sizeInBytes() const
 {
-    return sizeof(KeeperMemNode) + children.heapSizeInBytes() + stats.data_size;
+    return sizeof(KeeperMemNode) + children.size() * sizeof(std::string_view) + stats.data_size;
 }
 
 void KeeperMemNode::setData(const String & new_data)
@@ -849,7 +848,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
                 acls = operation.new_acls;
             }
 
-            applied_zxids.push_back(delta.zxid);
+            applied_zxids.insert(delta.zxid);
             zxid_to_nodes[delta.zxid].insert(node_it);
         },
         delta.operation);
@@ -1010,7 +1009,7 @@ void KeeperStorage<Container>::UncommittedState::cleanup(int64_t commit_zxid)
 
         for (const auto node_it : transaction_nodes)
         {
-            std::erase(node_it->second.applied_zxids, transaction_zxid);
+            node_it->second.applied_zxids.erase(transaction_zxid);
             if (node_it->second.applied_zxids.empty())
                 nodes.erase(node_it);
         }
@@ -1131,7 +1130,7 @@ void KeeperStorage<Container>::UncommittedState::rollback(std::list<Delta> rollb
 
         for (const auto node_it : transaction_nodes)
         {
-            std::erase(node_it->second.applied_zxids, transaction_zxid);
+            node_it->second.applied_zxids.erase(transaction_zxid);
             if (node_it->second.applied_zxids.empty())
                 nodes.erase(node_it);
         }
