@@ -33,6 +33,8 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/MergeSortingTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
@@ -142,8 +144,16 @@ bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info
 
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForSort;
+}
+
 namespace ProfileEvents
 {
+    extern const Event ExternalSortCompressedBytes;
+    extern const Event ExternalSortUncompressedBytes;
+    extern const Event ExternalSortWritePart;
     extern const Event IndexAnalysisRounds;
     extern const Event SelectedParts;
     extern const Event SelectedPartsTotal;
@@ -206,6 +216,10 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_uncompressed_cache;
+    extern const SettingsUInt64 max_bytes_before_external_sort;
+    extern const SettingsUInt64 max_bytes_before_remerge_sort;
+    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
@@ -3025,6 +3039,99 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
     if (query_info.input_order_info)
     {
+        /// When the primary key index doesn't significantly reduce the number of granules to read
+        /// (e.g., because the WHERE clause uses a pattern like LIKE '%...' that can't use the index),
+        /// read-in-order kills parallelism: each part is read by a single stream instead of many.
+        /// In such cases, parallel reading with a per-stream sort is much faster.
+        const bool has_limit = query_info.input_order_info->limit > 0;
+        const bool pk_filtering_is_poor = result.total_marks_pk > 0
+            && result.selected_marks_pk > result.total_marks_pk / 2;
+
+        if (!has_limit && pk_filtering_is_poor)
+        {
+            LOG_DEBUG(log, "Read-in-order optimization disabled at runtime: PK selected {}/{} marks. "
+                "Falling back to parallel reading with per-stream sorting.",
+                result.selected_marks_pk, result.total_marks_pk);
+
+            auto pipe = spreadMarkRangesAmongStreams(
+                std::move(parts_with_ranges), index_build_context, num_streams, column_names_to_read);
+
+            if (!pipe.empty())
+            {
+                /// Build sort description from the sorting key prefix.
+                const size_t prefix_size = query_info.input_order_info->used_prefix_of_sorting_key_size;
+                const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
+                const auto reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+
+                SortDescription sort_description;
+                for (size_t i = 0; i < prefix_size; ++i)
+                {
+                    int direction = query_info.input_order_info->direction;
+                    if (!reverse_flags.empty() && reverse_flags[i])
+                        direction *= -1;
+                    sort_description.emplace_back(sorting_columns[i], direction);
+                }
+
+                /// Add sorting key expression (computes sorting key columns from source columns
+                /// when the sorting key involves expressions, e.g. toDate(timestamp)).
+                auto order_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
+                order_key_prefix_ast->children.resize(prefix_size);
+
+                auto syntax_result = TreeRewriter(context).analyze(
+                    order_key_prefix_ast,
+                    storage_snapshot->metadata->getColumns().get(
+                        GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+                auto sorting_key_prefix_expr = std::make_shared<ExpressionActions>(
+                    ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false));
+
+                Block pipe_header = pipe.getHeader();
+
+                pipe.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, sorting_key_prefix_expr);
+                });
+
+                /// Sort each block individually.
+                pipe.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<PartialSortingTransform>(header, sort_description, 0);
+                });
+
+                /// Merge sorted blocks within each stream into a single sorted run.
+                const auto & query_settings = context->getSettingsRef();
+                TemporaryDataOnDiskScopePtr tmp_data_on_disk;
+                if (auto tmp_data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
+                    tmp_data_on_disk = tmp_data->childScope(
+                        {.current_metric = CurrentMetrics::TemporaryFilesForSort,
+                         .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
+                         .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
+                         .num_files = ProfileEvents::ExternalSortWritePart});
+
+                const size_t num_output_streams = pipe.numOutputPorts();
+                pipe.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<MergeSortingTransform>(
+                        header,
+                        sort_description,
+                        block_size.max_block_size_rows,
+                        0 /* max_block_bytes */,
+                        0 /* limit */,
+                        false /* increase_sort_description_compile_attempts */,
+                        query_settings[Setting::max_bytes_before_remerge_sort] / num_output_streams,
+                        query_settings[Setting::remerge_sort_lowered_memory_bytes_ratio],
+                        query_settings[Setting::max_bytes_before_external_sort] / num_output_streams,
+                        query_settings[Setting::max_bytes_before_external_sort],
+                        tmp_data_on_disk,
+                        query_settings[Setting::min_free_disk_space_for_temporary_data]);
+                });
+
+                /// Drop temporary columns added by the sorting key expression.
+                result_projection = createProjection(pipe_header);
+            }
+
+            return pipe;
+        }
+
         return spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges),
             index_build_context,
