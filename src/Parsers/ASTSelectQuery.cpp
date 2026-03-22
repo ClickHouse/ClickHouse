@@ -206,7 +206,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
     }
 
-    if(shuffle())
+    if (shuffle())
     {
         ostr << s.nl_or_ws << indent_str << "SHUFFLE";
         if (!shuffle()->children.empty())

@@ -2,6 +2,8 @@
 
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Port.h>
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
 
 namespace DB
 {
@@ -19,6 +21,9 @@ namespace DB
         size_t limit;
         size_t total_rows = 0;
         Chunks accumulated;
+        pcg64 rng{randomSeed()};
+
+        Chunks reservoir;
 
     };
 }

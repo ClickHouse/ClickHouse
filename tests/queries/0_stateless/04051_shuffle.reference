@@ -8,6 +8,7 @@ Expression ((Project names + (Projection + Change column names to column identif
 SELECT number
 FROM numbers(10)
 SHUFFLE
+SETTINGS allow_experimental_shuffle_query = 1
 Expression (Project names)
   ShuffleStep (SHUFFLE)
     Expression ((Projection + Change column names to column identifiers))
@@ -16,3 +17,4 @@ Expression (Project names)
   ShuffleStep (SHUFFLE LIMIT 3)
     Expression ((Projection + Change column names to column identifiers))
       ReadFromSystemNumbers
+1000	1000	1	1

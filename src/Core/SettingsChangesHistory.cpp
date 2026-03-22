@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
-
+            {"allow_experimental_shuffle_query", false, false, "New setting to enable the experimental `SHUFFLE` clause in `SELECT` queries."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
