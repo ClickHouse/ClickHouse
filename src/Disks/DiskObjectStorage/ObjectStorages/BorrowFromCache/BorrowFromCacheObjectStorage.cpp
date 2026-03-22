@@ -162,7 +162,7 @@ void BorrowFromCacheObjectStorage::copyObject( /// NOLINT
     const WriteSettings & write_settings,
     std::optional<ObjectAttributes> /* object_to_attributes */)
 {
-    auto in = readObject(object_from, read_settings);
+    auto in = readObject(object_from, read_settings, /* read_hint= */ {});
     auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
