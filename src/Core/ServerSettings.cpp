@@ -36,6 +36,11 @@ extern const Metric BackgroundMessageBrokerSchedulePoolSize;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+}
+
 
 namespace
 {
@@ -1683,6 +1688,293 @@ void ServerSettings::set(std::string_view name, const Field & value)
 void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     impl->loadSettingsFromConfig(config);
+}
+
+
+void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguration & config, const String & config_path)
+{
+    if (config.getBool("skip_check_for_incorrect_settings", false))
+        return;
+
+    /// Collect all known top-level keys from ServerSettings:
+    /// - For settings without paths, the setting name itself is the top-level key.
+    /// - For settings with paths, the first segment of the path (before any dot) is the top-level key.
+    std::unordered_set<String> known_keys;
+    {
+        ServerSettingsImpl settings;
+        for (const auto & setting : settings.all())
+        {
+            String path{setting.getPath()};
+            if (path.empty())
+            {
+                known_keys.insert(String(setting.getName()));
+            }
+            else
+            {
+                auto dot_pos = path.find('.');
+                if (dot_pos != String::npos)
+                    known_keys.insert(path.substr(0, dot_pos));
+                else
+                    known_keys.insert(path);
+            }
+        }
+    }
+
+    /// Known config sections that have complex/dynamic structure
+    /// and cannot be represented as simple scalar ServerSettings.
+    /// If you add a new config section, add it here to avoid throwing on unknown config.
+    static const std::unordered_set<String> known_complex_sections = {
+        /// Network
+        "listen_host",
+        "interserver_listen_host",
+
+        /// Ports
+        "http_port",
+        "https_port",
+        "tcp_port",
+        "tcp_port_secure",
+        "mysql_port",
+        "postgresql_port",
+        "grpc_port",
+        "interserver_http_port",
+        "interserver_https_port",
+        "tcp_with_proxy_port",
+        "tcp_ssh_port",
+        "arrowflight_port",
+
+        /// Cluster and replication
+        "remote_servers",
+        "zookeeper",
+        "keeper",
+        "auxiliary_zookeepers",
+        "macros",
+        "interserver_http_credentials",
+        "replica_group_name",
+
+        /// Storage
+        "storage_configuration",
+        "backups",
+        "compression",
+        "encryption_codecs",
+        "disk_encrypted_keys",
+        "merge_tree",
+        "replicated_merge_tree",
+        "database_replicated",
+        "filesystem_caches",
+        "custom_cached_disks_base_directory",
+        "custom_local_disks_base_directory",
+
+        /// Dictionaries and functions
+        "dictionaries_config",
+        "user_defined_executable_functions_config",
+        "nb_models",
+        "dictionary",
+
+        /// Access control
+        "users",
+        "profiles",
+        "quotas",
+        "roles",
+        "users_config",
+        "user_directories",
+        "ldap_servers",
+        "kerberos",
+        "jwt",
+        "http_authentication_servers",
+        "connections_credentials",
+        "custom_settings_prefixes",
+        "default_profile",
+        "system_profile",
+        "buffer_profile",
+        "background_profile",
+        "access_control_path",
+        "access_control_improvements",
+        "password_complexity",
+        "default_password_type",
+        "bcrypt_workfactor",
+        "allow_implicit_no_password",
+        "allow_no_password",
+        "allow_plaintext_password",
+
+        /// Named collections
+        "named_collections",
+        "named_collections_storage",
+
+        /// Networking and protocols
+        "protocols",
+        "grpc",
+        "http_options_response",
+        "http_server_default_response",
+        "http_forbid_headers",
+        "remote_url_allow_hosts",
+        "http_handlers",
+        "arrowflight",
+        "proxy",
+
+        /// Monitoring and metrics
+        "graphite",
+        "send_crash_reports",
+
+        /// System log tables
+        "query_log",
+        "query_thread_log",
+        "part_log",
+        "background_schedule_pool_log",
+        "trace_log",
+        "crash_log",
+        "text_log",
+        "metric_log",
+        "transposed_metric_log",
+        "error_log",
+        "filesystem_cache_log",
+        "filesystem_read_prefetches_log",
+        "s3queue_log",
+        "azure_queue_log",
+        "asynchronous_metric_log",
+        "opentelemetry_span_log",
+        "query_views_log",
+        "zookeeper_log",
+        "session_log",
+        "transactions_info_log",
+        "processors_profile_log",
+        "asynchronous_insert_log",
+        "backup_log",
+        "blob_storage_log",
+        "query_metric_log",
+        "dead_letter_queue",
+        "zookeeper_connection_log",
+        "aggregated_zookeeper_log",
+        "iceberg_metadata_log",
+        "delta_lake_metadata_log",
+        "distributed_cache_log",
+        "distributed_cache_server_log",
+
+        /// Other logging
+        "query_masking_rules",
+
+        /// Engine-specific
+        "kafka",
+        "rabbitmq",
+        "s3",
+        "rocksdb",
+        "distributed",
+        "mqs",
+        "kafka_consumer_hang",
+
+        /// Miscellaneous
+        "core_dump",
+        "resources",
+        "resources_and_workloads",
+        "top_level_domains_lists",
+        "url_scheme_mappers",
+        "dashboards",
+        "acme",
+        "ai",
+        "placement_info",
+        "placement",
+        "display_name",
+        "database_disk",
+        "allow_system_allocate_memory",
+        "timezone",
+        "allow_experimental_transactions",
+        "allow_moving_table_directory_to_trash",
+        "allow_remove_stale_moving_parts",
+        "allow_zookeeper_write",
+        "auth_use_forwarded_address",
+        "builtin_dictionaries_reload_interval",
+        "default_session_timeout",
+        "max_session_timeout",
+        "keeper_map_path_prefix",
+        "user_defined_zookeeper_path",
+        "workload_zookeeper_path",
+        "warning_supress_regexp",
+        "enable_system_unfreeze",
+        "disable_insertion_and_mutation",
+        "streaming_storage_shutdown_threads",
+        "local_disk_check_period_ms",
+        "page_cache_size",
+        "replicated_merge_tree_paranoid_check_on_drop_range",
+        "replicated_merge_tree_paranoid_check_on_startup",
+        "test",
+        "include",
+        "include_endpoint",
+
+        /// Background pool settings (legacy, moved to merge_tree section)
+        "background_processing_pool_thread_sleep_seconds",
+        "background_processing_pool_thread_sleep_seconds_if_nothing_to_do",
+        "background_processing_pool_thread_sleep_seconds_random_part",
+        "background_processing_pool_task_sleep_seconds_when_no_work_min",
+        "background_processing_pool_task_sleep_seconds_when_no_work_max",
+        "background_processing_pool_task_sleep_seconds_when_no_work_multiplier",
+        "background_processing_pool_task_sleep_seconds_when_no_work_random_part",
+        "background_move_processing_pool_thread_sleep_seconds",
+        "background_move_processing_pool_task_sleep_seconds_when_no_work_max",
+
+        /// Schema inference cache settings
+        "schema_inference_cache_max_elements_for_s3",
+        "schema_inference_cache_max_elements_for_file",
+        "schema_inference_cache_max_elements_for_url",
+        "schema_inference_cache_max_elements_for_azure",
+
+        /// Config processing
+        "include_from",
+
+        /// Startup
+        "startup_scripts",
+        "fail_points_active",
+
+        /// SSL and security
+        "ssh",
+        "ssh_server",
+
+        /// Application
+        "application",
+
+        /// Testing
+        "_functional_tests_helper_database_replicated_replace_args_macros",
+    };
+
+    /// Some config sections have user-defined names (e.g., graphite rollup rules, HTTP handlers).
+    /// We recognize them by known prefixes.
+    static const std::vector<String> known_prefixes = {
+        "graphite_rollup",
+        "http_handlers",
+        "users_",
+    };
+
+    Poco::Util::AbstractConfiguration::Keys top_level_keys;
+    config.keys("", top_level_keys);
+
+    for (auto key : top_level_keys)
+    {
+        /// Strip array indices like "listen_host[1]"
+        auto bracket_pos = key.find('[');
+        if (bracket_pos != String::npos)
+            key.resize(bracket_pos);
+
+        if (known_keys.contains(key) || known_complex_sections.contains(key))
+            continue;
+
+        bool matches_prefix = false;
+        for (const auto & prefix : known_prefixes)
+        {
+            if (key.starts_with(prefix))
+            {
+                matches_prefix = true;
+                break;
+            }
+        }
+        if (matches_prefix)
+            continue;
+
+        throw Exception(
+            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+            "Unknown element '{}' found in config {}."
+            " If it is a new option, it should be added to ServerSettings or to the known config sections."
+            " You can also disable this check with <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>.",
+            key,
+            config_path);
+    }
 }
 
 

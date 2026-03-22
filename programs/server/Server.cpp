@@ -1667,6 +1667,7 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+    ServerSettings::checkUnknownSettings(config(), config_path);
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
@@ -2171,6 +2172,7 @@ try
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+            ServerSettings::checkUnknownSettings(config(), config_path);
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());

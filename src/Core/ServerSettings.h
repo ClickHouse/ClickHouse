@@ -57,6 +57,10 @@ struct ServerSettings
 
     void dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const;
 
+    /// Check that all top-level keys in the config are known server settings or known config sections.
+    /// Throws an exception if an unknown key is found (unless skip_check_for_incorrect_settings is set).
+    static void checkUnknownSettings(const Poco::Util::AbstractConfiguration & config, const String & config_path);
+
 private:
     std::unique_ptr<ServerSettingsImpl> impl;
 };
