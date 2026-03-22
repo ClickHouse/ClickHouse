@@ -1,11 +1,14 @@
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Storages/System/StorageSystemErrors.h>
 #include <Interpreters/Context.h>
+#include <Common/SymbolsHelper.h>
 #include <Common/ErrorCodes.h>
 #include <Core/Settings.h>
+
 
 
 namespace DB
@@ -17,6 +20,8 @@ namespace Setting
 
 ColumnsDescription StorageSystemErrors::getColumnsDescription()
 {
+    DataTypePtr symbolized_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+
     return ColumnsDescription
     {
         { "name",                     std::make_shared<DataTypeString>(), "Name of the error (errorCodeToName)."},
@@ -28,6 +33,8 @@ ColumnsDescription StorageSystemErrors::getColumnsDescription()
         { "last_error_trace",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace that represents a list of physical addresses where the called methods are stored."},
         { "remote",                   std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."},
         { "query_id",                 std::make_shared<DataTypeString>(), "Id of a query that caused an error (if available)." },
+        { "last_error_symbols", symbolized_type, "Demangled symbol names corresponding to last_error_trace." },
+        { "last_error_lines",   symbolized_type, "File names with line numbers corresponding to last_error_trace." },
     };
 }
 
@@ -55,6 +62,20 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             }
             res_columns[col_num++]->insert(remote);
             res_columns[col_num++]->insert(error.query_id);
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+            if (!error.trace.empty())
+            {
+                auto [symbols, lines] = symbolizeTrace(error.trace.data(), error.trace.size());
+                res_columns[col_num++]->insert(Array(symbols.begin(), symbols.end()));
+                res_columns[col_num++]->insert(Array(lines.begin(), lines.end()));
+            }
+            else
+#endif
+            {
+                res_columns[col_num++]->insertDefault();
+                res_columns[col_num++]->insertDefault();
+            }
+
         }
     };
 

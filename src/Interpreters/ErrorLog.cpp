@@ -1,6 +1,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrorCodes.h>
+#include <Common/SymbolsHelper.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -87,6 +88,18 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "A stack trace that represents a list of physical addresses where the called methods are stored."
+            },
+        {
+                "last_error_symbols",
+                symbolized_type,
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Demangled symbol names corresponding to last_error_trace."
+            },
+        {
+                "last_error_lines",
+                symbolized_type,
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "File names with line numbers corresponding to last_error_trace."
             }
     };
 }
@@ -113,6 +126,20 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
         last_error_trace_array.emplace_back(reinterpret_cast<uintptr_t>(ptr));
 
     columns[column_idx++]->insert(Array(last_error_trace_array.begin(), last_error_trace_array.end()));
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    if (!last_error_trace.empty())
+    {
+        auto [symbols, lines] = symbolizeTrace(last_error_trace.data(), last_error_trace.size());
+        columns[column_idx++]->insert(Array(symbols.begin(), symbols.end()));
+        columns[column_idx++]->insert(Array(lines.begin(), lines.end()));
+    }
+    else
+#endif
+    {
+        columns[column_idx++]->insertDefault();
+        columns[column_idx++]->insertDefault();
+    }
 }
 
 struct ValuePair

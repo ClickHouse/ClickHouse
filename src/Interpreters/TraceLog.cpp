@@ -12,18 +12,13 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/WriteBufferFromArena.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/TraceLog.h>
-#include <base/demangle.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/SymbolsHelper.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/Dwarf.h>
-#include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
-
-#include <filesystem>
 
 
 namespace DB
@@ -128,75 +123,6 @@ NamesAndAliases TraceLogElement::getNamesAndAliases()
 }
 
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-namespace
-{
-    class AddressToLineCache
-    {
-    private:
-        Arena arena;
-        using Map = HashMap<uintptr_t, std::string_view>;
-        Map map;
-        std::unordered_map<std::string, Dwarf> dwarfs;
-
-        void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
-        {
-            const char * arena_begin = nullptr;
-            WriteBufferFromArena out(arena, arena_begin);
-
-            writeString(location.file.toString(), out);
-            writeChar(':', out);
-            writeIntText(location.line, out);
-            writeChar(':', out);
-            writeIntText(location.column, out);
-
-            out.finalize();
-            result = out.complete();
-        }
-
-        std::string_view impl(uintptr_t addr)
-        {
-            const SymbolIndex & symbol_index = SymbolIndex::instance();
-
-            if (const auto * object = symbol_index.thisObject())
-            {
-                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
-                if (!std::filesystem::exists(object->name))
-                    return {};
-
-                Dwarf::LocationInfo location;
-                std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
-                std::string_view result;
-                if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
-                {
-                    setResult(result, location, frames);
-                    return result;
-                }
-                return object->name;
-            }
-            return {};
-        }
-
-        std::string_view implCached(uintptr_t addr)
-        {
-            typename Map::LookupResult it;
-            bool inserted;
-            map.emplace(addr, it, inserted);
-            if (inserted)
-                it->getMapped() = impl(addr);
-            return it->getMapped();
-        }
-
-    public:
-        static std::string_view get(uintptr_t addr)
-        {
-            static AddressToLineCache cache;
-            return cache.implCached(addr);
-        }
-    };
-}
-#endif
-
 
 void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
@@ -248,41 +174,16 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     if (symbolize)
     {
-        auto & column_symbols = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_symbols_inner = typeid_cast<ColumnLowCardinality &>(column_symbols.getData());
-
-        auto & column_lines = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_lines_inner = typeid_cast<ColumnLowCardinality &>(column_lines.getData());
-
-        const SymbolIndex & symbol_index = SymbolIndex::instance();
-        size_t num_frames = trace.size();
-        for (size_t frame = 0; frame < num_frames; ++frame)
-        {
-            if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
-            {
-                auto demangled = tryDemangle(symbol->name);
-                if (demangled)
-                    column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
-                else
-                    column_symbols_inner.insertData(symbol->name, strlen(symbol->name));
-
-                column_lines_inner.insert(AddressToLineCache::get(trace[frame]));
-            }
-            else
-            {
-                column_symbols_inner.insertDefault();
-                column_lines_inner.insertDefault();
-            }
-        }
-
-        column_symbols.getOffsets().push_back(column_symbols.getOffsets().back() + num_frames);
-        column_lines.getOffsets().push_back(column_lines.getOffsets().back() + num_frames);
+        auto [symbols, lines] = symbolizeTrace(
+            reinterpret_cast<const void * const *>(trace.data()), trace.size());
+        columns[i++]->insert(Array(symbols.begin(), symbols.end()));
+        columns[i++]->insert(Array(lines.begin(), lines.end()));
     }
     else
 #endif
     {
-        typeid_cast<ColumnArray &>(*columns[i++]).insertDefault();
-        typeid_cast<ColumnArray &>(*columns[i++]).insertDefault();
+        columns[i++]->insertDefault();
+        columns[i++]->insertDefault();
     }
 
     typeid_cast<ColumnNullable &>(*columns[i++])
