@@ -166,10 +166,10 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
     SerializationFlags flags;
-    return deserialize(in, context, flags);
+    return deserialize(in, context, flags, version);
 }
 
-QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags)
+QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, UInt64 version)
 {
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
 
@@ -220,7 +220,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         for (const auto & child : frame.children)
             input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings, version};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())

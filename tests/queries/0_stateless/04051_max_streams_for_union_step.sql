@@ -12,7 +12,7 @@ UNION ALL
 SELECT 4
 SETTINGS max_threads = 4, max_streams_for_union_step = 2, max_streams_for_union_step_to_max_threads_ratio = 0;
 
--- 2. Default ratio = 1, max_threads = 2 narrows 4 branches to 2 streams
+-- 2. Ratio = 1, max_threads = 2 narrows 4 branches to 2 streams
 EXPLAIN PIPELINE
 SELECT 1
 UNION ALL

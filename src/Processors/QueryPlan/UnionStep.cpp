@@ -112,8 +112,11 @@ QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
     UInt64 max_threads_ = 0;
     UInt64 max_streams_ = 0;
 
-    readVarUInt(max_threads_, ctx.in);
-    readVarUInt(max_streams_, ctx.in);
+    if (ctx.version >= 1)
+    {
+        readVarUInt(max_threads_, ctx.in);
+        readVarUInt(max_streams_, ctx.in);
+    }
 
     return std::make_unique<UnionStep>(ctx.input_headers, max_threads_, max_streams_);
 }
