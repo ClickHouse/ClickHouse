@@ -181,7 +181,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
     {
         /// Enumerate dynamic paths in sorted order for consistency.
         const auto * dynamic_paths = column_object ? &column_object->getDynamicPaths() : nullptr;
-        std::shared_ptr<std::vector<String>> sorted_dynamic_paths;
+        std::shared_ptr<VectorWithMemoryTracking<String>> sorted_dynamic_paths;
         /// If we have deserialize_state we can take sorted dynamic paths list from it.
         if (structure_state)
         {
@@ -189,7 +189,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
         }
         else
         {
-            sorted_dynamic_paths = std::make_shared<std::vector<String>>();
+            sorted_dynamic_paths = std::make_shared<VectorWithMemoryTracking<String>>();
             sorted_dynamic_paths->reserve(dynamic_paths->size());
             for (const auto & [path, _] : *dynamic_paths)
                 sorted_dynamic_paths->push_back(path);
@@ -705,7 +705,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             /// Read the sorted list of dynamic paths.
             size_t dynamic_paths_size;
             readVarUInt(dynamic_paths_size, *structure_stream);
-            structure_state->sorted_dynamic_paths = std::make_shared<std::vector<String>>();
+            structure_state->sorted_dynamic_paths = std::make_shared<VectorWithMemoryTracking<String>>();
             structure_state->sorted_dynamic_paths->resize(dynamic_paths_size);
             for (size_t i = 0; i != dynamic_paths_size; ++i)
                 readStringBinary((*structure_state->sorted_dynamic_paths)[i], *structure_stream);
