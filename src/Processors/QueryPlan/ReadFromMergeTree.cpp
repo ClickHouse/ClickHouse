@@ -18,6 +18,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/ConcatProcessor.h>
+#include <Processors/PrefetchingConcatProcessor.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -1374,9 +1375,33 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             split_parts_and_ranges.emplace_back(std::move(new_parts));
         }
 
+        /// Check if all streams come from a single part (non-overlapping range groups).
+        /// In that case, PrefetchingConcatProcessor can be used instead of MergingSorted:
+        /// it marks all inputs as needed (enabling parallel IO/filtering) and concatenates
+        /// results in order, avoiding merge overhead.
+        bool all_from_single_part =
+            !need_preliminary_merge
+            && !output_each_partition_through_separate_port
+            && input_order_info->limit == 0
+            && input_order_info->direction == 1
+            && split_parts_and_ranges.size() > 1
+            && std::all_of(split_parts_and_ranges.begin(), split_parts_and_ranges.end(),
+                [](const RangesInDataParts & parts) { return parts.size() == 1; })
+            && std::all_of(split_parts_and_ranges.begin(), split_parts_and_ranges.end(),
+                [&](const RangesInDataParts & parts)
+                { return parts.front().data_part == split_parts_and_ranges.front().front().data_part; });
+
         for (auto && item : split_parts_and_ranges)
             pipes.emplace_back(readInOrder(
                 std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+
+        if (all_from_single_part)
+        {
+            LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams from single part", pipes.size());
+            auto pipe = Pipe::unitePipes(std::move(pipes));
+            pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
+            return pipe;
+        }
     }
 
     Block pipe_header;
