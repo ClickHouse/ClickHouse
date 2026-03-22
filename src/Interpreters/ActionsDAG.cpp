@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
@@ -1713,6 +1714,75 @@ void ActionsDAG::decorrelate() noexcept
             node.type = ActionType::INPUT;
             node.column = nullptr;
             inputs.emplace_back(&node);
+        }
+    }
+}
+
+void ActionsDAG::reconcileInputTypesAfterDecorrelation(const Block & actual_header, ContextPtr context)
+{
+    /// Build a map from column name to actual type from the decorrelated input header.
+    std::unordered_map<std::string_view, DataTypePtr> header_types;
+    for (size_t i = 0; i < actual_header.columns(); ++i)
+    {
+        const auto & col = actual_header.getByPosition(i);
+        header_types[col.name] = col.type;
+    }
+
+    /// Update INPUT node types to match the actual header.
+    /// This is needed because correlated columns may have become Nullable
+    /// in the outer scope (e.g. due to group_by_use_nulls + ROLLUP/CUBE),
+    /// but the placeholder was created with the original non-Nullable type.
+    bool any_type_changed = false;
+    for (auto & node : nodes)
+    {
+        if (node.type != ActionType::INPUT)
+            continue;
+
+        auto it = header_types.find(node.result_name);
+        if (it != header_types.end() && !node.result_type->equals(*it->second))
+        {
+            node.result_type = it->second;
+            any_type_changed = true;
+        }
+    }
+
+    if (!any_type_changed)
+        return;
+
+    /// Walk through all nodes in topological order (the nodes list is ordered inputs-first)
+    /// and rebuild any FUNCTION/ALIAS nodes whose children's types changed.
+    for (auto & node : nodes)
+    {
+        if (node.type == ActionType::FUNCTION && node.function_base)
+        {
+            const auto & expected_types = node.function_base->getArgumentTypes();
+            bool mismatch = false;
+            for (size_t i = 0; i < node.children.size() && i < expected_types.size(); ++i)
+            {
+                if (!expected_types[i]->equals(*node.children[i]->result_type))
+                {
+                    mismatch = true;
+                    break;
+                }
+            }
+
+            if (!mismatch)
+                continue;
+
+            auto resolver = FunctionFactory::instance().tryGet(node.function_base->getName(), context);
+            if (!resolver)
+                continue;
+
+            auto [arguments, all_const] = getFunctionArguments(node.children);
+            auto new_function_base = resolver->build(arguments);
+            node.result_type = new_function_base->getResultType();
+            node.function = new_function_base->prepare(arguments);
+            node.function_base = std::move(new_function_base);
+        }
+        else if (node.type == ActionType::ALIAS && !node.children.empty())
+        {
+            if (!node.result_type->equals(*node.children[0]->result_type))
+                node.result_type = node.children[0]->result_type;
         }
     }
 }

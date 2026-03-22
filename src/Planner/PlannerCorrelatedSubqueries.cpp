@@ -320,6 +320,8 @@ QueryPlan decorrelateQueryPlan(
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
         expression_step->decorrelateActions();
+        expression_step->getExpression().reconcileInputTypesAfterDecorrelation(
+            *input_header, context.planner_context->getQueryContext());
         expression_step->getExpression().appendInputsForUnusedColumns(*input_header);
         for (const auto & column : input_header->getColumnsWithTypeAndName())
             expression_step->getExpression().tryRestoreColumn(column.name);
@@ -359,6 +361,8 @@ QueryPlan decorrelateQueryPlan(
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
         filter_step->decorrelateActions();
+        filter_step->getExpression().reconcileInputTypesAfterDecorrelation(
+            *input_header, context.planner_context->getQueryContext());
         filter_step->getExpression().appendInputsForUnusedColumns(*input_header);
         for (const auto & column : input_header->getColumnsWithTypeAndName())
             filter_step->getExpression().tryRestoreColumn(column.name);

@@ -342,6 +342,11 @@ public:
     /// Replace all PLACEHOLDER nodes with INPUT nodes
     void decorrelate() noexcept;
 
+    /// After decorrelation, reconcile INPUT node types with the actual input header
+    /// and rebuild any dependent FUNCTION nodes whose argument types changed.
+    /// This is needed when correlated columns become Nullable due to group_by_use_nulls + ROLLUP/CUBE.
+    void reconcileInputTypesAfterDecorrelation(const Block & actual_header, ContextPtr context);
+
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
     void addMaterializingOutputActions(bool materialize_sparse);
