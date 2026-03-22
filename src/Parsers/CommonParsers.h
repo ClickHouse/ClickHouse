@@ -630,7 +630,7 @@ namespace DB
     MR_MACROS(SSL_CERTIFICATE, "SSL_CERTIFICATE") \
     MR_MACROS(STRICTLY_ASCENDING, "STRICTLY_ASCENDING") \
     MR_MACROS(WITH_ITEMINDEX, "WITH_ITEMINDEX")
-    
+
 enum class Keyword : size_t
 {
 #define DECLARE_PARSER_KEYWORD_ENUM(identifier, name) identifier,
