@@ -217,6 +217,11 @@ std::optional<String> optimizeUseNormalProjections(
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
+/// Resolve all DelayedMaterializingCTEsStep nodes in the plan tree.
+/// Must be called after the second optimization pass so that is_planned flags
+/// set by buildOrderedSetInplace are already visible.
+void resolveMaterializingCTEs(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & root_plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+
 /// Enable memory bound merging of aggregation states for remote queries
 /// in case it was enabled for local plan
 void enableMemoryBoundMerging(QueryPlan::Node & node);
