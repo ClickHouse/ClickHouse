@@ -181,9 +181,12 @@ endif()
 
 add_headers_and_sources(dbms Databases/DataLake)
 
+add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/BorrowFromCache)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Local)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Web)
+
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Memory)
 
 add_headers_and_sources(dbms Storages/Cache)
 if (TARGET ch_contrib::hivemetastore)

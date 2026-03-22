@@ -18,7 +18,10 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/BorrowFromCache/BorrowFromCacheObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
+
+#include <Interpreters/Cache/FileCacheFactory.h>
 
 #include <Interpreters/Context.h>
 
@@ -262,6 +265,25 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local_plain_rewritable", creator);
 }
 
+void registerBorrowFromCacheObjectStorage(ObjectStorageFactory & factory)
+{
+    factory.registerObjectStorageType("borrow_from_cache", [](
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const ContextPtr & /* context */,
+        bool /* skip_access_check */) -> ObjectStoragePtr
+    {
+        auto cache_name = config.getString(config_prefix + ".cache_name");
+        auto file_cache = FileCacheFactory::instance().get(cache_name);
+        if (!file_cache)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Filesystem cache '{}' not found for borrow_from_cache object storage '{}'", cache_name, name);
+
+        return std::make_shared<BorrowFromCacheObjectStorage>(name, file_cache);
+    });
+}
+
 void registerObjectStorages()
 {
     auto & factory = ObjectStorageFactory::instance();
@@ -280,6 +302,7 @@ void registerObjectStorages()
 
     registerWebObjectStorage(factory);
     registerLocalObjectStorage(factory);
+    registerBorrowFromCacheObjectStorage(factory);
 }
 
 void ObjectStorageFactory::clearRegistry()

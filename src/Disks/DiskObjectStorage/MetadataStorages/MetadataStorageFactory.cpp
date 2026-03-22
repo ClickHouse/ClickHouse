@@ -8,6 +8,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageInMemory.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
 
@@ -76,6 +77,8 @@ std::string MetadataStorageFactory::getCompatibilityMetadataTypeHint(
             return "local";
         case ObjectStorageType::Web:
             return "web";
+        case ObjectStorageType::BorrowFromCache:
+            return "memory";
         default:
             return "";
     }
@@ -220,6 +223,25 @@ void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & fa
     });
 }
 
+void registerMetadataStorageInMemory(MetadataStorageFactory & factory)
+{
+    factory.registerMetadataStorageType("memory", [](
+        const std::string & /* name */,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const ClusterConfigurationPtr & cluster,
+        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
+    {
+        checkSingleLocation(cluster);
+
+        const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
+        auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);
+        auto key_generator = local_object_storage->createKeyGenerator();
+
+        return std::make_shared<MetadataStorageInMemory>(std::move(key_compatibility_prefix), std::move(key_generator));
+    });
+}
+
 void registerMetadataStorages()
 {
     auto & factory = MetadataStorageFactory::instance();
@@ -227,6 +249,7 @@ void registerMetadataStorages()
     registerPlainMetadataStorage(factory);
     registerPlainRewritableMetadataStorage(factory);
     registerMetadataStorageFromStaticFilesWebServer(factory);
+    registerMetadataStorageInMemory(factory);
 #if CLICKHOUSE_CLOUD
     registerMetadataStorageFromKeeper(factory);
 #endif
