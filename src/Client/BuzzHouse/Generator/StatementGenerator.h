@@ -627,7 +627,12 @@ private:
     String getNextTestingAddress(RandomGenerator & rg, bool secure) const;
     String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
     String getNextHTTPURL(RandomGenerator & rg, bool secure);
-    bool joinedTableOrFunction(
+    struct FromSourceInfo
+    {
+        bool supports_final = false;
+        bool supports_sample = false;
+    };
+    FromSourceInfo joinedTableOrFunction(
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     void generateJoinConstraint(RandomGenerator & rg, JoinConstraint * jc);

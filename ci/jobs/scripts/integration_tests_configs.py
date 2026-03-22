@@ -23,25 +23,25 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
 ]
 
 TEST_CONFIGS = [
-    TC("test_dns_cache/", True, "no idea why i'm sequential"),
-    TC("test_global_overcommit_tracker/", True, "no idea why i'm sequential"),
+    TC("test_dns_cache/", False, "uses fixed IPv6 addresses; Docker network startup is serialized via file lock"),
+    TC("test_global_overcommit_tracker/", False, "memory overcommit test; isolated to its own ClickHouse instance"),
     TC(
         "test_profile_max_sessions_for_user/",
-        True,
-        "no idea why i'm sequential",
+        False,
+        "uses fixed internal ports (gRPC/MySQL/PostgreSQL) within isolated Docker container",
     ),
-    TC("test_random_inserts/", True, "no idea why i'm sequential"),
-    TC("test_server_overload/", True, "no idea why i'm sequential"),
-    TC("test_storage_kafka/", True, "no idea why i'm sequential"),
-    TC("test_storage_kerberized_kafka/", True, "no idea why i'm sequential"),
+    TC("test_random_inserts/", False, "standard replicated inserts test; cluster is fully isolated"),
+    TC("test_server_overload/", True, "uses taskset to pin ClickHouse to specific CPU cores; sensitive to concurrent CPU load"),
+    TC("test_storage_kafka/", False, "each cluster has its own Kafka container and Docker network"),
+    TC("test_storage_kerberized_kafka/", False, "each cluster has its own Kafka container and Docker network"),
     TC(
         "test_backup_restore_on_cluster/test_concurrency.py",
-        True,
-        "no idea why i'm sequential",
+        False,
+        "10-node cluster; fully isolated per test module",
     ),
-    TC("test_storage_iceberg_no_spark/", True, "no idea why i'm sequential"),
-    TC("test_storage_iceberg_with_spark_cache/", True, "no idea why i'm sequential"),
-    TC("test_storage_iceberg_concurrent/", True, "no idea why i'm sequential"),
+    TC("test_storage_iceberg_no_spark/", False, "minio/azurite per cluster; fully isolated"),
+    TC("test_storage_iceberg_with_spark_cache/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
+    TC("test_storage_iceberg_concurrent/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
 ]
 
 IMAGES_ENV = {
@@ -326,7 +326,10 @@ def get_optimal_test_batch(
     sequential_test_modules = [
         test_file
         for test_file in tests
-        if any(test_file.startswith(test_config.prefix) for test_config in TEST_CONFIGS)
+        if any(
+            test_file.startswith(test_config.prefix) and test_config.is_sequential
+            for test_config in TEST_CONFIGS
+        )
     ]
     parallel_test_modules = [
         test_file for test_file in tests if test_file not in sequential_test_modules

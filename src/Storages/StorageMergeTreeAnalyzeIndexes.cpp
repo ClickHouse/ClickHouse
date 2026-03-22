@@ -155,6 +155,7 @@ protected:
             correlated_subtrees.assertEmpty("in constant expression without query context");
 
             auto subquery_options = SelectQueryOptions{}.subquery();
+            subquery_options.forceMaterializeCTE();
             subquery_options.ignore_limits = false;
             for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
             {

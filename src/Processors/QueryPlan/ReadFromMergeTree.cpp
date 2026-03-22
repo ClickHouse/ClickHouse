@@ -2808,8 +2808,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     updateSortDescription();
 
     /// Set correct read_type
-    /// For some reason for projection it breaks aggregation in order, so skip it
-    if (analyzed_result_ptr && !analyzed_result_ptr->readFromProjection())
+    if (analyzed_result_ptr)
     {
         analyzed_result_ptr->read_type = (query_info.input_order_info->direction > 0)
             ? ReadType::InOrder
@@ -3371,7 +3370,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 ? CoordinationMode::WithOrder
                 : CoordinationMode::ReverseOrder;
         };
-        extension.sendInitialRequest(get_coordination_mode(), result.parts_with_ranges, /*mark_segment_size=*/1);
+        // This code is executed only if there is no parts to read, so the parameter values don't really matter
+        extension.sendInitialRequest(
+            get_coordination_mode(), result.parts_with_ranges.getDescriptions(), /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
     }
 
     if (result.parts_with_ranges.empty())
