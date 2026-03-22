@@ -1,0 +1,7 @@
+100
+ReadFromMergeTree log_event
+                Parts: 1/2
+                Parts: 1/1
+                Parts: 1/1
+ReadFromMergeTree data_user_utm
+                Parts: 1/2

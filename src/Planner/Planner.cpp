@@ -245,6 +245,12 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         }
     }
 
+    /// When a post_filter is provided (e.g. outer WHERE pushed into a VIEW),
+    /// we must always run the filter collection pipeline so that the filter
+    /// gets pushed down through JOINs inside the VIEW to the underlying tables.
+    if (post_filter)
+        collect_filters = true;
+
     if (!collect_filters)
         return {};
 
