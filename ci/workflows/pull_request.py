@@ -1,6 +1,12 @@
 from praktika import Workflow
 
-from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames
+from ci.defs.defs import (
+    BASE_BRANCH,
+    DOCKERS,
+    SECRETS,
+    ArtifactConfigs,
+    JobNames,
+)
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
@@ -15,7 +21,7 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
         for substr in (
             "_debug, parallel",
             "_binary, parallel",
-            "_asan, distributed plan, parallel",
+            "_asan_ubsan, distributed plan, parallel",
             "_tsan, parallel",
         )
     )
@@ -39,6 +45,7 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
+        JobConfigs.code_review,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_arm_jobs,
@@ -55,10 +62,14 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
+        *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
+        JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
         JobConfigs.lightweight_functional_tests_job,
         JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
+        JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_merge_on_failure(),
+        JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_merge_on_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         JobConfigs.bugfix_validation_ft_pr_job,
@@ -75,6 +86,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.functional_tests_jobs_azure
         ],
+        *JobConfigs.functional_test_llvm_coverage_jobs,
         *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_required[:]
@@ -83,7 +95,9 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
+        *JobConfigs.integration_test_llvm_coverage_jobs,
         *JobConfigs.unittest_jobs,
+        *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
@@ -118,15 +132,17 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
-        # macOS smoke tests on GitHub-hosted runners (no AWS credentials)
-        # Explicit dependency on darwin builds since artifact-based requires was removed
-        *[
-            job.set_dependency(
-                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                + [j.name for j in JobConfigs.special_build_jobs if "darwin" in j.name]
-            )
-            for job in JobConfigs.macos_smoke_test_jobs
-        ],
+        JobConfigs.llvm_coverage_job,
+        JobConfigs.sqllogic_test_master_job.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        *JobConfigs.toolchain_build_jobs,
+        # TODO: uncomment when praktika supports depends-on-all-jobs;
+        # currently set_dependency requires an explicit list, but CI Results Review
+        # should only run after every other job has finished.
+        # JobConfigs.ci_results_review.set_dependency(
+        #     FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        # ),
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -137,6 +153,10 @@ workflow = Workflow.Config(
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.parser_memory_profiler,
+        *ArtifactConfigs.llvm_profdata_file,
+        ArtifactConfigs.llvm_coverage_info_file,
+        ArtifactConfigs.toolchain_pgo_bolt_amd,
+        ArtifactConfigs.toolchain_pgo_bolt_arm,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
@@ -168,7 +188,9 @@ workflow = Workflow.Config(
         "integration": JobConfigs.integration_test_jobs_non_required[
             0
         ].name,  # plain integration test job, no old analyzer, no dist plan
+        "fast": "Fast test",
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
+        "build_debug": "Build (amd_debug)",
         "build": "Build (amd_binary)",
     },
 )

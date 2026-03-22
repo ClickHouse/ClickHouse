@@ -31,7 +31,12 @@ def send_signal(started_node, signal):
 
 def wait_for_clickhouse_stop(started_node):
     result = None
-    for attempt in range(180):
+    ## The signal handler thread waits up to ~303s before killing the process
+    ## (300s polling for fatal_error_printed + 3s extra sleep), so we need to
+    ## wait at least that long. On loaded CI machines, the crash handler can
+    ## take over 180s due to stack trace symbolization and the
+    ## sleep_in_logs_flush failpoint adding 30s per log flush.
+    for attempt in range(360):
         time.sleep(1)
         pid = started_node.get_process_pid("clickhouse")
         if pid is None:

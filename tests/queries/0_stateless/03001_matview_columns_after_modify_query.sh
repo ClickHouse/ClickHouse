@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-catalog
+# Tags: no-replicated-database, no-shared-catalog, no-parallel
 # Tag no-replicated-database -- modify on-disk metadata that may lead to "Digest does not match" in case Replicated database
 # Tag no-shared-catalog -- same
 

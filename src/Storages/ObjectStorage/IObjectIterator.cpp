@@ -9,6 +9,14 @@
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event ObjectStorageListedObjects;
+    extern const Event ObjectStoragePredicateFilteredObjects;
+}
 
 namespace DB
 {
@@ -56,6 +64,9 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
         if (!object)
             break;
 
+        if (emit_profile_events)
+            ProfileEvents::increment(ProfileEvents::ObjectStorageListedObjects);
+
         if (filter_actions)
         {
             const auto key = object->getPath();
@@ -71,7 +82,12 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
                 virtual_columns, hive_partition_columns, getContext());
 
             if (keys.empty())
+            {
+                if (emit_profile_events)
+                    ProfileEvents::increment(ProfileEvents::ObjectStoragePredicateFilteredObjects);
+                LOG_TRACE(log, "Filtered out object: {}", object->getPath());
                 continue;
+            }
         }
 
         return object;

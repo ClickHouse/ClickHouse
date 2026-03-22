@@ -40,6 +40,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_CONFIG_PARAMETER;
+}
+
 namespace
 {
 
@@ -164,6 +169,9 @@ void removeBlobs(
     const ObjectStorageRouterPtr & object_storages,
     const LoggerPtr & log) noexcept
 {
+    if (blobs_to_remove.empty())
+        return;
+
     auto tasks = sliceIntoRemoveTasks(blobs_to_remove);
     ProfileEvents::increment(ProfileEvents::BlobKillerThreadRemoveTasks, tasks.size());
     LOG_TRACE(log, "Distributed removal of {} blobs into {} tasks", blobs_to_remove.size(), tasks.size());
@@ -205,12 +213,13 @@ void executeBlobsCleanup(
 }
 
 BlobKillerThread::BlobKillerThread(
-    std::string disk_name,
+    std::string disk_name_,
     ContextPtr context,
     ClusterConfigurationPtr cluster_,
     MetadataStoragePtr metadata_storage_,
     ObjectStorageRouterPtr object_storages_)
-    : cluster(std::move(cluster_))
+    : disk_name(std::move(disk_name_))
+    , cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
     , log(getLogger(fmt::format("{}::BlobKillerThread", disk_name)))
@@ -223,13 +232,16 @@ BlobKillerThread::BlobKillerThread(
 
 void BlobKillerThread::run()
 {
-    LOG_TRACE(log, "Starting cleanup");
+    auto component_guard = Coordination::setCurrentComponent("BlobKillerThread::run");
+    LOG_TEST(log, "Starting cleanup");
 
     executeBlobsCleanup(metadata_request_batch.load(), remove_tasks_runner, cluster, metadata_storage, object_storages, log);
+    finished_rounds.fetch_add(1);
+    finished_rounds.notify_all();
 
     const int64_t schedule_after_ms = DelayWithJitter(reschedule_interval_sec.load() * 1000).getDelayWithJitter(-500, 500);
     task->scheduleAfter(schedule_after_ms);
-    LOG_TRACE(log, "Scheduled after: {} ms", schedule_after_ms);
+    LOG_TEST(log, "Scheduled after: {} ms", schedule_after_ms);
 }
 
 void BlobKillerThread::startup()
@@ -245,12 +257,31 @@ void BlobKillerThread::startup()
 
 void BlobKillerThread::shutdown()
 {
+    auto component_guard = Coordination::setCurrentComponent("BlobKillerThread::shutdown");
     LOG_INFO(log, "Shutting down Blob Killer thread");
 
     task->deactivate();
 
     /// We need to execute it here explicitly because some blobs may be in the metadata storage queue.
     executeBlobsCleanup(/*max_to_remove=*/0, remove_tasks_runner, cluster, metadata_storage, object_storages, log);
+}
+
+void BlobKillerThread::triggerAndWait()
+{
+    if (!started || !enabled)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Blobs cleanup was not enabled for disk {}", disk_name);
+
+    int64_t current_round = finished_rounds.load();
+    int64_t expected_round = current_round + 1;
+
+    task->schedule();
+
+    /// Wait at least one task run
+    while (current_round < expected_round)
+    {
+        finished_rounds.wait(current_round);
+        current_round = finished_rounds.load();
+    }
 }
 
 void BlobKillerThread::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)

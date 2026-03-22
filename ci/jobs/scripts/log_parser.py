@@ -324,7 +324,10 @@ class FuzzerLogParser:
 
     def get_stack_trace(self):
         lines = []
-        stack_trace_pattern = re.compile(r"<Fatal> BaseDaemon: \d+(?:\.\d+)*\.\s*")
+        # Variant 1: BaseDaemon format
+        stack_trace_pattern_v1 = re.compile(r"<Fatal> BaseDaemon: \d+(?:\.\d+)*\.\s*")
+        # Variant 2: with numbered lines like "0. ./path/file.cpp:line: function() @ 0xaddr"
+        stack_trace_pattern_v2 = re.compile(r"^\d+\.\s+\./")
 
         if self.stack_trace_str:
             all_lines = self.stack_trace_str.splitlines()
@@ -332,18 +335,59 @@ class FuzzerLogParser:
             with open(self.server_log, "r", errors="replace") as file:
                 all_lines = file.readlines()
 
-        for line in reversed(all_lines):
-            if "<Fatal> BaseDaemon: Stack trace:" in line:
-                break
-            match = stack_trace_pattern.search(line)
-            if match:
-                # Extract only the part after the pattern
-                extracted = line[match.end() :]
-                # Only append if there's meaningful content after extraction
-                if extracted.strip():
-                    lines.append(extracted)
+        # Check which variant is present
+        has_variant1 = any(
+            "<Fatal> BaseDaemon: Stack trace:" in line for line in all_lines
+        )
+        has_variant2 = any("<Fatal> : Stack trace" in line for line in all_lines)
+
+        if has_variant1:
+            # Variant 1: Original BaseDaemon format
+            for line in reversed(all_lines):
+                if "<Fatal> BaseDaemon: Stack trace:" in line:
+                    break
+                match = stack_trace_pattern_v1.search(line)
+                if match:
+                    # Extract only the part after the pattern
+                    extracted = line[match.end() :]
+                    # Remove everything before and including 'ClickHouse/' if present
+                    if "ClickHouse/" in extracted:
+                        extracted = extracted.split("ClickHouse/")[-1]
+                    elif "/./" in extracted:
+                        extracted = extracted.split("/./")[-1]
+                    # Only append if there's meaningful content after extraction
+                    if extracted.strip():
+                        lines.append(extracted)
+            lines = list(reversed(lines))
+        elif has_variant2:
+            # Variant 2: Extract stack trace with numbered lines
+            in_stack_trace = False
+            for line in all_lines:
+                if "<Fatal> : Stack trace" in line:
+                    in_stack_trace = True
+                    continue
+                if in_stack_trace:
+                    # Check if line matches the numbered stack trace pattern
+                    match = stack_trace_pattern_v2.search(line)
+                    if match:
+                        # Extract the part after the number and leading "./"
+                        extracted = line.strip()
+                        # Remove leading number and ". " prefix
+                        extracted = re.sub(r"^\d+\.\s+", "", extracted)
+                        # Remove everything before and including './ci/tmp/build/./' or similar patterns
+                        if "/./" in extracted:
+                            extracted = extracted.split("/./")[-1]
+                        elif "ClickHouse/" in extracted:
+                            extracted = extracted.split("ClickHouse/")[-1]
+                        # Only append if there's meaningful content after extraction
+                        if extracted.strip():
+                            lines.append(extracted)
+                    elif lines:
+                        # End of stack trace (reached a line that doesn't match the pattern)
+                        break
+
         lines = [line.strip().replace("\n", "") for line in lines]
-        return "\n".join(reversed(lines)) if lines else None
+        return "\n".join(lines) if lines else None
 
     def get_stack_trace_id(self, stack_trace):
         """
@@ -492,7 +536,7 @@ class FuzzerLogParser:
         from_matches = re.findall(from_pattern, failed_query, re.IGNORECASE)
         join_matches = re.findall(join_pattern, failed_query, re.IGNORECASE)
 
-        table_finctions = set()
+        table_functions = set()
         for match in from_matches + join_matches:
             if match.startswith("file("):
                 # Extract filename from file(...) function, handling nested functions
@@ -501,13 +545,15 @@ class FuzzerLogParser:
                 if file_match:
                     table_files.add(file_match.group(1))
             if match.startswith("numbers(") or match.startswith("file("):
-                table_finctions.add(match)
+                table_functions.add(match)
             else:
                 tables.add(match)
 
-        if not (tables or table_files or table_finctions):
+        if not (tables or table_files or table_functions):
             print("WARNING: No tables found in query command")
-            return [failed_query + ";" if not failed_query.endswith(";") else failed_query]
+            return [
+                failed_query + ";" if not failed_query.endswith(";") else failed_query
+            ]
 
         # Get all write commands for found tables
         commands_to_reproduce = []
@@ -531,8 +577,7 @@ class FuzzerLogParser:
 
         # Ensure all commands end with a semicolon
         commands_to_reproduce = [
-            cmd + ";" if not cmd.endswith(";") else cmd
-            for cmd in commands_to_reproduce
+            cmd + ";" if not cmd.endswith(";") else cmd for cmd in commands_to_reproduce
         ]
 
         return commands_to_reproduce
@@ -579,9 +624,9 @@ class FuzzerLogParser:
 
 if __name__ == "__main__":
     # Test:
-    fuzzer_log = "./asan_err/fuzzer.log"
-    server_log = "./no_stid/server.log"
-    FTG = FuzzerLogParser(server_log, fuzzer_log)
+    fuzzer_log = "./fuzzer.log"
+    server_log = "./server.log"
+    FTG = FuzzerLogParser(server_log, fuzzer_log, "none")
     # FTG2 = FuzzerLogParser("", "", stack_trace_str="...")
     result_name, info, files = FTG.parse_failure()
     print("Result name:", result_name)

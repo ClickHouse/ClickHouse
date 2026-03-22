@@ -45,7 +45,7 @@ struct AttributeConfiguration
     std::string expression;
 };
 
-using AttributeNameToConfiguration = std::unordered_map<std::string, AttributeConfiguration>;
+using AttributeNameToConfiguration = UnorderedMapWithMemoryTracking<std::string, AttributeConfiguration>;
 
 String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr)
 {
@@ -514,6 +514,11 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
                     "Please update the dictionary definition to remove function usage");
             }
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
+            if (!builder)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                    "The dictionary definition contains unsupported function {}", func->name);
+            }
             auto function = builder->build({});
             function->prepare({});
 

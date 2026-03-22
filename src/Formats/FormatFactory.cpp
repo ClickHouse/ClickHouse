@@ -198,6 +198,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
+    format_settings.trim_fixed_string = settings[Setting::output_format_trim_fixed_string];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
     format_settings.parquet.row_group_bytes = settings[Setting::output_format_parquet_row_group_size_bytes];
     format_settings.parquet.output_version = settings[Setting::output_format_parquet_version];
@@ -311,6 +312,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_string_as_string = settings[Setting::output_format_arrow_string_as_string];
     format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_arrow_fixed_string_as_fixed_byte_array];
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
+    format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
@@ -373,6 +375,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
+    format_settings.max_block_wait_ms = settings[Setting::input_format_max_block_wait_ms];
+    format_settings.connection_handling = settings[Setting::input_format_connection_handling];
     format_settings.aggregate_function_input_format = settings[Setting::aggregate_function_input_format];
     format_settings.allow_special_serialization_kinds = settings[Setting::allow_special_serialization_kinds_in_output_formats];
 
@@ -415,7 +419,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     const Block & sample,
     const ContextPtr & context,
     UInt64 max_block_size,
-    const std::optional<RelativePathWithMetadata> & metadata,
+    const std::optional<RelativePathWithMetadata> & object_with_metadata,
     const std::optional<FormatSettings> & _format_settings,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
@@ -437,9 +441,10 @@ InputFormatPtr FormatFactory::getInputImpl(
     const FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
 
-    if (format_filter_info && (format_filter_info->prewhere_info || format_filter_info->row_level_filter)
-        && (!creators.random_access_input_creator || !creators.random_access_input_creator_with_metadata
-        || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
+    if (format_filter_info
+        && (format_filter_info->prewhere_info || format_filter_info->row_level_filter)
+        && ((!creators.random_access_input_creator && !creators.random_access_input_creator_with_metadata)
+            || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} passed to format that doesn't support it",
             format_filter_info->prewhere_info ? "PREWHERE" : "ROW LEVEL FILTER");
 
@@ -448,11 +453,16 @@ InputFormatPtr FormatFactory::getInputImpl(
             settings,
             /*num_streams_=*/1);
 
+    if (format_settings.max_block_wait_ms > 0 && !format_settings.connection_handling)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'input_format_max_block_wait_ms' requires 'input_format_connection_handling' to be enabled");
+
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size_rows = max_block_size;
     row_input_format_params.max_block_size_bytes = max_block_size_bytes.value_or(format_settings.max_block_size_bytes);
     row_input_format_params.min_block_size_rows = min_block_size_rows.value_or(0);
     row_input_format_params.min_block_size_bytes = min_block_size_bytes.value_or(0);
+    row_input_format_params.max_block_wait_ms = format_settings.max_block_wait_ms;
+    row_input_format_params.connection_handling = format_settings.connection_handling;
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
     row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     row_input_format_params.max_execution_time = settings[Setting::max_execution_time];
@@ -470,7 +480,7 @@ InputFormatPtr FormatFactory::getInputImpl(
 
     size_t max_parsing_threads = parser_shared_resources->getParsingThreadsPerReader();
     bool parallel_parsing = max_parsing_threads > 1 && settings[Setting::input_format_parallel_parsing]
-        && creators.file_segmentation_engine_creator && !(creators.random_access_input_creator && creators.random_access_input_creator_with_metadata)
+        && creators.file_segmentation_engine_creator && !(creators.random_access_input_creator || creators.random_access_input_creator_with_metadata)
         && !need_only_count;
 
     if (settings[Setting::max_memory_usage]
@@ -478,6 +488,9 @@ InputFormatPtr FormatFactory::getInputImpl(
         parallel_parsing = false;
     if (settings[Setting::max_memory_usage_for_user]
         && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage_for_user])
+        parallel_parsing = false;
+
+    if (format_settings.connection_handling)
         parallel_parsing = false;
 
     if (parallel_parsing)
@@ -517,12 +530,13 @@ InputFormatPtr FormatFactory::getInputImpl(
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
     }
-    // 2. Prefer to use metadata-aware creator if we have format metadata
-    else if (creators.random_access_input_creator_with_metadata && metadata.has_value())
+    // 2. Prefer to use metadata-aware creator if we have object metadata
+    else if (creators.random_access_input_creator_with_metadata
+        && object_with_metadata.has_value() && format_settings.parquet.use_native_reader_v3)
     {
         format = creators.random_access_input_creator_with_metadata(
             buf, sample, format_settings, context->getReadSettings(), is_remote_fs,
-            parser_shared_resources, format_filter_info, metadata);
+            parser_shared_resources, format_filter_info, object_with_metadata, context);
     }
     // 3. Use the normal random access creator for formats that need to jump around in the file
     else if (creators.random_access_input_creator)
@@ -585,7 +599,7 @@ InputFormatPtr FormatFactory::getInputWithMetadata(
     const Block & sample,
     const ContextPtr & context,
     UInt64 max_block_size,
-    const std::optional<RelativePathWithMetadata> & metadata,
+    const std::optional<RelativePathWithMetadata> & object_with_metadata,
     const std::optional<FormatSettings> & format_settings,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
@@ -596,8 +610,8 @@ InputFormatPtr FormatFactory::getInputWithMetadata(
     const std::optional<UInt64> & min_block_size_rows,
     const std::optional<UInt64> & min_block_size_bytes) const
 {
-    chassert(metadata.has_value());
-    return getInputImpl(name, buf, sample, context, max_block_size, metadata,
+    chassert(object_with_metadata.has_value());
+    return getInputImpl(name, buf, sample, context, max_block_size, object_with_metadata,
                        format_settings, parser_shared_resources, format_filter_info,
                        is_remote_fs, compression, need_only_count,
                        max_block_size_bytes, min_block_size_rows, min_block_size_bytes);

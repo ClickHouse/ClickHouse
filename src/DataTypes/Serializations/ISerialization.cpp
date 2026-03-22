@@ -3,17 +3,20 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
+#include <Common/Exception.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <absl/strings/str_split.h>
 #include <base/EnumReflection.h>
+#include <base/demangle.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <boost/algorithm/string_regex.hpp>
+#include <base/types.h>
 
 namespace DB
 {
@@ -28,6 +31,21 @@ namespace ErrorCodes
     extern const int MULTIPLE_STREAMS_REQUIRED;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int LOGICAL_ERROR;
+}
+
+void throwEmptySerializationState(const ISerialization * serialization)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Got empty state for {}", demangle(typeid(*serialization).name()));
+}
+
+void throwInvalidSerializationState(const ISerialization * serialization, const std::type_info & expected, const std::type_info & got)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Invalid State for {}. Expected: {}, got {}",
+            demangle(typeid(*serialization).name()),
+            demangle(expected.name()),
+            demangle(got.name()));
 }
 
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
@@ -91,7 +109,7 @@ String ISerialization::kindStackToString(const KindStack & kind_stack)
     return result;
 }
 
-static ISerialization::Kind stringToKind(const String & str)
+static ISerialization::Kind stringToKind(std::string_view str)
 {
     if (str == "Default")
         return ISerialization::Kind::DEFAULT;
@@ -106,8 +124,7 @@ static ISerialization::Kind stringToKind(const String & str)
 
 ISerialization::KindStack ISerialization::stringToKindStack(const String & str)
 {
-    std::vector<String> kind_strings;
-    boost::algorithm::split_regex(kind_strings, str, boost::regex("Over"));
+    std::vector<std::string_view> kind_strings = absl::StrSplit(str, absl::ByString("Over"));
     KindStack kind_stack;
     for (size_t i = 0; i != kind_strings.size(); ++i)
     {
@@ -524,7 +541,7 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
         deserialize(column);
         return true;
     }
-    catch (...)
+    catch (...) // Ok: tryDeserializeText is a try-pattern
     {
         if (column.size() > prev_size)
             column.popBack(column.size() - prev_size);

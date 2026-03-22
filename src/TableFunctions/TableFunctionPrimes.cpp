@@ -125,25 +125,28 @@ StoragePtr TableFunctionPrimes::executeImpl(
 
 void registerTableFunctionPrimes(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionPrimes>({.documentation = {
-        .description = R"(Returns tables with a single UInt64 column `prime` containing prime numbers in ascending order, starting from 2.)",
-        .syntax = "primes() | primes(N) | primes(N, M) | primes(N, M, S)",
-        .arguments = {
-            {"N", "If used as primes(N): number of primes to return. If used as primes(N, M[, S]): starting prime index (0-based).", {"UInt64"}},
-            {"M", "Number of primes to return (only for primes(N, M) and primes(N, M, S)).", {"UInt64"}},
-            {"S", "Step by prime index (S >= 1), only for primes(N, M, S).", {"UInt64"}},
+    factory.registerFunction<TableFunctionPrimes>(
+        {
+            .description = R"(Returns tables with a single UInt64 column `prime` containing prime numbers in ascending order, starting from 2.)",
+            .syntax = "primes() | primes(N) | primes(N, M) | primes(N, M, S)",
+            .arguments = {
+                {"N", "If used as primes(N): number of primes to return. If used as primes(N, M[, S]): starting prime index (0-based).", {"UInt64"}},
+                {"M", "Number of primes to return (only for primes(N, M) and primes(N, M, S)).", {"UInt64"}},
+                {"S", "Step by prime index (S >= 1), only for primes(N, M, S).", {"UInt64"}},
+            },
+            .returned_value = {"A table with a single UInt64 column `prime`.", {"UInt64"}},
+            .examples = {
+                {"The first 10 primes", "SELECT * FROM primes(10);", ""},
+                {"The first 10 primes using LIMIT", "SELECT prime FROM primes() LIMIT 10;", ""},
+                {"Skip the first 10 primes and then return next 10", "SELECT prime FROM primes() LIMIT 10 OFFSET 10;", ""},
+                {"The first prime after 1e15", "SELECT prime FROM primes() WHERE prime > toUInt64(1e15) LIMIT 1;", ""},
+                {"The first 7 Mersenne primes", "SELECT prime FROM primes() WHERE bitAnd(prime, prime + 1) = 0 LIMIT 7;", ""},
+            },
+            .introduced_in = {26, 1},
+            .category = FunctionDocumentation::Category::TableFunction,
         },
-        .returned_value = {"A table with a single UInt64 column `prime`.", {"UInt64"}},
-        .examples = {
-            {"The first 10 primes", "SELECT * FROM primes(10);", ""},
-            {"The first 10 primes using LIMIT", "SELECT prime FROM primes() LIMIT 10;", ""},
-            {"Skip the first 10 primes and then return next 10", "SELECT prime FROM primes() LIMIT 10 OFFSET 10;", ""},
-            {"The first prime after 1e15", "SELECT prime FROM primes() WHERE prime > toUInt64(1e15) LIMIT 1;", ""},
-            {"The first 7 Mersenne primes", "SELECT prime FROM primes() WHERE bitAnd(prime, prime + 1) = 0 LIMIT 7;", ""},
-        },
-        .introduced_in = {26, 1},
-        .category = FunctionDocumentation::Category::TableFunction,
-    }, .allow_readonly = true});
+        {.allow_readonly = true}
+    );
 }
 
 }

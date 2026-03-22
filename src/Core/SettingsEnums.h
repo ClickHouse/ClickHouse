@@ -299,6 +299,7 @@ enum class Dialect : uint8_t
     kusto,
     prql,
     promql,
+    polyglot,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -428,6 +429,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     GLUE,
     ICEBERG_HIVE,
     ICEBERG_ONELAKE,
+    ICEBERG_BIGLAKE,
     PAIMON_REST,
 };
 
@@ -437,6 +439,8 @@ enum class FileCachePolicy : uint8_t
 {
     LRU,
     SLRU,
+    SLRU_OVERCOMMIT,
+    LRU_OVERCOMMIT,
 };
 
 DECLARE_SETTING_ENUM(FileCachePolicy)
@@ -537,4 +541,13 @@ enum class InsertDeduplicationVersions : uint8_t
 };
 
 DECLARE_SETTING_ENUM(InsertDeduplicationVersions)
+
+enum class JemallocProfileFormat : uint8_t
+{
+    Raw = 0,
+    Symbolized,
+    Collapsed
+};
+
+DECLARE_SETTING_ENUM(JemallocProfileFormat)
 }

@@ -100,6 +100,7 @@ protected:
 
     DeserializationPrefixesCache * deserialization_prefixes_cache;
     DeserializeBinaryBulkStateMap cached_subcolumn_prefixes;
+
 private:
     void readPrefix(
         const NameAndTypePair & name_and_type,

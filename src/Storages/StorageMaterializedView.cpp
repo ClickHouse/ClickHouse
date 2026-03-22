@@ -142,8 +142,11 @@ StorageMaterializedView::StorageMaterializedView(
         storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->primary_key->ptr(),
                                                                      storage_metadata.columns,
                                                                      local_context->getGlobalContext());
+    /// Use the database where the materialized view is created to resolve nested views
+    ContextMutablePtr mv_db_context = Context::createCopy(local_context);
+    mv_db_context->setCurrentDatabase(table_id_.database_name);
 
-    auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, local_context);
+    auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, mv_db_context);
     if (select.select_table_id)
     {
         auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
@@ -536,10 +539,12 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
+    /// Use the database where the materialized view is created to run the select query in the refresh task
+    refresh_context->setCurrentDatabase(getStorageID().database_name);
     return refresh_context;
 }
 
-std::tuple<boost::intrusive_ptr<ASTInsertQuery>, CurrentThread::QueryScope>
+std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
 StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
 {
     auto inner_table_id = getTargetTableId();
@@ -550,7 +555,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
 
     if (!append)
     {
-       auto query_scope = CurrentThread::QueryScope::create(refresh_context);
+       auto query_scope = QueryScope::create(refresh_context);
 
         auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
         String db_name = db->getDatabaseName();
@@ -568,6 +573,8 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         /// Use UUID to ensure that the INSERT below inserts into the exact table we created, even if another replica replaced it.
         create_query->uuid = UUIDHelpers::generateV4();
         create_query->has_uuid = true;
+        if (create_query->targets)
+            create_query->targets->resetInnerUUIDs();
 
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
@@ -580,7 +587,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     }
 
     // Create a thread group for the query.
-    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
+    auto query_scope = QueryScope::create(refresh_context);
 
     auto insert_query = make_intrusive<ASTInsertQuery>();
     insert_query->select = select_query;
@@ -614,7 +621,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
     auto target_db = DatabaseCatalog::instance().getDatabase(fresh_table.database_name);
     bool exchange = DatabaseCatalog::instance().isTableExist(stale_table_id, refresh_context);
 
-    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
+    auto query_scope = QueryScope::create(refresh_context);
 
     auto rename_query = make_intrusive<ASTRenameQuery>();
     rename_query->exchange = exchange;
@@ -627,7 +634,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
 {
-    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
+    auto query_scope = QueryScope::create(refresh_context);
 
     auto drop_query = make_intrusive<ASTDropQuery>();
     drop_query->setDatabase(table_id.database_name);
@@ -661,7 +668,12 @@ void StorageMaterializedView::alter(
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, local_context);
+
+    /// Use the database where the materialized view is created to resolve nested views
+    ContextMutablePtr mv_db_context = Context::createCopy(local_context);
+    mv_db_context->setCurrentDatabase(table_id.database_name);
+
+    params.apply(new_metadata, mv_db_context);
 
     const auto & new_select = new_metadata.select;
     new_metadata.setSelectQuery(new_select);

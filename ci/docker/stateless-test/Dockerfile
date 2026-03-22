@@ -1,5 +1,8 @@
 # docker build -t clickhouse/stateless-test .
 ARG FROM_TAG=latest
+ARG REDPANDA_VERSION=v25.1.3
+FROM docker.redpanda.com/redpandadata/redpanda:${REDPANDA_VERSION} AS redpanda
+
 FROM clickhouse/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
@@ -31,12 +34,10 @@ RUN apt-get update -y \
         mysql-client=8.0* \
         ncdu \
         netcat-openbsd \
+        openssh-client \
         odbcinst \
-        openjdk-11-jre-headless \
         openssl \
         postgresql-client \
-        python3 \
-        python3-pip \
         qemu-user-static \
         sqlite3 \
         tree \
@@ -66,7 +67,7 @@ RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PR
     && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
 COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cd /tmp/clickhouse-odbc-tmp \
@@ -106,6 +107,10 @@ RUN arch=${TARGETARCH:-amd64} \
     && curl -fsSL "https://github.com/ClickHouse/azurite-rs/releases/download/${AZURITE_RS_VERSION}/azurite-rs-linux-${arch}.tar.gz" | tar -xz -C /usr/local/bin/ \
     && mv /usr/local/bin/azurite-rs-linux-${arch} /usr/local/bin/azurite-rs \
     && chmod +x /usr/local/bin/azurite-rs
+
+# Install Redpanda (Kafka-compatible broker, no JVM required)
+COPY --from=redpanda /opt/redpanda /opt/redpanda
+ENV PATH="/opt/redpanda/bin:${PATH}"
 
 ENV PYTHONPATH=".:./ci"
 

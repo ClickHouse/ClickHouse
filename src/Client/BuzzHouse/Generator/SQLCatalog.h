@@ -78,6 +78,10 @@ enum class LakeCatalog
     Unity = 4
 };
 
+extern const std::vector<std::vector<OutFormat>> outFormats;
+extern const std::unordered_map<OutFormat, InFormat> outIn;
+extern const std::vector<std::vector<InOutFormat>> inOutFormats;
+
 struct SQLColumn
 {
 public:
@@ -99,10 +103,11 @@ public:
     SQLColumn(SQLColumn && c) noexcept
     {
         this->cname = c.cname;
-        this->tp = c.tp->typeDeepCopy();
+        this->tp = c.tp;
+        c.tp = nullptr;
         this->special = c.special;
-        this->nullable = std::optional<bool>(c.nullable);
-        this->dmod = std::optional<DModifier>(c.dmod);
+        this->nullable = c.nullable;
+        this->dmod = c.dmod;
     }
     SQLColumn & operator=(const SQLColumn & c)
     {
@@ -140,20 +145,26 @@ public:
     String getColumnName() const;
 };
 
-struct SQLIndex
+struct WithCluster
 {
 public:
-    uint32_t iname = 0;
+    std::optional<String> cluster;
+
+    const std::optional<String> & getCluster() const { return cluster; }
 };
 
-struct SQLDatabase
+struct SQLDatabase : WithCluster
 {
 public:
     bool random_engine = false;
-    String keeper_path, shard_name, replica_name;
-    uint32_t dname = 0, replica_counter = 0, shard_counter = 0;
+    String keeper_path;
+    String shard_name;
+    String replica_name;
+    uint32_t dname = 0;
+    uint32_t replica_counter = 0;
+    uint32_t shard_counter = 0;
+    uint32_t backup_number = 0;
     DatabaseEngineValues deng;
-    std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
     IntegrationCall integration = IntegrationCall::None;
     /// For DataLakeCatalog
@@ -173,15 +184,13 @@ public:
 
     bool isSharedDatabase() const;
 
-    bool isLazyDatabase() const;
+    bool isBackupDatabase() const;
 
     bool isOrdinaryDatabase() const;
 
     bool isDataLakeCatalogDatabase() const;
 
     bool isReplicatedOrSharedDatabase() const;
-
-    const std::optional<String> & getCluster() const;
 
     bool isAttached() const;
 
@@ -198,20 +207,38 @@ public:
     void finishDatabaseSpecification(DatabaseEngine * de);
 };
 
-struct SQLBase
+struct SQLBase : WithCluster
 {
 public:
     String prefix;
-    bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false, has_order_by = false,
-         random_engine = false, can_run_merges = true;
-    uint32_t tname = 0, replica_counter = 0, shard_counter = 0;
+    bool is_temp = false;
+    bool is_deterministic = false;
+    bool has_metadata = false;
+    bool has_partition_by = false;
+    bool has_order_by = false;
+    bool random_engine = false;
+    bool can_run_merges = true;
+    uint32_t tname = 0;
+    uint32_t replica_counter = 0;
+    uint32_t shard_counter = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, storage_class_name, host_params,
-        bucket_path, topic, group;
-    String keeper_path, shard_name, replica_db, replica_table, replica_name;
+    std::optional<String> file_comp;
+    std::optional<String> partition_strategy;
+    std::optional<String> partition_columns_in_data_file;
+    std::optional<String> storage_class_name;
+    std::optional<String> host_params;
+    std::optional<String> bucket_path;
+    std::optional<String> topic;
+    std::optional<String> group;
+    String keeper_path;
+    String shard_name;
+    String replica_db;
+    String replica_table;
+    String replica_name;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption;
-    TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
+    TableEngineValues teng = TableEngineValues::Null;
+    TableEngineValues sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     std::optional<InOutFormat> file_format;
     IntegrationCall integration = IntegrationCall::None;
@@ -343,8 +370,6 @@ public:
 
     bool hasClickHousePeer() const;
 
-    const std::optional<String> & getCluster() const;
-
     bool isAttached() const;
 
     bool isDettached() const;
@@ -381,10 +406,14 @@ public:
 struct SQLTable : SQLBase
 {
 public:
-    uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0, freeze_counter = 0;
-    std::unordered_map<uint32_t, SQLColumn> cols, staged_cols;
-    std::unordered_map<uint32_t, SQLIndex> idxs, staged_idxs;
-    std::unordered_set<uint32_t> projs, staged_projs, constrs, staged_constrs;
+    uint32_t col_counter = 0;
+    uint32_t idx_counter = 0;
+    uint32_t proj_counter = 0;
+    uint32_t constr_counter = 0;
+    std::unordered_map<uint32_t, SQLColumn> cols;
+    std::unordered_map<uint32_t, SQLColumn> staged_cols;
+    std::unordered_set<uint32_t> constrs;
+    std::unordered_set<uint32_t> staged_constrs;
     std::unordered_map<uint32_t, String> frozen_partitions;
 
     SQLTable()
@@ -406,7 +435,9 @@ public:
 struct SQLView : SQLBase
 {
 public:
-    bool is_materialized = false, is_refreshable = false, has_with_cols = false;
+    bool is_materialized = false;
+    bool is_refreshable = false;
+    bool has_with_cols = false;
     uint32_t staged_ncols = 0;
     std::unordered_set<uint32_t> cols;
 
@@ -431,16 +462,40 @@ public:
     bool supportsFinal() const;
 };
 
-struct SQLFunction
+struct SQLFunction : WithCluster
 {
 public:
     bool is_deterministic = false;
-    uint32_t fname = 0, nargs = 0;
-    std::optional<String> cluster;
-
-    const std::optional<String> & getCluster() const;
+    uint32_t fname = 0;
+    uint32_t nargs = 0;
 
     void setName(Function * f) const;
+};
+
+struct SQLPolicy : WithCluster
+{
+public:
+    bool is_row = true;
+    uint32_t policy_id = 0;
+    uint32_t table_id = 0;
+    /// USING predicate stored at creation time; absent means the policy allows all rows.
+    std::optional<WhereStatement> where_expr;
+    /// True when the policy was created with `TO buzzhouse_oracle_role` — eligible for the row policy oracle.
+    bool targets_oracle_role = false;
+
+    SQLPolicy() = default;
+    SQLPolicy(const SQLPolicy & other)
+        : WithCluster(other)
+    {
+        this->is_row = other.is_row;
+        this->policy_id = other.policy_id;
+        this->table_id = other.table_id;
+        this->where_expr = other.where_expr;
+        this->targets_oracle_role = other.targets_oracle_role;
+    }
+    SQLPolicy & operator=(const SQLPolicy & other) = default;
+
+    void setName(Policy * f) const;
 };
 
 struct ColumnPathChainEntry

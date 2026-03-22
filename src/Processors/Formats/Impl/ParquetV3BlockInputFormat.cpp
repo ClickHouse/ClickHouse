@@ -1,4 +1,5 @@
 #include <memory>
+#include <Common/CurrentThread.h>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 
@@ -39,14 +40,14 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     FormatFilterInfoPtr format_filter_info_,
     size_t min_bytes_for_seek,
     ParquetMetadataCachePtr metadata_cache_,
-    const std::optional<RelativePathWithMetadata> & metadata_)
+    const std::optional<RelativePathWithMetadata> & object_with_metadata_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , read_options(convertReadOptions(format_settings))
     , parser_shared_resources(parser_shared_resources_)
     , format_filter_info(format_filter_info_)
     , metadata_cache(metadata_cache_)
-    , metadata(metadata_)
+    , object_with_metadata(object_with_metadata_)
 {
     read_options.min_bytes_for_seek = min_bytes_for_seek;
     read_options.bytes_per_read_task = min_bytes_for_seek * 4;
@@ -59,15 +60,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 {
     if (!reader)
     {
-        format_filter_info->initOnce([&]
-            {
-                format_filter_info->initKeyCondition(getPort().getHeader());
-
-                auto ext = std::make_shared<Parquet::FilterInfoExt>();
-                if (format_filter_info->key_condition)
-                    format_filter_info->key_condition->extractSingleColumnConditions(ext->column_conditions, nullptr);
-                format_filter_info->opaque = ext;
-            });
+        format_filter_info->initKeyConditionOnce(getPort().getHeader());
         parser_shared_resources->initOnce([&]
             {
                 if (format_settings.parquet.enable_row_group_prefetch && parser_shared_resources->max_io_threads > 0)
@@ -107,10 +100,10 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 
 parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet::Prefetcher & prefetcher) const
 {
-    if (metadata_cache && metadata.has_value())
+    if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
     {
-        String file_name = metadata->getPath();
-        String etag = metadata->metadata->etag;
+        String file_name = object_with_metadata->getPath();
+        String etag = object_with_metadata->metadata->etag;
         ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
         return metadata_cache->getOrSetMetadata(
             cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
