@@ -519,10 +519,15 @@ void MergeTreeData::loadPhysicalNameMappingFromDisk()
 
 void MergeTreeData::writePhysicalNameMappingToDisk() const
 {
-    const auto physical_names_path = fs::path(relative_data_path) / PHYSICAL_NAMES_FILE_NAME;
     auto mapping = getPhysicalNameMapping();
     if (!mapping)
         return;
+    writePhysicalNameMappingToDisk(*mapping);
+}
+
+void MergeTreeData::writePhysicalNameMappingToDisk(const PhysicalNameMapping & mapping) const
+{
+    const auto physical_names_path = fs::path(relative_data_path) / PHYSICAL_NAMES_FILE_NAME;
 
     for (const auto & disk : getStoragePolicy()->getDisks())
     {
@@ -532,7 +537,7 @@ void MergeTreeData::writePhysicalNameMappingToDisk() const
         if (!disk->isReadOnly() && !disk->isWriteOnce())
         {
             auto buf = disk->writeFile(physical_names_path, 4096, WriteMode::Rewrite, getContext()->getWriteSettings());
-            mapping->serialize(*buf);
+            mapping.serialize(*buf);
             buf->finalize();
             if (getContext()->getSettingsRef()[Setting::fsync_metadata])
                 buf->sync();

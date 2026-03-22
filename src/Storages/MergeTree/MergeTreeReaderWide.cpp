@@ -173,6 +173,29 @@ size_t MergeTreeReaderWide::readRows(
         prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
         deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
 
+        /// Pre-build a map from offset-stream-name → list of column indices
+        /// for physically-named flattened Nested siblings. This avoids O(n²)
+        /// repeated `getStreamNameForColumn` calls in the cache-sharing loop.
+        ISerialization::SubstreamPath offsets_path{{ISerialization::Substream::ArraySizes}};
+        std::unordered_map<String, std::vector<size_t>> offset_stream_siblings;
+        std::vector<std::optional<String>> column_offset_stream(num_columns);
+        for (size_t pos = 0; pos < num_columns; ++pos)
+        {
+            if (isColumnDroppedByPendingMutation(pos))
+                continue;
+            const auto & col = columns_to_read[pos];
+            if (col.physical_name.empty())
+                continue;
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                col, offsets_path, ".bin",
+                data_part_info_for_read->getChecksums(), storage_settings);
+            if (stream_name)
+            {
+                offset_stream_siblings[*stream_name].push_back(pos);
+                column_offset_stream[pos] = std::move(*stream_name);
+            }
+        }
+
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
             /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
@@ -216,32 +239,20 @@ size_t MergeTreeReaderWide::readRows(
                 /// sibling to re-read the stream whose position was already advanced by the
                 /// first sibling (and possibly not re-seekable due to prefetching on S3).
                 /// Pre-populate upcoming siblings' caches with the offsets we just read.
-                if (!column_to_read.physical_name.empty())
+                if (column_offset_stream[pos])
                 {
-                    ISerialization::SubstreamPath offsets_path{{ISerialization::Substream::ArraySizes}};
-                    auto this_offsets_stream = IMergeTreeDataPart::getStreamNameForColumn(
-                        column_to_read, offsets_path, ".bin",
-                        data_part_info_for_read->getChecksums(), storage_settings);
-                    if (this_offsets_stream)
+                    if (auto cached = ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(&cache, offsets_path))
                     {
-                        if (auto cached = ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(&cache, offsets_path))
+                        auto & [cached_column, num_read_rows] = *cached;
+                        auto siblings_it = offset_stream_siblings.find(*column_offset_stream[pos]);
+                        if (siblings_it != offset_stream_siblings.end())
                         {
-                            auto & [cached_column, num_read_rows] = *cached;
-                            for (size_t j = pos + 1; j < num_columns; ++j)
+                            for (size_t j : siblings_it->second)
                             {
-                                if (isColumnDroppedByPendingMutation(j))
+                                if (j <= pos)
                                     continue;
-                                const auto & sibling = columns_to_read[j];
-                                if (sibling.physical_name.empty())
-                                    continue;
-                                auto sibling_offsets_stream = IMergeTreeDataPart::getStreamNameForColumn(
-                                    sibling, offsets_path, ".bin",
-                                    data_part_info_for_read->getChecksums(), storage_settings);
-                                if (sibling_offsets_stream && *sibling_offsets_stream == *this_offsets_stream)
-                                {
-                                    ISerialization::addColumnWithNumReadRowsToSubstreamsCache(
-                                        &caches[sibling.getNameInStorage()], offsets_path, cached_column, num_read_rows);
-                                }
+                                ISerialization::addColumnWithNumReadRowsToSubstreamsCache(
+                                    &caches[columns_to_read[j].getNameInStorage()], offsets_path, cached_column, num_read_rows);
                             }
                         }
                     }
@@ -438,8 +449,8 @@ ReadBuffer * MergeTreeReaderWide::getStream(
         stream.seekToMark(from_mark);
     else if (read_without_marks
         && !name_and_type.physical_name.empty()
-        && substream_path.size() == 1
-        && substream_path[0].type == ISerialization::Substream::ArraySizes
+        && !substream_path.empty()
+        && substream_path.back().type == ISerialization::Substream::ArraySizes
         && Nested::extractTableName(name_and_type.getNameInStorage()) != name_and_type.getNameInStorage())
     {
         /// Defense-in-depth: normally the cache-sharing logic in `readRows`

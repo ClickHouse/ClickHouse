@@ -744,10 +744,12 @@ void StorageMergeTree::alter(
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata, false, local_context);
 
-            /// Persist physical name mapping BEFORE metadata commit. If we crash
-            /// between the two, the mapping on disk is "ahead" of metadata — stale
-            /// entries are harmless and columns not yet in metadata fall back to
-            /// identity via `getPhysicalNameOrDefault`.
+            /// Persist physical name mapping to disk BEFORE publishing in-memory
+            /// and BEFORE metadata commit.  This ensures any mapping visible to
+            /// concurrent readers (via MultiVersion) is already durable.  If we
+            /// crash between persist and metadata commit, the mapping on disk is
+            /// "ahead" of metadata — stale entries are harmless and
+            /// `reconcilePhysicalNameMappingWithMetadata` cleans them up.
             bool mapping_was_changed = false;
             std::shared_ptr<const PhysicalNameMapping> old_published_mapping;
 
@@ -762,15 +764,15 @@ void StorageMergeTree::alter(
                         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before physical name mapping persist");
                     });
 
-                    setPhysicalNameMapping(std::move(*pn_plan.new_mapping));
-                    mapping_was_changed = true;
-
-                    writePhysicalNameMappingToDisk();
+                    writePhysicalNameMappingToDisk(*pn_plan.new_mapping);
 
                     fiu_do_on(FailPoints::physical_names_throw_after_mapping_persist,
                     {
                         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after physical name mapping persist");
                     });
+
+                    setPhysicalNameMapping(std::move(*pn_plan.new_mapping));
+                    mapping_was_changed = true;
                 }
 
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
@@ -782,11 +784,31 @@ void StorageMergeTree::alter(
                 setProperties(old_metadata, new_metadata, false, local_context);
                 if (mapping_was_changed)
                 {
+                    try
+                    {
+                        if (old_published_mapping)
+                            setPhysicalNameMapping(*old_published_mapping);
+                        else
+                            setPhysicalNameMapping(PhysicalNameMapping{});
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log,
+                            "Failed to revert physical name mapping in-memory");
+                    }
+                }
+                try
+                {
                     if (old_published_mapping)
-                        setPhysicalNameMapping(*old_published_mapping);
-                    else
-                        setPhysicalNameMapping(PhysicalNameMapping{});
-                    writePhysicalNameMappingToDisk();
+                        writePhysicalNameMappingToDisk(*old_published_mapping);
+                    else if (pn_plan.new_mapping)
+                        writePhysicalNameMappingToDisk(PhysicalNameMapping{});
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log,
+                        "Failed to revert physical name mapping to disk; "
+                        "reconciliation at next startup will fix it");
                 }
                 throw;
             }

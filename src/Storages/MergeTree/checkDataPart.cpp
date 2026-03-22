@@ -183,6 +183,37 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
                 data_part_storage.getFullPath(), columns_list.toString(), columns_txt.toString());
     }
+    else
+    {
+        /// With physical names, old parts have pre-rename column names in
+        /// `columns.txt`, so exact equality is impossible. Perform a weaker
+        /// check: for every column found in both the expected list and the
+        /// part (matched by physical name), verify the types agree.
+        std::unordered_map<String, DataTypePtr> expected_types;
+        for (const auto & col : columns_list)
+        {
+            auto phys = pn_mapping->getPhysicalNameOrDefault(col.name);
+            expected_types[phys] = col.type;
+        }
+        for (const auto & col : columns_txt)
+        {
+            String phys;
+            if (pn_mapping->hasLogicalName(col.name))
+                phys = pn_mapping->getPhysicalName(col.name);
+            else if (pn_mapping->hasPhysicalName(col.name))
+                phys = col.name;
+            else
+                continue;
+
+            auto it = expected_types.find(phys);
+            if (it != expected_types.end() && !col.type->equals(*it->second))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Column type mismatch in part {} for physical name '{}': "
+                    "expected {}, found {}",
+                    data_part_storage.getFullPath(), phys,
+                    it->second->getName(), col.type->getName());
+        }
+    }
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
     IMergeTreeDataPart::Checksums checksums_data;

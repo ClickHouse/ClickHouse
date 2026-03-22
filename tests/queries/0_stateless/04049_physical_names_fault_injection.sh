@@ -7,6 +7,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+cleanup()
+{
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT physical_names_pause_after_metadata_alter" 2>/dev/null
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT physical_names_throw_before_mapping_persist" 2>/dev/null
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT physical_names_throw_after_mapping_persist" 2>/dev/null
+}
+trap cleanup EXIT
+
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_physical_column_names=1"
 
 # Test 1: INSERT concurrent with metadata-only RENAME
@@ -120,8 +128,8 @@ echo "INSERT INTO t_fp_merge VALUES (3, 'three')" | $CLICKHOUSE_CLIENT
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_fp_merge RENAME COLUMN b TO d"
 
 # Verify we have multiple parts
-PARTS=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_fp_merge' AND active")
-echo "parts_before_merge: $([ $PARTS -gt 1 ] && echo 'multiple' || echo 'single')"
+PARTS=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_fp_merge' AND active" | tr -d '[:space:]')
+echo "parts_before_merge: $([ "$PARTS" -gt 1 ] && echo 'multiple' || echo 'single')"
 
 # Resume merges and force merge
 $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES t_fp_merge"
@@ -131,7 +139,7 @@ $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_fp_merge FINAL"
 $CLICKHOUSE_CLIENT --query "SELECT a, d FROM t_fp_merge ORDER BY a"
 
 # Verify single merged part
-PARTS_AFTER=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_fp_merge' AND active")
+PARTS_AFTER=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_fp_merge' AND active" | tr -d '[:space:]')
 echo "parts_after_merge: $PARTS_AFTER"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_fp_merge SYNC"

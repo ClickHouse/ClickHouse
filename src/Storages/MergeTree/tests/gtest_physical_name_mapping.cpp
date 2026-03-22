@@ -124,6 +124,9 @@ TEST(PhysicalNameMapping, TwoPhaseRenameCrashRecovery)
 
     EXPECT_TRUE(restored.hasLogicalName("a"));
     EXPECT_TRUE(restored.hasLogicalName("c"));
+    /// Both "a" and "c" map to physical "a"; reverse map must be deterministic
+    /// (lexicographically smallest logical name wins).
+    EXPECT_EQ(restored.getLogicalName("a"), "a");
 
     restored.removeColumn("c");
 

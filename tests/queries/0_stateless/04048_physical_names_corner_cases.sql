@@ -333,7 +333,9 @@ INSERT INTO t_phys_flat_nested VALUES (2, [10, 20], ['a', 'b']);
 SELECT a, `n.x`, `n.y` FROM t_phys_flat_nested ORDER BY a;
 DROP TABLE t_phys_flat_nested;
 
--- Test 12: DROP + re-ADD same column in a single ALTER gets a fresh physical name
+-- Test 12: DROP + re-ADD same column in a single ALTER falls back to mutation
+-- (reusing the same logical name means the physical name stays identity-mapped,
+-- but the mutation rewrites data so the old values are replaced by the default).
 SELECT 'Test 12: drop and re-add in single ALTER';
 DROP TABLE IF EXISTS t_phys_drop_readd;
 CREATE TABLE t_phys_drop_readd (a UInt64, b String) ENGINE = MergeTree ORDER BY a
@@ -381,3 +383,46 @@ OPTIMIZE TABLE t_phys_variant_compact FINAL;
 SELECT a, w, variantType(w) FROM t_phys_variant_compact ORDER BY a;
 
 DROP TABLE t_phys_variant_compact;
+
+-- Test 14: Full DETACH TABLE / ATTACH TABLE — verifies physical_names.json
+-- survives a full table detach-attach cycle (mapping loaded from disk).
+SELECT 'Test 14: full table detach/attach recovery';
+DROP TABLE IF EXISTS t_phys_full_detach;
+CREATE TABLE t_phys_full_detach (a UInt64, b String) ENGINE = MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+INSERT INTO t_phys_full_detach VALUES (1, 'before');
+ALTER TABLE t_phys_full_detach RENAME COLUMN b TO d;
+INSERT INTO t_phys_full_detach (a, d) VALUES (2, 'after');
+SELECT a, d FROM t_phys_full_detach ORDER BY a;
+DETACH TABLE t_phys_full_detach;
+ATTACH TABLE t_phys_full_detach;
+SELECT a, d FROM t_phys_full_detach ORDER BY a;
+OPTIMIZE TABLE t_phys_full_detach FINAL;
+SELECT a, d FROM t_phys_full_detach ORDER BY a;
+DROP TABLE t_phys_full_detach;
+
+-- Test 15: TTL column rename — verify TTL still works after renaming a
+-- non-TTL column (the TTL expression references a different column).
+-- Use INTERVAL 50 YEAR to stay within DateTime 32-bit range (max ~2106).
+SELECT 'Test 15: TTL with column rename';
+DROP TABLE IF EXISTS t_phys_ttl;
+CREATE TABLE t_phys_ttl
+(
+    a UInt64,
+    b String,
+    dt DateTime DEFAULT now()
+)
+ENGINE = MergeTree ORDER BY a
+TTL dt + INTERVAL 50 YEAR
+SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+INSERT INTO t_phys_ttl (a, b) VALUES (1, 'hello');
+ALTER TABLE t_phys_ttl RENAME COLUMN b TO d;
+INSERT INTO t_phys_ttl (a, d) VALUES (2, 'world');
+SELECT a, d FROM t_phys_ttl ORDER BY a;
+OPTIMIZE TABLE t_phys_ttl FINAL;
+SELECT a, d FROM t_phys_ttl ORDER BY a;
+DROP TABLE t_phys_ttl;

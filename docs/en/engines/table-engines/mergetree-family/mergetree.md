@@ -1257,6 +1257,7 @@ This decouples file names from logical column names and enables metadata-only `R
 
 :::note
 Physical column names are an experimental feature. Enable it with `allow_experimental_physical_column_names = 1`.
+Currently only non-replicated `MergeTree` tables are supported. `ReplicatedMergeTree` support is planned for a future release.
 :::
 
 ### Enabling physical names {#enabling-physical-names}
@@ -1321,3 +1322,9 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 'example' AND active
 ORDER BY column;
 ```
+
+:::note
+After a metadata-only `RENAME COLUMN`, old parts still show the pre-rename column name in the `column` field of `system.parts_columns`.
+New parts (from subsequent inserts or merges) show the new name.
+The `physical_name` field is a stable identifier that does not change across renames.
+:::

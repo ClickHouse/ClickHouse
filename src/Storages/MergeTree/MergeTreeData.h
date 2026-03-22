@@ -665,6 +665,7 @@ public:
 
     void loadPhysicalNameMappingFromDisk();
     void writePhysicalNameMappingToDisk() const;
+    void writePhysicalNameMappingToDisk(const PhysicalNameMapping & mapping) const;
 
     /// Remove mapping entries whose logical name no longer exists in table
     /// metadata. Called after loading the mapping from disk to handle stale

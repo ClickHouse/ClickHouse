@@ -132,7 +132,9 @@ String PhysicalNameMapping::allocatePhysicalName()
     /// which is now orphaned — the reader's loadColumns remapping
     /// (physical-name-first algorithm) will correctly skip it.
     active = true;
-    return ::DB::toString(next_physical_column_id++);
+    auto id = next_physical_column_id;
+    next_physical_column_id = safeIncrementPhysicalColumnId(next_physical_column_id);
+    return ::DB::toString(id);
 }
 
 void PhysicalNameMapping::addColumn(const String & logical_name, const String & physical_name)
@@ -194,7 +196,11 @@ void PhysicalNameMapping::beginRename(const String & old_logical_name, const Str
 
     auto physical_name = it->second;
     logical_to_physical.emplace(new_logical_name, physical_name);
-    physical_to_logical[physical_name] = new_logical_name;
+    /// Do NOT update physical_to_logical here — keep it pointing to
+    /// old_logical_name so the reverse map stays consistent with the
+    /// still-uncommitted metadata.  `reconcilePhysicalNameMappingWithMetadata`
+    /// resolves any ambiguity on restart.  `finishRename` updates the
+    /// reverse map once the metadata commit is confirmed.
 }
 
 void PhysicalNameMapping::finishRename(const String & old_logical_name)
@@ -309,6 +315,24 @@ PhysicalNameMapping PhysicalNameMapping::fromString(const String & str)
         String physical = physical_name_value.convert<String>();
         mapping.logical_to_physical.emplace(logical_name, physical);
         mapping.physical_to_logical[physical] = logical_name;
+    }
+
+    /// During two-phase rename, both old and new logical names map to the
+    /// same physical name.  The `operator[]` above may have picked either
+    /// winner depending on JSON key iteration order.  Rebuild the reverse
+    /// map deterministically: for each physical name with multiple logical
+    /// names, prefer the lexicographically smallest one.  This is arbitrary
+    /// but stable; `reconcilePhysicalNameMappingWithMetadata` will remove
+    /// the stale entry immediately after startup anyway.
+    if (mapping.physical_to_logical.size() < mapping.logical_to_physical.size())
+    {
+        mapping.physical_to_logical.clear();
+        for (const auto & [logical, physical] : mapping.logical_to_physical)
+        {
+            auto it = mapping.physical_to_logical.find(physical);
+            if (it == mapping.physical_to_logical.end() || logical < it->second)
+                mapping.physical_to_logical[physical] = logical;
+        }
     }
 
     mapping.active = mapping.active || !mapping.logical_to_physical.empty();
