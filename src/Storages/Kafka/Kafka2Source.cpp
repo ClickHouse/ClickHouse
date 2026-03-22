@@ -62,6 +62,19 @@ Kafka2Source::~Kafka2Source()
     storage.releaseConsumer(std::move(consumer));
 }
 
+bool Kafka2Source::checkTimeLimit() const
+{
+    if (max_execution_time != 0)
+    {
+        auto elapsed_ns = total_stopwatch.elapsed();
+
+        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+            return false;
+    }
+
+    return true;
+}
+
 Chunk Kafka2Source::generate()
 {
     auto chunk = generateImpl();
@@ -147,7 +160,7 @@ Chunk Kafka2Source::generateImpl()
             case StreamingHandleErrorMode::DEFAULT:
             {
                 e.addMessage(
-                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})",
                     current_msg_info->currentTopic(),
                     current_msg_info->currentPartition(),
                     current_msg_info->currentOffset());
@@ -274,7 +287,7 @@ Chunk Kafka2Source::generateImpl()
         }
 
         if (!has_more_polled_messages
-            && (total_rows >= max_block_size || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
+            && (total_rows >= max_block_size || !checkTimeLimit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             return true;
         }

@@ -5,6 +5,8 @@
 #include <Storages/StorageSnapshot.h>
 #include <Common/Stopwatch.h>
 
+#include <Poco/Timespan.h>
+
 
 namespace DB
 {
@@ -31,6 +33,7 @@ public:
 
     void commit();
     bool isStalled() const { return stalled; }
+    void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
 
 private:
     StorageKafka2 & storage;
@@ -46,9 +49,13 @@ private:
     bool broken = true;
     bool stalled = false;
 
+    Poco::Timespan max_execution_time = 0;
+    Stopwatch total_stopwatch{CLOCK_MONOTONIC_COARSE};
+
     std::shared_ptr<KeeperHandlingConsumer> consumer;
     std::optional<KeeperHandlingConsumer::OffsetGuard> offset_guard;
 
+    bool checkTimeLimit() const;
     Chunk generateImpl();
 };
 

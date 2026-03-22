@@ -423,10 +423,14 @@ private:
         auto modified_context = Context::createCopy(getContext());
         modified_context->applySettingsChanges(kafka_storage.settings_adjustments);
 
+        Poco::Timespan max_execution_time = (*kafka_storage.kafka_settings)[KafkaSetting::kafka_flush_interval_ms].changed
+            ? (*kafka_storage.kafka_settings)[KafkaSetting::kafka_flush_interval_ms]
+            : modified_context->getSettingsRef()[Setting::stream_flush_interval_ms];
+
         for (size_t i = 0; i < kafka_storage.num_consumers; ++i)
         {
             /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
-            pipes.emplace_back(std::make_shared<Kafka2Source>(
+            auto source = std::make_shared<Kafka2Source>(
                 kafka_storage,
                 storage_snapshot,
                 modified_context,
@@ -434,7 +438,9 @@ private:
                 kafka_storage.log,
                 1,
                 i,
-                (*kafka_storage.kafka_settings)[KafkaSetting::kafka_commit_on_select]));
+                (*kafka_storage.kafka_settings)[KafkaSetting::kafka_commit_on_select]);
+            source->setTimeLimit(max_execution_time);
+            pipes.emplace_back(std::move(source));
         }
 
         LOG_DEBUG(kafka_storage.log, "Starting reading {} streams", pipes.size());
