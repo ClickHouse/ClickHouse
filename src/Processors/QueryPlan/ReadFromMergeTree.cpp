@@ -1424,7 +1424,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                         if (prev_mark > 0 && prev_mark >= (*prev_index)[0]->size())
                             --prev_mark;
 
-                        size_t cols_to_check = std::min(num_pk_columns, std::min(prev_index->size(), curr_index->size()));
+                        size_t cols_to_check = std::min({num_pk_columns, prev_index->size(), curr_index->size()});
 
                         for (size_t col = 0; col < cols_to_check; ++col)
                         {
