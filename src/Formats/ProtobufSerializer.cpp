@@ -74,6 +74,15 @@ namespace
     using FieldTypeId = google::protobuf::FieldDescriptor::Type;
     using OneofDescriptor = google::protobuf::OneofDescriptor;
 
+    /// Returns a mutable reference to a column that is borrowed from the caller.
+    /// Used in ProtobufSerializer where columns are passed for mutation during deserialization,
+    /// but the caller retains a reference for lifetime management, making the use_count > 1.
+    /// The caller guarantees mutability by contract.
+    IColumn & borrowColumnRef(const ColumnPtr & col)
+    {
+        return const_cast<IColumn &>(*col);
+    }
+
 
     /// Compares column's name with protobuf field's name.
     /// This comparison is case-insensitive and ignores the difference between '.' and '_'
@@ -1997,7 +2006,7 @@ namespace
             {
                 if (i == presence_column_idx)
                 {
-                    presence_column_ptr = const_cast<IColumn *>(columns[presence_column_idx].get());
+                    presence_column = borrowColumnRef(columns[presence_column_idx]).getPtr();
                 }
                 else
                 {
@@ -2023,19 +2032,19 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            if (presence_column_ptr)
+            if (presence_column)
             {
-                if (row_num < presence_column_ptr->size())
+                if (row_num < presence_column->size())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protobuf data: OneOf has more than one value to track via column `{}`", oneof_column_name);
-                presence_column_ptr->insert(field_tag);
+                presence_column->insert(field_tag);
             }
             nested_serializer->readRow(row_num);
         }
 
         void insertDefaults(size_t row_num) override
         {
-            if (row_num >= presence_column_ptr->size())
-                presence_column_ptr->insert(0);
+            if (row_num >= presence_column->size())
+                presence_column->insert(0);
 
             nested_serializer->insertDefaults(row_num);
         }
@@ -2051,7 +2060,7 @@ namespace
         std::string_view oneof_column_name;
         size_t presence_column_idx;
         int field_tag;
-        IColumn * presence_column_ptr = nullptr;
+        MutableColumnPtr presence_column;
     };
 
 
@@ -2092,7 +2101,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(columnRef());
+            auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             auto & nested_column = column_nullable.getNestedColumn();
             auto & null_map = column_nullable.getNullMapData();
             size_t old_size = null_map.size();
@@ -2122,7 +2131,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(columnRef());
+            auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
             column_nullable.insertDefault();
@@ -2130,7 +2139,7 @@ namespace
 
         void insertNestedDefaults(size_t row_num)
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(columnRef());
+            auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
             column_nullable.getNestedColumn().insertDefault();
@@ -2227,7 +2236,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_lc = assert_cast<ColumnLowCardinality &>(columnRef());
+            auto & column_lc = assert_cast<ColumnLowCardinality &>(borrowColumnRef(column));
 
             if (!read_value_column_set)
             {
@@ -2255,7 +2264,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_lc = assert_cast<ColumnLowCardinality &>(columnRef());
+            auto & column_lc = assert_cast<ColumnLowCardinality &>(borrowColumnRef(column));
             if (row_num < column_lc.size())
                 return;
 
@@ -2323,7 +2332,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_array = assert_cast<ColumnArray &>(columnRef());
+            auto & column_array = assert_cast<ColumnArray &>(borrowColumnRef(column));
             auto & offsets = column_array.getOffsets();
             size_t old_size = offsets.size();
             if (row_num + 1 < old_size)
@@ -2355,7 +2364,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_array = assert_cast<ColumnArray &>(columnRef());
+            auto & column_array = assert_cast<ColumnArray &>(borrowColumnRef(column));
             if (row_num < column_array.size())
                 return;
             column_array.insertDefault();
@@ -2421,7 +2430,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_tuple = assert_cast<ColumnTuple &>(columnRef());
+            auto & column_tuple = assert_cast<ColumnTuple &>(borrowColumnRef(column));
 
             size_t old_size = column_tuple.size();
             if (row_num >= old_size)
@@ -2446,7 +2455,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_tuple = assert_cast<ColumnTuple &>(columnRef());
+            auto & column_tuple = assert_cast<ColumnTuple &>(borrowColumnRef(column));
             size_t old_size = column_tuple.size();
 
             if (row_num > old_size)
@@ -2562,7 +2571,7 @@ namespace
             {
                 mutable_columns.resize(num_columns_);
                 for (size_t i : collections::range(num_columns_))
-                    mutable_columns[i] = columns_[i]->assumeMutable();
+                    mutable_columns[i] = borrowColumnRef(columns_[i]).getPtr();
 
                 std::vector<UInt8> column_is_missing;
                 column_is_missing.resize(num_columns_, true);
