@@ -12,7 +12,6 @@
 #include <set>
 #include <unordered_map>
 
-
 namespace DB
 {
 
@@ -89,7 +88,6 @@ private:
     std::mutex removed_objects_mutex;
     StoredObjectSet objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
 };
-
 
 class MetadataStorageInMemoryTransaction final : public IMetadataTransaction
 {

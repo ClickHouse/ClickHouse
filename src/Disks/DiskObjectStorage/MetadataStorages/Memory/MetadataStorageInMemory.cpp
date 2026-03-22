@@ -8,7 +8,6 @@
 #include <ranges>
 #include <shared_mutex>
 
-
 namespace fs = std::filesystem;
 
 namespace DB
@@ -188,7 +187,6 @@ StoredObjects MetadataStorageInMemory::getStorageObjects(const std::string & pat
     return entry->objects;
 }
 
-
 /// ==================== Transaction ====================
 
 MetadataStorageInMemoryTransaction::MetadataStorageInMemoryTransaction(MetadataStorageInMemory & metadata_storage_)
@@ -258,6 +256,13 @@ void MetadataStorageInMemoryTransaction::unlinkFile(const std::string & path, bo
             if (if_exists)
                 return;
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
+        }
+
+        if (it->second.ref_count > 0)
+        {
+            /// Other hardlinks still reference this data, just decrement.
+            it->second.ref_count -= 1;
+            return;
         }
 
         if (should_remove_objects)
@@ -357,10 +362,11 @@ void MetadataStorageInMemoryTransaction::createHardLink(const std::string & path
         if (!entry)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path_from);
 
-        auto & new_entry = metadata_storage.files[path_to];
-        new_entry = *entry;
-        entry->ref_count++;
-        new_entry.ref_count = entry->ref_count;
+        if (metadata_storage.findFile(path_to))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", path_to);
+
+        entry->ref_count += 1;
+        metadata_storage.files[path_to] = *entry;
     });
 }
 

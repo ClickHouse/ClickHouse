@@ -7,7 +7,6 @@
 #include <mutex>
 #include <unordered_map>
 
-
 namespace DB
 {
 
