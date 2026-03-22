@@ -54,8 +54,7 @@ namespace ProfileEvents
     extern const Event KeeperBatchMaxTotalSize;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
     extern const Event KeeperStaleRequestsSkipped;
-    extern const Event KeeperLiveSessionsLockWaitMicroseconds;
-    extern const Event KeeperLiveSessionsLockHoldMicroseconds;
+    extern const Event KeeperFinishedSessionsCacheFull;
     extern const Event KeeperSessionCallbackLockWaitMicroseconds;
     extern const Event KeeperSessionCallbackLockHoldMicroseconds;
     extern const Event KeeperReadRequestQueueLockWaitMicroseconds;
@@ -76,6 +75,7 @@ namespace DB
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
+    extern const CoordinationSettingsUInt64 max_finished_sessions_cache_size;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
@@ -210,7 +210,7 @@ void KeeperDispatcher::requestThread()
                 if (shutdown_called)
                     break;
 
-                /// Skip stale requests for sessions that are no longer live.
+                /// Skip stale requests for finished sessions.
                 /// Close must pass through RAFT (ephemeral cleanup, watch cleanup, etc.).
                 /// SessionID uses internal IDs (session_id = -1), ignore it just to be safe.
                 auto is_stale_session_request = [&](const KeeperRequestForSession & req) -> bool
@@ -218,8 +218,8 @@ void KeeperDispatcher::requestThread()
                     if (req.request->getOpNum() != Coordination::OpNum::Close
                         && req.request->getOpNum() != Coordination::OpNum::SessionID)
                     {
-                        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
-                        if (!live_sessions.contains(req.session_id))
+                        std::lock_guard lock(finished_sessions_mutex);
+                        if (finished_sessions.contains(req.session_id))
                         {
                             ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
 
@@ -238,7 +238,7 @@ void KeeperDispatcher::requestThread()
                                     };
                                 },
                                 OpenTelemetry::SpanStatus::ERROR,
-                                "Session is no longer live");
+                                "Session finished before request could execute");
 
                             return true;
                         }
@@ -289,7 +289,7 @@ void KeeperDispatcher::requestThread()
                         {
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
 
-                            /// Skip stale requests for sessions that are no longer live during batch assembly.
+                            /// Skip stale requests for finished sessions during batch assembly.
                             if (is_stale_session_request(request))
                                 return true; // consumed, keep draining
 
@@ -414,12 +414,12 @@ void KeeperDispatcher::requestThread()
                 /// Read request always goes after write batch (last request)
                 if (has_read_request)
                 {
-                    bool is_live;
+                    bool finished;
                     {
-                        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
-                        is_live = live_sessions.contains(request.session_id);
+                        std::lock_guard lock(finished_sessions_mutex);
+                        finished = finished_sessions.contains(request.session_id);
                     }
-                    if (is_live)
+                    if (!finished)
                     {
                         if (server->isLeaderAlive())
                             server->putLocalReadRequest({request});
@@ -428,12 +428,12 @@ void KeeperDispatcher::requestThread()
                     }
                     else
                     {
-                        /// The session is no longer live (e.g. a Close was committed
-                        /// in the preceding write batch or the session was cleaned up).
+                        /// The session became finished after the initial stale check
+                        /// (e.g. a Close was committed in the preceding write batch).
                         /// The dispatcher_requests_queue span was already finalized
                         /// at handle_opentelemetery_spans above.
                         ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-                        LOG_TRACE(log, "Dropping stale read request for non-live session {}, xid {}", request.session_id, request.request->xid);
+                        LOG_TRACE(log, "Dropping stale read request for finished session {}, xid {}", request.session_id, request.request->xid);
                     }
                 }
             }
@@ -615,8 +615,8 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
     {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
-        if (!live_sessions.contains(session_id))
+        std::lock_guard lock(finished_sessions_mutex);
+        if (finished_sessions.contains(session_id))
         {
             ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
             return false;
@@ -689,10 +689,10 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             /// push to thread-safe queues, so no lock is needed here.
             for (const auto & read_request : pending_reads)
             {
-                /// Skip reads whose session is no longer live
+                /// Skip reads whose session has been finished
                 {
-                    ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
-                    if (!live_sessions.contains(read_request.session_id))
+                    std::lock_guard finished_lock(finished_sessions_mutex);
+                    if (finished_sessions.contains(read_request.session_id))
                     {
                         ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
 
@@ -708,7 +708,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                                 };
                             },
                             OpenTelemetry::SpanStatus::ERROR,
-                            "Session is no longer live");
+                            "Session finished before read could execute");
 
                         continue;
                     }
@@ -734,16 +734,14 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                 server->putLocalReadRequest(read_request);
             }
 
-            /// When Close commits, remove the session from `live_sessions` so that
-            /// stale requests still sitting in the backed-up queue will be filtered.
-            /// This covers the window between Close commit and `finishSession`
-            /// (e.g. `sessionCleanerTask` expired the session but the TCP handler
-            /// hasn't disconnected yet). Fires on ALL nodes via RAFT, which is
-            /// how followers learn about closed sessions.
+            /// When Close commits, all prior requests for this session have been processed.
+            /// Remove from finished_sessions to reclaim memory.
+            /// Done after the pending-read loop so reads queued for the closing session
+            /// are still filtered by the stale check above.
             if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
             {
-                ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
-                live_sessions.erase(request_for_session.session_id);
+                std::lock_guard lock(finished_sessions_mutex);
+                finished_sessions.erase(request_for_session.session_id);
             }
         });
 
@@ -907,28 +905,10 @@ KeeperDispatcher::~KeeperDispatcher()
 
 void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
-    bool inserted = false;
-    {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
-        inserted = live_sessions.insert(session_id).second;
-    }
-
-    try
-    {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
-        if (!session_to_response_callback.try_emplace(session_id, callback).second)
-            throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
-        CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
-    }
-    catch (...)
-    {
-        if (inserted)
-        {
-            ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
-            live_sessions.erase(session_id);
-        }
-        throw;
-    }
+    ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
+    if (!session_to_response_callback.try_emplace(session_id, callback).second)
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
+    CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
 }
 
 void KeeperDispatcher::sessionCleanerTask()
@@ -964,10 +944,10 @@ void KeeperDispatcher::sessionCleanerTask()
                         .request = std::move(request),
                         .digest = std::nullopt
                     };
-                    /// Remove session from live_sessions before pushing Close to the queue.
-                    /// This gives the leader early filtering — stale requests for
-                    /// this session are skipped as soon as the session expiry is detected,
-                    /// before the Close even enters the queue.
+                    /// Mark session as finished before pushing Close to the queue.
+                    /// This prevents a race where Close commits and erases from
+                    /// `finished_sessions` before `finishSession` inserts it,
+                    /// which would permanently leak the session ID in the set.
                     /// Close requests are exempt from stale filtering, so the
                     /// Close will still pass through RAFT for ephemeral cleanup.
                     finishSession(dead_session);
@@ -1008,17 +988,27 @@ void KeeperDispatcher::finishSession(int64_t session_id)
         else
         {
             /// Session was already finished by another path (e.g. `sessionCleanerTask`
-            /// raced with `KeeperTCPHandler`). That path already erased from
-            /// `live_sessions`.
+            /// raced with `KeeperTCPHandler`). The `Close` request may have already
+            /// committed and erased `finished_sessions`, so inserting now would leak
+            /// the session ID with no one to clean it up.
             return;
         }
     }
 
-    /// Remove from live_sessions so `requestThread` can skip stale requests
+    /// Mark session as finished so `requestThread` can skip stale requests
     /// still sitting in the queue for this session.
     {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
-        live_sessions.erase(session_id);
+        std::lock_guard lock(finished_sessions_mutex);
+        if (finished_sessions.size() < configuration_and_settings->coordination_settings[CoordinationSetting::max_finished_sessions_cache_size])
+        {
+            finished_sessions.insert(session_id);
+        }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::KeeperFinishedSessionsCacheFull);
+            LOG_WARNING(LogFrequencyLimiter(log, 10), "Finished sessions cache is full (size {}), session {} will not be tracked for stale request filtering",
+                finished_sessions.size(), session_id);
+        }
     }
 
     /// Notify the callback that session is being closed before removing it
