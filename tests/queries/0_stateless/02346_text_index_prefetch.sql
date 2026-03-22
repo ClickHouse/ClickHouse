@@ -5,6 +5,8 @@ SET allow_prefetched_read_pool_for_remote_filesystem = 1;
 SET remote_filesystem_read_prefetch = 1;
 SET remote_filesystem_read_method = 'threadpool';
 SET max_rows_to_read = 0;
+SET use_page_cache_for_disks_without_file_cache = 0;
+SET use_page_cache_for_object_storage = 0;
 
 DROP TABLE IF EXISTS tab;
 
