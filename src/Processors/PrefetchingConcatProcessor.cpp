@@ -38,15 +38,21 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
         }
     }
 
-    /// Mark non-current inputs as needed if their buffer has room.
+    /// Mark non-current inputs as needed/not-needed based on buffer capacity.
     /// This is the key to parallelism: the pipeline executor will schedule
     /// upstream sources for all "needed" inputs simultaneously.
+    /// setNotNeeded provides backpressure when the buffer is full.
     {
         size_t idx = 0;
         for (auto & input : inputs)
         {
-            if (idx != current_input_idx && !input.isFinished() && buffers[idx].size() < max_buffered_chunks)
-                input.setNeeded();
+            if (idx != current_input_idx && !input.isFinished())
+            {
+                if (buffers[idx].size() < max_buffered_chunks)
+                    input.setNeeded();
+                else
+                    input.setNotNeeded();
+            }
             ++idx;
         }
     }

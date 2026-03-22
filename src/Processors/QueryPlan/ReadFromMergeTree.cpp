@@ -1306,6 +1306,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         const bool can_use_per_part_prefetching =
             !output_each_partition_through_separate_port
             && input_order_info->limit == 0
+            && !has_outer_limit
             && input_order_info->direction == 1
             && num_streams > 1;
 
@@ -1318,22 +1319,23 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
             /// Allocate streams proportional to marks, bounded by the global budget.
             size_t part_streams = 1;
-            if (streams_remaining > 1 && marks_remaining_total > 0)
+            if (can_use_per_part_prefetching && streams_remaining > 1 && marks_remaining_total > 0)
             {
                 part_streams = std::max<size_t>(1,
                     static_cast<size_t>(std::round(
                         static_cast<double>(marks_in_part) / static_cast<double>(marks_remaining_total)
                         * static_cast<double>(streams_remaining))));
                 part_streams = std::min(part_streams, streams_remaining);
+
+                /// Don't create more streams than marks available for concurrent reading.
+                if (marks_in_part < part_streams * info.min_marks_for_concurrent_read)
+                    part_streams = std::max<size_t>(1, marks_in_part / info.min_marks_for_concurrent_read);
             }
-            /// Don't create more streams than marks available for concurrent reading.
-            if (marks_in_part < part_streams * info.min_marks_for_concurrent_read)
-                part_streams = std::max<size_t>(1, marks_in_part / info.min_marks_for_concurrent_read);
 
             streams_remaining -= std::min(part_streams, streams_remaining);
             marks_remaining_total -= std::min(marks_in_part, marks_remaining_total);
 
-            if (part_streams <= 1 || !can_use_per_part_prefetching)
+            if (part_streams <= 1)
             {
                 /// Single stream for this part — no splitting needed.
                 RangesInDataParts single_part_vec;

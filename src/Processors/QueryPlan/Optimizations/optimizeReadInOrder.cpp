@@ -1128,6 +1128,12 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             if (!can_read)
                 return nullptr;
 
+            /// If the query has a LIMIT but it was zeroed (e.g. by a JOIN),
+            /// tell the reading step so it can avoid per-part prefetching
+            /// that would defeat early termination.
+            if (sorting.getLimit() > 0 && order_info.input_order->limit == 0)
+                reading->setHasOuterLimit();
+
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }

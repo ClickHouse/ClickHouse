@@ -315,6 +315,11 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+
+    /// Set when the query has a LIMIT but it could not be propagated
+    /// to `input_order_info->limit` (e.g. because of a JOIN).
+    /// Used to disable per-part prefetching that defeats early termination.
+    void setHasOuterLimit() { has_outer_limit = true; }
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
@@ -411,6 +416,10 @@ private:
 
     size_t requested_num_streams;
     size_t output_streams_limit = 0;
+
+    /// True when a LIMIT exists in the query but could not be pushed
+    /// to input_order_info->limit (e.g. because of a JOIN).
+    bool has_outer_limit = false;
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
