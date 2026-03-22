@@ -12,10 +12,6 @@ namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_CONVERT_TYPE;
-    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -150,37 +146,46 @@ public:
 
         /// Try the optimized `transform` path when all WHEN/THEN values are constant.
         /// `transform(expr, [when1, when2, ...], [then1, then2, ...], else)` uses a precomputed
-        /// lookup table and is faster than `multiIf`. However, it has limitations:
-        /// - It doesn't support some data types (e.g. Int128) and throws NOT_IMPLEMENTED.
+        /// lookup table and is faster than `multiIf`. However, `transform` has limitations:
         /// - It casts WHEN values to the expression type, which fails when WHEN values are
-        ///   Nullable (containing NULL) but the expression is non-Nullable.
+        ///   Nullable but the expression is non-Nullable (NULL cannot be cast).
         /// - It requires a common supertype for all WHEN values and all THEN values.
-        /// In all these cases, we fall through to the `multiIf` path.
+        /// - It doesn't support types larger than 8 bytes (e.g. Int128).
+        /// When `transform` is not applicable, we fall through to the `multiIf` path.
         if (all_when_then_values_constant)
         {
-            try
+            ColumnsWithTypeAndName src_array_elems;
+            DataTypes src_array_types;
+            ColumnsWithTypeAndName dst_array_elems;
+            DataTypes dst_array_types;
+
+            for (size_t i = 1; i < (args.size() - 1); ++i)
             {
-                ColumnsWithTypeAndName src_array_elems;
-                DataTypes src_array_types;
-                ColumnsWithTypeAndName dst_array_elems;
-                DataTypes dst_array_types;
-
-                for (size_t i = 1; i < (args.size() - 1); ++i)
+                if (i % 2)
                 {
-                    if (i % 2)
-                    {
-                        src_array_elems.push_back(args[i]);
-                        src_array_types.push_back(args[i].type);
-                    }
-                    else
-                    {
-                        dst_array_elems.push_back(args[i]);
-                        dst_array_types.push_back(args[i].type);
-                    }
+                    src_array_elems.push_back(args[i]);
+                    src_array_types.push_back(args[i].type);
                 }
+                else
+                {
+                    dst_array_elems.push_back(args[i]);
+                    dst_array_types.push_back(args[i].type);
+                }
+            }
 
-                DataTypePtr src_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(src_array_types));
-                DataTypePtr dst_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(dst_array_types));
+            /// Check whether `transform` can handle these types.
+            /// `transform` casts WHEN values to the expression type; if WHEN values are Nullable
+            /// but the expression is non-Nullable, the cast will fail on NULLs.
+            auto src_supertype = tryGetLeastSupertype(src_array_types);
+            auto dst_supertype = tryGetLeastSupertype(dst_array_types);
+
+            bool can_use_transform = src_supertype && dst_supertype
+                && !(src_supertype->isNullable() && !args.front().type->isNullable());
+
+            if (can_use_transform)
+            {
+                DataTypePtr src_array_type = std::make_shared<DataTypeArray>(src_supertype);
+                DataTypePtr dst_array_type = std::make_shared<DataTypeArray>(dst_supertype);
 
                 ColumnWithTypeAndName src_array_col{nullptr, src_array_type, ""};
                 ColumnWithTypeAndName dst_array_col{nullptr, dst_array_type, ""};
@@ -191,19 +196,23 @@ public:
                 dst_array_col.column = fun_array->build(dst_array_elems)->execute(dst_array_elems, dst_array_type, input_rows_count, /* dry_run = */ false);
 
                 ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
-                auto function_base = FunctionFactory::instance().get("transform", context)->build(transform_args);
-                return function_base->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
-            }
-            catch (Exception & e)
-            {
-                if (e.code() != ErrorCodes::NOT_IMPLEMENTED
-                    && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE
-                    && e.code() != ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
-                    && e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-                    && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                    throw;
 
-                /// Fall back to multiIf.
+                FunctionBasePtr function_base;
+                try
+                {
+                    function_base = FunctionFactory::instance().get("transform", context)->build(transform_args);
+                }
+                catch (Exception & e)
+                {
+                    if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                        throw;
+
+                    /// Function `transform` doesn't support some data types, e.g. Int128.
+                    /// Fall back to multiIf.
+                }
+
+                if (function_base)
+                    return function_base->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
             }
         }
 
