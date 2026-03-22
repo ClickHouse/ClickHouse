@@ -54,7 +54,7 @@ std::string_view AddressToLineCache::getCached(uintptr_t addr)
     /// Fast path: read lock — concurrent reads don't block each other
     {
         std::shared_lock read_lock(mutex);
-        if (auto it = map.find(addr); it)
+        if (auto * it = map.find(addr); it)
             return it->getMapped();
     }
 
