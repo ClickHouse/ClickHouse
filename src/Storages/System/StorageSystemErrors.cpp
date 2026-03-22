@@ -9,8 +9,6 @@
 #include <Common/ErrorCodes.h>
 #include <Core/Settings.h>
 
-
-
 namespace DB
 {
 namespace Setting
@@ -37,7 +35,6 @@ ColumnsDescription StorageSystemErrors::getColumnsDescription()
         { "last_error_lines",   symbolized_type, "File names with line numbers corresponding to last_error_trace." },
     };
 }
-
 
 void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {

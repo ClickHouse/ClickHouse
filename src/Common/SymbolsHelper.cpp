@@ -27,7 +27,7 @@ symbolizeTrace(const void * const * frame_pointers, size_t size)
         /// Callers may pass either absolute runtime addresses or file offsets.
         const auto * object = symbol_index.findObject(addr);
         const void * offset = addr;
-        
+
         if (object)
             offset = reinterpret_cast<const void *>(
                 reinterpret_cast<uintptr_t>(addr) - reinterpret_cast<uintptr_t>(object->address_begin));

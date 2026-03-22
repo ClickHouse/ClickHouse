@@ -20,7 +20,6 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/SymbolIndex.h>
 
-
 namespace DB
 {
 
@@ -121,8 +120,6 @@ NamesAndAliases TraceLogElement::getNamesAndAliases()
         {"build_id", std::make_shared<DataTypeString>(), "\'" + build_id_hex + "\'"},
     };
 }
-
-
 
 void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
