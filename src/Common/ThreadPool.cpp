@@ -419,7 +419,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             return on_error("cannot start the job or thread");
         }
 
-        /// Wake up the most recently idle thread (LIFO order) to run the new job.
+        /// Select the most recently idle thread (LIFO order) for priority wake-up.
         /// LIFO scheduling concentrates work on fewer threads, improving cache locality
         /// and reducing memory overhead from allocator per-thread caches.
         if (!idle_thread_stack.empty())
@@ -427,9 +427,11 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             auto * thread_to_wake = idle_thread_stack.back();
             idle_thread_stack.pop_back();
             thread_to_wake->idle_wakeup_flag = true;
-            thread_to_wake->idle_wakeup_cv.notify_one();
         }
     }
+
+    /// Wake up a free thread to run the new job.
+    new_job_or_shutdown.notify_one();
 
     ProfileEvents::increment(std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
@@ -598,11 +600,9 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::wakeUpAllIdleThreadsNoLock()
 {
     for (auto * thread : idle_thread_stack)
-    {
         thread->idle_wakeup_flag = true;
-        thread->idle_wakeup_cv.notify_one();
-    }
     idle_thread_stack.clear();
+    new_job_or_shutdown.notify_all();
 }
 
 template <typename Thread>
@@ -753,10 +753,10 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             }
 
             /// LIFO idle thread scheduling: push this thread onto the idle stack
-            /// and wait on a per-thread condition variable. The scheduler wakes the
-            /// most recently idle thread first, concentrating work on fewer OS threads.
-            /// This improves CPU cache locality and reduces memory fragmentation
-            /// from allocator per-thread caches (e.g. jemalloc tcache).
+            /// and wait on the shared condition variable. The scheduler selects the
+            /// most recently idle thread first via idle_wakeup_flag, concentrating
+            /// work on fewer OS threads. This improves CPU cache locality and reduces
+            /// memory fragmentation from allocator per-thread caches (e.g. jemalloc tcache).
             while (parent_pool.jobs.empty()
                 && !parent_pool.shutdown
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
@@ -766,7 +766,19 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     parent_pool.idle_thread_stack.push_back(this);
                 }
                 idle_wakeup_flag = false;
-                idle_wakeup_cv.wait(lock, [this] { return idle_wakeup_flag; });
+
+                parent_pool.new_job_or_shutdown.wait(lock, [this]
+                {
+                    return idle_wakeup_flag
+                        || !parent_pool.jobs.empty()
+                        || parent_pool.shutdown
+                        || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
+                });
+
+                /// If we were not the LIFO-selected thread, remove ourselves from the idle stack.
+                if (!idle_wakeup_flag)
+                    std::erase(parent_pool.idle_thread_stack, this);
+                idle_wakeup_flag = false;
             }
 
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
