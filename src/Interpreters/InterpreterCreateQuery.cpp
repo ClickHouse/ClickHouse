@@ -34,6 +34,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -891,33 +893,46 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
             const auto & selects = select_with_union_query->list_of_selects->children;
 
-            for (const auto & select : selects)
+            std::function<void(const ASTPtr &)> apply_aliases = [&](const ASTPtr & node)
             {
-                const auto * select_query = select->as<ASTSelectQuery>();
-
-                if (!select_query)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectQuery inside ASTSelectWithUnionQuery");
-
-                auto select_expression_list = select_query->select();
-
-                if (!select_expression_list)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No select expressions in SELECT query");
-
-                auto & select_expressions = select_expression_list->children;
-
-                if (select_expressions.size() != aliases_children.size())
+                if (const auto * select_query = node->as<ASTSelectQuery>())
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Number of aliases does not match number of expressions in SELECT list");
-                }
+                    auto select_expression_list = select_query->select();
 
-                for (size_t i = 0; i < select_expressions.size(); ++i)
-                {
-                    auto & expr = select_expressions[i];
-                    const auto & alias_ast = aliases_children[i]->as<ASTIdentifier &>();
-                    expr->setAlias(alias_ast.name());
+                    if (!select_expression_list)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "No select expressions in SELECT query");
+
+                    auto & select_expressions = select_expression_list->children;
+
+                    if (select_expressions.size() != aliases_children.size())
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Number of aliases does not match number of expressions in SELECT list");
+                    }
+
+                    for (size_t i = 0; i < select_expressions.size(); ++i)
+                    {
+                        auto & expr = select_expressions[i];
+                        const auto & alias_ast = aliases_children[i]->as<ASTIdentifier &>();
+                        expr->setAlias(alias_ast.name());
+                    }
                 }
-            }
+                else if (const auto * intersect_except = node->as<ASTSelectIntersectExceptQuery>())
+                {
+                    for (const auto & child : intersect_except->getListOfSelects())
+                        apply_aliases(child);
+                }
+                else if (const auto * nested_union = node->as<ASTSelectWithUnionQuery>())
+                {
+                    for (const auto & child : nested_union->list_of_selects->children)
+                        apply_aliases(child);
+                }
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AST node inside ASTSelectWithUnionQuery: {}", node->getID());
+            };
+
+            for (const auto & select : selects)
+                apply_aliases(select);
         }
 
         /// For refreshable materialized views, use the MV's database as context for the view's SELECT analysis.
