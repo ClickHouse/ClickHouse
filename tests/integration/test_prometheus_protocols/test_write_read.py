@@ -178,7 +178,6 @@ def test_remote_write_dynamic_routing():
 
 def test_remote_write_dynamic_routing_disabled_for_table():
     timestamp = time.time()
-    rows_before = int(node.query("SELECT count() FROM timeSeriesData(prometheus)"))
     write_request = convert_time_series_to_protobuf(
         [({"__name__": "disabled_dynamic_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
     )
@@ -190,9 +189,13 @@ def test_remote_write_dynamic_routing_disabled_for_table():
         write_request,
     )
 
-    rows_after = int(node.query("SELECT count() FROM timeSeriesData(prometheus)"))
-
     assert response.status_code == requests.codes.internal_server_error
     assert "Prometheus remote write dynamic routing is disabled" in response.text
     assert "default.prometheus" in response.text
-    assert rows_after == rows_before
+    assert (
+        node.query(
+            "SELECT count() FROM timeSeriesTags(prometheus) "
+            "WHERE metric_name = 'disabled_dynamic_metric'"
+        ).strip()
+        == "0"
+    )
