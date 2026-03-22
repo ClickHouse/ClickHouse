@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_topn_aggregation", false, false, "New setting to enable fused TopN aggregation optimization for GROUP BY ... ORDER BY aggregate LIMIT K queries."},
             {"topn_aggregation_pruning_level", 2, 2, "Controls Mode 2 pruning optimizations: 0=direct compute only, 1=+in-transform threshold, 2=+dynamic filter pushdown."},
             {"topn_aggregation_max_limit", 1000, 1000, "Maximum LIMIT value for applying TopN Mode 2 optimization; larger LIMIT falls back to standard pipeline to avoid regressions."},
+            {"enable_materialized_cte", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -52,6 +53,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
             {"optimize_syntax_fuse_functions", false, true, "The optimization is production-ready"},
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
+            {"enable_materialized_cte", false, false, "New setting"},
             {"use_parquet_metadata_cache", false, true, "Enables cache of parquet file metadata."},
             {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
             {"use_text_index_tokens_cache", false, false, "New setting"},
@@ -87,6 +89,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
+
             {"optimize_dry_run_check_part", true, true, "New setting"},
             {"parallel_non_joined_rows_processing", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."},
             {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
