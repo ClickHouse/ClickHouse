@@ -3,6 +3,8 @@ SET optimize_read_in_order=1;
 SET optimize_trivial_insert_select = 1;
 SET read_in_order_two_level_merge_threshold=100;
 SET read_in_order_use_virtual_row = 1;
+SET use_skip_indexes_for_top_k = 0;
+SET use_top_k_dynamic_filtering = 0;
 
 DROP TABLE IF EXISTS t_read_in_order;
 

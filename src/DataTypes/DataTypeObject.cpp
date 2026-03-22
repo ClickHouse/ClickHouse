@@ -249,7 +249,7 @@ String DataTypeObject::doGetName() const
 
 MutableColumnPtr DataTypeObject::createColumn() const
 {
-    std::unordered_map<String, MutableColumnPtr> typed_path_columns;
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
     typed_path_columns.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
         typed_path_columns[path] = type->createColumn();
@@ -412,7 +412,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
                     result_typed_columns[path.substr(prefix.size())] = column;
             }
 
-            std::vector<std::pair<String, ColumnPtr>> result_dynamic_paths;
+            VectorWithMemoryTracking<std::pair<String, ColumnPtr>> result_dynamic_paths;
             for (const auto & [path, column] :  object_column.getDynamicPaths())
             {
                 if (path.starts_with(prefix))
