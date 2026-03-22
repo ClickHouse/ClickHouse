@@ -1,9 +1,10 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/67668
 -- When querying a VIEW that contains a JOIN, the outer WHERE clause must be
 -- pushed down through the JOIN to the underlying tables.
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-random-merge-tree-settings
 
 SET enable_analyzer = 1;
+SET serialize_query_plan = 0;
 
 DROP TABLE IF EXISTS log_event;
 DROP TABLE IF EXISTS data_user_utm;
@@ -38,6 +39,9 @@ SELECT log_event.*, data_user_utm.*
 FROM log_event
 ANY LEFT JOIN data_user_utm FINAL
 ON log_event.app_id = data_user_utm.app_id AND log_event.guid = data_user_utm.guid;
+
+SYSTEM STOP MERGES log_event;
+SYSTEM STOP MERGES data_user_utm;
 
 -- Insert data into two partitions for each table
 INSERT INTO log_event SELECT number, 20240725, 16, 'web', '1.0', toString(number) FROM numbers(100);
