@@ -357,7 +357,7 @@ SELECT generateEmbedding('my_embeddings', 'ClickHouse is a fast analytics databa
 
 **Semantic similarity search**
 
-Use with [cosineDistance](/sql-reference/functions/distance-functions#cosinedistance) to find semantically similar texts:
+Use with [cosineDistance](/sql-reference/functions/distance-functions) to find semantically similar texts:
 
 ```sql
 SELECT
