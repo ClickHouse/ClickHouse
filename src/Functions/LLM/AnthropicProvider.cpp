@@ -18,6 +18,32 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
+static String extractProviderError(const std::string & response_body, int status_code)
+{
+    try
+    {
+        Poco::JSON::Parser err_parser;
+        auto err_json = err_parser.parse(response_body);
+        auto err_obj = err_json.extract<Poco::JSON::Object::Ptr>();
+        if (err_obj && err_obj->has("error"))
+        {
+            auto err = err_obj->getObject("error");
+            if (err)
+            {
+                String msg = err->optValue<String>("message", "");
+                String type = err->optValue<String>("type", "");
+                if (!msg.empty())
+                    return fmt::format("HTTP {} [{}]: {}", status_code, type, msg);
+            }
+        }
+    }
+    catch (...) {} // NOLINT: best-effort JSON parsing
+    size_t max_len = 256;
+    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
+        response_body.substr(0, std::min(response_body.size(), max_len)));
+}
+
+
 AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & api_key_)
     : endpoint(endpoint_), api_key(api_key_), uri(endpoint_)
 {
@@ -97,7 +123,7 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
     {
         throw Exception(
             ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "Anthropic provider returned HTTP {}: {}", static_cast<int>(status), response_body);
+            "Anthropic provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
     }
 
     Poco::JSON::Parser parser;

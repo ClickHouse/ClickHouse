@@ -154,7 +154,10 @@ public:
             dim_arg_idx = 2;
 
             const auto * first_const = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-            String first_arg = first_const ? String(first_const->getDataAt(0)) : "";
+            if (!first_const)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "First argument of {} must be a constant string (named collection or URL) when 3 arguments are provided", name);
+            String first_arg(first_const->getDataAt(0));
 
             if (!first_arg.empty() && looksLikeURL(first_arg))
             {
@@ -333,9 +336,22 @@ public:
 
                             {
                                 std::lock_guard lock(results_mutex);
+                                if (resp.embeddings.empty())
+                                {
+                                    if constexpr (or_null)
+                                    {
+                                        for (const auto * item : batch_items)
+                                            results[item->key] = {};
+                                        return;
+                                    }
+                                    else
+                                        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                                            "LLM embedding provider returned empty response for batch of {} inputs", batch_items.size());
+                                }
+
                                 for (size_t i = 0; i < batch_items.size(); ++i)
                                 {
-                                    auto & embedding = (i < resp.embeddings.size()) ? resp.embeddings[i] : resp.embeddings.back();
+                                    const auto & embedding = (i < resp.embeddings.size()) ? resp.embeddings[i] : resp.embeddings.back();
 
                                     if (cache_ttl > 0 && !embedding.empty())
                                     {

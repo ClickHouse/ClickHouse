@@ -11,7 +11,7 @@ namespace ErrorCodes
 
 static bool isGracefulQuotaMode(const String & mode)
 {
-    return mode == "break" || mode == "null" || mode == "partial";
+    return mode == "null";
 }
 
 bool LLMQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 batch_rows)
@@ -29,7 +29,7 @@ bool LLMQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                     "Limit for LLM rows exceeded: {} rows processed, maximum: {}. "
                     "This is controlled by the 'llm_max_rows_per_query' setting. "
-                    "Set 'llm_on_quota_exceeded' to 'break' to return NULL for remaining rows instead of failing",
+                    "Set 'llm_on_quota_exceeded' to 'null' to return NULL for remaining rows instead of failing",
                     prev, max_rows);
             quota_exceeded.store(true, std::memory_order_relaxed);
             return false;
