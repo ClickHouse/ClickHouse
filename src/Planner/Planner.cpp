@@ -2230,7 +2230,8 @@ void Planner::buildPlanForQueryNode()
                 && !query_node.hasOffset()
                 && !query_node.isLimitWithTies()
                 && !query_analysis_result.is_limit_length_negative
-                && query_analysis_result.fractional_limit == 0)
+                && query_analysis_result.fractional_limit == 0
+                && query_analysis_result.limit_length > 0)
             {
                 shuffle_limit = static_cast<size_t>(query_analysis_result.limit_length);
                 shuffle_limit_applied = true;

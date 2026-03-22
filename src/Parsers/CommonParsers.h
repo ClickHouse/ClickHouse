@@ -639,7 +639,6 @@ enum class Keyword : size_t
 #undef DECLARE_PARSER_KEYWORD_ENUM
 };
 
-
 std::string_view toStringView(Keyword type);
 
 const std::vector<String> & getAllKeyWords();
