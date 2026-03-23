@@ -262,9 +262,11 @@ public:
             /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
             FUNCTION_POINT_IN_POLYGON,
             /// Special for S2 spatial functions to utilize granule-level index pruning.
-            /// For example: s2RectContains(lo, hi, s2_col) or s2CapContains(center, deg, s2_col)
-            FUNCTION_S2_RECT_CONTAINS,
-            FUNCTION_S2_CAP_CONTAINS,
+            /// The query region is decomposed into an S2CellUnion covering at parse time;
+            /// at eval time each granule's [cell_min, cell_max] Hilbert-curve interval is
+            /// tested against the covering.
+            /// Applies to: s2RectContains, s2CapContains, s2CellsIntersect.
+            FUNCTION_S2_COVERING,
             /// Can take any value.
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
@@ -324,13 +326,11 @@ public:
         std::optional<String> point_in_polygon_function_name;
         std::shared_ptr<Polygon> polygon;
 
-        /// For FUNCTION_S2_RECT_CONTAINS and FUNCTION_S2_CAP_CONTAINS.
-        /// Pimpl wrappers to avoid including S2 headers here.
+        /// For FUNCTION_S2_COVERING.
+        /// Pimpl wrapper to avoid including S2 headers here.
         /// Additionally, `key_columns` has one element for the S2 key column.
-        struct S2RectData;
-        struct S2CapData;
-        std::shared_ptr<S2RectData> s2_rect_data;
-        std::shared_ptr<S2CapData> s2_cap_data;
+        struct S2CoveringData;
+        std::shared_ptr<S2CoveringData> s2_covering_data;
 
         /// What functions are applied to the key column before doing the range/set/etc check.
         /// E.g. toDate(key) > '2025-09-12'.
