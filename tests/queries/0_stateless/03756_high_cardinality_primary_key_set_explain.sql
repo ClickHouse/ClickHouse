@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel-replicas, no-parallel, no-random-merge-tree-settings
+-- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
 DROP TABLE IF EXISTS high_cardinality_primary_key_set;
