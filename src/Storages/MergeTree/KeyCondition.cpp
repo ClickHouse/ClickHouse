@@ -3374,8 +3374,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             if (allow_s2_keycondition)
             {
                 if (func_name == "s2RectContains"
-                    || func_name == "s2CapContains"
-                    || func_name == "s2CellsIntersect")
+                    || func_name == "s2CapContains")
                     return analyze_s2_covering();
             }
 #endif
