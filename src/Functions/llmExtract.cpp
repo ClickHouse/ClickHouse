@@ -23,7 +23,7 @@ namespace
 class FunctionLLMExtract final : public FunctionBaseLLM
 {
 public:
-    static constexpr auto name = "LLMExtract";
+    static constexpr auto name = "llmExtract";
     static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMExtract>(std::move(ctx)); }
     explicit FunctionLLMExtract(ContextPtr ctx) : FunctionBaseLLM(std::move(ctx)) {}
 
@@ -154,14 +154,14 @@ protected:
 
 }
 
-REGISTER_FUNCTION(LLMExtract)
+REGISTER_FUNCTION(llmExtract)
 {
     factory.registerFunction<FunctionLLMExtract>(FunctionDocumentation{
         .description = "Extracts structured information from unstructured text using an LLM.",
-        .syntax = "LLMExtract([collection,] text, instruction_or_schema[, temperature])",
+        .syntax = "llmExtract([collection,] text, instruction_or_schema[, temperature])",
         .arguments = {{"text", "Input text"}, {"instruction_or_schema", "Extraction instruction or JSON schema"}},
         .returned_value = {"Extracted value as String.", {"String"}},
-        .examples = {{"basic", "SELECT LLMExtract(body, 'main complaint') FROM reviews", ""}},
+        .examples = {{"basic", "SELECT llmExtract(body, 'main complaint') FROM reviews", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
 }

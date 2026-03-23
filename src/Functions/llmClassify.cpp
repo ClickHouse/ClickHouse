@@ -29,7 +29,7 @@ namespace
 class FunctionLLMClassify final : public FunctionBaseLLM
 {
 public:
-    static constexpr auto name = "LLMClassify";
+    static constexpr auto name = "llmClassify";
     static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMClassify>(std::move(ctx)); }
     explicit FunctionLLMClassify(ContextPtr ctx) : FunctionBaseLLM(std::move(ctx)) {}
 
@@ -121,14 +121,14 @@ protected:
 
 }
 
-REGISTER_FUNCTION(LLMClassify)
+REGISTER_FUNCTION(llmClassify)
 {
     factory.registerFunction<FunctionLLMClassify>(FunctionDocumentation{
         .description = "Classifies input text into one of the provided categories using an LLM.",
-        .syntax = "LLMClassify([collection,] text, categories[, temperature])",
+        .syntax = "llmClassify([collection,] text, categories[, temperature])",
         .arguments = {{"text", "Input text to classify"}, {"categories", "Array of category labels"}},
         .returned_value = {"The category label from the provided array.", {"String"}},
-        .examples = {{"basic", "SELECT LLMClassify(body, ['positive', 'negative']) FROM reviews", ""}},
+        .examples = {{"basic", "SELECT llmClassify(body, ['positive', 'negative']) FROM reviews", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
 }

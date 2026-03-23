@@ -70,14 +70,14 @@ Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `p
 | [`embedding_max_batch_size`](/operations/settings/settings#embedding_max_batch_size) | UInt64 | `100` | Maximum number of texts per HTTP request for embedding functions. Texts are grouped into batches of this size to reduce API call overhead. |
 | [`llm_on_quota_exceeded`](/operations/settings/settings#llm_on_quota_exceeded) | String | `'throw'` | Behavior when quota is exceeded: `'throw'` raises an exception, `'null'` returns NULL for remaining rows. |
 
-## LLMClassify {#llmclassify}
+## llmClassify {#llmclassify}
 
 Classifies input text into one of the provided categories.
 
 **Syntax**
 
 ```sql
-LLMClassify([collection,] text, categories[, temperature])
+llmClassify([collection,] text, categories[, temperature])
 ```
 
 **Arguments**
@@ -94,7 +94,7 @@ LLMClassify([collection,] text, categories[, temperature])
 **Example**
 
 ```sql
-SELECT LLMClassify('my_llm', 'I absolutely love ClickHouse!', ['positive', 'negative', 'neutral']) AS sentiment;
+SELECT llmClassify('my_llm', 'I absolutely love ClickHouse!', ['positive', 'negative', 'neutral']) AS sentiment;
 ```
 
 ```response
@@ -108,19 +108,19 @@ Classify multiple rows:
 ```sql
 SELECT
     review,
-    LLMClassify('my_llm', review, ['positive', 'negative', 'neutral']) AS sentiment
+    llmClassify('my_llm', review, ['positive', 'negative', 'neutral']) AS sentiment
 FROM product_reviews
 LIMIT 10;
 ```
 
-## LLMExtract {#llmextract}
+## llmExtract {#llmextract}
 
 Extracts information from text.
 
 **Syntax**
 
 ```sql
-LLMExtract([collection,] text, what_to_extract[, temperature])
+llmExtract([collection,] text, what_to_extract[, temperature])
 ```
 
 **Arguments**
@@ -137,7 +137,7 @@ LLMExtract([collection,] text, what_to_extract[, temperature])
 **Example**
 
 ```sql
-SELECT LLMExtract('my_llm', 'John Doe works at Acme Corp since 2020.', 'company name') AS company;
+SELECT llmExtract('my_llm', 'John Doe works at Acme Corp since 2020.', 'company name') AS company;
 ```
 
 ```response
@@ -157,7 +157,7 @@ SELECT
     JSONExtractString(info, 'remote') AS remote
 FROM
 (
-    SELECT LLMExtract(
+    SELECT llmExtract(
         'my_llm',
         text,
         '{"company": "company name", "location": "city and state or country", "stack": "main technologies, comma-separated", "contact": "email address or application URL if mentioned, or null", "remote": "yes, no, or hybrid"}'
@@ -186,14 +186,14 @@ ORDER BY company ASC;
 
 This works with any JSON schema, you can add or remove keys to control exactly what will be extracted.
 
-## LLMTranslate {#llmtranslate}
+## llmTranslate {#llmtranslate}
 
 Translates text into the specified target language.
 
 **Syntax**
 
 ```sql
-LLMTranslate([collection,] text, target_language[, instructions][, temperature])
+llmTranslate([collection,] text, target_language[, instructions][, temperature])
 ```
 
 **Arguments**
@@ -211,7 +211,7 @@ LLMTranslate([collection,] text, target_language[, instructions][, temperature])
 **Example**
 
 ```sql
-SELECT LLMTranslate('my_llm', 'Hello, how are you?', 'French') AS translated;
+SELECT llmTranslate('my_llm', 'Hello, how are you?', 'French') AS translated;
 ```
 
 ```response
@@ -225,19 +225,19 @@ Translate a whole column:
 ```sql
 SELECT
     original_text,
-    LLMTranslate('my_llm', original_text, 'German') AS german_text
+    llmTranslate('my_llm', original_text, 'German') AS german_text
 FROM articles
 LIMIT 5;
 ```
 
-## LLMGenerateSQL {#llmgeneratesql}
+## llmGenerateSQL {#llmgeneratesql}
 
 Generates a SQL query from a natural language description using an LLM. The function automatically discovers the database schema from the ClickHouse catalog, introspecting all accessible databases and tables to build context for the LLM.
 
 **Syntax**
 
 ```sql
-LLMGenerateSQL([collection,] prompt[, temperature])
+llmGenerateSQL([collection,] prompt[, temperature])
 ```
 
 **Arguments**
@@ -253,7 +253,7 @@ LLMGenerateSQL([collection,] prompt[, temperature])
 **Example**
 
 ```sql
-SELECT LLMGenerateSQL(
+SELECT llmGenerateSQL(
     'my_llm',
     'Find the top 5 customers by total order amount'
 ) AS generated_sql;
@@ -265,14 +265,14 @@ SELECT LLMGenerateSQL(
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## LLMGenerateContent {#llmgeneratecontent}
+## llmGenerateContent {#llmgeneratecontent}
 
 Generates free-form text content from a prompt.
 
 **Syntax**
 
 ```sql
-LLMGenerateContent([collection,] prompt[, system_prompt][, temperature])
+llmGenerateContent([collection,] prompt[, system_prompt][, temperature])
 ```
 
 **Arguments**
@@ -289,7 +289,7 @@ LLMGenerateContent([collection,] prompt[, system_prompt][, temperature])
 **Example**
 
 ```sql
-SELECT LLMGenerateContent('my_llm', 'What is 2 + 2? Reply with just the number.') AS answer;
+SELECT llmGenerateContent('my_llm', 'What is 2 + 2? Reply with just the number.') AS answer;
 ```
 
 ```response
@@ -303,7 +303,7 @@ Summarize column values:
 ```sql
 SELECT
     article_title,
-    LLMGenerateContent('my_llm', concat('Summarize in one sentence: ', article_body)) AS summary
+    llmGenerateContent('my_llm', concat('Summarize in one sentence: ', article_body)) AS summary
 FROM articles
 LIMIT 5;
 ```

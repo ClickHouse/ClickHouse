@@ -1,41 +1,33 @@
--- Function registration
-LLMClassify
-LLMExtract
-LLMGenerateContent
-LLMGenerateSQL
-LLMTranslate
-generateEmbedding
-generateEmbeddingOrNull
--- LLMClassify: too few arguments
--- LLMClassify: too many arguments
--- LLMClassify: missing named collection
--- LLMExtract: too few arguments
--- LLMExtract: too many arguments
--- LLMExtract: missing named collection
--- LLMTranslate: too few arguments
--- LLMTranslate: too many arguments
--- LLMTranslate: missing named collection
--- LLMGenerateSQL: too few arguments
--- LLMGenerateSQL: too many arguments
--- LLMGenerateSQL: missing named collection
--- LLMGenerateContent: too few arguments
--- LLMGenerateContent: too many arguments
--- LLMGenerateContent: missing named collection
+-- llmClassify: too few arguments
+-- llmClassify: too many arguments
+-- llmClassify: missing named collection
+-- llmExtract: too few arguments
+-- llmExtract: too many arguments
+-- llmExtract: missing named collection
+-- llmExtract: too few arguments
+-- llmExtract: too many arguments
+-- llmExtract: missing named collection
+-- llmGenerateSQL: too few arguments
+-- llmGenerateSQL: too many arguments
+-- llmGenerateSQL: missing named collection
+-- llmGenerateContent: too few arguments
+-- llmGenerateContent: too many arguments
+-- llmGenerateContent: missing named collection
 -- generateEmbedding: too few arguments
 -- generateEmbedding: too many arguments
 -- generateEmbedding: missing named collection
 -- generateEmbeddingOrNull: too few arguments
 -- generateEmbeddingOrNull: too many arguments
 -- generateEmbeddingOrNull: missing named collection
--- LLMClassify return type
+-- llmClassify return type
 result	Nullable(String)
--- LLMExtract return type
+-- llmExtract return type
 result	Nullable(String)
--- LLMTranslate return type
+-- llmExtract return type
 result	Nullable(String)
--- LLMGenerateSQL return type
+-- llmGenerateSQL return type
 result	Nullable(String)
--- LLMGenerateContent return type
+-- llmGenerateContent return type
 result	Nullable(String)
 -- generateEmbedding return type
 result	Array(Float32)

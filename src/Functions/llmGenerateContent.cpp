@@ -21,7 +21,7 @@ namespace
 class FunctionLLMGenerateContent final : public FunctionBaseLLM
 {
 public:
-    static constexpr auto name = "LLMGenerateContent";
+    static constexpr auto name = "llmGenerateContent";
     static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMGenerateContent>(std::move(ctx)); }
     explicit FunctionLLMGenerateContent(ContextPtr ctx) : FunctionBaseLLM(std::move(ctx)) {}
 
@@ -68,14 +68,14 @@ protected:
 
 }
 
-REGISTER_FUNCTION(LLMGenerateContent)
+REGISTER_FUNCTION(llmGenerateContent)
 {
     factory.registerFunction<FunctionLLMGenerateContent>(FunctionDocumentation{
         .description = "Generates text content from a prompt using an LLM.",
-        .syntax = "LLMGenerateContent([collection,] prompt[, system_prompt][, temperature])",
+        .syntax = "llmGenerateContent([collection,] prompt[, system_prompt][, temperature])",
         .arguments = {{"prompt", "The user prompt or question"}, {"system_prompt", "Optional system prompt to guide generation"}},
         .returned_value = {"Generated text as String.", {"String"}},
-        .examples = {{"basic", "SELECT LLMGenerateContent('Explain what ClickHouse is in one sentence')", ""}},
+        .examples = {{"basic", "SELECT llmGenerateContent('Explain what ClickHouse is in one sentence')", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
 }

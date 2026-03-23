@@ -25,7 +25,7 @@ namespace
 class FunctionLLMGenerateSQL final : public FunctionBaseLLM
 {
 public:
-    static constexpr auto name = "LLMGenerateSQL";
+    static constexpr auto name = "llmGenerateSQL";
     static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMGenerateSQL>(std::move(ctx)); }
     explicit FunctionLLMGenerateSQL(ContextPtr ctx) : FunctionBaseLLM(std::move(ctx)) {}
 
@@ -164,17 +164,17 @@ protected:
 
 }
 
-REGISTER_FUNCTION(LLMGenerateSQL)
+REGISTER_FUNCTION(llmGenerateSQL)
 {
     factory.registerFunction<FunctionLLMGenerateSQL>(FunctionDocumentation{
         .description = "Generates a ClickHouse SQL query from a natural language description using an LLM.",
-        .syntax = "LLMGenerateSQL([collection,] query[, temperature])",
+        .syntax = "llmGenerateSQL([collection,] query[, temperature])",
         .arguments = {
             {"collection", "Optional named collection with LLM provider configuration"},
             {"query", "Natural language description of the desired query"},
             {"temperature", "Optional sampling temperature (default: 0.1)"}},
         .returned_value = {"Generated SQL query as String.", {"String"}},
-        .examples = {{"basic", "SELECT LLMGenerateSQL('top 10 users by revenue')", ""}},
+        .examples = {{"basic", "SELECT llmGenerateSQL('top 10 users by revenue')", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
 }
