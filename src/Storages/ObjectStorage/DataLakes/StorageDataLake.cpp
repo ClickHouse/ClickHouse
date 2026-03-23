@@ -76,13 +76,18 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     , format_settings(format_settings_)
     , distributed_processing(distributed_processing_)
     , is_table_function(is_table_function_)
-    , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
+    , log(getLogger(fmt::format("Storage{}({})", String(DataLakeMetadata::name) + configuration->getEngineName(), table_id_.getFullTableName())))
     , datalake_settings(std::move(datalake_settings_))
     , catalog(catalog_)
     , storage_id(table_id_)
 {
     if (datalake_settings)
         configuration->setDataLakeSettings(datalake_settings);
+
+    /// Ensure trailing slash on the raw path for data lake storages.
+    auto path = configuration->getRawPath();
+    if (!path.path.ends_with('/'))
+        configuration->setRawPath(StorageObjectStorageConfiguration::Path(path.path + "/"));
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
@@ -240,7 +245,7 @@ void StorageDataLake<DataLakeMetadata>::updateMetadata(ContextPtr context) const
 template <typename DataLakeMetadata>
 String StorageDataLake<DataLakeMetadata>::getName() const
 {
-    return configuration->getEngineName();
+    return String(DataLakeMetadata::name) + configuration->getEngineName();
 }
 
 template <typename DataLakeMetadata>

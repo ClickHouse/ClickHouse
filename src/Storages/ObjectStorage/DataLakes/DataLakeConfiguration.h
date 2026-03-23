@@ -25,12 +25,10 @@ template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
 
 /// DataLakeConfiguration is a thin wrapper around a base storage configuration
-/// (S3, Azure, etc.) that marks it as a data lake configuration and adjusts the
-/// engine name and path. All metadata management is handled externally by
-/// StorageDataLake / StorageDataLakeCluster.
-///
-/// Settings are injected via setDataLakeSettings by the storage classes and
-/// accessed by metadata implementations via the configuration weak pointer.
+/// (S3, Azure, etc.) that carries a MetadataType alias used by table function
+/// templates. All real data-lake logic (engine name prefix, trailing-slash
+/// normalization, settings injection) is handled by StorageDataLake /
+/// StorageDataLakeCluster.
 template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetadata>
 class DataLakeConfiguration : public BaseStorageConfiguration
 {
@@ -38,28 +36,10 @@ public:
     using MetadataType = DataLakeMetadata;
 
     explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_ = nullptr)
-        : settings(std::move(settings_))
     {
+        if (settings_)
+            this->setDataLakeSettings(std::move(settings_));
     }
-
-    const DataLakeStorageSettings & getDataLakeSettings() const override
-    {
-        chassert(settings);
-        return *settings;
-    }
-
-    void setDataLakeSettings(DataLakeStorageSettingsPtr settings_) override { settings = std::move(settings_); }
-
-    std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
-
-    StorageObjectStorageConfiguration::Path getRawPath() const override
-    {
-        auto result = BaseStorageConfiguration::getRawPath().path;
-        return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
-    }
-
-private:
-    DataLakeStorageSettingsPtr settings;
 };
 
 

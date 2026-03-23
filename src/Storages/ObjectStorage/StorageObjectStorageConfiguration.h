@@ -259,12 +259,13 @@ public:
 
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
-    virtual const DataLakeStorageSettings & getDataLakeSettings() const
+    const DataLakeStorageSettings & getDataLakeSettings() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
+        chassert(datalake_settings);
+        return *datalake_settings;
     }
 
-    virtual void setDataLakeSettings(DataLakeStorageSettingsPtr) {}
+    void setDataLakeSettings(DataLakeStorageSettingsPtr settings_) { datalake_settings = std::move(settings_); }
 
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
 
@@ -311,6 +312,9 @@ protected:
     /// Object storage obtained from a named disk during `fromDisk` initialization.
     /// Used by `createObjectStorage` to return the pre-created storage instead of creating a new one.
     ObjectStoragePtr ready_object_storage;
+
+    /// DataLake storage settings, injected by StorageDataLake/StorageDataLakeCluster.
+    DataLakeStorageSettingsPtr datalake_settings;
 
 private:
     // Path used for reading, by default it is the same as `getRawPath`

@@ -69,11 +69,19 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
     DataLakeStorageSettingsPtr datalake_settings_,
     bool is_table_function)
     : IStorageCluster(
-        cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
+        cluster_name_, table_id_, getLogger(fmt::format("{}({})", String(DataLakeMetadata::name) + configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
     , datalake_settings(std::move(datalake_settings_))
 {
+    if (datalake_settings)
+        configuration->setDataLakeSettings(datalake_settings);
+
+    /// Ensure trailing slash on the raw path for data lake storages.
+    auto path = configuration->getRawPath();
+    if (!path.path.ends_with('/'))
+        configuration->setRawPath(StorageObjectStorageConfiguration::Path(path.path + "/"));
+
     configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
@@ -120,7 +128,7 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
 template <typename DataLakeMetadata>
 std::string StorageDataLakeCluster<DataLakeMetadata>::getName() const
 {
-    return configuration->getEngineName();
+    return String(DataLakeMetadata::name) + configuration->getEngineName();
 }
 
 template <typename DataLakeMetadata>
@@ -152,7 +160,7 @@ void StorageDataLakeCluster<DataLakeMetadata>::updateQueryToSendIfNeeded(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), query->formatForErrorMessage());
+            String(DataLakeMetadata::name) + configuration->getEngineName(), query->formatForErrorMessage());
     }
 
     ASTs & args = expression_list->children;
@@ -162,7 +170,7 @@ void StorageDataLakeCluster<DataLakeMetadata>::updateQueryToSendIfNeeded(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unexpected empty list of arguments for {}Cluster table function",
-            configuration->getEngineName());
+            String(DataLakeMetadata::name) + configuration->getEngineName());
     }
 
     ASTPtr settings_temporary_storage = nullptr;
