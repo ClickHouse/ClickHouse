@@ -39,7 +39,7 @@ namespace ErrorCodes
 
 /// Both `['a', 'b']` and `array('a', 'b')` are parsed as `_CAST(['a', 'b'], 'Array(String)')` with analyzer.
 /// While for non-analyzer there is no _CAST
-std::vector<String> extractParts(const ASTPtr & argument)
+std::vector<String> extractParts(const ASTPtr & argument, const ContextPtr & context)
 {
     ASTPtr array = argument;
     if (const auto * func = array->as<ASTFunction>())
@@ -66,7 +66,7 @@ std::vector<String> extractParts(const ASTPtr & argument)
         {
             std::vector<String> result;
             for (const auto & element : expr_list->children)
-                result.push_back(element->as<ASTLiteral &>().value.safeGet<String>());
+                result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value.safeGet<String>());
             return result;
         }
     }
@@ -153,7 +153,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
         predicate = args[1]->clone();
 
     if (args.size() > 2)
-        parts = extractParts(args[2]);
+        parts = extractParts(args[2], context);
 
     if (args.size() > 3)
         parseArgumentsForOptimizations(args, context);
@@ -178,7 +178,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
         predicate = args[2]->clone();
 
     if (args.size() > 3)
-        parts = extractParts(args[3]);
+        parts = extractParts(args[3], context);
 
     if (args.size() > 3)
         parseArgumentsForOptimizations(args, context);

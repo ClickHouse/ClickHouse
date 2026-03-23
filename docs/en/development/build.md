@@ -119,8 +119,11 @@ ninja
 You can control the number of parallel build jobs using parameter `-j`:
 
 ```sh
-ninja -j 1 clickhouse-server clickhouse-client
+ninja -j 1 clickhouse
 ```
+
+:::note
+`clickhouse-server`, `clickhouse-client`, and similar binaries are symbolic links in the `programs/` directory that point to the `clickhouse` executable after the build is completed.
 
 :::tip
 CMake provides shortcuts for above commands:

@@ -181,15 +181,15 @@ class ElOraculoDeTablas:
     DETAIL_QUERIES = [
         "SELECT database, table, name FROM system.detached_parts WHERE startsWith(name, 'broken') LIMIT 3;",
         "SELECT database, table, lost_part_count FROM system.replicas WHERE lost_part_count > 0 LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%') ORDER BY event_time DESC LIMIT 3;",
         "",
         "",
         "SELECT database, table, last_exception FROM system.replicas WHERE readonly_start_time IS NOT NULL LIMIT 3;",
         "SELECT database, table, part_name, exception FROM system.part_log WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3;",
         "SELECT database, table, last_exception FROM system.replication_queue WHERE last_exception != '' LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%LOGICAL_ERROR%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%CORRUPTED_DATA%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3;",
     ]
 
     def run_health_check(
@@ -210,7 +210,7 @@ class ElOraculoDeTablas:
                     (SELECT ifNull(sum(lost_part_count), 0), 2 y FROM system.replicas)
                      UNION ALL
                     (SELECT count() x, 3 y FROM system.text_log
-                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%')
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%'))
                      UNION ALL
                     (SELECT count() x, 4 y FROM clusterAllReplicas(default, system.clusters)
                      WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)
@@ -223,16 +223,16 @@ class ElOraculoDeTablas:
                      WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)
                      UNION ALL
                     (SELECT count() x, 8 y FROM system.text_log
-                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%')
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%'))
                      UNION ALL
                     (SELECT count() x, 9 y FROM system.replication_queue WHERE last_exception != '')
                      UNION ALL
                     (SELECT count() x, 10 y FROM system.text_log
-                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%LOGICAL_ERROR%' AND message NOT ILIKE '%UNION ALL%')
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%'))
                      UNION ALL
                     (SELECT count() x, 11 y FROM system.text_log
-                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%CORRUPTED_DATA%' AND message NOT ILIKE '%UNION ALL%')
-                    ) tx ORDER BY y;
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%'))
+                    ) tx ORDER BY y SETTINGS use_query_condition_cache = 0, use_query_cache = 0;
                     """
                 )
             except Exception as ex:

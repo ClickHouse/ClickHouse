@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Core/Names.h>
+#include <Core/Field.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -8,6 +11,7 @@
 
 #include <list>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 
@@ -65,6 +69,11 @@ struct ExplainPlanOptions
     bool input_headers = false;
     /// Print structure of columns instead of just their names and types.
     bool column_structure = false;
+    /// Hide expression steps and detailed action info
+    bool compact = false;
+    /// Print query plan with pretty formatting
+    bool pretty = false;
+
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -116,7 +125,7 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0, size_t max_description_length = 0) const;
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t offset = 0, size_t max_description_length = 0) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
