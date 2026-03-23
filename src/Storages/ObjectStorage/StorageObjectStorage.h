@@ -9,13 +9,9 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
-#include <Databases/DataLake/ICatalog.h>
-#include <Storages/MutationCommands.h>
 
 #include <memory>
 
@@ -46,9 +42,6 @@ public:
         const String & comment,
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
-        std::shared_ptr<DataLake::ICatalog> catalog_,
-        bool if_not_exists_,
-        bool is_datalake_query,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
         ASTPtr order_by_ = nullptr,
@@ -91,11 +84,11 @@ public:
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
+    bool isDataLake() const override { return false; }
 
     bool isObjectStorage() const override { return true; }
 
-    bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
+    bool supportsReplication() const override { return false; }
 
     /// Things required for PREWHERE.
     bool supportsPrewhere() const override;
@@ -132,35 +125,8 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
-    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
-
-    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
-
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
-
-    bool optimize(
-        const ASTPtr & /*query*/,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ASTPtr & /*partition*/,
-        bool /*final*/,
-        bool /*deduplicate*/,
-        const Names & /* deduplicate_by_columns */,
-        bool /*cleanup*/,
-        ContextPtr context) override;
-
-    bool supportsDelete() const override { return configuration->supportsDelete(); }
-
-    bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
-
-    void mutate(const MutationCommands &, ContextPtr) override;
-    void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
-
-    Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
-
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
-
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
 protected:
     /// Get path sample for hive partitioning implementation.
@@ -192,9 +158,6 @@ protected:
     NamesAndTypesList file_columns;
 
     LoggerPtr log;
-
-    std::shared_ptr<DataLake::ICatalog> catalog;
-    StorageID storage_id;
 };
 
 }
