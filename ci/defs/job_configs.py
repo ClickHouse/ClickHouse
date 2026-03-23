@@ -1214,6 +1214,7 @@ class JobConfigs:
         requires=[ArtifactNames.CH_ARM_RELEASE],
         run_in_docker="clickhouse/stateless-test",
         timeout=10800,
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
