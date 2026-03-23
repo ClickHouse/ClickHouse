@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.4",
         {
             {"enable_materialized_cte", false, false, "New setting"},
+            {"use_sparse_lightweight_representation_of_primary_key_for_index_analysis", false, true, "Optimize primary key index analysis by only materializing key columns referenced in the WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -50,7 +51,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
             {"optimize_syntax_fuse_functions", false, true, "The optimization is production-ready"},
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
-            {"use_sparse_lightweight_representation_of_primary_key_for_index_analysis", false, true, "New setting"},
             {"enable_materialized_cte", false, false, "New setting"},
             {"use_parquet_metadata_cache", false, true, "Enables cache of parquet file metadata."},
             {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
