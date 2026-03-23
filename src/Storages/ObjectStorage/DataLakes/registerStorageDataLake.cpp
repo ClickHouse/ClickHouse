@@ -102,7 +102,12 @@ std::shared_ptr<StorageDataLake<DataLakeMetadata>>
 createStorageDataLake(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration, DataLakeStorageSettingsPtr storage_settings)
 {
     const auto context = args.getLocalContext();
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
+    const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
+        ? (*storage_settings)[DataLakeStorageSetting::disk].value
+        : "";
+    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id, disk_name);
+    if (configuration->format == "auto")
+        configuration->format = "Parquet";
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

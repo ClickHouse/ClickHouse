@@ -88,7 +88,8 @@ public:
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        const StorageID * table_id = nullptr);
+        const StorageID * table_id = nullptr,
+        const String & disk_name = "");
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -146,7 +147,7 @@ public:
     virtual ObjectStoragePtr doCreateObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
-    virtual bool isDataLakeConfiguration() const { return false; }
+
 
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }

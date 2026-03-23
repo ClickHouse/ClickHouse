@@ -102,16 +102,9 @@ void StorageObjectStorageConfiguration::initialize(
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    const StorageID * table_id)
+    const StorageID * table_id,
+    const String & disk_name)
 {
-    std::string disk_name;
-    if (configuration_to_initialize.isDataLakeConfiguration())
-    {
-        const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
-        disk_name = storage_settings[DataLakeStorageSetting::disk].changed
-            ? storage_settings[DataLakeStorageSetting::disk].value
-            : "";
-    }
     if (!disk_name.empty())
     {
         if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
@@ -132,14 +125,7 @@ void StorageObjectStorageConfiguration::initialize(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
 
-    if (configuration_to_initialize.isDataLakeConfiguration())
-    {
-        if (configuration_to_initialize.partition_strategy_type != PartitionStrategyFactory::StrategyType::NONE)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
-        }
-    }
-    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
     {
         if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
         {
@@ -150,17 +136,10 @@ void StorageObjectStorageConfiguration::initialize(
 
     if (configuration_to_initialize.format == "auto")
     {
-        if (configuration_to_initialize.isDataLakeConfiguration())
-        {
-            configuration_to_initialize.format = "Parquet";
-        }
-        else
-        {
-            configuration_to_initialize.format
-                = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : configuration_to_initialize.getRawPath().path)
-                      .value_or("auto");
-        }
+        configuration_to_initialize.format
+            = FormatFactory::instance()
+                  .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : configuration_to_initialize.getRawPath().path)
+                  .value_or("auto");
     }
     else
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);

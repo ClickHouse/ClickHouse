@@ -42,8 +42,6 @@ public:
     {
     }
 
-    bool isDataLakeConfiguration() const override { return true; }
-
     const DataLakeStorageSettings & getDataLakeSettings() const override
     {
         chassert(settings);

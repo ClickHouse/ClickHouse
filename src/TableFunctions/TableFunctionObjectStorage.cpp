@@ -54,6 +54,17 @@ namespace DataLakeStorageSetting
 }
 
 template <typename Definition, typename Configuration, bool is_data_lake>
+String TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getDiskName() const
+{
+    if constexpr (is_data_lake)
+    {
+        if (settings && (*settings)[DataLakeStorageSetting::disk].changed)
+            return (*settings)[DataLakeStorageSetting::disk].value;
+    }
+    return "";
+}
+
+template <typename Definition, typename Configuration, bool is_data_lake>
 ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
     if (!object_storage)
@@ -302,7 +313,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     }
 
     ObjectStoragePtr current_object_storage;
-    if (configuration->isDataLakeConfiguration() && !disk_name.empty())
+    if (!disk_name.empty())
         current_object_storage = context->getDisk(disk_name)->getObjectStorage();
     else
         current_object_storage = getObjectStorage(context, !is_insert_query);

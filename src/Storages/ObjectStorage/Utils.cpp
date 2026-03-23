@@ -71,38 +71,17 @@ void resolveSchemaAndFormat(
     std::string & sample_path,
     const ContextPtr & context)
 {
-    if (format == "auto")
-    {
-        if (configuration->isDataLakeConfiguration())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Format must be already specified for {} storage.",
-                configuration->getTypeName());
-        }
-    }
-
     if (columns.empty())
     {
-        if (configuration->isDataLakeConfiguration())
+        if (format == "auto")
         {
-            auto table_structure = configuration->tryGetTableStructureFromMetadata(context);
-            if (table_structure)
-                columns = table_structure.value();
+            std::tie(columns, format) = resolveSchemaAndFormatFromData(
+                object_storage, configuration, format_settings, sample_path, context);
         }
-
-        if (columns.empty())
+        else
         {
-            if (format == "auto")
-            {
-                std::tie(columns, format) = resolveSchemaAndFormatFromData(
-                    object_storage, configuration, format_settings, sample_path, context);
-            }
-            else
-            {
-                chassert(!format.empty());
-                columns = resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
-            }
+            chassert(!format.empty());
+            columns = resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
         }
     }
     else if (format == "auto")

@@ -55,8 +55,15 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true);
+        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true, nullptr, getDiskName());
+        if constexpr (is_data_lake)
+        {
+            if (configuration->format == "auto")
+                configuration->format = "Parquet";
+        }
     }
+
+    String getDiskName() const;
 
     static void updateStructureAndFormatArgumentsIfNeeded(
       ASTs & args,
