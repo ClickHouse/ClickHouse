@@ -315,6 +315,13 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
         }
 
         query_context->setUser(*user_id, role_ids);
+
+        /// Clear database_namespace: the DDL query text already contains physical
+        /// (namespace-prefixed) database names from the initiator node. If we keep
+        /// the namespace set, the interpreter would apply it again, causing double-prefixing
+        /// (e.g., tenant1__tenant1__mydb). This is safe because ON CLUSTER queries
+        /// are always serialized with physical names after namespace resolution.
+        query_context->setDatabaseNamespace({});
     }
 
     if (entry.settings)
