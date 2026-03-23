@@ -578,6 +578,9 @@ private:
     /// Whether to use S2 spatial functions (`s2RectContains`, `s2CapContains`) as key conditions.
     bool allow_s2_keycondition = false;
 
+    /// Maximum number of cells for the S2 covering (see `s2_max_covering_cells` setting).
+    size_t s2_max_covering_cells = 20;
+
     /// If true, this key condition is relaxed. When a key condition is relaxed, it
     /// is considered weakened. This is because keys may not always align perfectly
     /// with the condition specified in the query, and the aim is to enhance the

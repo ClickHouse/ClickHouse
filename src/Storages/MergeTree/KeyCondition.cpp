@@ -66,6 +66,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_s2_keycondition;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsUInt64 s2_max_covering_cells;
     extern const SettingsTimezone session_timezone;
 }
 
@@ -76,7 +77,8 @@ extern const int LOGICAL_ERROR;
 
 #if USE_S2_GEOMETRY
 /// S2 index pruning: at parse time the query region is decomposed into a
-/// tight S2CellUnion covering via S2RegionCoverer (~20 cells). At eval time
+/// tight S2CellUnion covering via S2RegionCoverer (controlled by
+/// the `s2_max_covering_cells` setting, default 20). At eval time
 /// each granule's actual [cell_min, cell_max] Hilbert-curve interval is
 /// tested directly against the covering using coveringIntersectsRange
 /// (one binary search, pure integer comparisons, no trigonometry).
@@ -960,6 +962,7 @@ KeyCondition::KeyCondition(
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
     , allow_s2_keycondition(context->getSettingsRef()[Setting::allow_experimental_s2_keycondition])
+    , s2_max_covering_cells(context->getSettingsRef()[Setting::s2_max_covering_cells])
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -3026,7 +3029,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     return false;
 
                 S2RegionCoverer::Options opts;
-                opts.set_max_cells(20);
+                opts.set_max_cells(static_cast<int>(s2_max_covering_cells));
                 return make_result(2, S2RegionCoverer(opts).GetCovering(rect));
             }
             else if (func_name == "s2CapContains")
@@ -3047,7 +3050,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     return false;
 
                 S2RegionCoverer::Options opts;
-                opts.set_max_cells(20);
+                opts.set_max_cells(static_cast<int>(s2_max_covering_cells));
                 return make_result(2, S2RegionCoverer(opts).GetCovering(cap));
             }
             else if (func_name == "s2CellsIntersect")
