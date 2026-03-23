@@ -882,4 +882,22 @@ SELECT * FROM 04032_t WHERE i = 3 AND i > 3.5 SETTINGS optimize_and_compare_chai
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i = 3 AND i > 3.5 SETTINGS optimize_and_compare_chain_pruning = 0;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i = 3 AND i > 3.5 SETTINGS optimize_and_compare_chain_pruning = 1;
 
+-- =====================================================================
+-- Section: all conditions redundant → replace AND with true
+-- =====================================================================
+
+-- u >= 0 AND u < 300 → both always true for UInt8 (range 0..255), result should be constant true
+SELECT 'all_redundant_true';
+SELECT * FROM 04032_t WHERE u >= 0 AND u < 300 ORDER BY i SETTINGS optimize_and_compare_chain_pruning = 0;
+SELECT * FROM 04032_t WHERE u >= 0 AND u < 300 ORDER BY i SETTINGS optimize_and_compare_chain_pruning = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE u >= 0 AND u < 300 SETTINGS optimize_and_compare_chain_pruning = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE u >= 0 AND u < 300 SETTINGS optimize_and_compare_chain_pruning = 1;
+
+-- u >= 0 AND u <= 255 AND u != 256 → all three always true for UInt8
+SELECT 'all_redundant_three';
+SELECT * FROM 04032_t WHERE u >= 0 AND u <= 255 AND u != 256 ORDER BY i SETTINGS optimize_and_compare_chain_pruning = 0;
+SELECT * FROM 04032_t WHERE u >= 0 AND u <= 255 AND u != 256 ORDER BY i SETTINGS optimize_and_compare_chain_pruning = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE u >= 0 AND u <= 255 AND u != 256 SETTINGS optimize_and_compare_chain_pruning = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE u >= 0 AND u <= 255 AND u != 256 SETTINGS optimize_and_compare_chain_pruning = 1;
+
 DROP TABLE IF EXISTS 04032_t;

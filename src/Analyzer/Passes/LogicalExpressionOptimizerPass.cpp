@@ -1557,6 +1557,12 @@ private:
         if (and_operands.size() == function_node.getArguments().getNodes().size())
             return;
 
+        if (and_operands.empty())
+        {
+            node = std::make_shared<ConstantNode>(1u, function_node.getResultType());
+            return;
+        }
+
         if (and_operands.size() == 1)
         {
             /// AND operator can have UInt8 or bool as its type.

@@ -2501,3 +2501,57 @@ SELECT
 FROM default.`04032_t` AS __table1
 WHERE 0
 SETTINGS optimize_and_compare_chain_pruning = 1
+all_redundant_true
+1	10	1.5	a	x	2024-01-01 00:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+1	10	1.5	a	x	2024-01-01 00:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.u >= 0) AND (__table1.u < 300)
+SETTINGS optimize_and_compare_chain_pruning = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE 1
+SETTINGS optimize_and_compare_chain_pruning = 1
+all_redundant_three
+1	10	1.5	a	x	2024-01-01 00:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+1	10	1.5	a	x	2024-01-01 00:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.u >= 0) AND (__table1.u <= 255) AND (__table1.u != 256)
+SETTINGS optimize_and_compare_chain_pruning = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE 1
+SETTINGS optimize_and_compare_chain_pruning = 1
