@@ -65,47 +65,47 @@ using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDe
 #endif
 
 #if USE_AVRO
-using TableFunctionIcebergLocalCluster = TableFunctionObjectStorageCluster<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration, true>;
+using TableFunctionIcebergLocalCluster = TableFunctionObjectStorageCluster<IcebergLocalClusterDefinition, StorageLocalConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
-using TableFunctionIcebergCluster = TableFunctionObjectStorageCluster<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
+using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3Configuration, true>;
+using TableFunctionIcebergCluster = TableFunctionObjectStorageCluster<IcebergClusterDefinition, StorageS3Configuration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration, true>;
+using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<IcebergAzureClusterDefinition, StorageAzureConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_HDFS
-using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
+using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionPaimonS3Cluster = TableFunctionObjectStorageCluster<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
-using TableFunctionPaimonCluster = TableFunctionObjectStorageCluster<PaimonClusterDefinition, StorageS3PaimonConfiguration, true>;
+using TableFunctionPaimonS3Cluster = TableFunctionObjectStorageCluster<PaimonS3ClusterDefinition, StorageS3Configuration, true>;
+using TableFunctionPaimonCluster = TableFunctionObjectStorageCluster<PaimonClusterDefinition, StorageS3Configuration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionPaimonAzureCluster = TableFunctionObjectStorageCluster<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration, true>;
+using TableFunctionPaimonAzureCluster = TableFunctionObjectStorageCluster<PaimonAzureClusterDefinition, StorageAzureConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_HDFS
-using TableFunctionPaimonHDFSCluster = TableFunctionObjectStorageCluster<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration, true>;
+using TableFunctionPaimonHDFSCluster = TableFunctionObjectStorageCluster<PaimonHDFSClusterDefinition, StorageHDFSConfiguration, true>;
 #endif
 
 
 #if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
-using TableFunctionDeltaLakeS3Cluster = TableFunctionObjectStorageCluster<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
+using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3Configuration, true>;
+using TableFunctionDeltaLakeS3Cluster = TableFunctionObjectStorageCluster<DeltaLakeS3ClusterDefinition, StorageS3Configuration, true>;
 #endif
 
 #if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeAzureCluster = TableFunctionObjectStorageCluster<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
+using TableFunctionDeltaLakeAzureCluster = TableFunctionObjectStorageCluster<DeltaLakeAzureClusterDefinition, StorageAzureConfiguration, true>;
 #endif
 
 #if USE_AWS_S3
-using TableFunctionHudiCluster = TableFunctionObjectStorageCluster<HudiClusterDefinition, StorageS3HudiConfiguration, true>;
+using TableFunctionHudiCluster = TableFunctionObjectStorageCluster<HudiClusterDefinition, StorageS3Configuration, true>;
 #endif
 
 }

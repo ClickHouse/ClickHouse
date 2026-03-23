@@ -3,6 +3,11 @@
 namespace DB
 {
 
+class IcebergMetadata;
+class DeltaLakeMetadata;
+class HudiMetadata;
+class PaimonMetadata;
+
 /// Important note:
 /// `storage_engine_name` is not the type of the object storage the function works on top of.
 /// This is the name of ClickHouse's storage engine.
@@ -54,6 +59,7 @@ struct IcebergDefinition
     static constexpr auto name = "iceberg";
     static constexpr auto storage_engine_name = "Iceberg";
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = IcebergMetadata;
 };
 
 struct IcebergS3Definition
@@ -61,6 +67,7 @@ struct IcebergS3Definition
     static constexpr auto name = "icebergS3";
     static constexpr auto storage_engine_name = "IcebergS3";
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = IcebergMetadata;
 };
 
 struct IcebergAzureDefinition
@@ -68,6 +75,7 @@ struct IcebergAzureDefinition
     static constexpr auto name = "icebergAzure";
     static constexpr auto storage_engine_name = "IcebergAzure";
     static constexpr auto object_storage_type = "azure";
+    using MetadataType = IcebergMetadata;
 };
 
 struct IcebergLocalDefinition
@@ -75,6 +83,7 @@ struct IcebergLocalDefinition
     static constexpr auto name = "icebergLocal";
     static constexpr auto storage_engine_name = "IcebergLocal";
     static constexpr auto object_storage_type = "azure";
+    using MetadataType = IcebergMetadata;
 };
 
 struct IcebergHDFSDefinition
@@ -82,6 +91,7 @@ struct IcebergHDFSDefinition
     static constexpr auto name = "icebergHDFS";
     static constexpr auto storage_engine_name = "IcebergHDFS";
     static constexpr auto object_storage_type = "hdfs";
+    using MetadataType = IcebergMetadata;
 };
 
 struct DeltaLakeDefinition
@@ -89,6 +99,7 @@ struct DeltaLakeDefinition
     static constexpr auto name = "deltaLake";
     static constexpr auto storage_engine_name = "DeltaLake";
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = DeltaLakeMetadata;
 };
 
 struct DeltaLakeS3Definition
@@ -96,6 +107,7 @@ struct DeltaLakeS3Definition
     static constexpr auto name = "deltaLakeS3";
     static constexpr auto storage_engine_name = "DeltaLakeS3";
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = DeltaLakeMetadata;
 };
 
 struct DeltaLakeAzureDefinition
@@ -103,6 +115,7 @@ struct DeltaLakeAzureDefinition
     static constexpr auto name = "deltaLakeAzure";
     static constexpr auto storage_engine_name = "DeltaLakeAzure";
     static constexpr auto object_storage_type = "azure";
+    using MetadataType = DeltaLakeMetadata;
 };
 
 struct DeltaLakeLocalDefinition
@@ -110,6 +123,7 @@ struct DeltaLakeLocalDefinition
     static constexpr auto name = "deltaLakeLocal";
     static constexpr auto storage_engine_name = "DeltaLakeLocal";
     static constexpr auto object_storage_type = "local";
+    using MetadataType = DeltaLakeMetadata;
 };
 
 struct HudiDefinition
@@ -117,6 +131,7 @@ struct HudiDefinition
     static constexpr auto name = "hudi";
     static constexpr auto storage_engine_name = "Hudi";
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = HudiMetadata;
 };
 
 struct PaimonDefinition
@@ -124,6 +139,7 @@ struct PaimonDefinition
     static constexpr auto name = "paimon";
     static constexpr auto storage_engine_name = S3Definition::storage_engine_name;
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = PaimonMetadata;
 };
 
 struct PaimonS3Definition
@@ -131,6 +147,7 @@ struct PaimonS3Definition
     static constexpr auto name = "paimonS3";
     static constexpr auto storage_engine_name = S3Definition::storage_engine_name;
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = PaimonMetadata;
 };
 
 
@@ -139,6 +156,7 @@ struct PaimonAzureDefinition
     static constexpr auto name = "paimonAzure";
     static constexpr auto storage_engine_name = AzureDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "azure";
+    using MetadataType = PaimonMetadata;
 };
 
 
@@ -147,12 +165,14 @@ struct PaimonHDFSDefinition
     static constexpr auto name = "paimonHDFS";
     static constexpr auto storage_engine_name = HDFSDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "hdfs";
+    using MetadataType = PaimonMetadata;
 };
 struct PaimonLocalDefinition
 {
     static constexpr auto name = "paimonLocal";
     static constexpr auto storage_engine_name = "File";
     static constexpr auto object_storage_type = "local";
+    using MetadataType = PaimonMetadata;
 };
 
 /// Cluster functions
@@ -187,6 +207,7 @@ struct IcebergClusterDefinition
     static constexpr auto storage_engine_name = "IcebergCluster";
     static constexpr auto non_clustered_storage_engine_name = IcebergDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = IcebergMetadata;
 };
 
 struct IcebergS3ClusterDefinition
@@ -195,6 +216,7 @@ struct IcebergS3ClusterDefinition
     static constexpr auto storage_engine_name = "IcebergS3Cluster";
     static constexpr auto non_clustered_storage_engine_name = IcebergS3Definition::storage_engine_name;
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = IcebergMetadata;
 };
 
 struct IcebergAzureClusterDefinition
@@ -203,6 +225,7 @@ struct IcebergAzureClusterDefinition
     static constexpr auto storage_engine_name = "IcebergAzureCluster";
     static constexpr auto non_clustered_storage_engine_name = IcebergAzureDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "azure";
+    using MetadataType = IcebergMetadata;
 };
 
 struct IcebergHDFSClusterDefinition
@@ -211,6 +234,7 @@ struct IcebergHDFSClusterDefinition
     static constexpr auto storage_engine_name = "IcebergHDFSCluster";
     static constexpr auto non_clustered_storage_engine_name = IcebergHDFSDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "hdfs";
+    using MetadataType = IcebergMetadata;
 };
 
 struct IcebergLocalClusterDefinition
@@ -219,6 +243,7 @@ struct IcebergLocalClusterDefinition
     static constexpr auto storage_engine_name = "IcebergLocalCluster";
     static constexpr auto non_clustered_storage_engine_name = IcebergLocalDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "local";
+    using MetadataType = IcebergMetadata;
 };
 
 struct DeltaLakeClusterDefinition
@@ -227,6 +252,7 @@ struct DeltaLakeClusterDefinition
     static constexpr auto storage_engine_name = "DeltaLakeCluster";
     static constexpr auto non_clustered_storage_engine_name = DeltaLakeDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = DeltaLakeMetadata;
 };
 
 struct DeltaLakeS3ClusterDefinition
@@ -235,6 +261,7 @@ struct DeltaLakeS3ClusterDefinition
     static constexpr auto storage_engine_name = "DeltaLakeS3Cluster";
     static constexpr auto non_clustered_storage_engine_name = DeltaLakeS3Definition::storage_engine_name;
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = DeltaLakeMetadata;
 };
 
 struct DeltaLakeAzureClusterDefinition
@@ -243,6 +270,7 @@ struct DeltaLakeAzureClusterDefinition
     static constexpr auto storage_engine_name = "DeltaLakeAzureCluster";
     static constexpr auto non_clustered_storage_engine_name = DeltaLakeAzureDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "azure";
+    using MetadataType = DeltaLakeMetadata;
 };
 
 struct HudiClusterDefinition
@@ -251,6 +279,7 @@ struct HudiClusterDefinition
     static constexpr auto storage_engine_name = "HudiS3Cluster";
     static constexpr auto non_clustered_storage_engine_name = HudiDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = HudiMetadata;
 };
 
 struct PaimonClusterDefinition
@@ -259,6 +288,7 @@ struct PaimonClusterDefinition
     static constexpr auto storage_engine_name = "PaimonCluster";
     static constexpr auto non_clustered_storage_engine_name = PaimonDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = PaimonMetadata;
 };
 
 struct PaimonS3ClusterDefinition
@@ -267,6 +297,7 @@ struct PaimonS3ClusterDefinition
     static constexpr auto storage_engine_name = "PaimonS3Cluster";
     static constexpr auto non_clustered_storage_engine_name = PaimonS3Definition::storage_engine_name;
     static constexpr auto object_storage_type = "s3";
+    using MetadataType = PaimonMetadata;
 };
 
 struct PaimonAzureClusterDefinition
@@ -275,6 +306,7 @@ struct PaimonAzureClusterDefinition
     static constexpr auto storage_engine_name = "PaimonAzureCluster";
     static constexpr auto non_clustered_storage_engine_name = PaimonAzureDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "azure";
+    using MetadataType = PaimonMetadata;
 };
 
 struct PaimonHDFSClusterDefinition
@@ -283,6 +315,7 @@ struct PaimonHDFSClusterDefinition
     static constexpr auto storage_engine_name = "PaimonHDFSCluster";
     static constexpr auto non_clustered_storage_engine_name = PaimonHDFSDefinition::storage_engine_name;
     static constexpr auto object_storage_type = "hdfs";
+    using MetadataType = PaimonMetadata;
 };
 
 }

@@ -10,9 +10,9 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
@@ -188,16 +188,16 @@ void registerStorageIceberg(StorageFactory & factory)
                 {
 #if USE_AWS_S3
                     case ObjectStorageType::S3:
-                        configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                        configuration = std::make_shared<StorageS3Configuration>();
                         break;
 #endif
 #if USE_AZURE_BLOB_STORAGE
                     case ObjectStorageType::Azure:
-                        configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+                        configuration = std::make_shared<StorageAzureConfiguration>();
                         break;
 #endif
                     case ObjectStorageType::Local:
-                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                        configuration = std::make_shared<StorageLocalConfiguration>();
                         break;
                     default:
                         throw Exception(
@@ -209,7 +209,7 @@ void registerStorageIceberg(StorageFactory & factory)
             }
             else
 #if USE_AWS_S3
-                configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                configuration = std::make_shared<StorageS3Configuration>();
 #endif
             if (configuration == nullptr)
             {
@@ -242,14 +242,14 @@ void registerStorageIceberg(StorageFactory & factory)
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::S3:
-                    configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                    configuration = std::make_shared<StorageS3Configuration>();
                     break;
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergS3Definition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
-                configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                configuration = std::make_shared<StorageS3Configuration>();
             return createStorageDataLake<IcebergMetadata>(args, configuration, storage_settings);
         },
         {
@@ -277,14 +277,14 @@ void registerStorageIceberg(StorageFactory & factory)
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::Azure:
-                    configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+                    configuration = std::make_shared<StorageAzureConfiguration>();
                     break;
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergAzureDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
-                configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+                configuration = std::make_shared<StorageAzureConfiguration>();
             return createStorageDataLake<IcebergMetadata>(args, configuration, storage_settings);
         },
         {
@@ -301,7 +301,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageHDFSConfiguration>();
             return createStorageDataLake<IcebergMetadata>(args, configuration, storage_settings);
         },
         {
@@ -328,14 +328,14 @@ void registerStorageIceberg(StorageFactory & factory)
                 switch (disk->getObjectStorage()->getType())
                 {
                     case ObjectStorageType::Local:
-                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                        configuration = std::make_shared<StorageLocalConfiguration>();
                         break;
                     default:
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergLocalDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
-                configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                configuration = std::make_shared<StorageLocalConfiguration>();
             return createStorageDataLake<IcebergMetadata>(args, configuration, storage_settings);
         },
         {
@@ -371,21 +371,21 @@ void registerStorageDeltaLake(StorageFactory & factory)
                 {
                     case ObjectStorageType::S3:
                     {
-                        configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+                        configuration = std::make_shared<StorageS3Configuration>();
                         break;
                     }
                     case ObjectStorageType::Azure:
-                        configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
+                        configuration = std::make_shared<StorageAzureConfiguration>();
                         break;
                     case ObjectStorageType::Local:
-                        configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+                        configuration = std::make_shared<StorageLocalConfiguration>();
                         break;
                     default:
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
-                configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+                configuration = std::make_shared<StorageS3Configuration>();
 
             return createStorageDataLake<DeltaLakeMetadata>(args, configuration, storage_settings);
         },
@@ -412,7 +412,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
                 {
                 case ObjectStorageType::S3:
                 {
-                    configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+                    configuration = std::make_shared<StorageS3Configuration>();
                     break;
                 }
                 default:
@@ -420,7 +420,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
                 }
             }
             else
-                configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+                configuration = std::make_shared<StorageS3Configuration>();
 
             return createStorageDataLake<DeltaLakeMetadata>(args, configuration, storage_settings);
         },
@@ -448,14 +448,14 @@ void registerStorageDeltaLake(StorageFactory & factory)
                 switch (disk->getObjectStorage()->getType())
                 {
                     case ObjectStorageType::Azure:
-                        configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
+                        configuration = std::make_shared<StorageAzureConfiguration>();
                         break;
                     default:
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeAzureDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
-                configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
+                configuration = std::make_shared<StorageAzureConfiguration>();
             return createStorageDataLake<DeltaLakeMetadata>(args, configuration, storage_settings);
         },
         {
@@ -481,14 +481,14 @@ void registerStorageDeltaLake(StorageFactory & factory)
                 switch (disk->getObjectStorage()->getType())
                 {
                     case ObjectStorageType::Local:
-                        configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+                        configuration = std::make_shared<StorageLocalConfiguration>();
                         break;
                     default:
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeLocalDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
-                configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+                configuration = std::make_shared<StorageLocalConfiguration>();
             return createStorageDataLake<DeltaLakeMetadata>(args, configuration, storage_settings);
         },
         {
@@ -508,7 +508,7 @@ void registerStorageHudi(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageS3HudiConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageS3Configuration>();
             return createStorageDataLake<HudiMetadata>(args, configuration, storage_settings);
         },
         {

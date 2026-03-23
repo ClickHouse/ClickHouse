@@ -48,7 +48,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 
@@ -508,7 +508,7 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
 
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
-    auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
+    auto configuration = std::make_shared<DB::StorageS3Configuration>();
     DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
 
     auto object_storage = configuration->createObjectStorage(getContext(), true, {});

@@ -54,7 +54,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
         /// On worker node this filename won't contains globs
         if constexpr (is_data_lake)
         {
-            storage = std::make_shared<StorageDataLake<typename Configuration::MetadataType>>(
+            storage = std::make_shared<StorageDataLake<typename Definition::MetadataType>>(
                 configuration,
                 object_storage,
                 context,
@@ -95,7 +95,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     {
         if constexpr (is_data_lake)
         {
-            storage = std::make_shared<StorageDataLakeCluster<typename Configuration::MetadataType>>(
+            storage = std::make_shared<StorageDataLakeCluster<typename Definition::MetadataType>>(
                 ITableFunctionCluster<Base>::cluster_name,
                 configuration,
                 object_storage,

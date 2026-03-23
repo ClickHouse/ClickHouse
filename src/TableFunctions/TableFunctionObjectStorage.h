@@ -2,7 +2,10 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -73,7 +76,7 @@ public:
     {
         if constexpr (is_data_lake)
         {
-            Configuration configuration(createEmptySettings());
+            Configuration configuration;
             if (configuration.format == "auto")
                 configuration.format = "Parquet"; /// Default format of data lakes.
 
@@ -131,42 +134,42 @@ using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFS
 
 #if USE_AVRO
 #    if USE_AWS_S3
-using TableFunctionIceberg = TableFunctionObjectStorage<IcebergDefinition, StorageS3IcebergConfiguration, true>;
-using TableFunctionIcebergS3 = TableFunctionObjectStorage<IcebergS3Definition, StorageS3IcebergConfiguration, true>;
+using TableFunctionIceberg = TableFunctionObjectStorage<IcebergDefinition, StorageS3Configuration, true>;
+using TableFunctionIcebergS3 = TableFunctionObjectStorage<IcebergS3Definition, StorageS3Configuration, true>;
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzure = TableFunctionObjectStorage<IcebergAzureDefinition, StorageAzureIcebergConfiguration, true>;
+using TableFunctionIcebergAzure = TableFunctionObjectStorage<IcebergAzureDefinition, StorageAzureConfiguration, true>;
 #    endif
 #    if USE_HDFS
-using TableFunctionIcebergHDFS = TableFunctionObjectStorage<IcebergHDFSDefinition, StorageHDFSIcebergConfiguration, true>;
+using TableFunctionIcebergHDFS = TableFunctionObjectStorage<IcebergHDFSDefinition, StorageHDFSConfiguration, true>;
 #    endif
-using TableFunctionIcebergLocal = TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalIcebergConfiguration, true>;
+using TableFunctionIcebergLocal = TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalConfiguration, true>;
 #endif
 #if USE_AVRO
 #    if USE_AWS_S3
-using TableFunctionPaimon = TableFunctionObjectStorage<PaimonDefinition, StorageS3PaimonConfiguration, true>;
-using TableFunctionPaimonS3 = TableFunctionObjectStorage<PaimonS3Definition, StorageS3PaimonConfiguration, true>;
+using TableFunctionPaimon = TableFunctionObjectStorage<PaimonDefinition, StorageS3Configuration, true>;
+using TableFunctionPaimonS3 = TableFunctionObjectStorage<PaimonS3Definition, StorageS3Configuration, true>;
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
-using TableFunctionPaimonAzure = TableFunctionObjectStorage<PaimonAzureDefinition, StorageAzurePaimonConfiguration, true>;
+using TableFunctionPaimonAzure = TableFunctionObjectStorage<PaimonAzureDefinition, StorageAzureConfiguration, true>;
 #    endif
 #    if USE_HDFS
-using TableFunctionPaimonHDFS = TableFunctionObjectStorage<PaimonHDFSDefinition, StorageHDFSPaimonConfiguration, true>;
+using TableFunctionPaimonHDFS = TableFunctionObjectStorage<PaimonHDFSDefinition, StorageHDFSConfiguration, true>;
 #    endif
-using TableFunctionPaimonLocal = TableFunctionObjectStorage<PaimonLocalDefinition, StorageLocalPaimonConfiguration, true>;
+using TableFunctionPaimonLocal = TableFunctionObjectStorage<PaimonLocalDefinition, StorageLocalConfiguration, true>;
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #if USE_AWS_S3
-using TableFunctionDeltaLake = TableFunctionObjectStorage<DeltaLakeDefinition, StorageS3DeltaLakeConfiguration, true>;
-using TableFunctionDeltaLakeS3 = TableFunctionObjectStorage<DeltaLakeS3Definition, StorageS3DeltaLakeConfiguration, true>;
+using TableFunctionDeltaLake = TableFunctionObjectStorage<DeltaLakeDefinition, StorageS3Configuration, true>;
+using TableFunctionDeltaLakeS3 = TableFunctionObjectStorage<DeltaLakeS3Definition, StorageS3Configuration, true>;
 #endif
 #if USE_AZURE_BLOB_STORAGE
-using TableFunctionDeltaLakeAzure = TableFunctionObjectStorage<DeltaLakeAzureDefinition, StorageAzureDeltaLakeConfiguration, true>;
+using TableFunctionDeltaLakeAzure = TableFunctionObjectStorage<DeltaLakeAzureDefinition, StorageAzureConfiguration, true>;
 #endif
 // New alias for local Delta Lake table function
-using TableFunctionDeltaLakeLocal = TableFunctionObjectStorage<DeltaLakeLocalDefinition, StorageLocalDeltaLakeConfiguration, true>;
+using TableFunctionDeltaLakeLocal = TableFunctionObjectStorage<DeltaLakeLocalDefinition, StorageLocalConfiguration, true>;
 #endif
 #if USE_AWS_S3
-using TableFunctionHudi = TableFunctionObjectStorage<HudiDefinition, StorageS3HudiConfiguration, true>;
+using TableFunctionHudi = TableFunctionObjectStorage<HudiDefinition, StorageS3Configuration, true>;
 #endif
 }

@@ -27,7 +27,6 @@
 #include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
 #include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/HivePartitioningUtils.h>
 
 
@@ -93,10 +92,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
-                        configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
+                        configuration = std::make_shared<StorageS3Configuration>();
 #if USE_PARQUET
                     else
-                        configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
+                        configuration = std::make_shared<StorageS3Configuration>();
 #endif
                     break;
 #endif
@@ -110,10 +109,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
-                        configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
+                        configuration = std::make_shared<StorageAzureConfiguration>();
 #if USE_PARQUET
                     else
-                        configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
+                        configuration = std::make_shared<StorageAzureConfiguration>();
 #endif
                     break;
 #endif
@@ -126,10 +125,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::object_storage_type != "local")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
                     if (std::string_view(Definition::name).starts_with("iceberg"))
-                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
+                        configuration = std::make_shared<StorageLocalConfiguration>();
 #if USE_PARQUET
                     else
-                        configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
+                        configuration = std::make_shared<StorageLocalConfiguration>();
 #endif
                     break;
 #endif
@@ -138,7 +137,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 }
             }
             else
-                configuration = std::make_shared<Configuration>(settings);
+                configuration = std::make_shared<Configuration>();
         }
         else
             configuration = std::make_shared<Configuration>();
@@ -270,7 +269,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     {
         if constexpr (is_data_lake)
         {
-            storage = std::make_shared<StorageDataLakeCluster<typename Configuration::MetadataType>>(
+            storage = std::make_shared<StorageDataLakeCluster<typename Definition::MetadataType>>(
                 parallel_replicas_cluster_name,
                 configuration,
                 getObjectStorage(context, !is_insert_query),
@@ -320,7 +319,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     if constexpr (is_data_lake)
     {
-        storage = std::make_shared<StorageDataLake<typename Configuration::MetadataType>>(
+        storage = std::make_shared<StorageDataLake<typename Definition::MetadataType>>(
             configuration,
             current_object_storage,
             context,
@@ -450,46 +449,46 @@ template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConf
 #endif
 
 #if USE_AVRO
-template class TableFunctionObjectStorage<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration, true>;
+template class TableFunctionObjectStorage<IcebergLocalClusterDefinition, StorageLocalConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AWS_S3
-template class TableFunctionObjectStorage<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
-template class TableFunctionObjectStorage<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
+template class TableFunctionObjectStorage<IcebergS3ClusterDefinition, StorageS3Configuration, true>;
+template class TableFunctionObjectStorage<IcebergClusterDefinition, StorageS3Configuration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-template class TableFunctionObjectStorage<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration, true>;
+template class TableFunctionObjectStorage<IcebergAzureClusterDefinition, StorageAzureConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_HDFS
-template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
+template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageHDFSConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AWS_S3
-template class TableFunctionObjectStorage<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
-template class TableFunctionObjectStorage<PaimonClusterDefinition, StorageS3PaimonConfiguration, true>;
+template class TableFunctionObjectStorage<PaimonS3ClusterDefinition, StorageS3Configuration, true>;
+template class TableFunctionObjectStorage<PaimonClusterDefinition, StorageS3Configuration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-template class TableFunctionObjectStorage<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration, true>;
+template class TableFunctionObjectStorage<PaimonAzureClusterDefinition, StorageAzureConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_HDFS
-template class TableFunctionObjectStorage<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration, true>;
+template class TableFunctionObjectStorage<PaimonHDFSClusterDefinition, StorageHDFSConfiguration, true>;
 #endif
 
 #if USE_PARQUET && USE_AWS_S3 && USE_DELTA_KERNEL_RS
-template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
-template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
+template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3Configuration, true>;
+template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS3Configuration, true>;
 #endif
 
 #if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
-template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
+template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureConfiguration, true>;
 #endif
 
 #if USE_AWS_S3
-template class TableFunctionObjectStorage<HudiClusterDefinition, StorageS3HudiConfiguration, true>;
+template class TableFunctionObjectStorage<HudiClusterDefinition, StorageS3Configuration, true>;
 #endif
 
 #if USE_AVRO

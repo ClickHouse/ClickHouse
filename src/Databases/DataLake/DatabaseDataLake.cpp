@@ -29,10 +29,12 @@
 #include <Databases/DataLake/PaimonRestCatalog.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
 #include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -302,7 +304,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
     DatabaseDataLakeStorageType type,
-    DataLakeStorageSettingsPtr storage_settings) const
+    DataLakeStorageSettingsPtr /* storage_settings */) const
 {
     /// TODO: add tests for azure, local storage types.
 
@@ -316,7 +318,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #if USE_AZURE_BLOB_STORAGE
                 case DB::DatabaseDataLakeStorageType::Azure:
                 {
-                    return std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageAzureConfiguration>();
                 }
 #endif
                 default:
@@ -334,24 +336,24 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #if USE_AWS_S3
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
-                    return std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageS3Configuration>();
                 }
 #endif
 #if USE_AZURE_BLOB_STORAGE
                 case DB::DatabaseDataLakeStorageType::Azure:
                 {
-                    return std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageAzureConfiguration>();
                 }
 #endif
 #if USE_HDFS
                 case DB::DatabaseDataLakeStorageType::HDFS:
                 {
-                    return std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageHDFSConfiguration>();
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Local:
                 {
-                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalConfiguration>();
                 }
                 /// Fake storage in case when catalog store not only
                 /// primary-type tables (DeltaLake or Iceberg), but for
@@ -363,7 +365,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                 /// dependencies and the most lightweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
-                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalConfiguration>();
                 }
 #if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
                 default:
@@ -380,18 +382,18 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #if USE_AWS_S3
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
-                    return std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+                    return std::make_shared<StorageS3Configuration>();
                 }
 #endif
 #if USE_AZURE_BLOB_STORAGE
                 case DB::DatabaseDataLakeStorageType::Azure:
                 {
-                    return std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
+                    return std::make_shared<StorageAzureConfiguration>();
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Local:
                 {
-                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalConfiguration>();
                 }
                 /// Fake storage in case when catalog store not only
                 /// primary-type tables (DeltaLake or Iceberg), but for
@@ -403,7 +405,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                 /// dependencies and the most lightweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
-                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalConfiguration>();
                 }
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -418,12 +420,12 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #if USE_AWS_S3
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
-                    return std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageS3Configuration>();
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
-                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalConfiguration>();
                 }
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -438,28 +440,28 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #if USE_AWS_S3
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
-                    return std::make_shared<StorageS3PaimonConfiguration>(storage_settings);
+                    return std::make_shared<StorageS3Configuration>();
                 }
 #endif
 #if USE_AZURE_BLOB_STORAGE
                 case DB::DatabaseDataLakeStorageType::Azure:
                 {
-                    return std::make_shared<StorageAzurePaimonConfiguration>(storage_settings);
+                    return std::make_shared<StorageAzureConfiguration>();
                 }
 #endif
 #if USE_HDFS
                 case DB::DatabaseDataLakeStorageType::HDFS:
                 {
-                    return std::make_shared<StorageHDFSPaimonConfiguration>(storage_settings);
+                    return std::make_shared<StorageHDFSConfiguration>();
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Local:
                 {
-                    return std::make_shared<StorageLocalPaimonConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalConfiguration>();
                 }
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
-                    return std::make_shared<StorageLocalPaimonConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalConfiguration>();
                 }
 #if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
                 default:
@@ -620,7 +622,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
     {
 #if USE_AZURE_BLOB_STORAGE
-        auto azure_configuration = std::static_pointer_cast<StorageAzureIcebergConfiguration>(configuration);
+        auto azure_configuration = std::static_pointer_cast<StorageAzureConfiguration>(configuration);
         if (!azure_configuration)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not azure type for one lake catalog");
         auto rest_catalog = std::static_pointer_cast<DataLake::OneLakeCatalog>(catalog);
