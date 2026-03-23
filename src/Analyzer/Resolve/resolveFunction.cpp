@@ -76,6 +76,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_experimental_unique_predicate;
     extern const SettingsBool rewrite_in_to_join;
 }
 
@@ -344,6 +345,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
+    bool is_special_function_unique = false;
 
     if (!lambda_expression_untyped)
     {
@@ -352,6 +354,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
+        is_special_function_unique = function_name == "__unique";
 
         /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
           *
@@ -652,6 +655,53 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 }
             }
         }
+    }
+
+    if (is_special_function_unique)
+    {
+        if (!scope.context->getSettingsRef()[Setting::allow_experimental_unique_predicate])
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "UNIQUE predicate is experimental. Set `allow_experimental_unique_predicate` setting to enable it");
+
+        checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
+
+        const auto & unique_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
+        auto unique_subquery_argument_node_type = unique_subquery_argument->getNodeType();
+        if (unique_subquery_argument_node_type != QueryTreeNodeType::QUERY
+            && unique_subquery_argument_node_type != QueryTreeNodeType::UNION)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function 'UNIQUE' expects a subquery argument. Actual: {}. In scope {}",
+                unique_subquery_argument->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+        }
+
+        /// Rewrite UNIQUE(subquery) into SELECT __hasNoDuplicates(*) FROM (subquery)
+        auto new_unique_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+        new_unique_subquery->setIsSubquery(true);
+
+        auto has_no_duplicates_function = std::make_shared<FunctionNode>("__hasNoDuplicates");
+        has_no_duplicates_function->getArguments().getNodes().push_back(std::make_shared<MatcherNode>());
+
+        new_unique_subquery->getProjection().getNodes().push_back(has_no_duplicates_function);
+        new_unique_subquery->getJoinTree() = unique_subquery_argument;
+
+        QueryTreeNodePtr new_unique_argument = new_unique_subquery;
+
+        evaluateScalarSubqueryIfNeeded(new_unique_argument, scope, false);
+        const auto * const_node = new_unique_argument->as<ConstantNode>();
+        auto res_col = ColumnUInt8::create();
+        if (const_node && !const_node->getColumn()->isNullAt(0))
+            res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->getUInt(0)));
+        else
+            res_col->getData().push_back(UInt8(1)); /// empty subquery is vacuously unique
+
+        ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
+        auto result_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
+        auto res = result_const_node->getValueStringRepresentation();
+        node = std::move(result_const_node);
+        return {std::move(res)};
     }
 
     if (is_special_function_exists)

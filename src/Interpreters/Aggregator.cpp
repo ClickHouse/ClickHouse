@@ -1837,6 +1837,19 @@ bool Aggregator::executeOnBlock(Columns columns,
         executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, all_keys_are_const, overflow_row_ptr);
     }
 
+    /// Check if any aggregate function requests early termination (e.g. `__hasNoDuplicates` found a duplicate).
+    /// Reuses the same BREAK code path as `group_by_overflow_mode` = 'break'.
+    if (result.type == AggregatedDataVariants::Type::without_key && result.without_key)
+    {
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+        {
+            const auto & aggregate = params.aggregates[i];
+            if (aggregate.function->isEarlyTerminable()
+                && aggregate.function->shouldTerminateEarly(result.without_key + offsets_of_aggregate_states[i]))
+                return false;
+        }
+    }
+
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 

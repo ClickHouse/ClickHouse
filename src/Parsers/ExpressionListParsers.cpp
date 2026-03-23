@@ -1832,6 +1832,30 @@ public:
     }
 };
 
+class UniqueLayer : public Layer
+{
+public:
+    UniqueLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
+    {
+        ASTPtr node;
+
+        if (!ParserSelectWithUnionQuery().parse(pos, node, expected))
+            return false;
+
+        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            return false;
+
+        auto subquery = make_intrusive<ASTSubquery>(std::move(node));
+        elements = {makeASTOperator("__unique", subquery)};
+
+        finished = true;
+
+        return true;
+    }
+};
+
 class TrimLayer : public Layer
 {
 public:
@@ -2480,6 +2504,8 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         return std::make_unique<PositionLayer>();
     if (function_name_lowercase == "exists")
         return std::make_unique<ExistsLayer>();
+    if (function_name_lowercase == "unique")
+        return std::make_unique<UniqueLayer>();
     if (function_name_lowercase == "trim")
         return std::make_unique<TrimLayer>(false, false);
     if (function_name_lowercase == "ltrim")

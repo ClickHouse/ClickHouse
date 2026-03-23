@@ -119,7 +119,7 @@ SELECT
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
-See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-reference/operators/exists.md) operator.
+See [IN operators](../../sql-reference/operators/in.md), [EXISTS](../../sql-reference/operators/exists.md), and [UNIQUE](../../sql-reference/operators/unique.md) operators.
 
 ### in function {#in-function}
 `a IN ...` – The `in(a, b)` function.

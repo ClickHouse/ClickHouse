@@ -370,6 +370,14 @@ public:
     // of true window functions, so this hack-ish interface suffices.
     virtual bool isOnlyWindowFunction() const { return false; }
 
+    /// Whether this aggregate function supports early termination.
+    /// If true, the Aggregator will check `shouldTerminateEarly` after each block.
+    virtual bool isEarlyTerminable() const { return false; }
+
+    /// Called after processing a block when `isEarlyTerminable` returns true.
+    /// Return true to signal that aggregation should stop (reuses the BREAK path).
+    virtual bool shouldTerminateEarly(ConstAggregateDataPtr __restrict /*place*/) const { return false; }
+
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
 
