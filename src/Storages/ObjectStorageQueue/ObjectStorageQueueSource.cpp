@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/CurrentThread.h>
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>

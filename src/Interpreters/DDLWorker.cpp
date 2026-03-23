@@ -1,4 +1,6 @@
 
+#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -329,6 +331,10 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     /// NOTE: It does not protect from all cases of query duplication, see also comments in processTask(...)
     if (reinitialized)
     {
+        /// We are reloading the queue after connection loss, so reset the flag.
+        /// It will be set back to true once we successfully initialize a new task.
+        queue_fully_loaded_after_initialization_debug_helper = false;
+
         if (current_tasks.empty())
             LOG_TRACE(log, "Don't have unfinished tasks after restarting");
         else
@@ -385,6 +391,13 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             }
         }
     }
+    else
+    {
+        /// `first_failed_task_name` is only meaningful during the recovery pass after reinitialization.
+        /// If the failed entry was removed from the queue before being rescheduled, keeping it here makes
+        /// the debug invariant below start from a stale position on the next normal scheduling pass.
+        first_failed_task_name.reset();
+    }
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
     size_t size_before_filtering = queue_nodes.size();
@@ -412,7 +425,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     if (first_failed_task_name)
     {
         /// If we had failed tasks, then we should start from the first failed task.
-        chassert(reinitialized);
+        chassert(reinitialized, fmt::format("Stale first_failed_task_name={}", *first_failed_task_name));
         begin_node = std::lower_bound(queue_nodes.begin(), queue_nodes.end(), first_failed_task_name);
     }
     else
@@ -457,6 +470,14 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         {
             /// If connection was lost during queue loading
             /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
+            return false;
+        }
+
+        if (first_failed_task_name.has_value())
+        {
+            /// During reinitialization, begin_node is moved back to first_failed_task_name.
+            /// With parallel execution, tasks after first_failed_task_name may already be
+            /// completed or still in current_tasks — that's expected, not a violation.
             return false;
         }
 
@@ -519,6 +540,11 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
 
     current_tasks.emplace_back(std::move(task));
 
+    if (worker_pool && current_tasks.size() > pool_size)
+    {
+        LOG_TEST(log, "Task {} is queued in memory waiting for a free DDL worker slot", current_tasks.back()->entry_name);
+    }
+
     if (first_failed_task_name && *first_failed_task_name == current_tasks.back()->entry_name)
         first_failed_task_name.reset();
 
@@ -533,7 +559,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     String query_to_show_in_logs = query_prefix + task.query_for_logging;
 
     ReadBufferFromString istr(query_to_execute);
-    CurrentThread::QueryScope query_scope;
+    QueryScope query_scope;
 
     try
     {
@@ -550,7 +576,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         query_context->setInitialQueryId(task.entry.initial_query_id);
 
         if (!task.is_initial_query)
-            query_scope = CurrentThread::QueryScope::create(query_context);
+            query_scope = QueryScope::create(query_context);
 
         NullWriteBuffer nullwb;
         executeQuery(istr, nullwb, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
@@ -1007,6 +1033,13 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
             /// Now we can safely delete entry
             LOG_INFO(log, "Task {} is outdated, deleting it", node_name);
 
+            /// Ensure node_path/finished exists to prevent staled hosts from processing this entry.
+            /// If a host calls createStatusDirs and finds that it created node_path/active
+            /// but node_path/finished already exists, it will detect concurrent deletion and back off.
+            /// This also handles the rare case when the initiator lost connection after enqueueing the entry
+            /// and never created status dirs (node_path/finished didn't exist).
+            zookeeper->tryCreate(fs::path(node_path) / "finished", {}, zkutil::CreateMode::Persistent);
+
             /// We recursively delete all nodes except node_path/finished to prevent staled hosts from
             /// creating node_path/active node (see createStatusDirs(...))
             zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, zkutil::RemoveException{"finished"});
@@ -1022,16 +1055,6 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
             if (rm_entry_res == Coordination::Error::ZNONODE)
             {
                 /// Most likely both node_path/finished and node_path were removed concurrently.
-                bool entry_removed_concurrently = res[0]->error == Coordination::Error::ZNONODE;
-                if (entry_removed_concurrently)
-                    continue;
-
-                /// Possible rare case: initiator node has lost connection after enqueueing entry and failed to create status dirs.
-                /// No one has started to process the entry, so node_path/active and node_path/finished nodes were never created, node_path has no children.
-                /// Entry became outdated, but we cannot remove remove it in a transaction with node_path/finished.
-                chassert(res[0]->error == Coordination::Error::ZOK && res[1]->error == Coordination::Error::ZNONODE);
-                rm_entry_res = zookeeper->tryRemove(node_path);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-                chassert(rm_entry_res != Coordination::Error::ZNOTEMPTY);
                 continue;
             }
             zkutil::KeeperMultiException::check(rm_entry_res, ops, res);
@@ -1222,6 +1245,7 @@ void DDLWorker::runMainThread()
         mark_reinitializing();
         /// Clear other in-memory state, like server just started.
         current_tasks.clear();
+        first_failed_task_name.reset();
         last_skipped_entry_name.reset();
         max_id = 0;
         LOG_INFO(log, "Cleaned DDLWorker state");

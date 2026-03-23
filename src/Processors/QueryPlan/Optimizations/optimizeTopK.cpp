@@ -76,8 +76,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     auto sort_column_name = sort_description.front().column_name;
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_column_name);
-    if (!sort_column.type->isValueRepresentedByNumber() || sort_column.type->isNullable())
-        return 0;
 
     const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
 
@@ -116,20 +114,49 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     TopKThresholdTrackerPtr threshold_tracker = nullptr;
 
-    int direction = sort_description.front().direction;
+    const auto & sort_col_desc = sort_description.front();
 
-    if ((settings.use_skip_indexes_for_top_k &&
-            read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name) && settings.use_skip_indexes_on_data_read) ||
-        (settings.use_top_k_dynamic_filtering && !read_from_mergetree_step->getPrewhereInfo()))
+    /// The skip-index top-k path ranks granules via raw Field comparison
+    /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
+    /// or collation. Restrict it to types where raw Field ordering matches
+    /// ORDER BY semantics. This check mirrors the guard in
+    /// ReadFromMergeTree::buildIndexes for defense-in-depth.
+    bool skip_index_type_eligible = sort_column.type->isValueRepresentedByNumber()
+        && !sort_column.type->isNullable()
+        && !sort_col_desc.collator;
+
+    bool use_skip_index = settings.use_skip_indexes_for_top_k
+        && skip_index_type_eligible
+        && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
+
+    bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
+        && !read_from_mergetree_step->getPrewhereInfo();
+
+    /// When read-in-order optimization is enabled and the sort column is a prefix
+    /// of the storage's sorting key, the engine will read data in sorted order.
+    /// TopK dynamic filtering is counterproductive in this case: once the threshold
+    /// is established, the prewhere rejects all subsequent rows (they are beyond
+    /// the threshold in sorted order), preventing the LIMIT from triggering early
+    /// pipeline cancellation, and causing a full table scan instead.
+    if (use_dynamic_filtering && settings.read_in_order)
     {
-        threshold_tracker = std::make_shared<TopKThresholdTracker>(direction);
+        const auto & sorting_key = read_from_mergetree_step->getStorageMetadata()->getSortingKey();
+        if (!sorting_key.column_names.empty() && sorting_key.column_names[0] == sort_column_name)
+            use_dynamic_filtering = false;
+    }
+
+    /// The threshold tracker is needed for dynamic mark skipping during reads
+    /// (use_skip_indexes_on_data_read) or for the prewhere dynamic filter.
+    /// Initial top-k mark selection (getTopKMarks) does not require it.
+    if ((use_skip_index && settings.use_skip_indexes_on_data_read) || use_dynamic_filtering)
+    {
+        threshold_tracker = std::make_shared<TopKThresholdTracker>(sort_col_desc);
         sorting_step->setTopKThresholdTracker(threshold_tracker);
     }
 
     bool added_step = false;
 
-    if  (settings.use_top_k_dynamic_filtering &&
-         !read_from_mergetree_step->getPrewhereInfo())
+    if (use_dynamic_filtering)
     {
         auto new_prewhere_info = std::make_shared<PrewhereInfo>();
         NameAndTypePair sort_column_name_and_type(sort_column_name, sort_column.type);
@@ -175,7 +202,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     ///                                  \
     ///                                __topKFilter() (Prewhere filtering)
 
-    read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, num_sort_columns, n, direction, where_clause, threshold_tracker});
+    if (use_skip_index || use_dynamic_filtering)
+        read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, num_sort_columns, n, sort_col_desc.direction, where_clause, threshold_tracker});
 
     return added_step ? 1 : 0;
 }

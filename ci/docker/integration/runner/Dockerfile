@@ -68,6 +68,7 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 COPY requirements.txt /
 RUN python3.13 -m pip install --no-cache-dir -r requirements.txt
 
+
 RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz \
     && tar xzvf spark-3.5.5-bin-hadoop3.tgz -C / \
     && rm spark-3.5.5-bin-hadoop3.tgz

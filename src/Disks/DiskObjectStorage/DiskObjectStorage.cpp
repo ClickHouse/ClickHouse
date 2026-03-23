@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Common/CurrentThread.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
@@ -714,7 +715,7 @@ static inline Settings updateIOSchedulingSettings(const Settings & settings, con
 {
     if (read_resource_name.empty() && write_resource_name.empty())
         return settings;
-    if (auto query_context = CurrentThread::getQueryContext())
+    if (auto query_context = CurrentThread::tryGetQueryContext())
     {
         Settings result(settings);
         if (!read_resource_name.empty())
@@ -936,6 +937,11 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
     auto transaction = createObjectStorageTransaction();
     transaction->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
     transaction->commit();
+}
+
+void DiskObjectStorage::waitBlobsCleanup()
+{
+    blob_killer->triggerAndWait();
 }
 
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)

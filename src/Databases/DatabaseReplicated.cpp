@@ -1,4 +1,5 @@
 #include <Core/UUID.h>
+#include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <atomic>
@@ -49,10 +50,12 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Common/AsyncLoader.h>
+#include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -94,6 +97,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsString default_replica_path;
     extern const DatabaseReplicatedSettingsString default_replica_shard_name;
     extern const DatabaseReplicatedSettingsString default_replica_name;
+    extern const DatabaseReplicatedSettingsBool internal_replication;
 }
 
 namespace ErrorCodes
@@ -122,6 +126,7 @@ namespace FailPoints
     extern const char database_replicated_startup_pause[];
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
+    extern const char database_replicated_force_metadata_digest_check[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -216,7 +221,7 @@ DatabaseReplicated::DatabaseReplicated(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
 
     if (!db_settings[DatabaseReplicatedSetting::collection_name].value.empty())
-        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value, context_->getConfigRef());
+        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value);
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
 
@@ -457,7 +462,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
             shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
-        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
+        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}});
     }
 
     if (shards.empty())
@@ -488,7 +493,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         cluster_name,
         cluster_auth_info.cluster_secret};
 
-    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
+    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params, db_settings[DatabaseReplicatedSetting::internal_replication]);
 }
 
 ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
@@ -559,17 +564,14 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
 }
 
-void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config_ref)
+void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
 {
-    const auto & config_prefix = fmt::format("named_collections.{}", collection_name);
+    auto collection = NamedCollectionFactory::instance().get(collection_name);
 
-    if (!config_ref.has(config_prefix))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
-
-    cluster_auth_info.cluster_username = config_ref.getString(config_prefix + ".cluster_username", "");
-    cluster_auth_info.cluster_password = config_ref.getString(config_prefix + ".cluster_password", "");
-    cluster_auth_info.cluster_secret = config_ref.getString(config_prefix + ".cluster_secret", "");
-    cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
+    cluster_auth_info.cluster_username = collection->getOrDefault<String>("cluster_username", "");
+    cluster_auth_info.cluster_password = collection->getOrDefault<String>("cluster_password", "");
+    cluster_auth_info.cluster_secret = collection->getOrDefault<String>("cluster_secret", "");
+    cluster_auth_info.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
@@ -1221,8 +1223,10 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
 void DatabaseReplicated::assertDigestWithProbability(const ContextPtr & local_context) const
 {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// Reduce number of debug checks
-    if (thread_local_rng() % 16)
+    /// Reduce number of debug checks, unless a failpoint forces the check.
+    bool force_check = false;
+    fiu_do_on(FailPoints::database_replicated_force_metadata_digest_check, { force_check = true; });
+    if (!force_check && thread_local_rng() % 16)
         return;
 
     if (!checkDigestValid(local_context))
@@ -1590,9 +1594,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("cloud_mode", false);
         query_context->setCurrentQueryId({});
         {
-            CurrentThread::QueryScope query_scope;
+            QueryScope query_scope;
             if (!CurrentThread::getGroup())
-                query_scope = CurrentThread::QueryScope::create(query_context);
+                query_scope = QueryScope::create(query_context);
 
             executeQuery(query, query_context, QueryFlags{.internal = true});
         }
@@ -1606,9 +1610,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("cloud_mode", false);
         query_context->setCurrentQueryId({});
         {
-            CurrentThread::QueryScope query_scope;
+            QueryScope query_scope;
             if (!CurrentThread::getGroup())
-                query_scope = CurrentThread::QueryScope::create(query_context);
+                query_scope = QueryScope::create(query_context);
 
             executeQuery(query, query_context, QueryFlags{.internal = true});
         }
@@ -2405,6 +2409,15 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     {
         assertDigestInTransactionOrInline(local_context, txn);
     }
+}
+
+void DatabaseReplicated::adjustDigestOnTableLostFromRestart(const String & table_name)
+{
+    std::lock_guard lock{metadata_mutex};
+    tables_metadata_digest -= getMetadataHash(table_name);
+    LOG_WARNING(log, "Table {} was lost from in-memory tables map due to failed SYSTEM RESTART REPLICA. "
+                     "Adjusted in-memory digest to {}. The table will be restored on server restart or recovery.",
+                table_name, tables_metadata_digest);
 }
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
