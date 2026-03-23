@@ -589,6 +589,8 @@ Block MergeTreeDataWriter::mergeBlock(
 /// the read path would evaluate the expression instead of returning the
 /// type-default that was explicitly inserted.
 /// Patch parts are excluded — they require all columns for lightweight UPDATE.
+/// If every removable column is empty, the smallest one is kept so that the
+/// part still has at least one physical column.
 static bool skipEmptyColumnsOnInsert(
     NamesAndTypesList & columns,
     const Block & block,
@@ -614,9 +616,25 @@ static bool skipEmptyColumnsOnInsert(
     if (empty_columns.empty())
         return false;
 
+    /// If removing empty columns would leave no columns at all, keep the
+    /// smallest one so the part remains valid.
     auto filtered = columns.eraseNames(empty_columns);
     if (filtered.empty())
-        return false;
+    {
+        size_t min_bytes = std::numeric_limits<size_t>::max();
+        String keep_name;
+        for (const auto & name : empty_columns)
+        {
+            size_t bytes = block.getByName(name).column->byteSize();
+            if (bytes < min_bytes || (bytes == min_bytes && (keep_name.empty() || name < keep_name)))
+            {
+                min_bytes = bytes;
+                keep_name = name;
+            }
+        }
+        empty_columns.erase(keep_name);
+        filtered = columns.eraseNames(empty_columns);
+    }
 
     columns = std::move(filtered);
     for (const auto & name : empty_columns)

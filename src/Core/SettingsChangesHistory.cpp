@@ -1102,7 +1102,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
-
+            {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all-default columns on INSERT"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
@@ -1112,7 +1112,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
             {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
-            {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all-default columns on INSERT"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {

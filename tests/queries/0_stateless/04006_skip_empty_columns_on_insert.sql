@@ -58,8 +58,13 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          skip_empty_columns_on_insert = 1,
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
--- Both key=0 and val=0 are defaults → should NOT remove all columns
+-- Both key=0 and val=0 are defaults → one column (the smallest) is kept
 INSERT INTO t_skip_empty_all_default (key, val) VALUES (0, 0);
+
+SELECT 'case2_columns_in_part';
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_all_default' AND active
+ORDER BY column;
 
 SELECT 'case2_data';
 SELECT * FROM t_skip_empty_all_default ORDER BY key;

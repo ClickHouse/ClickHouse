@@ -3,6 +3,8 @@ key
 val1
 case1_data
 1	100		0
+case2_columns_in_part
+key
 case2_data
 0	0
 case3_pre_merge
