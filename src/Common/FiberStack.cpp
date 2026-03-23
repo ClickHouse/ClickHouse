@@ -1,4 +1,5 @@
 #include <base/defines.h>
+#include <base/MemorySanitizer.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
@@ -71,6 +72,14 @@ boost::context::stack_context FiberStack::allocate()
             throw;
         }
     }
+
+    /// Mark the fiber stack memory as initialized for MSan.
+    /// Unlike the program's main stack (which the OS zero-initializes), fiber stacks are
+    /// heap-allocated via aligned_alloc, so MSan considers them uninitialized.
+    /// This causes false positives when stack slots are reused across function calls within
+    /// the fiber. Unpoisoning is safe because MSan's per-variable lifetime tracking
+    /// (__lifetime.start / __lifetime.end) still properly detects real uninitialized variables.
+    __msan_unpoison(data, num_bytes);
 
     /// Remember the allocation for ASan unpoisoning in beforeResume().
     stack_base = data;

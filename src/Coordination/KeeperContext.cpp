@@ -16,6 +16,8 @@
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
+#include <base/getMemoryAmount.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -558,6 +560,26 @@ void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfig
 {
     if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
         memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+}
+
+void KeeperContext::initializeKeeperMemorySoftLimit(Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+{
+    UInt64 memory_soft_limit = 0;
+    if (config.has("keeper_server.max_memory_usage_soft_limit"))
+        memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+
+    if (memory_soft_limit == 0)
+    {
+        Float64 ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio", 0.9);
+        size_t physical_server_memory = getMemoryAmount();
+        if (ratio > 0 && physical_server_memory > 0)
+        {
+            memory_soft_limit = static_cast<UInt64>(static_cast<Float64>(physical_server_memory) * ratio);
+            config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
+        }
+    }
+
+    LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
 }
 
 bool KeeperContext::setShutdownCalled()

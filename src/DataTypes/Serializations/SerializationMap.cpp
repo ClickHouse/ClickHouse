@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeMap.h>
@@ -15,7 +16,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 
-
 namespace DB
 {
 
@@ -23,6 +23,14 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_MAP_FROM_TEXT;
     extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+UInt128 SerializationMap::getHash(const SerializationPtr & nested_)
+{
+    SipHash hash;
+    hash.update("Map");
+    hash.update(nested_->getHash());
+    return hash.get128();
 }
 
 SerializationMap::SerializationMap(const SerializationPtr & key_, const SerializationPtr & value_, const SerializationPtr & nested_)
@@ -121,6 +129,13 @@ void SerializationMap::readMapSafe(DB::IColumn & column, std::function<void()> &
 
         throw;
     }
+}
+
+SerializationPtr SerializationMap::create(const SerializationPtr & key_type_, const SerializationPtr & value_type_, const SerializationPtr & nested_)
+{
+    if (!nested_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationMap(key_type_, value_type_, nested_));
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationMap(key_type_, value_type_, nested_); });
 }
 
 template <typename KeyWriter, typename ValueWriter>

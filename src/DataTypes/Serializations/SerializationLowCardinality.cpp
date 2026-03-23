@@ -41,6 +41,24 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 {
 }
 
+UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type_)
+{
+    SipHash hash;
+    hash.update("LowCardinality");
+    auto dict_type_name = dictionary_type_->getName();
+    hash.update(dict_type_name.size());
+    hash.update(dict_type_name);
+    hash.update(removeNullable(dictionary_type_)->getDefaultSerialization()->getHash());
+    return hash.get128();
+}
+
+SerializationPtr SerializationLowCardinality::create(const DataTypePtr & dictionary_type_)
+{
+    if (!removeNullable(dictionary_type_)->getDefaultSerialization()->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationLowCardinality(dictionary_type_));
+    return ISerialization::pooled(getHash(dictionary_type_), [&] { return new SerializationLowCardinality(dictionary_type_); });
+}
+
 void SerializationLowCardinality::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
