@@ -42,12 +42,12 @@ Starting from 24.1 clickhouse version, it is possible to use a new configuration
 It requires specifying:
 
 1. A `type` equal to `object_storage`
-2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs` (unsupported), `local_blob_storage` (or just `local` from `24.3`), `web`.
+2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs` (unsupported), `local_blob_storage` (or just `local` from `24.3`), `web`, `borrow_from_cache`.
 
 <br/>
 
-Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web` and, starting from `24.4`, `plain_rewritable`.
-Usage of `plain` metadata type is described in [plain storage section](/operations/storing-data#plain-storage), `web` metadata type can be used only with `web` object storage type, `local` metadata type stores metadata files locally (each metadata files contains mapping to files in object storage and some additional meta information about them).
+Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web`, `plain_rewritable` (starting from `24.4`), and `memory`.
+Usage of `plain` metadata type is described in [plain storage section](/operations/storing-data#plain-storage), `web` metadata type can be used only with `web` object storage type, `local` metadata type stores metadata files locally (each metadata files contains mapping to files in object storage and some additional meta information about them). The `memory` metadata type keeps all mappings entirely in RAM with no persistence — see [borrow-from-cache storage](/operations/storing-data#borrow-from-cache-storage).
 
 For example:
 
@@ -777,6 +777,54 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 | `FilesystemCacheElements` | `FilesystemCacheFiles`     | `CachedReadBufferReadFromSourceMicroseconds`, `CachedReadBufferReadFromCacheMicroseconds` |
 |                           |                            | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
 |                           |                            | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
+
+### Using Borrow-from-Cache Storage {#borrow-from-cache-storage}
+
+The `borrow_from_cache` object storage type allocates space inside an existing [filesystem cache](#using-local-cache) for data storage. Each stored object is backed by an ephemeral cache segment; when released, the cache reclaims the space. Combined with the `memory` metadata type, this provides a fully ephemeral disk where both data and metadata are lost on server restart.
+
+This is intended for temporary tables and short-lived workloads where durability is not required. For example, it allows creating temporary tables with custom `MergeTree` engines without needing external storage like S3.
+
+#### Configuration {#borrow-from-cache-configuration}
+
+A `borrow_from_cache` disk requires a pre-existing filesystem cache. First, create the cache (either via XML configuration or by creating a table with a `cache` disk), then reference it by name:
+
+```sql
+-- Step 1: Ensure a filesystem cache exists (e.g., by creating a cached disk).
+CREATE TABLE cache_holder (x UInt64)
+ENGINE = MergeTree() ORDER BY x
+SETTINGS disk = disk(
+    type = cache,
+    disk = 'local_disk',
+    name = 'my_cache',
+    path = 'my_cache_dir/',
+    max_size = '1Gi'
+);
+
+-- Step 2: Create a table that borrows space from the cache.
+CREATE TABLE my_temp_table (key UInt64, value String)
+ENGINE = MergeTree() ORDER BY key
+SETTINGS disk = disk(
+    type = object_storage,
+    object_storage_type = 'borrow_from_cache',
+    metadata_type = 'memory',
+    cache_name = 'my_cache'
+);
+```
+
+#### Required parameters {#borrow-from-cache-required-parameters}
+
+| Parameter              | Description                                                                                                   |
+|------------------------|---------------------------------------------------------------------------------------------------------------|
+| `object_storage_type`  | Must be `borrow_from_cache`.                                                                                  |
+| `metadata_type`        | Must be `memory` (the only metadata type supported with `borrow_from_cache`).                                 |
+| `cache_name`           | Name of an existing filesystem cache to borrow space from. The cache must already exist at table creation time.|
+
+#### Behavior and limitations {#borrow-from-cache-limitations}
+
+- **No persistence.** Both data (in the cache) and metadata (in memory) are lost when the server restarts.
+- **Cache eviction.** Stored segments are ephemeral and participate in cache eviction. Under heavy cache pressure, data from borrowed-disk tables may be evicted.
+- **No append writes.** Only full rewrites of objects are supported.
+- **Local storage only.** The disk is not remote — reads go directly to the local filesystem cache.
 
 ### Using static Web storage (read-only) {#web-storage}
 
