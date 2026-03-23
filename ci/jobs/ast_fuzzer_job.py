@@ -144,12 +144,15 @@ def run_fuzz_job(check_name: str):
     compatibility_setting: str | None = None
     if not buzzhouse:
         if is_old_compatibility:
-            compatibility_setting = "22.1"
+            # The minimum version is 24.3 because that's when enable_analyzer
+            # became enabled by default, and the fuzzer has a readonly constraint
+            # on enable_analyzer to avoid wasting cycles on the old interpreter.
+            compatibility_setting = "24.3"
         elif is_targeted:
             compatibility_setting = None
         else:
             compatibility_setting = (
-                f"{random.randint(22, 27)}.{random.randint(1, 12)}"
+                f"{random.randint(24, 27)}.{random.randint(1, 12)}"
             )
         if compatibility_setting:
             logging.info("AST fuzzer compatibility setting: %s", compatibility_setting)
