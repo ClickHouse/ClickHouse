@@ -409,8 +409,11 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # CFI checks: virtual dispatch type safety and bad downcasts via static_cast.
         # cfi-icall is omitted because C function pointers in contrib libraries (compiled without
         # CFI) would cause false positives. Start conservative; broaden after baseline is clean.
-        # -fvisibility=hidden is required by Clang when using CFI sanitizers.
-        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=hidden")
+        # Clang 21 requires an explicit -fvisibility= flag alongside -fsanitize=cfi-*.
+        # Use -fvisibility=default (not hidden) to avoid -Wunique-object-duplication
+        # errors on inline static members. CFI vtable visibility is already satisfied
+        # by -fwhole-program-vtables and -Wl,--lto-whole-program-visibility above.
+        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
         set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
