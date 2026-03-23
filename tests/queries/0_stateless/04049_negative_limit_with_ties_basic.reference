@@ -65,6 +65,26 @@ SELECT intDiv(number, 2) AS x, number AS y FROM numbers(10) ORDER BY x, y LIMIT 
 3	7
 4	8
 4	9
+SELECT 'Multiple ORDER BY columns, partial tie';
+Multiple ORDER BY columns, partial tie
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -5 WITH TIES;
+1	1
+1	1
+2	0
+2	0
+2	1
+2	1
+SELECT 'Single ORDER BY column, wider tie';
+Single ORDER BY column, wider tie
+SELECT intDiv(number, 4) AS a FROM numbers(12) ORDER BY a LIMIT -5 WITH TIES;
+1
+1
+1
+1
+2
+2
+2
+2
 SET max_block_size = 2;
 SELECT 'Small block size';
 Small block size

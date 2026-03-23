@@ -132,6 +132,14 @@ AS SELECT intDiv(number, 2) AS x FROM
 
 SELECT x FROM modified_tab ORDER BY x;
 
+SELECT 'Multiple ORDER BY columns';
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -5 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -4 WITH TIES;
+SELECT intDiv(number, 4) AS a FROM numbers(12) ORDER BY a LIMIT -5 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -3, -5 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT 4, -3 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -4, 3 WITH TIES;
+
 SELECT 'Small block size';
 SET max_block_size = 2;
 SELECT number FROM numbers(10) ORDER BY number LIMIT -3 WITH TIES;
@@ -143,6 +151,9 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT -5, 1 WITH TIES;
 SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -5, 1 WITH TIES;
 SELECT 0 AS x FROM numbers(7) ORDER BY x LIMIT -2 WITH TIES;
 SELECT intDiv(number, 3) AS x FROM numbers(12) ORDER BY x LIMIT -4 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -5 WITH TIES;
+SELECT intDiv(number, 4) AS a FROM numbers(12) ORDER BY a LIMIT -5 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -3, -5 WITH TIES;
 SET max_block_size = 65536;
 
 DROP TABLE IF EXISTS num_tab;
@@ -280,6 +291,14 @@ AS SELECT intDiv(number, 2) AS x FROM
 
 SELECT x FROM modified_tab ORDER BY x;
 
+SELECT 'Multiple ORDER BY columns';
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -5 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -4 WITH TIES;
+SELECT intDiv(number, 4) AS a FROM numbers(12) ORDER BY a LIMIT -5 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -3, -5 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT 4, -3 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -4, 3 WITH TIES;
+
 SELECT 'Small block size';
 SET max_block_size = 2;
 SELECT number FROM numbers(10) ORDER BY number LIMIT -3 WITH TIES;
@@ -291,6 +310,9 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT -5, 1 WITH TIES;
 SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -5, 1 WITH TIES;
 SELECT 0 AS x FROM numbers(7) ORDER BY x LIMIT -2 WITH TIES;
 SELECT intDiv(number, 3) AS x FROM numbers(12) ORDER BY x LIMIT -4 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -5 WITH TIES;
+SELECT intDiv(number, 4) AS a FROM numbers(12) ORDER BY a LIMIT -5 WITH TIES;
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -3, -5 WITH TIES;
 SET max_block_size = 65536;
 
 DROP TABLE IF EXISTS num_tab;

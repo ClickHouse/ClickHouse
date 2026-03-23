@@ -27,6 +27,12 @@ SELECT 0 AS x FROM numbers(5) ORDER BY x LIMIT -1 WITH TIES;
 SELECT 'Multiple ORDER BY columns, no ties';
 SELECT intDiv(number, 2) AS x, number AS y FROM numbers(10) ORDER BY x, y LIMIT -3 WITH TIES;
 
+SELECT 'Multiple ORDER BY columns, partial tie';
+SELECT intDiv(number, 4) AS a, number % 2 AS b FROM numbers(12) ORDER BY a, b LIMIT -5 WITH TIES;
+
+SELECT 'Single ORDER BY column, wider tie';
+SELECT intDiv(number, 4) AS a FROM numbers(12) ORDER BY a LIMIT -5 WITH TIES;
+
 SET max_block_size = 2;
 SELECT 'Small block size';
 SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x LIMIT -3 WITH TIES;
