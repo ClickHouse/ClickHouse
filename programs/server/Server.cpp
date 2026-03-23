@@ -3504,7 +3504,7 @@ void Server::createServers(
                 servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
-#if USE_SSH && defined(OS_LINUX)
+#if USE_SSH
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ false);
                     return ProtocolServerAdapter(
@@ -3519,7 +3519,7 @@ void Server::createServers(
                             connection_filter));
 #else
                 UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled for ClickHouse, as it has been either built without libssh or not for Linux");
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled because ClickHouse has been built without libssh");
 #endif
                 });
         }

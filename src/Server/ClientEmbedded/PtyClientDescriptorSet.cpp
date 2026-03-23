@@ -1,5 +1,3 @@
-#if defined(OS_LINUX)
-
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -80,5 +78,3 @@ void PtyClientDescriptorSet::changeWindowSize(int width, int height, int width_p
 PtyClientDescriptorSet::~PtyClientDescriptorSet() = default;
 
 }
-
-#endif

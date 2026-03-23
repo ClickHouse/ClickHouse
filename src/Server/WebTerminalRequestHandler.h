@@ -1,7 +1,5 @@
 #pragma once
 
-#if defined(OS_LINUX)
-
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/IServer.h>
 
@@ -31,5 +29,3 @@ private:
 };
 
 }
-
-#endif

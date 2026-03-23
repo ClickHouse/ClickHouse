@@ -1,5 +1,3 @@
-#if defined(OS_LINUX)
-
 #include <Server/WebTerminalRequestHandler.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
@@ -554,5 +552,3 @@ void WebTerminalRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
 }
 
 }
-
-#endif

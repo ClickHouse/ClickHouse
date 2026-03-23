@@ -1,6 +1,6 @@
 #include <Server/SSH/SSHPtyHandler.h>
 
-#if USE_SSH && defined(OS_LINUX)
+#if USE_SSH
 
 #include <Access/Common/AuthenticationType.h>
 #include <Access/Credentials.h>

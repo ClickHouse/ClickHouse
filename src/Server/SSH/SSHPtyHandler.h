@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_SSH && defined(OS_LINUX)
+#if USE_SSH
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/TCPServerConnection.h>

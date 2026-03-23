@@ -1,36 +1,53 @@
 #pragma once
 
 #include <fcntl.h>
-#include <pthread.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
 /**
- * This function is taken from Musl with a few modifications.
- * Clang-tidy produces several warning, but we would love to keep the implementation
- * as close as possible to the original one.
+ * Portable openpty implementation using POSIX posix_openpt/grantpt/unlockpt/ptsname.
+ * Replaces the previous Linux-only musl-derived version that used /dev/ptmx and Linux-specific ioctls.
  */
 // NOLINTBEGIN
-int openpty(int *pm, int *ps, char *name, const struct termios *tio, const struct winsize *ws)
+inline int openpty(int *pm, int *ps, char *name, const struct termios *tio, const struct winsize *ws)
 {
-	int m, s, n=0, cs;
-	char buf[20];
-
-	m = open("/dev/ptmx", O_RDWR|O_NOCTTY);
+	int m = posix_openpt(O_RDWR | O_NOCTTY);
 	if (m < 0) return -1;
 
-	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cs);
+	if (grantpt(m) || unlockpt(m))
+	{
+		close(m);
+		return -1;
+	}
 
-	if (ioctl(m, TIOCSPTLCK, &n) || ioctl (m, TIOCGPTN, &n))
-		goto fail;
+	char * slave_name = ptsname(m);
+	if (!slave_name)
+	{
+		close(m);
+		return -1;
+	}
 
-	if (!name) name = buf;
-	snprintf(name, sizeof buf, "/dev/pts/%d", n);
-	if ((s = open(name, O_RDWR|O_NOCTTY)) < 0)
-		goto fail;
+	int s = open(slave_name, O_RDWR | O_NOCTTY);
+	if (s < 0)
+	{
+		close(m);
+		return -1;
+	}
+
+	if (name)
+	{
+		/// The caller is responsible for providing a large enough buffer.
+		/// We copy up to 19 chars + null to match the previous implementation's buf[20].
+		size_t i = 0;
+		while (slave_name[i] && i < 19)
+		{
+			name[i] = slave_name[i];
+			++i;
+		}
+		name[i] = '\0';
+	}
 
 	if (tio) tcsetattr(s, TCSANOW, tio);
 	if (ws) ioctl(s, TIOCSWINSZ, ws);
@@ -38,11 +55,6 @@ int openpty(int *pm, int *ps, char *name, const struct termios *tio, const struc
 	*pm = m;
 	*ps = s;
 
-	pthread_setcancelstate(cs, nullptr);
 	return 0;
-fail:
-	close(m);
-	pthread_setcancelstate(cs, nullptr);
-	return -1;
 }
 // NOLINTEND

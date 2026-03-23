@@ -9,9 +9,7 @@
 #include <Server/ReplicasStatusHandler.h>
 #include <Server/StaticRequestHandler.h>
 #include <Server/WebUIRequestHandler.h>
-#if defined(OS_LINUX)
 #include <Server/WebTerminalRequestHandler.h>
-#endif
 
 #if USE_SSL
 #include <Server/ACME/RequestHandler.h>
@@ -245,14 +243,12 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
-#if defined(OS_LINUX)
             else if (handler_type == "webterminal")
             {
                 auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
-#endif
 #if USE_SSL
             else if (handler_type == "acme")
             {
@@ -390,12 +386,10 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/clickstack");
     factory.addHandler(clickstack_handler);
 
-#if defined(OS_LINUX)
     auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
     webterminal_handler->attachNonStrictPath("/webterminal");
     factory.addPathToHints("/webterminal");
     factory.addHandler(webterminal_handler);
-#endif
 
 #if USE_SSL
     if (server.config().has("acme"))

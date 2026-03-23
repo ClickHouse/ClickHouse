@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_SSH && defined(OS_LINUX)
+#if USE_SSH
 
 #include <optional>
 #include <unistd.h>
