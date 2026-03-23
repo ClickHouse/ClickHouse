@@ -33,7 +33,8 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
+#include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -665,7 +666,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (can_use_parallel_replicas && !is_secondary_query)
     {
         auto storage_id = StorageID(getDatabaseName(), name);
-        auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
+        auto storage_cluster = std::make_shared<StorageDataLakeCluster>(
             parallel_replicas_cluster_name,
             configuration,
             configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(storage_id)),
@@ -686,7 +687,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         context_->getClientInfo().collaborate_with_initiator &&
         can_use_parallel_replicas;
 
-    return std::make_shared<StorageObjectStorage>(
+    return std::make_shared<StorageDataLake>(
         configuration,
         configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
         context_copy,

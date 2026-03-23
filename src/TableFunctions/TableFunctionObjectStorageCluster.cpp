@@ -6,6 +6,8 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
+#include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -50,37 +52,77 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             context->hasClusterFunctionReadTaskCallback();
 
         /// On worker node this filename won't contains globs
-        storage = std::make_shared<StorageObjectStorage>(
-            configuration,
-            object_storage,
-            context,
-            StorageID(Base::getDatabaseName(), table_name),
-            columns,
-            ConstraintsDescription{},
-            /* comment */ String{},
-            /* format_settings */ std::nullopt, /// No format_settings
-            /* mode */ LoadingStrictnessLevel::CREATE,
-            /* catalog*/nullptr,
-            /* if_not_exists*/false,
-            /* is_datalake_query*/ false,
-            /* distributed_processing */ can_use_distributed_iterator,
-            /* partition_by_ */Base::partition_by,
-            /* order_by_ */nullptr,
-            /* is_table_function */true,
-            /* lazy_init */ true);
+        if constexpr (is_data_lake)
+        {
+            storage = std::make_shared<StorageDataLake>(
+                configuration,
+                object_storage,
+                context,
+                StorageID(Base::getDatabaseName(), table_name),
+                columns,
+                ConstraintsDescription{},
+                /* comment */ String{},
+                /* format_settings */ std::nullopt, /// No format_settings
+                /* mode */ LoadingStrictnessLevel::CREATE,
+                /* catalog*/nullptr,
+                /* if_not_exists*/false,
+                /* is_datalake_query*/ false,
+                /* distributed_processing */ can_use_distributed_iterator,
+                /* partition_by_ */Base::partition_by,
+                /* order_by_ */nullptr,
+                /* is_table_function */true,
+                /* lazy_init */ true);
+        }
+        else
+        {
+            storage = std::make_shared<StorageObjectStorage>(
+                configuration,
+                object_storage,
+                context,
+                StorageID(Base::getDatabaseName(), table_name),
+                columns,
+                ConstraintsDescription{},
+                /* comment */ String{},
+                /* format_settings */ std::nullopt, /// No format_settings
+                /* mode */ LoadingStrictnessLevel::CREATE,
+                /* catalog*/nullptr,
+                /* if_not_exists*/false,
+                /* is_datalake_query*/ false,
+                /* distributed_processing */ can_use_distributed_iterator,
+                /* partition_by_ */Base::partition_by,
+                /* order_by_ */nullptr,
+                /* is_table_function */true,
+                /* lazy_init */ true);
+        }
     }
     else
     {
-        storage = std::make_shared<StorageObjectStorageCluster>(
-            ITableFunctionCluster<Base>::cluster_name,
-            configuration,
-            object_storage,
-            StorageID(Base::getDatabaseName(), table_name),
-            columns,
-            ConstraintsDescription{},
-            Base::partition_by,
-            context,
-            /* is_table_function */true);
+        if constexpr (is_data_lake)
+        {
+            storage = std::make_shared<StorageDataLakeCluster>(
+                ITableFunctionCluster<Base>::cluster_name,
+                configuration,
+                object_storage,
+                StorageID(Base::getDatabaseName(), table_name),
+                columns,
+                ConstraintsDescription{},
+                Base::partition_by,
+                context,
+                /* is_table_function */true);
+        }
+        else
+        {
+            storage = std::make_shared<StorageObjectStorageCluster>(
+                ITableFunctionCluster<Base>::cluster_name,
+                configuration,
+                object_storage,
+                StorageID(Base::getDatabaseName(), table_name),
+                columns,
+                ConstraintsDescription{},
+                Base::partition_by,
+                context,
+                /* is_table_function */true);
+        }
     }
 
     storage->startup();

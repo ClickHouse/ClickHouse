@@ -24,6 +24,8 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
+#include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -255,16 +257,32 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {
-        storage = std::make_shared<StorageObjectStorageCluster>(
-            parallel_replicas_cluster_name,
-            configuration,
-            getObjectStorage(context, !is_insert_query),
-            StorageID(getDatabaseName(), table_name),
-            columns,
-            ConstraintsDescription{},
-            partition_by,
-            context,
-            /* is_table_function */true);
+        if constexpr (is_data_lake)
+        {
+            storage = std::make_shared<StorageDataLakeCluster>(
+                parallel_replicas_cluster_name,
+                configuration,
+                getObjectStorage(context, !is_insert_query),
+                StorageID(getDatabaseName(), table_name),
+                columns,
+                ConstraintsDescription{},
+                partition_by,
+                context,
+                /* is_table_function */true);
+        }
+        else
+        {
+            storage = std::make_shared<StorageObjectStorageCluster>(
+                parallel_replicas_cluster_name,
+                configuration,
+                getObjectStorage(context, !is_insert_query),
+                StorageID(getDatabaseName(), table_name),
+                columns,
+                ConstraintsDescription{},
+                partition_by,
+                context,
+                /* is_table_function */true);
+        }
 
         storage->startup();
         return storage;
@@ -288,23 +306,46 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     else
         current_object_storage = getObjectStorage(context, !is_insert_query);
 
-    storage = std::make_shared<StorageObjectStorage>(
-        configuration,
-        current_object_storage,
-        context,
-        StorageID(getDatabaseName(), table_name),
-        columns,
-        ConstraintsDescription{},
-        /* comment */ String{},
-        /* format_settings */ std::nullopt,
-        /* mode */ LoadingStrictnessLevel::CREATE,
-        /* catalog*/ nullptr,
-        /* if_not_exists*/ false,
-        /* is_datalake_query*/ false,
-        /* distributed_processing */ can_use_distributed_iterator,
-        /* partition_by */ partition_by,
-        /* order_by */ nullptr,
-        /* is_table_function */true);
+    if constexpr (is_data_lake)
+    {
+        storage = std::make_shared<StorageDataLake>(
+            configuration,
+            current_object_storage,
+            context,
+            StorageID(getDatabaseName(), table_name),
+            columns,
+            ConstraintsDescription{},
+            /* comment */ String{},
+            /* format_settings */ std::nullopt,
+            /* mode */ LoadingStrictnessLevel::CREATE,
+            /* catalog*/ nullptr,
+            /* if_not_exists*/ false,
+            /* is_datalake_query*/ false,
+            /* distributed_processing */ can_use_distributed_iterator,
+            /* partition_by */ partition_by,
+            /* order_by */ nullptr,
+            /* is_table_function */true);
+    }
+    else
+    {
+        storage = std::make_shared<StorageObjectStorage>(
+            configuration,
+            current_object_storage,
+            context,
+            StorageID(getDatabaseName(), table_name),
+            columns,
+            ConstraintsDescription{},
+            /* comment */ String{},
+            /* format_settings */ std::nullopt,
+            /* mode */ LoadingStrictnessLevel::CREATE,
+            /* catalog*/ nullptr,
+            /* if_not_exists*/ false,
+            /* is_datalake_query*/ false,
+            /* distributed_processing */ can_use_distributed_iterator,
+            /* partition_by */ partition_by,
+            /* order_by */ nullptr,
+            /* is_table_function */true);
+    }
 
     storage->startup();
     return storage;
