@@ -88,6 +88,11 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
             expression->group_id, expression->getDescription(), group->dump(memo.getCostConfig()));
 
     const Float64 distribution_node_count = static_cast<Float64>(std::max<size_t>(expression->properties.distribution.node_count, 1));
+    /// Effective parallelism: partitioned data is split across N nodes (each does 1/N),
+    /// replicated data is duplicated on each node (each does the full work).
+    const Float64 parallelism = expression->properties.distribution.is_replicated
+        ? 1.0
+        : distribution_node_count;
 
     ExpressionCost total_cost;
     IQueryPlanStep * expression_plan_step = expression->getQueryPlanStep();
@@ -98,7 +103,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         auto left_input_group = memo.getGroup(left_input.group_id);
         auto right_input_group = memo.getGroup(right_input.group_id);
         const auto * join_strategy = dynamic_cast<const IJoinStrategy *>(expression->strategy.get());
-        total_cost = estimateHashJoinCost(*join_step, join_strategy, *group->statistics, *left_input_group->statistics, *right_input_group->statistics, distribution_node_count);
+        total_cost = estimateHashJoinCost(*join_step, join_strategy, *group->statistics, *left_input_group->statistics, *right_input_group->statistics, parallelism);
     }
     else if (const auto * read_step = typeid_cast<ReadFromMergeTree *>(expression_plan_step))
     {
@@ -108,36 +113,34 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (typeid_cast<FilterStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count / distribution_node_count;
+        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count / parallelism;
     }
     else if (typeid_cast<ExpressionStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count / distribution_node_count;
+        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count / parallelism;
     }
     else if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
         const auto * aggregation_strategy = dynamic_cast<const IAggregationStrategy *>(expression->strategy.get());
-        total_cost = estimateAggregationCost(*aggregating_step, aggregation_strategy, *group->statistics, *input_group->statistics, distribution_node_count);
+        total_cost = estimateAggregationCost(*aggregating_step, aggregation_strategy, *group->statistics, *input_group->statistics, parallelism);
     }
     else if (typeid_cast<MergingAggregatedStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
         /// Merging intermediate aggregate states: CPU proportional to input + output rows.
-        /// At N nodes each node merges 1/N of the data.
-        total_cost.cost.cpu = (group->statistics->estimated_row_count + input_group->statistics->estimated_row_count) / distribution_node_count;
+        /// At N nodes each node merges 1/N of the data (replicated = no parallelism benefit).
+        total_cost.cost.cpu = (group->statistics->estimated_row_count + input_group->statistics->estimated_row_count) / parallelism;
         /// Merge phase is sequential (single-threaded merge of partial states).
-        total_cost.cost.sequential += input_group->statistics->estimated_row_count / distribution_node_count;
+        total_cost.cost.sequential += input_group->statistics->estimated_row_count / parallelism;
     }
-    else if (auto * broadcast = dynamic_cast<BroadcastExchangeStep *>(expression_plan_step))
+    else if (dynamic_cast<BroadcastExchangeStep *>(expression_plan_step))
     {
-        auto result_count = static_cast<Float64>(broadcast->getResultBucketCount());
         auto bytes_per_row = group->statistics->estimated_bytes_per_row;
         /// Broadcast replicates all rows to every destination node.
-        /// Total network traffic is proportional to rows * N, but the sending is pipelined
-        /// across destinations, so model the cost as total bytes transferred.
-        total_cost.cost.network += group->statistics->estimated_row_count * bytes_per_row * result_count;
+        /// Per-node receive bottleneck: each node receives and materializes one full copy.
+        total_cost.cost.network += group->statistics->estimated_row_count * bytes_per_row;
         /// Per-node memory: each destination materializes one copy.
         total_cost.cost.memory += group->statistics->estimated_row_count * bytes_per_row;
         /// Fixed overhead for connection setup / metadata exchange is sequential.
@@ -154,11 +157,11 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (typeid_cast<SortingStep *>(expression_plan_step))
     {
         /// Sorting: N log N CPU cost (parallel partial sort across streams).
-        /// At N nodes each node sorts 1/N of the data.
+        /// At N nodes each node sorts 1/N of the data (replicated = no parallelism benefit).
         Float64 rows = group->statistics->estimated_row_count;
-        total_cost.cost.cpu += rows * std::max(1.0, std::log2(rows)) / distribution_node_count;
+        total_cost.cost.cpu += rows * std::max(1.0, std::log2(rows)) / parallelism;
         /// Final N-way merge (`MergingSortedTransform`) is single-threaded.
-        total_cost.cost.sequential += rows / distribution_node_count;
+        total_cost.cost.sequential += rows / parallelism;
     }
     else
     {
@@ -195,43 +198,36 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & left_statistics,
         const ExpressionStatistics & right_statistics,
-        Float64 distribution_node_count)
+        Float64 parallelism)
 {
     const bool is_broadcast = dynamic_cast<const BroadcastJoinStrategy *>(strategy) != nullptr;
-    const bool is_shuffle = dynamic_cast<const ShuffleJoinStrategy *>(strategy) != nullptr;
 
     ExpressionCost join_cost;
-    /// Output rows are distributed across N nodes; per-node probe work is proportional to output_rows / N.
-    join_cost.cost.cpu = this_step_statistics.estimated_row_count / distribution_node_count;
+
+    /// Uniform CPU formula for all strategies:
+    ///   left_rows  = probe-side scan
+    ///   2 * right  = build phase (hash + insert)
+    ///   output     = result materialization
+    /// Divided by parallelism: partitioned data splits across nodes, replicated does not.
+    join_cost.cost.cpu = (left_statistics.estimated_row_count
+                          + 2.0 * right_statistics.estimated_row_count
+                          + this_step_statistics.estimated_row_count) / parallelism;
 
     if (is_broadcast)
     {
-        /// Hash table is built from the full right table on every node.
+        /// Broadcast: each node holds the FULL right table (replicated to all nodes).
         /// Network cost is already modeled by the BroadcastExchange expression.
-        /// Per-node memory: each node holds one copy of the right table.
         join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
         /// Build phase is sequential: each node inserts the full right table into the hash table.
         join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0;
     }
-    else if (is_shuffle)
-    {
-        /// Hash table is built from right_rows/N on each node, total = right_rows.
-        /// Network cost is already modeled by ShuffleExchange expressions.
-        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
-        /// Build phase is sequential: each node inserts right_rows/N into the hash table.
-        join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0 / distribution_node_count;
-    }
     else
     {
-        /// Local join: at N nodes each node processes 1/N of both inputs.
-        join_cost.cost.cpu +=
-            (left_statistics.estimated_row_count +           /// Scan of left table
-            2.0 * right_statistics.estimated_row_count)      /// Right table contributes more because we build hash table from it
-            / distribution_node_count;
-
-        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row / distribution_node_count;
-        /// Build phase is sequential: each node builds hash table from 1/N of the right input.
-        join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0 / distribution_node_count;
+        /// Shuffle or local: each node holds 1/N of the right table (or full if replicated).
+        /// Network cost (for shuffle) is already modeled by ShuffleExchange expressions.
+        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row / parallelism;
+        /// Build phase is sequential: each node builds hash table from its share.
+        join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0 / parallelism;
     }
 
     return join_cost;
@@ -277,7 +273,7 @@ ExpressionCost CostEstimator::estimateAggregationCost(
     const IAggregationStrategy * strategy,
     const ExpressionStatistics & this_step_statistics,
     const ExpressionStatistics & input_statistics,
-    Float64 distribution_node_count)
+    Float64 parallelism)
 {
     const bool is_local = dynamic_cast<const LocalAggregationStrategy *>(strategy) != nullptr;
     const bool is_shuffle = dynamic_cast<const ShuffleAggregationStrategy *>(strategy) != nullptr;
@@ -293,16 +289,17 @@ ExpressionCost CostEstimator::estimateAggregationCost(
     }
     else if (is_shuffle)
     {
+        /// CPU: per-node computation on 1/N of the data.
+        /// Network cost is NOT added here -- it is already modeled by the `ShuffleExchange` child.
         aggregation_cost.cost.cpu +=
-            this_step_statistics.estimated_row_count / distribution_node_count +
-            input_statistics.estimated_row_count / distribution_node_count;
-        aggregation_cost.cost.network += input_statistics.estimated_row_count * input_statistics.estimated_bytes_per_row;
+            this_step_statistics.estimated_row_count / parallelism +
+            input_statistics.estimated_row_count / parallelism;
     }
     else if (is_partial)
     {
         aggregation_cost.cost.cpu +=
-            this_step_statistics.estimated_row_count / distribution_node_count +
-            input_statistics.estimated_row_count / distribution_node_count;
+            this_step_statistics.estimated_row_count / parallelism +
+            input_statistics.estimated_row_count / parallelism;
     }
     else
     {

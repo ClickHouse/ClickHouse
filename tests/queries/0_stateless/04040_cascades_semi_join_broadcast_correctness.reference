@@ -3,35 +3,35 @@ Expression ((Project names + Projection))
     GatherExchange
       Aggregating
         Expression (((Before GROUP BY + WHERE) + Discarding unused columns))
-          JoinLogical (Broadcast HashJoin  swapped)
+          JoinLogical (Broadcast HashJoin )
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.test_orders)
             Expression (Create result for always true EXISTS expression)
               Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
                 ReadFromMergeTree (ReplicatedRead default.test_lineitem)
-1000
-1000
+20
+20
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
       Aggregating
         Expression (Before GROUP BY)
-          JoinLogical (Broadcast HashJoin  swapped)
+          JoinLogical (Broadcast HashJoin )
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.test_orders)
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ReplicatedRead default.test_lineitem)
-1000
-1000
+20
+20
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
       Aggregating
         Expression (Before GROUP BY)
-          JoinLogical (Broadcast HashJoin  swapped)
+          JoinLogical (Broadcast HashJoin )
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.test_orders)
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ReplicatedRead default.test_lineitem)
-1000
-1000
+20
+20

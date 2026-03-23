@@ -13,15 +13,20 @@ namespace DB
 ///   total = cpu * cpu_weight + memory * memory_weight + network * network_weight
 ///         + io * io_weight + sequential * sequential_weight
 ///
+/// Cost approximates wall-clock time on the bottleneck node.  Parallelism factor:
+///   partitioned data (`is_replicated = false`): each node processes 1/N -- divide by N
+///   replicated data  (`is_replicated = true`):  each node processes all -- no division
+///
 /// The `sequential` component represents single-threaded work (hash table builds in
 /// joins, merge phases) that cannot be parallelized within a node.  Its weight relative
 /// to `cpu_weight` should approximate the number of parallel threads per node, since
-/// sequential work is T× slower in wall-clock than parallel work on T threads.
-/// In a distributed setting it also controls broadcast-vs-shuffle: broadcast joins have
-/// `sequential = right_rows × 2` (full hash table on every node), while shuffle joins
-/// have `sequential = right_rows × 2 / N` (1/N per node).  For shuffle to win over
-/// broadcast on the sequential term alone: `sequential_weight > bytes_per_row × (N-1) / 2`.
-/// With typical TPC-H rows (~100 bytes) on a 20-node cluster, the threshold is ~950.
+/// sequential work is T times slower in wall-clock than parallel work on T threads.
+///
+/// Broadcast vs shuffle differentiation:
+///   - sequential: broadcast = `right_rows * 2` (full HT), shuffle = `right_rows * 2 / N`
+///   - memory:     broadcast = `right_rows * bytes` (full HT per node),
+///                 shuffle   = `right_rows * bytes / N` (1/N per node)
+///   - network:    both modeled by their respective Exchange children (per-node bottleneck)
 ///
 /// Configurable at query time via `SET param__internal_cascades_cost_config = '<json>'`.
 struct CostConfig
@@ -115,7 +120,7 @@ private:
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & left_statistics,
         const ExpressionStatistics & right_statistics,
-        Float64 distribution_node_count);
+        Float64 parallelism);
 
     ExpressionCost estimateReadCost(
         const ReadFromMergeTree & read_step,
@@ -128,7 +133,7 @@ private:
         const IAggregationStrategy * strategy,
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & input_statistics,
-        Float64 distribution_node_count);
+        Float64 parallelism);
 
     Memo & memo;
     LoggerPtr log = getLogger("CostEstimator");
