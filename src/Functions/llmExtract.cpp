@@ -24,6 +24,7 @@ class FunctionLLMExtract final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "llmExtract";
+
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMExtract>(context); }
     explicit FunctionLLMExtract(ContextPtr context) : FunctionBaseLLM(context) {}
 

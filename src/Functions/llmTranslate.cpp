@@ -21,6 +21,7 @@ class FunctionLLMTranslate final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "llmTranslate";
+
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMTranslate>(context); }
     explicit FunctionLLMTranslate(ContextPtr context) : FunctionBaseLLM(context) {}
 

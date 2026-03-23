@@ -127,13 +127,11 @@ public:
         , llm_max_api_calls_per_query(context->getSettingsRef()[Setting::llm_max_api_calls_per_query])
         , llm_on_error(context->getSettingsRef()[Setting::llm_on_error])
         , llm_on_quota_exceeded(context->getSettingsRef()[Setting::llm_on_quota_exceeded])
-        , max_batch_size(context->getSettingsRef()[Setting::generateembedding_max_batch_size])
+        , max_batch_size(context->getSettingsRef()[Setting::generateembedding_max_batch_size] ? 0 : DEFAULT_EMBED_BATCH_SIZE)
         , default_llm_resource(context->getSettingsRef()[Setting::default_llm_resource])
         , settings(context->getSettingsRef())
         , server_settings(context->getServerSettings())
     {
-        if (max_batch_size == 0)
-            max_batch_size = DEFAULT_EMBED_BATCH_SIZE;
     }
 
     ContextPtr context;
@@ -486,7 +484,7 @@ private:
         const UInt64 llm_max_api_calls_per_query;
         const String llm_on_error;
         const String llm_on_quota_exceeded;
-        UInt64 max_batch_size;
+        const UInt64 max_batch_size;
         const String default_llm_resource;
         const Settings & settings;
         const ServerSettings & server_settings;

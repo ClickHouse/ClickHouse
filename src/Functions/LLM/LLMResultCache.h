@@ -40,7 +40,7 @@ public:
 
     static LLMResultCache & instance();
 
-    LLMResultCache(size_t max_size_in_bytes, size_t max_count);
+    LLMResultCache(size_t max_size_in_bytes, size_t max_entries);
 
     static UInt128 buildKey(
         const String & function_name,
@@ -59,9 +59,9 @@ public:
         UInt64 hit_count;
     };
 
-    std::vector<CacheEntryInfo> getEntries() const;
+    std::vector<CacheEntryInfo> dump() const;
 
-    void reset();
+    void clear();
 };
 
 }

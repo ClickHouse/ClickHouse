@@ -26,6 +26,7 @@ class FunctionLLMGenerateSQL final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "llmGenerateSQL";
+
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLLMGenerateSQL>(context_); }
     explicit FunctionLLMGenerateSQL(ContextPtr context_) : FunctionBaseLLM(context_) , context(context_) {}
 

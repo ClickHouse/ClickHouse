@@ -12,7 +12,7 @@ namespace DB
 {
 
 static constexpr size_t DEFAULT_LLM_CACHE_MAX_SIZE = 1ULL << 30; // 1 GiB
-static constexpr size_t DEFAULT_LLM_CACHE_MAX_ENTRIES = 1000000;
+static constexpr size_t DEFAULT_LLM_CACHE_MAX_ENTRIES = 1'000'000;
 
 LLMResultCache & LLMResultCache::instance()
 {
@@ -20,8 +20,8 @@ LLMResultCache & LLMResultCache::instance()
     return cache;
 }
 
-LLMResultCache::LLMResultCache(size_t max_size_in_bytes, size_t max_count)
-    : Base("LRU", CurrentMetrics::LLMCacheSizeInBytes, CurrentMetrics::LLMCacheEntries, max_size_in_bytes, max_count, 0.5)
+LLMResultCache::LLMResultCache(size_t max_size_in_bytes, size_t max_entries)
+    : Base("LRU", CurrentMetrics::LLMCacheSizeInBytes, CurrentMetrics::LLMCacheEntries, max_size_in_bytes, max_entries, 0.5)
 {
 }
 
@@ -34,8 +34,7 @@ UInt128 LLMResultCache::buildKey(
     SipHash hash;
     auto hash_string_with_length = [&](const String & s)
     {
-        size_t len = s.size();
-        hash.update(len);
+        hash.update(s.size());
         hash.update(s);
     };
     hash_string_with_length(function_name);
@@ -47,7 +46,7 @@ UInt128 LLMResultCache::buildKey(
     return hash.get128();
 }
 
-std::vector<LLMResultCache::CacheEntryInfo> LLMResultCache::getEntries() const
+std::vector<LLMResultCache::CacheEntryInfo> LLMResultCache::dump() const
 {
     std::vector<CacheEntryInfo> result;
     auto entries = Base::dump();
@@ -67,7 +66,7 @@ std::vector<LLMResultCache::CacheEntryInfo> LLMResultCache::getEntries() const
     return result;
 }
 
-void LLMResultCache::reset()
+void LLMResultCache::clear()
 {
     Base::clear();
 }

@@ -30,6 +30,7 @@ class FunctionLLMClassify final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "llmClassify";
+
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMClassify>(context); }
     explicit FunctionLLMClassify(ContextPtr context) : FunctionBaseLLM(context) {}
 

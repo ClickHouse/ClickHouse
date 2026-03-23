@@ -22,6 +22,7 @@ class FunctionLLMGenerateContent final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "llmGenerateContent";
+
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMGenerateContent>(context); }
     explicit FunctionLLMGenerateContent(ContextPtr context) : FunctionBaseLLM(context) {}
 
