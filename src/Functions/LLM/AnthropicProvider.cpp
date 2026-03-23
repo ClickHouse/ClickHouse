@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
-static String extractProviderError(const std::string & response_body, int status_code)
+String extractProviderError(const std::string & response_body, int status_code)
 {
     try
     {
@@ -45,7 +45,9 @@ static String extractProviderError(const std::string & response_body, int status
 
 
 AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & api_key_)
-    : endpoint(endpoint_), api_key(api_key_), uri(endpoint_)
+    : endpoint(endpoint_)
+    , api_key(api_key_)
+    , uri(endpoint_)
 {
 }
 

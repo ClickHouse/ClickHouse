@@ -23,7 +23,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
-static String extractProviderError(const std::string & response_body, int status_code)
+String extractProviderError(const std::string & response_body, int status_code)
 {
     try
     {
@@ -50,7 +50,9 @@ static String extractProviderError(const std::string & response_body, int status
 
 
 OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
-    : endpoint(endpoint_), api_key(api_key_), uri(endpoint_)
+    : endpoint(endpoint_)
+    , api_key(api_key_)
+    , uri(endpoint_)
 {
 }
 
@@ -59,16 +61,16 @@ LLMResponse OpenAIProvider::call(const LLMRequest & request, const ConnectionTim
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", request.model);
     root->set("temperature", request.temperature);
-    root->set("max_tokens", static_cast<Int64>(request.max_tokens));
+    root->set("max_tokens", request.max_tokens);
 
     Poco::JSON::Array::Ptr messages = new Poco::JSON::Array;
 
     if (!request.system_prompt.empty())
     {
-        Poco::JSON::Object::Ptr sys_msg = new Poco::JSON::Object;
-        sys_msg->set("role", "system");
-        sys_msg->set("content", sanitizeTextForLLM(request.system_prompt));
-        messages->add(sys_msg);
+        Poco::JSON::Object::Ptr system_prompt = new Poco::JSON::Object;
+        system_prompt->set("role", "system");
+        system_prompt->set("content", sanitizeTextForLLM(request.system_prompt));
+        messages->add(system_prompt);
     }
 
     Poco::JSON::Object::Ptr user_msg = new Poco::JSON::Object;

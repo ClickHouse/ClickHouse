@@ -18,6 +18,21 @@ LLMEmbeddingResponse ILLMProvider::embed(const LLMEmbeddingRequest & /*request*/
         "Provider '{}' does not support embeddings", providerName());
 }
 
+String ILLMProvider::sanitizeTextForLLM(const String & input)
+{
+    String output;
+    output.reserve(input.size());
+    for (auto c : input)
+    {
+        /// Control characters are U+0000..U+001F except \t \n \r
+        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r')
+            output.push_back(' ');
+        else
+            output.push_back(c);
+    }
+    return output;
+}
+
 LLMProviderPtr createLLMProvider(const String & provider_name, const String & endpoint, const String & api_key)
 {
     if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")
@@ -28,5 +43,4 @@ LLMProviderPtr createLLMProvider(const String & provider_name, const String & en
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Unknown LLM provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);
 }
-
 }

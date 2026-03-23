@@ -1,5 +1,5 @@
 ---
-description: 'Documentation for LLM (Large Language Model) Functions'
+description: 'Documentation for AI Functions'
 sidebar_label: 'AI'
 slug: /sql-reference/functions/ai-functions
 title: 'AI Functions'
@@ -8,10 +8,11 @@ doc_type: 'reference'
 
 # AI functions
 
-AI Functions are built-in functions in ClickHouse that you can use to call LLM or generate embeddings to work with your data, extract information, classify data, etc...
+AI Functions are built-in functions in ClickHouse that lets you call remote LLMs (Large Language Model) or generate embeddings to work with your data, extract information, classify data, etc...
 
 :::note
-AI functions can return unpredictable inputs. The result will highly depend on the quality of the prompt and the model used.
+AI functions are non-deterministic, meaning that the same input can return different results in different invocations.
+Also, the result highly depends on the quality of the prompt and the used model.
 :::
 
 All functions are sharing a common infrastructure that provides:
@@ -25,7 +26,9 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-LLM functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection. If omitted, the [`default_llm_resource`](/operations/settings/settings#default_llm_resource) setting is used.
+LLM functions reference a **named collection** that stores the provider credentials and configuration.
+The first argument to each function is the name of this collection.
+If omitted, the [`default_llm_resource`](/operations/settings/settings#default_llm_resource) setting is used.
 
 ```sql
 CREATE NAMED COLLECTION my_llm AS
@@ -436,27 +439,27 @@ FROM documents;
 
 ## Supported providers {#supported-providers}
 
-| Provider | `provider` value | Chat functions | Embedding functions | Notes |
-|----------|-----------------|----------------|---------------------|-------|
-| OpenAI | `'openai'` | Yes | Yes | Default provider. |
-| Anthropic | `'anthropic'` | Yes | No | Uses `/v1/messages` endpoint. |
-| HuggingFace TEI | `'huggingface'` or `'tei'` | Yes | Yes | Uses OpenAI-compatible API format. Useful for self-hosted models. |
+| Provider        | `provider` name            | Chat functions | Embedding functions | Notes                                                             |
+|-----------------|----------------------------|----------------|---------------------|-------------------------------------------------------------------|
+| OpenAI          | `'openai'`                 | Yes            | Yes                 | Default provider.                                                 |
+| Anthropic       | `'anthropic'`              | Yes            | No                  | Uses `/v1/messages` endpoint.                                     |
+| HuggingFace TEI | `'huggingface'` or `'tei'` | Yes            | Yes                 | Uses OpenAI-compatible API format. Useful for self-hosted models. |
 
 
-## Observability {#observability}
+## Debugging {#debugging}
 
-AI function activity is tracked through ClickHouse [ProfileEvents](/operations/system-tables/query_log):
+AI functions can be debugged using ClickHouse [ProfileEvents](/operations/system-tables/query_log):
 
-| Event | Description |
-|-------|-------------|
-| `AIAPICalls` | Number of HTTP requests made to the AI provider. |
-| `AIInputTokens` | Total input tokens consumed. |
-| `AICacheHits` | Number of results served from cache. |
-| `AICacheMisses` | Number of results that required an API call. |
+| Event             | Description |
+|-------------------|--------------------------------------------------------|
+| `AIAPICalls`      | Number of HTTP requests made to the AI provider. |
+| `AIInputTokens`   | Total input tokens consumed. |
+| `AICacheHits`     | Number of results served from cache. |
+| `AICacheMisses`   | Number of results that required an API call. |
 | `AIRowsProcessed` | Number of rows that received a result. |
-| `AIRowsSkipped` | Number of rows skipped (NULL, empty, quota exceeded). |
+| `AIRowsSkipped`   | Number of rows skipped (NULL, empty, quota exceeded). |
 
-Query these events:
+Example:
 
 ```sql
 SELECT

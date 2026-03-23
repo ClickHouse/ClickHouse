@@ -9,8 +9,8 @@ class AnthropicProvider : public ILLMProvider
 {
 public:
     AnthropicProvider(const String & endpoint_, const String & api_key_);
-    LLMResponse call(const LLMRequest & request, const ConnectionTimeouts & timeouts) override;
     String providerName() const override { return "anthropic"; }
+    LLMResponse call(const LLMRequest & request, const ConnectionTimeouts & timeouts) override;
 
 private:
     String endpoint;

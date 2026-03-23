@@ -7763,12 +7763,11 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
-    /* AI function settings (LLMClassify, LLMExtract, LLMGenerateSQL, LLMTranslate, LLMGenerateContent, generateEmbedding, generateEmbeddingOrNull) */ \
     DECLARE(Bool, allow_experimental_ai_functions, false, R"(
-Enable experimental AI functions (LLMClassify, LLMExtract, LLMGenerateSQL, LLMTranslate, LLMGenerateContent, generateEmbedding, generateEmbeddingOrNull). These functions make external HTTP calls to LLM and embedding providers.
+Enable experimental AI functions. These functions make HTTP calls to external LLM and embedding providers like OpenAI and Anthropic.
 )", EXPERIMENTAL) \
     DECLARE(String, default_llm_resource, "", R"(
-Default named collection for AI functions (LLMClassify, LLMExtract, LLMGenerateSQL, LLMTranslate, LLMGenerateContent, generateEmbedding, generateEmbeddingOrNull). When set, functions can be called without passing a collection name as the first argument.
+Default named collection for AI functions. When set, functions can be called without passing a collection name as the first argument.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, llm_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (LLM chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to llm_max_retries.
