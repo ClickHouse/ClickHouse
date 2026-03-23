@@ -189,7 +189,8 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql},
      {"promql", Dialect::promql},
-     {"polyglot", Dialect::polyglot}})
+     {"polyglot", Dialect::polyglot},
+     {"clickhouse_json", Dialect::clickhouse_json}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},

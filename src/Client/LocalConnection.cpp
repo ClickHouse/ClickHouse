@@ -15,6 +15,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -206,37 +207,44 @@ void LocalConnection::sendQuery(
         const char * end = begin + state->query.size();
         const Dialect & dialect = settings[Setting::dialect];
 
-        std::unique_ptr<IParserBase> parser;
-        if (dialect == Dialect::kusto)
-            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-        else if (dialect == Dialect::prql)
-            parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        else if (dialect == Dialect::promql)
-            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
-        else
-            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-
         ASTPtr parsed_query;
-        if (dialect == Dialect::kusto)
-            parsed_query = parseKQLQueryAndMovePosition(
-                *parser,
-                begin,
-                end,
-                "",
-                /*allow_multi_statements*/ false,
-                settings[Setting::max_query_size],
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]);
+        if (dialect == Dialect::clickhouse_json)
+        {
+            parsed_query = IAST::createFromJSON(String(begin, end));
+        }
         else
-            parsed_query = parseQueryAndMovePosition(
-                *parser,
-                begin,
-                end,
-                "",
-                /*allow_multi_statements*/ false,
-                settings[Setting::max_query_size],
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]);
+        {
+            std::unique_ptr<IParserBase> parser;
+            if (dialect == Dialect::kusto)
+                parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+            else if (dialect == Dialect::prql)
+                parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            else if (dialect == Dialect::promql)
+                parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+            else
+                parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+
+            if (dialect == Dialect::kusto)
+                parsed_query = parseKQLQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
+                    "",
+                    /*allow_multi_statements*/ false,
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
+            else
+                parsed_query = parseQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
+                    "",
+                    /*allow_multi_statements*/ false,
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
+        }
 
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
         {

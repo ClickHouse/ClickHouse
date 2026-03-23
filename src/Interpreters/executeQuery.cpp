@@ -119,6 +119,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_json_ast_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
@@ -1185,6 +1186,33 @@ static BlockIO executeQueryImpl(
                 end,
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
+        {
+            if (!settings[Setting::allow_experimental_json_ast_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Support for clickhouse_json dialect is disabled "
+                    "(turn on setting 'allow_experimental_json_ast_dialect')");
+
+            std::string_view query_view(begin, end - begin);
+
+            /// Allow SET queries in plain SQL so users can switch back to another dialect.
+            /// Detect by checking if the query starts with "SET" (after trimming whitespace).
+            size_t pos = query_view.find_first_not_of(" \t\r\n");
+            if (pos != std::string_view::npos
+                && query_view.size() - pos >= 3
+                && (query_view[pos] == 'S' || query_view[pos] == 's')
+                && (query_view[pos + 1] == 'E' || query_view[pos + 1] == 'e')
+                && (query_view[pos + 2] == 'T' || query_view[pos + 2] == 't')
+                && (query_view.size() - pos == 3 || query_view[pos + 3] == ' ' || query_view[pos + 3] == '\t'))
+            {
+                ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
+            else
+            {
+                out_ast = IAST::createFromJSON(String(begin, end));
+            }
         }
         else
         {
