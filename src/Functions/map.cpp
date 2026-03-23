@@ -78,7 +78,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     /// map(..., Nothing) -> Map(..., Nothing)
@@ -274,7 +274,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
