@@ -2,13 +2,15 @@
 
 #include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
 /**
- * Portable openpty implementation using POSIX posix_openpt/grantpt/unlockpt/ptsname.
- * Replaces the previous Linux-only musl-derived version that used /dev/ptmx and Linux-specific ioctls.
+ * Portable openpty implementation using POSIX posix_openpt/grantpt/unlockpt.
+ * Uses ptsname_r on Linux (where ptsname is not thread-safe) and ptsname
+ * on macOS/FreeBSD (where it uses thread-local storage and is thread-safe).
  */
 // NOLINTBEGIN
 inline int openpty(int *pm, int *ps, char *name, const struct termios *tio, const struct winsize *ws)
@@ -22,14 +24,27 @@ inline int openpty(int *pm, int *ps, char *name, const struct termios *tio, cons
 		return -1;
 	}
 
-	char * slave_name = ptsname(m);
-	if (!slave_name)
+	char slave_name_buf[64];
+
+#ifdef __linux__
+	if (ptsname_r(m, slave_name_buf, sizeof(slave_name_buf)) != 0)
 	{
 		close(m);
 		return -1;
 	}
+#else
+	/// On macOS and FreeBSD, ptsname uses thread-local storage and is thread-safe.
+	const char * slave_name_ptr = ptsname(m);
+	if (!slave_name_ptr)
+	{
+		close(m);
+		return -1;
+	}
+	strncpy(slave_name_buf, slave_name_ptr, sizeof(slave_name_buf) - 1);
+	slave_name_buf[sizeof(slave_name_buf) - 1] = '\0';
+#endif
 
-	int s = open(slave_name, O_RDWR | O_NOCTTY);
+	int s = open(slave_name_buf, O_RDWR | O_NOCTTY);
 	if (s < 0)
 	{
 		close(m);
@@ -38,15 +53,8 @@ inline int openpty(int *pm, int *ps, char *name, const struct termios *tio, cons
 
 	if (name)
 	{
-		/// The caller is responsible for providing a large enough buffer.
-		/// We copy up to 19 chars + null to match the previous implementation's buf[20].
-		size_t i = 0;
-		while (slave_name[i] && i < 19)
-		{
-			name[i] = slave_name[i];
-			++i;
-		}
-		name[i] = '\0';
+		strncpy(name, slave_name_buf, 19);
+		name[19] = '\0';
 	}
 
 	if (tio) tcsetattr(s, TCSANOW, tio);

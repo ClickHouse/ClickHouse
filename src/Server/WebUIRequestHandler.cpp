@@ -116,12 +116,12 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
 {
     struct Resource { const char * path; const unsigned char * data; size_t size; const char * content_type; };
     const Resource resources[] = {
-        {"/js/uplot.js", resource_uplot_js, std::size(resource_uplot_js), nullptr},
-        {"/js/lz-string.js", resource_lz_string_js, std::size(resource_lz_string_js), nullptr},
-        {"/js/xterm.min.js", resource_xterm_js, std::size(resource_xterm_js), nullptr},
+        {"/js/uplot.js", resource_uplot_js, std::size(resource_uplot_js), "application/javascript; charset=UTF-8"},
+        {"/js/lz-string.js", resource_lz_string_js, std::size(resource_lz_string_js), "application/javascript; charset=UTF-8"},
+        {"/js/xterm.min.js", resource_xterm_js, std::size(resource_xterm_js), "application/javascript; charset=UTF-8"},
         {"/js/xterm.min.css", resource_xterm_css, std::size(resource_xterm_css), "text/css; charset=UTF-8"},
-        {"/js/addon-fit.min.js", resource_addon_fit_js, std::size(resource_addon_fit_js), nullptr},
-        {"/js/addon-web-links.min.js", resource_addon_web_links_js, std::size(resource_addon_web_links_js), nullptr},
+        {"/js/addon-fit.min.js", resource_addon_fit_js, std::size(resource_addon_fit_js), "application/javascript; charset=UTF-8"},
+        {"/js/addon-web-links.min.js", resource_addon_web_links_js, std::size(resource_addon_web_links_js), "application/javascript; charset=UTF-8"},
     };
 
     for (const auto & resource : resources)

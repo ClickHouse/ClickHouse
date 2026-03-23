@@ -78,7 +78,6 @@
     var currentUser = params.get('user') || 'default';
     var currentPassword = params.get('password') || '';
     var userFromURL = params.has('user');
-    var initialQuery = params.get('query') || '';
     var inIframe = (window.parent !== window);
     var waitingForCredentials = false;
 
@@ -283,16 +282,6 @@
             term.write('\r\x1b[2K');
             sendResize();
 
-            // Paste initial query from URL parameter after the client prompt appears
-            if (initialQuery) {
-                var q = initialQuery;
-                initialQuery = '';
-                setTimeout(function() {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(new TextEncoder().encode(q));
-                    }
-                }, 100);
-            }
         };
 
         ws.onmessage = function(event) {

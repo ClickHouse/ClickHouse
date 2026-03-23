@@ -45,6 +45,35 @@ String computeWebSocketAccept(const String & key)
     return base64Encode(String(reinterpret_cast<const char *>(digest.data()), digest.size()));
 }
 
+/// Validate that Sec-WebSocket-Key is a base64-encoded 16-byte nonce per RFC 6455
+bool isValidWebSocketKey(const String & key)
+{
+    if (key.empty() || key.size() > 128)
+        return false;
+    try
+    {
+        String decoded = base64Decode(key);
+        return decoded.size() == 16;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+/// Send all bytes to the socket, handling partial writes.
+void sendAllBytes(Poco::Net::StreamSocket & socket, const char * data, size_t len)
+{
+    size_t total = 0;
+    while (total < len)
+    {
+        int sent = socket.sendBytes(data + total, static_cast<int>(len - total));
+        if (sent <= 0)
+            throw Poco::IOException("Failed to send bytes to WebSocket");
+        total += static_cast<size_t>(sent);
+    }
+}
+
 /// Send a WebSocket frame. Server-to-client frames are not masked.
 /// Header and payload are combined into a single buffer to avoid partial frame writes.
 void sendWebSocketFrame(Poco::Net::StreamSocket & socket, uint8_t opcode, const char * data, size_t len)
@@ -79,7 +108,7 @@ void sendWebSocketFrame(Poco::Net::StreamSocket & socket, uint8_t opcode, const 
     buf.append(reinterpret_cast<const char *>(header), header_len);
     if (len > 0)
         buf.append(data, len);
-    socket.sendBytes(buf.data(), static_cast<int>(buf.size()));
+    sendAllBytes(socket, buf.data(), buf.size());
 }
 
 void sendWebSocketBinary(Poco::Net::StreamSocket & socket, const char * data, size_t len)
@@ -116,6 +145,7 @@ struct WebSocketFrame
     bool fin = false;
     String payload;
     bool valid = false;
+    bool protocol_error = false;
 };
 
 /// Read a single WebSocket frame from the socket.
@@ -130,8 +160,32 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket)
     frame.fin = (header[0] & 0x80) != 0;
     frame.opcode = header[0] & 0x0F;
 
+    /// RSV1/RSV2/RSV3 must be zero (no extensions negotiated)
+    if (header[0] & 0x70)
+    {
+        frame.protocol_error = true;
+        return frame;
+    }
+
     bool masked = (header[1] & 0x80) != 0;
     uint64_t payload_len = header[1] & 0x7F;
+
+    /// RFC 6455: client-to-server frames MUST be masked
+    if (!masked)
+    {
+        frame.protocol_error = true;
+        return frame;
+    }
+
+    /// Control frames (opcode >= 0x08) must have FIN set and payload <= 125
+    if (frame.opcode >= 0x08)
+    {
+        if (!frame.fin || payload_len > 125)
+        {
+            frame.protocol_error = true;
+            return frame;
+        }
+    }
 
     if (payload_len == 126)
     {
@@ -156,11 +210,8 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket)
         return frame;
 
     uint8_t mask_key[4] = {};
-    if (masked)
-    {
-        if (!readExact(socket, reinterpret_cast<char *>(mask_key), 4))
-            return frame;
-    }
+    if (!readExact(socket, reinterpret_cast<char *>(mask_key), 4))
+        return frame;
 
     frame.payload.resize(payload_len);
     if (payload_len > 0)
@@ -168,11 +219,8 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket)
         if (!readExact(socket, frame.payload.data(), payload_len))
             return frame;
 
-        if (masked)
-        {
-            for (uint64_t i = 0; i < payload_len; ++i)
-                frame.payload[i] ^= static_cast<char>(mask_key[i % 4]);
-        }
+        for (uint64_t i = 0; i < payload_len; ++i)
+            frame.payload[i] ^= static_cast<char>(mask_key[i % 4]);
     }
 
     frame.valid = true;
@@ -202,15 +250,16 @@ bool parseResizeMessage(const String & json, int & cols, int & rows)
         ++pos;
         while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t'))
             ++pos;
-        int value = 0;
+        /// Parse as unsigned to avoid signed overflow UB
+        unsigned value = 0;
         while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9')
         {
-            value = value * 10 + (json[pos] - '0');
-            if (value > MAX_TERMINAL_DIMENSION)
+            value = value * 10 + static_cast<unsigned>(json[pos] - '0');
+            if (value > static_cast<unsigned>(MAX_TERMINAL_DIMENSION))
                 return MAX_TERMINAL_DIMENSION;
             ++pos;
         }
-        return value;
+        return static_cast<int>(value);
     };
 
     cols = extract_int("\"cols\"");
@@ -239,12 +288,20 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
 {
     auto log = getLogger("WebTerminalHandler");
 
+    /// Require GET method for WebSocket upgrade per RFC 6455
+    if (request.getMethod() != HTTPRequest::HTTP_GET)
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED);
+        *response.send() << "WebSocket upgrade requires GET method.\n";
+        return;
+    }
+
     /// Validate WebSocket upgrade headers per RFC 6455
     String ws_key = request.get("Sec-WebSocket-Key", "");
-    if (ws_key.empty())
+    if (!isValidWebSocketKey(ws_key))
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        *response.send() << "Missing Sec-WebSocket-Key.\n";
+        *response.send() << "Invalid or missing Sec-WebSocket-Key.\n";
         return;
     }
 
@@ -291,7 +348,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                            "Connection: Upgrade\r\n"
                            "Sec-WebSocket-Accept: " + accept_key + "\r\n"
                            "\r\n";
-    socket.sendBytes(handshake_str.data(), static_cast<int>(handshake_str.size()));
+    sendAllBytes(socket, handshake_str.data(), handshake_str.size());
 
     LOG_INFO(log, "WebSocket connection established for user {}", session->getClientInfo().current_user);
 
@@ -308,9 +365,8 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     auto server_descriptors = client_runner->getDescriptorsForServer();
     int pty_master_fd = server_descriptors.out;
 
-    /// Keep the socket in blocking mode. We use poll() to check for data availability
-    /// before reading, and send operations are always blocking.
-    /// This avoids exception-safety issues with toggling blocking mode.
+    /// Set a send timeout to avoid hanging indefinitely on slow/non-reading clients
+    socket.setSendTimeout(Poco::Timespan(30, 0)); /// 30 seconds
 
     /// Make PTY master non-blocking for polling
     int flags = fcntl(pty_master_fd, F_GETFL, 0);
@@ -323,9 +379,12 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// State for WebSocket frame reassembly (RFC 6455 fragmentation)
     String fragment_buffer;
     uint8_t fragment_opcode = 0;
+    bool in_fragmented_message = false;
+    static constexpr size_t MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
-    /// Set a receive timeout so readWebSocketFrame doesn't block forever
-    socket.setReceiveTimeout(Poco::Timespan(0, 200000)); /// 200ms
+    /// Do not set a receive timeout on the socket. We use poll() to check for
+    /// readability before calling readWebSocketFrame. Setting a receive timeout
+    /// would risk partial frame reads on timeout, causing protocol desync.
 
     while (running && !server.isCancelled() && !client_runner->hasFinished())
     {
@@ -374,6 +433,13 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
             {
                 WebSocketFrame frame = readWebSocketFrame(socket);
 
+                if (frame.protocol_error)
+                {
+                    sendWebSocketClose(socket, 1002, "Protocol error");
+                    running = false;
+                    continue;
+                }
+
                 if (!frame.valid)
                 {
                     running = false;
@@ -401,21 +467,37 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                 /// Handle data frames with fragmentation support (RFC 6455 Section 5.4)
                 if (frame.opcode != 0x00)
                 {
+                    /// A new data frame while a fragmented message is in progress is a protocol error
+                    if (in_fragmented_message)
+                    {
+                        sendWebSocketClose(socket, 1002, "Protocol error: new message during fragmentation");
+                        running = false;
+                        continue;
+                    }
                     /// First frame of a message (text or binary)
                     fragment_opcode = frame.opcode;
                     fragment_buffer = std::move(frame.payload);
+                    in_fragmented_message = !frame.fin;
                 }
                 else
                 {
-                    /// Continuation frame
-                    static constexpr size_t MAX_FRAGMENT_BUFFER_SIZE = 16 * 1024 * 1024;
-                    if (fragment_buffer.size() + frame.payload.size() > MAX_FRAGMENT_BUFFER_SIZE)
+                    /// Continuation frame without a preceding data frame is a protocol error
+                    if (!in_fragmented_message)
                     {
-                        LOG_WARNING(log, "WebSocket fragment buffer exceeded limit");
+                        sendWebSocketClose(socket, 1002, "Protocol error: unexpected continuation frame");
+                        running = false;
+                        continue;
+                    }
+                    if (fragment_buffer.size() + frame.payload.size() > MAX_MESSAGE_SIZE)
+                    {
+                        LOG_WARNING(log, "WebSocket message exceeded size limit");
+                        sendWebSocketClose(socket, 1009, "Message too big");
                         running = false;
                         continue;
                     }
                     fragment_buffer.append(frame.payload);
+                    if (frame.fin)
+                        in_fragmented_message = false;
                 }
 
                 if (!frame.fin)
@@ -451,6 +533,8 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                             if (written < 0)
                             {
                                 if (errno == EINTR)
+                                    continue;
+                                if (errno == EAGAIN || errno == EWOULDBLOCK)
                                     continue;
                                 running = false;
                                 break;
@@ -547,6 +631,13 @@ void WebTerminalRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
     }
     else
     {
+        /// Only allow GET/HEAD for the HTML page
+        if (request.getMethod() != HTTPRequest::HTTP_GET && request.getMethod() != HTTPRequest::HTTP_HEAD)
+        {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED);
+            *response.send() << "Method not allowed.\n";
+            return;
+        }
         serveHTML(request, response);
     }
 }
