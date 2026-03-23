@@ -157,6 +157,14 @@ public:
         return version;
     }
 
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        size_t version = 0;
+        for (const auto & func : nested_functions)
+            version = std::max(version, func->getVersionFromRevision(revision));
+        return version;
+    }
+
     size_t sizeOfData() const override { return total_state_size; }
     size_t alignOfData() const override { return max_state_align; }
 
@@ -212,16 +220,16 @@ public:
             nested_functions[i]->merge(place + state_offsets[i], rhs + state_offsets[i], arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         for (size_t i = 0; i < num_elements; ++i)
-            nested_functions[i]->serialize(place + state_offsets[i], buf);
+            nested_functions[i]->serialize(place + state_offsets[i], buf, version);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         for (size_t i = 0; i < num_elements; ++i)
-            nested_functions[i]->deserialize(place + state_offsets[i], buf, std::nullopt, arena);
+            nested_functions[i]->deserialize(place + state_offsets[i], buf, version, arena);
     }
 
     template <bool merge>

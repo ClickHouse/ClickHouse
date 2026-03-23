@@ -47,6 +47,31 @@ DROP TABLE test_tuple_combinator;
 SELECT 'TupleIf';
 SELECT sumTupleIf(t, cond) FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1);
 
+-- State/Merge roundtrip: sumTupleState -> sumTupleMerge
+SELECT 'State/Merge roundtrip';
+SELECT sumTupleMerge(s) FROM (SELECT sumTupleState(t) AS s FROM (SELECT tuple(toInt64(1), toFloat64(2.0), toInt64(3)) AS t UNION ALL SELECT tuple(toInt64(4), toFloat64(5.0), toInt64(6)) UNION ALL SELECT tuple(toInt64(7), toFloat64(8.0), toInt64(9))));
+
+-- State/Merge roundtrip with GROUP BY
+SELECT 'State/Merge GROUP BY';
+SELECT k, sumTupleMerge(s) FROM (SELECT k, sumTupleState(t) AS s FROM (SELECT number % 2 AS k, tuple(toInt64(number), toFloat64(number) * 1.5) AS t FROM numbers(6)) GROUP BY k) GROUP BY k ORDER BY k;
+
+-- State/Merge roundtrip: two-level merge (State -> MergeState -> Merge)
+SELECT 'State/Merge two-level';
+SELECT sumTupleMerge(s) FROM (SELECT sumTupleMergeState(s) AS s FROM (SELECT sumTupleState(t) AS s FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0))) UNION ALL SELECT sumTupleState(t) AS s FROM (SELECT tuple(toInt64(5), toFloat64(6.0)) AS t UNION ALL SELECT tuple(toInt64(7), toFloat64(8.0)))));
+
+-- StateIf / Merge roundtrip
+SELECT 'StateIf/Merge roundtrip';
+SELECT sumTupleMerge(s) FROM (SELECT sumTupleStateIf(t, cond) AS s FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1));
+
+-- AggregatingMergeTree roundtrip: persist state to disk and read back
+SELECT 'AggregatingMergeTree roundtrip';
+DROP TABLE IF EXISTS test_tuple_agg_mt;
+CREATE TABLE test_tuple_agg_mt (k UInt8, s AggregateFunction(sumTuple, Tuple(Int64, Float64, Int64))) ENGINE = AggregatingMergeTree ORDER BY k;
+INSERT INTO test_tuple_agg_mt SELECT k, sumTupleState(t) AS s FROM (SELECT 1 AS k, tuple(toInt64(10), toFloat64(1.5), toInt64(100)) AS t UNION ALL SELECT 1, tuple(toInt64(20), toFloat64(2.5), toInt64(200)) UNION ALL SELECT 2, tuple(toInt64(30), toFloat64(3.5), toInt64(300))) GROUP BY k;
+INSERT INTO test_tuple_agg_mt SELECT k, sumTupleState(t) AS s FROM (SELECT 1 AS k, tuple(toInt64(30), toFloat64(3.5), toInt64(300)) AS t UNION ALL SELECT 2, tuple(toInt64(40), toFloat64(4.5), toInt64(400))) GROUP BY k;
+SELECT k, sumTupleMerge(s) FROM test_tuple_agg_mt GROUP BY k ORDER BY k;
+DROP TABLE test_tuple_agg_mt;
+
 -- Error: argument is not a Tuple
 SELECT sumTuple(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 

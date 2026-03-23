@@ -26,3 +26,15 @@ table numeric
 2	(40,4.5,400)
 TupleIf
 (6,8)
+State/Merge roundtrip
+(12,15,18)
+State/Merge GROUP BY
+0	(6,9)
+1	(9,13.5)
+State/Merge two-level
+(16,20)
+StateIf/Merge roundtrip
+(6,8)
+AggregatingMergeTree roundtrip
+1	(60,7.5,600)
+2	(70,8,700)
