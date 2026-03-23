@@ -19,7 +19,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 8, nodes: 1
       SORT id: 9, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION id
+        EXPRESSION
           COLUMN id: 10, column_name: id, result_type: UInt64, source_id: 5
 0
 1
@@ -42,7 +42,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 8, nodes: 1
       SORT id: 9, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION id
+        EXPRESSION
           COLUMN id: 10, column_name: id, result_type: UInt64, source_id: 5
 2
 1
