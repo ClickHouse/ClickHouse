@@ -335,6 +335,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                 }
             }
+
+            /// The atom handlers for IN / NOT IN expect a Tuple but we may have parsed a single scalar in the case of IN (single_value).
+            if (is_in_operator && const_value.getType() != Field::Types::Tuple)
+                const_value = Tuple{const_value};
+
             const auto atom_it = atom_map.find(func_name);
             atom_it->second(out, column_name, const_value);
             return true;
