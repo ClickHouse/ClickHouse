@@ -280,6 +280,25 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         assertEOF(*buf);
     }
 
+    /// Strip .proj entries that are referenced in checksums.txt but absent from
+    /// checksums_data (i.e. whose directory was never on disk).  This happens when
+    /// a replica fetches a part after its projection was dropped: the sender copies
+    /// checksums.txt verbatim (still containing pp.proj) but skips the .proj
+    /// directory because getProjectionParts() returns nothing for unknown projections.
+    /// Doing this right after load keeps checksums_txt consistent for all subsequent
+    /// processing — no transient state where the entry is present before the check
+    /// and absent after.
+    for (auto it = checksums_txt.files.begin(); it != checksums_txt.files.end();)
+    {
+        if (it->first.ends_with(".proj") && !checksums_data.has(it->first))
+        {
+            is_broken_projection = true;
+            it = checksums_txt.files.erase(it);
+        }
+        else
+            ++it;
+    }
+
     NameSet projections_on_disk;
     const auto & checksums_txt_files = checksums_txt.files;
     for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
@@ -377,24 +396,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         is_broken_projection = true;
         for (const auto & projection_file : projections_on_disk)
             checksums_txt.remove(projection_file);
-    }
-
-    /// Handle the complementary case: checksums_txt references a .proj entry
-    /// whose directory was never present on disk (e.g. a replica that fetched
-    /// the part after its projection was dropped — checksums.txt was copied
-    /// verbatim from the sender but the .proj directory was not transferred
-    /// because getProjectionParts() returns nothing for the unknown projection).
-    /// Without this, checkEqual would throw NO_FILE_IN_DATA_PART and the part
-    /// would be marked broken, triggering an infinite re-fetch loop.
-    for (auto it = checksums_txt.files.begin(); it != checksums_txt.files.end();)
-    {
-        if (it->first.ends_with(".proj") && !checksums_data.has(it->first))
-        {
-            is_broken_projection = true;
-            it = checksums_txt.files.erase(it);
-        }
-        else
-            ++it;
     }
 
     if (throw_on_broken_projection)

@@ -28,7 +28,7 @@ CREATE TABLE t_fetch_unknown_proj_2 (x Int32, y Int32, PROJECTION p (SELECT x, y
 INSERT INTO t_fetch_unknown_proj_1 SELECT number, number FROM numbers(7);
 
 ALTER TABLE t_fetch_unknown_proj_1 ADD PROJECTION pp (SELECT x, count() GROUP BY x);
-ALTER TABLE t_fetch_unknown_proj_1 MATERIALIZE PROJECTION pp SETTINGS mutations_sync = 2;
+ALTER TABLE t_fetch_unknown_proj_1 MATERIALIZE PROJECTION pp SETTINGS mutations_sync = 2, alter_sync = 2;
 
 -- Detach on replica 1 so the part (with pp.proj on disk) goes to detached/.
 -- Replication propagates the detach to replica 2 as well.
