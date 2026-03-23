@@ -379,6 +379,24 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             checksums_txt.remove(projection_file);
     }
 
+    /// Handle the complementary case: checksums_txt references a .proj entry
+    /// whose directory was never present on disk (e.g. a replica that fetched
+    /// the part after its projection was dropped — checksums.txt was copied
+    /// verbatim from the sender but the .proj directory was not transferred
+    /// because getProjectionParts() returns nothing for the unknown projection).
+    /// Without this, checkEqual would throw NO_FILE_IN_DATA_PART and the part
+    /// would be marked broken, triggering an infinite re-fetch loop.
+    for (auto it = checksums_txt.files.begin(); it != checksums_txt.files.end();)
+    {
+        if (it->first.ends_with(".proj") && !checksums_data.has(it->first))
+        {
+            is_broken_projection = true;
+            it = checksums_txt.files.erase(it);
+        }
+        else
+            ++it;
+    }
+
     if (throw_on_broken_projection)
     {
         if (!broken_projections_message.empty())

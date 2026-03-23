@@ -56,9 +56,13 @@ run "SELECT sum(x), sum(y) FROM t_unknown_proj_1"
 # Replica 2 must fetch the part with the unknown projection from replica 1
 # via downloadPartToDisk on a local disk.  This exercises the receiver-side
 # checkEqual that compares checksums.txt against actually transferred files.
+# Additionally, CHECK TABLE on replica 2 must not fail with NO_FILE_IN_DATA_PART:
+# checksums.txt references pp.proj but the directory was never transferred, so
+# checkDataPart must strip it before the checkEqual comparison.
 run "SYSTEM SYNC REPLICA t_unknown_proj_2"
 run "SELECT count() FROM t_unknown_proj_2"
 run "SELECT sum(x), sum(y) FROM t_unknown_proj_2"
+run "CHECK TABLE t_unknown_proj_2" 2>&1 | grep -o "NO_FILE_IN_DATA_PART\|BROKEN_PROJECTION" | uniq
 
 # Force a merge to make sure the part with the unknown projection can merge.
 run "ALTER TABLE t_unknown_proj_1 MODIFY SETTING max_parts_to_merge_at_once = 100"
