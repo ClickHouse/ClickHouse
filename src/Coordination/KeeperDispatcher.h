@@ -118,14 +118,6 @@ private:
     using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
     void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count);
 
-    /// Park a read request behind a same-session write in the current batch,
-    /// or collect it for immediate dispatch if no same-session write exists.
-    void parkOrDispatchRead(
-        const KeeperRequestForSession & read_request,
-        const KeeperRequestsForSessions & current_batch,
-        KeeperRequestsForSessions & pending_immediate_reads,
-        bool per_session_only);
-
     /// Dispatch collected immediate reads that have no same-session write dependency.
     void dispatchImmediateReads(KeeperRequestsForSessions & pending_immediate_reads);
 
@@ -138,6 +130,14 @@ public:
 
     /// queue of read requests that can be processed after a request with specific session ID and XID is committed
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
+
+    /// Park a read request behind a same-session write in the current batch,
+    /// or collect it for immediate dispatch if no same-session write exists.
+    void parkOrDispatchRead(
+        const KeeperRequestForSession & read_request,
+        const KeeperRequestsForSessions & current_batch,
+        KeeperRequestsForSessions & pending_immediate_reads,
+        bool per_session_only);
 
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();

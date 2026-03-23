@@ -24,6 +24,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
+#include <Coordination/KeeperDispatcher.h>
 
 TYPED_TEST(CoordinationTest, RaftServerConfigParse)
 {
@@ -950,166 +951,210 @@ TYPED_TEST(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA));
 }
 
-/// Test that the read-request parking logic in KeeperDispatcher only parks reads
-/// behind same-session writes, not behind writes from other sessions.
-/// This verifies the fix for cross-session read blocking.
+/// Test that KeeperDispatcher::parkOrDispatchRead parks reads behind
+/// same-session writes and dispatches cross-session reads immediately.
+/// Exercises the real production method, not a copy of the logic.
 TYPED_TEST(CoordinationTest, TestReadRequestQueueCrossSessionParking)
 {
     using namespace Coordination;
     using namespace DB;
 
-    /// Simulate the read parking logic from KeeperDispatcher::requestThread.
-    /// We build a batch of writes from different sessions, then check that
-    /// reads are parked correctly (same-session) or not parked (cross-session).
+    /// KeeperDispatcher::parkOrDispatchRead only accesses read_request_queue
+    /// (public), so we can call it on a default-constructed dispatcher
+    /// without starting a Raft server.
+    KeeperDispatcher dispatcher;
 
     const int64_t session_1 = 100;
     const int64_t session_2 = 200;
     const int64_t session_3 = 300;
 
+    auto make_request = [](int64_t session_id, Coordination::XID xid, bool is_write)
+    {
+        Coordination::ZooKeeperRequestPtr req;
+        if (is_write)
+        {
+            auto w = std::make_shared<ZooKeeperCreateRequest>();
+            w->path = "/test";
+            req = std::move(w);
+        }
+        else
+        {
+            auto r = std::make_shared<ZooKeeperExistsRequest>();
+            r->path = "/test";
+            req = std::move(r);
+        }
+        req->xid = xid;
+        KeeperRequestForSession result;
+        result.session_id = session_id;
+        result.request = req;
+        return result;
+    };
+
     /// Build a write batch with writes from sessions 1 and 2
     KeeperRequestsForSessions current_batch;
+    current_batch.push_back(make_request(session_1, /*xid=*/1, /*is_write=*/true));
+    current_batch.push_back(make_request(session_2, /*xid=*/2, /*is_write=*/true));
 
-    auto make_write = [](int64_t session_id, Coordination::XID xid)
-    {
-        auto req = std::make_shared<ZooKeeperCreateRequest>();
-        req->path = "/test";
-        req->xid = xid;
-        KeeperRequestForSession r;
-        r.session_id = session_id;
-        r.request = req;
-        return r;
-    };
-
-    auto make_read = [](int64_t session_id, Coordination::XID xid)
-    {
-        auto req = std::make_shared<ZooKeeperExistsRequest>();
-        req->path = "/test";
-        req->xid = xid;
-        KeeperRequestForSession r;
-        r.session_id = session_id;
-        r.request = req;
-        return r;
-    };
-
-    current_batch.push_back(make_write(session_1, /*xid=*/1));
-    current_batch.push_back(make_write(session_2, /*xid=*/2));
-
-    /// Simulate the parking logic (mirrors KeeperDispatcher::requestThread)
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
     KeeperRequestsForSessions pending_immediate_reads;
 
-    auto park_read = [&](const KeeperRequestForSession & read_request)
+    /// per_session_only=true: read from session_1 parks behind session_1's write
+    dispatcher.parkOrDispatchRead(
+        make_request(session_1, /*xid=*/10, /*is_write=*/false),
+        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+
+    /// per_session_only=true: read from session_2 parks behind session_2's write
+    dispatcher.parkOrDispatchRead(
+        make_request(session_2, /*xid=*/20, /*is_write=*/false),
+        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+
+    /// per_session_only=true: read from session_3 has no write in batch -> immediate
+    dispatcher.parkOrDispatchRead(
+        make_request(session_3, /*xid=*/30, /*is_write=*/false),
+        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+
     {
-        auto same_session_it = std::find_if(
-            current_batch.rbegin(), current_batch.rend(),
-            [&](const KeeperRequestForSession & r) { return r.session_id == read_request.session_id; });
+        std::lock_guard lock(dispatcher.read_request_queue_mutex);
 
-        if (same_session_it != current_batch.rend())
-            read_request_queue[same_session_it->session_id][same_session_it->request->xid].push_back(read_request);
-        else
-            pending_immediate_reads.push_back(read_request);
-    };
+        /// session_1's read is parked behind session_1's write (xid=1)
+        ASSERT_TRUE(dispatcher.read_request_queue.contains(session_1));
+        ASSERT_TRUE(dispatcher.read_request_queue[session_1].contains(1));
+        ASSERT_EQ(dispatcher.read_request_queue[session_1][1].size(), 1);
+        ASSERT_EQ(dispatcher.read_request_queue[session_1][1][0].session_id, session_1);
 
-    /// Read from session_1: should be parked behind session_1's write (xid=1)
-    auto read_s1 = make_read(session_1, /*xid=*/10);
-    park_read(read_s1);
+        /// session_2's read is parked behind session_2's write (xid=2)
+        ASSERT_TRUE(dispatcher.read_request_queue.contains(session_2));
+        ASSERT_TRUE(dispatcher.read_request_queue[session_2].contains(2));
+        ASSERT_EQ(dispatcher.read_request_queue[session_2][2].size(), 1);
+        ASSERT_EQ(dispatcher.read_request_queue[session_2][2][0].session_id, session_2);
 
-    /// Read from session_2: should be parked behind session_2's write (xid=2)
-    auto read_s2 = make_read(session_2, /*xid=*/20);
-    park_read(read_s2);
+        /// session_3 has no entry — it went to immediate dispatch
+        ASSERT_FALSE(dispatcher.read_request_queue.contains(session_3));
+    }
 
-    /// Read from session_3: no write from session_3 in batch → immediate dispatch
-    auto read_s3 = make_read(session_3, /*xid=*/30);
-    park_read(read_s3);
-
-    /// Verify: session_1's read is parked behind session_1's write
-    ASSERT_TRUE(read_request_queue.contains(session_1));
-    ASSERT_TRUE(read_request_queue[session_1].contains(1));
-    ASSERT_EQ(read_request_queue[session_1][1].size(), 1);
-    ASSERT_EQ(read_request_queue[session_1][1][0].session_id, session_1);
-
-    /// Verify: session_2's read is parked behind session_2's write
-    ASSERT_TRUE(read_request_queue.contains(session_2));
-    ASSERT_TRUE(read_request_queue[session_2].contains(2));
-    ASSERT_EQ(read_request_queue[session_2][2].size(), 1);
-    ASSERT_EQ(read_request_queue[session_2][2][0].session_id, session_2);
-
-    /// Verify: session_3's read is NOT parked — it goes to immediate dispatch
-    ASSERT_FALSE(read_request_queue.contains(session_3));
     ASSERT_EQ(pending_immediate_reads.size(), 1);
     ASSERT_EQ(pending_immediate_reads[0].session_id, session_3);
-
-    /// Verify: the OLD behavior would have parked ALL reads behind the last write (session_2, xid=2).
-    /// With the fix, reads are correctly distributed per-session.
-    /// session_1's read is NOT under session_2's key:
-    ASSERT_EQ(read_request_queue[session_2][2].size(), 1); // only session_2's own read
 }
 
 /// Test that multiple reads from the same session are all parked behind
-/// the last write from that session.
+/// the last write from that session, using the real dispatcher method.
 TYPED_TEST(CoordinationTest, TestReadRequestQueueSameSessionMultipleReads)
 {
     using namespace Coordination;
     using namespace DB;
 
+    KeeperDispatcher dispatcher;
+
     const int64_t session_1 = 100;
     const int64_t session_2 = 200;
 
+    auto make_request = [](int64_t session_id, Coordination::XID xid, bool is_write)
+    {
+        Coordination::ZooKeeperRequestPtr req;
+        if (is_write)
+        {
+            auto w = std::make_shared<ZooKeeperCreateRequest>();
+            w->path = "/test";
+            req = std::move(w);
+        }
+        else
+        {
+            auto r = std::make_shared<ZooKeeperExistsRequest>();
+            r->path = "/test";
+            req = std::move(r);
+        }
+        req->xid = xid;
+        KeeperRequestForSession result;
+        result.session_id = session_id;
+        result.request = req;
+        return result;
+    };
+
+    /// Session 1 has two writes, session 2 has one
     KeeperRequestsForSessions current_batch;
+    current_batch.push_back(make_request(session_1, /*xid=*/1, /*is_write=*/true));
+    current_batch.push_back(make_request(session_2, /*xid=*/2, /*is_write=*/true));
+    current_batch.push_back(make_request(session_1, /*xid=*/3, /*is_write=*/true));
 
-    auto make_write = [](int64_t session_id, Coordination::XID xid)
-    {
-        auto req = std::make_shared<ZooKeeperCreateRequest>();
-        req->path = "/test";
-        req->xid = xid;
-        KeeperRequestForSession r;
-        r.session_id = session_id;
-        r.request = req;
-        return r;
-    };
-
-    auto make_read = [](int64_t session_id, Coordination::XID xid)
-    {
-        auto req = std::make_shared<ZooKeeperExistsRequest>();
-        req->path = "/test";
-        req->xid = xid;
-        KeeperRequestForSession r;
-        r.session_id = session_id;
-        r.request = req;
-        return r;
-    };
-
-    /// Session 1 has two writes in the batch
-    current_batch.push_back(make_write(session_1, /*xid=*/1));
-    current_batch.push_back(make_write(session_2, /*xid=*/2));
-    current_batch.push_back(make_write(session_1, /*xid=*/3));
-
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
     KeeperRequestsForSessions pending_immediate_reads;
 
-    auto park_read = [&](const KeeperRequestForSession & read_request)
-    {
-        auto same_session_it = std::find_if(
-            current_batch.rbegin(), current_batch.rend(),
-            [&](const KeeperRequestForSession & r) { return r.session_id == read_request.session_id; });
+    /// Three reads from session_1
+    dispatcher.parkOrDispatchRead(
+        make_request(session_1, /*xid=*/10, /*is_write=*/false),
+        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+    dispatcher.parkOrDispatchRead(
+        make_request(session_1, /*xid=*/11, /*is_write=*/false),
+        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+    dispatcher.parkOrDispatchRead(
+        make_request(session_1, /*xid=*/12, /*is_write=*/false),
+        current_batch, pending_immediate_reads, /*per_session_only=*/true);
 
-        if (same_session_it != current_batch.rend())
-            read_request_queue[same_session_it->session_id][same_session_it->request->xid].push_back(read_request);
+    {
+        std::lock_guard lock(dispatcher.read_request_queue_mutex);
+
+        /// All three reads behind session_1's LAST write (xid=3), not first (xid=1)
+        ASSERT_FALSE(dispatcher.read_request_queue[session_1].contains(1));
+        ASSERT_TRUE(dispatcher.read_request_queue[session_1].contains(3));
+        ASSERT_EQ(dispatcher.read_request_queue[session_1][3].size(), 3);
+    }
+
+    ASSERT_TRUE(pending_immediate_reads.empty());
+}
+
+/// Test legacy behavior (per_session_only=false): all reads park behind
+/// the last write in the batch regardless of session.
+TYPED_TEST(CoordinationTest, TestReadRequestQueueLegacyBehavior)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    KeeperDispatcher dispatcher;
+
+    const int64_t session_1 = 100;
+    const int64_t session_2 = 200;
+
+    auto make_request = [](int64_t session_id, Coordination::XID xid, bool is_write)
+    {
+        Coordination::ZooKeeperRequestPtr req;
+        if (is_write)
+        {
+            auto w = std::make_shared<ZooKeeperCreateRequest>();
+            w->path = "/test";
+            req = std::move(w);
+        }
         else
-            pending_immediate_reads.push_back(read_request);
+        {
+            auto r = std::make_shared<ZooKeeperExistsRequest>();
+            r->path = "/test";
+            req = std::move(r);
+        }
+        req->xid = xid;
+        KeeperRequestForSession result;
+        result.session_id = session_id;
+        result.request = req;
+        return result;
     };
 
-    /// Three reads from session_1: should all park behind the LAST write from session_1 (xid=3)
-    park_read(make_read(session_1, /*xid=*/10));
-    park_read(make_read(session_1, /*xid=*/11));
-    park_read(make_read(session_1, /*xid=*/12));
+    KeeperRequestsForSessions current_batch;
+    current_batch.push_back(make_request(session_1, /*xid=*/1, /*is_write=*/true));
+    current_batch.push_back(make_request(session_2, /*xid=*/2, /*is_write=*/true));
 
-    /// Verify: all three reads are behind session_1's LAST write (xid=3), not first write (xid=1)
-    ASSERT_FALSE(read_request_queue[session_1].contains(1)); // not behind first write
-    ASSERT_TRUE(read_request_queue[session_1].contains(3));  // behind last write
-    ASSERT_EQ(read_request_queue[session_1][3].size(), 3);
+    KeeperRequestsForSessions pending_immediate_reads;
 
-    /// No immediate reads
+    /// per_session_only=false: read from session_1 parks behind last write (session_2, xid=2)
+    dispatcher.parkOrDispatchRead(
+        make_request(session_1, /*xid=*/10, /*is_write=*/false),
+        current_batch, pending_immediate_reads, /*per_session_only=*/false);
+
+    {
+        std::lock_guard lock(dispatcher.read_request_queue_mutex);
+
+        /// In legacy mode, session_1's read is parked under session_2's key
+        ASSERT_FALSE(dispatcher.read_request_queue.contains(session_1));
+        ASSERT_TRUE(dispatcher.read_request_queue.contains(session_2));
+        ASSERT_EQ(dispatcher.read_request_queue[session_2][2].size(), 1);
+        ASSERT_EQ(dispatcher.read_request_queue[session_2][2][0].session_id, session_1);
+    }
+
     ASSERT_TRUE(pending_immediate_reads.empty());
 }
 
