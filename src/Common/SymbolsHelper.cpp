@@ -23,16 +23,7 @@ symbolizeTrace(const void * const * frame_pointers, size_t size)
     {
         const void * addr = frame_pointers[i];
 
-        /// Convert virtual address to file offset if it falls within a loaded object.
-        /// Callers may pass either absolute runtime addresses or file offsets.
-        const auto * object = symbol_index.findObject(addr);
-        const void * offset = addr;
-
-        if (object)
-            offset = reinterpret_cast<const void *>(
-                reinterpret_cast<uintptr_t>(addr) - reinterpret_cast<uintptr_t>(object->address_begin));
-
-        if (const auto * symbol = symbol_index.findSymbol(offset))
+        if (const auto * symbol = symbol_index.findSymbol(addr))
         {
             auto demangled = tryDemangle(symbol->name);
             if (demangled)
@@ -40,7 +31,7 @@ symbolizeTrace(const void * const * frame_pointers, size_t size)
             else
                 symbols.emplace_back(symbol->name, strlen(symbol->name));
 
-            lines.emplace_back(AddressToLineCache::get(reinterpret_cast<uintptr_t>(offset)));
+            lines.emplace_back(AddressToLineCache::get(reinterpret_cast<uintptr_t>(addr)));
         }
         else
         {

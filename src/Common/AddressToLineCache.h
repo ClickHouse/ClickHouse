@@ -22,7 +22,7 @@ public:
 private:
     void setResult(std::string_view & result, const Dwarf::LocationInfo & location);
     std::string_view impl(uintptr_t addr);
-    std::string_view getCached(uintptr_t addr);
+    std::string_view implCached(uintptr_t addr);
 
     Arena arena;
     using Map = HashMap<uintptr_t, std::string_view>;

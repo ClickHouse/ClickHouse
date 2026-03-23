@@ -30,7 +30,16 @@ std::string_view AddressToLineCache::impl(uintptr_t addr)
 {
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-    if (const auto * object = symbol_index.thisObject())
+    /// Convert virtual address to file offset if it falls within a loaded object.
+    /// Callers may pass either absolute runtime addresses or file offsets.
+    const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr));
+    uintptr_t physical_addr = addr;
+    if (object)
+        physical_addr = addr - reinterpret_cast<uintptr_t>(object->address_begin);
+    else
+        object = symbol_index.thisObject();
+
+    if (object)
     {
         auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
         if (!std::filesystem::exists(object->name))
@@ -39,7 +48,7 @@ std::string_view AddressToLineCache::impl(uintptr_t addr)
         Dwarf::LocationInfo location;
         std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
         std::string_view result;
-        if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
+        if (dwarf_it->second.findAddress(physical_addr, location, Dwarf::LocationInfoMode::FAST, frames))
         {
             setResult(result, location);
             return result;
@@ -49,7 +58,7 @@ std::string_view AddressToLineCache::impl(uintptr_t addr)
     return {};
 }
 
-std::string_view AddressToLineCache::getCached(uintptr_t addr)
+std::string_view AddressToLineCache::implCached(uintptr_t addr)
 {
     /// Fast path: read lock — concurrent reads don't block each other
     {
@@ -73,7 +82,7 @@ std::string_view AddressToLineCache::getCached(uintptr_t addr)
 std::string_view AddressToLineCache::get(uintptr_t addr)
 {
     static AddressToLineCache cache;
-    return cache.getCached(addr);
+    return cache.implCached(addr);
 }
 
 }
