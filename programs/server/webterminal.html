@@ -38,12 +38,23 @@
             width: 100%;
         }
 
-        /* Hide scrollbar but keep scrollable */
+        /* Dark themed scrollbar */
         .xterm-viewport::-webkit-scrollbar {
-            display: none;
+            width: 8px;
+        }
+        .xterm-viewport::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 4px;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb:hover {
+            background: #777;
         }
         .xterm-viewport {
-            scrollbar-width: none;
+            scrollbar-width: thin;
+            scrollbar-color: #555 #1e1e1e;
         }
     </style>
 </head>
