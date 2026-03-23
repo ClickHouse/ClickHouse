@@ -5145,7 +5145,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             if (disjoint)
             {
-                // Indices box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
+                // Index box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
                 rpn_stack.emplace_back(false, true);
                 continue;
             }
