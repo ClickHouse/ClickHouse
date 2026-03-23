@@ -97,7 +97,7 @@ namespace DB::Iceberg
 {
 
 using namespace DB;
-static CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
+CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
 {
     constexpr std::string_view metadata_suffix = ".metadata.json";
 
