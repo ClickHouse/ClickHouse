@@ -425,7 +425,7 @@ namespace
                     return {};
                 return literal->value.safeGet<String>();
             }
-            catch (...)
+            catch (const Exception &)
             {
                 return {};
             }

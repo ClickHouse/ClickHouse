@@ -22,10 +22,28 @@ namespace
 {
 /// API exported to guest WebAssembly code.
 
-void wasmExportLog(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
+std::string_view getWasmString(WasmCompartment * compartment, WasmPtr ptr, WasmSizeT size)
 {
-    const auto * host_ptr = compartment->getMemory(wasm_ptr, size);
-    LOG_TRACE(getLogger("WasmUdf"), "{}", std::string_view(reinterpret_cast<const char *>(host_ptr), size));
+    auto data = compartment->getMemory(ptr, size);
+    return {reinterpret_cast<const char *>(data.data()), data.size()};
+}
+
+void wasmExportLog(WasmCompartment * compartment, UInt32 level, WasmPtr wasm_ptr, WasmSizeT size)
+{
+    /// Map level to Poco::Message::Priority.
+    /// Poco priorities: 1 (FATAL) .. 8 (TRACE). WASM modules must not emit messages
+    /// more severe than WARNING — those could trigger alerting systems and misrepresent
+    /// ClickHouse health. Clamp as integers first to avoid signed overflow on large
+    /// UInt32 values (e.g. 0xFFFFFFFF → -1 if cast first), then cast.
+    UInt32 clamped_level = std::clamp(level,
+        static_cast<UInt32>(Poco::Message::PRIO_WARNING),
+        static_cast<UInt32>(Poco::Message::PRIO_TRACE));
+    auto prio = static_cast<Poco::Message::Priority>(clamped_level);
+
+    std::string_view message = getWasmString(compartment, wasm_ptr, size);
+
+    auto logger = getLogger("WasmUdf");
+    logger->log(Poco::Message(logger->name(), std::string(message), prio));
 }
 
 Int64 wasmExportServerVer(WasmCompartment *)
@@ -35,17 +53,18 @@ Int64 wasmExportServerVer(WasmCompartment *)
 
 [[noreturn]] void wasmExportThrow(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
 {
-    const auto * host_ptr = compartment->getMemory(wasm_ptr, size);
-    std::string_view data(reinterpret_cast<const char *>(host_ptr), size);
-    throw Exception(ErrorCodes::WASM_ERROR, "WebAssembly UDF terminated with error: {}", data);
+    auto data = compartment->getMemory(wasm_ptr, size);
+    std::string_view data_view(reinterpret_cast<const char *>(data.data()), data.size());
+    throw Exception(ErrorCodes::WASM_ERROR, "WebAssembly UDF terminated with error: {}", data_view);
 }
 
 void wasmExportRandom(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
 {
-    auto * host_ptr = compartment->getMemory(wasm_ptr, size);
-    std::uniform_int_distribution<> dist(std::numeric_limits<UInt8>::min(), std::numeric_limits<UInt8>::max());
+    auto data = compartment->getMemory(wasm_ptr, size);
+    using ValueType = decltype(data)::value_type;
+    std::uniform_int_distribution<> dist(std::numeric_limits<ValueType>::min(), std::numeric_limits<ValueType>::max());
     for (WasmSizeT i = 0; i < size; ++i)
-        host_ptr[i] = static_cast<UInt8>(dist(thread_local_rng));
+        data[i] = static_cast<ValueType>(dist(thread_local_rng));
 }
 
 }
@@ -108,6 +127,7 @@ WasmHostFunction makeHostFunction(std::string_view function_name, ReturnType (*h
 {
     using FuncPtr = ReturnType (*)(WasmCompartment *, Args...);
     WasmFunctionDeclaration func_decl(
+        "env",
         function_name,
         WasmHostFunctionAdapter<FuncPtr>::getArgumentTypes(),
         WasmHostFunctionAdapter<FuncPtr>::getReturnType());

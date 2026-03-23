@@ -398,7 +398,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         auto task = getContext()->getSchedulePool().createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
-    max_files_override_per_task.resize(task_count, 0);
+    max_files_override = 0;
 }
 
 void StorageObjectStorageQueue::startup()
@@ -711,29 +711,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
 
 size_t StorageObjectStorageQueue::getDependencies() const
 {
-    auto table_id = getStorageID();
-
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
-
-    if (view_ids.empty())
-        return 0;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return 0;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return 0;
-    }
-
-    return view_ids.size();
+    return DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext()).size();
 }
 
 void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
@@ -872,10 +850,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
-    size_t & effective_max_files = max_files_override_per_task[streaming_tasks_index];
-
     while (!shutdown_called && !file_iterator->isFinished())
     {
+        /// All tasks share a single batch size override so that the halving
+        /// converges regardless of which task encounters the bad file.
+        auto effective_max_files = max_files_override.load();
+
         /// FIXME:
         /// it is possible that MV is dropped just before we start the insert,
         /// but in this case we would not throw any exception, so
@@ -958,10 +938,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
                 file_iterator->releaseFinishedBuckets();
 
-                /// Halve the batch size so that on the next iteration the bad file
+                /// Halve the global batch size so that on the next iteration the bad file
                 /// ends up in a smaller batch, eventually alone (batch size 1),
                 /// and only then its retry count will be reduced.
-                size_t current_max = effective_max_files;
+                /// The override is shared across all tasks so that the halving converges
+                /// regardless of which task encounters the bad file.
+                size_t current_max = max_files_override.load();
                 if (!current_max)
                 {
                     std::lock_guard lock(mutex);
@@ -969,13 +951,14 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                 }
                 if (!current_max)
                     current_max = processing_progress->processed_files.load();
-                effective_max_files = std::max<size_t>(current_max / 2, 1);
+                max_files_override = std::max<size_t>(current_max / 2, 1);
             }
             catch (Exception & e)
             {
                 e.addMessage("Previous exception: {}", message);
                 throw;
             }
+
             throw;
         }
 
@@ -985,7 +968,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
-        effective_max_files = 0;
+        max_files_override = 0;
         total_rows += rows;
     }
 
@@ -1548,6 +1531,8 @@ const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetad
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::createFileIterator");
+
     const auto & table_metadata = getTableMetadata();
     bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);

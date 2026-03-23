@@ -79,6 +79,7 @@ concurrency:
 env:
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
+{ENV_SECRETS}
 
 jobs:
 {JOBS}\
@@ -99,6 +100,7 @@ on:
 env:
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
+{ENV_SECRETS}
 {GH_TOKEN_PERMISSIONS}
 
 jobs:
@@ -341,13 +343,13 @@ class PullRequestPushYamlGen:
                 if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_ALWAYS
 
             secrets_envs = []
-            for secret in self.workflow_config.secret_names_gh:
+            for secret in job.secret_names_gh:
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENV_SECRETS.format(
                         SECRET_NAME=secret
                     )
                 )
-            for var in self.workflow_config.variable_names_gh:
+            for var in job.variable_names_gh:
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENV_VARS.format(VAR_NAME=var)
                 )

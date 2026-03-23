@@ -64,7 +64,24 @@ For more information about format parsers, see the [Formats](../interfaces/forma
 ClickHouse supports both SQL-style and C-style comments:
 
 - SQL-style comments begin with `--`, `#!` or `# ` and continue to the end of the line. A space after `--` and `#!` can be omitted.
-- C-style comments span from `/*` to `*/` and can be multiline. Spaces are not required either.
+- C-style comments:
+  - `//` (or more than 2 `/` characters) followed by text until the end of the line. Spaces after `/` are not required.
+  - Can span from `/*` to `*/` for multiline comments. Spaces are not required either.
+  - C-style comments can be nested.
+ 
+For example:
+
+```sql
+/*
+ * Compute the number of days between two dates.
+ * /* Returns NULL if either argument is NULL */
+ */
+SELECT
+    dateDiff('day', toDate('2024-01-01'), toDate('2024-12-31')) AS days_in_year, -- 365
+    dateDiff('day', toDate('2020-01-01'), today()) AS days_since  #! since 2020
+    ///////////////////////////////////////////////////////////////////
+    # TODO: add hour/minute variants
+```
 
 ## Keywords {#keywords}
 
@@ -279,14 +296,11 @@ Query parameters allow you to write generic queries that contain abstract placeh
 When a query with query parameters is executed, 
 all placeholders are resolved and replaced by the actual query parameter values.
 
-There are two ways to define a query parameter:
+Query parameters can be defined in several ways:
 
-- `SET param_<name>=<value>`
-- `--param_<name>='<value>'`
-
-When using the second variant, it is passed as an argument to `clickhouse-client` on the command line where:
-- `<name>` is the name of the query parameter.
-- `<value>` is its value.
+- `SET param_<name>=<value>` — using a `SET` command in a query.
+- `--param_<name>='<value>'` — as an argument to `clickhouse-client` on the command line.
+- `param_<name>=<value>` — as a URL query string parameter for the HTTP interface.
 
 A query parameter can be referenced in a query using `{<name>: <datatype>}`, where `<name>` is the query parameter name and `<datatype>` is the datatype it is converted to.
 
@@ -330,8 +344,26 @@ SELECT * FROM {mytablename:Identifier};
 ```
 </details>
 
+<details>
+<summary>Example with the HTTP interface</summary>
+
+Query parameters can be passed as URL query string parameters with the `param_` prefix. For example:
+
+```bash
+curl -s "http://localhost:8123/?param_message=hello" --data-binary "SELECT {message: String}"
+
+hello
+```
+</details>
+
+<details>
+<summary>Example with the Web UI</summary>
+
+The built-in Web UI (`play.html`) automatically detects `{name:Type}` parameter placeholders in the query and displays labeled input fields for each parameter. The parameter values are included in the HTTP request and also persisted in the page URL for bookmarking and sharing.
+</details>
+
 :::note
-Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries. 
+Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries.
 They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
 :::
 

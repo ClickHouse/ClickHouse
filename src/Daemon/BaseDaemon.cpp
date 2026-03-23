@@ -127,7 +127,10 @@ void BaseDaemon::loadConfiguration()
 }
 
 
-BaseDaemon::BaseDaemon() = default;
+BaseDaemon::BaseDaemon()
+    : original_working_directory(fs::current_path())
+{
+}
 
 
 BaseDaemon::~BaseDaemon()
@@ -283,10 +286,23 @@ void BaseDaemon::initialize(Application & self)
         struct rlimit rlim;
         if (getrlimit(RLIMIT_SIGPENDING, &rlim))
             throw Poco::Exception("Cannot getrlimit");
-        rlim.rlim_cur = pending_signals;
-        if (setrlimit(RLIMIT_SIGPENDING, &rlim))
+
+        /// Only adjust if the current soft limit is below the requested value.
+        if (rlim.rlim_cur < pending_signals)
         {
-            std::cerr << "Cannot set pending signals to " + std::to_string(rlim.rlim_cur) << std::endl;
+            rlim_t old_cur = rlim.rlim_cur;
+            rlim_t old_max = rlim.rlim_max;
+
+            /// Raise hard limit only if needed (requires CAP_SYS_RESOURCE).
+            /// (Note it is "unlimited" compatible, since it is rlim_t(-1))
+            rlim.rlim_max = std::max<rlim_t>(rlim.rlim_max, pending_signals);
+
+            rlim.rlim_cur = pending_signals;
+
+            if (setrlimit(RLIMIT_SIGPENDING, &rlim))
+                std::cerr << "Cannot set RLIMIT_SIGPENDING (soft=" << old_cur << ", hard=" << old_max << ") to " << pending_signals << std::endl;
+            else
+                std::cerr << "Set RLIMIT_SIGPENDING from (soft=" << old_cur << ", hard=" << old_max << ") to " << pending_signals << std::endl;
         }
     }
 #endif
@@ -454,9 +470,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"));
+    signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"), [this](int, bool) { onTerminateRequestSignal(); });
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
 
@@ -512,36 +528,15 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
     Poco::Util::ServerApplication::defineOptions(new_options);
 }
 
-void BaseDaemon::handleSignal(int signal_id)
+void BaseDaemon::onTerminateRequestSignal()
 {
-    if (!(signal_id == SIGINT ||
-        signal_id == SIGQUIT ||
-        signal_id == SIGTERM))
-        throw Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
-    std::lock_guard lock(signal_handler_mutex);
-    {
-        ++terminate_signals_counter;
-        signal_event.notify_all();
-    }
-
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
-    if (terminate_signals_counter >= 2)
-    {
-        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
-        call_default_signal_handler(signal_id);
-        /// If the above did not help.
-        _exit(128 + signal_id);
-    }
 }
 
 void BaseDaemon::waitForTerminationRequest()
 {
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
-    std::unique_lock<std::mutex> lock(signal_handler_mutex);
-    signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
+    signal_listener->waitForTerminationRequest();
 }
 
 

@@ -79,6 +79,9 @@ class Job:
 
         parameter: Any = None
 
+        # Per-job secrets (exported only for this job, not all jobs in the workflow)
+        secrets: list = field(default_factory=list)
+
         # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
 
@@ -270,7 +273,7 @@ class Job:
                 container_name = (
                     "praktika_"
                     + hashlib.sha1(
-                        Path(os.getcwd()).resolve().as_posix().encode()
+                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
                     ).hexdigest()[:12]
                 )
                 self.timeout_shell_cleanup = f"docker rm -f {container_name}"
