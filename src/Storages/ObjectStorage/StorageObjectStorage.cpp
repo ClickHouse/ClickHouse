@@ -16,9 +16,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
-#include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -466,54 +464,9 @@ void StorageObjectStorage::drop()
     configuration->drop(Context::getGlobalContextInstance());
 }
 
-std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
-    const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
-    const std::optional<FormatSettings> & format_settings,
-    ObjectInfos & read_keys,
-    const ContextPtr & context)
-{
-    return DB::createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-}
-
-ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
-    const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
-    const std::optional<FormatSettings> & format_settings,
-    std::string & sample_path,
-    const ContextPtr & context)
-{
-    return DB::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
-}
-
-std::string StorageObjectStorage::resolveFormatFromData(
-    const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
-    const std::optional<FormatSettings> & format_settings,
-    std::string & sample_path,
-    const ContextPtr & context)
-{
-    return DB::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
-}
-
-std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAndFormatFromData(
-    const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
-    const std::optional<FormatSettings> & format_settings,
-    std::string & sample_path,
-    const ContextPtr & context)
-{
-    return DB::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, sample_path, context);
-}
-
 void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
-}
-
-SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name)
-{
-    return DB::getSchemaCache(context, storage_engine_name);
 }
 
 }

@@ -1,10 +1,8 @@
 #pragma once
-#include <Core/SchemaInferenceMode.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
@@ -100,29 +98,6 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
-
-    static ColumnsDescription resolveSchemaFromData(
-        const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        std::string & sample_path,
-        const ContextPtr & context);
-
-    static std::string resolveFormatFromData(
-        const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        std::string & sample_path,
-        const ContextPtr & context);
-
-    static std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
-        const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        std::string & sample_path,
-        const ContextPtr & context);
-
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
@@ -131,14 +106,6 @@ public:
 protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
-
-    /// Creates ReadBufferIterator for schema inference implementation.
-    static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
-        const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        ObjectInfos & read_keys,
-        const ContextPtr & context);
 
     /// Storage configuration (S3, Azure, HDFS, Local, DataLake).
     /// Contains information about table engine configuration
