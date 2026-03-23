@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 -- Test for -Tuple aggregate function combinator
 
 -- Basic: sumTuple
