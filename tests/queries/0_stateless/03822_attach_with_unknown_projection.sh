@@ -60,6 +60,11 @@ run "SYSTEM SYNC REPLICA t_unknown_proj_2"
 run "SELECT count() FROM t_unknown_proj_2"
 run "SELECT sum(x), sum(y) FROM t_unknown_proj_2"
 
+# CHECK TABLE on the fetching replica must pass: checkDataPart strips the
+# orphaned pp.proj entry from checksums_txt (the directory was never
+# transferred because getProjectionParts() skips unknown projections).
+run "CHECK TABLE t_unknown_proj_2 SETTINGS check_query_single_value_result = 1"
+
 # Force a merge to make sure the part with the unknown projection can merge.
 run "ALTER TABLE t_unknown_proj_1 MODIFY SETTING max_parts_to_merge_at_once = 100"
 run "OPTIMIZE TABLE t_unknown_proj_1 FINAL"
