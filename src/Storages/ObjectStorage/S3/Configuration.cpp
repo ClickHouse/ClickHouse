@@ -156,7 +156,7 @@ StorageObjectStorageQuerySettings StorageS3Configuration::getQuerySettings(const
     };
 }
 
-ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */, CredentialsConfigurationCallback refresh_credentials_callback) /// NOLINT
+ObjectStoragePtr StorageS3Configuration::doCreateObjectStorage(ContextPtr context, bool /* is_readonly */, CredentialsConfigurationCallback refresh_credentials_callback) /// NOLINT
 {
     assertInitialized();
 

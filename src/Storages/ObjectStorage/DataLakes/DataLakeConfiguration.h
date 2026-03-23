@@ -173,13 +173,6 @@ public:
 
     }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
-    {
-        if (ready_object_storage)
-            return ready_object_storage;
-        return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
-    }
-
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         assertInitialized();
@@ -385,16 +378,6 @@ public:
         current_metadata->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);
     }
 
-    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
-    {
-        if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines. The list of allowed disks is defined by `allowed_disks_for_table_engines", disk_name);
-
-        BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
-        auto disk = context->getDisk(disk_name);
-        ready_object_storage = disk->getObjectStorage();
-    }
-
     bool supportsPrewhere() const override
     {
 #if USE_AVRO
@@ -406,7 +389,6 @@ public:
 
 private:
     const DataLakeStorageSettingsPtr settings;
-    ObjectStoragePtr ready_object_storage;
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
 

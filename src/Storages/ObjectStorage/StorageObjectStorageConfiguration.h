@@ -142,7 +142,8 @@ public:
     virtual void check(ContextPtr context);
     virtual void validateNamespace(const String & /* name */) const {}
 
-    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback);
+    virtual ObjectStoragePtr doCreateObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual bool isDataLakeConfiguration() const { return false; }
@@ -303,6 +304,10 @@ protected:
 
     bool initialized = false;
     String schema_hash;
+
+    /// Object storage obtained from a named disk during `fromDisk` initialization.
+    /// Used by `createObjectStorage` to return the pre-created storage instead of creating a new one.
+    ObjectStoragePtr ready_object_storage;
 
 private:
     // Path used for reading, by default it is the same as `getRawPath`

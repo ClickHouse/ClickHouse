@@ -55,6 +55,14 @@ void StorageObjectStorageConfiguration::create( ///NOLINT
 {
 }
 
+ObjectStoragePtr StorageObjectStorageConfiguration::createObjectStorage(
+    ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback)
+{
+    if (ready_object_storage)
+        return ready_object_storage;
+    return doCreateObjectStorage(context, is_readonly, refresh_credentials_callback);
+}
+
 ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     ObjectStoragePtr,
     const Strings & requested_columns,
@@ -105,7 +113,16 @@ void StorageObjectStorageConfiguration::initialize(
             : "";
     }
     if (!disk_name.empty())
+    {
+        if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Disk {} is not allowed for usage in storage engines. "
+                "The list of allowed disks is defined by `allowed_disks_for_table_engines`", disk_name);
+
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
+        auto disk = local_context->getDisk(disk_name);
+        configuration_to_initialize.ready_object_storage = disk->getObjectStorage();
+    }
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
