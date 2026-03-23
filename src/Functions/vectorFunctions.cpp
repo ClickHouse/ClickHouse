@@ -1428,6 +1428,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return array_function->getArgumentsThatAreAlwaysConstant(); }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool canThrow(const DataTypesWithConstInfo & arguments) const override { return array_function->canThrow(arguments); }

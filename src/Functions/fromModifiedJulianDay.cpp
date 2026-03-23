@@ -111,7 +111,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -128,6 +128,17 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
+            /// The OrNull variant maps multiple out-of-range inputs to NULL, breaking monotonicity.
+            if constexpr (nullOnErrors)
+                return {};
+            /// The input is cast to int64_t internally; for types that don't fully fit,
+            /// large values overflow, breaking monotonicity.
+            using T = typename FromDataType::FieldType;
+            constexpr bool fits_in_int64 =
+                (is_signed_v<T> && sizeof(T) <= sizeof(Int64))
+                || (is_unsigned_v<T> && sizeof(T) < sizeof(Int64));
+            if constexpr (!fits_in_int64)
+                return {};
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true, };
         }
 
@@ -204,7 +215,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
     };
 

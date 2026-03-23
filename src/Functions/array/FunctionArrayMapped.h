@@ -58,7 +58,7 @@ namespace ErrorCodes
   *
   * See the example of Impl template parameter in arrayMap.cpp
   */
-template <typename Impl, typename Name>
+template <typename Impl, typename Name, bool IsDeterministic = true>
 class FunctionArrayMapped : public IFunction
 {
 public:
@@ -73,6 +73,8 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isDeterministic() const override { return IsDeterministic; }
+    bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

@@ -6,6 +6,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 
@@ -126,6 +127,9 @@ public:
       */
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
+    void setMaterializedCTE(MaterializedCTEPtr materialized_cte_) { materialized_cte = std::move(materialized_cte_); }
+    const MaterializedCTEPtr & getMaterializedCTE() const { return materialized_cte; }
+
 private:
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
@@ -137,6 +141,7 @@ private:
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
+    MaterializedCTEPtr materialized_cte;
 
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
