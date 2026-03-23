@@ -168,7 +168,7 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
     size_t num_columns = mutable_columns.size();
 
     /// Collect the list of source columns for each column.
-    std::vector<Columns> source_columns_list(num_columns);
+    std::vector<VectorWithMemoryTracking<ColumnPtr>> source_columns_list(num_columns);
     std::vector<UInt8> have_same_serialization(num_columns, true);
 
     for (size_t i = 0; i != num_columns; ++i)
