@@ -44,9 +44,6 @@ namespace Tx
     /// So far, that changes will never become visible
     const CSN RolledBackCSN = std::numeric_limits<CSN>::max();
 
-    /// Maximum possible CSN for committed transactions (used for visibility checks)
-    const CSN MaxCommittedCSN = RolledBackCSN - 1;
-
     const LocalTID PrehistoricLocalTID = 1;
     const LocalTID DummyLocalTID = 2;
     const LocalTID MaxReservedLocalTID = 32;

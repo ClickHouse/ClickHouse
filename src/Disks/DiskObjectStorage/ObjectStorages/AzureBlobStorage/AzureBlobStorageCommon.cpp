@@ -349,7 +349,6 @@ BlobClientOptions getClientOptions(
     if (settings[Setting::azure_max_get_rps] > 0 || settings[Setting::azure_max_get_burst] > 0)
     {
         request_throttler.get_throttler = std::make_shared<Throttler>(
-            "azure_get_rps",
             settings[Setting::azure_max_get_rps],
             settings[Setting::azure_max_get_burst],
             ProfileEvents::AzureGetRequestThrottlerCount,
@@ -368,7 +367,6 @@ BlobClientOptions getClientOptions(
     if (settings[Setting::azure_max_put_rps] > 0 || settings[Setting::azure_max_put_burst] > 0)
     {
         request_throttler.put_throttler = std::make_shared<Throttler>(
-            "azure_put_rps",
             settings[Setting::azure_max_put_rps],
             settings[Setting::azure_max_put_burst],
             ProfileEvents::AzurePutRequestThrottlerCount,
@@ -498,10 +496,6 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     else if (config.has(config_prefix + ".connection_string"))
     {
         storage_url = config.getString(config_prefix + ".connection_string");
-        if (storage_url.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Azure Blob Storage connection string is empty. "
-                "If it is specified via an environment variable, please check that the variable is set");
         container_name = get_container_name();
     }
     else if (config.has(config_prefix + ".storage_account_url"))

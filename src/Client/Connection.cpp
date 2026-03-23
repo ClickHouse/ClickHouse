@@ -58,7 +58,6 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event DistributedConnectionReconnectCount;
-    extern const Event DistributedConnectionConnectCount;
 }
 
 namespace DB
@@ -67,6 +66,8 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool enable_deflate_qpl_codec;
+    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
 }
@@ -106,7 +107,6 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_,
-    const String & tls_sni_override_,
     const String & bind_host_
 #if USE_JWT_CPP && USE_SSL
     , std::shared_ptr<JWTProvider> jwt_provider_
@@ -128,7 +128,6 @@ Connection::Connection(const String & host_, UInt16 port_,
     , client_name(client_name_)
     , compression(compression_)
     , secure(secure_)
-    , tls_sni_override(tls_sni_override_)
     , bind_host(bind_host_)
     , log_wrapper(*this)
 {
@@ -146,7 +145,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     /// if connection was broken it is necessary to cancel it before reconnecting
     disconnect();
 
-    ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -176,8 +174,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
                 /// work we need to pass host name separately. It will be send into TLS Hello packet to let
                 /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())
-                    ->setPeerHostName(tls_sni_override.empty() ? host : tls_sni_override);
+                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
                 /// we want to postpone SSL handshake until first read or write operation
                 /// so any errors during negotiation would be properly processed
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
@@ -200,7 +197,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 {
                     Poco::Net::SocketAddress socket_address(bind_host, 0);
 
-                    static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
+                    static_cast<Poco::Net::StreamSocket*>(socket.get())->bind(socket_address, true);
                 }
             }
 
@@ -264,15 +261,13 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         if (tcp_keep_alive_timeout_in_sec)
         {
             socket->setKeepAlive(true);
-#if defined(TCP_KEEPIDLE)
-            // TCP_KEEPIDLE: Linux, illumos
-            // Note: Check TCP_KEEPIDLE first because illumos defines TCP_KEEPALIVE
-            // but doesn't implement it.
-            socket->setOption(IPPROTO_TCP, TCP_KEEPIDLE, tcp_keep_alive_timeout_in_sec);
-#elif defined(TCP_KEEPALIVE)
-            // TCP_KEEPALIVE: macOS
-            socket->setOption(IPPROTO_TCP, TCP_KEEPALIVE, tcp_keep_alive_timeout_in_sec);
+            socket->setOption(IPPROTO_TCP,
+#if defined(TCP_KEEPALIVE)
+                TCP_KEEPALIVE
+#else
+                TCP_KEEPIDLE  // __APPLE__
 #endif
+                , tcp_keep_alive_timeout_in_sec);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
@@ -896,7 +891,9 @@ void Connection::sendQuery(
             method,
             level,
             !(*settings)[Setting::allow_suspicious_codecs],
-            (*settings)[Setting::allow_experimental_codecs]);
+            (*settings)[Setting::allow_experimental_codecs],
+            (*settings)[Setting::enable_deflate_qpl_codec],
+            (*settings)[Setting::enable_zstd_qat_codec]);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -1039,18 +1036,7 @@ void Connection::sendQuery(
 void Connection::sendQueryPlan(const QueryPlan & query_plan)
 {
     writeVarUInt(Protocol::Client::QueryPlan, *out);
-
-    if (query_plan.isSerialized())
-    {
-        // Use cached serialization
-        auto serialized_data = query_plan.getSerializedData();
-        out->write(serialized_data.data(), serialized_data.size());
-    }
-    else
-    {
-        // Fallback: serialize on-the-fly
-        query_plan.serialize(*out, server_query_plan_serialization_version);
-    }
+    query_plan.serialize(*out, server_query_plan_serialization_version);
 }
 
 void Connection::sendCancel()
@@ -1117,7 +1103,7 @@ void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTa
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
-    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
+    response.serialize(*out, server_parallel_replicas_protocol_version);
     out->finishChunk();
     out->next();
 }
@@ -1176,19 +1162,19 @@ void Connection::sendScalarsData(Scalars & data)
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
-            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()),
-            static_cast<double>(maybe_compressed_out_bytes) / static_cast<double>(out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
             ReadableSize(out_bytes),
-            ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
+            ReadableSize(out_bytes / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
-            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()));
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
 }
 
 namespace
@@ -1287,19 +1273,19 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
-            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()),
-            static_cast<double>(maybe_compressed_out_bytes) / static_cast<double>(out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
             ReadableSize(out_bytes),
-            ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
+            ReadableSize(out_bytes / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
-            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()));
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
 }
 
 std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
@@ -1657,7 +1643,6 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
         parameters.security,
-        parameters.tls_sni_override,
         parameters.bind_host
 #if USE_JWT_CPP && USE_SSL
         , parameters.jwt_provider

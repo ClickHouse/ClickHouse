@@ -57,12 +57,12 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
     {
         return makeASTOperator("and",
                                makeASTOperator("greaterOrEquals",
-                                            make_intrusive<ASTIdentifier>(column_name),
-                                            make_intrusive<ASTLiteral>(start_date_or_date_time)
+                                            std::make_shared<ASTIdentifier>(column_name),
+                                            std::make_shared<ASTLiteral>(start_date_or_date_time)
                                             ),
                                makeASTOperator("less",
-                                            make_intrusive<ASTIdentifier>(column_name),
-                                            make_intrusive<ASTLiteral>(end_date_or_date_time)
+                                            std::make_shared<ASTIdentifier>(column_name),
+                                            std::make_shared<ASTLiteral>(end_date_or_date_time)
                                             )
                                 );
     }
@@ -70,23 +70,23 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
     {
         return makeASTOperator(
             "or",
-            makeASTOperator("less", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(start_date_or_date_time)),
+            makeASTOperator("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time)),
             makeASTOperator(
-                "greaterOrEquals", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(end_date_or_date_time)));
+                "greaterOrEquals", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time)));
     }
     if (comparator == "greater")
     {
         return makeASTOperator(
-            "greaterOrEquals", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(end_date_or_date_time));
+            "greaterOrEquals", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
     }
     if (comparator == "lessOrEquals")
     {
-        return makeASTOperator("less", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(end_date_or_date_time));
+        return makeASTOperator("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
     }
     if (comparator == "less" || comparator == "greaterOrEquals")
     {
         return makeASTOperator(
-            comparator, make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(start_date_or_date_time));
+            comparator, std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time));
     }
     [[unlikely]] {
         throw Exception(

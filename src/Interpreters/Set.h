@@ -21,7 +21,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 using Sizes = std::vector<size_t>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class Chunk;
 
@@ -34,7 +34,10 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_);
+    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
+        :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
+        , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
+    {}
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -78,7 +81,7 @@ public:
 
     bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount()); }
     bool hasSetElements() const { return !set_elements.empty(); }
-    Columns getSetElements() const;
+    Columns getSetElements() const { checkIsCreated(); return { set_elements.begin(), set_elements.end() }; }
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -140,7 +143,7 @@ private:
 
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
-    MutableColumns set_elements;
+    std::vector<IColumn::WrappedPtr> set_elements;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
@@ -191,6 +194,10 @@ private:
 using SetPtr = std::shared_ptr<Set>;
 using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
+
+
+class IFunction;
+using FunctionPtr = std::shared_ptr<IFunction>;
 
 
 /// Class for checkInRange function.

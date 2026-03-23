@@ -37,7 +37,7 @@ public:
 
     String new_name;
 
-    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
+    std::shared_ptr<ASTRolesOrUsersSet> roles;
 
     ASTPtr update_assignments;  // ASTExpressionList of ASTAssignment objects
     ASTPtr where_condition;

@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
@@ -14,11 +13,11 @@ namespace ErrorCodes
 }
 
 SerializationSubObject::SerializationSubObject(
-    const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_)
+    const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_)
     : paths_prefix(paths_prefix_)
     , typed_paths_serializations(typed_paths_serializations_)
     , dynamic_type(dynamic_type_)
-    , dynamic_serialization(dynamic_serialization_)
+    , dynamic_serialization(dynamic_type->getDefaultSerialization())
 {
 }
 
@@ -27,7 +26,7 @@ struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeB
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> typed_path_states;
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> dynamic_path_states;
     std::vector<String> dynamic_paths;
-    VectorWithMemoryTracking<String> dynamic_sub_paths;
+    std::vector<String> dynamic_sub_paths;
     SerializationPtr shared_data_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
 
@@ -159,8 +158,7 @@ void SerializationSubObject::deserializeBinaryBulkStatePrefix(
         structure_state_concrete->shared_data_serialization_version,
         structure_state_concrete->shared_data_buckets,
         paths_prefix,
-        dynamic_type,
-        dynamic_serialization);
+        dynamic_type);
     sub_object_state->shared_data_serialization->deserializeBinaryBulkStatePrefix(settings, sub_object_state->shared_data_state, cache);
     settings.path.pop_back();
 

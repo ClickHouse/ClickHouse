@@ -33,12 +33,13 @@ namespace ErrorCodes
 namespace
 {
 
+template <bool is_diff>
 class DateDiffImpl
 {
 public:
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 
-    DateDiffImpl(const String & name_, bool is_diff_) : name(name_), is_diff(is_diff_) {}
+    explicit DateDiffImpl(const String & name_) : name(name_) {}
 
     template <typename Transform>
     void dispatchForColumns(
@@ -166,7 +167,7 @@ public:
     {
         auto res =  static_cast<Int64>(transform_y.execute(y, timezone_y)) - static_cast<Int64>(transform_x.execute(x, timezone_x));
 
-        if (is_diff)
+        if constexpr (is_diff)
         {
             return res;
         }
@@ -231,8 +232,8 @@ public:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
             {
-                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, static_cast<UInt8>(0), timezone_x);
-                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, static_cast<UInt8>(0), timezone_y);
+                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, 0, timezone_x);
+                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, 0, timezone_y);
                 if ((x_day_of_week > y_day_of_week)
                     || ((x_day_of_week == y_day_of_week) && (a_comp.time.hour > b_comp.time.hour))
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
@@ -311,7 +312,6 @@ public:
     }
 private:
     String name;
-    bool is_diff;
 };
 
 
@@ -325,18 +325,14 @@ private:
   *
   * The timezone matters because days can have different lengths.
   */
+template <bool is_relative>
 class FunctionDateDiff : public IFunction
 {
 public:
-    FunctionDateDiff(const char * name_, bool is_relative_)
-        : function_name(name_), impl{function_name, is_relative_} {}
+    static constexpr auto name = is_relative ? "dateDiff" : "age";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
 
-    static FunctionPtr create(const char * name, bool is_relative)
-    {
-        return std::make_shared<FunctionDateDiff>(name, is_relative);
-    }
-
-    String getName() const override { return function_name; }
+    String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -410,8 +406,7 @@ public:
         return col_res;
     }
 private:
-    const char * function_name;
-    DateDiffImpl impl;
+    DateDiffImpl<is_relative> impl{name};
 };
 
 
@@ -461,7 +456,7 @@ public:
         return col_res;
     }
 private:
-    DateDiffImpl impl{name, true};
+    DateDiffImpl<true> impl{name};
 };
 
 }
@@ -533,14 +528,12 @@ SELECT
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("dateDiff",
-        [](ContextPtr){ return FunctionDateDiff::create("dateDiff", true); },
-        documentation, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("date_diff", "dateDiff");
-    factory.registerAlias("DATE_DIFF", "dateDiff");
-    factory.registerAlias("timestampDiff", "dateDiff");
-    factory.registerAlias("timestamp_diff", "dateDiff");
-    factory.registerAlias("TIMESTAMP_DIFF", "dateDiff");
+    factory.registerFunction<FunctionDateDiff<true>>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
+    factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
+    factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
+    factory.registerAlias("timestamp_diff", FunctionDateDiff<true>::name);
+    factory.registerAlias("TIMESTAMP_DIFF", FunctionDateDiff<true>::name);
 }
 
 REGISTER_FUNCTION(TimeDiff)
@@ -663,9 +656,7 @@ SELECT
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("age",
-        [](ContextPtr){ return FunctionDateDiff::create("age", false); },
-        documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionDateDiff<false>>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

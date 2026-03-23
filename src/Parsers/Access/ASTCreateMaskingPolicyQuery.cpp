@@ -10,7 +10,7 @@ namespace
 {
     void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << " RENAME TO " << backQuoteIfNeed(new_name);
+        ostr << " RENAME TO " << backQuote(new_name);
     }
 
     void formatUpdateExpression(const ASTPtr & expr, WriteBuffer & ostr, const IAST::FormatSettings & settings)
@@ -46,10 +46,10 @@ String ASTCreateMaskingPolicyQuery::getID(char) const
 
 ASTPtr ASTCreateMaskingPolicyQuery::clone() const
 {
-    auto res = make_intrusive<ASTCreateMaskingPolicyQuery>(*this);
+    auto res = std::make_shared<ASTCreateMaskingPolicyQuery>(*this);
 
     if (roles)
-        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     if (update_assignments)
         res->update_assignments = update_assignments->clone();

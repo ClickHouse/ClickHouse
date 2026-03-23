@@ -228,14 +228,9 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     if (!pattern)
     {
         for (const auto & child : children)
-        {
-            if (const auto * identifier = child->as<ASTIdentifier>())
-                expected_columns.insert(identifier->name());
-            else
-                expected_columns.insert(child->getAliasOrColumnName());
-        }
+            expected_columns.insert(child->as<const ASTIdentifier &>().name());
 
-        for (auto it = nodes.begin(); it != nodes.end();)
+        for (auto * it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
@@ -254,9 +249,9 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     {
         auto regexp = getMatcher();
 
-        for (auto it = nodes.begin(); it != nodes.end();)
+        for (auto * it = nodes.begin(); it != nodes.end();)
         {
-            if (auto * id = it->get()->as<ASTIdentifier>())
+            if (const auto * id = it->get()->as<ASTIdentifier>())
             {
                 if (RE2::PartialMatch(id->shortName(), *regexp))
                 {

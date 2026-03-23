@@ -20,7 +20,6 @@ namespace DB
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
 }
@@ -270,8 +269,7 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
         || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns))
         return result;
 
-    constexpr bool escape_index_filenames = true; /// Does not matter here, we re-serialize the parsed result
-    auto parsed = IndicesDescription::parse(result.skip_indices, columns, escape_index_filenames, context);
+    auto parsed = IndicesDescription::parse(result.skip_indices, columns, context);
 
     bool has_implicit = false;
     for (auto & index : parsed)
@@ -423,8 +421,7 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
 
     /// Implicit indices are stripped from Keeper metadata during `parseAndNormalize`,
     /// so at this point `from_zk.skip_indices` only contains explicit indices.
-    constexpr bool escape_index_filenames = true; /// It doesn't matter here, as we compare parsed strings
-    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).allToString();
+    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).allToString();
     if (skip_indices != parsed_zk_skip_indices)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
@@ -559,7 +556,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         }
 
         if (skip_indices_changed)
-            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, new_metadata.escape_index_filenames, context);
+            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, context);
 
         if (constraints_changed)
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
@@ -613,26 +610,9 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
     if (!skip_indices_changed) /// otherwise already updated
     {
-        /// Remove implicitly created indices and recalculate explicit ones
-        IndicesDescription new_indices;
         for (auto & index : new_metadata.secondary_indices)
-        {
-            if (!index.isImplicitlyCreated())
-            {
-                index.recalculateWithNewColumns(new_metadata.columns, context);
-                new_indices.push_back(index);
-            }
-        }
-        new_metadata.secondary_indices = std::move(new_indices);
+            index.recalculateWithNewColumns(new_metadata.columns, context);
     }
-
-    /// Regenerate implicit indices for the new columns regardless of whether indices were explicitly changed.
-    /// Implicit indices are not stored in ZooKeeper, so they must be recreated locally based on the current
-    /// columns and table settings.
-    /// Note: addImplicitIndicesForColumn checks for existing minmax indices on each column and won't create
-    /// duplicates if an explicit index already exists.
-    for (const auto & column : new_metadata.columns)
-        new_metadata.addImplicitIndicesForColumn(column, context);
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(

@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 ASTPtr ASTSelectQuery::clone() const
 {
-    auto res = make_intrusive<ASTSelectQuery>(*this);
+    auto res = std::make_shared<ASTSelectQuery>(*this);
 
     /** NOTE Members must clone exactly in the same order in which they were inserted into `children` in ParserSelectQuery.
      * This is important because the AST hash depends on the children order and this hash is used for multiple things,
@@ -49,8 +49,6 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_with_rollup);
     hash_state.update(group_by_with_cube);
     hash_state.update(limit_with_ties);
-    hash_state.update(group_by_all);
-    hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
@@ -160,9 +158,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     {
         ostr << s.nl_or_ws << indent_str <<
             "WINDOW";
-        s.one_line
-            ? window()->format(ostr, s, state, frame)
-            : window()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        window()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
     }
 
     if (qualify())
@@ -440,9 +436,9 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
 
     if (!table_expression)
     {
-        setExpression(Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
-        auto element = make_intrusive<ASTTablesInSelectQueryElement>();
-        auto table_expr = make_intrusive<ASTTableExpression>();
+        setExpression(Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+        auto element = std::make_shared<ASTTablesInSelectQueryElement>();
+        auto table_expr = std::make_shared<ASTTableExpression>();
         element->table_expression = table_expr;
         element->children.emplace_back(table_expr);
         tables()->children.emplace_back(element);
@@ -450,7 +446,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>(table_id);
+    table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>(table_id);
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);
@@ -463,9 +459,9 @@ void ASTSelectQuery::addTableFunction(const ASTPtr & table_function_ptr)
 
     if (!table_expression)
     {
-        setExpression(Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
-        auto element = make_intrusive<ASTTablesInSelectQueryElement>();
-        auto table_expr = make_intrusive<ASTTableExpression>();
+        setExpression(Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+        auto element = std::make_shared<ASTTablesInSelectQueryElement>();
+        auto table_expr = std::make_shared<ASTTableExpression>();
         element->table_expression = table_expr;
         element->children.emplace_back(table_expr);
         tables()->children.emplace_back(element);
@@ -512,50 +508,6 @@ ASTPtr & ASTSelectQuery::getExpression(Expression expr)
     return children[positions[expr]];
 }
 
-void ASTSelectQuery::normalizeChildrenOrder()
-{
-    /// Canonical order must match the order in which ParserSelectQuery calls setExpression.
-    static constexpr Expression canonical_order[] =
-    {
-        Expression::WITH,
-        Expression::SELECT,
-        Expression::TABLES,
-        Expression::ALIASES,
-        Expression::CTE_ALIASES,
-        Expression::PREWHERE,
-        Expression::WHERE,
-        Expression::GROUP_BY,
-        Expression::HAVING,
-        Expression::WINDOW,
-        Expression::QUALIFY,
-        Expression::ORDER_BY,
-        Expression::LIMIT_BY_OFFSET,
-        Expression::LIMIT_BY_LENGTH,
-        Expression::LIMIT_BY,
-        Expression::LIMIT_OFFSET,
-        Expression::LIMIT_LENGTH,
-        Expression::SETTINGS,
-        Expression::INTERPOLATE,
-    };
-
-    ASTs new_children;
-    new_children.reserve(children.size());
-    std::unordered_map<Expression, size_t> new_positions;
-
-    for (auto expr : canonical_order)
-    {
-        auto it = positions.find(expr);
-        if (it != positions.end())
-        {
-            new_positions[expr] = new_children.size();
-            new_children.push_back(children[it->second]);
-        }
-    }
-
-    children = std::move(new_children);
-    positions = std::move(new_positions);
-}
-
 void ASTSelectQuery::setFinal() // NOLINT method can be made const
 {
     auto & tables_in_select_query = tables()->as<ASTTablesInSelectQuery &>();
@@ -575,7 +527,7 @@ bool ASTSelectQuery::hasQueryParameters() const
 {
     if (!has_query_parameters.has_value())
     {
-        has_query_parameters = !analyzeReceiveQueryParams(make_intrusive<ASTSelectQuery>(*this)).empty();
+        has_query_parameters = !analyzeReceiveQueryParams(std::make_shared<ASTSelectQuery>(*this)).empty();
     }
 
     return  has_query_parameters.value();
@@ -586,7 +538,7 @@ NameToNameMap ASTSelectQuery::getQueryParameters() const
     if (!hasQueryParameters())
         return {};
 
-    return analyzeReceiveQueryParamsWithType(make_intrusive<ASTSelectQuery>(*this));
+    return analyzeReceiveQueryParamsWithType(std::make_shared<ASTSelectQuery>(*this));
 }
 
 }

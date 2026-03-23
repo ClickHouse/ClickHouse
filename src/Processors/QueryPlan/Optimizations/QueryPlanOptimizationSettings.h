@@ -5,7 +5,6 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
-#include <chrono>
 #include <cstddef>
 
 namespace DB
@@ -20,7 +19,7 @@ class QueryPlan;
 
 struct QueryPlanOptimizationSettings
 {
-    QueryPlanOptimizationSettings(
+    explicit QueryPlanOptimizationSettings(
         const Settings & from,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
@@ -80,12 +79,11 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;
+    bool query_condition_cache_store_conditions_as_plaintext;
     bool read_in_order_through_join;
-    bool correlated_subqueries_use_in_memory_buffer;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
-    bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
 
     bool make_distributed_plan = false;
@@ -150,9 +148,6 @@ struct QueryPlanOptimizationSettings
     UInt64 join_runtime_filter_exact_values_limit = 0;
     UInt64 join_runtime_bloom_filter_bytes = 0;
     UInt64 join_runtime_bloom_filter_hash_functions = 0;
-    Float64 join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
-    UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
-    Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
@@ -164,12 +159,10 @@ struct QueryPlanOptimizationSettings
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
-    size_t max_parallel_replicas = 1;
+    bool parallel_replicas_enabled;
+    size_t max_parallel_replicas;
     size_t automatic_parallel_replicas_mode;
-    size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
-
-    bool query_plan_optimize_primary_key = true;
 
     bool keep_logical_steps;
 

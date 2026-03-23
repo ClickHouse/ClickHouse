@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -148,7 +149,7 @@ void ColumnTuple::get(size_t n, Field & res) const
         res_tuple.push_back((*columns[i])[n]);
 }
 
-void ColumnTuple::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnTuple::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const size_t tuple_size = columns.size();
 
@@ -160,14 +161,20 @@ void ColumnTuple::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n
             name_buf << "tuple(";
     }
 
+    DataTypes element_types;
+    element_types.reserve(tuple_size);
+
     for (size_t i = 0; i < tuple_size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        columns[i]->getValueNameImpl(name_buf, n, options);
+        const auto & type = columns[i]->getValueNameAndTypeImpl(name_buf, n, options);
+        element_types.push_back(type);
     }
     if (options.notFull(name_buf))
         name_buf << ")";
+
+    return std::make_shared<DataTypeTuple>(element_types);
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const
@@ -286,9 +293,6 @@ void ColumnTuple::insertDefault()
 
 void ColumnTuple::popBack(size_t n)
 {
-    if (n > size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
     column_length -= n;
     for (auto & column : columns)
         column->popBack(n);
@@ -489,7 +493,7 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        size_t result_size = limit ? std::min(limit, perm.size()) : perm.size();
+        size_t result_size = limit ? limit : perm.size();
         if (perm.size() < result_size)
             throw Exception(
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) is less than required ({})", perm.size(), result_size);
@@ -510,7 +514,7 @@ ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
     if (columns.empty())
     {
-        size_t result_size = limit ? std::min(limit, indexes.size()) : indexes.size();
+        size_t result_size = limit ? limit : indexes.size();
         if (indexes.size() < result_size)
             throw Exception(
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})", indexes.size(), result_size);
@@ -546,16 +550,18 @@ ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
     return ColumnTuple::create(new_columns);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
+MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
 {
     if (columns.empty())
     {
         if (column_length != selector.size())
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column");
 
-        auto counts = countColumnsSizeInSelector(num_columns, selector);
+        std::vector<size_t> counts(num_columns);
+        for (auto idx : selector)
+            ++counts[idx];
 
-        VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
+        MutableColumns res(num_columns);
         for (size_t i = 0; i < num_columns; ++i)
             res[i] = cloneResized(counts[i]);
 
@@ -563,12 +569,12 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_colum
     }
 
     const size_t tuple_size = columns.size();
-    VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> scattered_tuple_elements(tuple_size);
+    std::vector<MutableColumns> scattered_tuple_elements(tuple_size);
 
     for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
         scattered_tuple_elements[tuple_element_idx] = columns[tuple_element_idx]->scatter(num_columns, selector);
 
-    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
+    MutableColumns res(num_columns);
 
     for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
     {
@@ -717,12 +723,12 @@ size_t ColumnTuple::capacity() const
     return getColumn(0).capacity();
 }
 
-void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnTuple::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        VectorWithMemoryTracking<ColumnPtr> nested_columns;
+        Columns nested_columns;
         nested_columns.reserve(source_columns.size() * factor);
         for (const auto & source_column : source_columns)
             nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
@@ -774,7 +780,7 @@ void ColumnTuple::protect()
         column->protect();
 }
 
-void ColumnTuple::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnTuple::getExtremes(Field & min, Field & max) const
 {
     const size_t tuple_size = columns.size();
 
@@ -782,7 +788,7 @@ void ColumnTuple::getExtremes(Field & min, Field & max, size_t start, size_t end
     Tuple max_tuple(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
-        columns[i]->getExtremes(min_tuple[i], max_tuple[i], start, end);
+        columns[i]->getExtremes(min_tuple[i], max_tuple[i]);
 
     min = min_tuple;
     max = max_tuple;
@@ -876,9 +882,9 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-void ColumnTuple::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> nested_source_columns;
+    std::vector<Columns> nested_source_columns;
     nested_source_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         nested_source_columns[i].reserve(source_columns.size());

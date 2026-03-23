@@ -1,3 +1,4 @@
+#include <amqpcpp.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -5,9 +6,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -27,14 +28,15 @@
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/StreamingStorageRegistry.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
+#include <Common/quoteString.h>
+#include <Common/setThreadName.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <base/range.h>
 
@@ -892,7 +894,6 @@ void StorageRabbitMQ::startup()
         streaming_task->activate();
         init_task->activateAndSchedule();
     }
-    StreamingStorageRegistry::instance().registerTable(getStorageID());
 }
 
 
@@ -936,15 +937,7 @@ void StorageRabbitMQ::shutdown(bool)
         tryLogCurrentException(log);
     }
 
-    StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
     LOG_TRACE(log, "Shutdown finished");
-}
-
-void StorageRabbitMQ::renameInMemory(const StorageID & new_table_id)
-{
-    const auto prev_storage_id = getStorageID();
-    IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 
@@ -1041,7 +1034,27 @@ RabbitMQConsumerPtr StorageRabbitMQ::createConsumer()
 
 bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
 {
-    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
+    // Check if all dependencies are attached
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
+
+    if (view_ids.empty())
+        return false;
+
+    // Check the dependencies are ready?
+    for (const auto & view_id : view_ids)
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
+        if (!view)
+            return false;
+
+        // If it materialized view, check it's target table
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return false;
+    }
+
+    return true;
 }
 
 void StorageRabbitMQ::streamingToViewsFunc()
@@ -1167,14 +1180,14 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
 
     // Create an INSERT query for streaming data
-    auto insert = make_intrusive<ASTInsertQuery>();
+    auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
     if (!sources.empty())
     {
-        auto column_list = make_intrusive<ASTExpressionList>();
+        auto column_list = std::make_shared<ASTExpressionList>();
         const auto & header = sources[0]->getPort().getHeader();
         for (const auto & column : header)
-            column_list->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
+            column_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
         insert->columns = std::move(column_list);
     }
 
@@ -1314,7 +1327,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     {
         auto rabbitmq_settings = std::make_unique<RabbitMQSettings>();
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
             rabbitmq_settings->loadFromNamedCollection(named_collection);
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ engine must have settings");

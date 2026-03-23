@@ -84,10 +84,8 @@ void MultipleFileWriter::release()
 
 void MultipleFileWriter::cancel()
 {
-    if (output_format)
-        output_format->cancel();
-    if (buffer)
-        buffer->cancel();
+    output_format->cancel();
+    buffer->cancel();
 }
 
 void MultipleFileWriter::clearAllDataFiles() const

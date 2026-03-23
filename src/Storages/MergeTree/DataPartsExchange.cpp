@@ -20,11 +20,14 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomDelay.h>
+#include <Common/FailPoint.h>
+#include <Common/thread_local_rng.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
 #include <base/sort.h>
+#include <random>
 
 namespace fs = std::filesystem;
 
@@ -55,6 +58,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
     extern const int ZERO_COPY_REPLICATION_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char replicated_sends_failpoint[];
 }
 
 namespace DataPartsExchange
@@ -95,7 +104,7 @@ struct ReplicatedFetchReadCallback
         if (replicated_fetch_entry->total_size_bytes_compressed != 0)
         {
             replicated_fetch_entry->progress.store(
-                    static_cast<double>(bytes_count) / static_cast<double>(replicated_fetch_entry->total_size_bytes_compressed),
+                    static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
                     std::memory_order_relaxed);
         }
     }
@@ -284,16 +293,6 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         }
     }
 
-    /// Handle unknown projections: .proj entries in part->checksums that are
-    /// not in getProjectionParts() (e.g. a projection was dropped while the
-    /// part was detached, then re-attached).  Copy their stored checksums to
-    /// data_checksums so that checkEqual below does not fail.
-    for (const auto & [name, checksum] : part->checksums.files)
-    {
-        if (name.ends_with(".proj") && !data_checksums.has(name))
-            data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
-    }
-
     writeBinary(replicated_description.files.size(), out);
     for (const auto & [file_name, desc] : replicated_description.files)
     {
@@ -304,7 +303,19 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         HashingWriteBuffer hashing_out(out);
 
         const auto & is_cancelled = blocker.getCounter();
-        copyDataWithThrottler(*file_in, hashing_out, is_cancelled, data.getSendsThrottler());
+        auto cancellation_hook = [&]()
+        {
+            if (is_cancelled)
+                throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
+
+            fiu_do_on(FailPoints::replicated_sends_failpoint,
+            {
+                std::bernoulli_distribution fault(0.1);
+                if (fault(thread_local_rng))
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint replicated_sends_failpoint is triggered");
+            });
+        };
+        copyDataWithThrottler(*file_in, hashing_out, cancellation_hook, data.getSendsThrottler());
 
         hashing_out.finalize();
 
@@ -433,7 +444,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
     uri.setHost(host);
-    uri.setPort(static_cast<uint16_t>(port));
+    uri.setPort(port);
     uri.setQueryParameters(
     {
         {"endpoint",                endpoint_id},
@@ -892,19 +903,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     else
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
-        {
-            /// Handle unknown projections on the fetch side: .proj entries in
-            /// checksums.txt that were not transferred (e.g. a projection was
-            /// dropped while the part was detached, then re-attached on the
-            /// sender).  Copy them to data_checksums so that checkEqual does
-            /// not fail.
-            for (const auto & [name, checksum] : new_data_part->checksums.files)
-            {
-                if (name.ends_with(".proj") && !data_checksums.has(name))
-                    data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
-            }
             new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
-        }
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
 

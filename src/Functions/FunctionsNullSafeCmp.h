@@ -1,5 +1,4 @@
 #pragma once
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsComparison.h>
@@ -32,23 +31,6 @@ class FunctionsNullSafeCmp : public IFunction
 {
 private:
     const ComparisonParams params;
-
-    static bool containsNothing(const DataTypePtr & type)
-    {
-        if (isNothing(type))
-            return true;
-
-        if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-        {
-            for (const auto & elem : tuple_type->getElements())
-            {
-                if (containsNothing(elem))
-                    return true;
-            }
-        }
-        return false;
-    }
-
 public:
     explicit FunctionsNullSafeCmp(ComparisonParams params_) : params(std::move(params_)) {}
 
@@ -71,7 +53,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool useDefaultImplementationForNothing() const override { return true; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 
@@ -85,9 +67,6 @@ public:
 
         const DataTypePtr & left_ele_type = arguments[0];
         const DataTypePtr & right_ele_type = arguments[1];
-
-        if (containsNothing(left_ele_type) || containsNothing(right_ele_type))
-            return std::make_shared<DataTypeNothing>();
 
         if ((isMap(left_ele_type) && right_ele_type->onlyNull())
                 || (left_ele_type->onlyNull() && isMap(right_ele_type))
@@ -106,18 +85,17 @@ public:
 
     ColumnPtr ALWAYS_INLINE executeForVariantOrDynamicAndNull(const ColumnWithTypeAndName & variant_or_dynamic_col) const
     {
-        ColumnPtr col = variant_or_dynamic_col.column->convertToFullColumnIfConst();
         const auto & column_variant_or_dynamic =
             isVariant(variant_or_dynamic_col.type) ?
-                checkAndGetColumn<ColumnVariant>(*col) :
-                checkAndGetColumn<ColumnDynamic>(*col).getVariantColumn();
+                checkAndGetColumn<ColumnVariant>(*variant_or_dynamic_col.column) :
+                checkAndGetColumn<ColumnDynamic>(*variant_or_dynamic_col.column).getVariantColumn();
         auto res = DataTypeUInt8().createColumn();
         auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
         data.resize(column_variant_or_dynamic.size());
         for (size_t i = 0; i < column_variant_or_dynamic.size(); ++i)
         {
-            bool is_null = column_variant_or_dynamic.isNullAt(i);
-            data[i] = is_equal_mode ? is_null : !is_null;
+            bool ele_is_null = column_variant_or_dynamic.isNullAt(i);
+            data[i] = is_equal_mode ? ele_is_null && true : ele_is_null && false;
         }
         return res;
     }
@@ -136,6 +114,16 @@ public:
                             backQuote(name),
                             left_col ? "NOT NULL" : "NULL",
                             right_col ? "NOT NULL" : "NULL");
+        }
+
+        // for self null-safe cmp
+        if (type_and_name_left_col.name == type_and_name_right_col.name
+            && type_and_name_left_col.type->equals(*type_and_name_right_col.type)
+            && !isTuple(type_and_name_left_col.type)
+            && left_col.get() == right_col.get())
+        {
+            return is_equal_mode ? result_type->createColumnConst(input_rows_count, UInt8(1)) :
+                                    result_type->createColumnConst(input_rows_count, UInt8(0));
         }
 
         // To address:

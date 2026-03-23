@@ -51,10 +51,6 @@ struct SelectQueryOptions
     /// This allows to skip double access check in some specific cases (e.g. insert into table with materialized view)
     bool ignore_access_check = false;
 
-    /// Check access rights for tables inside subqueries even in only_analyze mode.
-    /// This is needed for CREATE MATERIALIZED VIEW validation to ensure user has access to all referenced tables.
-    bool check_subquery_table_access = false;
-
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.
@@ -73,8 +69,6 @@ struct SelectQueryOptions
       * TODO: Implement this functionality in safer way
       */
     bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
-
-    bool force_materialize_cte = false;
 
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
@@ -168,12 +162,6 @@ struct SelectQueryOptions
         return *this;
     }
 
-    SelectQueryOptions & checkSubqueryTableAccess(bool value = true)
-    {
-        check_subquery_table_access = value;
-        return *this;
-    }
-
     SelectQueryOptions & setInternal(bool value = false)
     {
         is_internal = value;
@@ -196,12 +184,6 @@ struct SelectQueryOptions
     SelectQueryOptions & setExplain(bool value = true)
     {
         is_explain = value;
-        return *this;
-    }
-
-    SelectQueryOptions & forceMaterializeCTE(bool value = true)
-    {
-        force_materialize_cte = value;
         return *this;
     }
 };

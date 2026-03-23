@@ -55,7 +55,6 @@ namespace Setting
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
-    extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
 }
 
@@ -66,7 +65,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -272,7 +270,7 @@ ProcessList::EntryPtr ProcessList::insert(
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
+            thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
@@ -281,15 +279,9 @@ ProcessList::EntryPtr ProcessList::insert(
                     .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_query],
                     .compression_codec = settings[Setting::temporary_files_codec],
                     .buffer_size = settings[Setting::temporary_files_buffer_size],
-                    .metrics = {}, /// Metrics are set by child scopes
                 };
-
-                if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
-
-                if (user_process_list.user_temp_data_on_disk)
-                    query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
-                        user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
+                query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
+                    user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
             }
 
             /// Set query-level memory trackers
@@ -304,22 +296,7 @@ ProcessList::EntryPtr ProcessList::insert(
                 thread_group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
                 thread_group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
                 thread_group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
-
-                /// Set up tracing of profile events
-                if (settings[Setting::trace_profile_events])
-                {
-                    const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
-                    if (!list_of_events_to_trace.empty())
-                    {
-                        /// Trace specific profile events
-                        thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
-                    }
-                    else
-                    {
-                        /// Trace all profile events
-                        thread_group->performance_counters.setTraceAllProfileEvents();
-                    }
-                }
+                thread_group->performance_counters.setTraceProfileEvents(settings[Setting::trace_profile_events]);
             }
 
             thread_group->memory_tracker.setDescription("Query");
@@ -379,16 +356,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
-            total_network_throttler = std::make_shared<Throttler>("network_all_users", settings[Setting::max_network_bandwidth_for_all_users]);
+            total_network_throttler = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_all_users]);
         }
 
         if (!user_process_list.user_throttler)
         {
             if (settings[Setting::max_network_bandwidth_for_user])
-            {
                 user_process_list.user_throttler
-                    = std::make_shared<Throttler>("network_user", settings[Setting::max_network_bandwidth_for_user], total_network_throttler);
-            }
+                    = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_user], total_network_throttler);
             else if (settings[Setting::max_network_bandwidth_for_all_users])
                 user_process_list.user_throttler = total_network_throttler;
         }
@@ -638,13 +613,6 @@ void QueryStatus::throwQueryWasCancelled() const
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
-void QueryStatus::throwIfKilled()
-{
-    if (!is_killed.load())
-        return;
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
-}
-
 bool QueryStatus::checkTimeLimitSoft()
 {
     if (is_killed.load())
@@ -783,25 +751,6 @@ void ProcessList::killAllQueries()
 
 }
 
-bool QueryStatus::updateProgressIn(const Progress & value)
-{
-    CurrentThread::updateProgressIn(value);
-    progress_in.incrementPiecewiseAtomically(value);
-
-    if (priority_handle)
-        priority_handle->waitIfNeed();
-
-    return !is_killed.load(std::memory_order_relaxed);
-}
-
-bool QueryStatus::updateProgressOut(const Progress & value)
-{
-    CurrentThread::updateProgressOut(value);
-    progress_out.incrementPiecewiseAtomically(value);
-
-    return !is_killed.load(std::memory_order_relaxed);
-}
-
 
 QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
@@ -906,12 +855,10 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_user],
             .compression_codec = settings[Setting::temporary_files_codec],
             .buffer_size = settings[Setting::temporary_files_buffer_size],
-            .metrics = {}, /// Metrics are set by child scopes
         };
 
-        if (auto shared_temp_data = global_context->getSharedTempDataOnDisk())
-            user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(shared_temp_data),
-                std::move(temporary_data_on_disk_settings));
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),
+            std::move(temporary_data_on_disk_settings));
     }
 }
 

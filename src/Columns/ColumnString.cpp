@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
@@ -300,7 +301,7 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -530,7 +531,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     auto res = ColumnString::create();
 
-    if (col_size == 0 || replicate_offsets.back() == 0)
+    if (0 == col_size)
         return res;
 
     Offsets & res_offsets = res->offsets;
@@ -577,7 +578,7 @@ size_t ColumnString::capacity() const
     return offsets.capacity();
 }
 
-void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnString::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     size_t new_chars_size = chars.size();
@@ -598,20 +599,22 @@ void ColumnString::shrinkToFit()
     offsets.shrink_to_fit();
 }
 
-void ColumnString::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnString::getExtremes(Field & min, Field & max) const
 {
     min = String();
     max = String();
 
-    if (start >= end)
+    size_t col_size = size();
+
+    if (col_size == 0)
         return;
 
-    size_t min_idx = start;
-    size_t max_idx = start;
+    size_t min_idx = 0;
+    size_t max_idx = 0;
 
     ComparatorBase cmp_op(*this);
 
-    for (size_t i = start + 1; i < end; ++i)
+    for (size_t i = 1; i < col_size; ++i)
     {
         if (cmp_op.compare(i, min_idx) < 0)
             min_idx = i;
