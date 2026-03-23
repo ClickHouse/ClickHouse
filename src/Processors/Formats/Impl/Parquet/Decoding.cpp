@@ -70,7 +70,7 @@ struct BitPackedRLEDecoder : public PageDecoder
     {
         skipFilterOrDecode<true, false>(num_values, nullptr, nullptr);
     }
-    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t /*asdqwe_delete_dis*/, size_t output_size_upper_bound) override
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t output_size_upper_bound) override
     {
         auto & out = assert_cast<ColumnVector<T> &>(col).getData();
         if (!filter)
@@ -242,7 +242,7 @@ struct PlainFixedSizeDecoder : public PageDecoder
         data += bytes;
     }
 
-    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t /*asdqwe_delete_dis*/, size_t output_size_upper_bound) override
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t output_size_upper_bound) override
     {
         const char * from = data;
         if (!filter)
@@ -296,7 +296,7 @@ struct PlainBooleanDecoder : public PageDecoder
         bit_idx += num_values;
     }
 
-    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t /*asdqwe_delete_dis*/, size_t output_size_upper_bound) override
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t output_size_upper_bound) override
     {
         if (!filter)
         {
@@ -402,7 +402,7 @@ struct PlainStringDecoder : public PageDecoder
         }
     }
 
-    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t /*asdqwe_delete_dis*/, size_t output_size_upper_bound) override
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t output_size_upper_bound) override
     {
         if (converter->isTrivial())
         {
@@ -597,7 +597,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         }
     }
 
-    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t /*asdqwe_delete_dis*/, size_t output_size_upper_bound) override
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t output_size_upper_bound) override
     {
         if (!filter)
         {
@@ -739,7 +739,7 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
         idx += num_values;
     }
 
-    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t /*asdqwe_delete_dis*/, size_t /*output_size_upper_bound*/) override
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t /*output_size_upper_bound*/) override
     {
         if (num_values > offsets.size() - idx)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Too few values in page");
@@ -827,7 +827,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
             decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr);
     }
 
-    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t /*asdqwe_delete_dis*/, size_t output_size_upper_bound) override
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t output_size_upper_bound) override
     {
         if (fixed_size_converter)
         {
@@ -949,7 +949,7 @@ struct ByteStreamSplitDecoder : public PageDecoder
         data += num_values;
     }
 
-    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t /*asdqwe_delete_dis*/, size_t output_size_upper_bound) override
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t output_size_upper_bound) override
     {
         size_t num_streams = converter->input_size;
 
@@ -1235,7 +1235,7 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
         auto decoder = info.makeDecoder(encoding, data_);
         auto c = raw_decoded_type.createColumn();
         c->reserve(num_values);
-        decoder->decode(num_values, *c, nullptr, 0, num_values);
+        decoder->decode(num_values, *c, nullptr, num_values);
         col = std::move(c);
 
         if (col->isFixedAndContiguous())

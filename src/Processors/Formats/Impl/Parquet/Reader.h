@@ -544,7 +544,7 @@ private:
     /// If filter_checked is true, the caller promises that row row_idx passes filter, so this function
     /// can do additional checks and always lands on that exact row.
     /// If filter_checked is false, this function will skip filtered-out pages and may land at a
-    /// higher row idx than requested (if the requested one is filteres out), and returns false if
+    /// higher row idx than requested (if the requested one is filtered out), and returns false if
     /// all remaining pages are filtered out.
     bool skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info, bool filter_checked);
     std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;

@@ -56,7 +56,7 @@ struct PageDecoder
     /// If `filter` is not null, output only elements whose index i has filter[i] != 0.
     /// `output_size_upper_bound` is >= than the number of values in the output, i.e. >= number of
     /// nonzero values in `filter`, or just `num_values` if no filter.
-    virtual void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t asdqwe_delete_dis, size_t output_size_upper_bound) = 0;
+    virtual void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t output_size_upper_bound) = 0;
 
     explicit PageDecoder(std::span<const char> data_) : data(data_.data()), end(data_.data() + data_.size()) {}
     virtual ~PageDecoder() = default;

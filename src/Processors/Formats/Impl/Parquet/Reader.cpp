@@ -2011,13 +2011,13 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
             auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
             auto & data = indices_column_uint32.getData();
             chassert(data.empty());
-            page.decoder->decode(encoded_values_to_read, *page.indices_column, filter, 0, output_size_upper_bound);
+            page.decoder->decode(encoded_values_to_read, *page.indices_column, filter, output_size_upper_bound);
             column.dictionary.index(indices_column_uint32, *subchunk.column);
             data.clear();
         }
         else
         {
-            page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, 0, output_size_upper_bound);
+            page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, output_size_upper_bound);
         }
     }
 
