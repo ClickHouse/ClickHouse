@@ -17,6 +17,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadFromDataLakeStep.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
@@ -331,6 +332,8 @@ void StorageDataLake<DataLakeMetadata>::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    auto * current_metadata = getExternalMetadata(local_context);
+
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 
@@ -379,14 +382,12 @@ void StorageDataLake<DataLakeMetadata>::read(
             "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
     }
 #endif
-    auto read_from_format_info = configuration->prepareReadingFromFormat(
-        object_storage,
+    auto read_from_format_info = current_metadata->prepareReadingFromFormat(
         column_names,
         storage_snapshot,
-        supportsSubsetOfColumns(local_context),
-        supports_tuple_elements,
         local_context,
-        PrepareReadingFromFormatHiveParams{});
+        supportsSubsetOfColumns(local_context),
+        supports_tuple_elements);
 
 
     if (query_info.prewhere_info || query_info.row_level_filter)
@@ -403,9 +404,9 @@ void StorageDataLake<DataLakeMetadata>::read(
     if (!modified_format_settings.has_value())
         modified_format_settings.emplace(getFormatSettings(local_context));
 
-    configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
+    current_metadata->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
-    auto read_step = std::make_unique<ReadFromObjectStorageStep>(
+    auto read_step = std::make_unique<ReadFromDataLakeStep>(
         object_storage,
         configuration,
         column_names,
@@ -413,12 +414,12 @@ void StorageDataLake<DataLakeMetadata>::read(
         query_info,
         storage_snapshot,
         modified_format_settings,
-        distributed_processing,
         read_from_format_info,
         need_only_count,
         local_context,
         max_block_size,
-        num_streams);
+        num_streams,
+        current_metadata);
 
     query_plan.addStep(std::move(read_step));
 }
