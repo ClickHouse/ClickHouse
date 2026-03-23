@@ -732,6 +732,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             /* comment */"",
             getFormatSettings(context_copy),
             LoadingStrictnessLevel::CREATE,
+            /* datalake_settings */storage_settings,
             getCatalog(),
             /* distributed_processing */can_use_distributed_iterator,
             /* partition_by */nullptr,

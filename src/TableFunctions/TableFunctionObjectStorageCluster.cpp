@@ -64,6 +64,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
                 /* comment */ String{},
                 /* format_settings */ std::nullopt, /// No format_settings
                 /* mode */ LoadingStrictnessLevel::CREATE,
+                /* datalake_settings */ std::dynamic_pointer_cast<DataLakeStorageSettings>(Base::settings),
                 /* catalog*/nullptr,
                 /* distributed_processing */ can_use_distributed_iterator,
                 /* partition_by_ */Base::partition_by,

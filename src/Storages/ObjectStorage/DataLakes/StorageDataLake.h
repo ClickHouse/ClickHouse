@@ -42,6 +42,7 @@ public:
         const String & comment,
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
+        DataLakeStorageSettingsPtr datalake_settings_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
@@ -120,9 +121,9 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
-    bool supportsDelete() const override { return configuration->supportsDelete(); }
+    bool supportsDelete() const override { return current_metadata && current_metadata->supportsDelete(); }
 
-    bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
+    bool supportsParallelInsert() const override { return current_metadata && current_metadata->supportsParallelInsert(); }
 
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
@@ -149,6 +150,12 @@ protected:
     bool is_table_function = false;
 
     LoggerPtr log;
+
+    DataLakeStorageSettingsPtr datalake_settings;
+    mutable DataLakeMetadataPtr current_metadata;
+
+    void ensureMetadataInitialized(ContextPtr context) const;
+    void updateMetadata(ContextPtr context) const;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;

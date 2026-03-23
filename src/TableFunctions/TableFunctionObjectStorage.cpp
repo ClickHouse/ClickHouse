@@ -319,6 +319,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             /* comment */ String{},
             /* format_settings */ std::nullopt,
             /* mode */ LoadingStrictnessLevel::CREATE,
+            /* datalake_settings */ std::dynamic_pointer_cast<DataLakeStorageSettings>(settings),
             /* catalog*/ nullptr,
             /* distributed_processing */ can_use_distributed_iterator,
             /* partition_by */ partition_by,

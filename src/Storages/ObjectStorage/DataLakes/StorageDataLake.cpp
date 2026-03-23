@@ -34,6 +34,7 @@
 #include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <type_traits>
 
 namespace DB
 {
@@ -62,6 +63,7 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     const String & comment,
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
+    DataLakeStorageSettingsPtr datalake_settings_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     bool distributed_processing_,
     ASTPtr partition_by_,
@@ -75,9 +77,12 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     , distributed_processing(distributed_processing_)
     , is_table_function(is_table_function_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
+    , datalake_settings(std::move(datalake_settings_))
     , catalog(catalog_)
     , storage_id(table_id_)
 {
+    if (datalake_settings)
+        configuration->setDataLakeSettings(datalake_settings);
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
@@ -99,8 +104,9 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && mode == LoadingStrictnessLevel::CREATE)
     {
         LOG_DEBUG(log, "Creating new storage with specified columns");
-        configuration->create(
-            object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, /*if_not_exists=*/ false, catalog, storage_id);
+        configuration->update(object_storage, context);
+        DataLakeMetadata::createInitial(
+            object_storage, configuration, context, columns_in_table_or_function_definition, partition_by_, order_by_, /*if_not_exists=*/ false, catalog, storage_id);
     }
 
     try
@@ -108,9 +114,9 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
         if (!do_lazy_init)
         {
             if (is_table_function)
-                configuration->lazyInitializeIfNeeded(object_storage, context);
+                ensureMetadataInitialized(context);
             else
-                configuration->update(object_storage, context);
+                updateMetadata(context);
         }
     }
     catch (...)
@@ -161,7 +167,10 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     ///    There's probably no reason for this, and it should just copy those fields like the others.
     ///  * If the table contains files in different formats, with only some of them supporting
     ///    prewhere, things break.
-    supports_prewhere = configuration->supportsPrewhere() && format_supports_prewhere;
+    if constexpr (std::is_same_v<DataLakeMetadata, IcebergMetadata>)
+        supports_prewhere = format_supports_prewhere;
+    else
+        supports_prewhere = false;
     supports_tuple_elements = format_supports_prewhere;
 
     StorageInMemoryMetadata metadata;
@@ -173,8 +182,8 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
         /// Additionally reload columns from the snapshot when the per-format setting is enabled.
         /// This is done eagerly because select queries for table functions may bypass
         /// updateExternalDynamicMetadataIfExists.
-        configuration->lazyInitializeIfNeeded(object_storage, context);
-        if (auto state = configuration->getTableStateSnapshot(context))
+        ensureMetadataInitialized(context);
+        if (auto state = current_metadata ? current_metadata->getTableStateSnapshot(context) : std::nullopt)
         {
             metadata.setDataLakeTableState(*state);
 
@@ -184,9 +193,9 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
             ///    a subset of columns from remote delta table
             /// 2. user want to override some data types
             ///    (for example, LawCardinality<String> instead of just String)
-            if (configuration->shouldReloadSchemaForConsistency(context))
+            if (current_metadata->shouldReloadSchemaForConsistency(context))
             {
-                if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, context))
+                if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, context))
                     metadata = *metadata_snapshot;
             }
         }
@@ -205,6 +214,27 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
         sample_path));
 
     setInMemoryMetadata(metadata);
+}
+
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::ensureMetadataInitialized(ContextPtr context) const
+{
+    if (current_metadata)
+        return;
+    configuration->update(object_storage, context);
+    current_metadata = DataLakeMetadata::create(object_storage, configuration, context);
+}
+
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::updateMetadata(ContextPtr context) const
+{
+    configuration->update(object_storage, context);
+    if (current_metadata && current_metadata->supportsUpdate())
+    {
+        current_metadata->update(context);
+        return;
+    }
+    current_metadata = DataLakeMetadata::create(object_storage, configuration, context);
 }
 
 template <typename DataLakeMetadata>
@@ -258,8 +288,8 @@ IStorage::ColumnSizeByName StorageDataLake<DataLakeMetadata>::getColumnSizes() c
 template <typename DataLakeMetadata>
 IDataLakeMetadata * StorageDataLake<DataLakeMetadata>::getExternalMetadata(ContextPtr query_context)
 {
-    configuration->update(object_storage, query_context);
-    return configuration->getExternalMetadata();
+    updateMetadata(query_context);
+    return current_metadata.get();
 }
 
 template <typename DataLakeMetadata>
@@ -268,9 +298,9 @@ void StorageDataLake<DataLakeMetadata>::updateExternalDynamicMetadataIfExists(Co
     /// Always force an update to pick up the latest snapshot version.
     /// Using if_not_updated_before=true would leave latest_snapshot_version
     /// stale from the first query and silently omit new files.
-    configuration->update(object_storage, query_context);
+    updateMetadata(query_context);
 
-    auto state = configuration->getTableStateSnapshot(query_context);
+    auto state = current_metadata ? current_metadata->getTableStateSnapshot(query_context) : std::nullopt;
     if (!state)
         return;
 
@@ -281,9 +311,9 @@ void StorageDataLake<DataLakeMetadata>::updateExternalDynamicMetadataIfExists(Co
 
     /// Optionally also refresh the columns (and other schema-derived fields such as the
     /// Iceberg sort key) when the per-format reload setting is enabled.
-    if (configuration->shouldReloadSchemaForConsistency(query_context))
+    if (current_metadata->shouldReloadSchemaForConsistency(query_context))
     {
-        if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
+        if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, query_context))
             new_metadata = *metadata_snapshot;
     }
 
@@ -294,7 +324,7 @@ void StorageDataLake<DataLakeMetadata>::updateExternalDynamicMetadataIfExists(Co
 template <typename DataLakeMetadata>
 std::optional<UInt64> StorageDataLake<DataLakeMetadata>::totalRows(ContextPtr query_context) const
 {
-    if (!configuration->supportsTotalRows(query_context, object_storage->getType()))
+    if (!DataLakeMetadata::supportsTotalRows(query_context, object_storage->getType()))
         return std::nullopt;
 
     /// Trivial count optimization can be applied only on initiator replica.
@@ -303,22 +333,22 @@ std::optional<UInt64> StorageDataLake<DataLakeMetadata>::totalRows(ContextPtr qu
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
+    is_table_function ? ensureMetadataInitialized(query_context) : updateMetadata(query_context);
 
-    return configuration->totalRows(query_context);
+    return current_metadata->totalRows(query_context);
 }
 
 template <typename DataLakeMetadata>
 std::optional<UInt64> StorageDataLake<DataLakeMetadata>::totalBytes(ContextPtr query_context) const
 {
-    if (!configuration->supportsTotalBytes(query_context, object_storage->getType()))
+    if (!DataLakeMetadata::supportsTotalBytes(query_context, object_storage->getType()))
         return std::nullopt;
 
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
-    return configuration->totalBytes(query_context);
+    is_table_function ? ensureMetadataInitialized(query_context) : updateMetadata(query_context);
+    return current_metadata->totalBytes(query_context);
 }
 
 template <typename DataLakeMetadata>
@@ -332,7 +362,7 @@ void StorageDataLake<DataLakeMetadata>::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto * current_metadata = getExternalMetadata(local_context);
+    auto * read_metadata = getExternalMetadata(local_context);
 
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
@@ -349,7 +379,7 @@ void StorageDataLake<DataLakeMetadata>::read(
     if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
         start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
     {
-        if (const auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(configuration->getExternalMetadata());
+        if (const auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(current_metadata.get());
             delta_kernel_metadata != nullptr)
         {
             auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -382,7 +412,7 @@ void StorageDataLake<DataLakeMetadata>::read(
             "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
     }
 #endif
-    auto read_from_format_info = current_metadata->prepareReadingFromFormat(
+    auto read_from_format_info = read_metadata->prepareReadingFromFormat(
         column_names,
         storage_snapshot,
         local_context,
@@ -404,7 +434,7 @@ void StorageDataLake<DataLakeMetadata>::read(
     if (!modified_format_settings.has_value())
         modified_format_settings.emplace(getFormatSettings(local_context));
 
-    current_metadata->modifyFormatSettings(modified_format_settings.value(), *local_context);
+    read_metadata->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromDataLakeStep>(
         object_storage,
@@ -419,7 +449,7 @@ void StorageDataLake<DataLakeMetadata>::read(
         local_context,
         max_block_size,
         num_streams,
-        current_metadata);
+        read_metadata);
 
     query_plan.addStep(std::move(read_step));
 }
@@ -431,11 +461,12 @@ SinkToStoragePtr StorageDataLake<DataLakeMetadata>::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    if (!configuration->supportsWrites())
+    ensureMetadataInitialized(local_context);
+    if (!current_metadata || !current_metadata->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-    return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
+    return current_metadata->write(sample_block, storage_id, object_storage, configuration, format_settings, local_context, catalog);
 }
 
 template <typename DataLakeMetadata>
@@ -449,7 +480,8 @@ bool StorageDataLake<DataLakeMetadata>::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return configuration->optimize(metadata_snapshot, context, format_settings);
+    ensureMetadataInitialized(context);
+    return current_metadata->optimize(metadata_snapshot, context, format_settings);
 }
 
 template <typename DataLakeMetadata>
@@ -471,7 +503,8 @@ void StorageDataLake<DataLakeMetadata>::drop()
         catalog->dropTable(namespace_name, table_name);
     }
     /// We cannot use query context here, because drop is executed in the background.
-    configuration->drop(Context::getGlobalContextInstance());
+    if (current_metadata)
+        current_metadata->drop(Context::getGlobalContextInstance());
 }
 
 template <typename DataLakeMetadata>
@@ -485,13 +518,14 @@ void StorageDataLake<DataLakeMetadata>::mutate([[maybe_unused]] const MutationCo
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
-    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
+    current_metadata->mutate(commands, configuration, context_, storage, metadata_snapshot, catalog, format_settings);
 }
 
 template <typename DataLakeMetadata>
 void StorageDataLake<DataLakeMetadata>::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    configuration->checkMutationIsPossible(commands);
+    if (current_metadata)
+        current_metadata->checkMutationIsPossible(commands);
 }
 
 template <typename DataLakeMetadata>
@@ -509,7 +543,8 @@ void StorageDataLake<DataLakeMetadata>::alter(const AlterCommands & params, Cont
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
-    configuration->alter(params, context);
+    if (current_metadata)
+        current_metadata->alter(params, context);
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
@@ -520,7 +555,8 @@ void StorageDataLake<DataLakeMetadata>::alter(const AlterCommands & params, Cont
 template <typename DataLakeMetadata>
 void StorageDataLake<DataLakeMetadata>::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
 {
-    configuration->checkAlterIsPossible(commands);
+    if (current_metadata)
+        current_metadata->checkAlterIsPossible(commands);
 }
 
 #if USE_AVRO
