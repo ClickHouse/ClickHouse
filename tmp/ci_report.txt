@@ -1,0 +1,10 @@
+Parsing URL: https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=96563&sha=9d11274b671364b17c3ebd8a7f01e2f23408be3b&name_0=PR&name_1=AST%20fuzzer%20%28arm_asan_ubsan%29
+
+Task: PR -> AST fuzzer (arm_asan_ubsan)
+SHA: 9d11274b671364b17c3ebd8a7f01e2f23408be3b
+
+Fetching JSON: https://s3.amazonaws.com/clickhouse-test-reports/PRs/96563/9d11274b671364b17c3ebd8a7f01e2f23408be3b/result_pr.json
+
+Fetching JSON (name_1): https://s3.amazonaws.com/clickhouse-test-reports/PRs/96563/9d11274b671364b17c3ebd8a7f01e2f23408be3b/result_ast_fuzzer_arm_asan_ubsan.json
+
+Error: getaddrinfo ENOTFOUND s3.amazonaws.com

@@ -42,7 +42,7 @@ ConnectionEstablisher::ConnectionEstablisher(
     const Settings & settings_,
     LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_)
+    : pool(std::move(pool_)), timeouts(*timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_)
 {
 }
 
@@ -51,17 +51,17 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     try
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionTries);
-        result.entry = pool->get(*timeouts, settings, force_connected);
+        result.entry = pool->get(timeouts, settings, force_connected);
         AsyncCallbackSetter<Connection> async_setter(&*result.entry, std::move(async_callback));
 
         UInt64 server_revision = 0;
         if (table_to_check)
-            server_revision = result.entry->getServerRevision(*timeouts);
+            server_revision = result.entry->getServerRevision(timeouts);
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
             if (!force_connected)
-                result.entry->forceConnected(*timeouts);
+                result.entry->forceConnected(timeouts);
 
             ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
             result.is_usable = true;
@@ -74,7 +74,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         TablesStatusRequest status_request;
         status_request.tables.emplace(*table_to_check);
 
-        TablesStatusResponse status_response = result.entry->getTablesStatus(*timeouts, status_request);
+        TablesStatusResponse status_response = result.entry->getTablesStatus(timeouts, status_request);
         auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
         if (table_status_it == status_response.table_states_by_id.end())
         {

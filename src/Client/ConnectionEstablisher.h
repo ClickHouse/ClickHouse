@@ -37,8 +37,8 @@ public:
 
 private:
     ConnectionPoolPtr pool;
-    const ConnectionTimeouts * timeouts;
-    const Settings & settings;
+    ConnectionTimeouts timeouts;
+    Settings settings;
     LoggerPtr log;
     const QualifiedTableName * table_to_check;
 
