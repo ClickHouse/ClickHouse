@@ -1580,6 +1580,7 @@ Validate checksums on reading. It is enabled by default and should be always ena
 Use a sparse lightweight representation of primary key values during primary key index analysis in MergeTree tables.
 
 When enabled, during index analysis ClickHouse avoids materializing primary key columns that are not needed to evaluate the filter predicate.
+)", 0) \
     DECLARE_WITH_ALIAS(Bool, use_partition_pruning, true, R"(
 Use partition key to prune partitions during query execution for MergeTree tables.
 
@@ -1587,7 +1588,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 0) \
+)", 0, use_partition_key) \
     DECLARE(Bool, force_index_by_date, false, R"(
 Disables query execution if the index can't be used by date.
 
@@ -1602,7 +1603,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 0, use_partition_key) \
+)", 0) \
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
 
