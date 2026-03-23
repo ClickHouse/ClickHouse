@@ -932,7 +932,10 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     /// If we have only NULLs, just filter local_discriminators column.
     if (hasOnlyNulls())
     {
-        Columns new_variants(variants.begin(), variants.end());
+        Columns new_variants;
+        new_variants.reserve(variants.size());
+        for (const auto & variant : variants)
+            new_variants.emplace_back(variant->cloneEmpty());
         auto new_discriminators = local_discriminators->filter(filt, result_size_hint);
         /// In case of all NULL values offsets doesn't contain any useful values, just resize it.
         ColumnPtr new_offsets = offsets->cloneResized(new_discriminators->size());
