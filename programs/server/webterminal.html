@@ -286,7 +286,7 @@
                 // Handshake failed - likely authentication error
                 ws = null;
                 term.write('\r\x1b[2K');
-                promptCredentials('Authentication failed.');
+                promptCredentials();
             } else {
                 // Normal disconnect after session was active
                 if (window.parent !== window) {
