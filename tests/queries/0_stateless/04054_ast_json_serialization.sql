@@ -232,5 +232,30 @@ SELECT 'MultiJoin' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t1 
 -- UNION DISTINCT
 SELECT 'UnionDistinct' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT 1 UNION DISTINCT SELECT 1'));
 
+-- === formatQueryFromJSON with original_query (two-argument form) ===
+
+-- Preserve inline comment
+SELECT 'Preserve_comment' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* my comment */ a FROM t');
+
+-- Preserve trailing comment
+SELECT 'Preserve_trailing' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT 1'), 'SELECT 1 -- trailing');
+
+-- Identical round-trip preserves original exactly
+SELECT 'Preserve_exact' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT a FROM t') = 'SELECT a FROM t';
+
+-- === JSON output tests: verify the structure of parseQueryToJSON ===
+
+-- Simple SELECT JSON structure
+SELECT 'JSON_select' AS t, parseQueryToJSON('SELECT 1');
+
+-- Identifier JSON
+SELECT 'JSON_identifier' AS t, parseQueryToJSON('SELECT a');
+
+-- Function JSON
+SELECT 'JSON_function' AS t, parseQueryToJSON('SELECT count(*)');
+
+-- CREATE TABLE JSON
+SELECT 'JSON_create' AS t, parseQueryToJSON('CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a');
+
 -- === Idempotence test: double round-trip ===
 SELECT 'Idempotent' AS t, formatQueryFromJSON(parseQueryToJSON(formatQueryFromJSON(parseQueryToJSON('SELECT a, sum(b) FROM t1 INNER JOIN t2 ON t1.id = t2.id WHERE c > 0 GROUP BY a ORDER BY a LIMIT 10')))) = formatQueryFromJSON(parseQueryToJSON('SELECT a, sum(b) FROM t1 INNER JOIN t2 ON t1.id = t2.id WHERE c > 0 GROUP BY a ORDER BY a LIMIT 10'));

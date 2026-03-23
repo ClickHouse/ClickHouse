@@ -81,4 +81,11 @@ Qualify	SELECT a, row_number() OVER (ORDER BY a ASC) AS rn FROM t QUALIFY rn <= 
 SelectSettings	SELECT 1 SETTINGS max_threads = 1
 MultiJoin	SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON t2.id = t3.id
 UnionDistinct	SELECT 1 UNION DISTINCT SELECT 1
+Preserve_comment	SELECT /* my comment */ a FROM t
+Preserve_trailing	SELECT 1 -- trailing
+Preserve_exact	1
+JSON_select	{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}
+JSON_identifier	{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"}]}}]}}
+JSON_function	{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Function","name":"count","arguments":{"type":"ExpressionList","children":[{"type":"Asterisk"}]}}]}}]}}
+JSON_create	{"type":"CreateQuery","database":"","table":"t","attach":false,"if_not_exists":false,"is_ordinary_view":false,"is_materialized_view":false,"is_window_view":false,"is_time_series_table":false,"is_populate":false,"is_create_empty":false,"is_clone_as":false,"replace_view":false,"has_uuid":false,"is_dictionary":false,"is_watermark_strictly_ascending":false,"is_watermark_ascending":false,"is_watermark_bounded":false,"allowed_lateness":false,"attach_short_syntax":false,"replace_table":false,"create_or_replace":false,"has_attach_from_path":false,"columns_list":{"type":"Columns definition","columns":{"type":"ExpressionList","children":[{"type":"ColumnDeclaration","name":"a","ephemeral_default":false,"primary_key_specifier":false,"data_type":{"type":"DataType","name":"UInt64"}}]}},"storage":{"type":"Storage","engine":{"type":"Function","name":"MergeTree","no_empty_args":true,"kind":"TABLE_ENGINE"},"order_by":{"type":"Identifier","name":"a"}}}
 Idempotent	1
