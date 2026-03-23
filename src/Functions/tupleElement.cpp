@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -25,7 +26,8 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -106,7 +108,7 @@ public:
             {
                 DataTypePtr element_type = tuple->getElements()[index.value()];
 
-                if (is_input_type_nullable && element_type->canBeInsideNullable())
+                if (is_input_type_nullable && canExtractedSubcolumnsBeInsideNullable(element_type))
                     element_type = std::make_shared<DataTypeNullable>(element_type);
 
                 return wrapInArrays(std::move(element_type), count_arrays);
@@ -217,7 +219,7 @@ public:
                     ColumnPtr merged_null_map = mergeNullMaps(null_map_column, res_nullable->getNullMapColumnPtr());
                     res = ColumnNullable::create(res_nullable->getNestedColumnPtr(), merged_null_map);
                 }
-                else if (element_type->canBeInsideNullable())
+                else if (canExtractedSubcolumnsBeInsideNullable(element_type))
                 {
                     res = ColumnNullable::create(res, null_map_column);
                 }
@@ -314,7 +316,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -331,7 +333,7 @@ private:
                 return {index + size};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -344,7 +346,7 @@ private:
 
             if (argument_size == 2)
                 throw Exception(
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
+                    ErrorCodes::BAD_ARGUMENTS, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
             return std::nullopt;
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant Int, UInt or String", getName());
@@ -361,7 +363,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "QBit doesn't have an element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "QBit doesn't have an element with index '{}'", index);
 
             return std::nullopt;
         }

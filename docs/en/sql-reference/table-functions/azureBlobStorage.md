@@ -232,14 +232,14 @@ SELECT _path, * FROM azureBlobStorage(
 
 This is a hint for ClickHouse to parse hive style partitioned files upon reading time. It has no effect on writing. For symmetrical reads and writes, use the `partition_strategy` argument.
 
-When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path.
 
 **Example**
 
 Use virtual column, created with Hive-style partitioning
 
 ```sql
-SELECT * FROM azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') WHERE _date > '2020-01-01' AND _country = 'Netherlands' AND _code = 42;
+SELECT * FROM azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
 ## Using Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}

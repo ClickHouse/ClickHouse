@@ -766,7 +766,9 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     if (!index_mark_cache)
         return;
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    /// Bypass QueryMetadataCache: this runs during part destruction, and caching a dying
+    /// storage's pointer would poison lookups if a new storage is allocated at the same address.
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(/*bypass_metadata_cache=*/ true);
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
     if (secondary_indices.empty())
         return;
@@ -3087,7 +3089,7 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
 std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & file_name) const
 {
     constexpr size_t size_hint = 4096;  /// These files are small.
-    if (auto res = getDataPartStorage().readFileIfExists(file_name, ReadSettings().adjustBufferSize(size_hint), size_hint))
+    if (auto res = getDataPartStorage().readFileIfExists(file_name, getReadSettings().adjustBufferSize(size_hint), size_hint))
     {
         if (isCompressedFromFileName(file_name))
             return std::make_unique<CompressedReadBufferFromFile>(std::move(res));

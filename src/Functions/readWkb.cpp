@@ -65,6 +65,10 @@ public:
             ReadBufferFromString in_buffer(str);
 
             auto object = parseWKBFormat(in_buffer);
+            if (!std::holds_alternative<Geometry>(object))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Function {}: expected geometry type {}, got variant index {}",
+                    NameHolder::name, ReturnDataTypeName().getName(), object.index());
             auto boost_object = std::get<Geometry>(object);
             serializer.add(boost_object);
         }

@@ -5,7 +5,6 @@
 #include <expected>
 
 #include <Common/ActionBlocker.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -19,6 +18,8 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+
 
 namespace DB
 {
@@ -470,6 +471,7 @@ public:
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
+
     MutationCounters getMutationCounters() const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
