@@ -1662,6 +1662,27 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         if (checksums.read(*buf))
         {
             assertEOF(*buf);
+
+            /// Strip .proj entries for projection directories absent on disk.
+            /// This happens when a replica fetches a part after its projection was dropped:
+            /// the sender copies checksums.txt verbatim but skips the .proj directory.
+            /// Stripping here keeps the in-memory checksums consistent with what is
+            /// actually on disk, so that subsequent checks (e.g. checkDataPart or
+            /// ZooKeeper header comparisons) see a coherent picture.
+            const auto erased = std::erase_if(
+                checksums.files,
+                [&](const auto & entry)
+                {
+                    return entry.first.ends_with(".proj")
+                        && !getDataPartStorage().existsDirectory(entry.first);
+                });
+            if (erased > 0)
+                LOG_WARNING(storage.log,
+                    "Part {} has {} .proj checksum entr{} with no corresponding directory on disk "
+                    "(projection was likely dropped while the part was detached or fetched). "
+                    "Stripping from in-memory checksums.",
+                    name, erased, erased == 1 ? "y" : "ies");
+
             bytes_on_disk = checksums.getTotalSizeOnDisk();
             bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
         }
