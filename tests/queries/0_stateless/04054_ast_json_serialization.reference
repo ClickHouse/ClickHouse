@@ -1,91 +1,264 @@
-Literal_types	SELECT 42, -1, 3.14, \'hello\', NULL, true, [1, 2, 3], (1, \'a\')
-Identifier	SELECT a, b.c FROM t
-TableIdentifier	SELECT 1 FROM db.t
-Function	SELECT plus(a, 1), count(*), quantile(0.9)(x) FROM t
-Subquery	SELECT * FROM (SELECT 1 AS x)
-QueryParameter	SELECT {param:UInt64}
-Asterisk	SELECT * FROM t
-QualifiedAsterisk	SELECT t.* FROM t
-ColumnsRegexpMatcher	SELECT COLUMNS(\'col.*\') FROM t
-ColumnsListMatcher	SELECT COLUMNS(a, b) FROM t
-ColumnsApplyTransformer	SELECT * APPLY toString FROM t
-ColumnsExceptTransformer	SELECT * EXCEPT a FROM t
-ColumnsReplaceTransformer	SELECT * REPLACE (a + 1 AS a) FROM t
-QualifiedColumnsRegexpMatcher	SELECT t.COLUMNS(\'x.*\') FROM t
-QualifiedColumnsListMatcher	SELECT t.COLUMNS(a, b) FROM t
-SelectQuery_full	SELECT DISTINCT a, sum(b) AS s FROM t PREWHERE c > 0 WHERE d = 1 GROUP BY a WITH TOTALS HAVING s > 10 ORDER BY s DESC LIMIT 5 BY a LIMIT 2, 10
-SelectWithUnionQuery	SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3
-SelectIntersectExceptQuery	SELECT 1 INTERSECT SELECT 1
-SelectExceptQuery	(SELECT 1) EXCEPT (SELECT 2)
-WithElement	WITH x AS (SELECT 1 AS a) SELECT * FROM x
-SetQuery	SET max_threads = 4
-ExplainQuery_AST	EXPLAIN AST SELECT 1
-ExplainQuery_SYNTAX	EXPLAIN SYNTAX SELECT 1
-ExplainQuery_PLAN	EXPLAIN SELECT 1
-TableExpression	SELECT 1 FROM t
-TableJoin_INNER	SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id
-TableJoin_LEFT	SELECT a FROM t1 LEFT JOIN t2 USING (id)
-TableJoin_CROSS	SELECT a FROM t1 CROSS JOIN t2
-ArrayJoin	SELECT x FROM t ARRAY JOIN arr AS x
-ArrayJoin_LEFT	SELECT x FROM t LEFT ARRAY JOIN arr AS x
-OrderByElement	SELECT a FROM t ORDER BY a ASC NULLS FIRST, b DESC NULLS LAST
-OrderByElement_FILL	SELECT a FROM t ORDER BY a ASC WITH FILL FROM 1 TO 10 STEP 1
-WindowDefinition	SELECT row_number() OVER (PARTITION BY a ORDER BY b ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM t
-WindowListElement	SELECT row_number() OVER w FROM t WINDOW w AS (PARTITION BY a ORDER BY b ASC)
-SampleRatio	SELECT a FROM t SAMPLE 1 / 10
-SampleRatio_offset	SELECT a FROM t SAMPLE 1 / 10 OFFSET 5 / 10
-InterpolateElement	SELECT a, b FROM t ORDER BY a ASC WITH FILL INTERPOLATE (`b` AS b + 1)
-Collation	SELECT a FROM t ORDER BY a ASC COLLATE \'en\'
-CreateQuery	CREATE TABLE db.t (`id` UInt64, `name` String DEFAULT \'x\', `ts` DateTime) ENGINE = MergeTree ORDER BY id
-IndexDeclaration	CREATE TABLE t (`a` String, INDEX idx a TYPE bloom_filter GRANULARITY 4) ENGINE = MergeTree ORDER BY a
-ConstraintDeclaration	CREATE TABLE t (`a` UInt64, CONSTRAINT c CHECK a > 0) ENGINE = MergeTree ORDER BY a
-ProjectionDeclaration	CREATE TABLE t (`a` UInt64, `b` UInt64, PROJECTION p (SELECT a, sum(b) GROUP BY a)) ENGINE = MergeTree ORDER BY a
-TTLElement	CREATE TABLE t (`a` UInt64, `d` DateTime) ENGINE = MergeTree ORDER BY a TTL d + toIntervalDay(1)
-Partition	CREATE TABLE t (`a` UInt64, `d` Date) ENGINE = MergeTree PARTITION BY d ORDER BY a
-CreateQuery_AS_SELECT	CREATE TABLE t ENGINE = MergeTree ORDER BY a AS SELECT 1 AS a
-CreateView	CREATE VIEW v AS SELECT 1
-DropQuery_TABLE	DROP TABLE IF EXISTS t
-DropQuery_DATABASE	DROP DATABASE IF EXISTS db
-InsertQuery_SELECT	INSERT INTO t SELECT 1, 2
-InsertQuery_COLUMNS	INSERT INTO t (a, b) SELECT 1, 2
-AlterQuery_ADD	ALTER TABLE t (ADD COLUMN `c` UInt64)
-AlterQuery_DROP	ALTER TABLE t (DROP COLUMN c)
-AlterQuery_MODIFY	ALTER TABLE t (MODIFY COLUMN `c` String)
-AlterQuery_RENAME	ALTER TABLE t (RENAME COLUMN a TO b)
-RenameQuery	RENAME TABLE a TO b
-RenameQuery_DB	RENAME TABLE db1.a TO db2.b
-NameTypePair	SELECT CAST(1, \'UInt64\')
-FunctionWithKV	CREATE TABLE t (`a` UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192
-Dictionary	CREATE DICTIONARY dict (`id` UInt64, `name` String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LIFETIME(MIN 0 MAX 1000) LAYOUT(HASHED())
-SystemQuery	SYSTEM FLUSH LOGS
-SystemQuery_STOP	SYSTEM STOP MERGES t
-ShowTablesQuery	SHOW TABLES FROM db
-ShowTablesQuery_LIKE	SHOW TABLES LIKE \'%test%\'
-ShowDatabases	SHOW DATABASES
-ShowColumnsQuery	SHOW COLUMNS FROM t
-KillQueryQuery	KILL QUERY WHERE query_id = \'abc\' ASYNC
-OptimizeQuery	OPTIMIZE TABLE t FINAL
-OptimizeQuery_DEDUP	OPTIMIZE TABLE t FINAL DEDUPLICATE
-UseQuery	USE mydb
-CheckTableQuery	CHECK TABLE t
-DeleteQuery	DELETE FROM t WHERE id = 1
-Alias	SELECT a AS x, b AS y FROM t AS u
-Lambda	SELECT arrayMap(x -> (x * 2), [1, 2, 3])
-GlobalJoin	SELECT a FROM t1 GLOBAL LEFT JOIN t2 ON t1.id = t2.id
-TableFunction	SELECT * FROM numbers(10)
-Final	SELECT a FROM t FINAL
-GroupBy_ROLLUP	SELECT a, b, count() FROM t GROUP BY a, b WITH ROLLUP
-GroupBy_CUBE	SELECT a, b, count() FROM t GROUP BY a, b WITH CUBE
-LimitBy	SELECT a, b FROM t LIMIT 1 BY a
-Qualify	SELECT a, row_number() OVER (ORDER BY a ASC) AS rn FROM t QUALIFY rn <= 3
-SelectSettings	SELECT 1 SETTINGS max_threads = 1
-MultiJoin	SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON t2.id = t3.id
-UnionDistinct	SELECT 1 UNION DISTINCT SELECT 1
-Preserve_comment	SELECT /* my comment */ a FROM t
-Preserve_trailing	SELECT 1 -- trailing
-Preserve_exact	1
-JSON_select	{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}
-JSON_identifier	{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"}]}}]}}
-JSON_function	{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Function","name":"count","arguments":{"type":"ExpressionList","children":[{"type":"Asterisk"}]}}]}}]}}
-JSON_create	{"type":"CreateQuery","database":"","table":"t","attach":false,"if_not_exists":false,"is_ordinary_view":false,"is_materialized_view":false,"is_window_view":false,"is_time_series_table":false,"is_populate":false,"is_create_empty":false,"is_clone_as":false,"replace_view":false,"has_uuid":false,"is_dictionary":false,"is_watermark_strictly_ascending":false,"is_watermark_ascending":false,"is_watermark_bounded":false,"allowed_lateness":false,"attach_short_syntax":false,"replace_table":false,"create_or_replace":false,"has_attach_from_path":false,"columns_list":{"type":"Columns definition","columns":{"type":"ExpressionList","children":[{"type":"ColumnDeclaration","name":"a","ephemeral_default":false,"primary_key_specifier":false,"data_type":{"type":"DataType","name":"UInt64"}}]}},"storage":{"type":"Storage","engine":{"type":"Function","name":"MergeTree","no_empty_args":true,"kind":"TABLE_ENGINE"},"order_by":{"type":"Identifier","name":"a"}}}
-Idempotent	1
+SelectWithUnionQuery_simple		UNION_DEFAULT	1
+SelectWithUnionQuery_union	UNION_DEFAULT	["UNION_ALL","UNION_ALL"]
+SelectWithUnionQuery_distinct	["UNION_DISTINCT"]
+SelectQuery_distinct	1
+SelectQuery_totals	1
+SelectQuery_rollup	1
+SelectQuery_cube	1
+SelectQuery_grouping_sets	1
+SelectQuery_group_by_all	1
+SelectQuery_order_by_all	1
+SelectQuery_limit_with_ties	1
+SelectQuery_all_children	1	1	1	1	1	1	1	1	1	1
+SelectQuery_limit_by	1	1
+SelectQuery_with	1
+SelectQuery_qualify	1
+SelectQuery_window	1
+SelectQuery_interpolate	1
+SelectIntersectExceptQuery_intersect	
+SelectIntersectExceptQuery_except	
+ExpressionList		1
+Literal_uint64	UInt64	42
+Literal_string	String	hello
+Literal_null	Null
+Literal_float	Float64
+Literal_int64	
+Literal_alias	x
+Literal_array	
+Literal_tuple	
+Identifier_simple	a
+Identifier_compound	a.b.c	["a","b","c"]
+Identifier_alias	x
+TableIdentifier_simple	t	
+TableIdentifier_compound	["db","t"]
+Function_simple	count	1
+Function_operator	plus	1
+Function_parametric	quantile	1
+Function_window	1	1	WINDOW_FUNCTION
+Function_window_name	w
+Function_lambda	1	LAMBDA_FUNCTION
+Function_nulls_action	
+Function_alias	cnt
+Subquery		1
+Subquery_alias	sub
+QueryParameter	param	UInt64
+Asterisk	
+Asterisk_transformers	1
+QualifiedAsterisk		1
+QualifiedAsterisk_tr	1
+ColumnsRegexpMatcher		col.*
+ColumnsListMatcher		1
+QualifiedColumnsRegexpMatcher		x.*	1
+QualifiedColumnsListMatcher		1	1
+ColumnsApplyTransformer		toString
+ColumnsExceptTransformer		1
+ColumnsExceptTransformer_strict	1
+ColumnsReplaceTransformer	
+TablesInSelectQuery		1
+TablesInSelectQueryElement		1
+TablesInSelectQueryElement_join	1	1
+TablesInSelectQueryElement_array_join	1
+TableExpression_table	1
+TableExpression_final	1
+TableExpression_func	1
+TableExpression_subquery	1
+TableExpression_sample	1	1
+TableJoin_inner_on	INNER	1
+TableJoin_left_using	LEFT		1
+TableJoin_global	GLOBAL
+TableJoin_cross	CROSS
+TableJoin_natural	1
+ArrayJoin_inner	Inner	1
+ArrayJoin_left	Left
+OrderByElement_asc	1	1
+OrderByElement_desc_nulls	-1	1
+OrderByElement_fill	1	1	1	1
+StorageOrderByElement	
+WindowDefinition_full	1	1	ROWS	Unbounded	1	Current	0
+WindowDefinition_offset	Offset	1	Offset
+WindowListElement	w	1
+SampleRatio	1	10
+InterpolateElement	b	1
+Collation	1
+SetQuery_standalone		1	max_threads
+SetQuery_multi	2
+ExplainQuery_AST	EXPLAIN AST	1
+ExplainQuery_SYNTAX	EXPLAIN SYNTAX
+ExplainQuery_PLAN	EXPLAIN
+WithElement	x	1
+ColumnDeclaration_basic	id	1
+ColumnDeclaration_default	DEFAULT	1
+ColumnDeclaration_null	1
+ColumnDeclaration_comment	1
+ColumnDeclaration_codec	1
+ColumnDeclaration_ttl	1
+IndexDeclaration	idx	4	1	1
+ConstraintDeclaration	c	CHECK	1
+ConstraintDeclaration_assume	ASSUME
+ProjectionDeclaration	p	1
+StatisticsDeclaration	0	0
+Storage_full	1	1	1	1	1	1	1
+Columns_definition		1	1	1	1
+CreateQuery_basic		db	t	1
+CreateQuery_view	1
+CreateQuery_matview	1
+CreateQuery_as_select	1
+CreateQuery_as_table	t
+CreateQuery_cluster	my_cluster
+DropQuery_table		Drop	t	1
+DropQuery_database	Drop	db	1
+DropQuery_sync	1
+DropQuery_view	1
+InsertQuery_select		1	1
+InsertQuery_columns	1
+InsertQuery_func	1
+AlterCommand_add	0	1
+AlterCommand_drop	1
+AlterCommand_update	1	1
+AlterCommand_delete	1
+AlterCommand_partition	1
+AlterQuery		t	TABLE	1
+RenameQuery		0	a	b	0
+RenameQuery_db	db1	db2
+RenameQuery_exchange	1
+NameTypePair	
+DataType_simple	UInt64
+DataType_parametric	FixedString	1
+FunctionWithKV		clickhouse	1	1
+Pair		table	1
+TTLElement	DELETE
+TTLElement_move	MOVE	DISK
+Partition_value	1	0
+Partition_all	0
+Dictionary	1	1	1	1
+Dictionary_range	1
+DictAttrDecl	id	1
+DictAttrDecl_flags	1	1
+DictionaryLifetime	0	1000
+DictionaryLayout	hashed	1
+DictionaryRange	start	end
+SystemQuery_flush		FLUSH LOGS
+SystemQuery_stop	STOP MERGES	1
+ShowTablesQuery_from		1
+ShowTablesQuery_like	%test%
+ShowTablesQuery_databases	1
+ShowColumnsQuery		t
+ShowColumnsQuery_db	db	t
+KillQueryQuery		1	1
+KillQueryQuery_test	1
+OptimizeQuery		1	1	1
+DeleteQuery		1	1
+UpdateQuery		1	0	0
+UseQuery		1
+TransactionControl_begin		0
+TransactionControl_commit	1
+TransactionControl_rollback	2
+CheckTableQuery	
+BackupQuery		0	1
+ViewTargets	0
+SQLSecurity	1
+RefreshStrategy	1
+TimeInterval	3600
+Assignment	a	1
+TableOverride	1
+ForeignKeyDeclaration	1
+RT_select	SELECT 1
+RT_select_full	SELECT DISTINCT a, sum(b) AS s FROM t PREWHERE c > 0 WHERE d = 1 GROUP BY a WITH TOTALS HAVING s > 10 ORDER BY s DESC LIMIT 5 BY a LIMIT 2, 10
+RT_union	SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3
+RT_union_distinct	SELECT 1 UNION DISTINCT SELECT 1
+RT_intersect	SELECT 1 INTERSECT SELECT 1
+RT_except	(SELECT 1) EXCEPT (SELECT 2)
+RT_literals	SELECT 42, -1, 3.14, \'hello\', NULL, true, [1, 2, 3], (1, \'a\')
+RT_identifiers	SELECT a, b.c FROM t
+RT_functions	SELECT plus(a, 1), count(*), quantile(0.9)(x) FROM t
+RT_lambda	SELECT arrayMap(x -> (x * 2), [1, 2, 3])
+RT_subquery	SELECT * FROM (SELECT 1 AS x)
+RT_param	SELECT {param:UInt64}
+RT_asterisk	SELECT * FROM t
+RT_qual_asterisk	SELECT t.* FROM t
+RT_columns_regexp	SELECT COLUMNS(\'col.*\') FROM t
+RT_columns_list	SELECT COLUMNS(a, b) FROM t
+RT_qual_columns_regexp	SELECT t.COLUMNS(\'x.*\') FROM t
+RT_qual_columns_list	SELECT t.COLUMNS(a, b) FROM t
+RT_apply	SELECT * APPLY toString FROM t
+RT_except	SELECT * EXCEPT a FROM t
+RT_except_strict	SELECT * EXCEPT STRICT a FROM t
+RT_replace	SELECT * REPLACE (a + 1 AS a) FROM t
+RT_inner_join	SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id
+RT_left_join	SELECT a FROM t1 LEFT JOIN t2 USING (id)
+RT_cross_join	SELECT a FROM t1 CROSS JOIN t2
+RT_global_join	SELECT a FROM t1 GLOBAL LEFT JOIN t2 ON t1.id = t2.id
+RT_natural_join	SELECT a FROM t1 NATURAL INNER JOIN t2
+RT_array_join	SELECT x FROM t ARRAY JOIN arr AS x
+RT_left_array_join	SELECT x FROM t LEFT ARRAY JOIN arr AS x
+RT_order_by	SELECT a FROM t ORDER BY a ASC NULLS FIRST, b DESC NULLS LAST
+RT_order_by_fill	SELECT a FROM t ORDER BY a ASC WITH FILL FROM 1 TO 10 STEP 1
+RT_window	SELECT row_number() OVER (PARTITION BY a ORDER BY b ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM t
+RT_window_named	SELECT row_number() OVER w FROM t WINDOW w AS (PARTITION BY a ORDER BY b ASC)
+RT_sample	SELECT a FROM t SAMPLE 1 / 10
+RT_sample_offset	SELECT a FROM t SAMPLE 1 / 10 OFFSET 5 / 10
+RT_interpolate	SELECT a, b FROM t ORDER BY a ASC WITH FILL INTERPOLATE (`b` AS b + 1)
+RT_collation	SELECT a FROM t ORDER BY a ASC COLLATE \'en\'
+RT_set	SET max_threads = 4
+RT_explain_ast	EXPLAIN AST SELECT 1
+RT_explain_syntax	EXPLAIN SYNTAX SELECT 1
+RT_with	WITH x AS (SELECT 1 AS a) SELECT * FROM x
+RT_rollup	SELECT a, b, count() FROM t GROUP BY a, b WITH ROLLUP
+RT_cube	SELECT a, b, count() FROM t GROUP BY a, b WITH CUBE
+RT_grouping_sets	SELECT a, b, count() FROM t GROUP BY GROUPING SETS ((a), (b))
+RT_limit_with_ties	SELECT a FROM t ORDER BY a ASC LIMIT 5  WITH TIES
+RT_limit_by	SELECT a, b FROM t LIMIT 1 BY a
+RT_qualify	SELECT a, row_number() OVER (ORDER BY a ASC) AS rn FROM t QUALIFY rn <= 3
+RT_settings	SELECT 1 SETTINGS max_threads = 1
+RT_final	SELECT a FROM t FINAL
+RT_table_func	SELECT * FROM numbers(10)
+RT_create_table	CREATE TABLE db.t (`id` UInt64, `name` String DEFAULT \'x\', `ts` DateTime, INDEX idx name TYPE bloom_filter GRANULARITY 4, CONSTRAINT c CHECK id > 0, PROJECTION p (SELECT id, count() GROUP BY id)) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY id
+RT_create_ine	CREATE TABLE IF NOT EXISTS t (`a` UInt64) ENGINE = MergeTree ORDER BY a
+RT_create_codec	CREATE TABLE t (`a` UInt64 COMMENT \'my col\' CODEC(LZ4)) ENGINE = MergeTree ORDER BY a
+RT_create_ttl	CREATE TABLE t (`a` UInt64, `d` DateTime) ENGINE = MergeTree ORDER BY a TTL d + toIntervalDay(1)
+RT_create_settings	CREATE TABLE t (`a` UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192
+RT_create_sample	CREATE TABLE t (`a` UInt64) ENGINE = MergeTree ORDER BY a SAMPLE BY a
+RT_create_as_select	CREATE TABLE t ENGINE = MergeTree ORDER BY a AS SELECT 1 AS a
+RT_create_view	CREATE VIEW v AS SELECT 1
+RT_create_mv	CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY a AS SELECT 1 AS a
+RT_drop_table	DROP TABLE IF EXISTS t
+RT_drop_db	DROP DATABASE IF EXISTS db
+RT_drop_view	DROP VIEW IF EXISTS v
+RT_drop_sync	DROP TABLE IF EXISTS t SYNC
+RT_insert	INSERT INTO t SELECT 1, 2
+RT_insert_cols	INSERT INTO t (a, b) SELECT 1, 2
+RT_alter_add	ALTER TABLE t (ADD COLUMN `c` UInt64)
+RT_alter_drop	ALTER TABLE t (DROP COLUMN c)
+RT_alter_modify	ALTER TABLE t (MODIFY COLUMN `c` String)
+RT_alter_rename	ALTER TABLE t (RENAME COLUMN a TO b)
+RT_alter_update	ALTER TABLE t (UPDATE  a = 1 WHERE b = 2)
+RT_alter_delete	ALTER TABLE t (DELETE WHERE a = 1)
+RT_alter_partition	ALTER TABLE t (DROP PARTITION 202301)
+RT_rename	RENAME TABLE a TO b
+RT_rename_db	RENAME TABLE db1.a TO db2.b
+RT_exchange	EXCHANGE TABLES a AND b
+RT_dictionary	CREATE DICTIONARY dict (`id` UInt64, `name` String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LIFETIME(MIN 0 MAX 1000) LAYOUT(HASHED())
+RT_dict_range	CREATE DICTIONARY dict (`id` UInt64, `start` DateTime, `end` DateTime, `name` String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LIFETIME(MIN 0 MAX 1000) LAYOUT(RANGE_HASHED()) RANGE(MIN start MAX end)
+RT_system_flush	SYSTEM FLUSH LOGS
+RT_system_stop	SYSTEM STOP MERGES t
+RT_show_tables	SHOW TABLES FROM db
+RT_show_tables_like	SHOW TABLES LIKE \'%test%\'
+RT_show_databases	SHOW DATABASES
+RT_show_columns	SHOW COLUMNS FROM t
+RT_kill	KILL QUERY WHERE query_id = \'abc\' ASYNC
+RT_optimize	OPTIMIZE TABLE t FINAL
+RT_optimize_dedup	OPTIMIZE TABLE t FINAL DEDUPLICATE
+RT_use	USE mydb
+RT_check	CHECK TABLE t
+RT_delete	DELETE FROM t WHERE id = 1
+RT_begin	BEGIN TRANSACTION
+RT_commit	COMMIT
+RT_rollback	ROLLBACK
+RT_backup	BACKUP  TO Disk(\'default\', \'backup1\')
+RT_multi_join	SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON t2.id = t3.id
+RT_aliases	SELECT a AS x, b AS y FROM t AS u
+RT_refresh	CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 HOUR ENGINE = MergeTree ORDER BY a AS SELECT 1 AS a
+RT_sql_security	CREATE VIEW v DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT 1
+Idempotent_select	1
+Idempotent_create	1
+Idempotent_dict	1
