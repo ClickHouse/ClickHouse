@@ -3222,10 +3222,13 @@ document.getElementById('download-button').addEventListener('click', async funct
 
     terminalResizer.addEventListener('touchstart', function(e) { e.preventDefault(); });
 
-    // Listen for session-ended message from the webterminal iframe
+    // Listen for messages from the webterminal iframe
     window.addEventListener('message', function(e) {
-        if (e.data && e.data.type === 'webterminal-closed') {
+        if (!e.data) return;
+        if (e.data.type === 'webterminal-closed') {
             closeTerminal();
+        } else if (e.data.type === 'webterminal-escape') {
+            hideTerminal();
         }
     });
 }

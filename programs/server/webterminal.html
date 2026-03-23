@@ -131,6 +131,17 @@
         term.open(document.getElementById('terminal-container'));
         fitAddon.fit();
 
+        // Escape key: when inside an iframe (playground), notify parent to deactivate terminal
+        if (window.parent !== window) {
+            term.attachCustomKeyEventHandler(function(e) {
+                if (e.type === 'keydown' && e.key === 'Escape') {
+                    window.parent.postMessage({type: 'webterminal-escape'}, window.location.origin);
+                    return false;
+                }
+                return true;
+            });
+        }
+
         window.addEventListener('resize', function() {
             fitAddon.fit();
         });
