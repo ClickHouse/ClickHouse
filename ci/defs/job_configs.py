@@ -388,6 +388,17 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_CFI],
         ),
     )
+    cfi_integration_jobs = common_integration_test_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"amd_cfi, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_CFI],
+            )
+            for total_batches in (4,)
+            for batch in range(1, total_batches + 1)
+        ]
+    )
     extra_validation_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",

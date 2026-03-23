@@ -19,6 +19,7 @@ workflow = Workflow.Config(
     jobs=[
         *JobConfigs.cfi_build_job,
         *JobConfigs.cfi_stateless_jobs,
+        *JobConfigs.cfi_integration_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.clickhouse_binaries,
