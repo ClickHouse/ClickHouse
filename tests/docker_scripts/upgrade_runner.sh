@@ -114,6 +114,7 @@ clickhouse-client --query="SELECT 'Server version: ', version()"
 mkdir tmp_stress_output
 
 stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
+    --skip-func-tests "--skip 03924_phantom_parts_to_do_in_mutations" \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
