@@ -491,13 +491,6 @@ public:
             if (fractional_limitby_limit > 0 || fractional_limitby_offset > 0)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
         }
-
-
-        if (query_node.isLimitWithTies())
-        {
-            if (is_limit_length_negative)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
-        }
     }
 
     bool aggregate_overflow_row = false;
@@ -1392,7 +1385,11 @@ void addLimitStep(
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
     {
-        auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
+        auto limit = std::make_unique<NegativeLimitStep>(
+            query_plan.getCurrentHeader(), limit_length, limit_offset, limit_with_ties, limit_with_ties_sort_description);
+
+        if (limit_with_ties)
+            limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
 
         query_plan.addStep(std::move(limit));
     }
@@ -1402,7 +1399,12 @@ void addLimitStep(
 
         query_plan.addStep(std::move(offset));
 
-        auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
+        auto limit = std::make_unique<NegativeLimitStep>(
+            query_plan.getCurrentHeader(), limit_length, 0, limit_with_ties, limit_with_ties_sort_description);
+
+        if (limit_with_ties)
+            limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
+
         query_plan.addStep(std::move(limit));
     }
     else if (!is_limit_length_negative && is_limit_offset_negative)

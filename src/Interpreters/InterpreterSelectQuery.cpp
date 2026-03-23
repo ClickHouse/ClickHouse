@@ -1837,10 +1837,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
                 if (query.limitLength() && !query.limitBy() && !query.limit_with_ties)
                 {
-                    /// Preliminary Limits mustn't be added if there is a fractional limit/offset
-                    /// because in order to correctly calculate the number of rows to be produced
-                    /// based on the given fraction the final limit/offset processor must count the entire dataset.
-                    /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
                     LimitInfo lim_info = getLimitLengthAndOffset(query, context);
                     if (lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0)
                         executePreLimit(query_plan, true);
@@ -3441,8 +3437,6 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT WITH TIES without ORDER BY");
             order_descr = getSortDescription(query, context);
 
-            if (lim_info.is_limit_length_negative || lim_info.is_limit_offset_negative)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
 
         if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
@@ -3483,7 +3477,11 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         }
         else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
-            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+            auto limit = std::make_unique<NegativeLimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, query.limit_with_ties, order_descr);
+
+            if (query.limit_with_ties)
+                limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
 
             query_plan.addStep(std::move(limit));
         }
@@ -3492,7 +3490,12 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
 
-            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
+            auto limit = std::make_unique<NegativeLimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, 0, query.limit_with_ties, order_descr);
+
+            if (query.limit_with_ties)
+                limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
+
             query_plan.addStep(std::move(limit));
         }
         else if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
