@@ -374,6 +374,7 @@ struct ToYearWeekImpl
         return yw.first * 100 + yw.second;
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
 };
 
@@ -409,6 +410,7 @@ struct ToStartOfWeekImpl
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
 };
 
@@ -442,6 +444,7 @@ struct ToLastDayOfWeekImpl
         return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
 };
 
@@ -471,6 +474,11 @@ struct ToWeekImpl
         YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode);
         return yw.second;
     }
+
+    /// toWeek() is not monotonic because week numbers can wrap at year boundaries
+    /// (e.g. ISO week 52 -> week 1 in late December), depending on the week_mode.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/90240
+    static constexpr bool hasMonotonicity() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -1400,6 +1408,7 @@ struct ToDayOfWeekImpl
         return time_zone.toDayOfWeek(DayNum(d), mode);
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ToMondayImpl;
 };
 
