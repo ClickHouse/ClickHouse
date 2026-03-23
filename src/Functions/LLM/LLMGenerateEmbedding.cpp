@@ -485,7 +485,7 @@ REGISTER_FUNCTION(GenerateEmbedding)
         .examples = {
             {"basic", "SELECT generateEmbedding('Hello world', 256)", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 REGISTER_FUNCTION(GenerateEmbeddingOrNull)
@@ -504,7 +504,7 @@ REGISTER_FUNCTION(GenerateEmbeddingOrNull)
             {"basic", "SELECT generateEmbeddingOrNull('Hello world', 256)", ""},
             {"error_safe", "SELECT generateEmbeddingOrNull(text, 256) FROM docs", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 }

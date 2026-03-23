@@ -176,7 +176,7 @@ REGISTER_FUNCTION(LLMGenerateSQL)
         .returned_value = {"Generated SQL query as String.", {"String"}},
         .examples = {{"basic", "SELECT LLMGenerateSQL('top 10 users by revenue')", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 }

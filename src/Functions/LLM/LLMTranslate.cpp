@@ -73,7 +73,7 @@ REGISTER_FUNCTION(LLMTranslate)
         .returned_value = {"Translated text as String.", {"String"}},
         .examples = {{"basic", "SELECT LLMTranslate(body, 'French') FROM articles", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 }

@@ -77,7 +77,7 @@ REGISTER_FUNCTION(LLMGenerateContent)
         .returned_value = {"Generated text as String.", {"String"}},
         .examples = {{"basic", "SELECT LLMGenerateContent('Explain what ClickHouse is in one sentence')", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 }

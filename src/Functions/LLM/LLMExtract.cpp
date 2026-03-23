@@ -163,7 +163,7 @@ REGISTER_FUNCTION(LLMExtract)
         .returned_value = {"Extracted value as String.", {"String"}},
         .examples = {{"basic", "SELECT LLMExtract(body, 'main complaint') FROM reviews", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 }
