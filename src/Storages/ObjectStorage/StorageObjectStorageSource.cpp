@@ -30,7 +30,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/HivePartitioningUtils.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -151,7 +150,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     StorageObjectStorageConfigurationPtr configuration,
     const StorageObjectStorageQuerySettings & query_settings,
     ObjectStoragePtr object_storage,
-    StorageMetadataPtr storage_metadata,
+    StorageMetadataPtr /* storage_metadata */,
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
@@ -253,23 +252,6 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 file_progress_callback);
         }
     }
-    else if (configuration->supportsFileIterator())
-    {
-        auto iter = configuration->iterate(
-            filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_metadata, local_context);
-
-        if (filter_actions_dag)
-        {
-            iter = std::make_shared<ObjectIteratorWithPathAndFileFilter>(
-                std::move(iter),
-                *filter_actions_dag,
-                virtual_columns,
-                hive_columns,
-                configuration->getNamespace(),
-                local_context);
-        }
-        return iter;
-    }
     else
     {
         Strings paths;
@@ -362,12 +344,6 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
-            std::string full_path = object_info->getPath();
-
-            const auto reading_path = configuration->getPathForRead().path;
-
-            if (!full_path.starts_with(reading_path))
-                full_path = fs::path(reading_path) / object_info->getPath();
 
             auto object_metadata = object_info->getObjectMetadata();
 
@@ -398,63 +374,6 @@ Chunk StorageObjectStorageSource::generate()
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
                 },
                 read_context);
-
-#if USE_PARQUET
-            if (chunk_size && chunk.hasColumns())
-            {
-                /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
-                if (dynamic_cast<const DeltaLakeMetadata *>(configuration->getExternalMetadata()))
-                {
-                    /// This is an awful temporary crutch,
-                    /// which will be removed once DeltaKernel is used by default for DeltaLake.
-                    /// (Because it does not make sense to support it in a nice way
-                    /// because the code will be removed ASAP anyway)
-                    if (configuration->isDataLakeConfiguration())
-                    {
-                        /// A terrible crutch, but it this code will be removed next month.
-                        DeltaLakePartitionColumns partition_columns;
-#if USE_AWS_S3
-                        if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
-                        {
-                            partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
-                        }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-                        if (auto * delta_conf_azure = dynamic_cast<StorageAzureDeltaLakeConfiguration *>(configuration.get()))
-                        {
-                            partition_columns = delta_conf_azure->getDeltaLakePartitionColumns();
-                        }
-#endif
-                        if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
-                        {
-                            partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
-                        }
-                        if (!partition_columns.empty())
-                        {
-                            auto partition_values = partition_columns.find(full_path);
-                            if (partition_values != partition_columns.end())
-                            {
-                                for (const auto & [name_and_type, value] : partition_values->second)
-                                {
-                                    if (!read_from_format_info.source_header.has(name_and_type.name))
-                                        continue;
-
-                                    const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
-                                    auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
-                                    /// This column is filled with default value now, remove it.
-                                    chunk.erase(column_pos);
-                                    /// Add correct values.
-                                    if (column_pos < chunk.getNumColumns())
-                                        chunk.addColumn(column_pos, std::move(partition_column));
-                                    else
-                                        chunk.addColumn(std::move(partition_column));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-#endif
 
             /// Convert any Const columns to full columns before returning.
             /// This is necessary because when chunks with different Const values (e.g., partition columns
@@ -629,27 +548,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         Block initial_header = read_from_format_info.format_header;
-        bool schema_changed = false;
-
-        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
-        {
-            Block sample_header;
-            for (const auto & [name, type] : *initial_schema)
-            {
-                sample_header.insert({type->createColumn(), type, name});
-            }
-            initial_header = sample_header;
-            schema_changed = true;
-        }
-        auto filter_info = [&]()
-        {
-            if (!schema_changed)
-                return format_filter_info;
-            auto mapper = configuration->getColumnMapperForObject(object_info);
-            if (!mapper)
-                return format_filter_info;
-            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
-        }();
 
         chassert(object_info->getObjectMetadata().has_value());
 
@@ -679,7 +577,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 object_with_metadata,
                 format_settings,
                 parser_shared_resources,
-                filter_info,
+                format_filter_info,
                 true /* is_remote_fs */,
                 compression_method,
                 need_only_count,
@@ -697,7 +595,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             max_block_size,
             format_settings,
             parser_shared_resources,
-            filter_info,
+            format_filter_info,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
@@ -710,8 +608,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
-
-        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows
@@ -727,16 +623,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
         {
             schema_transform = object_info->data_lake_metadata->schema_transform->clone();
-            /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
-            /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
-            /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
             schema_transform->removeUnusedActions(read_from_format_info.requested_columns.getNames());
-        }
-        if (!schema_transform)
-        {
-            auto transform = configuration->getSchemaTransformer(context_, object_info);
-            if (transform)
-                schema_transform = transform->clone();
         }
 
         if (schema_transform.has_value())

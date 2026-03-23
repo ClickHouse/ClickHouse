@@ -259,7 +259,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     {
         if constexpr (is_data_lake)
         {
-            storage = std::make_shared<StorageDataLakeCluster>(
+            storage = std::make_shared<StorageDataLakeCluster<typename Configuration::MetadataType>>(
                 parallel_replicas_cluster_name,
                 configuration,
                 getObjectStorage(context, !is_insert_query),
@@ -268,6 +268,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
                 ConstraintsDescription{},
                 partition_by,
                 context,
+                std::dynamic_pointer_cast<DataLakeStorageSettings>(settings),
                 /* is_table_function */true);
         }
         else

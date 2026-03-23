@@ -670,18 +670,47 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (can_use_parallel_replicas && !is_secondary_query)
     {
         auto storage_id = StorageID(getDatabaseName(), name);
-        auto storage_cluster = std::make_shared<StorageDataLakeCluster>(
-            parallel_replicas_cluster_name,
-            configuration,
-            configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(storage_id)),
-            storage_id,
-            columns,
-            ConstraintsDescription{},
-            nullptr,
-            context_,
-            /// Use is_table_function = true,
-            /// because this table is actually stateless like a table function.
-            /* is_table_function */true);
+
+        auto make_datalake_cluster_storage = [&]<typename MetadataType>() -> StoragePtr
+        {
+            return std::make_shared<StorageDataLakeCluster<MetadataType>>(
+                parallel_replicas_cluster_name,
+                configuration,
+                configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(storage_id)),
+                storage_id,
+                columns,
+                ConstraintsDescription{},
+                nullptr,
+                context_,
+                /* datalake_settings */ nullptr,
+                /// Use is_table_function = true,
+                /// because this table is actually stateless like a table function.
+                /* is_table_function */true);
+        };
+
+        StoragePtr storage_cluster;
+        switch (catalog->getCatalogType())
+        {
+#if USE_AVRO
+            case DatabaseDataLakeCatalogType::ICEBERG_REST:
+            case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+            case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
+            case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+            case DatabaseDataLakeCatalogType::GLUE:
+                storage_cluster = make_datalake_cluster_storage.template operator()<IcebergMetadata>();
+                break;
+            case DatabaseDataLakeCatalogType::PAIMON_REST:
+                storage_cluster = make_datalake_cluster_storage.template operator()<PaimonMetadata>();
+                break;
+#endif
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+            case DatabaseDataLakeCatalogType::UNITY:
+                storage_cluster = make_datalake_cluster_storage.template operator()<DeltaLakeMetadata>();
+                break;
+#endif
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported catalog type for creating StorageDataLakeCluster");
+        }
 
         storage_cluster->startup();
         return storage_cluster;

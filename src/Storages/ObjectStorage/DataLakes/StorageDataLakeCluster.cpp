@@ -7,23 +7,27 @@
 #include <Interpreters/Context.h>
 
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/IPartitionStrategy.h>
 
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
+
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
 }
@@ -33,32 +37,27 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-String StorageDataLakeCluster::getPathSample(ContextPtr context)
+template <typename DataLakeMetadata>
+void StorageDataLakeCluster<DataLakeMetadata>::ensureMetadataInitialized(ContextPtr context) const
 {
-    auto query_settings = configuration->getQuerySettings(context);
-    /// We don't want to throw an exception if there are no files with specified path.
-    query_settings.throw_on_zero_files_match = false;
-    auto file_iterator = StorageObjectStorageSource::createFileIterator(
-        configuration,
-        query_settings,
-        object_storage,
-        nullptr, // storage_metadata
-        false, // distributed_processing
-        context,
-        {}, // predicate
-        {},
-        {}, // virtual_columns
-        {}, // hive_columns
-        nullptr, // read_keys
-        {} // file_progress_callback
-    );
-
-    if (auto file = file_iterator->next(0))
-        return file->getPath();
-    return "";
+    if (current_metadata)
+        return;
+    current_metadata = DataLakeMetadata::create(object_storage, configuration, context);
 }
 
-StorageDataLakeCluster::StorageDataLakeCluster(
+template <typename DataLakeMetadata>
+void StorageDataLakeCluster<DataLakeMetadata>::updateMetadata(ContextPtr context) const
+{
+    if (current_metadata && current_metadata->supportsUpdate())
+    {
+        current_metadata->update(context);
+        return;
+    }
+    current_metadata = DataLakeMetadata::create(object_storage, configuration, context);
+}
+
+template <typename DataLakeMetadata>
+StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
     const String & cluster_name_,
     StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
@@ -67,11 +66,13 @@ StorageDataLakeCluster::StorageDataLakeCluster(
     const ConstraintsDescription & constraints_,
     const ASTPtr & partition_by,
     ContextPtr context_,
+    DataLakeStorageSettingsPtr datalake_settings_,
     bool is_table_function)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
+    , datalake_settings(std::move(datalake_settings_))
 {
     configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
     /// We allow exceptions to be thrown on update(),
@@ -79,39 +80,26 @@ StorageDataLakeCluster::StorageDataLakeCluster(
     /// so no lazy initialization is allowed.
     configuration->update(object_storage, context_);
 
+    current_metadata = DataLakeMetadata::create(object_storage, configuration, context_);
+
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
-    if (sample_path.empty()
-        && context_->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->isDataLakeConfiguration()
-        && !configuration->partition_strategy)
-        sample_path = getPathSample(context_);
-
-    /// Not grabbing the file_columns because it is not necessary to do it here.
-    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
-        columns,
-        configuration,
-        sample_path,
-        columns_in_table_or_function_definition.empty(),
-        std::nullopt,
-        context_);
-
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
-    if (is_table_function && configuration->isDataLakeConfiguration())
+    if (is_table_function)
     {
         /// For datalake table functions, always pin the current snapshot version so that
         /// query execution uses the same snapshot as query analysis (logical-race fix).
         /// Additionally reload columns from the snapshot when the per-format setting is enabled.
-        if (auto state = configuration->getTableStateSnapshot(context_))
+        if (auto state = current_metadata->getTableStateSnapshot(context_))
         {
             metadata.setDataLakeTableState(*state);
-            if (configuration->shouldReloadSchemaForConsistency(context_))
+            if (current_metadata->shouldReloadSchemaForConsistency(context_))
             {
-                if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, context_))
+                if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, context_))
                     metadata = *metadata_snapshot;
             }
         }
@@ -129,28 +117,28 @@ StorageDataLakeCluster::StorageDataLakeCluster(
     setInMemoryMetadata(metadata);
 }
 
-std::string StorageDataLakeCluster::getName() const
+template <typename DataLakeMetadata>
+std::string StorageDataLakeCluster<DataLakeMetadata>::getName() const
 {
     return configuration->getEngineName();
 }
 
-std::optional<UInt64> StorageDataLakeCluster::totalRows(ContextPtr query_context) const
+template <typename DataLakeMetadata>
+std::optional<UInt64> StorageDataLakeCluster<DataLakeMetadata>::totalRows(ContextPtr query_context) const
 {
-    configuration->lazyInitializeIfNeeded(
-        object_storage,
-        query_context);
-    return configuration->totalRows(query_context);
+    ensureMetadataInitialized(query_context);
+    return current_metadata->totalRows(query_context);
 }
 
-std::optional<UInt64> StorageDataLakeCluster::totalBytes(ContextPtr query_context) const
+template <typename DataLakeMetadata>
+std::optional<UInt64> StorageDataLakeCluster<DataLakeMetadata>::totalBytes(ContextPtr query_context) const
 {
-    configuration->lazyInitializeIfNeeded(
-        object_storage,
-        query_context);
-    return configuration->totalBytes(query_context);
+    ensureMetadataInitialized(query_context);
+    return current_metadata->totalBytes(query_context);
 }
 
-void StorageDataLakeCluster::updateQueryToSendIfNeeded(
+template <typename DataLakeMetadata>
+void StorageDataLakeCluster<DataLakeMetadata>::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
@@ -204,56 +192,44 @@ void StorageDataLakeCluster::updateQueryToSendIfNeeded(
     }
 }
 
-void StorageDataLakeCluster::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+template <typename DataLakeMetadata>
+void StorageDataLakeCluster<DataLakeMetadata>::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    if (!configuration->isDataLakeConfiguration())
-        return;
-
     /// Always force an update to pick up the latest snapshot version.
-    /// Using if_not_updated_before=true would leave latest_snapshot_version
-    /// stale from the first query and silently omit new files.
-    configuration->update(
-        object_storage,
-        query_context);
+    updateMetadata(query_context);
 
-    auto state = configuration->getTableStateSnapshot(query_context);
+    auto state = current_metadata->getTableStateSnapshot(query_context);
     if (!state)
         return;
 
     auto new_metadata = *getInMemoryMetadataPtr();
     new_metadata.setDataLakeTableState(*state);
 
-    if (configuration->shouldReloadSchemaForConsistency(query_context))
+    if (current_metadata->shouldReloadSchemaForConsistency(query_context))
     {
-        if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
+        if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, query_context))
             new_metadata = *metadata_snapshot;
     }
 
     setInMemoryMetadata(new_metadata);
 }
 
-RemoteQueryExecutor::Extension StorageDataLakeCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate,
+template <typename DataLakeMetadata>
+RemoteQueryExecutor::Extension StorageDataLakeCluster<DataLakeMetadata>::getTaskIteratorExtension(
+    const ActionsDAG::Node * /*predicate*/,
     const ActionsDAG * filter,
     const ContextPtr & local_context,
     ClusterPtr cluster,
     StorageMetadataPtr storage_metadata_snapshot) const
 {
-    auto iterator = StorageObjectStorageSource::createFileIterator(
-        configuration,
-        configuration->getQuerySettings(local_context),
-        object_storage,
-        storage_metadata_snapshot,
-        /* distributed_processing */ false,
-        local_context,
-        predicate,
+    ensureMetadataInitialized(local_context);
+
+    auto iterator = current_metadata->iterate(
         filter,
-        virtual_columns,
-        hive_partition_columns_to_read_from_file_path,
-        nullptr,
         local_context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/false,
-        /*skip_object_metadata=*/true);
+        configuration->getQuerySettings(local_context).list_object_keys_size,
+        storage_metadata_snapshot,
+        local_context);
 
     if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
     {
@@ -295,5 +271,17 @@ RemoteQueryExecutor::Extension StorageDataLakeCluster::getTaskIteratorExtension(
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
-}
+#if USE_AVRO
+template class StorageDataLakeCluster<IcebergMetadata>;
+template class StorageDataLakeCluster<PaimonMetadata>;
+#endif
 
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+template class StorageDataLakeCluster<DeltaLakeMetadata>;
+#endif
+
+#if USE_AWS_S3
+template class StorageDataLakeCluster<HudiMetadata>;
+#endif
+
+}

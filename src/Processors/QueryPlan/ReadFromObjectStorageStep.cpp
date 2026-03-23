@@ -9,8 +9,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>
@@ -103,7 +101,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         filter_actions_dag,
         context,
-        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+        nullptr,
         query_info.row_level_filter,
         query_info.prewhere_info);
 
@@ -170,7 +168,7 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
 
 bool ReadFromObjectStorageStep::requestReadingInOrder() const
 {
-    return configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
+    return false;
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const

@@ -1,12 +1,14 @@
 #pragma once
 #include <Storages/IStorageCluster.h>
-#include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
+template <typename DataLakeMetadata>
 class StorageDataLakeCluster : public IStorageCluster
 {
 public:
@@ -19,6 +21,7 @@ public:
         const ConstraintsDescription & constraints_,
         const ASTPtr & partition_by,
         ContextPtr context_,
+        DataLakeStorageSettingsPtr datalake_settings_,
         bool is_table_function_ = false);
 
     std::string getName() const override;
@@ -30,12 +33,13 @@ public:
         ClusterPtr cluster,
         StorageMetadataPtr storage_metadata_snapshot) const override;
 
-    String getPathSample(ContextPtr context);
-
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+
+protected:
+    mutable DataLakeMetadataPtr current_metadata;
 
 private:
     void updateQueryToSendIfNeeded(
@@ -43,11 +47,14 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context) override;
 
+    void ensureMetadataInitialized(ContextPtr context) const;
+    void updateMetadata(ContextPtr context) const;
+
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
+    const DataLakeStorageSettingsPtr datalake_settings;
     NamesAndTypesList virtual_columns;
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
 }
