@@ -29,7 +29,6 @@
 
 #include <unordered_map>
 #include <unordered_set>
-#include <sstream>
 
 namespace ProfileEvents
 {
@@ -60,7 +59,7 @@ namespace Setting
     extern const SettingsUInt64 llm_max_output_tokens_per_query;
     extern const SettingsUInt64 llm_max_api_calls_per_query;
     extern const SettingsString llm_on_quota_exceeded;
-    extern const SettingsUInt64 embedding_max_batch_size;
+    extern const SettingsUInt64 generateembedding_max_batch_size;
 }
 
 namespace ErrorCodes
@@ -86,6 +85,7 @@ String serializeEmbedding(const std::vector<Float32> & vec)
 
 std::vector<Float32> deserializeEmbedding(const String & data)
 {
+    chassert(data.size() % sizeof(Float32) == 0);
     size_t count = data.size() / sizeof(Float32);
     std::vector<Float32> vec(count);
     memcpy(vec.data(), data.data(), data.size());
@@ -113,7 +113,28 @@ public:
                 "AI function '{}' is experimental. Set `allow_experimental_ai_functions` setting to enable", name);
         return std::make_shared<FunctionGenerateEmbeddingImpl>(context);
     }
-    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_) : context(context_) {}
+
+    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_)
+        : context(context_)
+        , llm_request_timeout_sec(context_->getSettingsRef()[Setting::llm_request_timeout_sec])
+        , llm_max_concurrent_requests(context->getSettingsRef()[Setting::llm_max_concurrent_requests])
+        , llm_max_retries(context->getSettingsRef()[Setting::llm_max_retries])
+        , llm_retry_initial_delay_ms(context->getSettingsRef()[Setting::llm_retry_initial_delay_ms])
+        , llm_cache_ttl_sec(context->getSettingsRef()[Setting::llm_cache_ttl_sec])
+        , llm_max_rows_per_query(context->getSettingsRef()[Setting::llm_max_rows_per_query])
+        , llm_max_input_tokens_per_query(context->getSettingsRef()[Setting::llm_max_input_tokens_per_query])
+        , llm_max_output_tokens_per_query(context->getSettingsRef()[Setting::llm_max_output_tokens_per_query])
+        , llm_max_api_calls_per_query(context->getSettingsRef()[Setting::llm_max_api_calls_per_query])
+        , llm_on_error(context->getSettingsRef()[Setting::llm_on_error])
+        , llm_on_quota_exceeded(context->getSettingsRef()[Setting::llm_on_quota_exceeded])
+        , max_batch_size(context->getSettingsRef()[Setting::generateembedding_max_batch_size])
+        , default_llm_resource(context->getSettingsRef()[Setting::default_llm_resource])
+        , settings(context->getSettingsRef())
+        , server_settings(context->getServerSettings())
+    {
+        if (max_batch_size == 0)
+            max_batch_size = DEFAULT_EMBED_BATCH_SIZE;
+    }
 
     ContextPtr context;
 
@@ -138,8 +159,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const auto & settings = context->getSettingsRef();
-
         String provider_name;
         String endpoint_val;
         String model;
@@ -166,7 +185,7 @@ public:
             }
             else
             {
-                String collection_name = first_arg.empty() ? String(settings[Setting::default_llm_resource].value) : first_arg;
+                String collection_name = first_arg.empty() ? default_llm_resource : first_arg;
                 if (collection_name.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "No LLM named collection specified and default_llm_resource is not set");
@@ -180,7 +199,7 @@ public:
         }
         else
         {
-            String collection_name = settings[Setting::default_llm_resource].value;
+            String collection_name = default_llm_resource;
             if (collection_name.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "No LLM named collection specified and default_llm_resource is not set");
@@ -195,10 +214,6 @@ public:
         if (endpoint_val.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM embedding endpoint is not configured");
 
-        size_t max_batch_size = settings[Setting::embedding_max_batch_size].value;
-        if (max_batch_size == 0)
-            max_batch_size = DEFAULT_EMBED_BATCH_SIZE;
-
         auto provider = createLLMProvider(provider_name, endpoint_val, api_key);
 
         const auto * dim_const = checkAndGetColumn<ColumnConst>(arguments[dim_arg_idx].column.get());
@@ -206,25 +221,19 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dimensions argument must be a constant");
         UInt64 dimensions = dim_const->getUInt(0);
 
-        UInt64 timeout_sec = settings[Setting::llm_request_timeout_sec].value;
-        UInt64 max_concurrent = settings[Setting::llm_max_concurrent_requests].value;
-        UInt64 max_retries = settings[Setting::llm_max_retries].value;
-        UInt64 retry_delay_ms = settings[Setting::llm_retry_initial_delay_ms].value;
-        UInt64 cache_ttl = settings[Setting::llm_cache_ttl_sec].value;
-
-        String on_error = or_null ? "null" : String(settings[Setting::llm_on_error].value);
-        String on_quota = or_null ? "null" : String(settings[Setting::llm_on_quota_exceeded].value);
+        String on_error = or_null ? "null" : String(llm_on_error);
+        String on_quota = or_null ? "null" : String(llm_on_quota_exceeded);
 
         auto quota = std::make_shared<LLMQuotaTracker>(
-            settings[Setting::llm_max_rows_per_query].value,
-            settings[Setting::llm_max_input_tokens_per_query].value,
-            settings[Setting::llm_max_output_tokens_per_query].value,
-            settings[Setting::llm_max_api_calls_per_query].value,
+            llm_max_rows_per_query,
+            llm_max_input_tokens_per_query,
+            llm_max_output_tokens_per_query,
+            llm_max_api_calls_per_query,
             on_quota,
             on_error);
 
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, context->getServerSettings());
-        timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec), 0);
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings);
+        timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(llm_request_timeout_sec), 0);
 
         std::unordered_map<UInt128, std::vector<size_t>, UInt128Hash> dedup_map;
         std::unordered_set<size_t> null_input_rows;
@@ -254,8 +263,8 @@ public:
         std::unordered_map<UInt128, std::vector<Float32>, UInt128Hash> results;
         std::mutex results_mutex;
 
-        std::atomic<UInt64> total_api_calls{0};
-        std::atomic<UInt64> total_input_tokens{0};
+        UInt64 total_api_calls = 0;
+        UInt64 total_input_tokens = 0;
         UInt64 cache_hits = 0;
         UInt64 cache_misses = 0;
 
@@ -300,7 +309,7 @@ public:
 
             auto pool = std::make_unique<ThreadPool>(
                 CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(),
-                max_concurrent, max_concurrent, max_concurrent);
+                llm_max_concurrent_requests, llm_max_concurrent_requests, llm_max_concurrent_requests);
 
             for (auto & batch : batches)
             {
@@ -318,7 +327,7 @@ public:
 
                 pool->scheduleOrThrowOnError([&, batch_items = std::move(batch)]
                 {
-                    for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
+                    for (UInt64 attempt = 0; attempt <= llm_max_retries; ++attempt)
                     {
                         try
                         {
@@ -331,8 +340,8 @@ public:
 
                             auto resp = provider->embed(req, timeouts);
 
-                            total_input_tokens.fetch_add(resp.input_tokens, std::memory_order_relaxed);
-                            total_api_calls.fetch_add(1, std::memory_order_relaxed);
+                            total_input_tokens += resp.input_tokens;
+                            total_api_calls += 1;
 
                             {
                                 std::lock_guard lock(results_mutex);
@@ -353,7 +362,7 @@ public:
                                 {
                                     const auto & embedding = (i < resp.embeddings.size()) ? resp.embeddings[i] : resp.embeddings.back();
 
-                                    if (cache_ttl > 0 && !embedding.empty())
+                                    if (llm_cache_ttl_sec > 0 && !embedding.empty())
                                     {
                                         auto entry = std::make_shared<LLMCacheEntry>();
                                         entry->result = serializeEmbedding(embedding);
@@ -361,7 +370,7 @@ public:
                                         entry->model = model;
                                         entry->result_size_bytes = entry->result.size();
                                         entry->created_at = std::chrono::system_clock::now();
-                                        entry->expires_at = entry->created_at + std::chrono::seconds(cache_ttl);
+                                        entry->expires_at = entry->created_at + std::chrono::seconds(llm_cache_ttl_sec);
                                         cache.set(batch_items[i]->key, entry);
                                     }
 
@@ -372,9 +381,9 @@ public:
                         }
                         catch (const Exception & e)
                         {
-                            if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                            if (attempt < llm_max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
                             {
-                                std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms * (1ULL << attempt)));
+                                std::this_thread::sleep_for(std::chrono::milliseconds(llm_retry_initial_delay_ms * (1ULL << attempt)));
                                 continue;
                             }
 
@@ -417,8 +426,8 @@ public:
 
         ProfileEvents::increment(ProfileEvents::AICacheHits, cache_hits);
         ProfileEvents::increment(ProfileEvents::AICacheMisses, cache_misses);
-        ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls.load());
-        ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens.load());
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
 
         auto data_col = ColumnVector<Float32>::create();
         auto offsets_col = ColumnArray::ColumnOffsets::create();
@@ -466,6 +475,21 @@ public:
     }
 
 private:
+        const UInt64 llm_request_timeout_sec;
+        const UInt64 llm_max_concurrent_requests;
+        const UInt64 llm_max_retries;
+        const UInt64 llm_retry_initial_delay_ms;
+        const UInt64 llm_cache_ttl_sec;
+        const UInt64 llm_max_rows_per_query;
+        const UInt64 llm_max_input_tokens_per_query;
+        const UInt64 llm_max_output_tokens_per_query;
+        const UInt64 llm_max_api_calls_per_query;
+        const String llm_on_error;
+        const String llm_on_quota_exceeded;
+        UInt64 max_batch_size;
+        const String default_llm_resource;
+        const Settings & settings;
+        const ServerSettings & server_settings;
 };
 
 }

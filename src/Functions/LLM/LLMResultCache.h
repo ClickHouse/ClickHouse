@@ -5,7 +5,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Core/Types.h>
 #include <chrono>
-#include <mutex>
 
 
 namespace DB

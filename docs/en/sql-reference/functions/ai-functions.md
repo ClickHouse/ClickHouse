@@ -312,7 +312,7 @@ LIMIT 5;
 
 Generates a vector embedding for input text using an embedding model.
 
-This function supports **batch API calls**, when processing multiple rows, texts are grouped into batches (configurable via [`embedding_max_batch_size`](/operations/settings/settings#embedding_max_batch_size)) and sent in a single HTTP request, significantly reducing overhead.
+This function supports **batch API calls**, when processing multiple rows, texts are grouped into batches (configurable via [`generateembedding_max_batch_size`](/operations/settings/settings#generateembedding_max_batch_size)) and sent in a single HTTP request, significantly reducing overhead.
 
 Returns an empty array `[]` for NULL or empty inputs.
 
