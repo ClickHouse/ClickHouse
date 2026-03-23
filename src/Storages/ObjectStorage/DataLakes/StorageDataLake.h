@@ -24,9 +24,11 @@ struct IPartitionStrategy;
 
 /**
  * A class containing implementation for data lake table engines
- * (Iceberg, DeltaLake, Hudi).
+ * (Iceberg, DeltaLake, Hudi, Paimon).
+ * Templated on the metadata type to allow compile-time specialization.
  * Works with an object of IObjectStorage class.
  */
+template <typename DataLakeMetadata>
 class StorageDataLake : public IStorage
 {
 public:

@@ -1,4 +1,8 @@
 #include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -46,7 +50,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StorageDataLake::StorageDataLake(
+template <typename DataLakeMetadata>
+StorageDataLake<DataLakeMetadata>::StorageDataLake(
     StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     ContextPtr context,
@@ -201,53 +206,63 @@ StorageDataLake::StorageDataLake(
     setInMemoryMetadata(metadata);
 }
 
-String StorageDataLake::getName() const
+template <typename DataLakeMetadata>
+String StorageDataLake<DataLakeMetadata>::getName() const
 {
     return configuration->getEngineName();
 }
 
-bool StorageDataLake::prefersLargeBlocks() const
+template <typename DataLakeMetadata>
+bool StorageDataLake<DataLakeMetadata>::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration->format);
 }
 
-bool StorageDataLake::parallelizeOutputAfterReading(ContextPtr context) const
+template <typename DataLakeMetadata>
+bool StorageDataLake<DataLakeMetadata>::parallelizeOutputAfterReading(ContextPtr context) const
 {
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
 }
 
-bool StorageDataLake::supportsSubsetOfColumns(const ContextPtr & context) const
+template <typename DataLakeMetadata>
+bool StorageDataLake<DataLakeMetadata>::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-bool StorageDataLake::supportsPrewhere() const
+template <typename DataLakeMetadata>
+bool StorageDataLake<DataLakeMetadata>::supportsPrewhere() const
 {
     return supports_prewhere;
 }
 
-bool StorageDataLake::canMoveConditionsToPrewhere() const
+template <typename DataLakeMetadata>
+bool StorageDataLake<DataLakeMetadata>::canMoveConditionsToPrewhere() const
 {
     return supports_prewhere;
 }
 
-std::optional<NameSet> StorageDataLake::supportedPrewhereColumns() const
+template <typename DataLakeMetadata>
+std::optional<NameSet> StorageDataLake<DataLakeMetadata>::supportedPrewhereColumns() const
 {
     return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ {});
 }
 
-IStorage::ColumnSizeByName StorageDataLake::getColumnSizes() const
+template <typename DataLakeMetadata>
+IStorage::ColumnSizeByName StorageDataLake<DataLakeMetadata>::getColumnSizes() const
 {
     return getInMemoryMetadataPtr()->getFakeColumnSizes();
 }
 
-IDataLakeMetadata * StorageDataLake::getExternalMetadata(ContextPtr query_context)
+template <typename DataLakeMetadata>
+IDataLakeMetadata * StorageDataLake<DataLakeMetadata>::getExternalMetadata(ContextPtr query_context)
 {
     configuration->update(object_storage, query_context);
     return configuration->getExternalMetadata();
 }
 
-void StorageDataLake::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
     /// Always force an update to pick up the latest snapshot version.
     /// Using if_not_updated_before=true would leave latest_snapshot_version
@@ -275,7 +290,8 @@ void StorageDataLake::updateExternalDynamicMetadataIfExists(ContextPtr query_con
 }
 
 
-std::optional<UInt64> StorageDataLake::totalRows(ContextPtr query_context) const
+template <typename DataLakeMetadata>
+std::optional<UInt64> StorageDataLake<DataLakeMetadata>::totalRows(ContextPtr query_context) const
 {
     if (!configuration->supportsTotalRows(query_context, object_storage->getType()))
         return std::nullopt;
@@ -291,7 +307,8 @@ std::optional<UInt64> StorageDataLake::totalRows(ContextPtr query_context) const
     return configuration->totalRows(query_context);
 }
 
-std::optional<UInt64> StorageDataLake::totalBytes(ContextPtr query_context) const
+template <typename DataLakeMetadata>
+std::optional<UInt64> StorageDataLake<DataLakeMetadata>::totalBytes(ContextPtr query_context) const
 {
     if (!configuration->supportsTotalBytes(query_context, object_storage->getType()))
         return std::nullopt;
@@ -303,7 +320,8 @@ std::optional<UInt64> StorageDataLake::totalBytes(ContextPtr query_context) cons
     return configuration->totalBytes(query_context);
 }
 
-void StorageDataLake::read(
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -405,7 +423,8 @@ void StorageDataLake::read(
     query_plan.addStep(std::move(read_step));
 }
 
-SinkToStoragePtr StorageDataLake::write(
+template <typename DataLakeMetadata>
+SinkToStoragePtr StorageDataLake<DataLakeMetadata>::write(
     const ASTPtr &,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context,
@@ -418,7 +437,8 @@ SinkToStoragePtr StorageDataLake::write(
     return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
 }
 
-bool StorageDataLake::optimize(
+template <typename DataLakeMetadata>
+bool StorageDataLake<DataLakeMetadata>::optimize(
     const ASTPtr & /*query*/,
     [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
     const ASTPtr & /*partition*/,
@@ -431,7 +451,8 @@ bool StorageDataLake::optimize(
     return configuration->optimize(metadata_snapshot, context, format_settings);
 }
 
-void StorageDataLake::truncate(
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
     ContextPtr /* context */,
@@ -440,7 +461,8 @@ void StorageDataLake::truncate(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported for data lake engine");
 }
 
-void StorageDataLake::drop()
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::drop()
 {
     if (catalog)
     {
@@ -451,24 +473,28 @@ void StorageDataLake::drop()
     configuration->drop(Context::getGlobalContextInstance());
 }
 
-void StorageDataLake::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
 }
 
-void StorageDataLake::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
     configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
 }
 
-void StorageDataLake::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
     configuration->checkMutationIsPossible(commands);
 }
 
-Pipe StorageDataLake::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
+template <typename DataLakeMetadata>
+Pipe StorageDataLake<DataLakeMetadata>::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
     auto * metadata = getExternalMetadata(context);
     if (!metadata)
@@ -476,7 +502,8 @@ Pipe StorageDataLake::executeCommand(const String & command_name, const ASTPtr &
     return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
 }
 
-void StorageDataLake::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
@@ -489,10 +516,23 @@ void StorageDataLake::alter(const AlterCommands & params, ContextPtr context, Al
     setInMemoryMetadata(new_metadata);
 }
 
-void StorageDataLake::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
+template <typename DataLakeMetadata>
+void StorageDataLake<DataLakeMetadata>::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
 {
     configuration->checkAlterIsPossible(commands);
 }
 
+#if USE_AVRO
+template class StorageDataLake<IcebergMetadata>;
+template class StorageDataLake<PaimonMetadata>;
+#endif
+
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+template class StorageDataLake<DeltaLakeMetadata>;
+#endif
+
+#if USE_AWS_S3
+template class StorageDataLake<HudiMetadata>;
+#endif
 
 }

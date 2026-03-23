@@ -308,7 +308,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     if constexpr (is_data_lake)
     {
-        storage = std::make_shared<StorageDataLake>(
+        storage = std::make_shared<StorageDataLake<typename Configuration::MetadataType>>(
             configuration,
             current_object_storage,
             context,

@@ -35,6 +35,10 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
 #include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -687,24 +691,47 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         context_->getClientInfo().collaborate_with_initiator &&
         can_use_parallel_replicas;
 
-    return std::make_shared<StorageDataLake>(
-        configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
-        context_copy,
-        StorageID(getDatabaseName(), name),
-        /* columns */columns,
-        /* constraints */ConstraintsDescription{},
-        /* comment */"",
-        getFormatSettings(context_copy),
-        LoadingStrictnessLevel::CREATE,
-        getCatalog(),
-        /* distributed_processing */can_use_distributed_iterator,
-        /* partition_by */nullptr,
-        /* order_by */nullptr,
-        /// Use is_table_function = true,
-        /// because this table is actually stateless like a table function.
-        /* is_table_function */true,
-        /* lazy_init */true);
+    auto make_datalake_storage = [&]<typename MetadataType>() -> StoragePtr
+    {
+        return std::make_shared<StorageDataLake<MetadataType>>(
+            configuration,
+            configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
+            context_copy,
+            StorageID(getDatabaseName(), name),
+            /* columns */columns,
+            /* constraints */ConstraintsDescription{},
+            /* comment */"",
+            getFormatSettings(context_copy),
+            LoadingStrictnessLevel::CREATE,
+            getCatalog(),
+            /* distributed_processing */can_use_distributed_iterator,
+            /* partition_by */nullptr,
+            /* order_by */nullptr,
+            /// Use is_table_function = true,
+            /// because this table is actually stateless like a table function.
+            /* is_table_function */true,
+            /* lazy_init */true);
+    };
+
+    switch (catalog->getCatalogType())
+    {
+#if USE_AVRO
+        case DatabaseDataLakeCatalogType::ICEBERG_REST:
+        case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+        case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
+        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        case DatabaseDataLakeCatalogType::GLUE:
+            return make_datalake_storage.template operator()<IcebergMetadata>();
+        case DatabaseDataLakeCatalogType::PAIMON_REST:
+            return make_datalake_storage.template operator()<PaimonMetadata>();
+#endif
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+        case DatabaseDataLakeCatalogType::UNITY:
+            return make_datalake_storage.template operator()<DeltaLakeMetadata>();
+#endif
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported catalog type for creating StorageDataLake");
+    }
 }
 
 void DatabaseDataLake::dropTable( /// NOLINT

@@ -57,7 +57,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 
     const auto access = context_copy->getAccess();
 
-    auto add_history_record = [&](const DatabaseTablesIteratorPtr & it, StorageDataLake * object_storage)
+    auto add_history_record = [&](const DatabaseTablesIteratorPtr & it, StorageDataLake<IcebergMetadata> * object_storage)
     {
         if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
             return;
@@ -106,7 +106,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     // Table was dropped while acquiring the lock, skipping table
                     continue;
 
-                if (auto * datalake_table = dynamic_cast<StorageDataLake *>(storage.get()))
+                if (auto * datalake_table = dynamic_cast<StorageDataLake<IcebergMetadata> *>(storage.get()))
                 {
                     add_history_record(iterator, datalake_table);
                 }
