@@ -1664,6 +1664,38 @@ void IMergeTreeDataPart::loadChecksums(bool require)
             assertEOF(*buf);
             bytes_on_disk = checksums.getTotalSizeOnDisk();
             bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
+
+            /// Strip .proj entries from checksums whose directories do not actually
+            /// exist on disk.  This can only happen for top-level parts, not for
+            /// projection sub-parts (which never contain .proj entries themselves).
+            /// The typical scenario: a part is fetched from a replica whose
+            /// checksums.txt references a projection that was dropped from the table
+            /// metadata -- the .proj directory is never transferred but checksums.txt
+            /// is copied verbatim from the sender.
+            /// Without this cleanup, checkDataPart would throw NO_FILE_IN_DATA_PART
+            /// and the part would be marked broken, causing an infinite re-fetch loop.
+            if (!parent_part)
+            {
+                bool has_phantom_projections = false;
+                for (auto it = checksums.files.begin(); it != checksums.files.end();)
+                {
+                    if (it->first.ends_with(".proj") && !getDataPartStorage().existsDirectory(it->first))
+                    {
+                        LOG_DEBUG(storage.log, "Part {}: ignoring phantom projection entry '{}' in checksums "
+                            "(directory does not exist on disk)", name, it->first);
+                        it = checksums.files.erase(it);
+                        has_phantom_projections = true;
+                    }
+                    else
+                        ++it;
+                }
+
+                if (has_phantom_projections)
+                {
+                    bytes_on_disk = checksums.getTotalSizeOnDisk();
+                    bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
+                }
+            }
         }
         else
             bytes_on_disk = getDataPartStorage().calculateTotalSizeOnDisk();
