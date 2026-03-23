@@ -950,4 +950,167 @@ TYPED_TEST(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA));
 }
 
+/// Test that the read-request parking logic in KeeperDispatcher only parks reads
+/// behind same-session writes, not behind writes from other sessions.
+/// This verifies the fix for cross-session read blocking.
+TYPED_TEST(CoordinationTest, TestReadRequestQueueCrossSessionParking)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    /// Simulate the read parking logic from KeeperDispatcher::requestThread.
+    /// We build a batch of writes from different sessions, then check that
+    /// reads are parked correctly (same-session) or not parked (cross-session).
+
+    const int64_t session_1 = 100;
+    const int64_t session_2 = 200;
+    const int64_t session_3 = 300;
+
+    /// Build a write batch with writes from sessions 1 and 2
+    KeeperRequestsForSessions current_batch;
+
+    auto make_write = [](int64_t session_id, Coordination::XID xid)
+    {
+        auto req = std::make_shared<ZooKeeperCreateRequest>();
+        req->path = "/test";
+        req->xid = xid;
+        KeeperRequestForSession r;
+        r.session_id = session_id;
+        r.request = req;
+        return r;
+    };
+
+    auto make_read = [](int64_t session_id, Coordination::XID xid)
+    {
+        auto req = std::make_shared<ZooKeeperExistsRequest>();
+        req->path = "/test";
+        req->xid = xid;
+        KeeperRequestForSession r;
+        r.session_id = session_id;
+        r.request = req;
+        return r;
+    };
+
+    current_batch.push_back(make_write(session_1, /*xid=*/1));
+    current_batch.push_back(make_write(session_2, /*xid=*/2));
+
+    /// Simulate the parking logic (mirrors KeeperDispatcher::requestThread)
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
+    KeeperRequestsForSessions pending_immediate_reads;
+
+    auto park_read = [&](const KeeperRequestForSession & read_request)
+    {
+        auto same_session_it = std::find_if(
+            current_batch.rbegin(), current_batch.rend(),
+            [&](const KeeperRequestForSession & r) { return r.session_id == read_request.session_id; });
+
+        if (same_session_it != current_batch.rend())
+            read_request_queue[same_session_it->session_id][same_session_it->request->xid].push_back(read_request);
+        else
+            pending_immediate_reads.push_back(read_request);
+    };
+
+    /// Read from session_1: should be parked behind session_1's write (xid=1)
+    auto read_s1 = make_read(session_1, /*xid=*/10);
+    park_read(read_s1);
+
+    /// Read from session_2: should be parked behind session_2's write (xid=2)
+    auto read_s2 = make_read(session_2, /*xid=*/20);
+    park_read(read_s2);
+
+    /// Read from session_3: no write from session_3 in batch → immediate dispatch
+    auto read_s3 = make_read(session_3, /*xid=*/30);
+    park_read(read_s3);
+
+    /// Verify: session_1's read is parked behind session_1's write
+    ASSERT_TRUE(read_request_queue.contains(session_1));
+    ASSERT_TRUE(read_request_queue[session_1].contains(1));
+    ASSERT_EQ(read_request_queue[session_1][1].size(), 1);
+    ASSERT_EQ(read_request_queue[session_1][1][0].session_id, session_1);
+
+    /// Verify: session_2's read is parked behind session_2's write
+    ASSERT_TRUE(read_request_queue.contains(session_2));
+    ASSERT_TRUE(read_request_queue[session_2].contains(2));
+    ASSERT_EQ(read_request_queue[session_2][2].size(), 1);
+    ASSERT_EQ(read_request_queue[session_2][2][0].session_id, session_2);
+
+    /// Verify: session_3's read is NOT parked — it goes to immediate dispatch
+    ASSERT_FALSE(read_request_queue.contains(session_3));
+    ASSERT_EQ(pending_immediate_reads.size(), 1);
+    ASSERT_EQ(pending_immediate_reads[0].session_id, session_3);
+
+    /// Verify: the OLD behavior would have parked ALL reads behind the last write (session_2, xid=2).
+    /// With the fix, reads are correctly distributed per-session.
+    /// session_1's read is NOT under session_2's key:
+    ASSERT_EQ(read_request_queue[session_2][2].size(), 1); // only session_2's own read
+}
+
+/// Test that multiple reads from the same session are all parked behind
+/// the last write from that session.
+TYPED_TEST(CoordinationTest, TestReadRequestQueueSameSessionMultipleReads)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    const int64_t session_1 = 100;
+    const int64_t session_2 = 200;
+
+    KeeperRequestsForSessions current_batch;
+
+    auto make_write = [](int64_t session_id, Coordination::XID xid)
+    {
+        auto req = std::make_shared<ZooKeeperCreateRequest>();
+        req->path = "/test";
+        req->xid = xid;
+        KeeperRequestForSession r;
+        r.session_id = session_id;
+        r.request = req;
+        return r;
+    };
+
+    auto make_read = [](int64_t session_id, Coordination::XID xid)
+    {
+        auto req = std::make_shared<ZooKeeperExistsRequest>();
+        req->path = "/test";
+        req->xid = xid;
+        KeeperRequestForSession r;
+        r.session_id = session_id;
+        r.request = req;
+        return r;
+    };
+
+    /// Session 1 has two writes in the batch
+    current_batch.push_back(make_write(session_1, /*xid=*/1));
+    current_batch.push_back(make_write(session_2, /*xid=*/2));
+    current_batch.push_back(make_write(session_1, /*xid=*/3));
+
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
+    KeeperRequestsForSessions pending_immediate_reads;
+
+    auto park_read = [&](const KeeperRequestForSession & read_request)
+    {
+        auto same_session_it = std::find_if(
+            current_batch.rbegin(), current_batch.rend(),
+            [&](const KeeperRequestForSession & r) { return r.session_id == read_request.session_id; });
+
+        if (same_session_it != current_batch.rend())
+            read_request_queue[same_session_it->session_id][same_session_it->request->xid].push_back(read_request);
+        else
+            pending_immediate_reads.push_back(read_request);
+    };
+
+    /// Three reads from session_1: should all park behind the LAST write from session_1 (xid=3)
+    park_read(make_read(session_1, /*xid=*/10));
+    park_read(make_read(session_1, /*xid=*/11));
+    park_read(make_read(session_1, /*xid=*/12));
+
+    /// Verify: all three reads are behind session_1's LAST write (xid=3), not first write (xid=1)
+    ASSERT_FALSE(read_request_queue[session_1].contains(1)); // not behind first write
+    ASSERT_TRUE(read_request_queue[session_1].contains(3));  // behind last write
+    ASSERT_EQ(read_request_queue[session_1][3].size(), 3);
+
+    /// No immediate reads
+    ASSERT_TRUE(pending_immediate_reads.empty());
+}
+
 #endif

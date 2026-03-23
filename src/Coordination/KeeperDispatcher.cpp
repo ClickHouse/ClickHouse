@@ -28,6 +28,7 @@
 #include <IO/ReadHelpers.h>
 #include <Disks/IDisk.h>
 
+#include <algorithm>
 #include <atomic>
 #include <future>
 #include <chrono>
@@ -52,6 +53,8 @@ namespace ProfileEvents
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
+    extern const Event KeeperReadImmediateProcessed;
+    extern const Event KeeperReadWaitForSameSessionWrite;
 }
 
 namespace HistogramMetrics
@@ -73,6 +76,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
+    extern const CoordinationSettingsBool read_only_waits_same_session_write;
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
     extern const CoordinationSettingsMilliseconds sleep_before_leader_change_ms;
 }
@@ -221,6 +225,7 @@ void KeeperDispatcher::requestThread()
                 }
 
                 KeeperRequestsForSessions current_batch;
+                KeeperRequestsForSessions pending_immediate_reads;
                 size_t current_batch_bytes_size = 0;
 
                 bool has_read_request = false;
@@ -244,13 +249,40 @@ void KeeperDispatcher::requestThread()
 
                             handle_opentelemetery_spans(request.request, request.session_id);
 
-                            /// Don't append read request into batch, we have to process them separately
+                            /// Don't append read request into batch, we have to process them separately.
                             if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
                             {
-                                const auto & last_request = current_batch.back();
-                                ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
-                                std::lock_guard lock(read_request_queue_mutex);
-                                read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
+                                if (coordination_settings[CoordinationSetting::read_only_waits_same_session_write])
+                                {
+                                    /// Read-after-write consistency is per-session: a read only needs to wait
+                                    /// for its own session's uncommitted writes, not writes from other sessions.
+                                    auto same_session_it = std::find_if(
+                                        current_batch.rbegin(), current_batch.rend(),
+                                        [&](const KeeperRequestForSession & r) { return r.session_id == request.session_id; });
+
+                                    if (same_session_it != current_batch.rend())
+                                    {
+                                        /// Park behind same-session write
+                                        ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
+                                        std::lock_guard lock(read_request_queue_mutex);
+                                        read_request_queue[same_session_it->session_id][same_session_it->request->xid].push_back(request);
+                                        ProfileEvents::increment(ProfileEvents::KeeperReadWaitForSameSessionWrite);
+                                    }
+                                    else
+                                    {
+                                        /// No same-session write in batch — no read-after-write dependency.
+                                        /// Collect for immediate dispatch after the batch is submitted.
+                                        pending_immediate_reads.push_back(request);
+                                    }
+                                }
+                                else
+                                {
+                                    /// Legacy behavior: park behind the last write in the batch regardless of session.
+                                    const auto & last_request = current_batch.back();
+                                    ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
+                                    std::lock_guard lock(read_request_queue_mutex);
+                                    read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
+                                }
                             }
                             else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
                             {
@@ -327,6 +359,22 @@ void KeeperDispatcher::requestThread()
 
                     prev_batch = std::move(current_batch);
                     prev_result = result;
+                }
+
+                /// Dispatch reads that have no same-session write in the batch.
+                /// These reads have no read-after-write dependency on the batch
+                /// and can be served immediately from committed state.
+                for (const auto & read_request : pending_immediate_reads)
+                {
+                    if (server->isLeaderAlive())
+                        server->putLocalReadRequest(read_request);
+                    else
+                        addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+                }
+                if (!pending_immediate_reads.empty())
+                {
+                    ProfileEvents::increment(ProfileEvents::KeeperReadImmediateProcessed, pending_immediate_reads.size());
+                    pending_immediate_reads.clear();
                 }
 
                 /// If we will execute read or reconfig next, we have to process result now
