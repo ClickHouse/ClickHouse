@@ -671,10 +671,107 @@ struct MatchImpl
         }
     }
 
-    template <typename... Args>
-    static void constantVector(Args &&...)
+    static void constantVector(
+        const String & haystack,
+        const ColumnString::Chars & needle_data,
+        const ColumnString::Offsets & needle_offsets,
+        [[maybe_unused]] const ColumnPtr & start_pos_,
+        PaddedPODArray<UInt8> & res,
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);
+        chassert(!res_null);
+        chassert(res.size() == needle_offsets.size());
+        chassert(res.size() == input_rows_count);
+        chassert(start_pos_ == nullptr);
+
+        if (input_rows_count == 0)
+            return;
+
+        const auto * const haystack_data = reinterpret_cast<const UInt8 *>(haystack.data());
+        const size_t haystack_length = haystack.size();
+
+        String required_substr;
+        bool is_trivial;
+        bool required_substring_is_prefix;
+
+        size_t prev_needle_offset = 0;
+
+        Regexps::LocalCacheTable cache;
+        Regexps::RegexpPtr regexp;
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const auto * const cur_needle_data = &needle_data[prev_needle_offset];
+            const size_t cur_needle_length = needle_offsets[i] - prev_needle_offset;
+
+            const auto & needle = String(
+                reinterpret_cast<const char *>(cur_needle_data),
+                cur_needle_length);
+
+            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+            {
+                if (required_substr.size() > haystack_length)
+                    res[i] = negate;
+                else
+                {
+                    Searcher searcher(required_substr.data(), required_substr.size(), haystack_length);
+                    const auto * match = searcher.search(haystack_data, haystack_length);
+                    res[i] = negate ^ (match != haystack_data + haystack_length);
+                }
+            }
+            else
+            {
+                regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle);
+                regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
+
+                if (required_substr.empty())
+                {
+                    if (!regexp->getRE2()) /// An empty regexp. Always matches.
+                        res[i] = !negate;
+                    else
+                    {
+                        const bool match = regexp->getRE2()->Match(
+                            {haystack.data(), haystack_length},
+                            0,
+                            haystack_length,
+                            re2::RE2::UNANCHORED,
+                            nullptr,
+                            0);
+                        res[i] = negate ^ match;
+                    }
+                }
+                else
+                {
+                    Searcher searcher(required_substr.data(), required_substr.size(), haystack_length);
+                    const auto * match = searcher.search(haystack_data, haystack_length);
+
+                    if (match == haystack_data + haystack_length)
+                        res[i] = negate;
+                    else
+                    {
+                        if (is_trivial)
+                            res[i] = !negate;
+                        else
+                        {
+                            const size_t start_pos = (required_substring_is_prefix) ? (match - haystack_data) : 0;
+                            const size_t end_pos = haystack_length;
+
+                            const bool match2 = regexp->getRE2()->Match(
+                                {haystack.data(), haystack_length},
+                                start_pos,
+                                end_pos,
+                                re2::RE2::UNANCHORED,
+                                nullptr,
+                                0);
+                            res[i] = negate ^ match2;
+                        }
+                    }
+                }
+            }
+
+            prev_needle_offset = needle_offsets[i];
+        }
     }
 };
 
