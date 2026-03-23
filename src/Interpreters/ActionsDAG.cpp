@@ -3499,7 +3499,10 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     auto replacement_lookup = [&](const ActionsDAG::Node * node) -> const ColumnWithTypeAndName *
     {
         auto it = node_name_to_input_node_column.find(node->result_name);
-        if (it == node_name_to_input_node_column.end())
+        if (it == node_name_to_input_node_column.end()
+            /// FUNCTION nodes with a matching name are type-conversion expressions (like _CAST added by
+            /// filter pushdow through JOIN). Replacing them can cause type mismatch
+            && node->type != ActionType::FUNCTION)
             return nullptr;
         return &it->second;
     };
