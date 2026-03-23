@@ -1,0 +1,45 @@
+Parsing URL: https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=100305&sha=latest&name_0=PR&name_1=Style+check
+
+Task: PR -> Style check
+SHA: c18bd8e5ba74e131361d1ce519557bf9e872f585
+
+Fetching JSON: https://s3.amazonaws.com/clickhouse-test-reports/PRs/100305/c18bd8e5ba74e131361d1ce519557bf9e872f585/result_pr.json
+
+Fetching JSON (name_1): https://s3.amazonaws.com/clickhouse-test-reports/PRs/100305/c18bd8e5ba74e131361d1ce519557bf9e872f585/result_style_check.json
+
+=== Test Results ===
+
+Total: 12 | ✅ Passed: 11 | ❌ Failed: 1 | ⏭️  Skipped: 0
+
+--- Failures ---
+❌ FAIL  cpp  (74.6050660610199s)
+   --- log tail ---
+   /home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/Transforms/ShuffleTransform.cpp:21:    accumulated.push_back(std::move(chunk)); 
+   /home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/QueryPlan/ShuffleStep.h:6:{   
+   /home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/QueryPlan/ShuffleStep.h:11:        String getName() const override { return "ShuffleStep"; }    
+   /home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Parsers/ASTSelectQuery.cpp:209:    if(shuffle())
+   /home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Parsers/CommonParsers.h:641:    
+   ^ style error on this line
+   1:/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/Transforms/ShuffleTransform.cpp:21:    accumulated.push_back(std::move(chunk)); 
+   2:/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/QueryPlan/ShuffleStep.h:6:{   
+   3:/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/QueryPlan/ShuffleStep.h:11:        String getName() const override { return "ShuffleStep"; }    
+   4:/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Parsers/CommonParsers.h:641:    
+   ^ Trailing whitespaces.
+   --- end ---
+
+--- All Tests ---
+SUCCESS  whitespace_check  (1.3012630939483643s)
+SUCCESS  yamllint  (1.7726669311523438s)
+SUCCESS  xmllint  (0.06617093086242676s)
+SUCCESS  functional_tests_check  (2.335089921951294s)
+SUCCESS  test_numbers_check  (0.016134023666381836s)
+SUCCESS  symlinks  (0.7301199436187744s)
+SUCCESS  catch_all  (1.283905029296875s)
+FAILURE  cpp  (74.6050660610199s)
+SUCCESS  submodules  (3.8024230003356934s)
+SUCCESS  various  (5.930773019790649s)
+SUCCESS  codespell  (6.308355093002319s)
+SUCCESS  aspell  (10.580679178237915s)
+
+=== Artifact Links ===
+job.log: https://s3.amazonaws.com/clickhouse-test-reports/PRs/100305/c18bd8e5ba74e131361d1ce519557bf9e872f585/style_check/job.log

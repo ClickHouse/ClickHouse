@@ -1,0 +1,30 @@
+Parsing URL: https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=100305&sha=latest&name_0=PR&name_1=Style+check
+
+Task: PR -> Style check
+SHA: c18bd8e5ba74e131361d1ce519557bf9e872f585
+
+Fetching JSON: https://s3.amazonaws.com/clickhouse-test-reports/PRs/100305/c18bd8e5ba74e131361d1ce519557bf9e872f585/result_pr.json
+
+Fetching JSON (name_1): https://s3.amazonaws.com/clickhouse-test-reports/PRs/100305/c18bd8e5ba74e131361d1ce519557bf9e872f585/result_style_check.json
+
+=== Test Results ===
+
+Total: 1 | ✅ Passed: 0 | ❌ Failed: 1 | ⏭️  Skipped: 0
+
+--- Failures ---
+❌ FAIL  cpp  (74.6050660610199s)
+   📊 CIDB: https://play.clickhouse.com/play?user=play&run=1#V0lUSAogICAgOTAgQVMgaW50ZXJ2YWxfZGF5cwpTRUxFQ1QKICAgIHRvU3RhcnRPZkRheShjaGVja19zdGFydF90aW1lKSBBUyBkYXksCiAgICBjb3VudCgpIEFTIGZhaWx1cmVzLAogICAgZ3JvdXBVbmlxQXJyYXkocHVsbF9yZXF1ZXN0X251bWJlcikgQVMgcHJzLAogICAgYW55KHJlcG9ydF91cmwpIEFTIHJlcG9ydF91cmwKRlJPTSBjaGVja3MKV0hFUkUgKG5vdygpIC0gdG9JbnRlcnZhbERheShpbnRlcnZhbF9kYXlzKSkgPD0gY2hlY2tfc3RhcnRfdGltZQogICAgQU5EIHRlc3RfbmFtZSA9ICdjcHAnCiAgICAtLSBBTkQgY2hlY2tfbmFtZSA9ICdTdHlsZSBjaGVjaycKICAgIEFORCB0ZXN0X3N0YXR1cyBJTiAoJ0ZBSUwnLCAnRVJST1InKQogICAgQU5EIChwdWxsX3JlcXVlc3RfbnVtYmVyID0gMCBPUiBiYXNlX3JlZiBJTiAoJ21hc3RlcicpKQogICAgLS0gQU5EIHRlc3RfY29udGV4dF9yYXcgTElLRSAnJXBhdHRlcm4lJyAgLS0gdW5jb21tZW50IGFuZCBlZGl0IHRvIGZpbHRlciBieSBmYWlsdXJlIHBhdHRlcm4KR1JPVVAgQlkgZGF5Ck9SREVSIEJZIGRheSBERVNDCg==
+   --- log tail ---
+   /home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/Transforms/ShuffleTransform.cpp:21:    accumulated.push_back(std::move(chunk)); 
+   /home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/QueryPlan/ShuffleStep.h:6:{   
+   /home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/QueryPlan/ShuffleStep.h:11:        String getName() const override { return "ShuffleStep"; }    
+   /home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Parsers/ASTSelectQuery.cpp:209:    if(shuffle())
+   /home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Parsers/CommonParsers.h:641:    
+   ^ style error on this line
+   1:/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/Transforms/ShuffleTransform.cpp:21:    accumulated.push_back(std::move(chunk)); 
+   2:/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/QueryPlan/ShuffleStep.h:6:{   
+   3:/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Processors/QueryPlan/ShuffleStep.h:11:        String getName() const override { return "ShuffleStep"; }    
+   4:/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/src/Parsers/CommonParsers.h:641:    
+   ^ Trailing whitespaces.
+   --- end ---
+
