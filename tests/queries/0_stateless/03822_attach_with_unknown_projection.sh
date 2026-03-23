@@ -61,9 +61,9 @@ run "SELECT count() FROM t_unknown_proj_2"
 run "SELECT sum(x), sum(y) FROM t_unknown_proj_2"
 
 # CHECK TABLE on replica 2 must not fail with NO_FILE_IN_DATA_PART:
-# checksums.txt references pp.proj but the directory was never transferred,
-# so loadChecksums must strip it before checkDataPart runs.
-run "CHECK TABLE t_unknown_proj_2" 2>&1 | grep -o "NO_FILE_IN_DATA_PART\|BROKEN_PROJECTION" | uniq
+# checksums.txt references pp.proj but the directory was never transferred.
+# checkDataPart must strip phantom .proj entries before the checkEqual comparison.
+run "CHECK TABLE t_unknown_proj_2"
 
 # Force a merge to make sure the part with the unknown projection can merge.
 run "ALTER TABLE t_unknown_proj_1 MODIFY SETTING max_parts_to_merge_at_once = 100"

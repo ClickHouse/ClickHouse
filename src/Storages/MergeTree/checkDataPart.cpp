@@ -384,6 +384,22 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
     }
 
+    /// Strip .proj entries from checksums_txt whose directories were never
+    /// present on disk (e.g. a replica that fetched the part after its
+    /// projection was dropped -- checksums.txt was copied verbatim from the
+    /// sender but the .proj directory was not transferred).  Without this,
+    /// checkEqual below would throw NO_FILE_IN_DATA_PART.
+    for (auto it = checksums_txt.files.begin(); it != checksums_txt.files.end();)
+    {
+        if (it->first.ends_with(".proj") && !checksums_data.has(it->first))
+        {
+            is_broken_projection = true;
+            it = checksums_txt.files.erase(it);
+        }
+        else
+            ++it;
+    }
+
     if (is_cancelled())
         return {};
 
