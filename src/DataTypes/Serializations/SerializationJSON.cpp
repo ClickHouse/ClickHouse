@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -16,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename Parser>
@@ -372,6 +374,17 @@ void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer
     String object_buffer;
     auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
     deserializeObject(column, object_view, settings);
+}
+
+template <typename Parser>
+UInt128 SerializationJSON<Parser>::getHash(
+    const std::unordered_map<String, DataTypePtr> &,
+    const std::unordered_set<String> &,
+    const std::vector<String> &,
+    const DataTypePtr &)
+{
+    /// Check the comment in the ::create method.
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Method getHash is not implemented for SerializationJSON");
 }
 
 #if USE_SIMDJSON

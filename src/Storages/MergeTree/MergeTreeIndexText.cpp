@@ -264,8 +264,8 @@ ColumnPtr deserializeTokensRaw(ReadBuffer & istr, size_t num_tokens)
     auto tokens_column = ColumnString::create();
     tokens_column->reserve(num_tokens);
 
-    SerializationString serialization_string;
-    serialization_string.deserializeBinaryBulk(*tokens_column, istr, 0, num_tokens, 0.0);
+    auto serialization_string = SerializationString::create();
+    serialization_string->deserializeBinaryBulk(*tokens_column, istr, 0, num_tokens, 0.0);
 
     return tokens_column;
 }
@@ -899,12 +899,12 @@ void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & 
     writeVarUInt(version, ostr);
     chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
 
-    SerializationString serialization_string;
-    SerializationNumber<UInt64> serialization_number;
+    auto serialization_string = SerializationString::create();
+    auto serialization_number = SerializationNumber<UInt64>::create();
 
     writeVarUInt(sparse_index.tokens->size(), ostr);
-    serialization_string.serializeBinaryBulk(*sparse_index.tokens, ostr, 0, sparse_index.tokens->size());
-    serialization_number.serializeBinaryBulk(*sparse_index.offsets_in_file, ostr, 0, sparse_index.offsets_in_file->size());
+    serialization_string->serializeBinaryBulk(*sparse_index.tokens, ostr, 0, sparse_index.tokens->size());
+    serialization_number->serializeBinaryBulk(*sparse_index.offsets_in_file, ostr, 0, sparse_index.offsets_in_file->size());
 }
 
 DictionarySparseIndex TextIndexSerialization::deserializeSparseIndex(ReadBuffer & istr)
@@ -923,8 +923,8 @@ DictionarySparseIndex TextIndexSerialization::deserializeSparseIndex(ReadBuffer 
     auto tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
     auto offsets = ColumnUInt64::create();
 
-    SerializationNumber<UInt64> serialization_number;
-    serialization_number.deserializeBinaryBulk(*offsets, istr, 0, num_sparse_index_tokens, 0.0);
+    auto serialization_number = SerializationNumber<UInt64>::create();
+    serialization_number->deserializeBinaryBulk(*offsets, istr, 0, num_sparse_index_tokens, 0.0);
     return DictionarySparseIndex(std::move(tokens), std::move(offsets));
 }
 
