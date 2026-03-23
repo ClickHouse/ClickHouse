@@ -280,17 +280,17 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         assertEOF(*buf);
     }
 
-    /// Strip .proj entries that are referenced in checksums.txt but absent from
-    /// checksums_data (i.e. whose directory was never on disk).  This happens when
-    /// a replica fetches a part after its projection was dropped: the sender copies
-    /// checksums.txt verbatim (still containing pp.proj) but skips the .proj
-    /// directory because getProjectionParts() returns nothing for unknown projections.
-    /// Doing this right after load keeps checksums_txt consistent for all subsequent
-    /// processing — no transient state where the entry is present before the check
-    /// and absent after.
+    /// Strip .proj entries from checksums_txt whose directory was never placed on
+    /// disk.  This happens when a replica fetches a part after its projection was
+    /// dropped: the sender copies checksums.txt verbatim (still containing pp.proj)
+    /// but skips the .proj directory because getProjectionParts() returns nothing for
+    /// unknown projections.  We must not use checksums_data for this check because
+    /// projection checksums are not added to checksums_data until the recursive
+    /// checkDataPart loop below — so every .proj entry would look absent at this
+    /// point.  Instead check whether the directory actually exists on disk.
     for (auto it = checksums_txt.files.begin(); it != checksums_txt.files.end();)
     {
-        if (it->first.ends_with(".proj") && !checksums_data.has(it->first))
+        if (it->first.ends_with(".proj") && !data_part_storage.existsDirectory(it->first))
         {
             is_broken_projection = true;
             it = checksums_txt.files.erase(it);
