@@ -3,6 +3,7 @@
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 
 #include <filesystem>
 #include <ranges>
@@ -81,7 +82,7 @@ uint64_t MetadataStorageInMemory::getFileSize(const std::string & path) const
     auto * entry = findFile(path);
     if (!entry)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
-    return getTotalSize(entry->objects);
+    return getTotalSize(entry->blob_group->objects);
 }
 
 Poco::Timestamp MetadataStorageInMemory::getLastModified(const std::string & path) const
@@ -160,7 +161,7 @@ uint32_t MetadataStorageInMemory::getHardlinkCount(const std::string & path) con
     auto * entry = findFile(path);
     if (!entry)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
-    return entry->ref_count;
+    return entry->blob_group->ref_count;
 }
 
 std::string MetadataStorageInMemory::readFileToString(const std::string & /* path */) const
@@ -183,7 +184,32 @@ StoredObjects MetadataStorageInMemory::getStorageObjects(const std::string & pat
     auto * entry = findFile(path);
     if (!entry)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
-    return entry->objects;
+    return entry->blob_group->objects;
+}
+
+IMetadataStorage::BlobsToRemove MetadataStorageInMemory::getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count)
+{
+    std::lock_guard guard(removed_objects_mutex);
+
+    if (max_count == 0)
+        max_count = std::numeric_limits<int64_t>::max();
+
+    BlobsToRemove blobs_to_remove;
+    for (const auto & blob : objects_to_remove | std::views::take(max_count))
+        blobs_to_remove[blob] = {cluster->getLocalLocation()};
+
+    return blobs_to_remove;
+}
+
+int64_t MetadataStorageInMemory::recordAsRemoved(const StoredObjects & blobs)
+{
+    std::lock_guard guard(removed_objects_mutex);
+
+    int64_t recorded_count = 0;
+    for (const auto & removed_blob : blobs)
+        recorded_count += objects_to_remove.erase(removed_blob);
+
+    return recorded_count;
 }
 
 /// ==================== Transaction ====================
@@ -257,16 +283,12 @@ void MetadataStorageInMemoryTransaction::unlinkFile(const std::string & path, bo
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
         }
 
-        if (it->second.ref_count > 0)
-        {
-            /// Other hardlinks still reference this data, just decrement.
-            it->second.ref_count -= 1;
-            return;
-        }
+        auto & blob_group = it->second.blob_group;
+        blob_group->ref_count -= 1;
 
-        if (should_remove_objects)
+        if (blob_group->ref_count == 0 && should_remove_objects)
         {
-            for (const auto & obj : it->second.objects)
+            for (const auto & obj : blob_group->objects)
                 objects_to_remove.push_back(obj);
         }
 
@@ -330,10 +352,16 @@ void MetadataStorageInMemoryTransaction::removeRecursive(
         {
             if (it->first.starts_with(prefix) || it->first == path)
             {
-                if (!should_remove_objects || should_remove_objects(fs::relative(it->first, path)))
+                auto & blob_group = it->second.blob_group;
+                blob_group->ref_count -= 1;
+
+                if (blob_group->ref_count == 0)
                 {
-                    for (const auto & obj : it->second.objects)
-                        objects_to_remove.push_back(obj);
+                    if (!should_remove_objects || should_remove_objects(fs::relative(it->first, path)))
+                    {
+                        for (const auto & obj : blob_group->objects)
+                            objects_to_remove.push_back(obj);
+                    }
                 }
                 it = metadata_storage.files.erase(it);
             }
@@ -364,8 +392,13 @@ void MetadataStorageInMemoryTransaction::createHardLink(const std::string & path
         if (metadata_storage.findFile(path_to))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", path_to);
 
-        entry->ref_count += 1;
-        metadata_storage.files[path_to] = *entry;
+        /// Share the blob group between source and destination.
+        entry->blob_group->ref_count += 1;
+        auto & new_entry = metadata_storage.files[path_to];
+        new_entry.blob_group = entry->blob_group;
+        new_entry.inline_data = entry->inline_data;
+        new_entry.read_only = entry->read_only;
+        new_entry.last_modified = entry->last_modified;
     });
 }
 
@@ -440,8 +473,13 @@ void MetadataStorageInMemoryTransaction::replaceFile(const std::string & path_fr
         auto it_to = metadata_storage.files.find(path_to);
         if (it_to != metadata_storage.files.end())
         {
-            for (const auto & obj : it_to->second.objects)
-                objects_to_remove.push_back(obj);
+            auto & blob_group = it_to->second.blob_group;
+            blob_group->ref_count -= 1;
+            if (blob_group->ref_count == 0)
+            {
+                for (const auto & obj : blob_group->objects)
+                    objects_to_remove.push_back(obj);
+            }
             metadata_storage.files.erase(it_to);
         }
 
@@ -454,15 +492,22 @@ void MetadataStorageInMemoryTransaction::createMetadataFile(const std::string & 
 {
     operations.emplace_back([this, path, objects]()
     {
-        auto & entry = metadata_storage.files[path];
-        /// If replacing existing file, schedule old objects for removal
-        if (!entry.objects.empty())
+        auto it = metadata_storage.files.find(path);
+        if (it != metadata_storage.files.end())
         {
-            for (const auto & obj : entry.objects)
-                objects_to_remove.push_back(obj);
+            /// If replacing existing file, handle old blob group
+            auto & old_group = it->second.blob_group;
+            old_group->ref_count -= 1;
+            if (old_group->ref_count == 0)
+            {
+                for (const auto & obj : old_group->objects)
+                    objects_to_remove.push_back(obj);
+            }
         }
-        entry.objects = objects;
-        entry.ref_count = 0;
+
+        auto & entry = metadata_storage.files[path];
+        entry.blob_group = std::make_shared<MetadataStorageInMemory::BlobGroup>();
+        entry.blob_group->objects = objects;
         entry.last_modified = Poco::Timestamp();
     });
 }
@@ -478,7 +523,7 @@ void MetadataStorageInMemoryTransaction::addBlobToMetadata(const std::string & p
             metadata_storage.files[path] = MetadataStorageInMemory::FileEntry{};
             entry = &metadata_storage.files[path];
         }
-        entry->objects.push_back(object);
+        entry->blob_group->objects.push_back(object);
         entry->last_modified = Poco::Timestamp();
     });
 }
@@ -493,7 +538,7 @@ void MetadataStorageInMemoryTransaction::truncateFile(const std::string & path, 
 
         size_t accumulated_size = 0;
         StoredObjects new_objects;
-        for (const auto & obj : entry->objects)
+        for (const auto & obj : entry->blob_group->objects)
         {
             if (accumulated_size >= target_size)
             {
@@ -504,7 +549,7 @@ void MetadataStorageInMemoryTransaction::truncateFile(const std::string & path, 
             new_objects.push_back(obj);
             accumulated_size += obj.bytes_size;
         }
-        entry->objects = std::move(new_objects);
+        entry->blob_group->objects = std::move(new_objects);
         entry->last_modified = Poco::Timestamp();
     });
 }

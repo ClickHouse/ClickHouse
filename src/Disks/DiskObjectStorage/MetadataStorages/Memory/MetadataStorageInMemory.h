@@ -62,14 +62,26 @@ public:
 
     bool supportWritingWithAppend() const override { return true; }
 
+    BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
+    int64_t recordAsRemoved(const StoredObjects & blobs) override;
+
 private:
-    struct FileEntry
+    /// Shared blob ownership: multiple FileEntry instances (hardlinks) can share
+    /// the same BlobGroup. Objects are only removed when the last reference is gone.
+    struct BlobGroup
     {
         StoredObjects objects;
+        int32_t ref_count = 1; /// number of FileEntry instances sharing this group
+    };
+
+    struct FileEntry
+    {
+        std::shared_ptr<BlobGroup> blob_group;
         std::string inline_data;
-        int32_t ref_count = 0;
         bool read_only = false;
         Poco::Timestamp last_modified;
+
+        FileEntry() : blob_group(std::make_shared<BlobGroup>()) {}
     };
 
     FileEntry * findFile(const std::string & path) const;
