@@ -288,16 +288,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     /// projection checksums are not added to checksums_data until the recursive
     /// checkDataPart loop below — so every .proj entry would look absent at this
     /// point.  Instead check whether the directory actually exists on disk.
-    for (auto it = checksums_txt.files.begin(); it != checksums_txt.files.end();)
-    {
-        if (it->first.ends_with(".proj") && !data_part_storage.existsDirectory(it->first))
+    const auto erased = std::erase_if(
+        checksums_txt.files,
+        [&](const auto & entry)
         {
-            is_broken_projection = true;
-            it = checksums_txt.files.erase(it);
-        }
-        else
-            ++it;
-    }
+            return entry.first.ends_with(".proj") && !data_part_storage.existsDirectory(entry.first);
+        });
+    if (erased > 0)
+        is_broken_projection = true;
 
     NameSet projections_on_disk;
     const auto & checksums_txt_files = checksums_txt.files;
