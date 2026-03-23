@@ -410,9 +410,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     if (options.format.parquet.bloom_filter_push_down && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
-    if (options.format.parquet.page_filter_push_down)
+    if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
     {
-        const auto & column_conditions = static_cast<FilterInfoExt *>(format_filter_info->opaque.get())->column_conditions;
+        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
         for (const auto & [idx_in_output_block, key_condition] : column_conditions)
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
@@ -1329,10 +1329,16 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     /// Find ranges of rows that pass filter and decode them.
 
+    /// When we have per-page prefetches (offset index), some pages may have had their prefetch
+    /// handles reset by determinePagesToPrefetch because they are fully filtered out. The
+    /// use_filter_in_decoder path reads ALL pages sequentially, so it would crash trying to access
+    /// those reset handles. Only use this optimization when reading the whole column chunk
+    /// sequentially (no offset index, i.e. data_pages is empty).
     const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
         !row_subgroup.filter.filter.empty() &&
         column.page.initialized &&
-        !column.page.is_dictionary_encoded;
+        !column.page.is_dictionary_encoded &&
+        column.data_pages.empty();
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
 
     if (use_filter_in_decoder)

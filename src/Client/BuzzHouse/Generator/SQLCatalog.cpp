@@ -169,9 +169,9 @@ bool SQLDatabase::isSharedDatabase() const
     return deng == DatabaseEngineValues::DShared;
 }
 
-bool SQLDatabase::isLazyDatabase() const
+bool SQLDatabase::isBackupDatabase() const
 {
-    return deng == DatabaseEngineValues::DLazy;
+    return deng == DatabaseEngineValues::DBackup;
 }
 
 bool SQLDatabase::isOrdinaryDatabase() const
@@ -187,11 +187,6 @@ bool SQLDatabase::isDataLakeCatalogDatabase() const
 bool SQLDatabase::isReplicatedOrSharedDatabase() const
 {
     return isReplicatedDatabase() || isSharedDatabase();
-}
-
-const std::optional<String> & SQLDatabase::getCluster() const
-{
-    return cluster;
 }
 
 bool SQLDatabase::isAttached() const
@@ -232,27 +227,13 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
         const uint32_t hive_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().hive_catalog.has_value());
         const uint32_t rest_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().rest_catalog.has_value());
         const uint32_t unit_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().unity_catalog.has_value());
-        const uint32_t prob_space = glue_cat + hive_cat + rest_cat + unit_cat;
-        chassert(prob_space > 0);
-        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-        const uint32_t nopt = next_dist(rg.generator);
 
-        if (glue_cat && (nopt < glue_cat + 1))
-        {
-            catalog = LakeCatalog::Glue;
-        }
-        else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
-        {
-            catalog = LakeCatalog::Hive;
-        }
-        else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
-        {
-            catalog = LakeCatalog::REST;
-        }
-        else if (unit_cat && (nopt < glue_cat + hive_cat + rest_cat + unit_cat + 1))
-        {
-            catalog = LakeCatalog::Unity;
-        }
+        chassert(glue_cat + hive_cat + rest_cat + unit_cat > 0);
+        rg.pickWeighted(
+            {{glue_cat, [&] { catalog = LakeCatalog::Glue; }},
+             {hive_cat, [&] { catalog = LakeCatalog::Hive; }},
+             {rest_cat, [&] { catalog = LakeCatalog::REST; }},
+             {unit_cat, [&] { catalog = LakeCatalog::Unity; }}});
 
         integration = IntegrationCall::Dolor; /// Has to use La Casa Del Dolor
         format = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || catalog == LakeCatalog::Glue) ? LakeFormat::Iceberg
@@ -565,11 +546,6 @@ bool SQLBase::hasClickHousePeer() const
     return peer_table == PeerTableDatabase::ClickHouse;
 }
 
-const std::optional<String> & SQLBase::getCluster() const
-{
-    return cluster;
-}
-
 bool SQLBase::isAttached() const
 {
     return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED;
@@ -621,6 +597,20 @@ String SQLBase::getSparkCatalogName() const
 }
 
 static const constexpr String PARTITION_STR = "{_partition_id}";
+static const constexpr String SCHEMA_HASH_STR = "{_schema_hash}";
+
+/// Returns the placeholder suffix to append to an S3/Azure path component.
+/// Both placeholders may appear in either order, chosen randomly.
+static String placeholders(RandomGenerator & rg, bool want_partition, bool want_hash)
+{
+    if (want_partition && want_hash)
+        return rg.nextBool() ? PARTITION_STR + SCHEMA_HASH_STR : SCHEMA_HASH_STR + PARTITION_STR;
+    if (want_partition)
+        return PARTITION_STR;
+    if (want_hash)
+        return SCHEMA_HASH_STR;
+    return {};
+}
 
 void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool has_dolor)
 {
@@ -704,16 +694,18 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             bool used_partition = false;
 
             chassert(isAnyS3Engine() || isAnyAzureEngine());
+            bool used_schema_hash = false;
+
             if (rg.nextBool())
             {
                 /// Use a subdirectory
                 next_bucket_path += "subdir";
                 next_bucket_path += rg.nextBool() ? std::to_string(tname) : "";
-                if (has_partition_by && rg.nextBool())
-                {
-                    next_bucket_path += PARTITION_STR;
-                    used_partition = true;
-                }
+                const bool want_partition = has_partition_by && rg.nextBool();
+                const bool want_hash = rg.nextBool();
+                next_bucket_path += placeholders(rg, want_partition, want_hash);
+                used_partition |= want_partition;
+                used_schema_hash |= want_hash;
                 next_bucket_path += "/";
             }
             if (rg.nextBool())
@@ -722,10 +714,8 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 
                 next_bucket_path += "file";
                 next_bucket_path += add_before ? std::to_string(tname) : "";
-                if (has_partition_by && !used_partition && rg.nextBool())
-                {
-                    next_bucket_path += PARTITION_STR;
-                }
+                next_bucket_path
+                    += placeholders(rg, has_partition_by && !used_partition && rg.nextBool(), !used_schema_hash && rg.nextBool());
                 next_bucket_path += !add_before ? std::to_string(tname) : "";
                 if ((isS3QueueEngine() || isAzureQueueEngine()) && rg.nextMediumNumber() < 81)
                 {
@@ -738,7 +728,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             }
             if (rg.nextBool())
             {
-                next_bucket_path += ".data";
+                /// Either a generic .data extension or a compression-recognized extension
+                /// (exercises ClickHouse's extension-based compression auto-detection)
+                static const DB::Strings comp_extensions
+                    = {"gz", "gzip", "bz2", "lz4", "xz", "zst", "zstd", "lzma", "br", "brotli", "deflate", "snappy", "7z"};
+                next_bucket_path += rg.nextSmallNumber() < 4 ? ".data" : ("." + rg.pickRandomly(comp_extensions));
             }
         }
         bucket_path = std::move(next_bucket_path);
@@ -746,7 +740,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
         /// Iceberg supports 3 formats
-        static const std::vector<InOutFormat> & formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
+        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
 
         file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
     }
@@ -856,6 +850,15 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
             res.replace(
                 partition_pos,
                 PARTITION_STR.length(),
+                rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
+        }
+        /// Replace schema hash str
+        const size_t schema_hash_pos = res.find(SCHEMA_HASH_STR);
+        if (schema_hash_pos != std::string::npos && rg.nextMediumNumber() < 81)
+        {
+            res.replace(
+                schema_hash_pos,
+                SCHEMA_HASH_STR.length(),
                 rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
         }
         /// Replace glob for number
@@ -984,23 +987,25 @@ bool SQLDictionary::supportsFinal() const
     return false;
 }
 
-const std::optional<String> & SQLFunction::getCluster() const
-{
-    return cluster;
-}
-
 void SQLFunction::setName(Function * f) const
 {
     f->set_function("f" + std::to_string(fname));
 }
 
+void SQLPolicy::setName(Policy * f) const
+{
+    f->set_policy("p" + std::to_string(policy_id));
+}
+
 const String & ColumnPathChain::getBottomName() const
 {
+    chassert(!path.empty());
     return path[path.size() - 1].cname;
 }
 
 SQLType * ColumnPathChain::getBottomType() const
 {
+    chassert(!path.empty());
     return path[path.size() - 1].tp;
 }
 

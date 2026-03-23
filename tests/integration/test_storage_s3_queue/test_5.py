@@ -355,12 +355,13 @@ def test_filtering_files(started_cluster, mode):
                 f"Will skip file {file[0]}: it should be processed by"
             )
             found_2_global = found_2_global or found_2
+            assert found_1 or found_2, "Failed with file " + file[0]
         else:
             found_2 = False
+            # Ordered mode with StartAfter does not re-list processed keys,
+            # so "Skipping ... Processed" may never appear; no per-file assertion.
 
-        assert found_1 or found_2, "Failed with file " + file[0]
-
-    assert found_1_global
+    assert found_1_global or not is_unordered  # unordered must see at least one skip-by-processed
     if is_unordered:
         assert found_2_global
 
@@ -369,6 +370,101 @@ def test_filtering_files(started_cluster, mode):
     ) or node1.contains_in_log(
         f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
     )
+
+
+def test_ordered_start_after_avoids_deep_relisting(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_start_after_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    initial_files = 1100
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 60000,
+            "polling_max_timeout_ms": 60000,
+            "polling_backoff_ms": 0,
+        },
+    )
+
+    files = [(f"{files_path}/file_{i:04d}.csv", i) for i in range(initial_files)]
+    generate_random_files(
+        started_cluster,
+        files_path,
+        initial_files,
+        start_ind=0,
+        row_num=1,
+        files=files,
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    for _ in range(60):
+        if initial_files == get_count():
+            break
+        time.sleep(1)
+    assert initial_files == get_count()
+
+    node.query(f"DROP TABLE {table_name}_mv SYNC")
+    baseline_list_calls = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'S3ListObjects' SETTINGS system_events_show_zero_values=1"
+        )
+    )
+    baseline_processed_files = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueProcessedFiles' SETTINGS system_events_show_zero_values=1"
+        )
+    )
+
+    put_s3_file_content(
+        started_cluster,
+        f"{files_path}/file_{initial_files:04d}.csv",
+        b"1,2,3\n",
+    )
+
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        create_dst_table_first=False,
+        dst_table_exists=True,
+    )
+
+    expected_rows = initial_files + 1
+    # Polling interval is configured to 60s for this test, so allow enough
+    # time for the first post-restart polling cycle to process the new file.
+    for _ in range(90):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count(), f"Timed out waiting for {expected_rows} rows"
+
+    list_calls_delta = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'S3ListObjects' SETTINGS system_events_show_zero_values=1"
+        )
+    ) - baseline_list_calls
+    processed_files_delta = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueProcessedFiles' SETTINGS system_events_show_zero_values=1"
+        )
+    ) - baseline_processed_files
+
+    # With StartAfter, the restart should list only the tail of the prefix.
+    assert list_calls_delta <= 2, f"Unexpected S3 list call count: {list_calls_delta}"
+    assert processed_files_delta == 1, f"Unexpected processed files count: {processed_files_delta}"
 
 
 def test_failed_commit(started_cluster):

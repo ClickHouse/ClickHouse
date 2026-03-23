@@ -1,4 +1,5 @@
 #include <future>
+#include <string>
 #include <vector>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
@@ -39,6 +40,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/DateLUT.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SensitiveDataMasker.h>
@@ -395,7 +397,13 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
         /* async_insert */ false);
 
     auto table = interpreter.getTable(insert_query);
-    auto sample_block = InterpreterInsertQuery::getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
+    auto sample_block = InterpreterInsertQuery::getSampleBlock(
+        insert_query,
+        table,
+        table->getInMemoryMetadataPtr(),
+        query_context,
+        /* no_destination */false,
+        insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
 
     if (!FormatFactory::instance().isInputFormat(insert_query.format))
     {
@@ -493,6 +501,14 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(
     return pushDataChunk(std::move(query), std::move(block), std::move(query_context));
 }
 
+std::vector<std::string> AsynchronousInsertQueue::getInsertQueryIds(InsertData & data)
+{
+    std::vector<std::string> query_ids;
+    for (const auto & entry : data.entries)
+        query_ids.push_back(entry->query_id);
+    return query_ids;
+}
+
 AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context)
 {
     const auto & settings = query_context->getSettingsRef();
@@ -554,8 +570,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         data->entries.emplace_back(entry);
         insert_future = entry->getFuture();
 
-        LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data for query '{}'",
-            data->entries.size(), size_t(shard_num), data->size_in_bytes, key.query_str);
+        LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data for the async insert queries '{}'",
+            data->entries.size(), size_t(shard_num), data->size_in_bytes, fmt::join(getInsertQueryIds(*data), ", "));
 
         bool has_enough_bytes = data->size_in_bytes >= (*key.settings)[Setting::async_insert_max_data_size];
         bool has_enough_queries
@@ -576,9 +592,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         /// This works because queries with the same set of settings are already grouped together.
         if (!flush_stopped && (has_enough_bytes || has_enough_queries || max_busy_timeout_exceeded()))
         {
-            LOG_DEBUG(log, "Scheduling async insert processing job for query '{}' "
-                           "because {}",
-                      key.query_str,
+            LOG_TRACE(log, "Scheduling async insert processing job because {}",
                       has_enough_bytes ? "enough bytes accumulated" :
                       has_enough_queries ? "enough queries accumulated" :
                       "maximum busy wait timeout exceeded");
@@ -977,19 +991,21 @@ try
     insert_context->setCurrentQueryId(insert_query_id);
     insert_context->setInitialQueryId(insert_query_id);
 
-    DB::CurrentThread::QueryScope query_scope;
+    DB::QueryScope query_scope;
     if (current_query_thread_group)
     {
         /// that means that flush async insert is called from some SYSTEM FLUSH ASYNC QUEUE,
         /// it is important to account profile events and other things correctly
-        query_scope = CurrentThread::QueryScope::createForFlushAsyncInsert(insert_context, current_query_thread_group);
+        query_scope = QueryScope::createForFlushAsyncInsert(insert_context, current_query_thread_group);
 
         /// This log line is useful to understand if async insert is flushed in the context of some query and which one
         if (auto query_context = current_query_thread_group->query_context.lock())
             LOG_DEBUG(log, "Processing async insert as a part of a query with query_id: {}", query_context->getCurrentQueryId());
     }
     else
-        query_scope = CurrentThread::QueryScope::create(insert_context);
+        query_scope = QueryScope::create(insert_context);
+
+    LOG_DEBUG(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
 
     String query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
     UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
@@ -1133,7 +1149,7 @@ try
             appendElementsToLogSafe(*async_insert_log, std::move(log_elements), flush_time, "");
         }
 
-        LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
+        LOG_DEBUG(log, "Flushed {} rows, {} bytes", num_rows, num_bytes);
         queue_shard_flush_time_history.updateWithCurrentTime();
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
@@ -1235,8 +1251,8 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         current_exception = e.displayText();
-        LOG_ERROR(logger, "Failed parsing for query '{}' with query id {}. {}",
-            key.query_str, current_entry->query_id, current_exception);
+        LOG_ERROR(logger, "Failed parsing for insert query id {}. {}",
+            current_entry->query_id, current_exception);
 
         for (size_t i = 0; i < result_columns.size(); ++i)
             result_columns[i]->rollback(*checkpoints[i]);
