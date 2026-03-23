@@ -34,7 +34,7 @@ public:
         CLEAR_INDEX_MARK_CACHE,
         CLEAR_INDEX_UNCOMPRESSED_CACHE,
         CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
-        CLEAR_TEXT_INDEX_DICTIONARY_CACHE,
+        CLEAR_TEXT_INDEX_TOKENS_CACHE,
         CLEAR_TEXT_INDEX_HEADER_CACHE,
         CLEAR_TEXT_INDEX_POSTINGS_CACHE,
         CLEAR_TEXT_INDEX_CACHES,
@@ -43,6 +43,7 @@ public:
         CLEAR_QUERY_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
+        CLEAR_PARQUET_METADATA_CACHE,
         CLEAR_FILESYSTEM_CACHE,
         CLEAR_DISTRIBUTED_CACHE,
         CLEAR_DISK_METADATA_CACHE,
@@ -106,6 +107,8 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        ALLOCATE_MEMORY,
+        FREE_MEMORY,
         WAIT_FAILPOINT,
         NOTIFY_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
@@ -132,6 +135,7 @@ public:
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
         RECONNECT_ZOOKEEPER,
+        WAIT_BLOBS_CLEANUP,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
@@ -157,6 +161,8 @@ public:
     String target_function;
     String replica;
     String shard;
+    String zk_name;
+    String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
@@ -164,6 +170,7 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+    UInt64 untracked_memory_size{};
 
     std::optional<String> query_result_cache_tag;
 

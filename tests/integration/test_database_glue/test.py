@@ -644,6 +644,7 @@ def test_system_tables(started_cluster):
 
     assert CATALOG_NAME in node.query("SHOW DATABASES")
     assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
     # system.tables
     assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
     assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
@@ -664,6 +665,48 @@ def test_system_tables(started_cluster):
     assert int(node.query(f"SELECT count() FROM system.completions WHERE startsWith(word, '{test_ref}') SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) != 0
     assert int(node.query(f"SELECT count() FROM system.completions WHERE startsWith(word, '{test_ref}')").strip()) == 0
 
+def test_show_tables_optimization(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_show_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+    assert not node.contains_in_log(
+        f"Get table information for table {root_namespace}.{table_name}"
+    )
+
+    node.query(f"SELECT * from system.tables where table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true")
+    assert node.contains_in_log(
+        f"Get table information for table {root_namespace}.{table_name}"
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT lightweight_show_tables")
+    node.query(f"SHOW TABLES FROM {CATALOG_NAME}", timeout=5)
 
 def test_table_without_metadata_location(started_cluster):
     """

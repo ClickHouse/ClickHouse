@@ -16,6 +16,7 @@
 #include <arm_neon.h>
 #endif
 
+
 namespace LZ4
 {
 
@@ -37,7 +38,8 @@ ALWAYS_INLINE void copyFromOutput(UInt8 * dst, UInt8 * src)
 template <size_t block_size>
 ALWAYS_INLINE void wildCopyFromInput(UInt8 * __restrict dst, const UInt8 * __restrict src, size_t size)
 {
-    /// Unrolling with clang is doing >10% performance degrade.
+    /// Unrolling with clang is doing >10% performance degrade on x86.
+    /// On ARM (Graviton 4) the pragma has no measurable effect.
     size_t i = 0;
     #pragma nounroll
     do
@@ -53,7 +55,8 @@ ALWAYS_INLINE void wildCopyFromInput(UInt8 * __restrict dst, const UInt8 * __res
 template <size_t block_size>
 ALWAYS_INLINE void wildCopyFromOutput(UInt8 * dst, const UInt8 * src, size_t size)
 {
-    /// Unrolling with clang is doing >10% performance degrade.
+    /// Unrolling with clang is doing >10% performance degrade on x86.
+    /// On ARM (Graviton 4) the pragma has no measurable effect.
     size_t i = 0;
     #pragma nounroll
     do
@@ -175,6 +178,10 @@ template <>
 
 #elif defined(__aarch64__) && defined(__ARM_NEON)
 
+    /// Single `vtbl1_u8` is a native 8-byte D-register operation on ARM — measured 6% faster
+    /// than the scalar fallback on Graviton 4 (geo mean 0.940x across test.hits columns).
+    /// Unlike `copyOverlap<16>` and `copyOverlap<32>` where NEON `vtbl2_u8` was slower
+    /// than scalar due to needing multiple calls, this single-instruction path is a clear win.
     static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
     {
         0, 1, 2, 2, 4, 3, 2, 1, /* offset = 0, not used as mask, but for shift amount instead */
@@ -244,35 +251,9 @@ template <>
     /// MSAN does not recognize the store as initializing the memory
     __msan_unpoison(op, 16);
 
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-
-    static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
-    {
-        0,  1,  2,  1,  4,  1,  4,  2,  8,  7,  6,  5,  4,  3,  2,  1, /* offset = 0, not used as mask, but for shift amount instead */
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, /* offset = 1 */
-        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
-        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,
-        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,
-        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,
-        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,
-    };
-
-    unalignedStore<uint8x8_t>(op,
-        vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset)));
-
-    unalignedStore<uint8x8_t>(op + 8,
-        vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset + 8)));
-
-    match += masks[offset];
+    /// Note: an ARM NEON path using `vqtbl1q_u8` (Q-register 16-byte table lookup) was tested
+    /// on Graviton 4 but showed no improvement over the scalar fallback (geo mean 1.0000x across
+    /// test.hits columns). The previous `vtbl2_u8` (D-register) path was actively slower.
 
 #else
     /// 4 % n.
@@ -299,29 +280,157 @@ template <>
 template <>
 [[maybe_unused]] void ALWAYS_INLINE copyOverlap<32>(UInt8 * op, UInt8 *& match, size_t offset)
 {
-    /// 4 % n
+#if defined(__SSSE3__)
+
+    /** In LZ4, when offset < copy_amount, the source and destination overlap during copying.
+      * This creates a repeating pattern effect. For example:
+      *   - If offset=1 and we copy 32 bytes, byte[0] repeats 32 times
+      *   - If offset=2 and we copy 32 bytes, bytes[0,1] repeat 16 times
+      *   - If offset=3 and we copy 32 bytes, bytes[0,1,2] repeat ~10.67 times
+      *
+      * The shuffle masks efficiently implement this pattern replication using SIMD instructions.
+      * Each row represents the shuffle pattern for a specific offset value (1-15).
+      */
+
+    /// Shuffle masks for the first 16 output bytes: masks_lo[offset][i] = i % offset.
+    /// This table generates indices for selecting bytes from the source pattern to fill positions 0-15.
+    /// For offset=2: [0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1] means alternate between byte[0] and byte[1].
+    /// For offset=3: [0,1,2,0,1,2,0,1,2,0,1,2,0,1,2,0] means cycle through bytes[0,1,2].
+    /// For offset=5: [0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0] means repeat the 5-byte pattern.
+    static constexpr UInt8 __attribute__((__aligned__(16))) masks_lo[] =
+    {
+        0,  1,  2,  1,  4,  1,  4,  2,  8,  7,  6,  5,  4,  3,  2,  1, /* offset = 0, not used as mask */
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, /* offset = 1 */
+        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
+        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,
+        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,
+        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,
+    };
+
+    /// Shuffle masks for the second 16 output bytes: masks_hi[offset][i] = (16 + i) % offset.
+    /// This table continues the pattern replication for positions 16-31.
+    /// The starting index is (16 % offset) to maintain pattern continuity from masks_lo.
+    /// For offset=2: Still [0,1,0,1,...] because 16%2=0, pattern restarts.
+    /// For offset=3: [1,2,0,1,2,0,...] because 16%3=1, pattern continues from index 1.
+    /// For offset=5: [1,2,3,4,0,1,2,3,4,0,...] because 16%5=1, pattern continues from index 1.
+    /// For offset=9: [7,8,0,1,2,3,4,5,6,7,8,0,...] because 16%9=7, pattern continues from index 7.
+    static constexpr UInt8 __attribute__((__aligned__(16))) masks_hi[] =
+    {
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, /* offset = 0, not used as mask */
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, /* offset = 1 */
+        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
+        1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,
+        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
+        1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,
+        4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,
+        2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
+        7,  8,  0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,
+        6,  7,  8,  9,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,
+        5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
+        4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,  4,  5,  6,  7,
+        3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,  3,  4,  5,
+        2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,  2,  3,
+        1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,  1,
+    };
+
+    /// How many bytes to advance the match pointer after copying 32 bytes.
+    /// This equals (32 % offset) when offset divides evenly, or the offset itself otherwise.
+    /// For offset=2: shifts[2]=2 because we copied the 2-byte pattern 16 times, advance by 2.
+    /// For offset=3: shifts[3]=2 because 32%3=2, the pattern repeated 10 full times plus 2 bytes.
+    /// For offset=5: shifts[5]=2 because 32%5=2, the pattern repeated 6 full times plus 2 bytes.
+    /// For offset=16: shifts[16]=16 because we copied exactly 16 bytes twice, advance by 16.
+    /// For offset=17-31: shifts[n] counts down from 15 to 1, representing 32%n for each offset.
+    static constexpr UInt8 shifts[]
+        = {0, 1, 2, 2, 4, 2, 2, 4, 8, 5, 2, 10, 8, 6, 4, 2, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
+
+    if (offset >= 16)
+    {
+        /// The second 16 bytes may overlap with op (e.g. offset=16 means match+16 == op),
+        /// so the first store must complete before the second load.
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(op),
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(match)));
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(op + 16),
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(match + 16)));
+    }
+    else
+    {
+        /// Load the source pattern once. Both shuffles reference only indices 0..offset-1,
+        /// so any bytes beyond the pattern length in the register are never selected.
+        __m128i src = _mm_loadu_si128(reinterpret_cast<const __m128i *>(match));
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(op),
+            _mm_shuffle_epi8(src, _mm_load_si128(reinterpret_cast<const __m128i *>(masks_lo) + offset)));
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(op + 16),
+            _mm_shuffle_epi8(src, _mm_load_si128(reinterpret_cast<const __m128i *>(masks_hi) + offset)));
+
+        __msan_unpoison(op, 32);
+    }
+
+    match += shifts[offset];
+
+    /// Note: an ARM NEON path using two `vqtbl1q_u8` calls (Q-register 16-byte table lookup)
+    /// was tested on Graviton 4 but showed no improvement over the scalar fallback (geo mean
+    /// 1.0000x across test.hits columns). The previous `vtbl2_u8` (D-register) path was also
+    /// slower due to needing four calls per 32 bytes.
+
+#else
+    /** Fallback implementation without SIMD instructions.
+      * Copies 32 bytes in four stages: 4 + 4 + 8 + 16 bytes.
+      * Each stage copies from an offset computed to maintain the repeating pattern.
+      */
+
+    /// Where to read from for the second 4 bytes (positions 4-7): equals (4 % offset) when that's non-zero, else 4.
+    /// For offset=2: shift1[2]=2, so we read from match+2, which wraps around to match[0,1] again.
+    /// For offset=3: shift1[3]=1, so we read from match+1, continuing the pattern [0,1,2,0,1,2,...].
+    /// For offset>=4: shift1[n]=4, so we read the next 4 fresh bytes.
     static constexpr UInt8 shift1[] = {0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
 
-    /// 8 % n
+    /// Where to read from for the next 8 bytes (positions 8-15): equals (8 % offset) when that's non-zero, else 8.
+    /// For offset=2: shift2[2]=2, wrapping the 2-byte pattern.
+    /// For offset=3: shift2[3]=2, because 8%3=2, continuing from the 2nd byte of the pattern.
+    /// For offset=5: shift2[5]=3, because 8%5=3, continuing from the 3rd byte of the pattern.
+    /// For offset>=8: shift2[n]=8 or (8%n), reading fresh or wrapped bytes as appropriate.
     static constexpr UInt8 shift2[] = {0, 1, 2, 2, 4, 3, 2, 1, 0, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8};
 
-    /// 16 % n
+    /// Where to read from for the next 16 bytes (positions 16-31): equals (16 % offset) when that's non-zero, else 16.
+    /// For offset=3: shift3[3]=1, because 16%3=1.
+    /// For offset=5: shift3[5]=1, because 16%5=1.
+    /// For offset=9: shift3[9]=7, because 16%9=7.
+    /// For offset>=16: shift3[n]=16, reading the next fresh 16 bytes without wrapping.
     static constexpr UInt8 shift3[]
         = {0, 1, 2, 1, 4, 1, 4, 2, 8, 7, 6, 5, 4, 3, 2, 1, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16};
 
-    /// 32 % n
+    /// How far to advance match pointer after copying all 32 bytes: equals (32 % offset).
+    /// This determines the final position after all four copy stages complete.
+    /// Same values as the SSSE3 shifts table.
     static constexpr UInt8 shift4[]
         = {0, 1, 2, 2, 4, 2, 2, 4, 8, 5, 2, 10, 8, 6, 4, 2, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
 
+    /// Copy the first 4 bytes directly.
     op[0] = match[0];
     op[1] = match[1];
     op[2] = match[2];
     op[3] = match[3];
 
+    /// Copy in stages, each reading from a position that maintains the repeating pattern.
     memcpy(op + 4, match + shift1[offset], 4);
     memcpy(op + 8, match + shift2[offset], 8);
     memcpy(op + 16, match + shift3[offset], 16);
     match += shift4[offset];
+#endif
 }
 
 
@@ -487,6 +596,24 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
 }
 
+/** Three variants of the decompression loop are instantiated, differing in copy granularity:
+  *   variant 0: `decompressImpl<8>`  — copies 8 bytes at a time
+  *   variant 1: `decompressImpl<16>` — copies 16 bytes at a time
+  *   variant 2: `decompressImpl<32>` — copies 32 bytes at a time
+  *
+  * No single variant is universally fastest. On x86 with SSSE3:
+  * - Variant 0 has the lowest per-iteration overhead (wins most files by count).
+  * - Variant 1 matches the natural 16-byte `pshufb` width (best aggregate throughput).
+  * - Variant 2 amortizes two `pshufb` ops per iteration (wins on large, high-repetition blocks).
+  *
+  * Measured on AMD 7950X3D with test.hits columns (175 files, 10 iterations each, min taken):
+  *   variant 0:  total 1,099M cycles — best for 57% of files
+  *   variant 1:  total   972M cycles — best for 26% of files (best single variant overall)
+  *   variant 2:  total 1,079M cycles — best for 17% of files
+  *   oracle:     total   869M cycles — per-file best, 10.6% faster than always-variant-1
+  *
+  * The adaptive bandit algorithm converges toward the oracle, making all three variants useful.
+  */
 bool decompress(
     const char * const source,
     char * const dest,
@@ -497,8 +624,10 @@ bool decompress(
     if (source_size == 0 || dest_size == 0)
         return true;
 
-    /// Don't run timer if the block is too small.
-    if (dest_size >= 32768)
+    /// When a specific method is forced, always use it regardless of block size.
+    /// The size threshold below only applies to the adaptive bandit algorithm
+    /// where timing very small blocks would add too much noise.
+    if (statistics.choose_method >= 0 || dest_size >= 32768)
     {
         size_t variant_size = 3;
         size_t best_variant = statistics.select(variant_size);
@@ -518,6 +647,14 @@ bool decompress(
         return success;
     }
 
+    /// For small blocks (< 32 KiB), skip the bandit and always use variant 0 (8-byte copies).
+    /// Timing such small blocks would add too much noise to the bandit's statistics.
+    /// Variant 0 is the right default here: it has the lowest per-iteration overhead
+    /// and wins the majority of files (57% on test.hits), especially smaller ones.
+    /// Note: the exact threshold value is not performance-sensitive. On test.hits columns
+    /// (AMD 7950X3D), sweeping it from 0 to 32K changes the oracle total by only 0.003%,
+    /// because variant 0 is available in the bandit anyway and would be selected for
+    /// the same files. The threshold is purely a noise-reduction measure.
     return decompressImpl<8>(source, dest, source_size, dest_size);
 }
 

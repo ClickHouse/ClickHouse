@@ -1,5 +1,3 @@
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -88,7 +86,7 @@ void ColumnMap::get(size_t n, Field & res) const
         map.push_back(getNestedData()[offset + i]);
 }
 
-DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnMap::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t offset = offsets[n - 1];
@@ -96,20 +94,18 @@ DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_b
 
     if (options.notFull(name_buf))
         name_buf << "[";
-    DataTypes element_types;
-    element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        const auto & type = getNestedData().getValueNameAndTypeImpl(name_buf, offset + i, options);
-        element_types.push_back(type);
+        getNestedData().getValueNameImpl(name_buf, offset + i, options);
+        if (!options.notFull(name_buf))
+            break;
     }
+
     if (options.notFull(name_buf))
         name_buf << "]";
-
-    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
@@ -254,10 +250,10 @@ ColumnPtr ColumnMap::replicate(const Offsets & offsets) const
     return ColumnMap::create(std::move(replicated));
 }
 
-MutableColumns ColumnMap::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnMap::scatter(size_t num_columns, const Selector & selector) const
 {
     auto scattered_columns = nested->scatter(num_columns, selector);
-    MutableColumns res;
+    VectorWithMemoryTracking<MutableColumnPtr> res;
     res.reserve(num_columns);
     for (auto && scattered : scattered_columns)
         res.push_back(ColumnMap::create(std::move(scattered)));
@@ -297,9 +293,9 @@ size_t ColumnMap::capacity() const
     return nested->capacity();
 }
 
-void ColumnMap::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnMap::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
-    Columns nested_source_columns;
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
@@ -336,12 +332,12 @@ void ColumnMap::protect()
     nested->protect();
 }
 
-void ColumnMap::getExtremes(Field & min, Field & max) const
+void ColumnMap::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     Field nested_min;
     Field nested_max;
 
-    nested->getExtremes(nested_min, nested_max);
+    nested->getExtremes(nested_min, nested_max, start, end);
 
     /// Convert result Array fields to Map fields because client expect min and max field to have type Map
 
@@ -438,9 +434,9 @@ ColumnPtr ColumnMap::compress(bool force_compression) const
     });
 }
 
-void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnMap::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    Columns nested_source_columns;
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());

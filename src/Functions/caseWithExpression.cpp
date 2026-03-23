@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -86,7 +87,7 @@ public:
         auto equals_result = function_base->execute(equals_args, equals_return_type, input_rows_count, false);
 
         // convert nullable equals result to non-nullable
-        if (isColumnNullable(*equals_result))
+        if (equals_return_type->isNullable())
         {
             auto if_null_func = FunctionFactory::instance().get("ifNull", context);
             auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
@@ -188,31 +189,43 @@ public:
         if (all_when_then_values_constant)
         {
             ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
-            return FunctionFactory::instance().get("transform", context)->build(transform_args)
-                ->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
-        }
-        else
-        {
-            ColumnsWithTypeAndName multi_if_args;
-
-            // Convert CASE expression into multiIf(expr = when1, then1, expr = when2, then2, ..., else)
-            for (size_t i = 1; i < args.size() - 1; i += 2)
+            FunctionBasePtr function_base;
+            try
             {
-                // use CASE WHEN equality semantics (NULL = NULL is true)
-                auto condition = caseWhenEquals(args.front(), args[i], input_rows_count);
+                function_base = FunctionFactory::instance().get("transform", context)->build(transform_args);
+            }
+            catch (Exception & e)
+            {
+                if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                    throw;
 
-                multi_if_args.push_back({condition, std::make_shared<DataTypeUInt8>(), ""});
-                multi_if_args.push_back(args[i + 1]); // Then value
+                /// Function 'transform' doesn't support some data types, e.g. Int128.
+                /// Fall back to multiIf.
             }
 
-            // Add an ELSE value
-            multi_if_args.push_back(args.back());
-
-            // Execute multiIf
-            return FunctionFactory::instance().get("multiIf", context)
-                ->build(multi_if_args)
-                ->execute(multi_if_args, result_type, input_rows_count, false);
+            if (function_base)
+                return function_base->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
         }
+
+        ColumnsWithTypeAndName multi_if_args;
+
+        // Convert CASE expression into multiIf(expr = when1, then1, expr = when2, then2, ..., else)
+        for (size_t i = 1; i < args.size() - 1; i += 2)
+        {
+            // use CASE WHEN equality semantics (NULL = NULL is true)
+            auto condition = caseWhenEquals(args.front(), args[i], input_rows_count);
+
+            multi_if_args.push_back({condition, std::make_shared<DataTypeUInt8>(), ""});
+            multi_if_args.push_back(args[i + 1]); // Then value
+        }
+
+        // Add an ELSE value
+        multi_if_args.push_back(args.back());
+
+        // Execute multiIf
+        return FunctionFactory::instance().get("multiIf", context)
+            ->build(multi_if_args)
+            ->execute(multi_if_args, result_type, input_rows_count, false);
     }
 
 private:
@@ -223,7 +236,23 @@ private:
 
 REGISTER_FUNCTION(CaseWithExpression)
 {
-    factory.registerFunction<FunctionCaseWithExpression>();
+    FunctionDocumentation::Description description = R"(
+Implements the `CASE expr WHEN val1 THEN result1 ... ELSE default END` expression. Internally transforms into a series of `multiIf` calls using equality comparison. Note that `NULL = NULL` evaluates to true in this context, unlike standard SQL equality.
+    )";
+    FunctionDocumentation::Syntax syntax = "caseWithExpression(expr, val1, result1[, val2, result2, ...], default)";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "The expression to compare.", {"Expression"}},
+        {"val1", "Value to compare against.", {"Any"}},
+        {"result1", "Value to return when expr equals val1.", {"Any"}},
+        {"default", "Default value to return if no match is found.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result corresponding to the first matching value, or the default.", {"Any"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT CASE 1 WHEN 1 THEN 'one' WHEN 2 THEN 'two' ELSE 'other' END", "one"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCaseWithExpression>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 
     /// These are obsolete function names.
     factory.registerAlias("caseWithExpr", "caseWithExpression");

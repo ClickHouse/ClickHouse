@@ -122,7 +122,7 @@ void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const Cont
         res_columns[1]->insert(DATABASE_CONTEXT);
         res_columns[2]->insertDefault();
 
-        for (auto iterator = database_ptr->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = database_ptr->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             const auto & table_name = iterator->name();
             const auto & table = iterator->table();

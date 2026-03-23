@@ -237,11 +237,25 @@
     M(KeeperPacketsSent) \
     M(KeeperPacketsReceived) \
     M(KeeperRequestTotal) \
+    M(KeeperRequestTotalWithSubrequests) \
     M(KeeperLatency) \
     M(KeeperTotalElapsedMicroseconds) \
     M(KeeperProcessElapsedMicroseconds) \
     M(KeeperPreprocessElapsedMicroseconds) \
     M(KeeperStorageLockWaitMicroseconds) \
+    M(KeeperStorageLockHoldMicroseconds) \
+    M(KeeperStorageSharedLockWaitMicroseconds) \
+    M(KeeperStorageSharedLockHoldMicroseconds) \
+    M(KeeperChangelogLockWaitMicroseconds) \
+    M(KeeperChangelogLockHoldMicroseconds) \
+    M(KeeperServerWriteLockWaitMicroseconds) \
+    M(KeeperServerWriteLockHoldMicroseconds) \
+    M(KeeperSessionCallbackLockWaitMicroseconds) \
+    M(KeeperSessionCallbackLockHoldMicroseconds) \
+    M(KeeperReadRequestQueueLockWaitMicroseconds) \
+    M(KeeperReadRequestQueueLockHoldMicroseconds) \
+    M(KeeperProcessAndResponsesLockWaitMicroseconds) \
+    M(KeeperProcessAndResponsesLockHoldMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
@@ -311,6 +325,9 @@
     M(JemallocFailedDeallocationSampleTracking) \
 \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
+    M(KeeperStaleRequestsSkipped) \
+    M(KeeperLiveSessionsLockWaitMicroseconds) \
+    M(KeeperLiveSessionsLockHoldMicroseconds) \
 
 namespace ProfileEvents
 {
