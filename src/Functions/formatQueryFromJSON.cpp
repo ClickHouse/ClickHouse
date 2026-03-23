@@ -78,11 +78,11 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
             const char * start = source.data();
             const char * end = tokens.empty() ? source.data() : tokens[0].begin;
             /// Find the actual first significant token's begin.
-            for (size_t i = 0; i < tokens.size(); ++i)
+            for (const auto & token : tokens)
             {
-                if (tokens[i].isSignificant() && !tokens[i].isEnd())
+                if (token.isSignificant() && !token.isEnd())
                 {
-                    end = tokens[i].begin;
+                    end = token.begin;
                     break;
                 }
             }

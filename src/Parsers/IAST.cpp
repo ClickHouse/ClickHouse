@@ -414,9 +414,8 @@ void IAST::readJSON(const Poco::JSON::Object & json)
         {
             setAlias(json.getValue<String>("alias"));
         }
-        catch (...)
+        catch (...) // Ok: node doesn't support aliases - ignore.
         {
-            /// Node doesn't support aliases - ignore.
         }
     }
 }

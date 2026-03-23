@@ -241,7 +241,7 @@ void ASTSetQuery::writeJSON(WriteBuffer & out) const
             o << "{\"name\":";
             writeJSONString(changes[i].name, o, fs);
             /// Write "value" key and the field as a JSON object via writeFieldValue.
-            /// We use a trick: writeFieldValue writes ,"key":{field_json},
+            /// We use a trick: writeFieldValue writes, "key":{field_json},
             /// but since we just wrote {"name":"..." the comma is exactly what we need.
             w.writeFieldValue("value", changes[i].value);
             o << '}';

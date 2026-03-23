@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 /// Helper for reading AST nodes from JSON objects.
 /// Provides convenient methods symmetric to JSONObjectWriter.
 class JSONObjectReader
@@ -86,7 +81,7 @@ public:
         result.reserve(arr->size());
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
-            auto child_obj = arr->getObject(i);
+            const auto & child_obj = arr->getObject(i);
             result.push_back(IAST::createFromJSON(*child_obj));
         }
         return result;

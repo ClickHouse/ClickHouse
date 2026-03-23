@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.4",
         {
             {"enable_materialized_cte", false, false, "New setting"},
+            {"allow_experimental_json_ast_dialect", false, false, "New setting to enable clickhouse_json dialect for JSON AST input instead of SQL."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

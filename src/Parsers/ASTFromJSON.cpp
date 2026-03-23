@@ -200,7 +200,7 @@ ASTPtr IAST::createFromJSON(const String & json)
 {
     Poco::JSON::Parser parser;
     auto result = parser.parse(json);
-    auto obj = result.extract<Poco::JSON::Object::Ptr>();
+    const auto & obj = result.extract<Poco::JSON::Object::Ptr>();
     if (!obj)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
     return createFromJSON(*obj);

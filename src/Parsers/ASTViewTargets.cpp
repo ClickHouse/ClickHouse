@@ -409,7 +409,7 @@ void ASTViewTargets::writeJSON(WriteBuffer & out) const
             }
             if (target.inner_uuid != UUIDHelpers::Nil)
             {
-                out << ",\"inner_uuid\":\"";
+                out << R"(,"inner_uuid":")";
                 writeUUIDText(target.inner_uuid, out);
                 out << '"';
             }
