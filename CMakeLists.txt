@@ -383,6 +383,15 @@ option(ENABLE_THINLTO "Clang-specific link time optimization" OFF)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
+# CFI requires ThinLTO. Validate here, after ENABLE_THINLTO has been resolved by
+# the option() call above. sanitize.cmake is included earlier (before the option()
+# declaration) so the check must live here where ENABLE_THINLTO is fully defined.
+if (ENABLE_CFI AND NOT ENABLE_THINLTO)
+    message (FATAL_ERROR "ENABLE_CFI requires ENABLE_THINLTO. "
+        "CFI needs -flto=thin and -fwhole-program-vtables which are only applied "
+        "when ThinLTO is enabled. Current configuration has ENABLE_THINLTO=${ENABLE_THINLTO}.")
+endif ()
+
 # We cannot afford to use LTO when compiling unit tests, and it's not enough
 # to only supply -fno-lto at the final linking stage. So we disable it
 # completely.
