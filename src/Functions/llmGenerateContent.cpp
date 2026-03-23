@@ -22,8 +22,8 @@ class FunctionLLMGenerateContent final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "llmGenerateContent";
-    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMGenerateContent>(std::move(ctx)); }
-    explicit FunctionLLMGenerateContent(ContextPtr ctx) : FunctionBaseLLM(std::move(ctx)) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMGenerateContent>(context); }
+    explicit FunctionLLMGenerateContent(ContextPtr context) : FunctionBaseLLM(context) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

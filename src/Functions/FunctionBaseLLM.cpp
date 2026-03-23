@@ -59,11 +59,27 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-FunctionBaseLLM::FunctionBaseLLM(ContextPtr context_) : context_weak(context_)
+FunctionBaseLLM::FunctionBaseLLM(ContextPtr context)
+    : timeout_sec(context->getSettingsRef()[Setting::llm_request_timeout_sec])
+    , max_concurrent(context->getSettingsRef()[Setting::llm_max_concurrent_requests])
+    , max_rps(context->getSettingsRef()[Setting::llm_max_rps])
+    , max_retries(context->getSettingsRef()[Setting::llm_max_retries])
+    , retry_delay_ms(context->getSettingsRef()[Setting::llm_retry_initial_delay_ms])
+    , cache_ttl(context->getSettingsRef()[Setting::llm_cache_ttl_sec])
+    , default_llm_resource(context->getSettingsRef()[Setting::default_llm_resource])
+    , llm_max_rows_per_query(context->getSettingsRef()[Setting::llm_cache_ttl_sec])
+    , llm_max_input_tokens_per_query(context->getSettingsRef()[Setting::llm_max_input_tokens_per_query])
+    , llm_max_output_tokens_per_query(context->getSettingsRef()[Setting::llm_max_output_tokens_per_query])
+    , llm_max_api_calls_per_query(context->getSettingsRef()[Setting::llm_max_api_calls_per_query])
+    , llm_on_quota_exceeded(context->getSettingsRef()[Setting::llm_on_quota_exceeded])
+    , llm_on_error(context->getSettingsRef()[Setting::llm_on_error])
+    , settings(context->getSettingsRef())
+    , server_settings(context->getServerSettings())
+
 {
-    if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
+    if (!context->getSettingsRef()[Setting::allow_experimental_ai_functions])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
+            "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable");
 }
 
 bool FunctionBaseLLM::hasNamedCollectionArg(const ColumnsWithTypeAndName & arguments) const
@@ -93,7 +109,6 @@ size_t FunctionBaseLLM::getFirstDataArgIndex(const ColumnsWithTypeAndName & argu
 FunctionBaseLLM::ResolvedConfig FunctionBaseLLM::resolveConfig(const ColumnsWithTypeAndName & arguments) const
 {
     ResolvedConfig config;
-    const auto & settings = getContext()->getSettingsRef();
 
     String collection_name;
     if (hasNamedCollectionArg(arguments))
@@ -103,7 +118,7 @@ FunctionBaseLLM::ResolvedConfig FunctionBaseLLM::resolveConfig(const ColumnsWith
     }
     else
     {
-        collection_name = settings[Setting::default_llm_resource].value;
+        collection_name = default_llm_resource;
     }
 
     if (collection_name.empty())
@@ -155,23 +170,15 @@ ColumnPtr FunctionBaseLLM::executeImpl(const ColumnsWithTypeAndName & arguments,
     auto provider = createLLMProvider(config.provider, config.endpoint, config.api_key);
     float temperature = resolveTemperature(arguments, config);
 
-    const auto & settings = getContext()->getSettingsRef();
-    UInt64 timeout_sec = settings[Setting::llm_request_timeout_sec].value;
-    UInt64 max_concurrent = settings[Setting::llm_max_concurrent_requests].value;
-    UInt64 max_rps = settings[Setting::llm_max_rps].value;
-    UInt64 max_retries = settings[Setting::llm_max_retries].value;
-    UInt64 retry_delay_ms = settings[Setting::llm_retry_initial_delay_ms].value;
-    UInt64 cache_ttl = settings[Setting::llm_cache_ttl_sec].value;
-
     auto quota = std::make_shared<LLMQuotaTracker>(
-        settings[Setting::llm_max_rows_per_query].value,
-        settings[Setting::llm_max_input_tokens_per_query].value,
-        settings[Setting::llm_max_output_tokens_per_query].value,
-        settings[Setting::llm_max_api_calls_per_query].value,
-        String(settings[Setting::llm_on_quota_exceeded].value),
-        String(settings[Setting::llm_on_error].value));
+        llm_max_rows_per_query,
+        llm_max_input_tokens_per_query,
+        llm_max_output_tokens_per_query,
+        llm_max_api_calls_per_query,
+        llm_on_quota_exceeded,
+        llm_on_error);
 
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings);
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec), 0);
 
     auto throttler = std::make_shared<Throttler>("llm_rps", max_rps);

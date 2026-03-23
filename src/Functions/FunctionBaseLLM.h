@@ -13,7 +13,7 @@ namespace DB
 class FunctionBaseLLM : public IFunction
 {
 public:
-    explicit FunctionBaseLLM(ContextPtr context_);
+    explicit FunctionBaseLLM(ContextPtr context);
 
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
@@ -25,9 +25,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 protected:
-    ContextWeakPtr context_weak;
-    ContextPtr getContext() const { return context_weak.lock(); }
-
     virtual String functionName() const = 0;
     virtual float defaultTemperature() const = 0;
     virtual String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const = 0;
@@ -53,6 +50,25 @@ private:
 
     ResolvedConfig resolveConfig(const ColumnsWithTypeAndName & arguments) const;
     float resolveTemperature(const ColumnsWithTypeAndName & arguments, const ResolvedConfig & config) const;
+
+    const UInt64 timeout_sec;
+    const UInt64 max_concurrent;
+    const UInt64 max_rps;
+    const UInt64 max_retries;
+    const UInt64 retry_delay_ms;
+    const UInt64 cache_ttl;
+
+    const String default_llm_resource;
+
+    const UInt64 llm_max_rows_per_query;
+    const UInt64 llm_max_input_tokens_per_query;
+    const UInt64 llm_max_output_tokens_per_query;
+    const UInt64 llm_max_api_calls_per_query;
+    const String llm_on_quota_exceeded;
+    const String llm_on_error;
+
+    const Settings & settings;
+    const ServerSettings & server_settings;
 };
 
 }

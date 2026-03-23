@@ -24,8 +24,8 @@ class FunctionLLMExtract final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "llmExtract";
-    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMExtract>(std::move(ctx)); }
-    explicit FunctionLLMExtract(ContextPtr ctx) : FunctionBaseLLM(std::move(ctx)) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMExtract>(context); }
+    explicit FunctionLLMExtract(ContextPtr context) : FunctionBaseLLM(context) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

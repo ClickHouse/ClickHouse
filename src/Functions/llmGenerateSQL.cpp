@@ -26,8 +26,8 @@ class FunctionLLMGenerateSQL final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "llmGenerateSQL";
-    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMGenerateSQL>(std::move(ctx)); }
-    explicit FunctionLLMGenerateSQL(ContextPtr ctx) : FunctionBaseLLM(std::move(ctx)) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLLMGenerateSQL>(context_); }
+    explicit FunctionLLMGenerateSQL(ContextPtr context_) : FunctionBaseLLM(context_) , context(context_) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -46,15 +46,17 @@ public:
         return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
     }
 
-protected:
+private:
+    ContextPtr context;
+
     String functionName() const override { return name; }
     float defaultTemperature() const override { return 0.1f; }
 
     String resolveSchemaForDatabase(const String & db_name) const
     {
-        auto database = DatabaseCatalog::instance().getDatabase(db_name, getContext());
+        auto database = DatabaseCatalog::instance().getDatabase(db_name, context);
         String schema;
-        auto iter = database->getTablesIterator(getContext());
+        auto iter = database->getTablesIterator(context);
         while (iter->isValid())
         {
             auto table_name = iter->name();
@@ -101,7 +103,7 @@ protected:
                 schema += db_schema;
         }
 
-        String current_db = getContext()->getCurrentDatabase();
+        String current_db = context->getCurrentDatabase();
         if (!current_db.empty() && current_db != "system" && current_db != "INFORMATION_SCHEMA"
             && current_db != "information_schema")
         {

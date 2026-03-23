@@ -30,8 +30,8 @@ class FunctionLLMClassify final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "llmClassify";
-    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMClassify>(std::move(ctx)); }
-    explicit FunctionLLMClassify(ContextPtr ctx) : FunctionBaseLLM(std::move(ctx)) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMClassify>(context); }
+    explicit FunctionLLMClassify(ContextPtr context) : FunctionBaseLLM(context) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -45,7 +45,7 @@ public:
         return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
     }
 
-protected:
+private:
     String functionName() const override { return name; }
     float defaultTemperature() const override { return 0.0f; }
 

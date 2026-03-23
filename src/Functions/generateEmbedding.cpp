@@ -105,17 +105,17 @@ class FunctionGenerateEmbeddingImpl final : public IFunction
 {
 public:
     static constexpr auto name = or_null ? "generateEmbeddingOrNull" : "generateEmbedding";
-    static FunctionPtr create(ContextPtr ctx)
-    {
-        if (!ctx->getSettingsRef()[Setting::allow_experimental_ai_functions])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "AI function '{}' is experimental. Set `allow_experimental_ai_functions` setting to enable it", name);
-        return std::make_shared<FunctionGenerateEmbeddingImpl>(std::move(ctx));
-    }
-    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_) : context_weak(context_) {}
 
-    ContextWeakPtr context_weak;
-    ContextPtr getContext() const { return context_weak.lock(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (!context->getSettingsRef()[Setting::allow_experimental_ai_functions])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "AI function '{}' is experimental. Set `allow_experimental_ai_functions` setting to enable", name);
+        return std::make_shared<FunctionGenerateEmbeddingImpl>(context);
+    }
+    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_) : context(context_) {}
+
+    ContextPtr context;
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -138,7 +138,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const auto & settings = getContext()->getSettingsRef();
+        const auto & settings = context->getSettingsRef();
 
         String provider_name;
         String endpoint_val;
@@ -223,7 +223,7 @@ public:
             on_quota,
             on_error);
 
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, context->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec), 0);
 
         std::unordered_map<UInt128, std::vector<size_t>, UInt128Hash> dedup_map;
