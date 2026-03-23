@@ -13,16 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-class IcebergMetadata;
-class DeltaLakeMetadata;
-class PaimonMetadata;
-class HudiMetadata;
-
 class DatabaseDataLake final : public IDatabase, WithContext
 {
 public:
@@ -97,11 +87,6 @@ private:
     static std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type);
 
-    /// Calls `func.template operator()<MetadataType>()` with the correct
-    /// metadata type determined by the catalog type.
-    template <typename Func>
-    auto dispatchByMetadataType(Func && func) const;
-
     std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
 
     /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes
@@ -110,32 +95,6 @@ private:
 
     const UUID db_uuid;
 };
-
-template <typename Func>
-auto DatabaseDataLake::dispatchByMetadataType(Func && func) const
-{
-    auto catalog = getCatalog();
-    switch (catalog->getCatalogType())
-    {
-#if USE_AVRO
-        case DatabaseDataLakeCatalogType::ICEBERG_REST:
-        case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
-        case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
-        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
-        case DatabaseDataLakeCatalogType::GLUE:
-            return func.template operator()<IcebergMetadata>();
-        case DatabaseDataLakeCatalogType::PAIMON_REST:
-            return func.template operator()<PaimonMetadata>();
-#endif
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
-        case DatabaseDataLakeCatalogType::UNITY:
-            return func.template operator()<DeltaLakeMetadata>();
-#endif
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unsupported catalog type for datalake operation");
-    }
-}
 
 }
 #endif

@@ -520,60 +520,107 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query)
-    {
-        auto storage_id = StorageID(getDatabaseName(), name);
-
-        auto make_datalake_cluster_storage = [&]<typename MetadataType>() -> StoragePtr
-        {
-            return std::make_shared<StorageDataLakeCluster<MetadataType>>(
-                parallel_replicas_cluster_name,
-                configuration,
-                configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(storage_id)),
-                storage_id,
-                columns,
-                ConstraintsDescription{},
-                nullptr,
-                context_,
-                /* datalake_settings */ nullptr,
-                /// Use is_table_function = true,
-                /// because this table is actually stateless like a table function.
-                /* is_table_function */true);
-        };
-
-        auto storage_cluster = dispatchByMetadataType(make_datalake_cluster_storage);
-        storage_cluster->startup();
-        return storage_cluster;
-    }
-
     bool can_use_distributed_iterator =
         context_->getClientInfo().collaborate_with_initiator &&
         can_use_parallel_replicas;
 
-    auto make_datalake_storage = [&]<typename MetadataType>() -> StoragePtr
+    enum class DataLakeType
     {
-        return std::make_shared<StorageDataLake<MetadataType>>(
-            configuration,
-            configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
-            context_copy,
-            StorageID(getDatabaseName(), name),
-            /* columns */columns,
-            /* constraints */ConstraintsDescription{},
-            /* comment */"",
-            getFormatSettings(context_copy),
-            LoadingStrictnessLevel::CREATE,
-            /* datalake_settings */storage_settings,
-            getCatalog(),
-            /* distributed_processing */can_use_distributed_iterator,
-            /* partition_by */nullptr,
-            /* order_by */nullptr,
-            /// Use is_table_function = true,
-            /// because this table is actually stateless like a table function.
-            /* is_table_function */true,
-            /* lazy_init */true);
+        Iceberg,
+        DeltaLake,
+        Paimon,
     };
 
-    return dispatchByMetadataType(make_datalake_storage);
+    DataLakeType datalake_type;
+    switch (catalog->getCatalogType())
+    {
+        case DatabaseDataLakeCatalogType::ICEBERG_REST:
+        case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+        case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
+        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        case DatabaseDataLakeCatalogType::GLUE:
+            datalake_type = DataLakeType::Iceberg;
+            break;
+        case DatabaseDataLakeCatalogType::UNITY:
+            datalake_type = DataLakeType::DeltaLake;
+            break;
+        case DatabaseDataLakeCatalogType::PAIMON_REST:
+            datalake_type = DataLakeType::Paimon;
+            break;
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported catalog type");
+    }
+
+    if (can_use_parallel_replicas && !is_secondary_query)
+    {
+        auto storage_id = StorageID(getDatabaseName(), name);
+        auto object_storage = configuration->createObjectStorage(
+            context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(storage_id));
+
+        StoragePtr storage_cluster;
+        switch (datalake_type)
+        {
+#if USE_AVRO
+            case DataLakeType::Iceberg:
+                storage_cluster = std::make_shared<StorageDataLakeCluster<IcebergMetadata>>(
+                    parallel_replicas_cluster_name, configuration, object_storage, storage_id,
+                    columns, ConstraintsDescription{}, nullptr, context_,
+                    /* datalake_settings */ nullptr, /* is_table_function */ true);
+                break;
+            case DataLakeType::Paimon:
+                storage_cluster = std::make_shared<StorageDataLakeCluster<PaimonMetadata>>(
+                    parallel_replicas_cluster_name, configuration, object_storage, storage_id,
+                    columns, ConstraintsDescription{}, nullptr, context_,
+                    /* datalake_settings */ nullptr, /* is_table_function */ true);
+                break;
+#endif
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+            case DataLakeType::DeltaLake:
+                storage_cluster = std::make_shared<StorageDataLakeCluster<DeltaLakeMetadata>>(
+                    parallel_replicas_cluster_name, configuration, object_storage, storage_id,
+                    columns, ConstraintsDescription{}, nullptr, context_,
+                    /* datalake_settings */ nullptr, /* is_table_function */ true);
+                break;
+#endif
+        }
+
+        if (!storage_cluster)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported datalake type for creating cluster storage");
+
+        storage_cluster->startup();
+        return storage_cluster;
+    }
+
+    auto table_id = StorageID(getDatabaseName(), name);
+    auto object_storage = configuration->createObjectStorage(
+        context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(table_id));
+
+    switch (datalake_type)
+    {
+#if USE_AVRO
+        case DataLakeType::Iceberg:
+            return std::make_shared<StorageDataLake<IcebergMetadata>>(
+                configuration, object_storage, context_copy, table_id, columns,
+                ConstraintsDescription{}, "", getFormatSettings(context_copy),
+                LoadingStrictnessLevel::CREATE, storage_settings, getCatalog(),
+                can_use_distributed_iterator, nullptr, nullptr, true, true);
+        case DataLakeType::Paimon:
+            return std::make_shared<StorageDataLake<PaimonMetadata>>(
+                configuration, object_storage, context_copy, table_id, columns,
+                ConstraintsDescription{}, "", getFormatSettings(context_copy),
+                LoadingStrictnessLevel::CREATE, storage_settings, getCatalog(),
+                can_use_distributed_iterator, nullptr, nullptr, true, true);
+#endif
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+        case DataLakeType::DeltaLake:
+            return std::make_shared<StorageDataLake<DeltaLakeMetadata>>(
+                configuration, object_storage, context_copy, table_id, columns,
+                ConstraintsDescription{}, "", getFormatSettings(context_copy),
+                LoadingStrictnessLevel::CREATE, storage_settings, getCatalog(),
+                can_use_distributed_iterator, nullptr, nullptr, true, true);
+#endif
+    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported datalake type for creating storage");
 }
 
 void DatabaseDataLake::dropTable( /// NOLINT
