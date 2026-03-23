@@ -59,6 +59,8 @@
 #endif
 
 
+
+
 namespace DB
 {
 namespace Setting
@@ -962,7 +964,9 @@ KeyCondition::KeyCondition(
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
     , allow_s2_keycondition(context->getSettingsRef()[Setting::allow_experimental_s2_keycondition])
-    , s2_max_covering_cells(context->getSettingsRef()[Setting::s2_max_covering_cells])
+    , s2_max_covering_cells(static_cast<int>(std::min<UInt64>(
+          context->getSettingsRef()[Setting::s2_max_covering_cells],
+          static_cast<UInt64>(std::numeric_limits<int>::max()))))
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -3007,6 +3011,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 out.s2_covering_data->function_name = func_name;
 
                 const auto atom_it = atom_map.find(func_name);
+                if (atom_it == atom_map.end())
+                    return false;
                 Field dummy;
                 return atom_it->second(out, dummy);
             };
@@ -3029,7 +3035,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     return false;
 
                 S2RegionCoverer::Options opts;
-                opts.set_max_cells(static_cast<int>(s2_max_covering_cells));
+                opts.set_max_cells(s2_max_covering_cells);
                 return make_result(2, S2RegionCoverer(opts).GetCovering(rect));
             }
             else if (func_name == "s2CapContains")
@@ -3050,12 +3056,24 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     return false;
 
                 S2RegionCoverer::Options opts;
-                opts.set_max_cells(static_cast<int>(s2_max_covering_cells));
+                opts.set_max_cells(s2_max_covering_cells);
                 return make_result(2, S2RegionCoverer(opts).GetCovering(cap));
             }
             else if (func_name == "s2CellsIntersect")
             {
                 /// s2CellsIntersect(s2index1, s2index2) — either arg can be the key column.
+                ///
+                /// Semantics: s2CellsIntersect(a, b) is true iff a and b share any area,
+                /// i.e. one is an ancestor (or equal) of the other on the S2 cell hierarchy.
+                ///
+                /// Index pruning soundness: wrapping `const_cell` in a single-element
+                /// S2CellUnion and testing it via `coveringIntersectsRange` is correct because
+                /// the Hilbert-curve range [const_cell.range_min(), const_cell.range_max()]
+                /// is exactly the set of all leaf-cell descendants of `const_cell`.  A granule
+                /// with interval [cell_min, cell_max] can only contain a cell that intersects
+                /// `const_cell` if some leaf-cell in that interval falls inside const_cell's
+                /// range — which is precisely what `coveringIntersectsRange` tests.  The check
+                /// is conservative: false positives are possible, false negatives are not.
                 Field cell_val;
                 DataTypePtr cell_type;
                 size_t key_arg_idx;
@@ -4582,6 +4600,18 @@ BoolMask KeyCondition::checkInHyperrectangle(
             const Range & key_range = hyperrectangle[element.key_columns[0]];
 
             if (unlikely(!element.s2_covering_data))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            /// The range boundaries may be ±infinity (Null) when this granule corresponds to
+            /// a non-prefix key column in `forAnyHyperrectangle`. `FieldVisitorConvertToNumber`
+            /// throws on Null, so we must guard against it.  An unbounded side means the
+            /// granule could contain any S2CellId value, so we conservatively report a
+            /// possible intersection rather than risk a false negative.
+            if (unlikely(key_range.left.isNegativeInfinity() || key_range.left.isPositiveInfinity()
+                || key_range.right.isNegativeInfinity() || key_range.right.isPositiveInfinity()))
             {
                 rpn_stack.emplace_back(true, true);
                 continue;

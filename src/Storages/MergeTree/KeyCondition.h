@@ -579,7 +579,9 @@ private:
     bool allow_s2_keycondition = false;
 
     /// Maximum number of cells for the S2 covering (see `s2_max_covering_cells` setting).
-    size_t s2_max_covering_cells = 20;
+    /// Stored as `int` to match `S2RegionCoverer::Options::set_max_cells`; clamped to
+    /// `std::numeric_limits<int>::max()` at construction to guard against UInt64 overflow.
+    int s2_max_covering_cells = 8;
 
     /// If true, this key condition is relaxed. When a key condition is relaxed, it
     /// is considered weakened. This is because keys may not always align perfectly

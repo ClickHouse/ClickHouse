@@ -1,6 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 -- Test S2 key condition: s2RectContains, s2CapContains, s2CellsIntersect
 -- for primary-key index pruning, plus the `s2_max_covering_cells` setting.
+-- no-parallel-replicas: EXPLAIN output for granule counts differs under parallel replicas.
 
 SET allow_experimental_s2_keycondition = 1;
 
@@ -100,3 +101,26 @@ WHERE s2CellsIntersect(cell_id, 9926594385212866560)
 SETTINGS s2_max_covering_cells = 8;
 
 DROP TABLE t_s2_cells;
+
+-- ── Table 3: composite key — S2 column is NOT the first key column ────────────
+-- This exercises the code path where `forAnyHyperrectangle` sets the S2 column's
+-- range to ±infinity (createWholeUniverseWithoutNull). Before the fix,
+-- `FieldVisitorConvertToNumber<UInt64>` would throw on those Null (infinity)
+-- boundaries; now the S2 branch conservatively returns {true, true}.
+
+DROP TABLE IF EXISTS t_s2_composite;
+CREATE TABLE t_s2_composite (part_id UInt32, cell_id UInt64)
+ENGINE = MergeTree ORDER BY (part_id, cell_id)
+SETTINGS index_granularity = 128;
+
+INSERT INTO t_s2_composite SELECT number % 4, geoToS2(-74.0 + (number % 100) * 0.005, 40.7 + (number / 100) * 0.005) FROM numbers(1000);
+INSERT INTO t_s2_composite VALUES (0, 9926595209846587392);
+OPTIMIZE TABLE t_s2_composite FINAL;
+
+-- 11. No false negatives with composite key (S2 column is non-prefix)
+SELECT
+    (SELECT count() FROM t_s2_composite WHERE s2CellsIntersect(cell_id, 9926594385212866560))
+    =
+    (SELECT count() FROM t_s2_composite WHERE s2CellsIntersect(cell_id, 9926594385212866560) SETTINGS use_primary_key = 0);
+
+DROP TABLE t_s2_composite;

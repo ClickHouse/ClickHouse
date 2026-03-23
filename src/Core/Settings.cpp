@@ -2554,8 +2554,8 @@ If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x
     DECLARE(Bool, allow_experimental_s2_keycondition, false, R"(
 Allow `s2RectContains` and `s2CapContains` to be used as key conditions for primary key index pruning. When the key column stores S2 cell identifiers, this enables granule-level spatial filtering so that non-matching granules are skipped during reads. At parse time the query region is decomposed into a tight `S2CellUnion` covering; at eval time each granule's `[cell_min, cell_max]` Hilbert-curve interval is tested directly against the covering, bypassing the common-ancestor over-approximation.
 )", 0) \
-    DECLARE(UInt64, s2_max_covering_cells, 20, R"(
-Maximum number of S2 cells used to approximate the query region when `allow_experimental_s2_keycondition` is enabled. Higher values produce tighter coverings (fewer false-positive granules) at the cost of slightly more comparisons per granule. The default of 20 matches the previous hard-coded value.
+    DECLARE(UInt64, s2_max_covering_cells, 8, R"(
+Maximum number of S2 cells used to approximate the query region when `allow_experimental_s2_keycondition` is enabled. Higher values produce tighter coverings (fewer false-positive granules) at the cost of slightly more comparisons per granule. Has no effect for `s2CellsIntersect`, which always uses a single-cell exact covering regardless of this setting.
 )", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
