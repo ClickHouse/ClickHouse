@@ -132,6 +132,19 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !read_from_mergetree_step->getPrewhereInfo();
 
+    /// When read-in-order optimization is enabled and the sort column is a prefix
+    /// of the storage's sorting key, the engine will read data in sorted order.
+    /// TopK dynamic filtering is counterproductive in this case: once the threshold
+    /// is established, the prewhere rejects all subsequent rows (they are beyond
+    /// the threshold in sorted order), preventing the LIMIT from triggering early
+    /// pipeline cancellation, and causing a full table scan instead.
+    if (use_dynamic_filtering && settings.read_in_order)
+    {
+        const auto & sorting_key = read_from_mergetree_step->getStorageMetadata()->getSortingKey();
+        if (!sorting_key.column_names.empty() && sorting_key.column_names[0] == sort_column_name)
+            use_dynamic_filtering = false;
+    }
+
     /// The threshold tracker is needed for dynamic mark skipping during reads
     /// (use_skip_indexes_on_data_read) or for the prewhere dynamic filter.
     /// Initial top-k mark selection (getTopKMarks) does not require it.

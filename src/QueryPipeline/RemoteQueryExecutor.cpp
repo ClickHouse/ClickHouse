@@ -5,7 +5,9 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
+#include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -433,6 +435,9 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         }
         local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
     }
+
+    if (distributed_fanout > 0)
+        connections->setDistributedFanout(distributed_fanout);
 
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, local_granted_roles);
 
@@ -903,8 +908,19 @@ void RemoteQueryExecutor::sendExternalTables()
             {
                 StoragePtr cur = table.second;
                 /// Send only temporary tables with StorageMemory
-                if (!std::dynamic_pointer_cast<StorageMemory>(cur))
+                auto storage_memory = std::dynamic_pointer_cast<StorageMemory>(cur);
+                if (!storage_memory)
                     continue;
+
+                /// Skip sending Materialized CTEs when they are not built.
+                /// It is required to be able CTE materialization plan with parallel replicas (avoiding
+                /// circular dependency between CTE materialization and parallel replicas external tables.
+                auto materialized_cte = storage_memory->getMaterializedCTE();
+                if (materialized_cte != nullptr && !materialized_cte->is_built)
+                {
+                    LOG_DEBUG(log, "Skipping sending CTE '{}' because it has not been materialized yet", materialized_cte->cte_name);
+                    continue;
+                }
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
