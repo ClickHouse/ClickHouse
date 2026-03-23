@@ -8,6 +8,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/typeid_cast.h>
 
 
@@ -162,6 +164,32 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     settings_query->is_standalone = false;
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     return node;
+}
+
+void ASTProjectionSelectQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ProjectionSelectQuery");
+    w.writeChild("with", with());
+    w.writeChild("select", select());
+    w.writeChild("group_by", groupBy());
+    w.writeChild("order_by", orderBy());
+}
+
+void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    auto setExpr = [&](const char * key, ASTProjectionSelectQuery::Expression expr)
+    {
+        auto child = r.readChild(key);
+        if (child)
+            this->setExpression(expr, std::move(child));
+    };
+
+    setExpr("with", Expression::WITH);
+    setExpr("select", Expression::SELECT);
+    setExpr("group_by", Expression::GROUP_BY);
+    setExpr("order_by", Expression::ORDER_BY);
 }
 
 }

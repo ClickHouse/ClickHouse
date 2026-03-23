@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Interpreters/StorageID.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -121,6 +122,8 @@ public:
     String getID(char) const override { return "ViewTargets"; }
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     /// Formats information only about a specific target table.
     void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const;

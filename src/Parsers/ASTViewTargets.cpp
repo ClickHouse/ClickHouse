@@ -1,4 +1,6 @@
 #include <Parsers/ASTViewTargets.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -343,4 +345,83 @@ void ASTViewTargets::resetTableASTWithQueryParams(ViewTarget::Kind kind)
         if (target.kind == kind)
             target.table_ast.reset();
 }
+
+void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    auto arr = r.getArray("targets");
+    if (!arr)
+        return;
+    for (unsigned int i = 0; i < arr->size(); ++i)
+    {
+        auto target_obj = arr->getObject(i);
+        if (!target_obj)
+            continue;
+        ViewTarget target;
+        String kind_str = target_obj->getValue<String>("kind");
+        parseFromString(target.kind, kind_str);
+        if (target_obj->has("table_id"))
+        {
+            String full_name = target_obj->getValue<String>("table_id");
+            auto dot_pos = full_name.find('.');
+            if (dot_pos != String::npos)
+                target.table_id = StorageID(full_name.substr(0, dot_pos), full_name.substr(dot_pos + 1));
+            else
+                target.table_id = StorageID("", full_name);
+        }
+        if (target_obj->has("inner_uuid"))
+        {
+            String uuid_str = target_obj->getValue<String>("inner_uuid");
+            target.inner_uuid = parseFromString<UUID>(uuid_str);
+        }
+        if (target_obj->has("inner_engine"))
+        {
+            auto engine_obj = target_obj->getObject("inner_engine");
+            if (engine_obj)
+            {
+                target.inner_engine = IAST::createFromJSON(*engine_obj);
+                children.push_back(target.inner_engine);
+            }
+        }
+        targets.push_back(std::move(target));
+    }
+}
+
+void ASTViewTargets::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ViewTargets");
+    if (!targets.empty())
+    {
+        w.writeKey("targets");
+        out << '[';
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            if (i > 0)
+                out << ',';
+            const auto & target = targets[i];
+            out << '{';
+            out << "\"kind\":";
+            writeJSONString(toString(target.kind), out, w.getFormatSettings());
+            if (!target.table_id.empty())
+            {
+                out << ",\"table_id\":";
+                writeJSONString(target.table_id.getFullTableName(), out, w.getFormatSettings());
+            }
+            if (target.inner_uuid != UUIDHelpers::Nil)
+            {
+                out << ",\"inner_uuid\":\"";
+                writeUUIDText(target.inner_uuid, out);
+                out << '"';
+            }
+            if (target.inner_engine)
+            {
+                out << ",\"inner_engine\":";
+                target.inner_engine->writeJSON(out);
+            }
+            out << '}';
+        }
+        out << ']';
+    }
+}
+
 }

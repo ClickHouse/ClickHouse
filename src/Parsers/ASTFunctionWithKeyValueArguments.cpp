@@ -4,6 +4,8 @@
 #include <Common/SipHash.h>
 #include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 namespace DB
 {
@@ -22,6 +24,26 @@ ASTPtr ASTPair::clone() const
     return res;
 }
 
+
+void ASTPair::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Pair");
+    w.writeString("first", first);
+    w.writeBool("second_with_brackets", second_with_brackets);
+    w.writeChild("second", second);
+}
+
+void ASTPair::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    first = r.getString("first");
+    second_with_brackets = r.getBool("second_with_brackets");
+
+    auto child = r.readChild("second");
+    if (child)
+        set(second, child);
+}
 
 void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
@@ -92,6 +114,26 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
     return res;
 }
 
+
+void ASTFunctionWithKeyValueArguments::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "FunctionWithKeyValueArguments");
+    w.writeString("name", name);
+    w.writeBool("has_brackets", has_brackets);
+    w.writeChild("elements", elements);
+}
+
+void ASTFunctionWithKeyValueArguments::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+    has_brackets = r.getBool("has_brackets");
+
+    elements = r.readChild("elements");
+    if (elements)
+        children.push_back(elements);
+}
 
 void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {

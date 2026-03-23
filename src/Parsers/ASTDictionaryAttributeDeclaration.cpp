@@ -2,6 +2,8 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -30,6 +32,43 @@ ASTPtr ASTDictionaryAttributeDeclaration::clone() const
     }
 
     return res;
+}
+
+void ASTDictionaryAttributeDeclaration::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DictionaryAttributeDeclaration");
+    w.writeString("name", name);
+    w.writeChild("attr_type", type);
+    w.writeChild("default_value", default_value);
+    w.writeChild("expression", expression);
+    w.writeBool("hierarchical", hierarchical);
+    w.writeBool("bidirectional", bidirectional);
+    w.writeBool("injective", injective);
+    w.writeBool("is_object_id", is_object_id);
+}
+
+void ASTDictionaryAttributeDeclaration::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+
+    type = r.readChild("attr_type");
+    if (type)
+        children.push_back(type);
+
+    default_value = r.readChild("default_value");
+    if (default_value)
+        children.push_back(default_value);
+
+    expression = r.readChild("expression");
+    if (expression)
+        children.push_back(expression);
+
+    hierarchical = r.getBool("hierarchical");
+    bidirectional = r.getBool("bidirectional");
+    injective = r.getBool("injective");
+    is_object_id = r.getBool("is_object_id");
 }
 
 void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

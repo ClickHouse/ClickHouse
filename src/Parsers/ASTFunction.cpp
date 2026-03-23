@@ -2,6 +2,8 @@
 #include <string_view>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -114,6 +116,105 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
             writeCString(")", ostr);
         }
     }
+}
+
+void ASTFunction::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Function");
+    w.writeString("name", name);
+    w.writeChild("arguments", arguments);
+    w.writeChild("parameters", parameters);
+    if (!window_name.empty())
+        w.writeString("window_name", window_name);
+    w.writeChild("window_definition", window_definition);
+    if (isOperator())
+        w.writeBool("is_operator", true);
+    if (isWindowFunction())
+        w.writeBool("is_window_function", true);
+    if (computeAfterWindowFunctions())
+        w.writeBool("compute_after_window_functions", true);
+    if (isLambdaFunction())
+        w.writeBool("is_lambda_function", true);
+    if (preferSubqueryToFunctionFormatting())
+        w.writeBool("prefer_subquery_to_function_formatting", true);
+    if (noEmptyArgs())
+        w.writeBool("no_empty_args", true);
+    if (isCompoundName())
+        w.writeBool("is_compound_name", true);
+    if (getNullsAction() == NullsAction::RESPECT_NULLS)
+        w.writeString("nulls_action", "RESPECT_NULLS");
+    else if (getNullsAction() == NullsAction::IGNORE_NULLS)
+        w.writeString("nulls_action", "IGNORE_NULLS");
+    if (getKind() != Kind::ORDINARY_FUNCTION)
+    {
+        const char * kind_str = nullptr;
+        switch (getKind())
+        {
+            case Kind::WINDOW_FUNCTION: kind_str = "WINDOW_FUNCTION"; break;
+            case Kind::LAMBDA_FUNCTION: kind_str = "LAMBDA_FUNCTION"; break;
+            case Kind::TABLE_ENGINE: kind_str = "TABLE_ENGINE"; break;
+            case Kind::DATABASE_ENGINE: kind_str = "DATABASE_ENGINE"; break;
+            case Kind::BACKUP_NAME: kind_str = "BACKUP_NAME"; break;
+            case Kind::CODEC: kind_str = "CODEC"; break;
+            case Kind::STATISTICS: kind_str = "STATISTICS"; break;
+            default: break;
+        }
+        if (kind_str)
+            w.writeString("kind", kind_str);
+    }
+    w.writeAlias(*this);
+}
+
+void ASTFunction::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    name = r.getString("name");
+
+    setIsOperator(r.getBool("is_operator"));
+    setIsWindowFunction(r.getBool("is_window_function"));
+    setComputeAfterWindowFunctions(r.getBool("compute_after_window_functions"));
+    setIsLambdaFunction(r.getBool("is_lambda_function"));
+    setPreferSubqueryToFunctionFormatting(r.getBool("prefer_subquery_to_function_formatting"));
+    setNoEmptyArgs(r.getBool("no_empty_args"));
+    setIsCompoundName(r.getBool("is_compound_name"));
+
+    String nulls_action_str = r.getString("nulls_action");
+    if (nulls_action_str == "RESPECT_NULLS")
+        setNullsAction(NullsAction::RESPECT_NULLS);
+    else if (nulls_action_str == "IGNORE_NULLS")
+        setNullsAction(NullsAction::IGNORE_NULLS);
+
+    String kind_str = r.getString("kind");
+    if (kind_str == "WINDOW_FUNCTION")
+        setKind(Kind::WINDOW_FUNCTION);
+    else if (kind_str == "LAMBDA_FUNCTION")
+        setKind(Kind::LAMBDA_FUNCTION);
+    else if (kind_str == "TABLE_ENGINE")
+        setKind(Kind::TABLE_ENGINE);
+    else if (kind_str == "DATABASE_ENGINE")
+        setKind(Kind::DATABASE_ENGINE);
+    else if (kind_str == "BACKUP_NAME")
+        setKind(Kind::BACKUP_NAME);
+    else if (kind_str == "CODEC")
+        setKind(Kind::CODEC);
+    else if (kind_str == "STATISTICS")
+        setKind(Kind::STATISTICS);
+
+    arguments = r.readChild("arguments");
+    if (arguments)
+        children.push_back(arguments);
+
+    parameters = r.readChild("parameters");
+    if (parameters)
+        children.push_back(parameters);
+
+    window_name = r.getString("window_name");
+
+    window_definition = r.readChild("window_definition");
+    if (window_definition)
+        children.push_back(window_definition);
+
+    r.readAlias(*this);
 }
 
 void ASTFunction::finishFormatWithWindow(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

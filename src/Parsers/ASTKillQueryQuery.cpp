@@ -1,4 +1,6 @@
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -38,6 +40,28 @@ void ASTKillQueryQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings
     }
 
     ostr << " " << (test ? "TEST" : (sync ? "SYNC" : "ASYNC"));
+}
+
+void ASTKillQueryQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "KillQueryQuery");
+    w.writeInt("kill_type", static_cast<Int64>(type));
+    w.writeChild("where_expression", where_expression);
+    if (sync)
+        w.writeBool("sync", true);
+    if (test)
+        w.writeBool("test", true);
+}
+
+void ASTKillQueryQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    type = static_cast<Type>(r.getInt("kill_type"));
+    where_expression = r.readChild("where_expression");
+    if (where_expression)
+        children.push_back(where_expression);
+    sync = r.getBool("sync");
+    test = r.getBool("test");
 }
 
 }

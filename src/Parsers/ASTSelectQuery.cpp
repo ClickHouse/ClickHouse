@@ -5,6 +5,8 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
 #include <Parsers/QueryParameterVisitor.h>
@@ -587,6 +589,94 @@ NameToNameMap ASTSelectQuery::getQueryParameters() const
         return {};
 
     return analyzeReceiveQueryParamsWithType(make_intrusive<ASTSelectQuery>(*this));
+}
+
+void ASTSelectQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "SelectQuery");
+
+    if (recursive_with)
+        w.writeBool("recursive_with", true);
+    if (distinct)
+        w.writeBool("distinct", true);
+    if (group_by_all)
+        w.writeBool("group_by_all", true);
+    if (group_by_with_totals)
+        w.writeBool("group_by_with_totals", true);
+    if (group_by_with_rollup)
+        w.writeBool("group_by_with_rollup", true);
+    if (group_by_with_cube)
+        w.writeBool("group_by_with_cube", true);
+    if (group_by_with_constant_keys)
+        w.writeBool("group_by_with_constant_keys", true);
+    if (group_by_with_grouping_sets)
+        w.writeBool("group_by_with_grouping_sets", true);
+    if (order_by_all)
+        w.writeBool("order_by_all", true);
+    if (limit_with_ties)
+        w.writeBool("limit_with_ties", true);
+    if (limit_by_all)
+        w.writeBool("limit_by_all", true);
+
+    w.writeChild("with", with());
+    w.writeChild("select", select());
+    w.writeChild("tables", tables());
+    w.writeChild("prewhere", prewhere());
+    w.writeChild("where", where());
+    w.writeChild("group_by", groupBy());
+    w.writeChild("having", having());
+    w.writeChild("window", window());
+    w.writeChild("qualify", qualify());
+    w.writeChild("order_by", orderBy());
+    w.writeChild("limit_by_offset", limitByOffset());
+    w.writeChild("limit_by_length", limitByLength());
+    w.writeChild("limit_by", limitBy());
+    w.writeChild("limit_offset", limitOffset());
+    w.writeChild("limit_length", limitLength());
+    w.writeChild("settings", settings());
+    w.writeChild("interpolate", interpolate());
+}
+
+void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    recursive_with = r.getBool("recursive_with");
+    distinct = r.getBool("distinct");
+    group_by_all = r.getBool("group_by_all");
+    group_by_with_totals = r.getBool("group_by_with_totals");
+    group_by_with_rollup = r.getBool("group_by_with_rollup");
+    group_by_with_cube = r.getBool("group_by_with_cube");
+    group_by_with_constant_keys = r.getBool("group_by_with_constant_keys");
+    group_by_with_grouping_sets = r.getBool("group_by_with_grouping_sets");
+    order_by_all = r.getBool("order_by_all");
+    limit_with_ties = r.getBool("limit_with_ties");
+    limit_by_all = r.getBool("limit_by_all");
+
+    auto setExpr = [&](const char * key, ASTSelectQuery::Expression expr)
+    {
+        auto child = r.readChild(key);
+        if (child)
+            this->setExpression(expr, std::move(child));
+    };
+
+    setExpr("with", Expression::WITH);
+    setExpr("select", Expression::SELECT);
+    setExpr("tables", Expression::TABLES);
+    setExpr("prewhere", Expression::PREWHERE);
+    setExpr("where", Expression::WHERE);
+    setExpr("group_by", Expression::GROUP_BY);
+    setExpr("having", Expression::HAVING);
+    setExpr("window", Expression::WINDOW);
+    setExpr("qualify", Expression::QUALIFY);
+    setExpr("order_by", Expression::ORDER_BY);
+    setExpr("limit_by_offset", Expression::LIMIT_BY_OFFSET);
+    setExpr("limit_by_length", Expression::LIMIT_BY_LENGTH);
+    setExpr("limit_by", Expression::LIMIT_BY);
+    setExpr("limit_offset", Expression::LIMIT_OFFSET);
+    setExpr("limit_length", Expression::LIMIT_LENGTH);
+    setExpr("settings", Expression::SETTINGS);
+    setExpr("interpolate", Expression::INTERPOLATE);
 }
 
 }

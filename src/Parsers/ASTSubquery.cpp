@@ -1,10 +1,29 @@
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Common/SipHash.h>
 
 namespace DB
 {
+
+void ASTSubquery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Subquery");
+    if (!cte_name.empty())
+        w.writeString("cte_name", cte_name);
+    w.writeAlias(*this);
+    w.writeChildren(children);
+}
+
+void ASTSubquery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    cte_name = r.getString("cte_name");
+    r.readAlias(*this);
+    children = r.readChildren();
+}
 
 void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
 {

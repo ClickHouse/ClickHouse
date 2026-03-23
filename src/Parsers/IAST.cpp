@@ -1,6 +1,9 @@
 #include <Parsers/IAST.h>
 
+#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Array.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/CommonParsers.h>
@@ -358,6 +361,64 @@ std::string IAST::dumpTree(size_t indent) const
     WriteBufferFromOwnString wb;
     dumpTree(wb, indent);
     return wb.str();
+}
+
+void IAST::writeJSON(WriteBuffer & out) const
+{
+    DB::FormatSettings fs;
+
+    out << "{\"type\":";
+    writeJSONString(getID(), out, fs);
+
+    auto alias = tryGetAlias();
+    if (!alias.empty())
+    {
+        out << ",\"alias\":";
+        writeJSONString(alias, out, fs);
+    }
+
+    if (!children.empty())
+    {
+        out << ",\"children\":[";
+        for (size_t i = 0; i < children.size(); ++i)
+        {
+            if (i > 0) out << ',';
+            children[i]->writeJSON(out);
+        }
+        out << ']';
+    }
+    out << '}';
+}
+
+void IAST::readJSON(const Poco::JSON::Object & json)
+{
+    /// Default: read children from the "children" array.
+    if (json.has("children"))
+    {
+        auto arr = json.getArray("children");
+        if (arr)
+        {
+            children.reserve(arr->size());
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                auto child_obj = arr->getObject(i);
+                children.push_back(IAST::createFromJSON(*child_obj));
+            }
+        }
+    }
+
+    /// Read alias if the node supports it.
+    if (json.has("alias"))
+    {
+        try
+        {
+            setAlias(json.getValue<String>("alias"));
+        }
+        catch (...)
+        {
+            /// Node doesn't support aliases - ignore.
+        }
+    }
 }
 
 }

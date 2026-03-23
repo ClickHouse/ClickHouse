@@ -1,4 +1,6 @@
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 
 
@@ -29,6 +31,26 @@ void ASTInterpolateElement::formatImpl(WriteBuffer & ostr, const FormatSettings 
     expr->format(ostr, settings, state, frame);
     if (need_parens)
         ostr << ')';
+}
+
+void ASTInterpolateElement::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "InterpolateElement");
+    w.writeString("column", column);
+    w.writeChild("expr", expr);
+}
+
+void ASTInterpolateElement::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    column = r.getString("column");
+
+    auto child = r.readChild("expr");
+    if (child)
+    {
+        expr = child;
+        children.push_back(expr);
+    }
 }
 
 }

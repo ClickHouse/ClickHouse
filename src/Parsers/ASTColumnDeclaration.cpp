@@ -1,6 +1,8 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -151,6 +153,55 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
         settings->format(ostr, format_settings, state, frame);
         ostr << ')';
     }
+}
+
+void ASTColumnDeclaration::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnDeclaration");
+    w.writeString("name", name);
+
+    if (default_specifier != ColumnDefaultSpecifier::Empty)
+        w.writeString("default_specifier", std::string_view(toString(default_specifier)));
+
+    if (null_modifier.has_value())
+        w.writeBool("null_modifier", *null_modifier);
+
+    w.writeBool("ephemeral_default", ephemeral_default);
+    w.writeBool("primary_key_specifier", primary_key_specifier);
+
+    w.writeChild("data_type", getType());
+    w.writeChild("default_expression", getDefaultExpression());
+    w.writeChild("comment", getComment());
+    w.writeChild("codec", getCodec());
+    w.writeChild("statistics_desc", getStatisticsDesc());
+    w.writeChild("ttl", getTTL());
+    w.writeChild("collation", getCollation());
+    w.writeChild("settings", getSettings());
+}
+
+void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+
+    String spec = r.getString("default_specifier");
+    default_specifier = columnDefaultSpecifierFromString(spec);
+
+    if (r.has("null_modifier"))
+        null_modifier = r.getBool("null_modifier");
+
+    ephemeral_default = r.getBool("ephemeral_default");
+    primary_key_specifier = r.getBool("primary_key_specifier");
+
+    setType(r.readChild("data_type"));
+    setDefaultExpression(r.readChild("default_expression"));
+    setComment(r.readChild("comment"));
+    setCodec(r.readChild("codec"));
+    setStatisticsDesc(r.readChild("statistics_desc"));
+    setTTL(r.readChild("ttl"));
+    setCollation(r.readChild("collation"));
+    setSettings(r.readChild("settings"));
 }
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)

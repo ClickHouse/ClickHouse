@@ -1,4 +1,6 @@
 #include <Parsers/ASTTimeInterval.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 #include <IO/Operators.h>
 
@@ -23,6 +25,20 @@ void ASTTimeInterval::formatImpl(WriteBuffer & ostr, const FormatSettings &, For
         ostr << value << ' ';
         ostr << kind.toKeyword();
     }
+}
+
+void ASTTimeInterval::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TimeInterval");
+    w.writeUInt("seconds", interval.seconds);
+    w.writeUInt("months", interval.months);
+}
+
+void ASTTimeInterval::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    interval.seconds = r.getUInt("seconds");
+    interval.months = r.getUInt("months");
 }
 
 }

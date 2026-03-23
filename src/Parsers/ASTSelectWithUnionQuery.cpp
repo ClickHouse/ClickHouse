@@ -1,6 +1,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/SelectUnionMode.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
 
@@ -177,6 +179,68 @@ NameToNameMap ASTSelectWithUnionQuery::getQueryParameters() const
     }
 
     return query_params;
+}
+
+void ASTSelectWithUnionQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "SelectWithUnionQuery");
+
+    w.writeString("union_mode", toString(union_mode));
+
+    if (!list_of_modes.empty())
+    {
+        w.writeKey("list_of_modes");
+        auto & o = w.getOut();
+        o << '[';
+        for (size_t i = 0; i < list_of_modes.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            writeJSONString(toString(list_of_modes[i]), o, w.getFormatSettings());
+        }
+        o << ']';
+    }
+
+    w.writeChild("list_of_selects", list_of_selects);
+    w.writeChild("out_file", out_file);
+    w.writeChild("format_ast", format_ast);
+    w.writeChild("settings_ast", settings_ast);
+    w.writeChild("compression", compression);
+    w.writeChild("compression_level", compression_level);
+}
+
+void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    union_mode = parseSelectUnionMode(r.getString("union_mode", "UNION_DEFAULT"));
+
+    auto modes_arr = r.readStringArray("list_of_modes");
+    for (const auto & mode_str : modes_arr)
+        list_of_modes.push_back(parseSelectUnionMode(mode_str));
+
+    list_of_selects = r.readChild("list_of_selects");
+    if (list_of_selects)
+        children.push_back(list_of_selects);
+
+    out_file = r.readChild("out_file");
+    if (out_file)
+        children.push_back(out_file);
+
+    format_ast = r.readChild("format_ast");
+    if (format_ast)
+        children.push_back(format_ast);
+
+    settings_ast = r.readChild("settings_ast");
+    if (settings_ast)
+        children.push_back(settings_ast);
+
+    compression = r.readChild("compression");
+    if (compression)
+        children.push_back(compression);
+
+    compression_level = r.readChild("compression_level");
+    if (compression_level)
+        children.push_back(compression_level);
 }
 
 }

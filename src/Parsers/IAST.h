@@ -15,6 +15,8 @@
 
 class SipHash;
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -145,6 +147,25 @@ public:
 
     void dumpTree(WriteBuffer & ostr, size_t indent = 0) const;
     std::string dumpTree(size_t indent = 0) const;
+
+    /** Serialize the AST node and its subtree to JSON.
+      * The default implementation writes: {"type":"<type>", "children":[...]}
+      * Subclasses override to include their specific properties.
+      */
+    virtual void writeJSON(WriteBuffer & out) const;
+
+    /** Deserialize the AST node from a JSON object.
+      * Called by the factory after creating the correct node type.
+      * The default implementation reads the "children" array.
+      * Subclasses override to read their specific properties (symmetric with writeJSON).
+      */
+    virtual void readJSON(const Poco::JSON::Object & json);
+
+    /** Factory: deserialize an AST tree from a JSON string. */
+    static ASTPtr createFromJSON(const String & json);
+
+    /** Factory: deserialize an AST node from a parsed JSON object. */
+    static ASTPtr createFromJSON(const Poco::JSON::Object & json);
 
     /** Check the depth of the tree.
       * If max_depth is specified and the depth is greater - throw an exception.

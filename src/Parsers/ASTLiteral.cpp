@@ -3,6 +3,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -18,6 +20,20 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
     applyVisitor(FieldVisitorHash(hash_state), value);
     if (!ignore_aliases)
         ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
+void ASTLiteral::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Literal");
+    w.writeFieldValue("value", value);
+    w.writeAlias(*this);
+}
+
+void ASTLiteral::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    value = r.readField("value");
+    r.readAlias(*this);
 }
 
 String ASTLiteral::getID(char delim) const

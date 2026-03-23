@@ -2,6 +2,10 @@
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
+
+#include <Poco/JSON/Array.h>
 
 
 namespace DB
@@ -28,6 +32,82 @@ ASTPtr ASTTTLElement::clone() const
         expr = expr->clone();
 
     return clone;
+}
+
+void ASTTTLElement::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TTLElement");
+    w.writeString("mode", std::string(magic_enum::enum_name(mode)));
+    w.writeString("destination_type", std::string(magic_enum::enum_name(destination_type)));
+
+    if (!destination_name.empty())
+        w.writeString("destination_name", destination_name);
+
+    w.writeBool("if_exists", if_exists);
+    w.writeChild("ttl_expr", ttl());
+    w.writeChild("where_expr", where());
+
+    if (!group_by_key.empty())
+    {
+        w.writeKey("group_by_key");
+        w.writeArray(group_by_key);
+    }
+
+    if (!group_by_assignments.empty())
+    {
+        w.writeKey("group_by_assignments");
+        w.writeArray(group_by_assignments);
+    }
+
+    w.writeChild("recompression_codec", recompression_codec);
+}
+
+void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    String mode_str = r.getString("mode");
+    auto mode_opt = magic_enum::enum_cast<TTLMode>(mode_str);
+    if (mode_opt)
+        mode = *mode_opt;
+
+    String dest_type_str = r.getString("destination_type");
+    auto dest_opt = magic_enum::enum_cast<DataDestinationType>(dest_type_str);
+    if (dest_opt)
+        destination_type = *dest_opt;
+
+    destination_name = r.getString("destination_name");
+    if_exists = r.getBool("if_exists");
+
+    auto ttl_child = r.readChild("ttl_expr");
+    if (ttl_child)
+        setTTL(std::move(ttl_child));
+
+    auto where_child = r.readChild("where_expr");
+    if (where_child)
+        setWhere(std::move(where_child));
+
+    auto arr = r.getArray("group_by_key");
+    if (arr)
+    {
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto child_obj = arr->getObject(i);
+            group_by_key.push_back(IAST::createFromJSON(*child_obj));
+        }
+    }
+
+    arr = r.getArray("group_by_assignments");
+    if (arr)
+    {
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto child_obj = arr->getObject(i);
+            group_by_assignments.push_back(IAST::createFromJSON(*child_obj));
+        }
+    }
+
+    recompression_codec = r.readChild("recompression_codec");
 }
 
 void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

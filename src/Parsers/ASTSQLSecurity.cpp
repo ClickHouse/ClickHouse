@@ -1,39 +1,35 @@
 
 #include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 
 namespace DB
 {
 
-void ASTSQLSecurity::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSQLSecurity::writeJSON(WriteBuffer & out) const
 {
-    if (!type)
-        return;
-
-    if (definer || is_definer_current_user)
+    JSONObjectWriter w(out, "SQLSecurity");
+    if (type.has_value())
+        w.writeInt("security_type", static_cast<Int64>(*type));
+    if (is_definer_current_user)
+        w.writeBool("is_definer_current_user", true);
+    if (definer)
     {
-        ostr << "DEFINER";
-        ostr << " = ";
-        if (definer)
-            definer->format(ostr, settings, state, frame);
-        else
-            ostr << "CURRENT_USER";
-        ostr << " ";
+        w.writeKey("definer");
+        definer->writeJSON(out);
     }
+}
 
-    ostr << "SQL SECURITY";
-    switch (*type)
-    {
-        case SQLSecurityType::INVOKER:
-            ostr << " INVOKER";
-            break;
-        case SQLSecurityType::DEFINER:
-            ostr << " DEFINER";
-            break;
-        case SQLSecurityType::NONE:
-            ostr << " NONE";
-            break;
-    }
+void ASTSQLSecurity::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    if (r.has("security_type"))
+        type = static_cast<SQLSecurityType>(r.getInt("security_type"));
+    is_definer_current_user = r.getBool("is_definer_current_user");
+    auto definer_child = r.readChild("definer");
+    if (definer_child)
+        definer = boost::static_pointer_cast<ASTUserNameWithHost>(definer_child);
 }
 
 }

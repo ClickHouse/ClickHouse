@@ -1,5 +1,7 @@
 #include <map>
 #include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -377,6 +379,90 @@ void ASTColumnsReplaceTransformer::replaceChildren(ASTPtr & node, const ASTPtr &
         else
             replaceChildren(child, replacement, name);
     }
+}
+
+void ASTColumnsTransformerList::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsTransformerList");
+    w.writeChildren(children);
+}
+
+void ASTColumnsApplyTransformer::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsApplyTransformer");
+    if (!func_name.empty())
+        w.writeString("func_name", func_name);
+    w.writeChild("parameters", parameters);
+    w.writeChild("lambda", lambda);
+    if (!lambda_arg.empty())
+        w.writeString("lambda_arg", lambda_arg);
+    if (!column_name_prefix.empty())
+        w.writeString("column_name_prefix", column_name_prefix);
+}
+
+void ASTColumnsExceptTransformer::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsExceptTransformer");
+    if (is_strict)
+        w.writeBool("is_strict", true);
+    if (pattern)
+        w.writeString("pattern", *pattern);
+    w.writeChildren(children);
+}
+
+void ASTColumnsReplaceTransformer::Replacement::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsReplaceTransformerReplacement");
+    w.writeString("name", name);
+    w.writeChildren(children);
+}
+
+void ASTColumnsReplaceTransformer::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsReplaceTransformer");
+    if (is_strict)
+        w.writeBool("is_strict", true);
+    w.writeChildren(children);
+}
+
+void ASTColumnsTransformerList::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    children = r.readChildren();
+}
+
+void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    func_name = r.getString("func_name");
+    parameters = r.readChild("parameters");
+    lambda = r.readChild("lambda");
+    lambda_arg = r.getString("lambda_arg");
+    column_name_prefix = r.getString("column_name_prefix");
+}
+
+void ASTColumnsExceptTransformer::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    is_strict = r.getBool("is_strict");
+    String pattern_str = r.getString("pattern");
+    if (!pattern_str.empty())
+        setPattern(std::move(pattern_str));
+    children = r.readChildren();
+}
+
+void ASTColumnsReplaceTransformer::Replacement::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    name = r.getString("name");
+    children = r.readChildren();
+}
+
+void ASTColumnsReplaceTransformer::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    is_strict = r.getBool("is_strict");
+    children = r.readChildren();
 }
 
 void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const

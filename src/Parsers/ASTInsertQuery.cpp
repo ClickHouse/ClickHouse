@@ -9,6 +9,8 @@
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -47,6 +49,107 @@ void ASTInsertQuery::setTable(const String & name)
         table.reset();
     else
         table = make_intrusive<ASTIdentifier>(name);
+}
+
+void ASTInsertQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "InsertQuery");
+
+    if (!table_id.database_name.empty())
+        w.writeString("database_name", table_id.database_name);
+    if (!table_id.table_name.empty())
+        w.writeString("table_name", table_id.table_name);
+
+    w.writeChild("database", database);
+    w.writeChild("table", table);
+
+    if (!format.empty())
+        w.writeString("format", format);
+
+    if (async_insert_flush)
+        w.writeBool("async_insert_flush", true);
+
+    w.writeChild("columns", columns);
+    w.writeChild("table_function", table_function);
+    w.writeChild("partition_by", partition_by);
+    w.writeChild("settings_ast", settings_ast);
+    w.writeChild("select", select);
+    w.writeChild("infile", infile);
+    w.writeChild("compression", compression);
+}
+
+void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    table_id.database_name = r.getString("database_name");
+    table_id.table_name = r.getString("table_name");
+
+    auto db_child = r.readChild("database");
+    if (db_child)
+    {
+        database = db_child;
+        children.push_back(database);
+    }
+
+    auto tbl_child = r.readChild("table");
+    if (tbl_child)
+    {
+        table = tbl_child;
+        children.push_back(table);
+    }
+
+    format = r.getString("format");
+    async_insert_flush = r.getBool("async_insert_flush");
+
+    auto child = r.readChild("columns");
+    if (child)
+    {
+        columns = child;
+        children.push_back(columns);
+    }
+
+    child = r.readChild("table_function");
+    if (child)
+    {
+        table_function = child;
+        children.push_back(table_function);
+    }
+
+    child = r.readChild("partition_by");
+    if (child)
+    {
+        partition_by = child;
+        children.push_back(partition_by);
+    }
+
+    child = r.readChild("settings_ast");
+    if (child)
+    {
+        settings_ast = child;
+        children.push_back(settings_ast);
+    }
+
+    child = r.readChild("select");
+    if (child)
+    {
+        select = child;
+        children.push_back(select);
+    }
+
+    child = r.readChild("infile");
+    if (child)
+    {
+        infile = child;
+        children.push_back(infile);
+    }
+
+    child = r.readChild("compression");
+    if (child)
+    {
+        compression = child;
+        children.push_back(compression);
+    }
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

@@ -1,5 +1,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
@@ -329,6 +331,38 @@ ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterAST
 IAST::QueryKind ASTBackupQuery::getQueryKind() const
 {
     return kind == Kind::BACKUP ? QueryKind::Backup : QueryKind::Restore;
+}
+
+void ASTBackupQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "BackupQuery");
+    w.writeInt("kind", static_cast<Int64>(kind));
+    w.writeChild("backup_name", backup_name);
+    w.writeChild("base_backup_name", base_backup_name);
+    w.writeChild("settings", settings);
+    w.writeChild("cluster_host_ids", cluster_host_ids);
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+    w.writeChildren(children);
+}
+
+void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    kind = static_cast<Kind>(r.getInt("kind"));
+    auto backup_name_child = r.readChild("backup_name");
+    if (backup_name_child)
+        set(backup_name, backup_name_child);
+    auto base_backup_name_child = r.readChild("base_backup_name");
+    if (base_backup_name_child)
+        set(base_backup_name, base_backup_name_child);
+    settings = r.readChild("settings");
+    if (settings)
+        children.push_back(settings);
+    cluster_host_ids = r.readChild("cluster_host_ids");
+    if (cluster_host_ids)
+        children.push_back(cluster_host_ids);
+    cluster = r.getString("cluster");
 }
 
 }

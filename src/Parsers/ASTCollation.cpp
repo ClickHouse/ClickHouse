@@ -1,4 +1,6 @@
 #include <Parsers/ASTCollation.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -14,6 +16,24 @@ namespace DB
     {
         if (collation)
             collation->format(ostr, s, state, frame);
+    }
+
+    void ASTCollation::writeJSON(WriteBuffer & out) const
+    {
+        JSONObjectWriter w(out, "Collation");
+        w.writeChild("collation", collation);
+    }
+
+    void ASTCollation::readJSON(const Poco::JSON::Object & json)
+    {
+        JSONObjectReader r(json);
+
+        auto child = r.readChild("collation");
+        if (child)
+        {
+            collation = child;
+            children.push_back(collation);
+        }
     }
 
 }

@@ -1,8 +1,13 @@
 #include <Parsers/ASTDictionary.h>
 #include <Poco/String.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Array.h>
 
 
 namespace DB
@@ -16,6 +21,20 @@ ASTPtr ASTDictionaryRange::clone() const
     return res;
 }
 
+
+void ASTDictionaryRange::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DictionaryRange");
+    w.writeString("min_attr_name", min_attr_name);
+    w.writeString("max_attr_name", max_attr_name);
+}
+
+void ASTDictionaryRange::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    min_attr_name = r.getString("min_attr_name");
+    max_attr_name = r.getString("max_attr_name");
+}
 
 void ASTDictionaryRange::formatImpl(WriteBuffer & ostr,
                                     const FormatSettings &,
@@ -35,6 +54,20 @@ ASTPtr ASTDictionaryLifetime::clone() const
 }
 
 
+void ASTDictionaryLifetime::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DictionaryLifetime");
+    w.writeUInt("min_sec", min_sec);
+    w.writeUInt("max_sec", max_sec);
+}
+
+void ASTDictionaryLifetime::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    min_sec = r.getUInt("min_sec");
+    max_sec = r.getUInt("max_sec");
+}
+
 void ASTDictionaryLifetime::formatImpl(WriteBuffer & ostr,
                                        const FormatSettings &,
                                        FormatState &,
@@ -53,6 +86,25 @@ ASTPtr ASTDictionaryLayout::clone() const
     return res;
 }
 
+
+void ASTDictionaryLayout::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DictionaryLayout");
+    w.writeString("layout_type", layout_type);
+    w.writeBool("has_brackets", has_brackets);
+    w.writeChild("parameters", parameters);
+}
+
+void ASTDictionaryLayout::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    layout_type = r.getString("layout_type");
+    has_brackets = r.getBool("has_brackets");
+
+    auto child = r.readChild("parameters");
+    if (child)
+        set(parameters, child);
+}
 
 void ASTDictionaryLayout::formatImpl(WriteBuffer & ostr,
                                      const FormatSettings & settings,
@@ -79,6 +131,46 @@ ASTPtr ASTDictionarySettings::clone() const
     res->changes = changes;
 
     return res;
+}
+
+void ASTDictionarySettings::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DictionarySettings");
+    if (!changes.empty())
+    {
+        w.writeKey("changes");
+        out << '[';
+        for (size_t i = 0; i < changes.size(); ++i)
+        {
+            if (i > 0)
+                out << ',';
+            out << '{';
+            out << "\"name\":";
+            writeJSONString(std::string_view(changes[i].name), out, w.getFormatSettings());
+            out << ",\"value\":";
+            writeJSONString(std::string_view(applyVisitor(FieldVisitorToString(), changes[i].value)), out, w.getFormatSettings());
+            out << '}';
+        }
+        out << ']';
+    }
+}
+
+void ASTDictionarySettings::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    changes.clear();
+    auto arr = r.getArray("changes");
+    if (arr)
+    {
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto obj = arr->getObject(i);
+            String setting_name = obj->getValue<String>("name");
+            String setting_value = obj->getValue<String>("value");
+            changes.emplace_back(setting_name, Field(setting_value));
+        }
+    }
 }
 
 void ASTDictionarySettings::formatImpl(WriteBuffer & ostr,
@@ -124,6 +216,46 @@ ASTPtr ASTDictionary::clone() const
     return res;
 }
 
+
+void ASTDictionary::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Dictionary");
+    w.writeChild("primary_key", primary_key);
+    w.writeChild("source", source);
+    w.writeChild("lifetime", lifetime);
+    w.writeChild("layout", layout);
+    w.writeChild("range", range);
+    w.writeChild("dict_settings", dict_settings);
+}
+
+void ASTDictionary::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    auto child = r.readChild("primary_key");
+    if (child)
+        set(primary_key, child);
+
+    child = r.readChild("source");
+    if (child)
+        set(source, child);
+
+    child = r.readChild("lifetime");
+    if (child)
+        set(lifetime, child);
+
+    child = r.readChild("layout");
+    if (child)
+        set(layout, child);
+
+    child = r.readChild("range");
+    if (child)
+        set(range, child);
+
+    child = r.readChild("dict_settings");
+    if (child)
+        set(dict_settings, child);
+}
 
 void ASTDictionary::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {

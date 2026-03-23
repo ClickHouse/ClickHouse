@@ -1,6 +1,8 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -22,6 +24,39 @@ ASTPtr ASTProjectionDeclaration::clone() const
     return res;
 }
 
+
+void ASTProjectionDeclaration::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ProjectionDeclaration");
+    w.writeString("name", name);
+    w.writeChild("query", query);
+    w.writeChild("index", index);
+    w.writeChild("projection_type", type);
+    w.writeChild("with_settings", with_settings);
+}
+
+void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+
+    auto child = r.readChild("query");
+    if (child)
+        set(query, child);
+
+    child = r.readChild("index");
+    if (child)
+        set(index, child);
+
+    child = r.readChild("projection_type");
+    if (child)
+        set(type, child);
+
+    child = r.readChild("with_settings");
+    if (child)
+        set(with_settings, child);
+}
 
 void ASTProjectionDeclaration::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

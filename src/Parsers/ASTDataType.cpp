@@ -1,6 +1,8 @@
 #include <Parsers/ASTDataType.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -28,6 +30,25 @@ ASTPtr ASTDataType::getArguments() const
     if (!children.empty())
         return children[0];
     return nullptr;
+}
+
+void ASTDataType::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DataType");
+    w.writeString("name", name);
+    if (auto args = getArguments())
+        w.writeChild("arguments", args);
+}
+
+void ASTDataType::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+
+    auto args = r.readChild("arguments");
+    if (args)
+        children.push_back(args);
 }
 
 void ASTDataType::resetArguments()

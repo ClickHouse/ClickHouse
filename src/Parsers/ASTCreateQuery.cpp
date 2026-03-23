@@ -9,6 +9,8 @@
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -67,6 +69,79 @@ ASTPtr ASTStorage::clone() const
         res->set(res->settings, settings->clone());
 
     return res;
+}
+
+void ASTColumns::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Columns definition");
+    w.writeChild("columns", columns);
+    w.writeChild("indices", indices);
+    w.writeChild("constraints", constraints);
+    w.writeChild("projections", projections);
+    w.writeChild("primary_key", primary_key);
+    w.writeChild("primary_key_from_columns", primary_key_from_columns);
+}
+
+void ASTColumns::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    auto c = r.readChild("columns");
+    if (c) set(columns, c);
+    auto idx = r.readChild("indices");
+    if (idx) set(indices, idx);
+    auto con = r.readChild("constraints");
+    if (con) set(constraints, con);
+    auto proj = r.readChild("projections");
+    if (proj) set(projections, proj);
+    auto pk = r.readChild("primary_key");
+    if (pk) set(primary_key, pk);
+    auto pkfc = r.readChild("primary_key_from_columns");
+    if (pkfc) set(primary_key_from_columns, pkfc);
+}
+
+void ASTStorage::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Storage");
+    w.writeChild("engine", engine);
+    w.writeChild("partition_by", partition_by);
+    w.writeChild("primary_key", primary_key);
+    w.writeChild("order_by", order_by);
+    w.writeChild("sample_by", sample_by);
+    w.writeChild("ttl_table", ttl_table);
+    w.writeChild("settings", settings);
+}
+
+void ASTStorage::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    auto child = r.readChild("engine");
+    if (child)
+        set(engine, child);
+
+    child = r.readChild("partition_by");
+    if (child)
+        set(partition_by, child);
+
+    child = r.readChild("primary_key");
+    if (child)
+        set(primary_key, child);
+
+    child = r.readChild("order_by");
+    if (child)
+        set(order_by, child);
+
+    child = r.readChild("sample_by");
+    if (child)
+        set(sample_by, child);
+
+    child = r.readChild("ttl_table");
+    if (child)
+        set(ttl_table, child);
+
+    child = r.readChild("settings");
+    if (child)
+        set(settings, child);
 }
 
 void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
@@ -318,6 +393,154 @@ String ASTCreateQuery::getID(char delim) const
         res += (delim + getDatabase());
     res += (delim + getTable());
     return res;
+}
+
+void ASTCreateQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "CreateQuery");
+
+    w.writeString("database", getDatabase());
+    w.writeString("table", getTable());
+
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+
+    if (!as_database.empty())
+        w.writeString("as_database", as_database);
+    if (!as_table.empty())
+        w.writeString("as_table", as_table);
+    if (!attach_from_path.empty())
+        w.writeString("attach_from_path", attach_from_path);
+
+    w.writeBool("attach", attach);
+    w.writeBool("if_not_exists", if_not_exists);
+    w.writeBool("is_ordinary_view", is_ordinary_view);
+    w.writeBool("is_materialized_view", is_materialized_view);
+    w.writeBool("is_window_view", is_window_view);
+    w.writeBool("is_time_series_table", is_time_series_table);
+    w.writeBool("is_populate", is_populate);
+    w.writeBool("is_create_empty", is_create_empty);
+    w.writeBool("is_clone_as", is_clone_as);
+    w.writeBool("replace_view", replace_view);
+    w.writeBool("has_uuid", has_uuid);
+    w.writeBool("is_dictionary", is_dictionary);
+    w.writeBool("is_watermark_strictly_ascending", is_watermark_strictly_ascending);
+    w.writeBool("is_watermark_ascending", is_watermark_ascending);
+    w.writeBool("is_watermark_bounded", is_watermark_bounded);
+    w.writeBool("allowed_lateness", allowed_lateness);
+    w.writeBool("attach_short_syntax", attach_short_syntax);
+    w.writeBool("replace_table", replace_table);
+    w.writeBool("create_or_replace", create_or_replace);
+    w.writeBool("has_attach_from_path", has_attach_from_path);
+
+    w.writeChild("columns_list", columns_list);
+    w.writeChild("aliases_list", aliases_list);
+    w.writeChild("storage", storage);
+    w.writeChild("watermark_function", watermark_function);
+    w.writeChild("lateness_function", lateness_function);
+    w.writeChild("as_table_function", as_table_function);
+    w.writeChild("select", select);
+    w.writeChild("targets", targets);
+    w.writeChild("comment", comment);
+    w.writeChild("sql_security", sql_security);
+    w.writeChild("table_overrides", table_overrides);
+    w.writeChild("dictionary_attributes_list", dictionary_attributes_list);
+    w.writeChild("dictionary", dictionary);
+    w.writeChild("refresh_strategy", refresh_strategy);
+}
+
+void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    String db = r.getString("database");
+    if (!db.empty())
+        setDatabase(db);
+    String tbl = r.getString("table");
+    if (!tbl.empty())
+        setTable(tbl);
+
+    cluster = r.getString("cluster");
+    as_database = r.getString("as_database");
+    as_table = r.getString("as_table");
+    attach_from_path = r.getString("attach_from_path");
+
+    attach = r.getBool("attach");
+    if_not_exists = r.getBool("if_not_exists");
+    is_ordinary_view = r.getBool("is_ordinary_view");
+    is_materialized_view = r.getBool("is_materialized_view");
+    is_window_view = r.getBool("is_window_view");
+    is_time_series_table = r.getBool("is_time_series_table");
+    is_populate = r.getBool("is_populate");
+    is_create_empty = r.getBool("is_create_empty");
+    is_clone_as = r.getBool("is_clone_as");
+    replace_view = r.getBool("replace_view");
+    has_uuid = r.getBool("has_uuid");
+    is_dictionary = r.getBool("is_dictionary");
+    is_watermark_strictly_ascending = r.getBool("is_watermark_strictly_ascending");
+    is_watermark_ascending = r.getBool("is_watermark_ascending");
+    is_watermark_bounded = r.getBool("is_watermark_bounded");
+    allowed_lateness = r.getBool("allowed_lateness");
+    attach_short_syntax = r.getBool("attach_short_syntax");
+    replace_table = r.getBool("replace_table");
+    create_or_replace = r.getBool("create_or_replace");
+    has_attach_from_path = r.getBool("has_attach_from_path");
+
+    auto child = r.readChild("columns_list");
+    if (child)
+        set(columns_list, child);
+
+    child = r.readChild("aliases_list");
+    if (child)
+        set(aliases_list, child);
+
+    child = r.readChild("storage");
+    if (child)
+        set(storage, child);
+
+    child = r.readChild("watermark_function");
+    if (child)
+        set(watermark_function, child);
+
+    child = r.readChild("lateness_function");
+    if (child)
+        set(lateness_function, child);
+
+    child = r.readChild("as_table_function");
+    if (child)
+        set(as_table_function, child);
+
+    child = r.readChild("select");
+    if (child)
+        set(select, child);
+
+    child = r.readChild("targets");
+    if (child)
+        set(targets, child);
+
+    child = r.readChild("comment");
+    if (child)
+        set(comment, child);
+
+    child = r.readChild("sql_security");
+    if (child)
+        set(sql_security, child);
+
+    child = r.readChild("table_overrides");
+    if (child)
+        set(table_overrides, child);
+
+    child = r.readChild("dictionary_attributes_list");
+    if (child)
+        set(dictionary_attributes_list, child);
+
+    child = r.readChild("dictionary");
+    if (child)
+        set(dictionary, child);
+
+    child = r.readChild("refresh_strategy");
+    if (child)
+        set(refresh_strategy, child);
 }
 
 void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

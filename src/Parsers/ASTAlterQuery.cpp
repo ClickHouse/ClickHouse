@@ -2,6 +2,8 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
 
@@ -69,6 +71,134 @@ ASTPtr ASTAlterCommand::clone() const
         res->execute_args = res->children.emplace_back(execute_args->clone()).get();
 
     return res;
+}
+
+void ASTAlterCommand::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "AlterCommand");
+    w.writeInt("command_type", static_cast<Int64>(type));
+
+    w.writeBool("detach", detach);
+    w.writeBool("part", part);
+    w.writeBool("clear_column", clear_column);
+    w.writeBool("clear_index", clear_index);
+    w.writeBool("clear_statistics", clear_statistics);
+    w.writeBool("clear_projection", clear_projection);
+    w.writeBool("if_not_exists", if_not_exists);
+    w.writeBool("if_exists", if_exists);
+    w.writeBool("first", first);
+    w.writeBool("replace", replace);
+
+    if (!move_destination_name.empty())
+        w.writeString("move_destination_name", move_destination_name);
+    if (!from.empty())
+        w.writeString("from", from);
+    if (!with_name.empty())
+        w.writeString("with_name", with_name);
+    if (!from_database.empty())
+        w.writeString("from_database", from_database);
+    if (!from_table.empty())
+        w.writeString("from_table", from_table);
+    if (!to_database.empty())
+        w.writeString("to_database", to_database);
+    if (!to_table.empty())
+        w.writeString("to_table", to_table);
+    if (!snapshot_name.empty())
+        w.writeString("snapshot_name", snapshot_name);
+    if (!execute_command_name.empty())
+        w.writeString("execute_command_name", execute_command_name);
+    if (!remove_property.empty())
+        w.writeString("remove_property", remove_property);
+
+    w.writeChild("col_decl", col_decl);
+    w.writeChild("column", column);
+    w.writeChild("order_by", order_by);
+    w.writeChild("sample_by", sample_by);
+    w.writeChild("index_decl", index_decl);
+    w.writeChild("index", index);
+    w.writeChild("constraint_decl", constraint_decl);
+    w.writeChild("constraint", constraint);
+    w.writeChild("projection_decl", projection_decl);
+    w.writeChild("projection", projection);
+    w.writeChild("statistics_decl", statistics_decl);
+    w.writeChild("partition", partition);
+    w.writeChild("predicate", predicate);
+    w.writeChild("update_assignments", update_assignments);
+    w.writeChild("comment", comment);
+    w.writeChild("ttl", ttl);
+    w.writeChild("settings_changes", settings_changes);
+    w.writeChild("settings_resets", settings_resets);
+    w.writeChild("select", select);
+    w.writeChild("sql_security", sql_security);
+    w.writeChild("rename_to", rename_to);
+    w.writeChild("refresh", refresh);
+    w.writeChild("execute_args", execute_args);
+}
+
+void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    type = static_cast<Type>(r.getInt("command_type"));
+
+    detach = r.getBool("detach");
+    part = r.getBool("part");
+    clear_column = r.getBool("clear_column");
+    clear_index = r.getBool("clear_index");
+    clear_statistics = r.getBool("clear_statistics");
+    clear_projection = r.getBool("clear_projection");
+    if_not_exists = r.getBool("if_not_exists");
+    if_exists = r.getBool("if_exists");
+    first = r.getBool("first");
+    replace = r.getBool("replace");
+
+    move_destination_name = r.getString("move_destination_name");
+    from = r.getString("from");
+    with_name = r.getString("with_name");
+    from_database = r.getString("from_database");
+    from_table = r.getString("from_table");
+    to_database = r.getString("to_database");
+    to_table = r.getString("to_table");
+    snapshot_name = r.getString("snapshot_name");
+    execute_command_name = r.getString("execute_command_name");
+    remove_property = r.getString("remove_property");
+
+    auto readRawChild = [&](const char * key, IAST *& field)
+    {
+        auto child = r.readChild(key);
+        if (child)
+            field = children.emplace_back(std::move(child)).get();
+    };
+
+    readRawChild("col_decl", col_decl);
+    readRawChild("column", column);
+    readRawChild("order_by", order_by);
+    readRawChild("sample_by", sample_by);
+    readRawChild("index_decl", index_decl);
+    readRawChild("index", index);
+    readRawChild("constraint_decl", constraint_decl);
+    readRawChild("constraint", constraint);
+    readRawChild("projection_decl", projection_decl);
+    readRawChild("projection", projection);
+    readRawChild("statistics_decl", statistics_decl);
+    readRawChild("partition", partition);
+    readRawChild("predicate", predicate);
+    readRawChild("update_assignments", update_assignments);
+    readRawChild("comment", comment);
+    readRawChild("ttl", ttl);
+    readRawChild("settings_changes", settings_changes);
+    readRawChild("settings_resets", settings_resets);
+    readRawChild("select", select);
+    readRawChild("sql_security", sql_security);
+    readRawChild("rename_to", rename_to);
+    readRawChild("execute_args", execute_args);
+
+    auto child = r.readChild("refresh");
+    if (child)
+    {
+        refresh = child;
+        children.push_back(refresh);
+    }
 }
 
 /// When the alter command is about statistics, the Parentheses is necessary to avoid ambiguity.
@@ -689,6 +819,52 @@ ASTPtr ASTAlterQuery::clone() const
         res->set(res->command_list, command_list->clone());
 
     return res;
+}
+
+void ASTAlterQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "AlterQuery");
+
+    w.writeString("database", getDatabase());
+    w.writeString("table", getTable());
+
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+
+    const char * obj_type = "UNKNOWN";
+    if (alter_object == AlterObjectType::TABLE)
+        obj_type = "TABLE";
+    else if (alter_object == AlterObjectType::DATABASE)
+        obj_type = "DATABASE";
+    w.writeString("alter_object", std::string_view(obj_type));
+
+    w.writeChild("command_list", command_list);
+}
+
+void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    String db = r.getString("database");
+    if (!db.empty())
+        setDatabase(db);
+    String tbl = r.getString("table");
+    if (!tbl.empty())
+        setTable(tbl);
+
+    cluster = r.getString("cluster");
+
+    String obj_type = r.getString("alter_object");
+    if (obj_type == "TABLE")
+        alter_object = AlterObjectType::TABLE;
+    else if (obj_type == "DATABASE")
+        alter_object = AlterObjectType::DATABASE;
+    else
+        alter_object = AlterObjectType::UNKNOWN;
+
+    auto child = r.readChild("command_list");
+    if (child)
+        set(command_list, child);
 }
 
 void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

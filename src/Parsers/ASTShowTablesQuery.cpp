@@ -1,6 +1,8 @@
 #include <iomanip>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -104,6 +106,70 @@ void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
 
         formatLimit(ostr, settings, state, frame);
     }
+}
+
+void ASTShowTablesQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ShowTablesQuery");
+    if (databases)
+        w.writeBool("databases", true);
+    if (clusters)
+        w.writeBool("clusters", true);
+    if (cluster)
+        w.writeBool("cluster", true);
+    if (dictionaries)
+        w.writeBool("dictionaries", true);
+    if (m_settings)
+        w.writeBool("settings", true);
+    if (merges)
+        w.writeBool("merges", true);
+    if (changed)
+        w.writeBool("changed", true);
+    if (temporary)
+        w.writeBool("temporary", true);
+    if (caches)
+        w.writeBool("caches", true);
+    if (full)
+        w.writeBool("full", true);
+    if (!cluster_str.empty())
+        w.writeString("cluster_str", cluster_str);
+    if (!like.empty())
+        w.writeString("like", like);
+    if (not_like)
+        w.writeBool("not_like", true);
+    if (case_insensitive_like)
+        w.writeBool("case_insensitive_like", true);
+    w.writeChild("from", from);
+    w.writeChild("where_expression", where_expression);
+    w.writeChild("limit_length", limit_length);
+}
+
+void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    databases = r.getBool("databases");
+    clusters = r.getBool("clusters");
+    cluster = r.getBool("cluster");
+    dictionaries = r.getBool("dictionaries");
+    m_settings = r.getBool("settings");
+    merges = r.getBool("merges");
+    changed = r.getBool("changed");
+    temporary = r.getBool("temporary");
+    caches = r.getBool("caches");
+    full = r.getBool("full");
+    cluster_str = r.getString("cluster_str");
+    like = r.getString("like");
+    not_like = r.getBool("not_like");
+    case_insensitive_like = r.getBool("case_insensitive_like");
+    auto from_child = r.readChild("from");
+    if (from_child)
+        set(from, from_child);
+    where_expression = r.readChild("where_expression");
+    if (where_expression)
+        children.push_back(where_expression);
+    limit_length = r.readChild("limit_length");
+    if (limit_length)
+        children.push_back(limit_length);
 }
 
 }

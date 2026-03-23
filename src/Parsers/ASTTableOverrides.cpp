@@ -3,6 +3,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTableOverrides.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -113,6 +115,44 @@ void ASTTableOverrideList::removeTableOverride(const String & name)
 bool ASTTableOverrideList::hasOverride(const String & name) const
 {
     return positions.contains(name);
+}
+
+void ASTTableOverride::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    table_name = r.getString("table_name");
+    auto columns_child = r.readChild("columns");
+    if (columns_child)
+        set(columns, columns_child);
+    auto storage_child = r.readChild("storage");
+    if (storage_child)
+        set(storage, storage_child);
+}
+
+void ASTTableOverride::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableOverride");
+    w.writeString("table_name", table_name);
+    w.writeChild("columns", columns);
+    w.writeChild("storage", storage);
+}
+
+void ASTTableOverrideList::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    children = r.readChildren();
+    positions.clear();
+    for (size_t i = 0; i < children.size(); ++i)
+    {
+        if (auto * override = children[i]->as<ASTTableOverride>())
+            positions[override->table_name] = i;
+    }
+}
+
+void ASTTableOverrideList::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableOverrideList");
+    w.writeChildren(children);
 }
 
 void ASTTableOverrideList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

@@ -2,6 +2,8 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
 #include <Interpreters/InstrumentationManager.h>
@@ -635,6 +637,75 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
         formatOnCluster(ostr, settings);
+}
+
+void ASTSystemQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "SystemQuery");
+    w.writeInt("query_type", static_cast<Int64>(type));
+    w.writeString("query_type_name", typeToString(type));
+    w.writeChild("database", database);
+    w.writeChild("table", table);
+    if (if_exists)
+        w.writeBool("if_exists", true);
+    w.writeChild("query_settings", query_settings);
+    if (!target_model.empty())
+        w.writeString("target_model", target_model);
+    if (!target_function.empty())
+        w.writeString("target_function", target_function);
+    if (!replica.empty())
+        w.writeString("replica", replica);
+    if (!shard.empty())
+        w.writeString("shard", shard);
+    if (!storage_policy.empty())
+        w.writeString("storage_policy", storage_policy);
+    if (!volume.empty())
+        w.writeString("volume", volume);
+    if (!disk.empty())
+        w.writeString("disk", disk);
+    if (seconds != 0)
+        w.writeUInt("seconds", seconds);
+    if (!filesystem_cache_name.empty())
+        w.writeString("filesystem_cache_name", filesystem_cache_name);
+    if (!backup_name.empty())
+        w.writeString("backup_name", backup_name);
+    w.writeChild("backup_source", backup_source);
+    if (!fail_point_name.empty())
+        w.writeString("fail_point_name", fail_point_name);
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+    w.writeChildren(children);
+}
+
+void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    type = static_cast<Type>(r.getInt("query_type"));
+    database = r.readChild("database");
+    if (database)
+        children.push_back(database);
+    table = r.readChild("table");
+    if (table)
+        children.push_back(table);
+    if_exists = r.getBool("if_exists");
+    query_settings = r.readChild("query_settings");
+    if (query_settings)
+        children.push_back(query_settings);
+    target_model = r.getString("target_model");
+    target_function = r.getString("target_function");
+    replica = r.getString("replica");
+    shard = r.getString("shard");
+    storage_policy = r.getString("storage_policy");
+    volume = r.getString("volume");
+    disk = r.getString("disk");
+    seconds = r.getUInt("seconds");
+    filesystem_cache_name = r.getString("filesystem_cache_name");
+    backup_name = r.getString("backup_name");
+    backup_source = r.readChild("backup_source");
+    if (backup_source)
+        children.push_back(backup_source);
+    fail_point_name = r.getString("fail_point_name");
+    cluster = r.getString("cluster");
 }
 
 

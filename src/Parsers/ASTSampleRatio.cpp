@@ -1,4 +1,6 @@
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -37,6 +39,30 @@ String ASTSampleRatio::toString(Rational ratio)
 void ASTSampleRatio::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings &, IAST::FormatState &, IAST::FormatStateStacked) const
 {
     ostr << toString(ratio);
+}
+
+void ASTSampleRatio::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "SampleRatio");
+    w.writeString("numerator", toString(ratio.numerator));
+    w.writeString("denominator", toString(ratio.denominator));
+}
+
+static ASTSampleRatio::BigNum parseBigNum(const String & s)
+{
+    ASTSampleRatio::BigNum result = 0;
+    for (char c : s)
+    {
+        result = result * 10 + (c - '0');
+    }
+    return result;
+}
+
+void ASTSampleRatio::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    ratio.numerator = parseBigNum(r.getString("numerator"));
+    ratio.denominator = parseBigNum(r.getString("denominator", "1"));
 }
 
 }

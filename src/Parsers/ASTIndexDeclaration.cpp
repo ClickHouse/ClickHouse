@@ -2,6 +2,8 @@
 
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTWithAlias.h>
@@ -62,6 +64,31 @@ boost::intrusive_ptr<ASTFunction> ASTIndexDeclaration::getType() const
     if (!func_ast)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
     return func_ast;
+}
+
+void ASTIndexDeclaration::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "IndexDeclaration");
+    w.writeString("name", name);
+    w.writeUInt("granularity", granularity);
+    w.writeChild("expression", getExpression());
+    w.writeChild("index_type", getType());
+}
+
+void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+    granularity = r.getUInt("granularity");
+
+    auto expression = r.readChild("expression");
+    if (expression)
+        children.push_back(expression);
+
+    auto index_type = r.readChild("index_type");
+    if (index_type)
+        children.push_back(index_type);
 }
 
 void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const

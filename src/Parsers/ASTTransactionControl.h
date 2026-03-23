@@ -1,6 +1,8 @@
 #pragma once
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -20,12 +22,15 @@ public:
 
     UInt64 snapshot;    /// For SET TRANSACTION SNAPSHOT ...
 
+    ASTTransactionControl() : action(BEGIN), snapshot(0) {}
     explicit ASTTransactionControl(QueryType action_) : action(action_) {}
 
     String getID(char /*delimiter*/) const override { return "ASTTransactionControl"; }
     ASTPtr clone() const override { return make_intrusive<ASTTransactionControl>(*this); }
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     QueryKind getQueryKind() const override;
 

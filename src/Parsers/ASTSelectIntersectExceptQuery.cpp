@@ -1,6 +1,8 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -68,5 +70,33 @@ const char * ASTSelectIntersectExceptQuery::fromOperator(Operator op)
         default:
             return "";
     }
+}
+
+void ASTSelectIntersectExceptQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "SelectIntersectExceptQuery");
+    w.writeString("final_operator", fromOperator(final_operator));
+    w.writeChildren(children);
+}
+
+static ASTSelectIntersectExceptQuery::Operator parseOperator(const String & str)
+{
+    if (str == "EXCEPT ALL")
+        return ASTSelectIntersectExceptQuery::Operator::EXCEPT_ALL;
+    if (str == "EXCEPT DISTINCT")
+        return ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT;
+    if (str == "INTERSECT ALL")
+        return ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL;
+    if (str == "INTERSECT DISTINCT")
+        return ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT;
+    return ASTSelectIntersectExceptQuery::Operator::UNKNOWN;
+}
+
+void ASTSelectIntersectExceptQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    final_operator = parseOperator(r.getString("final_operator"));
+    children = r.readChildren();
 }
 }

@@ -1,6 +1,8 @@
 #include <Parsers/ASTPartition.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 namespace DB
 {
@@ -59,6 +61,37 @@ ASTPtr ASTPartition::clone() const
     }
 
     return res;
+}
+
+void ASTPartition::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Partition");
+    w.writeChild("value", value);
+    w.writeChild("id", id);
+    w.writeBool("all", all);
+    if (fields_count.has_value())
+        w.writeUInt("fields_count", *fields_count);
+}
+
+void ASTPartition::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    all = r.getBool("all");
+
+    if (r.has("fields_count"))
+        fields_count = r.getUInt("fields_count");
+
+    auto val_child = r.readChild("value");
+    if (val_child)
+        setPartitionValue(val_child);
+
+    if (!val_child)
+    {
+        auto id_child = r.readChild("id");
+        if (id_child)
+            setPartitionID(id_child);
+    }
 }
 
 void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

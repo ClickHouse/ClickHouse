@@ -1,6 +1,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -15,6 +17,32 @@ ASTPtr ASTWithElement::clone() const
         res->aliases = aliases->clone();
     res->children.emplace_back(res->subquery);
     return res;
+}
+
+void ASTWithElement::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "WithElement");
+    w.writeString("name", name);
+    if (is_materialized)
+        w.writeBool("is_materialized", true);
+    w.writeChild("subquery", subquery);
+    w.writeChild("aliases", aliases);
+}
+
+void ASTWithElement::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+    is_materialized = r.getBool("is_materialized");
+
+    subquery = r.readChild("subquery");
+    if (subquery)
+        children.push_back(subquery);
+
+    aliases = r.readChild("aliases");
+    if (aliases)
+        children.push_back(aliases);
 }
 
 void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

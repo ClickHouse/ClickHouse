@@ -1,4 +1,6 @@
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
@@ -218,6 +220,104 @@ void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
     writeText(hash.low64, ostr);
     ostr.write('_');
     writeText(hash.high64, ostr);
+}
+
+void ASTSetQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "SetQuery");
+
+    if (is_standalone)
+        w.writeBool("is_standalone", true);
+
+    if (!changes.empty())
+    {
+        w.writeKey("changes");
+        auto & o = w.getOut();
+        const auto & fs = w.getFormatSettings();
+        o << '[';
+        for (size_t i = 0; i < changes.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            o << "{\"name\":";
+            writeJSONString(changes[i].name, o, fs);
+            /// Write "value" key and the field as a JSON object via writeFieldValue.
+            /// We use a trick: writeFieldValue writes ,"key":{field_json},
+            /// but since we just wrote {"name":"..." the comma is exactly what we need.
+            w.writeFieldValue("value", changes[i].value);
+            o << '}';
+        }
+        o << ']';
+    }
+
+    if (!default_settings.empty())
+    {
+        w.writeKey("default_settings");
+        auto & o = w.getOut();
+        const auto & fs = w.getFormatSettings();
+        o << '[';
+        for (size_t i = 0; i < default_settings.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            writeJSONString(default_settings[i], o, fs);
+        }
+        o << ']';
+    }
+
+    if (!query_parameters.empty())
+    {
+        w.writeKey("query_parameters");
+        auto & o = w.getOut();
+        const auto & fs = w.getFormatSettings();
+        o << '[';
+        for (size_t i = 0; i < query_parameters.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            o << "{\"name\":";
+            writeJSONString(query_parameters[i].first, o, fs);
+            o << ",\"value\":";
+            writeJSONString(query_parameters[i].second, o, fs);
+            o << '}';
+        }
+        o << ']';
+    }
+}
+
+void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    is_standalone = r.getBool("is_standalone");
+
+    if (r.has("changes"))
+    {
+        auto arr = r.getArray("changes");
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto change_obj = arr->getObject(i);
+            SettingChange change;
+            change.name = change_obj->getValue<String>("name");
+            auto value_obj = change_obj->getObject("value");
+            change.value = JSONObjectReader::readFieldFromObject(*value_obj);
+            changes.push_back(std::move(change));
+        }
+    }
+
+    if (r.has("default_settings"))
+    {
+        default_settings = r.readStringArray("default_settings");
+    }
+
+    if (r.has("query_parameters"))
+    {
+        auto arr = r.getArray("query_parameters");
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto param_obj = arr->getObject(i);
+            query_parameters.emplace_back(
+                param_obj->getValue<String>("name"),
+                param_obj->getValue<String>("value"));
+        }
+    }
 }
 
 bool ASTSetQuery::hasSecretParts() const

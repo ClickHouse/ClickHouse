@@ -1,4 +1,6 @@
 #include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 #include <Common/SipHash.h>
 
@@ -42,6 +44,22 @@ IAST::QueryKind ASTTransactionControl::getQueryKind() const
 void ASTTransactionControl::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
 {
     hash_state.update(action);
+}
+
+void ASTTransactionControl::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TransactionControl");
+    w.writeInt("action", static_cast<Int64>(action));
+    if (action == SET_SNAPSHOT)
+        w.writeUInt("snapshot", snapshot);
+}
+
+void ASTTransactionControl::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    action = static_cast<QueryType>(r.getInt("action"));
+    if (action == SET_SNAPSHOT)
+        snapshot = r.getUInt("snapshot");
 }
 
 }

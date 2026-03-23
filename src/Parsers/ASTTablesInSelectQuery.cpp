@@ -1,12 +1,19 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 #define CLONE(member) \
 do \
@@ -322,6 +329,209 @@ void ASTTablesInSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings
 {
     for (const auto & child : children)
         child->format(ostr, settings, state, frame);
+}
+
+
+void ASTTablesInSelectQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TablesInSelectQuery");
+    w.writeChildren(children);
+}
+
+void ASTTablesInSelectQueryElement::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TablesInSelectQueryElement");
+    w.writeChild("table_join", table_join);
+    w.writeChild("table_expression", table_expression);
+    w.writeChild("array_join", array_join);
+}
+
+void ASTTableExpression::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableExpression");
+    if (final)
+        w.writeBool("final", true);
+    w.writeChild("database_and_table_name", database_and_table_name);
+    w.writeChild("table_function", table_function);
+    w.writeChild("subquery", subquery);
+    w.writeChild("sample_size", sample_size);
+    w.writeChild("sample_offset", sample_offset);
+    w.writeChild("column_aliases", column_aliases);
+}
+
+void ASTTableJoin::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableJoin");
+    if (locality != JoinLocality::Unspecified)
+        w.writeString("locality", toString(locality));
+    if (strictness != JoinStrictness::Unspecified)
+        w.writeString("strictness", toString(strictness));
+    w.writeString("kind", toString(kind));
+    if (is_natural)
+        w.writeBool("is_natural", true);
+    w.writeChild("using_expression_list", using_expression_list);
+    w.writeChild("on_expression", on_expression);
+}
+
+void ASTArrayJoin::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ArrayJoin");
+    w.writeString("kind", kind == Kind::Left ? "Left" : "Inner");
+    w.writeChild("expression_list", expression_list);
+}
+
+static JoinKind parseJoinKind(const String & s)
+{
+    if (s == "INNER") return JoinKind::Inner;
+    if (s == "LEFT") return JoinKind::Left;
+    if (s == "RIGHT") return JoinKind::Right;
+    if (s == "FULL") return JoinKind::Full;
+    if (s == "CROSS") return JoinKind::Cross;
+    if (s == "COMMA") return JoinKind::Comma;
+    if (s == "PASTE") return JoinKind::Paste;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown JoinKind: '{}'", s);
+}
+
+static JoinStrictness parseJoinStrictness(const String & s)
+{
+    if (s == "RIGHT_ANY") return JoinStrictness::RightAny;
+    if (s == "ANY") return JoinStrictness::Any;
+    if (s == "ALL") return JoinStrictness::All;
+    if (s == "ASOF") return JoinStrictness::Asof;
+    if (s == "SEMI") return JoinStrictness::Semi;
+    if (s == "ANTI") return JoinStrictness::Anti;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown JoinStrictness: '{}'", s);
+}
+
+static JoinLocality parseJoinLocality(const String & s)
+{
+    if (s == "LOCAL") return JoinLocality::Local;
+    if (s == "GLOBAL") return JoinLocality::Global;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown JoinLocality: '{}'", s);
+}
+
+void ASTTablesInSelectQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    children = r.readChildren();
+}
+
+void ASTTablesInSelectQueryElement::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    auto child = r.readChild("table_join");
+    if (child)
+    {
+        table_join = child;
+        children.push_back(table_join);
+    }
+
+    child = r.readChild("table_expression");
+    if (child)
+    {
+        table_expression = child;
+        children.push_back(table_expression);
+    }
+
+    child = r.readChild("array_join");
+    if (child)
+    {
+        array_join = child;
+        children.push_back(array_join);
+    }
+}
+
+void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    final = r.getBool("final");
+
+    auto child = r.readChild("database_and_table_name");
+    if (child)
+    {
+        database_and_table_name = child;
+        children.push_back(database_and_table_name);
+    }
+
+    child = r.readChild("table_function");
+    if (child)
+    {
+        table_function = child;
+        children.push_back(table_function);
+    }
+
+    child = r.readChild("subquery");
+    if (child)
+    {
+        subquery = child;
+        children.push_back(subquery);
+    }
+
+    child = r.readChild("sample_size");
+    if (child)
+    {
+        sample_size = child;
+        children.push_back(sample_size);
+    }
+
+    child = r.readChild("sample_offset");
+    if (child)
+    {
+        sample_offset = child;
+        children.push_back(sample_offset);
+    }
+
+    child = r.readChild("column_aliases");
+    if (child)
+    {
+        column_aliases = child;
+        children.push_back(column_aliases);
+    }
+}
+
+void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    String locality_str = r.getString("locality");
+    if (!locality_str.empty())
+        locality = parseJoinLocality(locality_str);
+
+    String strictness_str = r.getString("strictness");
+    if (!strictness_str.empty())
+        strictness = parseJoinStrictness(strictness_str);
+
+    kind = parseJoinKind(r.getString("kind"));
+    is_natural = r.getBool("is_natural");
+
+    auto child = r.readChild("using_expression_list");
+    if (child)
+    {
+        using_expression_list = child;
+        children.push_back(using_expression_list);
+    }
+
+    child = r.readChild("on_expression");
+    if (child)
+    {
+        on_expression = child;
+        children.push_back(on_expression);
+    }
+}
+
+void ASTArrayJoin::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    String kind_str = r.getString("kind");
+    kind = (kind_str == "Left") ? Kind::Left : Kind::Inner;
+
+    auto child = r.readChild("expression_list");
+    if (child)
+    {
+        expression_list = child;
+        children.push_back(expression_list);
+    }
 }
 
 }

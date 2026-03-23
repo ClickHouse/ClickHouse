@@ -3,6 +3,8 @@
 
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFunction.h>
 
 
@@ -43,6 +45,26 @@ std::vector<String> ASTStatisticsDeclaration::getTypeNames() const
     }
     return result;
 
+}
+
+void ASTStatisticsDeclaration::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "StatisticsDeclaration");
+    w.writeChild("columns", columns);
+    w.writeChild("types", types);
+}
+
+void ASTStatisticsDeclaration::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    auto child = r.readChild("columns");
+    if (child)
+        set(columns, child);
+
+    child = r.readChild("types");
+    if (child)
+        set(types, child);
 }
 
 void ASTStatisticsDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const

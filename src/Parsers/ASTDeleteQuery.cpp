@@ -1,4 +1,6 @@
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -59,6 +61,36 @@ void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     ostr << " WHERE ";
     predicate->format(ostr, settings, state, frame);
+}
+
+void ASTDeleteQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DeleteQuery");
+    w.writeChild("database", database);
+    w.writeChild("table", table);
+    w.writeChild("partition", partition);
+    w.writeChild("predicate", predicate);
+    w.writeChild("settings_ast", settings_ast);
+}
+
+void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    database = r.readChild("database");
+    if (database)
+        children.push_back(database);
+    table = r.readChild("table");
+    if (table)
+        children.push_back(table);
+    partition = r.readChild("partition");
+    if (partition)
+        children.push_back(partition);
+    predicate = r.readChild("predicate");
+    if (predicate)
+        children.push_back(predicate);
+    settings_ast = r.readChild("settings_ast");
+    if (settings_ast)
+        children.push_back(settings_ast);
 }
 
 }

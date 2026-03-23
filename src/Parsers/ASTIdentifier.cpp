@@ -1,6 +1,10 @@
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <Common/SipHash.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
@@ -63,6 +67,41 @@ ASTPtr ASTIdentifier::getParam() const
 {
     assert(full_name.empty() && children.size() == 1);
     return children.front()->clone();
+}
+
+void ASTIdentifier::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Identifier");
+    w.writeString("name", name());
+    if (name_parts.size() > 1)
+    {
+        w.writeKey("name_parts");
+        auto & o = w.getOut();
+        o << '[';
+        for (size_t i = 0; i < name_parts.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            writeJSONString(name_parts[i], o, w.getFormatSettings());
+        }
+        o << ']';
+    }
+    w.writeAlias(*this);
+}
+
+void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    auto parts = r.readStringArray("name_parts");
+    if (!parts.empty())
+    {
+        name_parts = std::move(parts);
+        resetFullName();
+    }
+    else
+    {
+        setShortName(r.getString("name"));
+    }
+    r.readAlias(*this);
 }
 
 ASTPtr ASTIdentifier::clone() const
@@ -198,6 +237,52 @@ ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, ASTs && name_
 ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, ASTs && name_params)
     : ASTIdentifier({database_name, table_name}, true, std::move(name_params))
 {
+}
+
+void ASTTableIdentifier::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableIdentifier");
+    w.writeString("name", name());
+    if (name_parts.size() > 1)
+    {
+        w.writeKey("name_parts");
+        auto & o = w.getOut();
+        o << '[';
+        for (size_t i = 0; i < name_parts.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            writeJSONString(name_parts[i], o, w.getFormatSettings());
+        }
+        o << ']';
+    }
+    if (uuid != UUIDHelpers::Nil)
+    {
+        WriteBufferFromOwnString uuid_buf;
+        writeUUIDText(uuid, uuid_buf);
+        w.writeString("uuid", uuid_buf.str());
+    }
+    w.writeAlias(*this);
+}
+
+void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    auto parts = r.readStringArray("name_parts");
+    if (!parts.empty())
+    {
+        name_parts = std::move(parts);
+        resetFullName();
+    }
+    else
+    {
+        setShortName(r.getString("name"));
+    }
+    if (r.has("uuid"))
+    {
+        String uuid_str = r.getString("uuid");
+        uuid = parseFromString<UUID>(uuid_str);
+    }
+    r.readAlias(*this);
 }
 
 ASTPtr ASTTableIdentifier::clone() const

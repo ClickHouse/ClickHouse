@@ -1,4 +1,6 @@
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 
@@ -74,6 +76,68 @@ void ASTStorageOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettin
 
     if (direction == -1)
         ostr << " DESC";
+}
+
+void ASTOrderByElement::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "OrderByElement");
+    w.writeInt("direction", direction);
+    w.writeInt("nulls_direction", nulls_direction);
+    if (nulls_direction_was_explicitly_specified)
+        w.writeBool("nulls_direction_was_explicitly_specified", true);
+    if (with_fill)
+        w.writeBool("with_fill", true);
+    w.writeChild("collation", getCollation());
+    w.writeChild("fill_from", getFillFrom());
+    w.writeChild("fill_to", getFillTo());
+    w.writeChild("fill_step", getFillStep());
+    w.writeChild("fill_staleness", getFillStaleness());
+    w.writeChildren(children);
+}
+
+void ASTStorageOrderByElement::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "StorageOrderByElement");
+    w.writeInt("direction", direction);
+    w.writeChildren(children);
+}
+
+void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    direction = static_cast<int>(r.getInt("direction"));
+    nulls_direction = static_cast<int>(r.getInt("nulls_direction"));
+    nulls_direction_was_explicitly_specified = r.getBool("nulls_direction_was_explicitly_specified");
+    with_fill = r.getBool("with_fill");
+
+    children = r.readChildren();
+
+    auto child = r.readChild("collation");
+    if (child)
+        setCollation(child);
+
+    child = r.readChild("fill_from");
+    if (child)
+        setFillFrom(child);
+
+    child = r.readChild("fill_to");
+    if (child)
+        setFillTo(child);
+
+    child = r.readChild("fill_step");
+    if (child)
+        setFillStep(child);
+
+    child = r.readChild("fill_staleness");
+    if (child)
+        setFillStaleness(child);
+}
+
+void ASTStorageOrderByElement::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    direction = static_cast<int>(r.getInt("direction"));
+    children = r.readChildren();
 }
 
 }

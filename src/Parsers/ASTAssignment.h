@@ -2,7 +2,11 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
+
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -19,6 +23,20 @@ public:
     }
 
     String getID(char delim) const override { return "Assignment" + (delim + column_name); }
+
+    void writeJSON(WriteBuffer & out) const override
+    {
+        JSONObjectWriter w(out, "Assignment");
+        w.writeString("column_name", column_name);
+        w.writeChildren(children);
+    }
+
+    void readJSON(const Poco::JSON::Object & json) override
+    {
+        JSONObjectReader r(json);
+        column_name = r.getString("column_name");
+        children = r.readChildren();
+    }
 
     ASTPtr clone() const override
     {

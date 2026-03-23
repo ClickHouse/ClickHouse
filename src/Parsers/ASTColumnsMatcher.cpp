@@ -1,4 +1,6 @@
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
@@ -226,6 +228,90 @@ void ASTQualifiedColumnsListMatcher::formatImpl(WriteBuffer & ostr, const Format
     {
         transformers->format(ostr, settings, state, frame);
     }
+}
+
+void ASTColumnsRegexpMatcher::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsRegexpMatcher");
+    w.writeString("pattern", getPattern());
+    w.writeChild("expression", expression);
+    w.writeChild("transformers", transformers);
+}
+
+void ASTColumnsListMatcher::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsListMatcher");
+    w.writeChild("expression", expression);
+    w.writeChild("column_list", column_list);
+    w.writeChild("transformers", transformers);
+}
+
+void ASTQualifiedColumnsRegexpMatcher::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "QualifiedColumnsRegexpMatcher");
+    w.writeString("pattern", getPattern());
+    w.writeChild("qualifier", qualifier);
+    w.writeChild("transformers", transformers);
+}
+
+void ASTQualifiedColumnsListMatcher::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "QualifiedColumnsListMatcher");
+    w.writeChild("qualifier", qualifier);
+    w.writeChild("column_list", column_list);
+    w.writeChild("transformers", transformers);
+}
+
+void ASTColumnsRegexpMatcher::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    setPattern(r.getString("pattern"));
+    expression = r.readChild("expression");
+    if (expression)
+        children.push_back(expression);
+    transformers = r.readChild("transformers");
+    if (transformers)
+        children.push_back(transformers);
+}
+
+void ASTColumnsListMatcher::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    expression = r.readChild("expression");
+    if (expression)
+        children.push_back(expression);
+    column_list = r.readChild("column_list");
+    if (column_list)
+        children.push_back(column_list);
+    transformers = r.readChild("transformers");
+    if (transformers)
+        children.push_back(transformers);
+}
+
+void ASTQualifiedColumnsRegexpMatcher::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    setPattern(r.getString("pattern"));
+    qualifier = r.readChild("qualifier");
+    if (qualifier)
+        children.push_back(qualifier);
+    transformers = r.readChild("transformers");
+    if (transformers)
+        children.push_back(transformers);
+}
+
+void ASTQualifiedColumnsListMatcher::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    qualifier = r.readChild("qualifier");
+    if (qualifier)
+        children.push_back(qualifier);
+    column_list = r.readChild("column_list");
+    if (column_list)
+        children.push_back(column_list);
+    transformers = r.readChild("transformers");
+    if (transformers)
+        children.push_back(transformers);
 }
 
 }

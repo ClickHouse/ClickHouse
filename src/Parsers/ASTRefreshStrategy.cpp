@@ -1,4 +1,6 @@
 #include <Parsers/ASTRefreshStrategy.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 #include <IO/Operators.h>
 
@@ -66,6 +68,41 @@ void ASTRefreshStrategy::formatImpl(
     }
     if (append)
         ostr << " APPEND";
+}
+
+void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "RefreshStrategy");
+    w.writeInt("schedule_kind", static_cast<Int64>(schedule_kind));
+    w.writeChild("period", period);
+    w.writeChild("offset", offset);
+    w.writeChild("spread", spread);
+    w.writeChild("settings", settings);
+    w.writeChild("dependencies", dependencies);
+    if (append)
+        w.writeBool("append", true);
+}
+
+void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    schedule_kind = static_cast<RefreshScheduleKind>(r.getInt("schedule_kind"));
+    auto period_child = r.readChild("period");
+    if (period_child)
+        set(period, period_child);
+    auto offset_child = r.readChild("offset");
+    if (offset_child)
+        set(offset, offset_child);
+    auto spread_child = r.readChild("spread");
+    if (spread_child)
+        set(spread, spread_child);
+    auto settings_child = r.readChild("settings");
+    if (settings_child)
+        set(settings, settings_child);
+    auto dependencies_child = r.readChild("dependencies");
+    if (dependencies_child)
+        set(dependencies, dependencies_child);
+    append = r.getBool("append");
 }
 
 }

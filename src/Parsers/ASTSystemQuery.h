@@ -2,6 +2,8 @@
 
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
+
+namespace Poco::JSON { class Object; }
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
 
@@ -224,6 +226,8 @@ public:
     std::optional<Int64> fake_time_for_view;
 
     String getID(char) const override { return "SYSTEM query"; }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr clone() const override
     {

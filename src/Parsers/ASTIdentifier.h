@@ -35,6 +35,8 @@ public:
     ASTPtr getParam() const;
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     void collectIdentifierNames(IdentifierNameSet & set) const override { set.insert(name()); }
 
@@ -83,6 +85,8 @@ public:
 
     String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     UUID uuid = UUIDHelpers::Nil;  // FIXME(ilezhankin): make private
 
