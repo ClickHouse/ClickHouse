@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"optimize_and_compare_chain_pruning", false, true, "New setting to detect conflicting and redundant comparison conditions on the same expression within AND chains."},
             {"enable_materialized_cte", false, false, "New setting"},
+            {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
