@@ -88,7 +88,7 @@ String likePatternToRegexp(std::string_view pattern)
     return res;
 }
 
-String rewriteLikePatternWithCustomEscape(std::string_view pattern, char escape_char)
+String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char escape_char)
 {
     String res;
     res.reserve(pattern.size());
@@ -102,12 +102,11 @@ String rewriteLikePatternWithCustomEscape(std::string_view pattern, char escape_
         {
             ++pos;
             if (pos == end)
-                throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE,
-                    "Invalid escape sequence at the end of LIKE pattern '{}'", pattern);
+                throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern '{}'", pattern);
 
             if (*pos == '%' || *pos == '_')
             {
-                /// escape_char + metacharacter → \metacharacter
+                /// escape_char + wildcard → \wildcard
                 res += '\\';
                 res += *pos;
             }
@@ -125,13 +124,13 @@ String rewriteLikePatternWithCustomEscape(std::string_view pattern, char escape_
             {
                 throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE,
                     "Invalid escape sequence '{}{}' in LIKE pattern '{}': "
-                    "the escape character can only be followed by '%', '_', or the escape character itself",
+                    "the escape character must be followed by '%', '_', or the escape character itself",
                     escape_char, *pos, pattern);
             }
         }
         else if (*pos == '\\' && escape_char != '\\')
         {
-            /// When a custom escape char is used, bare backslashes are literal
+            /// When a custom escape char is used, bare backslashes are literals
             res += "\\\\";
         }
         else

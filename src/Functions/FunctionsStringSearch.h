@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/MatchImpl.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/likePatternToRegexp.h>
@@ -86,14 +87,12 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
     Yes     /// depending on a setting, the function arguments are (haystack, needle[, position]) or (needle, haystack[, position])
 };
 
-/// Detects whether an Impl has `is_like = true` (only `MatchImpl` with `Syntax::Like`).
-/// Other Impl types (PositionImpl, CountSubstringsImpl, etc.) don't define `is_like` at all,
-/// so we use SFINAE to default to false for them.
-template <typename T, typename = void>
+/// Detects whether Impl is `MatchImpl` instantiated with `MatchTraits::Syntax::Like`.
+template <typename T>
 struct ImplIsLike : std::false_type {};
 
-template <typename T>
-struct ImplIsLike<T, std::void_t<decltype(T::is_like)>> : std::bool_constant<T::is_like> {};
+template <typename Name, MatchTraits::Case case_, MatchTraits::Result result_>
+struct ImplIsLike<MatchImpl<Name, MatchTraits::Syntax::Like, case_, result_>> : std::true_type {};
 
 template <typename Impl,
          ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
@@ -213,9 +212,10 @@ public:
 
         if constexpr (ImplIsLike<Impl>::value)
         {
+            /// Is there an ESCAPE argument? Rewrite the needle with escape character into one without escape character.
             if (arguments.size() >= 3)
             {
-                /// ESCAPE argument for LIKE: extract the escape character and rewrite the pattern
+                /// Extract escape character
                 const auto * col_escape = typeid_cast<const ColumnConst *>(arguments[2].column.get());
                 if (!col_escape)
                     throw Exception(
@@ -230,24 +230,24 @@ public:
                         getName(), escape_str);
                 char escape_char = escape_str[0];
 
-                /// Rewrite the needle pattern from custom escape to standard backslash escapes
-                if (const auto * col_const = typeid_cast<const ColumnConst *>(column_needle.get()))
+                /// Rewrite the needle from custom escape to standard backslash escape
+                if (const auto * col_needle_const = typeid_cast<const ColumnConst *>(column_needle.get()))
                 {
-                    String rewritten = rewriteLikePatternWithCustomEscape(col_const->getValue<String>(), escape_char);
-                    auto data_col = ColumnString::create();
-                    data_col->insertData(rewritten.data(), rewritten.size());
-                    column_needle_rewritten = ColumnConst::create(std::move(data_col), col_const->size());
+                    String rewritten_needle = likePatternWithCustomEscapeToLikePattern(col_needle_const->getValue<String>(), escape_char);
+                    auto rewritten_needle_col = ColumnString::create();
+                    rewritten_needle_col->insertData(rewritten_needle.data(), rewritten_needle.size());
+                    column_needle_rewritten = ColumnConst::create(std::move(rewritten_needle_col), col_needle_const->size());
                 }
-                else if (const auto * col_str = typeid_cast<const ColumnString *>(column_needle.get()))
+                else if (const auto * col_needle_nonconst = typeid_cast<const ColumnString *>(column_needle.get()))
                 {
-                    auto rewritten_col = ColumnString::create();
-                    for (size_t i = 0; i < col_str->size(); ++i)
+                    auto rewritten_needle_col = ColumnString::create();
+                    for (size_t i = 0; i < col_needle_nonconst->size(); ++i)
                     {
-                        auto ref = col_str->getDataAt(i);
-                        String rewritten = rewriteLikePatternWithCustomEscape(std::string_view{ref.data(), ref.size()}, escape_char);
-                        rewritten_col->insertData(rewritten.data(), rewritten.size());
+                        auto needle = col_needle_nonconst->getDataAt(i);
+                        String rewritten = likePatternWithCustomEscapeToLikePattern({needle.data(), needle.size()}, escape_char);
+                        rewritten_needle_col->insertData(rewritten.data(), rewritten.size());
                     }
-                    column_needle_rewritten = std::move(rewritten_col);
+                    column_needle_rewritten = std::move(rewritten_needle_col);
                 }
             }
         }
