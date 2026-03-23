@@ -122,14 +122,15 @@
 
         window.addEventListener('resize', function() {
             fitAddon.fit();
-            sendResize();
         });
 
         var container = document.getElementById('terminal-container');
         if (window.ResizeObserver) {
             new ResizeObserver(function() {
-                fitAddon.fit();
-                sendResize();
+                // Skip if container has no usable size (e.g. parent panel is hidden)
+                if (container.clientWidth > 0 && container.clientHeight > 0) {
+                    fitAddon.fit();
+                }
             }).observe(container);
         }
 
@@ -314,9 +315,12 @@
             userFromURL = true;
             attemptConnect();
         } else if (e.data.type === 'webterminal-refit' && fitAddon && term) {
-            fitAddon.fit();
-            sendResize();
-            term.focus();
+            // Defer fit until the browser has finished layout after the panel becomes visible,
+            // otherwise fitAddon may compute a tiny column count from stale dimensions.
+            requestAnimationFrame(function() {
+                fitAddon.fit();
+                term.focus();
+            });
         }
     });
 
