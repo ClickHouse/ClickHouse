@@ -1,4 +1,4 @@
-#include <Functions/LLM/LLMFunctionBase.h>
+#include <Functions/FunctionBaseLLM.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -22,12 +22,12 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionLLMGenerateSQL final : public LLMFunctionBase
+class FunctionLLMGenerateSQL final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "LLMGenerateSQL";
     static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMGenerateSQL>(std::move(ctx)); }
-    explicit FunctionLLMGenerateSQL(ContextPtr ctx) : LLMFunctionBase(std::move(ctx)) {}
+    explicit FunctionLLMGenerateSQL(ContextPtr ctx) : FunctionBaseLLM(std::move(ctx)) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

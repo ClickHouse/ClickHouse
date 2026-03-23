@@ -1,4 +1,4 @@
-#include <Functions/LLM/LLMFunctionBase.h>
+#include <Functions/FunctionBaseLLM.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -17,12 +17,12 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionLLMTranslate final : public LLMFunctionBase
+class FunctionLLMTranslate final : public FunctionBaseLLM
 {
 public:
     static constexpr auto name = "LLMTranslate";
     static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMTranslate>(std::move(ctx)); }
-    explicit FunctionLLMTranslate(ContextPtr ctx) : LLMFunctionBase(std::move(ctx)) {}
+    explicit FunctionLLMTranslate(ContextPtr ctx) : FunctionBaseLLM(std::move(ctx)) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

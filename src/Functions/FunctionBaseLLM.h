@@ -10,10 +10,10 @@
 namespace DB
 {
 
-class LLMFunctionBase : public IFunction
+class FunctionBaseLLM : public IFunction
 {
 public:
-    explicit LLMFunctionBase(ContextPtr context_);
+    explicit FunctionBaseLLM(ContextPtr context_);
 
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
