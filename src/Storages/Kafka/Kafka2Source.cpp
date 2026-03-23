@@ -16,6 +16,7 @@
 #include <Common/DateLUT.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 namespace ProfileEvents
 {
@@ -57,6 +58,8 @@ Kafka2Source::~Kafka2Source()
     if (!consumer)
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("Kafka2Source::~Kafka2Source");
+
     // If broken (not committed), the OffsetGuard destructor will rollback
     offset_guard.reset();
     storage.releaseConsumer(std::move(consumer));
@@ -86,6 +89,8 @@ Chunk Kafka2Source::generate()
 
 Chunk Kafka2Source::generateImpl()
 {
+    auto component_guard = Coordination::setCurrentComponent("Kafka2Source::generateImpl");
+
     if (!consumer)
     {
         consumer = storage.acquireConsumer(consumer_index);
@@ -334,6 +339,8 @@ void Kafka2Source::commit()
 {
     if (!consumer)
         return;
+
+    auto component_guard = Coordination::setCurrentComponent("Kafka2Source::commit");
 
     if (offset_guard.has_value())
     {
