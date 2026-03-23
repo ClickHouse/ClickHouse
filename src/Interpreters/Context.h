@@ -395,6 +395,7 @@ protected:
     String insert_format; /// Format, used in insert query.
 
     TemporaryTablesMapping external_tables_mapping;
+    /// Query scalars
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
@@ -736,6 +737,7 @@ public:
     /// present to be able to add, remove or update warnings from the table
     enum class WarningType
     {
+        AST_FUZZER_IS_ENABLED,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
         AVAILABLE_MEMORY_TOO_LOW,
@@ -910,6 +912,8 @@ public:
     /// Get callback for reading data for input()
     InputBlocksReader getInputBlocksReaderCallback() const;
     void resetInputCallbacks();
+    /// Clear cached table function results (e.g. StorageInput) to avoid stale state across queries.
+    void clearTableFunctionResults();
 
     /// Returns information about the client executing a query.
     const ClientInfo & getClientInfo() const { return client_info; }

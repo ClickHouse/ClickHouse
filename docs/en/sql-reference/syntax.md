@@ -296,14 +296,11 @@ Query parameters allow you to write generic queries that contain abstract placeh
 When a query with query parameters is executed, 
 all placeholders are resolved and replaced by the actual query parameter values.
 
-There are two ways to define a query parameter:
+Query parameters can be defined in several ways:
 
-- `SET param_<name>=<value>`
-- `--param_<name>='<value>'`
-
-When using the second variant, it is passed as an argument to `clickhouse-client` on the command line where:
-- `<name>` is the name of the query parameter.
-- `<value>` is its value.
+- `SET param_<name>=<value>` — using a `SET` command in a query.
+- `--param_<name>='<value>'` — as an argument to `clickhouse-client` on the command line.
+- `param_<name>=<value>` — as a URL query string parameter for the HTTP interface.
 
 A query parameter can be referenced in a query using `{<name>: <datatype>}`, where `<name>` is the query parameter name and `<datatype>` is the datatype it is converted to.
 
@@ -347,8 +344,26 @@ SELECT * FROM {mytablename:Identifier};
 ```
 </details>
 
+<details>
+<summary>Example with the HTTP interface</summary>
+
+Query parameters can be passed as URL query string parameters with the `param_` prefix. For example:
+
+```bash
+curl -s "http://localhost:8123/?param_message=hello" --data-binary "SELECT {message: String}"
+
+hello
+```
+</details>
+
+<details>
+<summary>Example with the Web UI</summary>
+
+The built-in Web UI (`play.html`) automatically detects `{name:Type}` parameter placeholders in the query and displays labeled input fields for each parameter. The parameter values are included in the HTTP request and also persisted in the page URL for bookmarking and sharing.
+</details>
+
 :::note
-Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries. 
+Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries.
 They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
 :::
 

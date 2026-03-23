@@ -170,7 +170,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/sql-reference/functions/array-functions.md/#array)).
-- `unicode_word` splits strings into tokens using Unicode word boundary rules (similar to UAX #29). ASCII alphanumeric characters and underscores form tokens with connectors (`:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters become single-character tokens. Stop words (configurable, defaults to common CJK punctuation) are skipped. An optional parameter `stop_words` can be specified as an array of strings, for example, `tokenizer = unicode_word(['，', '。'])`.
+- `unicodeWord` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
 
 All available tokenizers are listed in [system.tokenizers](../../../operations/system-tables/tokenizers.md).
 
@@ -198,9 +198,8 @@ Result:
 ```
 
 *Working with non-ASCII inputs.*
-While text indexes can in principle be build on top of text data in any language and character set, we recommend doing so at the moment only for input in an extended ASCII character sets, i.e. Western languages.
-In particular, Chinese, Japanese, and Korean currently lack comprehensive indexing support, leading to potentially huge index sizes and large query times.
-We plan to add specialized language-specific tokenizers to handle these cases better in future.
+Text indexes can be built on top of text data in any language and character set.
+For non-ASCII text, the `unicodeWord` tokenizer is recommended as it correctly handles Unicode word boundaries including CJK characters.
 :::
 
 **Preprocessor argument (optional)**. The preprocessor refers to an expression which is applied to the input string before tokenization.
