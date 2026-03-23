@@ -303,177 +303,28 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 }
 
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
-    DatabaseDataLakeStorageType type,
-    DataLakeStorageSettingsPtr /* storage_settings */) const
+    DatabaseDataLakeStorageType type)
 {
-    /// TODO: add tests for azure, local storage types.
-
-    auto catalog = getCatalog();
-    switch (catalog->getCatalogType())
+    switch (type)
     {
-        case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
-        {
-            switch (type)
-            {
-#if USE_AZURE_BLOB_STORAGE
-                case DB::DatabaseDataLakeStorageType::Azure:
-                {
-                    return std::make_shared<StorageAzureConfiguration>();
-                }
-#endif
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Server does not contain support for storage type {} for Iceberg OneLake catalog",
-                                    type);
-            }
-        }
-        case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
-        case DatabaseDataLakeCatalogType::ICEBERG_REST:
-        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
-        {
-            switch (type)
-            {
 #if USE_AWS_S3
-                case DB::DatabaseDataLakeStorageType::S3:
-                {
-                    return std::make_shared<StorageS3Configuration>();
-                }
+        case DatabaseDataLakeStorageType::S3:
+            return std::make_shared<StorageS3Configuration>();
 #endif
 #if USE_AZURE_BLOB_STORAGE
-                case DB::DatabaseDataLakeStorageType::Azure:
-                {
-                    return std::make_shared<StorageAzureConfiguration>();
-                }
+        case DatabaseDataLakeStorageType::Azure:
+            return std::make_shared<StorageAzureConfiguration>();
 #endif
 #if USE_HDFS
-                case DB::DatabaseDataLakeStorageType::HDFS:
-                {
-                    return std::make_shared<StorageHDFSConfiguration>();
-                }
+        case DatabaseDataLakeStorageType::HDFS:
+            return std::make_shared<StorageHDFSConfiguration>();
 #endif
-                case DB::DatabaseDataLakeStorageType::Local:
-                {
-                    return std::make_shared<StorageLocalConfiguration>();
-                }
-                /// Fake storage in case when catalog store not only
-                /// primary-type tables (DeltaLake or Iceberg), but for
-                /// examples something else like INFORMATION_SCHEMA.
-                /// Such tables are unreadable, but at least we can show
-                /// them in SHOW CREATE TABLE, as well we can show their
-                /// schema.
-                /// We use local as substitution for fake because it has 0
-                /// dependencies and the most lightweight
-                case DB::DatabaseDataLakeStorageType::Other:
-                {
-                    return std::make_shared<StorageLocalConfiguration>();
-                }
-#if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Server does not contain support for storage type {} for Iceberg Rest catalog",
-                                    type);
-#endif
-            }
-        }
-        case DatabaseDataLakeCatalogType::UNITY:
-        {
-            switch (type)
-            {
-#if USE_AWS_S3
-                case DB::DatabaseDataLakeStorageType::S3:
-                {
-                    return std::make_shared<StorageS3Configuration>();
-                }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-                case DB::DatabaseDataLakeStorageType::Azure:
-                {
-                    return std::make_shared<StorageAzureConfiguration>();
-                }
-#endif
-                case DB::DatabaseDataLakeStorageType::Local:
-                {
-                    return std::make_shared<StorageLocalConfiguration>();
-                }
-                /// Fake storage in case when catalog store not only
-                /// primary-type tables (DeltaLake or Iceberg), but for
-                /// examples something else like INFORMATION_SCHEMA.
-                /// Such tables are unreadable, but at least we can show
-                /// them in SHOW CREATE TABLE, as well we can show their
-                /// schema.
-                /// We use local as substitution for fake because it has 0
-                /// dependencies and the most lightweight
-                case DB::DatabaseDataLakeStorageType::Other:
-                {
-                    return std::make_shared<StorageLocalConfiguration>();
-                }
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Server does not contain support for storage type {} for Unity catalog",
-                                    type);
-            }
-        }
-        case DatabaseDataLakeCatalogType::GLUE:
-        {
-            switch (type)
-            {
-#if USE_AWS_S3
-                case DB::DatabaseDataLakeStorageType::S3:
-                {
-                    return std::make_shared<StorageS3Configuration>();
-                }
-#endif
-                case DB::DatabaseDataLakeStorageType::Other:
-                {
-                    return std::make_shared<StorageLocalConfiguration>();
-                }
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Server does not contain support for storage type {} for Glue catalog",
-                                    type);
-            }
-        }
-        case DatabaseDataLakeCatalogType::PAIMON_REST:
-        {
-            switch (type)
-            {
-#if USE_AWS_S3
-                case DB::DatabaseDataLakeStorageType::S3:
-                {
-                    return std::make_shared<StorageS3Configuration>();
-                }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-                case DB::DatabaseDataLakeStorageType::Azure:
-                {
-                    return std::make_shared<StorageAzureConfiguration>();
-                }
-#endif
-#if USE_HDFS
-                case DB::DatabaseDataLakeStorageType::HDFS:
-                {
-                    return std::make_shared<StorageHDFSConfiguration>();
-                }
-#endif
-                case DB::DatabaseDataLakeStorageType::Local:
-                {
-                    return std::make_shared<StorageLocalConfiguration>();
-                }
-                case DB::DatabaseDataLakeStorageType::Other:
-                {
-                    return std::make_shared<StorageLocalConfiguration>();
-                }
-#if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Server does not contain support for storage type {} for Iceberg Rest catalog",
-                                    type);
-#endif
-            }
-        }
-        case DatabaseDataLakeCatalogType::NONE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unspecified catalog type");
+        case DatabaseDataLakeStorageType::Local:
+        case DatabaseDataLakeStorageType::Other:
+            return std::make_shared<StorageLocalConfiguration>();
     }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Server does not contain support for storage type {}", type);
 }
 
 std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const
@@ -611,7 +462,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
     }
 
-    const auto configuration = getConfiguration(storage_type, storage_settings);
+    const auto configuration = getConfiguration(storage_type);
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);
@@ -690,30 +541,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 /* is_table_function */true);
         };
 
-        StoragePtr storage_cluster;
-        switch (catalog->getCatalogType())
-        {
-#if USE_AVRO
-            case DatabaseDataLakeCatalogType::ICEBERG_REST:
-            case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
-            case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
-            case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
-            case DatabaseDataLakeCatalogType::GLUE:
-                storage_cluster = make_datalake_cluster_storage.template operator()<IcebergMetadata>();
-                break;
-            case DatabaseDataLakeCatalogType::PAIMON_REST:
-                storage_cluster = make_datalake_cluster_storage.template operator()<PaimonMetadata>();
-                break;
-#endif
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
-            case DatabaseDataLakeCatalogType::UNITY:
-                storage_cluster = make_datalake_cluster_storage.template operator()<DeltaLakeMetadata>();
-                break;
-#endif
-            default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported catalog type for creating StorageDataLakeCluster");
-        }
-
+        auto storage_cluster = dispatchByMetadataType(make_datalake_cluster_storage);
         storage_cluster->startup();
         return storage_cluster;
     }
@@ -745,25 +573,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             /* lazy_init */true);
     };
 
-    switch (catalog->getCatalogType())
-    {
-#if USE_AVRO
-        case DatabaseDataLakeCatalogType::ICEBERG_REST:
-        case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
-        case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
-        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
-        case DatabaseDataLakeCatalogType::GLUE:
-            return make_datalake_storage.template operator()<IcebergMetadata>();
-        case DatabaseDataLakeCatalogType::PAIMON_REST:
-            return make_datalake_storage.template operator()<PaimonMetadata>();
-#endif
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
-        case DatabaseDataLakeCatalogType::UNITY:
-            return make_datalake_storage.template operator()<DeltaLakeMetadata>();
-#endif
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported catalog type for creating StorageDataLake");
-    }
+    return dispatchByMetadataType(make_datalake_storage);
 }
 
 void DatabaseDataLake::dropTable( /// NOLINT
