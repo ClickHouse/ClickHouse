@@ -89,8 +89,8 @@
             fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace',
             theme: {
                 background: '#000',
-                foreground: '#d4d4d4',
-                cursor: '#d4d4d4',
+                foreground: '#ffffff',
+                cursor: '#ffffff',
                 selectionBackground: '#264f78',
                 black: '#000',
                 red: '#f44747',
@@ -274,26 +274,11 @@
         };
 
         ws.onmessage = function(event) {
-            var text = (event.data instanceof ArrayBuffer)
-                ? new TextDecoder().decode(event.data)
-                : event.data;
-
-            // When bold is set without an explicit foreground color, add bright white (97)
-            // so that bold default-foreground text renders as pure white.
-            text = text.replace(/\x1b\[([0-9;]*)m/g, function(match, params) {
-                var parts = params === '' ? [0] : params.split(';').map(Number);
-                var hasBold = parts.indexOf(1) !== -1;
-                var hasFg = parts.some(function(p) {
-                    return (p >= 30 && p <= 39) || (p >= 90 && p <= 97);
-                });
-                if (hasBold && !hasFg) {
-                    parts.push(97);
-                    return '\x1b[' + parts.join(';') + 'm';
-                }
-                return match;
-            });
-
-            term.write(text);
+            if (event.data instanceof ArrayBuffer) {
+                term.write(new Uint8Array(event.data));
+            } else {
+                term.write(event.data);
+            }
         };
 
         ws.onclose = function() {
