@@ -36,9 +36,12 @@
                 <max_ast_depth>
                     <readonly/>
                 </max_ast_depth>
+
             </constraints>
 
             <!-- Allow all experimental features by default -->
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+
             <allow_custom_error_code_in_throwif>1</allow_custom_error_code_in_throwif>
             <allow_ddl>1</allow_ddl>
             <allow_distributed_ddl>1</allow_distributed_ddl>

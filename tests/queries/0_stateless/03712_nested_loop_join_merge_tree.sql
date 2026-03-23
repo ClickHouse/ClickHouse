@@ -46,6 +46,7 @@ SET query_plan_join_swap_table = 0;
 SET enable_analyzer = 1;
 SET join_algorithm = 'direct';
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
+SET query_plan_optimize_prewhere = 1;
 
 SELECT count(), countIf(t1.Attribute != ''), sum(sipHash64(t1.Attribute))
 FROM events AS t0 INNER JOIN attributes AS t1 ON t1.EventId = t0.Id
