@@ -3162,7 +3162,15 @@ document.getElementById('download-button').addEventListener('click', async funct
     document.addEventListener('keydown', function(e) {
         if ((e.key === '`' || e.key === '~') && !e.ctrlKey && !e.altKey && !e.metaKey) {
             const tag = e.target.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
+            if (tag === 'INPUT' || tag === 'SELECT' || e.target.isContentEditable) return;
+            // In the query textarea: activate terminal if ~ is typed into an empty field
+            if (tag === 'TEXTAREA' && e.target.id === 'query') {
+                if (!terminalActive && e.target.value === '') {
+                    e.preventDefault();
+                    activateTerminal();
+                }
+                return;
+            }
             e.preventDefault();
             toggleTerminal();
         }
