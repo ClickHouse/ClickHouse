@@ -1082,10 +1082,12 @@ void KeeperDispatcher::dispatchImmediateReads(KeeperRequestsForSessions & pendin
 {
     for (const auto & read_request : pending_immediate_reads)
     {
-        if (server->isLeaderAlive())
-            server->putLocalReadRequest(read_request);
-        else
+        /// Route through the 2-arg putLocalReadRequest which checks
+        /// live_sessions, session_to_response_callback, and shutdown state.
+        if (!server->isLeaderAlive())
             addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+        else if (!putLocalReadRequest(read_request.request, read_request.session_id))
+            addErrorResponses({read_request}, Coordination::Error::ZSESSIONEXPIRED);
     }
     if (!pending_immediate_reads.empty())
     {
