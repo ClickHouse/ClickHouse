@@ -367,6 +367,18 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         projections_on_disk.erase(projection_file);
     }
 
+    /// Handle unknown projections: on disk and in checksums but not in the
+    /// part's projection list (e.g. a projection was dropped while the part
+    /// was detached, then re-attached).  Remove them from checksums_txt so
+    /// that the checkEqual below does not fail, and mark the part as having
+    /// a broken projection so the caller can handle it gracefully.
+    if (!projections_on_disk.empty())
+    {
+        is_broken_projection = true;
+        for (const auto & projection_file : projections_on_disk)
+            checksums_txt.remove(projection_file);
+    }
+
     if (throw_on_broken_projection)
     {
         if (!broken_projections_message.empty())
@@ -374,8 +386,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
         }
 
-        /// This one is actually not broken, just redundant files on disk which
-        /// MergeTree will never use.
         if (require_checksums && !projections_on_disk.empty())
         {
             throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,

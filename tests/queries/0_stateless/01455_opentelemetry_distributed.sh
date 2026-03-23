@@ -9,9 +9,29 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function check_log
 {
+    # The gateway span (HTTPHandler / TCPHandler TracingContextHolder) is logged
+    # only when handleRequest() / runImpl() fully exits — after the response has
+    # already been sent to the client.  There is therefore a small window where
+    # the client has received the HTTP 200 but the span is not yet in the table.
+    # Retry a few times to let the background I/O thread finish.
+    # This fixes https://github.com/ClickHouse/ClickHouse/issues/67108 and https://github.com/ClickHouse/ClickHouse/issues/93452
+    for _retry in {1..20}; do
+        ${CLICKHOUSE_CLIENT} -q "system flush logs opentelemetry_span_log"
+        _gateway_count=$(${CLICKHOUSE_CLIENT} -q "
+            select count() from system.opentelemetry_span_log
+            where finish_date >= yesterday()
+              AND trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
+              and parent_span_id = reinterpretAsUInt64(unhex('73'))
+        ")
+        if [[ "$_gateway_count" -gt 0 ]]; then
+            break
+        fi
+        sleep 0.1
+    done
+
 ${CLICKHOUSE_CLIENT} --format=JSONEachRow -q "
 set enable_analyzer = 1;
-system flush logs opentelemetry_span_log;
+-- Spans are already flushed by the retry loop above.
 
 -- Show queries sorted by start time.
 select attribute['db.statement'] as query,

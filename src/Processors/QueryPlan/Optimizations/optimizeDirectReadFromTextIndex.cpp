@@ -33,7 +33,7 @@ struct TextIndexReadInfo
 {
     const MergeTreeIndexWithCondition * index;
     bool is_materialized;
-    bool is_fully_materialied;
+    bool is_fully_materialized;
 };
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
@@ -171,7 +171,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         {
             .index = &index,
             .is_materialized = num_materialized_parts > 0,
-            .is_fully_materialied = num_materialized_parts == unique_parts.size()
+            .is_fully_materialized = num_materialized_parts == unique_parts.size()
         };
     }
 }
@@ -596,6 +596,11 @@ private:
         /// It can happen when the original function returns Nullable or LowCardinality type and replacement doesn't.
         if (!function_node.result_type->equals(*replacement.node->result_type))
             replacement.node = &actions_dag.addCast(*replacement.node, function_node.result_type, "", context);
+
+        /// Preserve the original column name so that downstream steps (e.g. ExpressionStep for SELECT)
+        /// that reference the predicate by its original name can still find it in the block.
+        if (replacement.node->result_name != function_node.result_name)
+            replacement.node = &actions_dag.addAlias(*replacement.node, function_node.result_name);
     }
 };
 
@@ -623,7 +628,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     /// Log partially materialized text indexes
     for (const auto & [index_name, info] : text_index_read_infos)
     {
-        if (!info.is_fully_materialied)
+        if (!info.is_fully_materialized)
             LOG_DEBUG(logger, "Text index '{}' is not fully materialized. In some parts, direct read from text index cannot be used.", index_name);
     }
 

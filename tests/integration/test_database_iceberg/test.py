@@ -37,8 +37,6 @@ from helpers.network import PartitionManager
 from helpers.client import QueryRuntimeException
 
 BASE_URL = "http://rest:8181/v1"
-BASE_URL_LOCAL = "http://localhost:8182/v1"
-BASE_URL_LOCAL_RAW = "http://localhost:8182"
 
 CATALOG_NAME = "demo"
 
@@ -75,8 +73,9 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
 
-def list_namespaces():
-    response = requests.get(f"{BASE_URL_LOCAL}/namespaces")
+def list_namespaces(started_cluster):
+    base_url_local = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}/v1"
+    response = requests.get(f"{base_url_local}/namespaces")
     if response.status_code == 200:
         return response.json()
     else:
@@ -84,10 +83,11 @@ def list_namespaces():
 
 
 def load_catalog_impl(started_cluster):
+    base_url_local_raw = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}"
     return load_catalog(
         CATALOG_NAME,
         **{
-            "uri": BASE_URL_LOCAL_RAW,
+            "uri": base_url_local_raw,
             "type": "rest",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
@@ -234,7 +234,7 @@ def test_list_tables(started_cluster):
         catalog.create_namespace(namespace)
 
     found = False
-    for namespace_list in list_namespaces()["namespaces"]:
+    for namespace_list in list_namespaces(started_cluster)["namespaces"]:
         if root_namespace == namespace_list[0]:
             found = True
             break
@@ -680,6 +680,91 @@ def test_not_specified_catalog_type(started_cluster):
     """
     )
     assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+def test_system_tables_with_nullptr_table(started_cluster):
+    """
+    Test that querying system.tables does not crash when DataLake database
+    returns nullptr for some tables (e.g. when table metadata fetch fails).
+    Reproduces: https://github.com/ClickHouse/clickhouse-core-incidents/issues/1434
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_nullptr"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table_name = "test_table"
+    create_table(catalog, namespace, table_name)
+
+    num_rows = 5
+    arrow_data = pa.table(
+        {
+            "datetime": [datetime.now() for _ in range(num_rows)],
+            "symbol": [f"sym_{i}" for i in range(num_rows)],
+            "bid": [float(i) for i in range(num_rows)],
+            "ask": [float(i + 1) for i in range(num_rows)],
+            "details": [{"created_by": f"user_{i}"} for i in range(num_rows)],
+        },
+        schema=pa.schema(
+            [
+                pa.field("datetime", pa.timestamp("us")),
+                pa.field("symbol", pa.string()),
+                pa.field("bid", pa.float64()),
+                pa.field("ask", pa.float64()),
+                pa.field(
+                    "details", pa.struct([pa.field("created_by", pa.string())])
+                ),
+            ]
+        ),
+    )
+    iceberg_table = catalog.load_table(f"{namespace}.{table_name}")
+    iceberg_table.append(arrow_data)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    ## Enable the failpoint so that tryGetTableImpl returns nullptr for all tables.
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_return_nullptr")
+
+    try:
+        ## This triggers getFilteredTables with engine_column populated (the crash site).
+        result = node.query(
+            f"SELECT engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        ## With the failpoint, all tables return nullptr so we get empty result.
+        assert result.strip() == ""
+
+        ## This triggers the fillData main loop path.
+        result = node.query(
+            f"SELECT * FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert result.strip() == ""
+
+        ## Also test with count() to exercise a different code path.
+        result = node.query(
+            f"SELECT count(engine) FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"AND engine LIKE '%ReplicatedMergeTree' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert result.strip() == "0"
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT datalake_try_get_table_return_nullptr"
+        )
+
+    ## After disabling the failpoint, verify normal operation still works.
+    result = node.query(
+        f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND name ILIKE '%{table_name}%' "
+        f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+    )
+    assert int(result.strip()) > 0
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
 def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
