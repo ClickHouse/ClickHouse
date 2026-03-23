@@ -27,13 +27,7 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
     T x;
 
     if constexpr (is_integer<T> && is_arithmetic_v<T>)
-    {
-        /// readIntTextUnsafe treats a leading '0' as the complete value zero, but readIntText tolerates it
-        if (settings.allow_number_leading_zeros)
-            readIntText(x, istr);
-        else
-            readIntTextUnsafe(x, istr);
-    }
+        readIntTextUnsafe(x, istr);
     else
         readText(x, istr);
 

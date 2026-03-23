@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/logger_useful.h>
 #include <shared_mutex>
 
 namespace ProfileEvents
@@ -70,25 +69,22 @@ public:
         build();
     }
 
-    /// When @p result_type is provided, sources with a different type are
-    /// filtered out per-source so compatible updates survive schema transitions.
-    IColumn::Patch createPatchForColumn(const String & column_name, IColumn::Versions & dst_versions,
-                                        const DataTypePtr & result_type = nullptr) const;
+    IColumn::Patch createPatchForColumn(const String & column_name, IColumn::Versions & dst_versions) const;
 
 private:
     void build();
 
-    ALWAYS_INLINE UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
+    UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->result_row_indices[row_idx];
     }
 
-    ALWAYS_INLINE UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
+    UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->patch_row_indices[row_idx];
     }
 
-    ALWAYS_INLINE UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
+    UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->getNumSources() == 1 ? 0 : patches[patch_idx]->patch_block_indices[row_idx];
     }
@@ -102,11 +98,6 @@ private:
     IColumn::Offsets src_row_indices;
     /// Index of row in the result block.
     IColumn::Offsets dst_row_indices;
-
-    /// Scratch space for type-filtering path in createPatchForColumn.
-    mutable IColumn::Offsets filtered_src_col_indices;
-    mutable IColumn::Offsets filtered_src_row_indices;
-    mutable IColumn::Offsets filtered_dst_row_indices;
 };
 
 void CombinedPatchBuilder::build()
@@ -233,58 +224,33 @@ void CombinedPatchBuilder::build()
     }
 }
 
-IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
-    const String & column_name, IColumn::Versions & dst_versions, const DataTypePtr & result_type) const
+IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_name, IColumn::Versions & dst_versions) const
 {
-    VectorWithMemoryTracking<IColumn::Patch::Source> sources;
-    VectorWithMemoryTracking<bool> source_ok(all_patch_blocks.size(), true);
-    VectorWithMemoryTracking<size_t> remap(all_patch_blocks.size());
-    bool need_filter = false;
+    std::vector<IColumn::Patch::Source> sources;
 
-    for (size_t i = 0; i < all_patch_blocks.size(); ++i)
+    for (const auto & patch_block : all_patch_blocks)
     {
-        const auto & pcol = all_patch_blocks[i].getByName(column_name);
-        if (!pcol.column)
+        const auto & patch_column = patch_block.getByName(column_name).column;
+        if (!patch_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} has null data in patch block", column_name);
 
-        if (result_type && !result_type->equals(*pcol.type))
+        IColumn::Patch::Source source =
         {
-            source_ok[i] = false;
-            need_filter = true;
-            continue;
-        }
+            .column = *patch_column,
+            .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
+        };
 
-        remap[i] = sources.size();
-        sources.push_back({.column = *pcol.column,
-                           .versions = getColumnUInt64Data(all_patch_blocks[i], PartDataVersionColumn::name)});
+        sources.push_back(std::move(source));
     }
 
-    if (!need_filter)
-        return IColumn::Patch{
-            .sources = std::move(sources), .src_col_indices = &src_block_indices,
-            .src_row_indices = src_row_indices, .dst_row_indices = dst_row_indices,
-            .dst_versions = dst_versions};
-
-    filtered_src_col_indices.clear();
-    filtered_src_row_indices.clear();
-    filtered_dst_row_indices.clear();
-
-    for (size_t j = 0; j < dst_row_indices.size(); ++j)
+    return IColumn::Patch
     {
-        if (!source_ok[src_block_indices[j]])
-            continue;
-        filtered_src_col_indices.push_back(remap[src_block_indices[j]]);
-        filtered_src_row_indices.push_back(src_row_indices[j]);
-        filtered_dst_row_indices.push_back(dst_row_indices[j]);
-    }
-
-    bool single_source = sources.size() == 1;
-    return IColumn::Patch{
         .sources = std::move(sources),
-        .src_col_indices = single_source ? nullptr : &filtered_src_col_indices,
-        .src_row_indices = filtered_src_row_indices,
-        .dst_row_indices = filtered_dst_row_indices,
-        .dst_versions = dst_versions};
+        .src_col_indices = &src_block_indices,
+        .src_row_indices = src_row_indices,
+        .dst_row_indices = dst_row_indices,
+        .dst_versions = dst_versions,
+    };
 }
 
 Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_columns)
@@ -318,19 +284,10 @@ Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_c
         headers.push_back(header.sortColumns());
     }
 
-    if (headers.empty())
-        return {};
-
-    /// Schema evolution may cause type mismatches across patch headers.
-    /// Skip assertion in that case — createPatchForColumn handles filtering.
-    for (size_t i = 1; i < headers.size(); ++i)
-        if (!isCompatibleHeader(headers[i], headers[0]))
-            return headers.front();
-
     for (size_t i = 1; i < headers.size(); ++i)
         assertCompatibleHeader(headers[i], headers[0], "patch parts");
 
-    return headers.front();
+    return headers.empty() ? Block{} : headers.front();
 }
 
 bool canApplyPatchesRaw(const PatchesToApply & patches)
@@ -371,7 +328,7 @@ void applyPatchesToBlockRaw(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
-        result_column.column = removeSpecialRepresentations(result_column.column);
+        result_column.column = recursiveRemoveSparse(result_column.column);
 
         for (const auto & patch_to_apply : patches)
         {
@@ -381,23 +338,9 @@ void applyPatchesToBlockRaw(
             if (!patch_block.has(result_column.name))
                 continue;
 
-            const auto & patch_col_with_type = patch_block.getByName(result_column.name);
-            if (!patch_col_with_type.column)
+            const auto & patch_column = patch_block.getByName(result_column.name).column;
+            if (!patch_column)
                 continue;
-
-            /// If the column type in the patch part doesn't match the result column
-            /// (e.g., due to schema evolution changing a column's type), skip the patch
-            /// for this column. Applying a patch with mismatched types would cause
-            /// undefined behavior in insertFrom (SIGSEGV in release builds).
-            if (!result_column.type->equals(*patch_col_with_type.type))
-            {
-                LOG_WARNING(getLogger("applyPatches"),
-                    "Skipping patch for column {} because column type has changed ({} -> {})",
-                    result_column.name, patch_col_with_type.type->getName(), result_column.type->getName());
-                continue;
-            }
-
-            const auto & patch_column = patch_col_with_type.column;
 
             IColumn::Patch::Source source =
             {
@@ -440,8 +383,8 @@ void applyPatchesToBlockCombined(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
-        auto multi_patch = builder.createPatchForColumn(result_column.name, result_versions, result_column.type);
-        result_column.column = removeSpecialRepresentations(result_column.column);
+        auto multi_patch = builder.createPatchForColumn(result_column.name, result_versions);
+        result_column.column = recursiveRemoveSparse(result_column.column);
 
         if (canApplyPatchInplace(*result_column.column))
             result_column.column->assumeMutableRef().updateInplaceFrom(multi_patch);
@@ -558,78 +501,32 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     patch_to_apply->patch_block_indices.reserve(size_to_reserve);
     patch_to_apply->patch_row_indices.reserve(size_to_reserve);
 
-    struct IteratorsPair
-    {
-        bool found = false;
-        PatchOffsetsMap::const_iterator it;
-        PatchOffsetsMap::const_iterator end;
-    };
-
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
-    /// Mapping from block number to iterator in offsets map.
-    absl::flat_hash_map<UInt64, IteratorsPair, HashCRC32<UInt64>> offsets_iterators;
-    IteratorsPair * current_offset_iterators = nullptr;
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Check that offsets are sorted within each block number.
-    absl::flat_hash_map<UInt64, UInt64> last_offset_by_block_number;
-#endif
+    const OffsetsHashMap * offsets_hash_map = nullptr;
 
     for (size_t row = 0; row < num_rows; ++row)
     {
         if (result_block_number[row] < join_entry.min_block || result_block_number[row] > join_entry.max_block)
-            continue;
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
         {
-            auto it = last_offset_by_block_number.find(result_block_number[row]);
-            if (it != last_offset_by_block_number.end() && it->second >= result_block_offset[row])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Block offsets ({}, {}) are not sorted within block number {}", it->second, result_block_offset[row], result_block_number[row]);
-
-            last_offset_by_block_number[result_block_number[row]] = result_block_offset[row];
+            continue;
         }
-#endif
 
         if (result_block_number[row] != prev_block_number)
         {
             prev_block_number = result_block_number[row];
-            auto [block_number_it, inserted] = offsets_iterators.try_emplace(result_block_number[row]);
-
-            if (inserted)
-            {
-                auto it = join_entry.hash_map.find(result_block_number[row]);
-
-                if (it != join_entry.hash_map.end())
-                {
-                    const auto & offsets_map = it->second;
-                    auto & iterators = block_number_it->second;
-
-                    iterators.found = true;
-                    iterators.it = offsets_map.lower_bound(result_block_offset[row]);
-                    iterators.end = offsets_map.end();
-                }
-            }
-
-            current_offset_iterators = &block_number_it->second;
+            auto it = join_entry.hash_map.find(prev_block_number);
+            offsets_hash_map = it != join_entry.hash_map.end() ? &it->second : nullptr;
         }
 
-        chassert(current_offset_iterators);
-        auto & iterators = *current_offset_iterators;
-
-        if (iterators.found)
+        if (offsets_hash_map)
         {
-            while (iterators.it != iterators.end && iterators.it->first < result_block_offset[row])
-            {
-                ++iterators.it;
-            }
+            auto offset_it = offsets_hash_map->find(result_block_offset[row]);
 
-            if (iterators.it != iterators.end && iterators.it->first == result_block_offset[row])
+            if (offset_it != offsets_hash_map->end())
             {
-                const auto & [patch_block_index, patch_row_index] = iterators.it->second;
-
                 patch_to_apply->result_row_indices.push_back(row);
-                patch_to_apply->patch_block_indices.push_back(patch_block_index);
-                patch_to_apply->patch_row_indices.push_back(patch_row_index);
+                patch_to_apply->patch_block_indices.push_back(offset_it->second.first);
+                patch_to_apply->patch_row_indices.push_back(offset_it->second.second);
             }
         }
     }

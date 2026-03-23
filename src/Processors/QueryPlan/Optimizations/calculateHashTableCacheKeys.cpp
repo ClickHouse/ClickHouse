@@ -1,4 +1,3 @@
-#include <unordered_map>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Core/Joins.h>
@@ -30,16 +29,8 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
 {
     SipHash hash;
     hash.update(read.getSerializationName());
-    String table_name;
     if (const auto & snapshot = read.getStorageSnapshot())
-    {
-        StorageID storage_id = snapshot->storage.getStorageID();
-        if (storage_id.hasUUID())
-            hash.update(storage_id.uuid.toUnderType());
-        else
-            hash.update(storage_id.getFullTableName());
-        table_name = storage_id.getFullTableName();
-    }
+        hash.update(snapshot->storage.getStorageID().getFullTableName());
     if (const auto & dag = read.getPrewhereInfo())
         dag->prewhere_actions.updateHash(hash);
     return hash.get64();
@@ -53,7 +44,7 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     {
         WriteBufferFromOwnString wbuf;
         SerializedSetsRegistry registry;
-        IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry, .skip_final_flag = true, .skip_cache_key = true};
+        IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry};
 
         writeStringBinary(transform.getSerializationName(), wbuf);
         if (transform.isSerializable())
@@ -70,22 +61,27 @@ UInt64 calculateHashFromStep(const JoinStepLogical & join_step, JoinTableSide si
 {
     SipHash hash;
 
-    hash.update(join_step.getSerializationName());
-    for (const auto & condition : join_step.getJoinOperator().expression)
+    auto serialize_join_condition = [&](const JoinCondition & condition)
     {
-        auto [op, lhs, rhs] = condition.asBinaryPredicate();
-        if (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
+        hash.update(condition.predicates.size());
+        for (const auto & pred : condition.predicates)
         {
-            if (side == JoinTableSide::Left && lhs.fromLeft())
-                lhs.getNode()->updateHash(hash);
-            if (side == JoinTableSide::Left && rhs.fromLeft())
-                rhs.getNode()->updateHash(hash);
-            if (side == JoinTableSide::Right && lhs.fromRight())
-                lhs.getNode()->updateHash(hash);
-            if (side == JoinTableSide::Right && rhs.fromRight())
-                rhs.getNode()->updateHash(hash);
+            const auto & node = side == JoinTableSide::Left ? pred.left_node : pred.right_node;
+            hash.update(node.getColumnName());
+            hash.update(static_cast<UInt8>(pred.op));
         }
-    }
+    };
+
+    hash.update(join_step.getSerializationName());
+    const auto & pre_join_actions = side == JoinTableSide::Left ? join_step.getExpressionActions().left_pre_join_actions
+                                                                : join_step.getExpressionActions().right_pre_join_actions;
+    chassert(pre_join_actions);
+    pre_join_actions->updateHash(hash);
+
+    serialize_join_condition(join_step.getJoinInfo().expression.condition);
+    for (const auto & condition : join_step.getJoinInfo().expression.disjunctive_conditions)
+        serialize_join_condition(condition);
+    hash.update(join_step.getJoinInfo().expression.is_using);
 
     return hash.get64();
 }
@@ -98,14 +94,18 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
+void calculateHashTableCacheKeys(QueryPlan::Node & root)
 {
     struct Frame
     {
-        const QueryPlan::Node * node = nullptr;
+        QueryPlan::Node * node = nullptr;
         size_t next_child = 0;
         // Hash state which steps should update with their own hashes
-        SipHash hash{};
+        SipHash * hash = nullptr;
+        // Hash state for left and right children of JoinStepLogical,
+        // kept in frame object since we cannot allocate them on the stack
+        SipHash left{};
+        SipHash right{};
     };
 
     // We use addresses of `left` and `right`, so they should be stable
@@ -115,19 +115,18 @@ void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_ma
     while (!stack.empty())
     {
         auto & frame = stack.back();
-        const auto & node = *frame.node;
+        auto & node = *frame.node;
 
         if (auto * join_step = dynamic_cast<JoinStepLogical *>(node.step.get()))
         {
             // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
-            const auto & join_expression = join_step->getJoinOperator().expression;
-            bool single_disjunct = join_expression.size() > 1 || (join_expression.size() == 1 && !join_expression.front().isFunction(JoinConditionOperator::Or));
-            const bool calculate = allowParallelHashJoin(
-                join_step->getJoinSettings().join_algorithms,
-                join_step->getJoinOperator().kind,
-                join_step->getJoinOperator().strictness,
-                typeid_cast<JoinStepLogicalLookup *>(node.children.back()->step.get()),
-                single_disjunct);
+            const bool calculate = frame.hash
+                || allowParallelHashJoin(
+                                       join_step->getJoinSettings().join_algorithms,
+                                       join_step->getJoinInfo().kind,
+                                       join_step->getJoinInfo().strictness,
+                                       join_step->hasPreparedJoinStorage(),
+                                       join_step->getJoinInfo().expression.disjunctive_conditions.empty());
 
             chassert(node.children.size() == 2);
 
@@ -136,16 +135,16 @@ void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_ma
                 if (frame.next_child == 0)
                 {
                     frame.next_child = node.children.size();
-                    stack.push_back({.node = node.children.at(0)});
-                    stack.push_back({.node = node.children.at(1)});
+                    stack.push_back({.node = node.children.at(0), .hash = &frame.left});
+                    stack.push_back({.node = node.children.at(1), .hash = &frame.right});
                 }
                 else
                 {
-                    cache_keys[node.children.at(0)] ^= calculateHashFromStep(*join_step, JoinTableSide::Left);
-                    cache_keys[node.children.at(1)] ^= calculateHashFromStep(*join_step, JoinTableSide::Right);
-                    frame.hash.update(cache_keys[node.children.at(0)]);
-                    frame.hash.update(cache_keys[node.children.at(1)]);
-                    cache_keys[&node] = frame.hash.get64();
+                    frame.left.update(calculateHashFromStep(*join_step, JoinTableSide::Left));
+                    frame.right.update(calculateHashFromStep(*join_step, JoinTableSide::Right));
+                    join_step->setHashTableCacheKeys(frame.left.get64(), frame.right.get64());
+                    if (frame.hash)
+                        frame.hash->update(frame.left.get64() ^ frame.right.get64());
 
                     stack.pop_back();
                 }
@@ -162,29 +161,20 @@ void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_ma
             continue;
         }
 
-        for (const auto * child : node.children)
-            frame.hash.update(cache_keys[child]);
-
-        if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
-            frame.hash.update(calculateHashFromStep(*source));
-        else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
-            frame.hash.update(calculateHashFromStep(*read));
-        else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
-            // Completely ignore the ignored steps (i.e. the ones for which we return 0)
-            if (auto hash = calculateHashFromStep(*transform))
-                frame.hash.update(hash);
-
-        cache_keys[&node] = frame.hash.get64();
+        if (frame.hash)
+        {
+            if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
+                frame.hash->update(calculateHashFromStep(*source));
+            else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
+                frame.hash->update(calculateHashFromStep(*read));
+            else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
+                // Completely ignore the ignored steps (i.e. the ones for which we return 0)
+                if (auto hash = calculateHashFromStep(*transform))
+                    frame.hash->update(hash);
+        }
 
         stack.pop_back();
     }
-}
-
-std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root)
-{
-    std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
-    calculateHashTableCacheKeys(root, cache_keys);
-    return cache_keys;
 }
 
 }
