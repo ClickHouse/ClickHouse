@@ -34,6 +34,13 @@ ALTER TABLE t_fetch_unknown_proj_1 MATERIALIZE PROJECTION pp SETTINGS mutations_
 -- Replication propagates the detach to replica 2 as well.
 ALTER TABLE t_fetch_unknown_proj_1 DETACH PARTITION 0;
 
+-- Ensure the DETACH replication log entry has been applied on replica 2
+-- before we drop its detached copy.  Without this sync the partition can
+-- still be *active* on replica 2 (DETACH not yet applied), so DROP DETACHED
+-- would be a no-op and replica 2 would keep the part with pp.proj on disk,
+-- hitting UNEXPECTED_FILE_IN_DATA_PART instead of the fetch-side fix.
+SYSTEM SYNC REPLICA t_fetch_unknown_proj_2;
+
 -- Drop the detached copy from replica 2 so it is forced to re-fetch the part
 -- from replica 1 when the partition is re-attached.
 ALTER TABLE t_fetch_unknown_proj_2 DROP DETACHED PARTITION 0 SETTINGS allow_drop_detached = 1;
