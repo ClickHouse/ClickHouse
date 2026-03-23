@@ -1370,7 +1370,10 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
                 else if constexpr (std::same_as<DeltaType, AddAuthDelta>)
                 {
                     std::lock_guard auth_lock{auth_mutex};
-                    committed_session_and_auth[operation.session_id].emplace_back(std::move(*operation.auth_id));
+                    /// We must copy here instead of move because the same AuthID object
+                    /// is referenced via shared_ptr from UncommittedState::session_and_auth,
+                    /// which can be read concurrently by preprocess on another thread.
+                    committed_session_and_auth[operation.session_id].emplace_back(*operation.auth_id);
                     return Coordination::Error::ZOK;
                 }
                 else if constexpr (std::same_as<DeltaType, CloseSessionDelta>)
