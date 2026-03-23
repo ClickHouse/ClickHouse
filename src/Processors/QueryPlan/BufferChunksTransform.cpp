@@ -68,6 +68,14 @@ IProcessor::Status BufferChunksTransform::prepare()
         auto chunk = pullChunk(virtual_row);
         if (virtual_row)
         {
+            /// Virtual rows must go to the output immediately.
+            /// If the output already has data (from the push above), buffer it
+            /// and it will be pushed first on the next prepare() call.
+            if (!output.canPush())
+            {
+                chunks.push(std::move(chunk));
+                return Status::PortFull;
+            }
             output.push(std::move(chunk));
             input.setNotNeeded();
             return Status::PortFull;

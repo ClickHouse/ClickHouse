@@ -23,7 +23,7 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
         return Status::Finished;
     }
 
-    if (!output.isNeeded())
+    if (!output.canPush())
         return Status::PortFull;
 
     /// Pull available data from ALL inputs into their buffers.
@@ -75,9 +75,6 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     }
 
     /// Try to output from the current input's buffer.
-    if (!output.canPush())
-        return Status::PortFull;
-
     if (!buffers[current_input_idx].empty())
     {
         output.push(std::move(buffers[current_input_idx].front()));
