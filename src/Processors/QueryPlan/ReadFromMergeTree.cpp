@@ -1300,14 +1300,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     else
     {
         /// Split each part independently into multiple streams.
-        /// Within each part, ranges are contiguous and in ascending PK order,
+        /// Within each part, ranges are contiguous and in PK order,
         /// so we can use PrefetchingConcatProcessor to parallelize reading.
+        /// For reverse direction, the pipe order is reversed so that PrefetchingConcat
+        /// outputs the highest ranges first.
         /// Between parts, MergingSorted merges the sorted streams.
         const bool can_use_per_part_prefetching =
             !output_each_partition_through_separate_port
             && input_order_info->limit == 0
             && !has_outer_limit
-            && input_order_info->direction == 1
             && num_streams > 1;
 
         size_t streams_remaining = num_streams;
@@ -1390,6 +1391,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             /// Concatenate streams within this part using PrefetchingConcatProcessor.
             if (part_pipes.size() > 1)
             {
+                /// For reverse direction, reverse the pipe order so that PrefetchingConcat
+                /// outputs the highest ranges first, maintaining correct descending order.
+                if (input_order_info->direction != 1)
+                    std::reverse(part_pipes.begin(), part_pipes.end());
+
                 LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams from part {}",
                     part_pipes.size(), part.data_part->name);
                 auto pipe = Pipe::unitePipes(std::move(part_pipes));

@@ -8,3 +8,7 @@ prefetching_multi_part
 1
 multi_part_correctness
 0
+reverse_has_prefetching
+1
+reverse_correctness
+0

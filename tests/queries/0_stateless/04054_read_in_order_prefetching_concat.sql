@@ -64,3 +64,27 @@ SELECT countIf(key < prev_key) FROM (
 ) WHERE prev_key != 0;
 
 DROP TABLE t_prefetching_concat_multi;
+
+-- PrefetchingConcat should also work for reverse-order reads (ORDER BY ... DESC).
+DROP TABLE IF EXISTS t_prefetching_concat_reverse;
+CREATE TABLE t_prefetching_concat_reverse (key UInt64, value String)
+ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_prefetching_concat_reverse SELECT number, toString(number) FROM numbers(5000000);
+OPTIMIZE TABLE t_prefetching_concat_reverse FINAL;
+
+SELECT 'reverse_has_prefetching';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_reverse
+    WHERE value LIKE '%5%'
+    ORDER BY key DESC
+    SETTINGS enable_parallel_replicas = 0, max_threads = 4
+) WHERE explain LIKE '%PrefetchingConcat%';
+
+-- Correctness: output must be in descending order.
+SELECT 'reverse_correctness';
+SELECT countIf(key > prev_key) FROM (
+    SELECT key, lagInFrame(key, 1, 0) OVER (ORDER BY key DESC) AS prev_key
+    FROM t_prefetching_concat_reverse WHERE value LIKE '%5%' ORDER BY key DESC SETTINGS max_threads = 4
+) WHERE prev_key != 0;
+
+DROP TABLE t_prefetching_concat_reverse;
