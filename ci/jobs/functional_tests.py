@@ -95,7 +95,8 @@ def run_tests(
     global_time_limit_option = (
         f"--global_time_limit={global_time_limit}" if global_time_limit > 0 else ""
     )
-    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {5*2**30} --trace \
+    memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
+    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
                 {extra_args} {global_time_limit_option} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
@@ -749,10 +750,6 @@ def main():
             # - At least one test must fail (bug reproduced)
             # - The overall Tests result is treated as success in that case
             test_result.set_success()
-
-        # For bugfix validation, "Check errors" (latest in the list) is only a helper step and
-        # must not affect the overall job result.
-        results[-1].set_success()
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")

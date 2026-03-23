@@ -43,8 +43,8 @@ private:
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
 
-    mutable std::mutex finished_sessions_mutex;
-    std::unordered_set<int64_t> finished_sessions;
+    mutable std::mutex live_sessions_mutex;
+    std::unordered_set<int64_t> live_sessions;
 
     mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.

@@ -2,6 +2,8 @@
 
 #include <Core/MergeTreeSerializationEnums.h>
 
+class SipHash;
+
 namespace DB
 {
 
@@ -33,6 +35,8 @@ struct SerializationInfoSettings
     bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
 
     bool canUseSparseSerialization(const IDataType & type) const;
+
+    void updateHash(SipHash & hash) const;
 
     /// Build a settings object that enables the broadest set of serialization capabilities. This is intended for
     /// readers that operate on in-memory state (e.g. NativeReader), which must handle all serialization variants.

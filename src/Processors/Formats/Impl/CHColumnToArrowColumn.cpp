@@ -29,6 +29,7 @@
 #include <arrow/builder.h>
 #include <arrow/type.h>
 #include <arrow/util/decimal.h>
+#include <arrow/extension_type.h>
 
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
         M(Int8, arrow::Int8Builder) \
@@ -68,6 +69,33 @@ namespace DB
         extern const int DECIMAL_OVERFLOW;
         extern const int ILLEGAL_COLUMN;
     }
+
+    class ArrowUUIDExtensionType : public arrow::ExtensionType
+    {
+    public:
+        ArrowUUIDExtensionType() : arrow::ExtensionType(arrow::fixed_size_binary(16)) {}
+
+        std::string extension_name() const override { return "arrow.uuid"; }
+
+        bool ExtensionEquals(const arrow::ExtensionType& other) const override
+        {
+            return other.extension_name() == this->extension_name();
+        }
+
+        std::shared_ptr<arrow::Array> MakeArray(std::shared_ptr<arrow::ArrayData> data) const override
+        {
+            return std::make_shared<arrow::ExtensionArray>(data);
+        }
+
+        arrow::Result<std::shared_ptr<arrow::DataType>> Deserialize(
+            std::shared_ptr<arrow::DataType> /* storage_type */,
+            const std::string& /* serialized_data */) const override
+        {
+            return std::make_shared<ArrowUUIDExtensionType>();
+        }
+
+        std::string Serialize() const override { return ""; }
+    };
 
     static const std::initializer_list<std::pair<String, std::shared_ptr<arrow::DataType>>> internal_type_to_arrow_type =
     {
@@ -1015,13 +1043,13 @@ namespace DB
     }
 
     static std::shared_ptr<arrow::DataType> getArrowType(
-        DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, const CHColumnToArrowColumn::Settings & settings, bool * out_is_column_nullable)
+        DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, const CHColumnToArrowColumn::Settings & settings, bool * out_is_column_nullable, bool for_builder = false)
     {
         if (column_type->isNullable())
         {
             DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
             ColumnPtr nested_column = assert_cast<const ColumnNullable *>(column.get())->getNestedColumnPtr();
-            auto arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable);
+            auto arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable, for_builder);
             *out_is_column_nullable = true;
             return arrow_type;
         }
@@ -1056,7 +1084,7 @@ namespace DB
             auto nested_type = assert_cast<const DataTypeArray *>(column_type.get())->getNestedType();
             auto nested_column = assert_cast<const ColumnArray *>(column.get())->getDataPtr();
             bool is_item_nullable = false;
-            auto nested_arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, &is_item_nullable);
+            auto nested_arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, &is_item_nullable, for_builder);
             return arrow::list(std::make_shared<arrow::Field>("item", nested_arrow_type, is_item_nullable));
         }
 
@@ -1070,7 +1098,7 @@ namespace DB
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
                 bool is_field_nullable = false;
-                auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), nested_names[i], format_name, settings, &is_field_nullable);
+                auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), nested_names[i], format_name, settings, &is_field_nullable, for_builder);
                 nested_fields.push_back(std::make_shared<arrow::Field>(nested_names[i], nested_arrow_type, is_field_nullable));
             }
             return arrow::struct_(nested_fields);
@@ -1084,7 +1112,7 @@ namespace DB
             const auto & indexes_column = lc_column->getIndexesPtr();
             return arrow::dictionary(
                 getArrowTypeForLowCardinalityIndexes(indexes_column, settings),
-                getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable));
+                getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable, for_builder));
         }
 
         if (isMap(column_type))
@@ -1095,9 +1123,9 @@ namespace DB
             const auto & columns =  assert_cast<const ColumnMap *>(column.get())->getNestedData().getColumns();
 
             bool _is_key_nullable = false;
-            auto key_arrow_type = getArrowType(key_type, columns[0], column_name, format_name, settings, &_is_key_nullable);
+            auto key_arrow_type = getArrowType(key_type, columns[0], column_name, format_name, settings, &_is_key_nullable, for_builder);
             bool is_val_nullable = false;
-            auto val_arrow_type = getArrowType(val_type, columns[1], column_name, format_name, settings, &is_val_nullable);
+            auto val_arrow_type = getArrowType(val_type, columns[1], column_name, format_name, settings, &is_val_nullable, for_builder);
 
             return arrow::map(
                 key_arrow_type,
@@ -1129,7 +1157,7 @@ namespace DB
             return arrow::uint32();
 
         if (isUUID(column_type))
-            return arrow::fixed_size_binary(sizeof(UUID));
+            return for_builder ? arrow::fixed_size_binary(sizeof(UUID)) : std::make_shared<ArrowUUIDExtensionType>();
 
         if (isDate(column_type) && settings.output_date_as_uint16)
             return arrow::uint16();
@@ -1267,8 +1295,13 @@ namespace DB
                 if (!settings.low_cardinality_as_dictionary)
                     column = recursiveRemoveLowCardinality(column);
 
+                // Generate the unwrapped builder schema (safe for MakeBuilder)
+                bool is_column_nullable = false;
+                auto builder_type = getArrowType(
+                    header_column.type, column, header_column.name, format_name, settings, &is_column_nullable, true /* for_builder */);
+
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_schema->field(static_cast<int>(column_i))->type(), &array_builder);
+                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), builder_type, &array_builder);
                 checkStatus(status, column->getName(), format_name);
 
                 fillArrowArray(
@@ -1286,6 +1319,15 @@ namespace DB
                 std::shared_ptr<arrow::Array> arrow_array;
                 status = array_builder->Finish(&arrow_array);
                 checkStatus(status, column->getName(), format_name);
+
+                // Zero-copy cast to the extension-rich schema (handles infinite nesting)
+                auto target_type = arrow_schema->field(static_cast<int>(column_i))->type();
+                if (!arrow_array->type()->Equals(*target_type))
+                {
+                    auto view_result = arrow_array->View(target_type);
+                    checkStatus(view_result.status(), column->getName(), format_name);
+                    arrow_array = view_result.ValueOrDie();
+                }
 
                 table_data.at(column_i).emplace_back(std::move(arrow_array));
             }
