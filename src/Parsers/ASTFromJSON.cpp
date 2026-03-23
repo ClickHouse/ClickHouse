@@ -193,7 +193,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
     return factory;
 }
 
-} /// namespace
+}
 
 
 ASTPtr IAST::createFromJSON(const String & json)

@@ -58,7 +58,7 @@ public:
     }
 };
 
-} /// namespace
+}
 
 
 REGISTER_FUNCTION(ParseQueryToJSON)

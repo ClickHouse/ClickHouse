@@ -59,7 +59,7 @@ public:
     }
 };
 
-} /// namespace
+}
 
 
 REGISTER_FUNCTION(FormatQueryFromJSON)
