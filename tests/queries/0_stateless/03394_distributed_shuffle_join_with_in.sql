@@ -12,7 +12,7 @@ SET query_plan_join_swap_table = 0;
 
 
 SET
-    optimize_move_to_prewhere = 0,
+    optimize_move_to_prewhere = 1,
     make_distributed_plan = 1,
     enable_parallel_replicas = 0,
     enable_join_runtime_filters = 1,
