@@ -394,6 +394,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         is_broken_projection = true;
         for (const auto & projection_file : projections_on_disk)
             checksums_txt.remove(projection_file);
+        /// Clear projections_on_disk so that the throw_on_broken_projection guard below
+        /// (which checks !projections_on_disk.empty()) does not re-throw for these
+        /// now-handled unknown projections and cause an infinite re-fetch loop.
+        projections_on_disk.clear();
     }
 
     if (throw_on_broken_projection)
