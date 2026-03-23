@@ -14,8 +14,8 @@ from ci.defs.job_configs import JobConfigs
 
 workflow = Workflow.Config(
     name="MonthlyCFI",
-    event=Workflow.Event.SCHEDULE,
-    branches=[BASE_BRANCH],
+    event=Workflow.Event.PULL_REQUEST,  # Temporary: revert to SCHEDULE before merge
+    base_branches=[BASE_BRANCH],
     jobs=[
         *JobConfigs.cfi_build_job,
         *JobConfigs.cfi_stateless_jobs,
@@ -28,7 +28,6 @@ workflow = Workflow.Config(
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,
-    cron_schedules=["0 6 1 * *"],  # 06:00 UTC on the 1st of each month
 )
 
 WORKFLOWS = [
