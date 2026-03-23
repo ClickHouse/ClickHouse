@@ -92,7 +92,6 @@ static SimulationResult runSimulation(
 
     PartsRange parts;
     int64_t next_block = 0;
-    time_t current_time = 0;
 
     const size_t max_bytes = 100ULL * 1024 * 1024 * 1024;
     const size_t max_rows = std::numeric_limits<size_t>::max();
@@ -160,7 +159,6 @@ static SimulationResult runSimulation(
         /// Calculate merge time and advance ages
         time_t merge_time = std::max<time_t>(1, static_cast<time_t>(sum_size / merge_speed_bytes_per_sec));
         age_all_parts(merge_time);
-        current_time += merge_time;
 
         PartsRange new_parts;
         new_parts.reserve(parts.size() - (merge_end - merge_begin) + 1);
@@ -199,7 +197,6 @@ static SimulationResult runSimulation(
 
         /// Advance time by insert interval
         age_all_parts(insert_interval_sec);
-        current_time += insert_interval_sec;
 
         result.max_parts = std::max(result.max_parts, parts.size());
 
@@ -214,7 +211,6 @@ static SimulationResult runSimulation(
     for (time_t extra = 0; extra < 60 * 86400; extra += 60)
     {
         age_all_parts(60);
-        current_time += 60;
 
         bool merged = false;
         while (try_merge())

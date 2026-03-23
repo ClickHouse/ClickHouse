@@ -1102,9 +1102,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
-            {"merge_selector_small_parts_threshold", 0, 10 * 1024 * 1024, "New setting to define the size threshold for small parts in merge selector"},
-            {"merge_selector_small_parts_min_count", 0, 0, "New setting to require minimum part count for merging small fresh parts"},
-            {"merge_selector_small_parts_max_age", 0, 600, "New setting to define the age limit for the small parts merge restriction"},
+            {"merge_selector_small_parts_threshold", 0, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"},
+            {"merge_selector_small_parts_min_count", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"},
+            {"merge_selector_small_parts_max_age", 0, 600, "Age limit for the small-parts merge restriction"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {

@@ -163,15 +163,8 @@ bool allow(
     if (settings.min_parts_to_merge_at_once && size < settings.min_parts_to_merge_at_once)
         return false;
 
-    /// When all parts in the range are small (max_size < small_parts_threshold),
-    /// fresh (min_age < small_parts_max_age), and there are fewer than small_parts_min_count parts,
-    /// reject the merge. This forces the system to batch more small parts per merge
-    /// under rapid insertion, reducing write amplification.
-    ///
-    /// The size check uses max_size (the largest part in the range) to distinguish
-    /// original small inserts from merge products, which grow in size.
-    /// The age check uses min_age (the youngest part) as a safety valve:
-    /// once all parts have aged beyond small_parts_max_age, the restriction is lifted.
+    /// Reject merges of few small fresh parts to force larger batches.
+    /// See the detailed comment in SimpleMergeSelector.h.
     if (settings.small_parts_min_count
         && max_size < static_cast<double>(settings.small_parts_threshold)
         && min_age < static_cast<double>(settings.small_parts_max_age)
