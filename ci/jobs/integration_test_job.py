@@ -1,9 +1,10 @@
 import argparse
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from more_itertools import tail
 
@@ -101,6 +102,150 @@ def _start_docker_in_docker():
             )
         time.sleep(2)
     print(f"Started docker-in-docker asynchronously with PID {dockerd_proc.pid}")
+
+
+_COMPOSE_DIR = Path("./tests/integration/compose")
+
+# Explicit mapping for with_* flags whose compose file name cannot be derived
+# by simply prepending "docker_compose_" and appending ".yml".
+_WITH_FLAG_TO_COMPOSE: dict[str, List[str]] = {
+    "mysql57": ["docker_compose_mysql.yml"],
+    "mysql8": ["docker_compose_mysql_8_0.yml"],
+    "dremio26": ["docker_compose_dremio_26_0.yml"],
+    "kerberos_kdc": ["docker_compose_kerberos_kdc.yml"],
+    # with_iceberg_catalog can use any of the iceberg catalogs; include them all
+    "iceberg_catalog": [
+        "docker_compose_iceberg_rest_catalog.yml",
+        "docker_compose_iceberg_hms_catalog.yml",
+        "docker_compose_iceberg_lakekeeper_catalog.yml",
+        "docker_compose_iceberg_nessie_catalog.yml",
+    ],
+    "hms_catalog": ["docker_compose_iceberg_hms_catalog.yml"],
+    "glue_catalog": ["docker_compose_glue_catalog.yml"],
+    "prometheus_writer": ["docker_compose_prometheus.yml"],
+    "prometheus_reader": ["docker_compose_prometheus.yml"],
+    "prometheus_receiver": ["docker_compose_prometheus.yml"],
+    # with_odbc_drivers implicitly sets up mysql8 + postgres
+    "odbc_drivers": ["docker_compose_mysql_8_0.yml", "docker_compose_postgres.yml"],
+    # Flags with no separate compose file of their own
+    "jdbc_bridge": [],
+    "net_trics": [],
+}
+
+
+def get_compose_files_for_test_modules(test_modules: List[str]) -> List[Path]:
+    """Return compose files needed by the given test modules.
+
+    Grep every Python source file in each test suite directory for:
+    - `with_X=True` patterns (mapped via `_WITH_FLAG_TO_COMPOSE` or the obvious
+      `docker_compose_{X}.yml` naming convention), and
+    - explicit `docker_compose_*.yml` file name strings (used e.g. via
+      `extra_parameters={"docker_compose_file_name": "..."}` calls).
+    """
+    needed: set[Path] = set()
+    suite_dirs = {m.split("/")[0] for m in test_modules}
+
+    for suite_dir in suite_dirs:
+        suite_path = Path("./tests/integration/") / suite_dir
+        if not suite_path.is_dir():
+            continue
+        for py_file in suite_path.glob("**/*.py"):
+            try:
+                content = py_file.read_text(errors="replace")
+            except OSError:
+                continue
+
+            # 1. with_X=True → compose file via mapping or naming convention
+            for m in re.finditer(r"\bwith_(\w+)\s*=\s*True", content):
+                flag = m.group(1)
+                if flag in _WITH_FLAG_TO_COMPOSE:
+                    for fname in _WITH_FLAG_TO_COMPOSE[flag]:
+                        p = _COMPOSE_DIR / fname
+                        if p.exists():
+                            needed.add(p)
+                else:
+                    p = _COMPOSE_DIR / f"docker_compose_{flag}.yml"
+                    if p.exists():
+                        needed.add(p)
+
+            # 2. Directly named compose files (e.g. in extra_parameters dicts)
+            for m in re.finditer(r"(docker_compose_\w+\.yml)", content):
+                p = _COMPOSE_DIR / m.group(1)
+                if p.exists():
+                    needed.add(p)
+
+    return sorted(needed)
+
+
+def get_images_from_compose_files(compose_files: List[Path]) -> List[str]:
+    """Parse compose files and return a deduplicated list of image references.
+
+    Environment variable placeholders like `${DOCKER_NGINX_DAV_TAG:-latest}` are
+    resolved from `os.environ`.  For clickhouse images that appear without a tag
+    (e.g. `clickhouse/integration-test`) the tag is looked up from `IMAGES_ENV`.
+    Images with still-unresolvable variables are silently skipped.
+    """
+    known_image_tags: dict[str, str] = {}
+    for image_name, env_var in IMAGES_ENV.items():
+        tag = os.environ.get(env_var)
+        if tag:
+            known_image_tags[image_name] = tag
+
+    def resolve_image(raw: str) -> Optional[str]:
+        def replace_var(m: re.Match) -> str:
+            var_name = m.group(1)
+            default = m.group(2) if m.group(2) is not None else "latest"
+            return os.environ.get(var_name, default)
+
+        resolved = re.sub(r"\$\{(\w+)(?::-([^}]*))?\}", replace_var, raw)
+        if "${" in resolved:
+            return None  # Still-unresolvable variable — skip
+        # Append the correct tag for tagless known clickhouse images
+        if ":" not in resolved and resolved in known_image_tags:
+            resolved = f"{resolved}:{known_image_tags[resolved]}"
+        return resolved
+
+    images: set[str] = set()
+    for compose_file in compose_files:
+        try:
+            content = compose_file.read_text()
+        except OSError:
+            continue
+        for m in re.finditer(r"^\s+image:\s+(.+)$", content, re.MULTILINE):
+            # Strip inline YAML comments from unquoted values before resolving
+            # (e.g. `coredns/coredns:1.9.3 # :latest broke this test`).
+            raw = re.sub(r"\s+#.*$", "", m.group(1).strip())
+            resolved = resolve_image(raw)
+            if resolved:
+                images.add(resolved)
+
+    return sorted(images)
+
+
+def prefetch_images(
+    images: List[str], retries: int = 3, pull_timeout: int = 300
+) -> bool:
+    """Pull every image in parallel using `ci/prefetch-integration-test-images`.
+
+    Images with no manifest for the current architecture (e.g. amd64-only images
+    on arm64 runners) are silently skipped.  Returns True on success, False if any
+    image fails to pull for a real reason.
+    """
+    if not images:
+        print("No images to pre-fetch.")
+        return True
+
+    script = f"{repo_dir}/ci/jobs/scripts/prefetch-integration-test-images"
+    env = {
+        **os.environ,
+        "PULL_RETRIES": str(retries),
+        "PULL_TIMEOUT": str(pull_timeout),
+    }
+    return Shell.check(
+        f"{script} {' '.join(images)}",
+        verbose=True,
+        env=env,
+    )
 
 
 def parse_args():
@@ -616,6 +761,22 @@ tar -czf ./ci/tmp/logs.tar.gz \
             os.environ[env_name] = tag
         else:
             assert False, f"No tag found for image [{image_name}]"
+
+    # Pre-fetch all Docker images needed by the selected test suites.
+    # This is done after IMAGES_ENV vars are set so tag resolution works correctly.
+    # Fail fast here rather than discovering missing images mid-test-run.
+    all_test_modules = parallel_test_modules + sequential_test_modules
+    compose_files = get_compose_files_for_test_modules(all_test_modules)
+    print(
+        f"Compose files detected for this batch ({len(compose_files)}): "
+        + ", ".join(str(f.name) for f in compose_files)
+    )
+    images_to_prefetch = get_images_from_compose_files(compose_files)
+    if not prefetch_images(images_to_prefetch):
+        Result.create_from(
+            status=Result.Status.ERROR,
+            info="Failed to pre-pull Docker images needed by the test batch",
+        ).complete_job()
 
     test_env = {
         "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": clickhouse_server_config_dir,

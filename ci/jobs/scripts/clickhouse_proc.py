@@ -708,6 +708,7 @@ MAX_EXECUTION_TIME=1800
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < ./tests/docker_scripts/create.sql
+bash ./tests/docker_scripts/create_tpcds.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
 clickhouse-client --query "CREATE DATABASE test"
@@ -997,6 +998,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         sanitizer_hits = Shell.get_output(
             f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
             f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
+            f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
+            f'grep -a -v "False positive error reports may follow" | '
+            f'grep -a -v "For details see https://github.com/google/sanitizers" | '
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(

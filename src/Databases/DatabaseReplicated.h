@@ -106,6 +106,11 @@ public:
         DatabaseReplicated & db;
     };
 
+    /// Called when SYSTEM RESTART REPLICA fails after detaching a table.
+    /// Adjusts tables_metadata_digest to account for the table being absent
+    /// from the in-memory tables map, preventing false "Digest does not match" assertions.
+    void adjustDigestOnTableLostFromRestart(const String & table_name);
+
     bool hasReplicationThread() const override { return true; }
 
     void stopReplication() override;
