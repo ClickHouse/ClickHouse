@@ -1,0 +1,46 @@
+90
+90
+1
+1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_s2_cells)
+        Indexes:
+          PrimaryKey
+            Keys:
+              cell_id
+            Condition: s2CellsIntersect
+            Parts: 1/1
+            Granules: 1/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_s2_cells)
+        Indexes:
+          PrimaryKey
+            Keys:
+              cell_id
+            Condition: s2RectContains
+            Parts: 1/1
+            Granules: 3/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_s2_cells)
+        Indexes:
+          PrimaryKey
+            Keys:
+              cell_id
+            Condition: s2CapContains
+            Parts: 1/1
+            Granules: 1/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
