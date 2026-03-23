@@ -771,6 +771,28 @@ namespace ErrorCodes
     (expert level setting, don't change if you don't understand what it is doing).
     0 - disabled. Works for Simple and StochasticSimple merge selectors.
     )", 0) \
+    DECLARE(UInt64, merge_selector_small_parts_threshold, 10 * 1024 * 1024, R"(
+    Maximum size (in bytes) of the largest part in a merge range for it to be considered
+    "all small parts". When all parts are below this threshold and are fresh
+    (younger than `merge_selector_small_parts_max_age`), at least
+    `merge_selector_small_parts_min_count` parts are required to allow the merge.
+    This reduces write amplification under rapid small part insertion by forcing
+    the system to batch more parts per merge. Works for Simple and StochasticSimple
+    merge selectors.
+    )", 0) \
+    DECLARE(UInt64, merge_selector_small_parts_min_count, 0, R"(
+    Minimum number of parts required to allow a merge when all parts in the range
+    are small (below `merge_selector_small_parts_threshold`) and fresh (younger than
+    `merge_selector_small_parts_max_age`). 0 means disabled. Works for Simple and
+    StochasticSimple merge selectors.
+    )", 0) \
+    DECLARE(UInt64, merge_selector_small_parts_max_age, 600, R"(
+    Maximum age (in seconds) of the youngest part in a merge range for the
+    small parts restriction to apply. Once the youngest part ages beyond this value,
+    the restriction is lifted and small parts can merge freely. This acts as a safety
+    valve so old small parts from stopped inserts can still eventually merge.
+    Works for Simple and StochasticSimple merge selectors.
+    )", 0) \
     DECLARE(Bool, apply_patches_on_merge, true, R"(
     If true patch parts are applied on merges
     )", 0) \

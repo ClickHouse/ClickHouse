@@ -162,6 +162,25 @@ public:
           */
         size_t min_age_to_force_merge = 0;
 
+        /** When all parts in a merge range are small (max_size < small_parts_threshold)
+          * and fresh (min_age < small_parts_max_age), require at least small_parts_min_count
+          * parts to allow the merge. This forces the system to batch more small parts per merge
+          * under rapid insertion, reducing the total number of merge operations and write amplification.
+          *
+          * The size check uses max_size (the largest part in the range) to distinguish
+          * original small inserts from merge products, which grow in size even though
+          * they have age = 0.
+          *
+          * The age check (min_age < small_parts_max_age) acts as a safety valve:
+          * once parts age beyond small_parts_max_age, the restriction is lifted so
+          * old small parts that stopped receiving inserts can still eventually merge.
+          *
+          * Zero small_parts_min_count means disabled.
+          */
+        size_t small_parts_threshold = 10 * 1024 * 1024;   /// 10 MB
+        size_t small_parts_min_count = 0;                   /// 0 = disabled
+        size_t small_parts_max_age = 600;                   /// 10 minutes
+
         /** Heuristic:
           * From right side of range, remove all parts, that size is less than specified ratio of sum_size.
           */

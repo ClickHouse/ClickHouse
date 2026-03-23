@@ -163,6 +163,21 @@ bool allow(
     if (settings.min_parts_to_merge_at_once && size < settings.min_parts_to_merge_at_once)
         return false;
 
+    /// When all parts in the range are small (max_size < small_parts_threshold),
+    /// fresh (min_age < small_parts_max_age), and there are fewer than small_parts_min_count parts,
+    /// reject the merge. This forces the system to batch more small parts per merge
+    /// under rapid insertion, reducing write amplification.
+    ///
+    /// The size check uses max_size (the largest part in the range) to distinguish
+    /// original small inserts from merge products, which grow in size.
+    /// The age check uses min_age (the youngest part) as a safety valve:
+    /// once all parts have aged beyond small_parts_max_age, the restriction is lifted.
+    if (settings.small_parts_min_count
+        && max_size < static_cast<double>(settings.small_parts_threshold)
+        && min_age < static_cast<double>(settings.small_parts_max_age)
+        && size < settings.small_parts_min_count)
+        return false;
+
     /// Map size to 0..1 using logarithmic scale
     /// Use log(1 + x) instead of log1p(x) because our sum_size is always integer.
     /// Also log1p seems to be slow and significantly affect performance of merges assignment.
