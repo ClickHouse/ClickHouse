@@ -58,6 +58,12 @@ namespace ErrorCodes
 namespace
 {
 
+template <typename ReplacementLookup>
+std::optional<ActionsDAG> buildFilterActionsDAGImpl(
+    const ActionsDAG::NodeRawConstPtrs & filter_nodes,
+    ReplacementLookup && replacement_lookup,
+    bool single_output_condition_node);
+
 std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::NodeRawConstPtrs & children)
 {
     size_t num_arguments = children.size();
@@ -2965,7 +2971,58 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         const Block & stream_header,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
     {
-        auto updated_filter = *ActionsDAG::buildFilterActionsDAG({filter.getOutputs()[filter_pos]}, columns_to_replace);
+        std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> input_nodes_to_replace;
+        for (const auto & node : filter.getNodes())
+        {
+            auto it = columns_to_replace.find(node.result_name);
+            if (it == columns_to_replace.end())
+                continue;
+
+            std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+            std::unordered_set<const ActionsDAG::Node *> seen_input_nodes;
+            std::vector<const ActionsDAG::Node *> input_nodes;
+            std::stack<const ActionsDAG::Node *> stack;
+            stack.push(&node);
+            visited_nodes.insert(&node);
+
+            while (!stack.empty())
+            {
+                const auto * current = stack.top();
+                stack.pop();
+
+                if (current->type == ActionsDAG::ActionType::INPUT)
+                {
+                    if (seen_input_nodes.insert(current).second)
+                        input_nodes.push_back(current);
+                    continue;
+                }
+
+                for (const auto * child : current->children)
+                {
+                    if (visited_nodes.insert(child).second)
+                        stack.push(child);
+                }
+            }
+
+            /// `Cast JOIN USING columns` preserves the original result name on derived nodes.
+            /// Replacing such nodes directly would drop the cast. Rebind the unique source input
+            /// of the equivalent expression instead, so the conversion chain is preserved.
+            if (input_nodes.size() != 1)
+                continue;
+
+            input_nodes_to_replace.insert_or_assign(input_nodes.front(), it->second);
+        }
+
+        auto updated_filter = *buildFilterActionsDAGImpl(
+            {filter.getOutputs()[filter_pos]},
+            [&](const ActionsDAG::Node * node) -> const ColumnWithTypeAndName *
+            {
+                auto it = input_nodes_to_replace.find(node);
+                if (it == input_nodes_to_replace.end())
+                    return nullptr;
+                return &it->second;
+            },
+            true /* single_output_condition_node */);
         chassert(updated_filter.getOutputs().size() == 1);
 
         /** If result filter to left or right stream has column that is one of the stream inputs, we need distinguish filter column from
@@ -3262,9 +3319,13 @@ bool ActionsDAG::isSortingPreserved(
     return true;
 }
 
-std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
-    const NodeRawConstPtrs & filter_nodes,
-    const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
+namespace
+{
+
+template <typename ReplacementLookup>
+std::optional<ActionsDAG> buildFilterActionsDAGImpl(
+    const ActionsDAG::NodeRawConstPtrs & filter_nodes,
+    ReplacementLookup && replacement_lookup,
     bool single_output_condition_node)
 {
     if (filter_nodes.empty())
@@ -3302,12 +3363,11 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
 
         const ActionsDAG::Node * result_node = nullptr;
 
-        auto input_node_it = node_name_to_input_node_column.find(node->result_name);
-        if (input_node_it != node_name_to_input_node_column.end())
+        if (const auto * replacement = replacement_lookup(node))
         {
-            auto & result_input = result_inputs[input_node_it->second.name];
+            auto & result_input = result_inputs[replacement->name];
             if (!result_input)
-                result_input = &result_dag.addInput(input_node_it->second);
+                result_input = &result_dag.addInput(*replacement);
 
             node_to_result_node.emplace(node, result_input);
             nodes_to_process.pop_back();
@@ -3357,7 +3417,7 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
             }
             case ActionsDAG::ActionType::FUNCTION:
             {
-                NodeRawConstPtrs function_children;
+                ActionsDAG::NodeRawConstPtrs function_children;
                 function_children.reserve(node->children.size());
 
                 FunctionOverloadResolverPtr function_overload_resolver;
@@ -3374,8 +3434,8 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
                             const auto & index_hint_args = index_hint->getActions().getOutputs();
 
                             if (!index_hint_args.empty())
-                                index_hint_filter_dag = *buildFilterActionsDAG(index_hint_args,
-                                    node_name_to_input_node_column,
+                                index_hint_filter_dag = *buildFilterActionsDAGImpl(index_hint_args,
+                                    replacement_lookup,
                                     false /*single_output_condition_node*/);
 
                             auto index_hint_function_clone = std::make_shared<FunctionIndexHint>();
@@ -3393,16 +3453,13 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
                 for (const auto & child : node->children)
                     function_children.push_back(node_to_result_node.find(child)->second);
 
-                auto [arguments, all_const] = getFunctionArguments(function_children);
-                auto function_base = function_overload_resolver ? function_overload_resolver->build(arguments) : node->function_base;
+                auto function_arguments = getFunctionArguments(function_children);
+                auto function_base = function_overload_resolver ? function_overload_resolver->build(function_arguments.first) : node->function_base;
 
-                result_node = &result_dag.addFunctionImpl(
+                result_node = &result_dag.addFunction(
                     function_base,
                     std::move(function_children),
-                    std::move(arguments),
-                    result_name,
-                    node->result_type,
-                    all_const);
+                    result_name);
                 break;
             }
             case ActionsDAG::ActionType::PLACEHOLDER:
@@ -3430,6 +3487,24 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     }
 
     return result_dag;
+}
+
+}
+
+std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
+    const NodeRawConstPtrs & filter_nodes,
+    const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
+    bool single_output_condition_node)
+{
+    auto replacement_lookup = [&](const ActionsDAG::Node * node) -> const ColumnWithTypeAndName *
+    {
+        auto it = node_name_to_input_node_column.find(node->result_name);
+        if (it == node_name_to_input_node_column.end())
+            return nullptr;
+        return &it->second;
+    };
+
+    return buildFilterActionsDAGImpl(filter_nodes, replacement_lookup, single_output_condition_node);
 }
 
 ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * predicate)

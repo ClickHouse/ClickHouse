@@ -100,6 +100,7 @@
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Coordination/KeeperContext.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Common/ReplicasReconnector.h>
@@ -1655,6 +1656,11 @@ try
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
+    if (has_zookeeper && config().getBool("keeper_server.standalone_keeper", false))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot use standalone_keeper=true with a configured zookeeper client connection. "
+            "A standalone keeper should not have a <zookeeper> section in its config.");
+
     auto main_config_zk_node_cache = std::make_unique<zkutil::ZooKeeperNodeCache>([&] { return global_context->getZooKeeper(); });
     Coordination::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
@@ -2307,7 +2313,13 @@ try
             global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings[ServerSetting::max_waiting_queries]);
 
             if (config().has("keeper_server"))
+            {
+#if USE_NURAFT
+                if (config().getBool("keeper_server.standalone_keeper", false))
+                    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
+#endif
                 global_context->updateKeeperConfiguration(config());
+            }
 
             /// Reload the number of threads for global pools.
             /// Note: If you specified it in the top level config (not it config of default profile)
