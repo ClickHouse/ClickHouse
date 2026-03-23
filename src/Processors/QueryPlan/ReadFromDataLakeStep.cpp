@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/ReadFromDataLakeStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/Sources/NullSource.h>
@@ -95,7 +95,7 @@ void ReadFromDataLakeStep::initializePipeline(QueryPipelineBuilder & pipeline, c
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<StorageObjectStorageSource>(
+        auto source = std::make_shared<DataLakeSource>(
             getName(),
             object_storage,
             configuration,
@@ -107,7 +107,8 @@ void ReadFromDataLakeStep::initializePipeline(QueryPipelineBuilder & pipeline, c
             iterator_wrapper,
             parser_shared_resources,
             format_filter_info,
-            need_only_count);
+            need_only_count,
+            metadata);
 
         pipes.emplace_back(std::move(source));
     }
