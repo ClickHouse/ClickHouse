@@ -395,6 +395,7 @@ protected:
     String insert_format; /// Format, used in insert query.
 
     TemporaryTablesMapping external_tables_mapping;
+    /// Query scalars
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
@@ -439,7 +440,6 @@ public:
             partitions = rhs.partitions;
             projections = rhs.projections;
             views = rhs.views;
-            skip_indices = rhs.skip_indices;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -460,7 +460,6 @@ public:
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
-            std::swap(skip_indices, rhs.skip_indices);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -471,7 +470,6 @@ public:
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
-        std::set<std::string> skip_indices TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -739,6 +737,7 @@ public:
     /// present to be able to add, remove or update warnings from the table
     enum class WarningType
     {
+        AST_FUZZER_IS_ENABLED,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
         AVAILABLE_MEMORY_TOO_LOW,
@@ -878,6 +877,8 @@ public:
     void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
+    String getLicenseFile() const;
+    void setLicenseFile(const String & value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
@@ -911,6 +912,8 @@ public:
     /// Get callback for reading data for input()
     InputBlocksReader getInputBlocksReaderCallback() const;
     void resetInputCallbacks();
+    /// Clear cached table function results (e.g. StorageInput) to avoid stale state across queries.
+    void clearTableFunctionResults();
 
     /// Returns information about the client executing a query.
     const ClientInfo & getClientInfo() const { return client_info; }
@@ -1000,8 +1003,6 @@ public:
     };
 
     void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
-
-    void addSkipIndexAccessInfo(const String & full_table_name, const String & skip_index_name);
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories : uint8_t
@@ -1464,6 +1465,7 @@ public:
     BackgroundSchedulePool & getSchedulePool() const;
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
+    BackgroundSchedulePool & getIcebergSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;

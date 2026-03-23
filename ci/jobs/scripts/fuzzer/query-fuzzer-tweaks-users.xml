@@ -36,9 +36,12 @@
                 <max_ast_depth>
                     <readonly/>
                 </max_ast_depth>
+
             </constraints>
 
             <!-- Allow all experimental features by default -->
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+
             <allow_custom_error_code_in_throwif>1</allow_custom_error_code_in_throwif>
             <allow_ddl>1</allow_ddl>
             <allow_distributed_ddl>1</allow_distributed_ddl>
@@ -69,7 +72,6 @@
             <allow_experimental_nullable_tuple_type>1</allow_experimental_nullable_tuple_type>
             <allow_experimental_prql_dialect>1</allow_experimental_prql_dialect>
             <allow_experimental_shared_set_join>1</allow_experimental_shared_set_join>
-            <allow_experimental_statistics>1</allow_experimental_statistics>
             <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
             <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
             <allow_experimental_time_time64_type>1</allow_experimental_time_time64_type>
