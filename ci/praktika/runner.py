@@ -1,8 +1,10 @@
 import dataclasses
 import glob
+import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 import traceback
 from pathlib import Path
@@ -151,6 +153,13 @@ class Runner:
     def _pre_run(self, workflow, job, local_run=False):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
+        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        if dirty:
+            print(f"NOTE: Dirty repo state before job start:\n{dirty}")
+            print("NOTE: Cleaning repo")
+            Shell.check("git clean -ffd", verbose=True)
+        else:
+            print("NOTE: Repo state is clean before job start")
         env = _Environment.get()
 
         result = Result(
@@ -269,7 +278,7 @@ class Runner:
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
-        if job.name != Settings.CI_CONFIG_JOB_NAME:
+        if env.WORKFLOW_CONFIG:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
                     RunConfig.from_workflow_data().digest_dockers
@@ -313,6 +322,18 @@ class Runner:
 
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            # Derive a stable container name from the worktree path and job name
+            # so that different jobs (or the same job in different worktrees)
+            # never share a name, while the name is deterministic enough to
+            # allow cleanup of stale containers from previous runs.
+            container_name = (
+                "praktika_"
+                + hashlib.sha1(
+                    (Path(current_dir).resolve().as_posix() + ":" + job.name).encode()
+                ).hexdigest()[:12]
+            )
+            if not job.timeout_shell_cleanup:
+                job.timeout_shell_cleanup = f"docker rm -f {container_name}"
             workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
@@ -327,13 +348,25 @@ class Runner:
                         f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
                     )
                     workdir = ""
-            if not Shell.check(
-                "if docker ps -a --format '{{.Names}}' | grep -qx praktika; then docker rm -f praktika; fi",
-                verbose=True,
+            if Shell.check(
+                f"docker ps --format '{{{{.Names}}}}' | grep -qx {container_name}",
+                verbose=False,
             ):
                 raise RuntimeError(
-                    "Failed to remove existing docker container 'praktika'"
+                    f"Docker container '{container_name}' is already running. "
+                    f"Another instance of job [{job.name}] may be active in this worktree."
                 )
+            if Shell.check(
+                f"docker ps -a --format '{{{{.Names}}}}' | grep -qx {container_name}",
+                verbose=False,
+            ):
+                print(
+                    f"Found stopped container '{container_name}' from a previous run — removing it"
+                )
+                if not Shell.check(f"docker rm {container_name}", verbose=True):
+                    raise RuntimeError(
+                        f"Failed to remove stopped container '{container_name}'"
+                    )
             if job.enable_gh_auth:
                 # pass gh auth seamlessly into the docker container
                 gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
@@ -349,7 +382,35 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+
+            # PRAKTIKA_HOST_WORKDIR overrides the host-side path used in
+            # --volume for the working directory mount.  Two main use cases:
+            #   1. Point the mount at an arbitrary host directory.
+            #   2. Docker-in-Docker: the inner Docker daemon needs the real
+            #      host path (not the outer container's CWD) for volume mounts.
+            #      This variable makes it more flexible to set the real host path.
+            # When unset, defaults to "./" (current directory).
+            host_dir = os.environ.get("PRAKTIKA_HOST_WORKDIR", "./")
+            host_dir_q = shlex.quote(host_dir)
+
+            # Rewrite relative host paths in user-supplied --volume settings
+            # so that they resolve correctly when PRAKTIKA_HOST_WORKDIR is set
+            # (e.g. in Docker-in-Docker scenarios).
+            if host_dir != "./":
+                rewritten_settings = []
+                for s in settings:
+                    if s.startswith("--volume="):
+                        vol_arg = s.removeprefix("--volume=")
+                        src, sep, rest = vol_arg.partition(":")
+                        if src == ".":
+                            src = host_dir.rstrip("/")
+                        elif src.startswith("./"):
+                            src = host_dir.rstrip("/") + src[1:]
+                        s = f"--volume={src}{sep}{rest}"
+                    rewritten_settings.append(s)
+                settings = rewritten_settings
+
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -378,6 +439,15 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
+        # Clean up stale experimental result file before starting the subprocess.
+        # This must happen before TeePopen.__enter__ which sleeps 1s after spawning
+        # the process — if the subprocess completes during that sleep (common for
+        # fast native jobs like Finish Workflow in backport PRs), deleting the file
+        # afterwards would remove the subprocess's own output, causing a spurious
+        # "Job killed or terminated" error.
+        if Path((Result.experimental_file_name_static())).exists():
+            Path(Result.experimental_file_name_static()).unlink()
+
         with TeePopen(
             cmd,
             timeout=job.timeout,
@@ -385,10 +455,6 @@ class Runner:
             timeout_shell_cleanup=job.timeout_shell_cleanup,
         ) as process:
             start_time = Utils.timestamp()
-
-            if Path((Result.experimental_file_name_static())).exists():
-                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
-                Path(Result.experimental_file_name_static()).unlink()
 
             exit_code = process.wait()
 
@@ -432,7 +498,7 @@ class Runner:
             # Get host user's UID and GID (not from inside the container)
             uid = os.getuid()
             gid = os.getgid()
-            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+            chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
             Shell.run(chown_cmd)
 
         return exit_code
@@ -531,7 +597,7 @@ class Runner:
                 file=f,
             )
 
-        if run_exit_code == 0 or "amd_llvm_coverage" in job.name:
+        if run_exit_code == 0 or result.do_not_block_pipeline_on_failure():
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:
@@ -805,6 +871,12 @@ class Runner:
                 except Exception as e:
                     traceback.print_exc()
                     print(f"ERROR: failed to notify Slack users: {e}")
+
+        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        if dirty:
+            print(f"NOTE: Dirty repo state after job:\n{dirty}")
+        else:
+            print("NOTE: Repo state is clean after job")
 
         return is_ok
 

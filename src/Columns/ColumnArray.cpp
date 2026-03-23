@@ -1,5 +1,3 @@
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
@@ -149,27 +147,25 @@ void ColumnArray::get(size_t n, Field & res) const
         res_arr.push_back(getData()[offset + i]);
 }
 
-DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnArray::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
 
     if (options.notFull(name_buf))
         name_buf << "[";
-    DataTypes element_types;
-    element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        const auto & type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
-        element_types.push_back(type);
+        getData().getValueNameImpl(name_buf, offset + i, options);
+        if (!options.notFull(name_buf))
+            break;
     }
+
     if (options.notFull(name_buf))
         name_buf << "]";
-
-    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }
 
 std::string_view ColumnArray::getDataAt(size_t n) const
@@ -513,10 +509,10 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnArray::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     size_t new_size = size();
-    Columns source_data_columns;
+    VectorWithMemoryTracking<ColumnPtr> source_data_columns;
     source_data_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
@@ -1651,9 +1647,9 @@ size_t ColumnArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnArray::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    Columns nested_source_columns;
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());

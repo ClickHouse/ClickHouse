@@ -1,8 +1,10 @@
 import copy
 import fnmatch
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
 from . import Artifact
@@ -76,6 +78,9 @@ class Job:
         result_name_for_cidb: str = ""
 
         parameter: Any = None
+
+        # Per-job secrets (exported only for this job, not all jobs in the workflow)
+        secrets: list = field(default_factory=list)
 
         # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
@@ -265,5 +270,10 @@ class Job:
             if self.timeout_shell_cleanup:
                 return
             if self.run_in_docker:
-                # the container name is always the same (praktika) for every image
-                self.timeout_shell_cleanup = "docker rm -f praktika"
+                container_name = (
+                    "praktika_"
+                    + hashlib.sha1(
+                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
+                    ).hexdigest()[:12]
+                )
+                self.timeout_shell_cleanup = f"docker rm -f {container_name}"

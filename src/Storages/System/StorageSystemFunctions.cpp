@@ -25,7 +25,8 @@ enum class FunctionOrigin : int8_t
 {
     SYSTEM = 0,
     SQL_USER_DEFINED = 1,
-    EXECUTABLE_USER_DEFINED = 2
+    EXECUTABLE_USER_DEFINED = 2,
+    WASM_USER_DEFINED = 3,
 };
 
 namespace

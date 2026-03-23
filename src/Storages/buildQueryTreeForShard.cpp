@@ -339,7 +339,7 @@ public:
         {
             WriteBufferFromOwnString name_buf;
             IColumn::Options options {.optimize_const_name_size = max_size};
-            col_const->getValueNameAndTypeImpl(name_buf, 0, options);
+            col_const->getValueNameImpl(name_buf, 0, options);
             if (options.notFull(name_buf))
                 return;
         }
@@ -417,6 +417,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     }
 
     auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
+    /// Force materialization of CTEs in subqueries, if they used in the subquery.
+    subquery_options.forceMaterializeCTE();
     auto context_copy = Context::createCopy(mutable_context);
     updateContextForSubqueryExecution(context_copy);
 
@@ -442,7 +444,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto external_storage_holder = TemporaryTableHolder(
         mutable_context,
-        ColumnsDescription(columns, false),
+        ColumnsDescription(columns),
         ConstraintsDescription{},
         nullptr /*query*/,
         true /*create_for_global_subquery*/);

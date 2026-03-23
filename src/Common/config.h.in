@@ -63,6 +63,7 @@
 #cmakedefine01 USE_FASTPFOR
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_PRQL
+#cmakedefine01 USE_POLYGLOT
 #cmakedefine01 USE_ULID
 #cmakedefine01 USE_LIBFIU
 #cmakedefine01 USE_BCRYPT
@@ -82,5 +83,7 @@
 #cmakedefine01 USE_YTSAURUS
 #cmakedefine01 USE_CLIENT_AI
 #cmakedefine01 USE_LIBCOTP
+#cmakedefine01 USE_WASMEDGE
+#cmakedefine01 USE_WASMTIME
 #cmakedefine01 WITH_COVERAGE
 

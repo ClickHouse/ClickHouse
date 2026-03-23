@@ -14,6 +14,7 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -120,7 +121,7 @@ Chunk ValuesBlockInputFormat::read()
     {
         try
         {
-            skipWhitespaceIfAny(*buf);
+            skipWhitespaceAndSQLComments(*buf);
             if (buf->eof() || *buf->position() == ';')
                 break;
             if (need_only_count)
@@ -722,7 +723,7 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
         first_row = false;
     }
 
-    skipWhitespaceIfAny(buf);
+    skipWhitespaceAndSQLComments(buf);
     if (buf.eof() || end_of_data)
         return {};
 
