@@ -338,23 +338,28 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
 
 bool JoinStepLogical::canRemoveUnusedColumns() const
 {
-    return !hasDuplicatedNamesInInputOrOutputs(*expression_actions.getActionsDAG());
+    return true;
 }
 
-IQueryPlanStep::RemovedUnusedColumns JoinStepLogical::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
+std::vector<std::vector<size_t>> JoinStepLogical::removeUnusedColumns(std::vector<size_t> required_output_positions, bool remove_inputs)
 {
     auto & actions_dag = *expression_actions.getActionsDAG();
-    const auto input_count_before = actions_dag.getInputs().size();
+    const size_t original_input_count = actions_dag.getInputs().size();
     ActionsDAG::NodeRawConstPtrs required_nodes;
     ActionsDAG::NodeRawConstPtrs new_actions_after_join = actions_after_join;
 
+    /// For JoinStepLogical, the output header maps directly to DAG outputs (no pass-throughs).
+    /// Build a set of required DAG output positions.
+    std::set<size_t> required_positions_set(required_output_positions.begin(), required_output_positions.end());
+
     bool removed_any_output = false;
-    for (const auto * output_node : actions_dag.getOutputs())
+    const auto & dag_outputs = actions_dag.getOutputs();
+    for (size_t i = 0; i < dag_outputs.size(); ++i)
     {
-        if (auto it = required_outputs.find(output_node->result_name); it != required_outputs.end())
+        const auto * output_node = dag_outputs[i];
+        if (required_positions_set.contains(i))
         {
             required_nodes.push_back(output_node);
-            required_outputs.erase(it);
         }
         else if (!isDummyColumnOfThisStep(output_node))
         {
@@ -422,60 +427,60 @@ IQueryPlanStep::RemovedUnusedColumns JoinStepLogical::removeUnusedColumns(NameMu
         });
 
     if (!removed_any_actions && !removed_any_output)
-        return RemovedUnusedColumns::None;
+        return {};
 
     actions_dag.getOutputs().swap(new_outputs);
     actions_after_join = std::move(new_actions_after_join);
 
-    const auto removed_any_input = actions_dag.getInputs().size() < input_count_before;
-
-    const auto update_source_mapping = [&]()
+    /// Update source mapping since nodes may have been removed.
     {
         JoinExpressionActions::NodeToSourceMapping node_sources;
-
         for (const auto & node : actions_dag.getNodes())
         {
             const auto action_ref = JoinActionRef(&node, expression_actions);
             node_sources[&node] = action_ref.getSourceRelations();
         }
-
         expression_actions.resetNodeSources(std::move(node_sources));
-    };
-
-    if (!removed_any_input)
-    {
-        update_source_mapping();
-        updateOutputHeader();
-        return RemovedUnusedColumns::OutputOnly;
     }
 
-    /// Once we support repeated input/output names, we have to make sure the order of columns in input headers
-    /// are the same as for the inputs for the ActionsDAG
-    NameMultiSet required_input_names;
-    for (const auto * input_node : actions_dag.getInputs())
-        required_input_names.insert(input_node->result_name);
+    /// Check if any DAG inputs were actually removed.
+    const bool inputs_were_removed = remove_inputs && actions_dag.getInputs().size() < original_input_count;
 
-    const auto remove_unused_inputs_from_header = [&required_input_names](const Block & header)
+    if (inputs_were_removed)
     {
-        Block new_header;
-        for (const auto & column : header)
+        /// Rebuild input headers based on surviving DAG inputs.
+        /// Use source mapping to classify each surviving input as left (0) or right (1).
+        ActionsDAG::NodeRawConstPtrs surviving_left_inputs;
+        ActionsDAG::NodeRawConstPtrs surviving_right_inputs;
+        for (const auto * input_node : actions_dag.getInputs())
         {
-            if (required_input_names.contains(column.name))
-                new_header.insert(column);
+            auto ref = JoinActionRef(input_node, expression_actions);
+            chassert(ref.fromLeft() || ref.fromRight());
+            if (ref.fromLeft())
+                surviving_left_inputs.push_back(input_node);
+            else if (ref.fromRight())
+                surviving_right_inputs.push_back(input_node);
         }
-        return std::make_shared<const Block>(std::move(new_header));
-    };
 
-    SharedHeaders new_input_headers;
-    for (const auto & input_header : input_headers)
-        new_input_headers.push_back(remove_unused_inputs_from_header(*input_header));
+        auto build_new_header = [](const ActionsDAG::NodeRawConstPtrs & surviving_inputs, const Block & old_header)
+        {
+            auto positions = ActionsDAG::matchInputNodesToHeader(surviving_inputs, old_header).matched;
+            Block new_header;
+            for (size_t pos : positions)
+                new_header.insert(old_header.getByPosition(pos));
+            return std::pair{std::move(positions), std::make_shared<const Block>(std::move(new_header))};
+        };
 
-    update_source_mapping();
+        auto [left_positions, new_left_header] = build_new_header(surviving_left_inputs, *input_headers[0]);
+        auto [right_positions, new_right_header] = build_new_header(surviving_right_inputs, *input_headers[1]);
 
-    updateInputHeaders(std::move(new_input_headers));
+        updateInputHeaders({std::move(new_left_header), std::move(new_right_header)});
+
+        return {std::move(left_positions), std::move(right_positions)};
+    }
+
     updateOutputHeader();
-
-    return RemovedUnusedColumns::OutputAndInput;
+    return {};
 }
 
 bool JoinStepLogical::canRemoveColumnsFromOutput() const

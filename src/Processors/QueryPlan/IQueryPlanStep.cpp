@@ -44,7 +44,7 @@ void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowSta
     dataflow_cache_updater = std::move(updater);
 }
 
-IQueryPlanStep::RemovedUnusedColumns IQueryPlanStep::removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/)
+std::vector<std::vector<size_t>> IQueryPlanStep::removeUnusedColumns(std::vector<size_t> /*required_output_positions*/, bool /*remove_inputs*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
 }

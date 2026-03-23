@@ -186,15 +186,6 @@ public:
     /// Same, but for the list of names.
     NodeRawConstPtrs findInOutputs(const Names & names) const;
 
-    struct SplitPossibleOutputNamesResult
-    {
-        NameMultiSet output_names;
-        Names not_output_names;
-    };
-
-    /// Returns the names from possible_output_names that are among the outputs.
-    SplitPossibleOutputNamesResult splitPossibleOutputNames(NameMultiSet possible_output_names) const;
-
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
     void addOrReplaceInOutputs(const Node & node);
@@ -330,6 +321,33 @@ public:
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
     Block updateHeader(const Block & header) const;
+
+    /// Match DAG inputs to header columns by name (left-to-right, handling duplicates),
+    /// replicating the matching logic from updateHeader.
+    /// Returns a pair:
+    ///  - matched: sorted header positions consumed by a DAG input
+    ///  - passthrough: header positions not consumed by any DAG input (in order)
+    struct MatchedInputPositions
+    {
+        std::vector<size_t> matched;
+        std::vector<size_t> passthrough;
+    };
+    MatchedInputPositions matchInputPositionsToHeader(const Block & header) const;
+
+    /// Same as above, but with an explicit list of input nodes instead of using the DAG's inputs.
+    static MatchedInputPositions matchInputNodesToHeader(const NodeRawConstPtrs & input_nodes, const Block & header);
+
+    /// Split output positions into DAG output indices and pass-through indices.
+    /// The output header is structured as [DAG outputs..., pass-through inputs...].
+    /// Positions below getOutputs().size() are DAG output indices;
+    /// positions at or above are pass-through indices (with the DAG output count subtracted),
+    /// can be used to index into the list of pass-through inputs from matchInputPositionsToHeader.
+    struct SplitOutputPositions
+    {
+        std::vector<size_t> dag_indices;
+        std::vector<size_t> passthrough_indices;
+    };
+    SplitOutputPositions splitOutputPositions(const std::vector<size_t> & output_positions) const;
 
     using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
     static ColumnsWithTypeAndName evaluatePartialResult(
@@ -610,13 +628,5 @@ struct ActionsAndProjectInputsFlag
 };
 
 using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;
-
-/// required_outputs must contain only output names from actions_dag
-/// Returns the output names in their order in the output of the actions dag.
-Names getRequiredOutputNamesInOrder(NameMultiSet required_outputs, const ActionsDAG & actions_dag);
-
-bool hasDuplicatedNames(const ActionsDAG::NodeRawConstPtrs & nodes);
-
-bool hasDuplicatedNamesInInputOrOutputs(const ActionsDAG & actions_dag);
 
 }

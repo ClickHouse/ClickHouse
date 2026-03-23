@@ -1,7 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <iterator>
-#include <Common/Logger.h>
 #include <Core/Names.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -19,16 +17,8 @@ namespace ErrorCodes
 
 namespace QueryPlanOptimizations
 {
-
 namespace
 {
-NameMultiSet getNameMultiSetFromNames(Names && names)
-{
-    NameMultiSet name_multi_set;
-    name_multi_set.insert(std::move_iterator(names.begin()), std::move_iterator(names.end()));
-    return name_multi_set;
-}
-
 bool addDiscardingExpressionStepIfNeeded(QueryPlan::Nodes & nodes, QueryPlan::Node & parent, const size_t child_id)
 {
     const auto input_header = parent.step->getInputHeaders()[child_id];
@@ -97,16 +87,6 @@ bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
         [](const QueryPlan::Node * child) { return child->step->canRemoveUnusedColumns() && child->step->canRemoveColumnsFromOutput(); });
 }
 
-bool updatedAnything(const IQueryPlanStep::RemovedUnusedColumns & result)
-{
-    return result != IQueryPlanStep::RemovedUnusedColumns::None;
-}
-
-bool removedAnyInput(const IQueryPlanStep::RemovedUnusedColumns & result)
-{
-    return result == IQueryPlanStep::RemovedUnusedColumns::OutputAndInput;
-}
-
 /// When the parent step removed some inputs but the child step couldn't fully reduce its output
 /// to match (e.g., ReadFromMergeTree with FINAL must keep columns required for merging),
 /// adjust the parent step to accept the extra columns from the child by adding them as
@@ -162,22 +142,32 @@ bool absorbExtraChildColumns(QueryPlan::Node & node, size_t child_id)
     return true;
 }
 
-RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, QueryPlan::Node & node)
+/// Remove unused columns from the children of `node`, using the required input positions
+/// returned by the parent's `removeUnusedColumns` call. If `required_input_positions` is
+/// non-empty, use those positions directly; otherwise fall back to computing positions
+/// from headers (for the case where the caller doesn't have positions yet).
+RemoveChildrenOutputResult removeChildrenOutputs(
+    QueryPlan::Nodes & nodes,
+    QueryPlan::Node & node,
+    const std::vector<std::vector<size_t>> & required_input_positions)
 {
     bool updated = false;
     bool added_any_discarding_step = false;
 
     for (auto child_id = 0U; child_id < node.children.size(); ++child_id)
     {
-        const auto & parent_inputs = node.step->getInputHeaders();
         auto & child_step = node.children[child_id]->step;
         chassert(child_step->canRemoveUnusedColumns());
 
-        // Here we never want to remove inputs because the grandchildren might cannot remove outputs
-        const auto updated_anything
-            = updatedAnything(child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), false));
+        chassert(child_id < required_input_positions.size());
+        auto required_positions = required_input_positions[child_id];
 
-        // As removeUnusedColumns might leave additional columns in the output, we have get rid of those outputs by adding a new ExpressionStep
+        // Here we never want to remove inputs because the grandchildren might not be able to remove outputs.
+        const auto output_columns_before = child_step->getOutputHeader()->columns();
+        child_step->removeUnusedColumns(std::move(required_positions), false);
+        const bool updated_anything = child_step->getOutputHeader()->columns() != output_columns_before;
+
+        // As removeUnusedColumns might leave additional columns in the output, we have to get rid of those outputs by adding a new ExpressionStep.
         // Right now this is mostly relevant for JoinStepLogical, as it must keep at least one column in its output, even if its parent requires no input.
         // However in the future we might have other steps with similar behavior.
         if (updated_anything)
@@ -206,6 +196,7 @@ RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, Query
             const auto & child_output = node.children[child_id]->step->getOutputHeader();
             if (child_output->columns() != current_parent_input->columns())
             {
+                // TODO(antaljanosbenjamin): check if this is still okay with repeated column names
                 if (!absorbExtraChildColumns(node, child_id))
                 {
                     if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id))
@@ -237,12 +228,7 @@ RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, Query
 
 size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
-    auto logger = getLogger("removeUnusedColumns");
-    auto & parent = node->step;
-
     auto max_updated_depth = 0U;
-
-    const auto & parent_inputs = parent->getInputHeaders();
 
     for (auto child_id = 0U; child_id < node->children.size(); ++child_id)
     {
@@ -255,16 +241,27 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, 
 
         const auto can_remove_inputs = canAllChildrenCanRemoveOutputs(*child_node);
 
-        const auto remove_result
-            = child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), can_remove_inputs);
+        /// The parent's input header matches the child's output header,
+        /// so all child output positions are required by the parent.
+        const auto num_child_outputs = child_step->getOutputHeader()->columns();
+        std::vector<size_t> required_positions(num_child_outputs);
+        std::iota(required_positions.begin(), required_positions.end(), 0);
 
-        if (updatedAnything(remove_result))
+        const auto output_columns_before = child_step->getOutputHeader()->columns();
+        const auto required_input_positions
+            = child_step->removeUnusedColumns(std::move(required_positions), can_remove_inputs);
+
+        const bool removed_any_input = !required_input_positions.empty();
+        const bool removed_any_output = child_step->getOutputHeader()->columns() != output_columns_before;
+        const bool updated_anything = removed_any_input || removed_any_output;
+
+        if (updated_anything)
         {
             ++current_update_depth;
 
-            if (removedAnyInput(remove_result))
+            if (removed_any_input)
             {
-                auto result = removeChildrenOutputs(nodes, *child_node);
+                auto result = removeChildrenOutputs(nodes, *child_node, required_input_positions);
                 switch (result)
                 {
                     case RemoveChildrenOutputResult::NotUpdated:

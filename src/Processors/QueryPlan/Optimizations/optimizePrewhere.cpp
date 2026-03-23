@@ -236,20 +236,21 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (source_step_with_filter->canRemoveUnusedColumns() && source_step_with_filter->canRemoveColumnsFromOutput()
         && parent_step->canRemoveUnusedColumns())
     {
-        NameMultiSet required_outputs;
+        /// Pass all output positions (we want to keep the same outputs, just prune inputs).
+        const auto & parent_output = parent_step->getOutputHeader();
+        std::vector<size_t> all_positions;
+        all_positions.reserve(parent_output->columns());
+        for (size_t i = 0; i < parent_output->columns(); ++i)
+            all_positions.push_back(i);
 
-        for (const auto & column_name_and_type : *parent_step->getOutputHeader())
-            required_outputs.insert(column_name_and_type.name);
+        const auto required_input_positions = parent_step->removeUnusedColumns(std::move(all_positions), true);
 
-        const auto result = parent_step->removeUnusedColumns(required_outputs, true);
-
-        if (result == IQueryPlanStep::RemovedUnusedColumns::OutputAndInput)
+        if (!required_input_positions.empty())
         {
-            required_outputs.clear();
-            for (const auto & column_name_and_type : *parent_step->getInputHeaders().at(0))
-                required_outputs.insert(column_name_and_type.name);
-
-            source_step_with_filter->removeUnusedColumns(required_outputs, true);
+            /// The parent step returned the positions it needs from its child (child 0).
+            /// Pass them directly to the source step.
+            chassert(required_input_positions.size() == 1);
+            source_step_with_filter->removeUnusedColumns(required_input_positions[0], true);
 
             // Here the output of the source step should match the input of the parent step, even though that is not
             // generally true after unused column removal. There might be outputs that are not removed in some step

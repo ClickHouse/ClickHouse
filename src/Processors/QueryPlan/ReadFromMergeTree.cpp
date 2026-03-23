@@ -4142,12 +4142,6 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
         return false;
 
-    if (query_info.row_level_filter && hasDuplicatedNamesInInputOrOutputs(query_info.row_level_filter->actions))
-        return false;
-
-    if (query_info.prewhere_info && hasDuplicatedNamesInInputOrOutputs(query_info.prewhere_info->prewhere_actions))
-        return false;
-
     if (query_info.isFinal())
     {
         // Cannot remove columns if FINAL requires them for merging
@@ -4161,18 +4155,20 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
     return true;
 }
 
-IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(NameMultiSet required_outputs, bool /*remove_inputs*/)
+std::vector<std::vector<size_t>> ReadFromMergeTree::removeUnusedColumns(std::vector<size_t> required_output_positions, bool /*remove_inputs*/)
 {
     if (output_header == nullptr)
-        return RemovedUnusedColumns::None;
+        return {};
 
+    /// ReadFromMergeTree output columns are unique (table columns always have distinct names),
+    /// so we can safely convert positions to names for internal use.
     NameSet columns_to_keep;
 
     if (query_info.isFinal())
         columns_to_keep = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
 
-    for (const auto & column_name : required_outputs)
-        columns_to_keep.insert(column_name);
+    for (size_t pos : required_output_positions)
+        columns_to_keep.insert(output_header->getByPosition(pos).name);
 
     auto removed_output_from_prewhere = false;
 
@@ -4194,6 +4190,7 @@ IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(Name
             removed_output_from_prewhere = true;
         }
 
+        /// Preserve filter dependencies: inputs of prewhere must be kept so the filter can be evaluated.
         for (const auto * input : query_info.prewhere_info->prewhere_actions.getInputs())
             columns_to_keep.insert(input->result_name);
     }
@@ -4218,6 +4215,7 @@ IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(Name
             query_info.row_level_filter->do_remove_column = true;
             removed_output_from_row_level_filter = true;
         }
+        /// Preserve filter dependencies: inputs of row-level filter must be kept.
         for (const auto * input : query_info.row_level_filter->actions.getInputs())
             columns_to_keep.insert(input->result_name);
     }
@@ -4230,7 +4228,7 @@ IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(Name
     }
 
     if (!removed_output_from_prewhere && !removed_output_from_row_level_filter && new_column_names.size() == all_column_names.size())
-        return RemovedUnusedColumns::None;
+        return {};
 
     all_column_names = std::move(new_column_names);
 
@@ -4245,7 +4243,7 @@ IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(Name
 
     required_source_columns = all_column_names;
 
-    return RemovedUnusedColumns::OutputOnly;
+    return {};
 }
 
 bool ReadFromMergeTree::canRemoveColumnsFromOutput() const

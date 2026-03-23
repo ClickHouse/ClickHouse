@@ -132,20 +132,18 @@ public:
     /// Returns true if the step has implemented removeUnusedColumns.
     virtual bool canRemoveUnusedColumns() const { return false; }
 
-    enum class RemovedUnusedColumns
-    {
-        None,
-        OutputOnly,
-        OutputAndInput
-    };
-
-    /// Removes the unnecessary inputs and outputs from the step based on required_outputs.
-    /// required_outputs must be a maybe empty subset of the current outputs of the step.
-    /// It is guaranteed that the output header of the step will contain all columns from
-    /// required_outputs and might contain some other columns too.
+    /// Removes the unnecessary inputs and outputs from the step based on required_output_positions.
+    /// required_output_positions must be a sorted vector of indices into the step's current output header.
+    /// Each position uniquely identifies a column even when names are duplicated.
+    /// It is guaranteed that the output header of the step will contain all columns at those positions
+    /// and might contain some other columns too.
     /// Can be used only if canRemoveUnusedColumns returns true.
     /// The order of the remaining outputs must be preserved.
-    virtual RemovedUnusedColumns removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/);
+    ///
+    /// Returns the required input positions per child (outer index = child_id).
+    /// An empty outer vector means no inputs were changed (either the step is a leaf,
+    /// remove_inputs was false, or no pruning was possible).
+    virtual std::vector<std::vector<size_t>> removeUnusedColumns(std::vector<size_t> /*required_output_positions*/, bool /*remove_inputs*/);
 
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;
