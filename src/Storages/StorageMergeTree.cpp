@@ -813,8 +813,17 @@ void StorageMergeTree::alter(
                 throw;
             }
 
-            finalizePhysicalNameRenames(pn_plan.rename_old_names);
-            finalizePhysicalNameDrops(pn_plan.drop_names);
+            try
+            {
+                finalizePhysicalNameRenames(pn_plan.rename_old_names);
+                finalizePhysicalNameDrops(pn_plan.drop_names);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log,
+                    "Failed to finalize physical name mapping after metadata commit; "
+                    "reconciliation at next startup will fix it");
+            }
 
             FailPointInjection::pauseFailPoint(FailPoints::physical_names_pause_after_metadata_alter);
 
