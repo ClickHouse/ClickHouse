@@ -10,6 +10,9 @@
 
 using namespace DB;
 
+/// Fuzzers use std::vector directly for simplicity; memory tracking is not needed here.
+using DiscriminatorVec = std::vector<ColumnVariant::Discriminator>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
 ContextMutablePtr context;
 
 extern "C" int LLVMFuzzerInitialize(int *, char ***)
@@ -29,7 +32,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 /// Build a small ColumnVariant with 2 variants (UInt64 and String) in a given local order.
 /// local_to_global: mapping from local discriminator index to global discriminator index.
 /// Inserts a few rows so there is real data to copy from.
-static MutableColumnPtr buildSourceVariantColumn(const std::vector<ColumnVariant::Discriminator> & local_to_global)
+static MutableColumnPtr buildSourceVariantColumn(const DiscriminatorVec & local_to_global)
 {
     /// Two variants: global 0 = String, global 1 = UInt64 (sorted alphabetically: String < UInt64)
     MutableColumns nested;
@@ -107,12 +110,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         /// -------------------------------------------------------------------
         {
             /// Source column: local order controlled by mapping_selector
-            const std::vector<ColumnVariant::Discriminator> src_local_to_global
-                = (mapping_selector & 1) ? std::vector<ColumnVariant::Discriminator>{1, 0}
-                                         : std::vector<ColumnVariant::Discriminator>{0, 1};
+            const DiscriminatorVec src_local_to_global
+                = (mapping_selector & 1) ? DiscriminatorVec{1, 0}
+                                         : DiscriminatorVec{0, 1};
 
             /// Destination column: always in global order (local_to_global = {0, 1})
-            const std::vector<ColumnVariant::Discriminator> dst_local_to_global = {0, 1};
+            const DiscriminatorVec dst_local_to_global = {0, 1};
 
             auto src_col = buildSourceVariantColumn(src_local_to_global);
             auto dst_col = buildSourceVariantColumn(dst_local_to_global);
@@ -133,9 +136,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         /// -------------------------------------------------------------------
         {
             /// Source has reversed local order: local 0 = UInt64 (global 1), local 1 = String (global 0)
-            const std::vector<ColumnVariant::Discriminator> src_local_to_global = {1, 0};
+            const DiscriminatorVec src_local_to_global = {1, 0};
             /// Destination has normal local order: local 0 = String (global 0), local 1 = UInt64 (global 1)
-            const std::vector<ColumnVariant::Discriminator> dst_local_to_global = {0, 1};
+            const DiscriminatorVec dst_local_to_global = {0, 1};
 
             auto src_col_raw = buildSourceVariantColumn(src_local_to_global);
             auto dst_col_raw = buildSourceVariantColumn(dst_local_to_global);
@@ -153,7 +156,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
             /// global_discriminators_mapping: src global discr i -> dst global discr i
             /// Both columns share the same 2 global types, so identity mapping is correct.
-            const std::vector<ColumnVariant::Discriminator> global_mapping = {0, 1};
+            const DiscriminatorVec global_mapping = {0, 1};
             dst_variant.insertRangeFrom(
                 src_variant, start, length, global_mapping, ColumnVariant::NULL_DISCRIMINATOR);
         }
