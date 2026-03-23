@@ -3123,9 +3123,10 @@ document.getElementById('download-button').addEventListener('click', async funct
         }
         terminalHiddenByResize = false;
 
-        // Tell the iframe to refit the terminal after becoming visible again
+        // Tell the iframe to refit the terminal after becoming visible again, and focus it
         if (terminalIframe && terminalIframe.contentWindow) {
             terminalIframe.contentWindow.postMessage({type: 'webterminal-refit'}, window.location.origin);
+            terminalIframe.focus();
         }
     }
 

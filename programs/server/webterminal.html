@@ -316,6 +316,7 @@
         } else if (e.data.type === 'webterminal-refit' && fitAddon && term) {
             fitAddon.fit();
             sendResize();
+            term.focus();
         }
     });
 
