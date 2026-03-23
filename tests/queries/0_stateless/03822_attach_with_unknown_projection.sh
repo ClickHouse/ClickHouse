@@ -49,7 +49,7 @@ run "ALTER TABLE t_unknown_proj_1 ATTACH PARTITION 0 SETTINGS mutations_sync=2"
 # The part must be usable: CHECK TABLE should pass and data should be intact.
 echo "=== Replicated MergeTree ==="
 run "SELECT count() FROM t_unknown_proj_1"
-run "CHECK TABLE t_unknown_proj_1" 2>&1 | grep -o "Found unexpected projection directories: pp.proj" | uniq
+run "CHECK TABLE t_unknown_proj_1 SETTINGS check_query_single_value_result = 1"
 
 run "SELECT sum(x), sum(y) FROM t_unknown_proj_1"
 
@@ -97,7 +97,7 @@ run "ALTER TABLE t_unknown_proj_mt ATTACH PARTITION 0 SETTINGS mutations_sync=2,
 
 echo "=== MergeTree ==="
 run "SELECT count() FROM t_unknown_proj_mt"
-run "CHECK TABLE t_unknown_proj_mt" 2>&1 | grep -o "Found unexpected projection directories: pp.proj" | uniq
+run "CHECK TABLE t_unknown_proj_mt SETTINGS check_query_single_value_result = 1"
 
 # Force a merge.
 run "ALTER TABLE t_unknown_proj_mt MODIFY SETTING max_parts_to_merge_at_once = 100"
