@@ -331,6 +331,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
     ARM_FUZZERS = "arm_fuzzers"
+    AMD_CFI = "amd_cfi"
 
 
 class JobNames:
@@ -448,6 +449,7 @@ class ArtifactNames:
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
+    CH_AMD_CFI = "CH_AMD_CFI"
 
 
 LLVM_FT_NUM_BATCHES = 3
@@ -530,6 +532,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_RISCV64,
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
+            ArtifactNames.CH_AMD_CFI,
         ]
     )
     llvm_profdata_file = Artifact.Config(
