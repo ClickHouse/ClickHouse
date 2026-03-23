@@ -5076,8 +5076,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
             auto [is_x_key_col_present, x_sparse_pos] = get_sparse_info(x_key_column);
             auto [is_y_key_col_present, y_sparse_pos] = get_sparse_info(y_key_column);
 
-            if (!is_x_key_col_present || !is_y_key_col_present)
+            if (!is_x_key_col_present && !is_y_key_col_present)
             {
+                /// Neither coordinate is available — nothing to prune on.
                 rpn_stack.emplace_back(true, true);
                 continue;
             }
@@ -5093,13 +5094,33 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
             };
 
-            const auto & range_x = sparse_hyperrectangle[x_sparse_pos];
-            const auto & range_y = sparse_hyperrectangle[y_sparse_pos];
-
-            Float64 x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
-            Float64 x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
-            Float64 y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
-            Float64 y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
+            /// For missing coordinates, assume (-inf, +inf) — we can still prune on the available coordinate.
+            Float64 x_min;
+            Float64 x_max;
+            Float64 y_min;
+            Float64 y_max;
+            if (is_x_key_col_present)
+            {
+                const auto & range_x = sparse_hyperrectangle[x_sparse_pos];
+                x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
+                x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
+            }
+            else
+            {
+                x_min = -std::numeric_limits<Float64>::infinity();
+                x_max = std::numeric_limits<Float64>::infinity();
+            }
+            if (is_y_key_col_present)
+            {
+                const auto & range_y = sparse_hyperrectangle[y_sparse_pos];
+                y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
+                y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
+            }
+            else
+            {
+                y_min = -std::numeric_limits<Float64>::infinity();
+                y_max = std::numeric_limits<Float64>::infinity();
+            }
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
