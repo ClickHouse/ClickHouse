@@ -28,7 +28,7 @@ void mutate(
     StorageID storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    PersistentTableComponents & persistent_table_components,
+    const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog,
@@ -40,7 +40,7 @@ void alter(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    PersistentTableComponents & persistent_table_components,
+    const PersistentTableComponents & persistent_table_components,
     const String & write_format);
 
 ExpireSnapshotsResult expireSnapshots(
@@ -48,7 +48,7 @@ ExpireSnapshotsResult expireSnapshots(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    PersistentTableComponents & persistent_table_components,
+    const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
     const String & blob_storage_type_name,

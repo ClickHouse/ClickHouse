@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationEnum.h>
 
 #include <Columns/ColumnVector.h>
@@ -218,6 +219,47 @@ void SerializationEnum<Type>::serializeTextMarkdown(
         writeMarkdownEscapedString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
     else
         serializeTextEscaped(column, row_num, ostr, settings);
+}
+
+template <typename Type>
+UInt128 SerializationEnum<Type>::getHash(const Values & values)
+{
+    SipHash hash;
+    hash.update("Enum");
+    hash.update(TypeName<Type>);
+    for (const auto & [name, value] : values)
+    {
+        hash.update(name.size());
+        hash.update(name);
+        hash.update(value);
+    }
+    return hash.get128();
+}
+
+template <typename Type>
+SerializationPtr SerializationEnum<Type>::create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type)
+{
+    return ISerialization::pooled(getHash(enum_type->getValues()), [&] { return new SerializationEnum(enum_type); });
+}
+
+template <typename Type>
+SerializationPtr SerializationEnum<Type>::create(const Values & values_)
+{
+    return ISerialization::pooled(getHash(values_), [&] { return new SerializationEnum(values_); });
+}
+
+template <typename Type>
+size_t SerializationEnum<Type>::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    if (own_enum_values)
+    {
+        const auto & vals = own_enum_values->getValues();
+        bytes += vals.capacity() * sizeof(typename EnumValues<Type>::Value);
+        for (const auto & [name, _] : vals)
+            bytes += name.capacity();
+    }
+    return bytes;
 }
 
 template class SerializationEnum<Int8>;
