@@ -59,8 +59,6 @@
 #endif
 
 
-
-
 namespace DB
 {
 namespace Setting
@@ -80,7 +78,7 @@ extern const int LOGICAL_ERROR;
 #if USE_S2_GEOMETRY
 /// S2 index pruning: at parse time the query region is decomposed into a
 /// tight S2CellUnion covering via S2RegionCoverer (controlled by
-/// the `s2_max_covering_cells` setting, default 20). At eval time
+/// the `s2_max_covering_cells` setting, default 8). At eval time
 /// each granule's actual [cell_min, cell_max] Hilbert-curve interval is
 /// tested directly against the covering using coveringIntersectsRange
 /// (one binary search, pure integer comparisons, no trigonometry).
