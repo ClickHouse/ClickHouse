@@ -40,7 +40,6 @@
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <Disks/IO/ReadBufferFromDistributedCache.h>
@@ -386,12 +385,6 @@ Chunk StorageObjectStorageSource::generate()
                     path);
             }
 
-            const String * iceberg_metadata_file_path = nullptr;
-#if USE_AVRO
-            if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
-                iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
-#endif
-
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
@@ -403,7 +396,6 @@ Chunk StorageObjectStorageSource::generate()
                     .etag = &(object_metadata->etag),
                     .tags = &(object_metadata->tags),
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
-                    .iceberg_metadata_file_path = iceberg_metadata_file_path,
                 },
                 read_context);
 
