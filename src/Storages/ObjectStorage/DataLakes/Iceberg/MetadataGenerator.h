@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Poco/JSON/Object.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 
 namespace DB

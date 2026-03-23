@@ -99,7 +99,7 @@ StorageObjectStorage::StorageObjectStorage(
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
     ASTPtr partition_by_,
-    ASTPtr order_by_,
+    ASTPtr /* order_by_ */,
     bool is_table_function_,
     bool lazy_init)
     : IStorage(table_id_)
@@ -121,13 +121,6 @@ StorageObjectStorage::StorageObjectStorage(
         "need_resolve_sample_path={}, is_table_function={}, columns_in_table_or_function_definition={}",
         lazy_init, need_resolve_columns_or_format, need_resolve_sample_path, is_table_function,
         columns_in_table_or_function_definition.toString(true));
-
-    if (!is_table_function && !columns_in_table_or_function_definition.empty() && mode == LoadingStrictnessLevel::CREATE)
-    {
-        LOG_DEBUG(log, "Creating new storage with specified columns");
-        configuration->create(
-            object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, false, nullptr, table_id_);
-    }
 
     bool updated_configuration = false;
     try
@@ -292,32 +285,14 @@ IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
     return getInMemoryMetadataPtr()->getFakeColumnSizes();
 }
 
-std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
+std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr) const
 {
-    if (!configuration->supportsTotalRows(query_context, object_storage->getType()))
-        return std::nullopt;
-
-    /// Trivial count optimization can be applied only on initiator replica.
-    /// (distributed_processing=true on non-initiator replicas).
-    /// This is needed only for old analyzer.
-    if (distributed_processing)
-        return std::nullopt;
-
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
-
-    return configuration->totalRows(query_context);
+    return std::nullopt;
 }
 
-std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
+std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr) const
 {
-    if (!configuration->supportsTotalBytes(query_context, object_storage->getType()))
-        return std::nullopt;
-
-    if (distributed_processing)
-        return std::nullopt;
-
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
-    return configuration->totalBytes(query_context);
+    return std::nullopt;
 }
 
 void StorageObjectStorage::read(

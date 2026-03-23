@@ -117,20 +117,14 @@ std::string StorageObjectStorageCluster::getName() const
     return configuration->getEngineName();
 }
 
-std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
+std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr) const
 {
-    configuration->lazyInitializeIfNeeded(
-        object_storage,
-        query_context);
-    return configuration->totalRows(query_context);
+    return std::nullopt;
 }
 
-std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
+std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr) const
 {
-    configuration->lazyInitializeIfNeeded(
-        object_storage,
-        query_context);
-    return configuration->totalBytes(query_context);
+    return std::nullopt;
 }
 
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(

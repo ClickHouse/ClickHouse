@@ -1,9 +1,10 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
+#include <Disks/IDisk.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
@@ -23,7 +24,6 @@ namespace DataLakeStorageSetting
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
@@ -41,18 +41,6 @@ void StorageObjectStorageConfiguration::lazyInitializeIfNeeded(
     ContextPtr context)
 {
     update(object_storage_ptr, context);
-}
-
-void StorageObjectStorageConfiguration::create( ///NOLINT
-    ObjectStoragePtr /*object_storage_ptr*/,
-    ContextPtr /*context*/,
-    const std::optional<ColumnsDescription> & /*columns*/,
-    ASTPtr /*partition_by*/,
-    ASTPtr /*order_by*/,
-    bool /*if_not_exists*/,
-    std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const StorageID & /*table_id_*/)
-{
 }
 
 ObjectStoragePtr StorageObjectStorageConfiguration::createObjectStorage(
@@ -74,28 +62,6 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
 {
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
-
-std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata(ContextPtr) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
-}
-
-std::optional<DataLakeTableStateSnapshot> StorageObjectStorageConfiguration::getTableStateSnapshot(ContextPtr) const
-{
-    return std::nullopt;
-}
-
-std::unique_ptr<StorageInMemoryMetadata> StorageObjectStorageConfiguration::buildStorageMetadataFromState(
-    const DataLakeTableStateSnapshot &, ContextPtr) const
-{
-    return nullptr;
-}
-
-bool StorageObjectStorageConfiguration::shouldReloadSchemaForConsistency(ContextPtr) const
-{
-    return false;
-}
-
 
 void StorageObjectStorageConfiguration::initialize(
     StorageObjectStorageConfiguration & configuration_to_initialize,
@@ -277,15 +243,6 @@ void StorageObjectStorageConfiguration::assertInitialized() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration was not initialized before usage");
     }
-}
-
-void StorageObjectStorageConfiguration::addDeleteTransformers(
-    ObjectInfoPtr,
-    QueryPipelineBuilder &,
-    const std::optional<FormatSettings> &,
-    FormatParserSharedResourcesPtr,
-    ContextPtr) const
-{
 }
 
 void StorageObjectStorageConfiguration::initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments)

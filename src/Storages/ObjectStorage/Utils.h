@@ -4,6 +4,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Formats/FormatSettings.h>
+#include <filesystem>
+namespace fs = std::filesystem;
 
 namespace DB
 {

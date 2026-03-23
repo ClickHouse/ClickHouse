@@ -7,6 +7,8 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Array.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
