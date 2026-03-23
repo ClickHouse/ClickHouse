@@ -774,7 +774,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
     };
 
     /// Because ordered_set is sorted lexicographically, the elements we're looking for are
-    /// consecituve. Use binary search to find the range of indices.
+    /// consecutive. Use binary search to find the range of indices.
 
     /// The part about left_included/right_included is a little tricky. It was initially implemented
     /// incorrectly:
@@ -917,7 +917,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     };
 
     /// Because ordered_set is sorted lexicographically, the elements we're looking for are
-    /// consecituve. Use binary search to find the range of indices.
+    /// consecutive. Use binary search to find the range of indices.
 
     /// The part about left_included/right_included is a little tricky. It was initially implemented
     /// incorrectly:
