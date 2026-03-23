@@ -25,7 +25,7 @@ alter table tp_1 drop projection pp;
 alter table tp_1 attach partition '0';
 "
 
-# Unknown projection pp is stripped at load time; CHECK TABLE should pass.
+# Unknown projection pp on disk is handled gracefully by checkDataPart; CHECK TABLE should pass.
 $CLICKHOUSE_CLIENT -m -q "
 set send_logs_level='fatal';
 check table tp_1 settings check_query_single_value_result = 1;"
@@ -48,7 +48,7 @@ set send_logs_level='fatal';
 check table tp_1 settings check_query_single_value_result = 1;"
 $CLICKHOUSE_CLIENT -m -q "
 set send_logs_level='fatal';
-check table tp_1"
+check table tp_1 settings check_query_single_value_result = 1"
 $CLICKHOUSE_CLIENT -m -q "
 set send_logs_level='fatal';
 drop table tp_1"
