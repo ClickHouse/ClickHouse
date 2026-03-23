@@ -21,6 +21,7 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     const String & path_,
     const String & path_subcolumn_,
     const DataTypePtr & dynamic_type_,
+    const SerializationPtr & dynamic_serialization_,
     const DataTypePtr & subcolumn_type_,
     size_t bucket_)
     : SerializationWrapper(nested_)
@@ -30,7 +31,7 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     , path_subcolumn(path_subcolumn_)
     , dynamic_type(dynamic_type_)
     , subcolumn_type(subcolumn_type_)
-    , dynamic_serialization(dynamic_type_->getDefaultSerialization())
+    , dynamic_serialization(dynamic_serialization_)
     , bucket(bucket_)
 {
 }

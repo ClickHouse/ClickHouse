@@ -573,6 +573,8 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!limit_clause.empty())
             if (!set_query_clasue("limit", limit_clause))
                 return false;
+
+        node->as<ASTSelectQuery>()->normalizeChildrenOrder();
         return true;
     }
 
@@ -585,6 +587,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    node->as<ASTSelectQuery>()->normalizeChildrenOrder();
     return true;
 }
 

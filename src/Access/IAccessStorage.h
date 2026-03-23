@@ -33,6 +33,9 @@ struct AuthResult
     /// Session settings received from authentication server (if any)
     SettingsChanges settings{};
     AuthenticationData authentication_data {};
+    /// Username determined by the access storage during authentication,
+    /// should be treated as the authenticated user name
+    String user_name;
 };
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.

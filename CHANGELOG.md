@@ -15,7 +15,7 @@
 
 # 2026 Changelog
 
-### <a id="262"></a> ClickHouse release 26.2, 2026-02-26. [Presentation](https://presentations.clickhouse.com/2026-release-26.2/), [Video](TODO)
+### <a id="262"></a> ClickHouse release 26.2, 2026-02-26. [Presentation](https://presentations.clickhouse.com/2026-release-26.2/), [Video](https://www.youtube.com/watch?v=7qHba08vNfo)
 
 #### Backward Incompatible Change
 * Deduplication is turned ON for all inserts by default. It was OFF before for async inserts and for MV's, but it was ON for sync inserts. The goal is to have the same defaults for both ways of inserts. If you have deduplication explicitly disabled on your cluster, you have to explicitly set `deduplicate_insert='backward_compatible_choice'` to keep the old behavior. The same with `deduplicate_blocks_in_dependent_materialized_views`. [#95970](https://github.com/ClickHouse/ClickHouse/pull/95970) ([Sema Checherinda](https://github.com/CheSema)).
@@ -51,7 +51,7 @@
 * Add a new check enabled by default via setting `check_named_collection_dependencies` to avoid dropping named collections used by tables. [#96181](https://github.com/ClickHouse/ClickHouse/pull/96181) ([Pablo Marcos](https://github.com/pamarcos)).
 * Added `system.fail_points` to inspect existing failpoints in the server and whether they are enabled or not. This is going to help automate testing. [#96762](https://github.com/ClickHouse/ClickHouse/pull/96762) ([Pedro Ferreira](https://github.com/PedroTadim)).
 * Add role-based access to Glue catalog. Use settings `aws_role_arn` and, optionally, `aws_role_session_name`. [#90825](https://github.com/ClickHouse/ClickHouse/pull/90825) ([Antonio Andelic](https://github.com/antonio2368)).
-* Added a setting `add_minmax_index_for_time_columns` that, when enabled, automatically creates minmax indexes for all `Date`, `Date32`, `Time`, `Time64`, `DateTime`, and `DateTime64` columns. [#93355](https://github.com/ClickHouse/ClickHouse/pull/93355) ([Michael Jarrett](https://github.com/EmeraldShift)).
+* Added a setting `add_minmax_index_for_temporal_columns` that, when enabled, automatically creates minmax indexes for all `Date`, `Date32`, `Time`, `Time64`, `DateTime`, and `DateTime64` columns. [#93355](https://github.com/ClickHouse/ClickHouse/pull/93355) ([Michael Jarrett](https://github.com/EmeraldShift)).
 * Support for extended table aliases for JOINs (queries like `SELECT * FROM (SELECT 1) AS t(a) JOIN (SELECT 1) AS u(b) ON a = b`). Closes [#95131](https://github.com/ClickHouse/ClickHouse/issues/95131). [#95331](https://github.com/ClickHouse/ClickHouse/pull/95331) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
 * Added support for `ALTER TABLE RENAME COLUMN` for Iceberg tables. Previously only `ADD COLUMN, DROP COLUMN, and MODIFY COLUMN` were supported. [#97455](https://github.com/ClickHouse/ClickHouse/pull/97455) ([murphy-4o](https://github.com/murphy-4o)).
 

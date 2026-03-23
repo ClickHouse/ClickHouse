@@ -323,12 +323,13 @@ To disable `error_log` setting, you should create the following file `/etc/click
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
-List of prefixes for [custom settings](/operations/settings/query-level#custom_settings). The prefixes must be separated with commas.
+List of prefixes used for [custom settings](/operations/settings/query-level#custom_settings).
+Multiple prefixes should be separated by commas.
 
 **Example**
 
 ```xml
-<custom_settings_prefixes>custom_</custom_settings_prefixes>
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
 ```
 
 **See Also**
@@ -371,7 +372,7 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-- "[Dictionaries](../../sql-reference/statements/create/dictionary/index.md)".
+- "[Dictionaries](../../sql-reference/statements/create/dictionary/overview.md)".
 
 **Example**
 

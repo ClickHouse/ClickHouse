@@ -156,6 +156,8 @@ public:
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 
+    Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
+
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
@@ -184,9 +186,7 @@ protected:
     const bool distributed_processing;
     bool supports_prewhere = false;
     bool supports_tuple_elements = false;
-    /// Whether we need to call `configuration->update()`
-    /// (e.g. refresh configuration) on each read() method call.
-    bool update_configuration_on_read_write = true;
+    bool is_table_function = false;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;

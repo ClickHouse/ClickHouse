@@ -85,6 +85,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
+    extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
 
 namespace FailPoints
@@ -559,7 +560,24 @@ getColumnsForNewDataPart(
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
+        {
+            /// For RENAME commands, handle chained renames:
+            /// e.g., if column A was already renamed to B, and now B is renamed to C,
+            /// we should track that C originates from A (the actual column in the source part).
+            if (command.type == MutationCommand::RENAME_COLUMN)
+            {
+                auto it = renamed_columns_to_from.find(command.column_name);
+                if (it != renamed_columns_to_from.end())
+                {
+                    auto original_name = it->second;
+                    renamed_columns_to_from.erase(it);
+                    renamed_columns_from_to.erase(original_name);
+                    renamed_columns_to_from.emplace(command.rename_to, original_name);
+                    renamed_columns_from_to.emplace(original_name, command.rename_to);
+                }
+            }
             continue;
+        }
 
         if (command.type == MutationCommand::DROP_COLUMN)
             removed_columns.insert(command.column_name);
@@ -604,6 +622,7 @@ getColumnsForNewDataPart(
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
             serialization_infos.getSettings().nullable_serialization_version,
+            serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
         };
     }
     /// Otherwise use fresh settings from storage.
@@ -616,6 +635,7 @@ getColumnsForNewDataPart(
             (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
+            (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
         };
     }
 

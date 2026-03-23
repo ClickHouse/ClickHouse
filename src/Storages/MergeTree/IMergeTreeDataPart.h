@@ -189,6 +189,12 @@ public:
     /// Removes marks from cache for all columns in part.
     virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
 
+    /// Loads index marks for secondary indices and saves them into the index mark cache.
+    void loadIndexMarksToCache(MarkCache * index_mark_cache) const;
+
+    /// Removes index marks for secondary indices from the index mark cache.
+    void removeIndexMarksFromCache(MarkCache * index_mark_cache) const;
+
     /// Removes data related to data part from mark and primary index caches.
     void clearCaches();
 

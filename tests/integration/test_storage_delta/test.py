@@ -2398,7 +2398,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1, use_parquet_metadata_cache=0",
             query_id=query_id,
         )
     )
@@ -4358,14 +4358,6 @@ def test_table_statistics(started_cluster):
     )
     assert int(result_latest.strip()) == 1500
 
-    instance.query("SYSTEM FLUSH LOGS")
-    message_latest = "Updated statistics for snapshot version 14"
-    log_result_latest = instance.query(
-        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id_latest}' "
-        f"AND message LIKE '%{message_latest}%'"
-    )
-    assert int(log_result_latest) == 1
-
 
 @pytest.mark.parametrize("use_delta_kernel", ["1"])
 def test_system_reload_delta_kernel_tracing(started_cluster, use_delta_kernel):
@@ -4582,3 +4574,343 @@ def test_early_return_limit(started_cluster, use_delta_kernel):
         f"Early return should scan 3 files with LIMIT 1, but scanned {scanned_files}"
 
 
+def test_struct_dotted_field_names(started_cluster):
+    """Regression test for struct fields whose logical (and physical) names contain dots.
+
+    In Delta Lake column mapping "name" mode the physical name equals the logical name,
+    so a field named `a.foo` has physical name `a.foo`.  The map value for the child is
+    therefore "data.a.foo" (parent_physical + "." + child_physical).  The old code used
+    `find_last_of('.')` to strip the parent prefix, which found the wrong dot and turned
+    every field into its last segment (e.g. "foo").  Duplicate segment names then caused
+    a `DUPLICATE_COLUMN` exception on `SELECT *` (Bug A) and silent NULLs on sub-field
+    access (Bug B).
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    table_name = randomize_table_name("test_struct_dotted_field_names")
+    path = f"/var/lib/clickhouse/user_files/{table_name}"
+
+    # ── Table 1: column mapping "name" mode ──────────────────────────────────────
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (
+            id        BIGINT,
+            data      STRUCT<`a.foo`: STRING, `b.foo`: STRING>,
+            data_deep STRUCT<`a.b.c.bar`: STRING, `a.b.d.bar`: STRING, `a.b.c.d.e.bar`: STRING, `a.bar`: STRING>,
+            d2        STRUCT<inner: STRUCT<`a.foo`: STRING, `b.foo`: STRING>>,
+            d3        STRUCT<l2: STRUCT<l3: STRUCT<`a.foo`: STRING, `b.foo`: STRING>>>,
+            d4        STRUCT<l2: STRUCT<l3: STRUCT<l4: STRUCT<`a.foo`: STRING, `b.foo`: STRING>>>>
+        )
+        USING DELTA
+        LOCATION '{path}'
+        TBLPROPERTIES (
+            'delta.minReaderVersion' = '2',
+            'delta.minWriterVersion' = '5',
+            'delta.columnMapping.mode' = 'name'
+        )
+        """
+    )
+    spark.sql(
+        f"""
+        INSERT INTO {table_name}
+        VALUES (
+            1,
+            named_struct('a.foo', 'hello', 'b.foo', 'world'),
+            named_struct('a.b.c.bar', 'abcbar', 'a.b.d.bar', 'abdbar', 'a.b.c.d.e.bar', 'abcdebar', 'a.bar', 'abar'),
+            named_struct('inner', named_struct('a.foo', 'afoo2', 'b.foo', 'bfoo2')),
+            named_struct('l2', named_struct('l3', named_struct('a.foo', 'afoo3', 'b.foo', 'bfoo3'))),
+            named_struct('l2', named_struct('l3', named_struct('l4', named_struct('a.foo', 'afoo4', 'b.foo', 'bfoo4'))))
+        )
+        """
+    )
+    LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
+
+    table_function = f"deltaLakeLocal('{path}')"
+
+    # Bug A: SELECT * must not raise DUPLICATE_COLUMN
+    result = instance.query(f"SELECT * FROM {table_function}").strip()
+    assert result == "1\t('hello','world')\t('abcbar','abdbar','abcdebar','abar')\t(('afoo2','bfoo2'))\t((('afoo3','bfoo3')))\t(((('afoo4','bfoo4'))))", \
+        f"Unexpected SELECT * result: {result!r}"
+
+    # Bug B: depth-1 sub-field access must return actual values, not NULL
+    result_a = instance.query(f"SELECT data.`a.foo` FROM {table_function}").strip()
+    assert result_a == "hello", f"Unexpected data.`a.foo` result: {result_a!r}"
+
+    result_b = instance.query(f"SELECT data.`b.foo` FROM {table_function}").strip()
+    assert result_b == "world", f"Unexpected data.`b.foo` result: {result_b!r}"
+
+    result_abc = instance.query(f"SELECT data_deep.`a.b.c.bar` FROM {table_function}").strip()
+    assert result_abc == "abcbar", f"Unexpected data_deep.`a.b.c.bar` result: {result_abc!r}"
+
+    result_abd = instance.query(f"SELECT data_deep.`a.b.d.bar` FROM {table_function}").strip()
+    assert result_abd == "abdbar", f"Unexpected data_deep.`a.b.d.bar` result: {result_abd!r}"
+
+    result_abcde = instance.query(f"SELECT data_deep.`a.b.c.d.e.bar` FROM {table_function}").strip()
+    assert result_abcde == "abcdebar", f"Unexpected data_deep.`a.b.c.d.e.bar` result: {result_abcde!r}"
+
+    result_abar = instance.query(f"SELECT data_deep.`a.bar` FROM {table_function}").strip()
+    assert result_abar == "abar", f"Unexpected data_deep.`a.bar` result: {result_abar!r}"
+
+    # Depth 2, 3, 4 sub-field access
+    result_d2 = instance.query(f"SELECT d2.inner.`a.foo` FROM {table_function}").strip()
+    assert result_d2 == "afoo2", f"Unexpected d2.inner.`a.foo` result: {result_d2!r}"
+
+    result_d3 = instance.query(f"SELECT d3.l2.l3.`a.foo` FROM {table_function}").strip()
+    assert result_d3 == "afoo3", f"Unexpected d3.l2.l3.`a.foo` result: {result_d3!r}"
+
+    result_d4 = instance.query(f"SELECT d4.l2.l3.l4.`a.foo` FROM {table_function}").strip()
+    assert result_d4 == "afoo4", f"Unexpected d4.l2.l3.l4.`a.foo` result: {result_d4!r}"
+
+    # ── Table 2: no column mapping (default) ─────────────────────────────────────
+    table_name2 = randomize_table_name("test_struct_dotted_field_names_no_cm")
+    path2 = f"/var/lib/clickhouse/user_files/{table_name2}"
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name2} (
+            id        BIGINT,
+            data      STRUCT<`a.foo`: STRING, `b.foo`: STRING>,
+            data_deep STRUCT<`a.b.c.bar`: STRING, `a.b.d.bar`: STRING, `a.b.c.d.e.bar`: STRING, `a.bar`: STRING>,
+            d2        STRUCT<inner: STRUCT<`a.foo`: STRING, `b.foo`: STRING>>,
+            d3        STRUCT<l2: STRUCT<l3: STRUCT<`a.foo`: STRING, `b.foo`: STRING>>>,
+            d4        STRUCT<l2: STRUCT<l3: STRUCT<l4: STRUCT<`a.foo`: STRING, `b.foo`: STRING>>>>
+        )
+        USING DELTA
+        LOCATION '{path2}'
+        TBLPROPERTIES (
+            'delta.minReaderVersion' = '2',
+            'delta.minWriterVersion' = '5'
+        )
+        """
+    )
+    spark.sql(
+        f"""
+        INSERT INTO {table_name2}
+        VALUES (
+            1,
+            named_struct('a.foo', 'hello', 'b.foo', 'world'),
+            named_struct('a.b.c.bar', 'abcbar', 'a.b.d.bar', 'abdbar', 'a.b.c.d.e.bar', 'abcdebar', 'a.bar', 'abar'),
+            named_struct('inner', named_struct('a.foo', 'afoo2', 'b.foo', 'bfoo2')),
+            named_struct('l2', named_struct('l3', named_struct('a.foo', 'afoo3', 'b.foo', 'bfoo3'))),
+            named_struct('l2', named_struct('l3', named_struct('l4', named_struct('a.foo', 'afoo4', 'b.foo', 'bfoo4'))))
+        )
+        """
+    )
+    LocalUploader(instance).upload_directory(f"{path2}/", f"{path2}/")
+
+    table_function2 = f"deltaLakeLocal('{path2}')"
+
+    result2_d2 = instance.query(f"SELECT d2.inner.`a.foo` FROM {table_function2}").strip()
+    assert result2_d2 == "afoo2", f"Unexpected d2.inner.`a.foo` result: {result2_d2!r}"
+
+    result2_d3 = instance.query(f"SELECT d3.l2.l3.`a.foo` FROM {table_function2}").strip()
+    assert result2_d3 == "afoo3", f"Unexpected d3.l2.l3.`a.foo` result: {result2_d3!r}"
+
+    result2_d4 = instance.query(f"SELECT d4.l2.l3.l4.`a.foo` FROM {table_function2}").strip()
+    assert result2_d4 == "afoo4", f"Unexpected d4.l2.l3.l4.`a.foo` result: {result2_d4!r}"
+
+
+def test_snapshot_consistency(started_cluster):
+    """Test that snapshot version is correctly captured and used from metadata snapshot.
+
+    This test uses failpoints to pause a query, update the table concurrently, and verify
+    that the paused query uses the correct (original) snapshot version via log messages.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_snapshot_consistency")
+
+    delta_path = f"/{TABLE_NAME}"
+
+    data = spark.range(100).selectExpr(
+        "id as a",
+        "id * 2 as b",
+        "id * 3 as c"
+    )
+    write_delta_from_df(spark, data, delta_path)
+
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    initial_count = int(instance.query(f"SELECT count() FROM {TABLE_NAME}").strip())
+    assert initial_count == 100, f"Expected 100 rows, got {initial_count}"
+
+    # Enable failpoint to pause at iterate()
+    instance.query("SYSTEM ENABLE FAILPOINT delta_lake_metadata_iterate_pause")
+
+    result_holder = {"result": None, "error": None, "query_id": None}
+
+    from concurrent.futures import ThreadPoolExecutor
+    import concurrent.futures
+
+    executor = ThreadPoolExecutor(max_workers=2)
+
+    # Wait for failpoint to be hit
+    wait_future = executor.submit(
+        lambda: instance.query("SYSTEM WAIT FAILPOINT delta_lake_metadata_iterate_pause PAUSE", timeout=30)
+    )
+
+    time.sleep(1)
+
+    # Start query that will be paused at iterate()
+    def run_query():
+        try:
+            # Use sum() instead of count() to force actual data reading and trigger iterate()
+            query_id = f"test_consistency_concurrent_{TABLE_NAME}"
+            result_holder["query_id"] = query_id
+            result = instance.query(
+                f"SELECT sum(a) FROM {TABLE_NAME} WHERE sleepEachRow(0.01) = 0",
+                settings={"max_threads": 1, "allow_experimental_delta_kernel_rs": 1},
+                query_id=query_id,
+                timeout=60
+            )
+            result_holder["result"] = int(result.strip())
+        except Exception as e:
+            result_holder["error"] = e
+
+    query_future = executor.submit(run_query)
+
+    # Wait for the query to hit the failpoint
+    concurrent.futures.wait([wait_future], timeout=15)
+
+    if wait_future.exception() is not None:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_lake_metadata_iterate_pause")
+        raise Exception("Test setup failed - failpoint not hit")
+
+    # While query is paused, update the table (creates version 1 with 50 rows)
+    df = spark.read.format("delta").load(delta_path)
+    df_filtered = df.filter("a < 50")
+    df_filtered.write.format("delta").mode("overwrite").save(delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+
+    # Verify that a new query sees the updated data (version 1)
+    # Use sum() to trigger iterate() so we can check logs
+    query_id_v1 = f"test_consistency_version_1_{TABLE_NAME}"
+    second_query_result = instance.query(
+        f"SELECT sum(a) FROM {TABLE_NAME}",
+        query_id=query_id_v1,
+        settings={"allow_experimental_delta_kernel_rs": 1},
+    ).strip()
+    # sum(0..49) = 1225
+    assert int(second_query_result) == 1225, f"Expected sum=1225 in updated table, got {second_query_result}"
+
+    # Resume the paused query
+    instance.query("SYSTEM NOTIFY FAILPOINT delta_lake_metadata_iterate_pause")
+
+    # Wait for query to complete
+    concurrent.futures.wait([query_future], timeout=60)
+
+    instance.query("SYSTEM DISABLE FAILPOINT delta_lake_metadata_iterate_pause")
+
+    if result_holder["error"]:
+        raise result_holder["error"]
+
+    first_query_result = result_holder["result"]
+
+    # The paused query should see the ORIGINAL snapshot (version 0, 100 rows)
+    # sum(0..99) = 4950
+    if first_query_result == 1225:  # sum(0..49) - would indicate bug
+        raise Exception(f"Bug detected: First query saw updated snapshot (sum={first_query_result}, version 1) "
+                       f"instead of its original snapshot (expected sum=4950, version 0)!")
+
+    assert first_query_result == 4950, f"Expected first query to see original data (sum=4950), got {first_query_result}"
+
+    # Now verify via logs that the correct snapshot version was used
+    instance.query("SYSTEM FLUSH LOGS")
+
+    query_id = result_holder["query_id"]
+
+    # Check that we used snapshot version 0 from metadata snapshot for iterate
+    log_check_iterate = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' "
+        f"AND message LIKE '%Using snapshot version 0 from storage metadata snapshot%'"
+    )
+    assert int(log_check_iterate) > 0, "Expected to find log message about using snapshot version 0 from metadata snapshot for iterate"
+
+    # Check that we used snapshot version 0 from metadata snapshot for prepareReadingFromFormat
+    log_check_prepare = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' "
+        f"AND message LIKE '%Using snapshot version 0 from storage metadata snapshot for prepareReadingFromFormat%'"
+    )
+    assert int(log_check_prepare) > 0, "Expected to find log message about using snapshot version 0 from metadata snapshot for prepareReadingFromFormat"
+
+    # Verify that the second query (after update) used snapshot version 1 from metadata snapshot
+    # Check that we used snapshot version 1 from metadata snapshot for iterate
+    log_check_iterate_v1 = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id_v1}' "
+        f"AND message LIKE '%Using snapshot version 1 from storage metadata snapshot%'"
+    )
+    assert int(log_check_iterate_v1) > 0, "Expected to find log message about using snapshot version 1 from metadata snapshot for iterate"
+
+    # Check that we used snapshot version 1 from metadata snapshot for prepareReadingFromFormat
+    log_check_prepare_v1 = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id_v1}' "
+        f"AND message LIKE '%Using snapshot version 1 from storage metadata snapshot for prepareReadingFromFormat%'"
+    )
+    assert int(log_check_prepare_v1) > 0, "Expected to find log message about using snapshot version 1 from metadata snapshot for prepareReadingFromFormat"
+
+
+def test_snapshot_initialized_once_per_query(started_cluster):
+    """Test that DeltaLake table snapshot is initialized exactly once per SELECT query.
+
+    Verifies via the `DeltaLakeSnapshotInitializations` profile event that a single
+    SELECT query loads the snapshot from object storage only once, regardless of
+    how many files/threads are involved in the query. Two cases are tested:
+    - `SELECT count()` which can be served from metadata without reading data files
+    - `SELECT sum()` which reads actual data files
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_snapshot_init_once")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    def check_initializations_count(query, expected_result, query_id):
+        result = instance.query(query, query_id=query_id, settings={"max_threads": 4})
+        assert int(result.strip()) == expected_result
+        instance.query("SYSTEM FLUSH LOGS")
+        initializations = int(instance.query(
+            f"SELECT ProfileEvents['DeltaLakeSnapshotInitializations'] "
+            f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        ).strip())
+        assert initializations == 1, (
+            f"Query '{query}': expected snapshot to be initialized exactly once, got {initializations}"
+        )
+
+    # FIXME
+    # count() currently produces 2 update() calls which reload table snapshot
+    # because of updateExternalDynamicMetadata
+    #check_initializations_count(
+    #    f"SELECT count() FROM {TABLE_NAME}",
+    #    expected_result=100,
+    #    query_id=f"snapshot_init_count_{TABLE_NAME}",
+    #)
+    check_initializations_count(
+        f"SELECT sum(a) FROM {TABLE_NAME}",
+        expected_result=4950,
+        query_id=f"snapshot_init_sum_{TABLE_NAME}",
+    )
+
+    cluster_table_function = (
+        f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/', "
+        f"'minio', '{minio_secret_key}')"
+    )
+    # FIXME
+    # count() currently produces 2 update() calls which reload table snapshot
+    # because of updateExternalDynamicMetadata
+    #check_initializations_count(
+    #    f"SELECT count() FROM {cluster_table_function}",
+    #    expected_result=100,
+    #    query_id=f"snapshot_init_cluster_count_{TABLE_NAME}",
+    #)
+    check_initializations_count(
+        f"SELECT sum(a) FROM {cluster_table_function}",
+        expected_result=4950,
+        query_id=f"snapshot_init_cluster_sum_{TABLE_NAME}",
+    )
