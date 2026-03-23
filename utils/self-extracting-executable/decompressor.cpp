@@ -66,7 +66,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         std::cerr << "Error (ZSTD): failed to create decompression context" << std::endl;
         return 1;
     }
-    pid_t pid;
+    pid_t pid = 0;
     bool error_happened = false;
 
     /// Decompress data
@@ -114,7 +114,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
             while (number_of_forks >= max_number_of_forks)
             {
                 /// Wait any fork
-                int status;
+                int status = 0;
                 waitpid(0, &status, 0);
 
                 /// If error happened, stop processing
@@ -135,7 +135,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     while (number_of_forks > 0)
     {
         /// Wait any fork
-        int status;
+        int status = 0;
         waitpid(0, &status, 0);
 
         if (WIFEXITED(status))
@@ -180,7 +180,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
-    struct stat info_in;
+    struct stat info_in{};
     if (0 != fstat(input_fd, &info_in))
     {
         perror("fstat");
@@ -212,7 +212,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     }
 
     /// Check free space
-    struct statvfs fs_info;
+    struct statvfs fs_info{};
     if (0 != fstatvfs(input_fd, &fs_info))
     {
         perror("fstatvfs");
@@ -435,7 +435,7 @@ int main(int/* argc*/, char* argv[])
     else
         name = file_path.data();
 
-    struct stat input_info;
+    struct stat input_info{};
     if (0 != stat(self, &input_info))
     {
         perror("stat");
@@ -480,7 +480,7 @@ int main(int/* argc*/, char* argv[])
     /// then file referred by path "self" is already pointing to different inode
     if (input_info.st_ino != inode)
     {
-        struct stat lock_info;
+        struct stat lock_info{};
         if (0 != fstat(lock, &lock_info))
         {
             perror("fstat lock");

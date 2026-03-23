@@ -101,7 +101,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         return 1;
     }
 
-    size_t check_result;
+    size_t check_result = 0;
 
     /// Set level and enable checksums
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
@@ -295,7 +295,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
             files_data[i].exec = true;
 
         /// read data about input file
-        struct stat info_in;
+        struct stat info_in{};
         if (0 != fstat(input_fd, &info_in))
         {
             perror("fstat");
@@ -440,7 +440,7 @@ int copy_decompressor_self(const char *self, int output_fd)
 
 int copy_decompressor_file(const char *path, int output_fd)
 {
-    struct stat info_in;
+    struct stat info_in{};
     if (stat(path, &info_in) != 0)
     {
         std::cerr << "Error: decompressor file [" << path << "]." << std::endl;
@@ -558,7 +558,7 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    struct stat info_out;
+    struct stat info_out{};
     if (stat(argv[start_of_files], &info_out) != -1 || errno != ENOENT)
     {
         std::cerr << "Error: output file [" << argv[start_of_files] << "] already exists" << std::endl;
