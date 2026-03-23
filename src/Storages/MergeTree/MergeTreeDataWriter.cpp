@@ -70,6 +70,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool finalize_projection_parts_synchronously;
     extern const SettingsBool materialize_skip_indexes_on_insert;
     extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
@@ -918,8 +919,23 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             auto proj_temp_part
                 = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
-            for (auto & stream : proj_temp_part->streams)
-                temp_part->streams.emplace_back(std::move(stream));
+
+            if (global_settings[Setting::finalize_projection_parts_synchronously])
+            {
+                /// Finish each projection stream's finalizer immediately to release
+                /// output stream memory (writer buffers, S3 write buffers, etc.).
+                /// We cannot call proj_temp_part->finalize() here because the part
+                /// has already been moved to new_data_part above. The projection
+                /// part's precommitTransaction() will be handled later by the main
+                /// temp_part->finalize() which iterates part->getProjectionParts().
+                for (auto & stream : proj_temp_part->streams)
+                    stream.finalizer.finish();
+            }
+            else
+            {
+                for (auto & stream : proj_temp_part->streams)
+                    temp_part->streams.emplace_back(std::move(stream));
+            }
         }
     }
 
