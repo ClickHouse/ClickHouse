@@ -4872,10 +4872,22 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         bool intersects = element.range.intersectsRange(key_range);
                         bool contains   = element.range.containsRange(key_range);
 
-                        /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
-                        /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
-                        if (unlikely(key_range.left.isNaN() || key_range.right.isNaN()))
+                        /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
+                        /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
+                        /// analysis may incorrectly include NaN values.
+                        /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
+                        ///   so no comparison condition can be true.
+                        /// - If only right bound is NaN: the range extends into NaN territory,
+                        ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+                        if (unlikely(key_range.left.isNaN()))
+                        {
+                            intersects = false;
                             contains = false;
+                        }
+                        else if (unlikely(key_range.right.isNaN()))
+                        {
+                            contains = false;
+                        }
 
                         rpn_stack.emplace_back(intersects, !contains);
                         /// we don't create bloom_filter_data if monotonic_functions_chain is present
@@ -4886,10 +4898,22 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     bool intersects = element.range.intersectsRange(key_range);
                     bool contains = element.range.containsRange(key_range);
 
-                    /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
-                    /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
-                    if (unlikely(key_range.left.isNaN() || key_range.right.isNaN()))
+                    /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
+                    /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
+                    /// analysis may incorrectly include NaN values.
+                    /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
+                    ///   so no comparison condition can be true.
+                    /// - If only right bound is NaN: the range extends into NaN territory,
+                    ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+                    if (unlikely(key_range.left.isNaN()))
+                    {
+                        intersects = false;
                         contains = false;
+                    }
+                    else if (unlikely(key_range.right.isNaN()))
+                    {
+                        contains = false;
+                    }
 
                     rpn_stack.emplace_back(intersects, !contains);
 
@@ -5034,11 +5058,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
         {
             /** There are 2 kinds of polygons:
-              *   1. Polygon by minmax index
+              *   1. Polygon by minmax index or primary key index
               *   2. Polygons which is provided by user
               *
               * Polygon by minmax index:
-              *   For hyperactangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
+              *   For hyperrectangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
               *
               * Algorithm:
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
@@ -5059,12 +5083,26 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 continue;
             }
 
-            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[x_sparse_pos].left);
-            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[x_sparse_pos].right);
-            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[y_sparse_pos].left);
-            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[y_sparse_pos].right);
+            /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`. So we need to separately handle `Null` case here.
+            auto convert_to_float64 = [](const FieldRef & ref, bool is_left_bound) -> Float64
+            {
+                if (ref.isNull())
+                {
+                    return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
+                }
 
-            if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
+                return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
+            };
+
+            const auto & range_x = sparse_hyperrectangle[x_sparse_pos];
+            const auto & range_y = sparse_hyperrectangle[y_sparse_pos];
+
+            Float64 x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
+            Float64 x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
+            Float64 y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
+            Float64 y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
+
+            if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
                 rpn_stack.emplace_back(true, true);
                 continue;
