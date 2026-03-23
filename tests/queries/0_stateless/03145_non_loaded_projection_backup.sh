@@ -25,10 +25,10 @@ alter table tp_1 drop projection pp;
 alter table tp_1 attach partition '0';
 "
 
+# Unknown projection pp is stripped at load time; CHECK TABLE should pass.
 $CLICKHOUSE_CLIENT -m -q "
 set send_logs_level='fatal';
-set check_query_single_value_result = 1;
-check table tp_1 settings check_query_single_value_result = 0;" | grep -o "Found unexpected projection directories: pp.proj"
+check table tp_1 settings check_query_single_value_result = 1;"
 
 backup_id="$CLICKHOUSE_TEST_UNIQUE_NAME"
 $CLICKHOUSE_CLIENT -q "
@@ -42,13 +42,12 @@ restore table tp_1 from Disk('backups', '$backup_id');
 " | grep -o "RESTORED"
 
 $CLICKHOUSE_CLIENT -q "select count() from tp_1;"
+# CHECK TABLE must also pass after restore.
 $CLICKHOUSE_CLIENT -m -q "
 set send_logs_level='fatal';
-set check_query_single_value_result = 1;
-check table tp_1 settings check_query_single_value_result = 0;" | grep -o "Found unexpected projection directories: pp.proj"
+check table tp_1 settings check_query_single_value_result = 1;"
 $CLICKHOUSE_CLIENT -m -q "
 set send_logs_level='fatal';
-set check_query_single_value_result = 1;
 check table tp_1"
 $CLICKHOUSE_CLIENT -m -q "
 set send_logs_level='fatal';
