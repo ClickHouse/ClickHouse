@@ -3958,12 +3958,11 @@ BoolMask KeyCondition::checkInRange(
 {
     const size_t sparse_keys_size = sparse_key_indices.size();
 
-    if (sparse_keys_size == 0)
-        return BoolMask(true, true);
-
 #ifndef NDEBUG
     chassert(sparse_keys_size <= sparse_data_types.size());
-    chassert(equal_boundaries_mask.size() > *std::max_element(sparse_key_indices.begin(), sparse_key_indices.end()));
+
+    if (sparse_keys_size > 0)
+        chassert(equal_boundaries_mask.size() > *std::max_element(sparse_key_indices.begin(), sparse_key_indices.end()));
 
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
