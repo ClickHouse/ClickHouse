@@ -52,7 +52,7 @@
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
@@ -616,17 +616,17 @@ BlockIO InterpreterSystemQuery::execute()
                 StorageFile::getSchemaCache(getContext()).clear();
 #if USE_AWS_S3
             if (caches_to_drop.contains("S3"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageS3Configuration::type_name).clear();
+                getSchemaCache(getContext(), StorageS3Configuration::type_name).clear();
 #endif
 #if USE_HDFS
             if (caches_to_drop.contains("HDFS"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageHDFSConfiguration::type_name).clear();
+                getSchemaCache(getContext(), StorageHDFSConfiguration::type_name).clear();
 #endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageAzureConfiguration::type_name).clear();
+                getSchemaCache(getContext(), StorageAzureConfiguration::type_name).clear();
 #endif
             break;
         }

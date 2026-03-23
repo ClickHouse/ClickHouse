@@ -659,22 +659,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
     ObjectInfos & read_keys,
     const ContextPtr & context)
 {
-    auto file_iterator = StorageObjectStorageSource::createFileIterator(
-        configuration,
-        configuration->getQuerySettings(context),
-        object_storage,
-        nullptr, /* storage_metadata */
-        false, /* distributed_processing */
-        context,
-        {}, /* predicate*/
-        {},
-        {}, /* virtual_columns */
-        {}, /* hive_columns */
-        &read_keys);
-
-    return std::make_unique<ReadBufferIterator>(
-        object_storage, configuration, file_iterator,
-        format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
+    return DB::createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
 }
 
 ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
@@ -684,11 +669,7 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
     std::string & sample_path,
     const ContextPtr & context)
 {
-    ObjectInfos read_keys;
-    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
-    sample_path = iterator->getLastFilePath();
-    return schema;
+    return DB::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
 }
 
 std::string StorageObjectStorage::resolveFormatFromData(
@@ -698,11 +679,7 @@ std::string StorageObjectStorage::resolveFormatFromData(
     std::string & sample_path,
     const ContextPtr & context)
 {
-    ObjectInfos read_keys;
-    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    auto format_and_schema = detectFormatAndReadSchema(format_settings, *iterator, context).second;
-    sample_path = iterator->getLastFilePath();
-    return format_and_schema;
+    return DB::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
 }
 
 std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAndFormatFromData(
@@ -712,12 +689,7 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
     std::string & sample_path,
     const ContextPtr & context)
 {
-    ObjectInfos read_keys;
-    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, context);
-    sample_path = iterator->getLastFilePath();
-    configuration->format = format;
-    return std::pair(columns, format);
+    return DB::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, sample_path, context);
 }
 
 void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
@@ -727,33 +699,7 @@ void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name)
 {
-    if (storage_engine_name == "s3")
-    {
-        static SchemaCache schema_cache(
-            context->getConfigRef().getUInt(
-                "schema_inference_cache_max_elements_for_s3",
-                DEFAULT_SCHEMA_CACHE_ELEMENTS));
-        return schema_cache;
-    }
-    if (storage_engine_name == "hdfs")
-    {
-        static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
-        return schema_cache;
-    }
-    if (storage_engine_name == "azure")
-    {
-        static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_azure", DEFAULT_SCHEMA_CACHE_ELEMENTS));
-        return schema_cache;
-    }
-    if (storage_engine_name == "local")
-    {
-        static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
-        return schema_cache;
-    }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
+    return DB::getSchemaCache(context, storage_engine_name);
 }
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)

@@ -2,7 +2,7 @@
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageURL.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -78,14 +78,14 @@ void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, C
 {
     fillDataImpl(res_columns, StorageFile::getSchemaCache(context), "File");
 #if USE_AWS_S3
-    fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageS3Configuration::type_name), "S3");
+    fillDataImpl(res_columns, getSchemaCache(context, StorageS3Configuration::type_name), "S3");
 #endif
 #if USE_HDFS
-    fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageHDFSConfiguration::type_name), "HDFS");
+    fillDataImpl(res_columns, getSchemaCache(context, StorageHDFSConfiguration::type_name), "HDFS");
 #endif
     fillDataImpl(res_columns, StorageURL::getSchemaCache(context), "URL");
 #if USE_AZURE_BLOB_STORAGE
-    fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageAzureConfiguration::type_name), "Azure");
+    fillDataImpl(res_columns, getSchemaCache(context, StorageAzureConfiguration::type_name), "Azure");
 #endif
 }
 

@@ -1,11 +1,16 @@
 #pragma once
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ColumnsDescription.h>
 #include <Parsers/IAST_fwd.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
 
 class IObjectStorage;
+class ReadBufferIterator;
+class SchemaCache;
 
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
@@ -63,5 +68,34 @@ struct ParseFromDiskResult
 
 ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix);
 
+SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
+
+ColumnsDescription resolveSchemaFromData(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
+    const ContextPtr & context);
+
+std::string resolveFormatFromData(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
+    const ContextPtr & context);
+
+std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
+    const ContextPtr & context);
+
+std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    ObjectInfos & read_keys,
+    const ContextPtr & context);
 
 }

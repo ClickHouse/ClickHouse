@@ -4,11 +4,14 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Context.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/Cache/SchemaCache.h>
+#include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -22,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -91,19 +95,19 @@ void resolveSchemaAndFormat(
         {
             if (format == "auto")
             {
-                std::tie(columns, format) = StorageObjectStorage::resolveSchemaAndFormatFromData(
+                std::tie(columns, format) = resolveSchemaAndFormatFromData(
                     object_storage, configuration, format_settings, sample_path, context);
             }
             else
             {
                 chassert(!format.empty());
-                columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
+                columns = resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
             }
         }
     }
     else if (format == "auto")
     {
-        format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
+        format = resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
     }
 
     validateSupportedColumns(columns, *configuration);
@@ -256,4 +260,104 @@ extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
 }
+
+std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    ObjectInfos & read_keys,
+    const ContextPtr & context)
+{
+    auto file_iterator = StorageObjectStorageSource::createFileIterator(
+        configuration,
+        configuration->getQuerySettings(context),
+        object_storage,
+        nullptr, /* storage_metadata */
+        false, /* distributed_processing */
+        context,
+        {}, /* predicate*/
+        {},
+        {}, /* virtual_columns */
+        {}, /* hive_columns */
+        &read_keys);
+
+    return std::make_unique<ReadBufferIterator>(
+        object_storage, configuration, file_iterator,
+        format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
+}
+
+ColumnsDescription resolveSchemaFromData(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
+    const ContextPtr & context)
+{
+    ObjectInfos read_keys;
+    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
+    sample_path = iterator->getLastFilePath();
+    return schema;
+}
+
+std::string resolveFormatFromData(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
+    const ContextPtr & context)
+{
+    ObjectInfos read_keys;
+    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto format_and_schema = detectFormatAndReadSchema(format_settings, *iterator, context).second;
+    sample_path = iterator->getLastFilePath();
+    return format_and_schema;
+}
+
+std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
+    const ContextPtr & context)
+{
+    ObjectInfos read_keys;
+    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, context);
+    sample_path = iterator->getLastFilePath();
+    configuration->format = format;
+    return std::pair(columns, format);
+}
+
+SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name)
+{
+    if (storage_engine_name == "s3")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt(
+                "schema_inference_cache_max_elements_for_s3",
+                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    if (storage_engine_name == "hdfs")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    if (storage_engine_name == "azure")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_azure", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    if (storage_engine_name == "local")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
+}
+
 }
