@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/CommonParsers.h>
 
+#include <Interpreters/SystemLogFlushPolicy.h>
 #include <boost/noncopyable.hpp>
 
 #define LIST_OF_ALL_SYSTEM_LOGS(M) \
@@ -211,7 +212,12 @@ public:
       */
     void prepareTable() override;
 
-    const StorageID & getTableID() { return table_id; }
+    const StorageID & getTableID() const { return table_id; }
+
+    void setManualFlushTargetIndex(ISystemLog::Index target_index) override
+    {
+        flush_policy->prepareManualFlush(target_index);
+    }
 
 protected:
     LoggerPtr log;
@@ -227,7 +233,8 @@ private:
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
-    const String create_query;
+    std::unique_ptr<ISystemLogFlushPolicy> flush_policy;
+    String create_query;
     String old_create_query;
     bool is_prepared = false;
 

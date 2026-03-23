@@ -8,6 +8,8 @@ on:
 env:
   PYTHONUNBUFFERED: 1
   CHECKOUT_REF: ""
+  TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
 permissions: write-all
 
@@ -32,10 +34,6 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-          export TWINE_PASSWORD=$(cat<<'EOF'
-          ${{ secrets.TWINE_PASSWORD }}
-          EOF
-          )
           cat > ./ci/tmp/workflow_inputs.json << 'EOF'
           ${{ toJson(github.event.inputs) }}
           EOF

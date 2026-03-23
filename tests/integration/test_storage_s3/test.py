@@ -78,6 +78,7 @@ def started_cluster():
                 "configs/access.xml",
                 "configs/users.xml",
                 "configs/s3_retry.xml",
+                "configs/sync_insert.xml",
             ],
         )
         cluster.add_instance(
@@ -88,13 +89,20 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
             ],
-            user_configs=["configs/access.xml"],
+            user_configs=[
+                "configs/access.xml",
+                "configs/sync_insert.xml",
+            ],
         )
         cluster.add_instance(
             "s3_max_redirects",
             with_minio=True,
             main_configs=["configs/defaultS3.xml"],
-            user_configs=["configs/s3_max_redirects.xml", "configs/s3_retry.xml"],
+            user_configs=[
+                "configs/s3_max_redirects.xml",
+                "configs/s3_retry.xml",
+                "configs/sync_insert.xml",
+            ],
         )
         cluster.add_instance(
             "s3_non_default",
@@ -108,6 +116,7 @@ def started_cluster():
                 "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
             },
             main_configs=["configs/use_environment_credentials.xml"],
+            user_configs=["configs/sync_insert.xml"],
         )
         cluster.add_instance(
             "dummy2",
@@ -126,6 +135,7 @@ def started_cluster():
                 "configs/users.xml",
                 "configs/s3_retry.xml",
                 "configs/process_archives_as_whole_with_cluster.xml",
+                "configs/sync_insert.xml",
             ],
         )
         cluster.add_instance(
@@ -147,6 +157,7 @@ def started_cluster():
                 "configs/access.xml",
                 "configs/users.xml",
                 "configs/s3_retry.xml",
+                "configs/sync_insert.xml",
             ],
         )
 
@@ -1285,36 +1296,6 @@ def test_url_reconnect_in_the_middle(started_cluster):
         thread.join()
 
         assert result == "1000000\t3914219105369203805\n"
-
-
-def test_check_parquet_schema(started_cluster):
-    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
-    format_name = 'Parquet'
-    idx = random.randint(0, 1000000)
-    file_path = f'http://minio1:9001/root/test_parquet/test_check_parquet_schema_{idx}.parquet'
-    table_function = f"s3('{file_path}', structure='a Int32, b String', format='{format_name}')"
-    expected_lines = 15000
-    instance.query("DROP TABLE IF EXISTS t_s3_schema_test")
-    instance.query(f"""
-        CREATE TABLE t_s3_schema_test
-        (
-            a Int32,
-            b String
-        )
-        ENGINE = S3('{file_path}', '{format_name}')
-        SETTINGS s3_truncate_on_insert = 1
-    """)
-
-    exec_query_with_retry(
-        instance,
-        f"INSERT INTO t_s3_schema_test SELECT number, randomString(100) FROM numbers({expected_lines})",
-        timeout=300,
-    )
-
-    instance.query("DROP TABLE IF EXISTS test_check_parquet_schema")
-    instance.query_and_get_error(f"CREATE TABLE test_check_parquet_schema (a Int32, b String, c Int32) ENGINE = S3('{file_path}')")
-    instance.query_and_get_error(f"CREATE TABLE test_check_parquet_schema (d Int32, b String) ENGINE = S3('{file_path}')")
-    instance.query(f"CREATE TABLE test_check_parquet_schema (a Int32) ENGINE = S3('{file_path}')")
 
 
 # At the time of writing the actual read bytes are respectively 148 and 169, so -10% to not be flaky
