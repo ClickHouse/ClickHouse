@@ -1,27 +1,84 @@
-SELECT 1
-SELECT a, b, c FROM t
-SELECT x FROM t WHERE x > 1
-SELECT x AS y FROM t
-SELECT count(*), sum(x) FROM t
-SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id
-SELECT a FROM t ORDER BY a DESC
-SELECT a FROM t LIMIT 5, 10
-SELECT a, count() FROM t GROUP BY a HAVING count() > 1
-SELECT * FROM (SELECT 1 AS x)
-SELECT DISTINCT a FROM t
-SELECT 1 UNION ALL SELECT 2
-SELECT * FROM t
-SELECT 42, -1, 3.14, \'hello\', NULL
-SELECT [1, 2, 3], (1, \'a\')
-SELECT if(x > 0, x, -x) FROM t
-SELECT x FROM t ARRAY JOIN arr AS x
-SELECT x FROM t LEFT ARRAY JOIN arr AS x
-SELECT row_number() OVER (PARTITION BY a ORDER BY b ASC) FROM t
-SELECT a, count() FROM t GROUP BY a WITH TOTALS
-CREATE TABLE t (`a` UInt64, `b` String) ENGINE = MergeTree ORDER BY a
-DROP TABLE IF EXISTS t
-INSERT INTO t SELECT 1, 2
-ALTER TABLE t (ADD COLUMN `c` Float64)
-EXPLAIN SELECT 1
-1
-1
+Literal_types	SELECT 42, -1, 3.14, \'hello\', NULL, true, [1, 2, 3], (1, \'a\')
+Identifier	SELECT a, b.c FROM t
+TableIdentifier	SELECT 1 FROM db.t
+Function	SELECT plus(a, 1), count(*), quantile(0.9)(x) FROM t
+Subquery	SELECT * FROM (SELECT 1 AS x)
+QueryParameter	SELECT {param:UInt64}
+Asterisk	SELECT * FROM t
+QualifiedAsterisk	SELECT t.* FROM t
+ColumnsRegexpMatcher	SELECT COLUMNS(\'col.*\') FROM t
+ColumnsListMatcher	SELECT COLUMNS(a, b) FROM t
+ColumnsApplyTransformer	SELECT * APPLY toString FROM t
+ColumnsExceptTransformer	SELECT * EXCEPT a FROM t
+ColumnsReplaceTransformer	SELECT * REPLACE (a + 1 AS a) FROM t
+QualifiedColumnsRegexpMatcher	SELECT t.COLUMNS(\'x.*\') FROM t
+QualifiedColumnsListMatcher	SELECT t.COLUMNS(a, b) FROM t
+SelectQuery_full	SELECT DISTINCT a, sum(b) AS s FROM t PREWHERE c > 0 WHERE d = 1 GROUP BY a WITH TOTALS HAVING s > 10 ORDER BY s DESC LIMIT 5 BY a LIMIT 2, 10
+SelectWithUnionQuery	SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3
+SelectIntersectExceptQuery	SELECT 1 INTERSECT SELECT 1
+SelectExceptQuery	(SELECT 1) EXCEPT (SELECT 2)
+WithElement	WITH x AS (SELECT 1 AS a) SELECT * FROM x
+SetQuery	SET max_threads = 4
+ExplainQuery_AST	EXPLAIN AST SELECT 1
+ExplainQuery_SYNTAX	EXPLAIN SYNTAX SELECT 1
+ExplainQuery_PLAN	EXPLAIN SELECT 1
+TableExpression	SELECT 1 FROM t
+TableJoin_INNER	SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id
+TableJoin_LEFT	SELECT a FROM t1 LEFT JOIN t2 USING (id)
+TableJoin_CROSS	SELECT a FROM t1 CROSS JOIN t2
+ArrayJoin	SELECT x FROM t ARRAY JOIN arr AS x
+ArrayJoin_LEFT	SELECT x FROM t LEFT ARRAY JOIN arr AS x
+OrderByElement	SELECT a FROM t ORDER BY a ASC NULLS FIRST, b DESC NULLS LAST
+OrderByElement_FILL	SELECT a FROM t ORDER BY a ASC WITH FILL FROM 1 TO 10 STEP 1
+WindowDefinition	SELECT row_number() OVER (PARTITION BY a ORDER BY b ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM t
+WindowListElement	SELECT row_number() OVER w FROM t WINDOW w AS (PARTITION BY a ORDER BY b ASC)
+SampleRatio	SELECT a FROM t SAMPLE 1 / 10
+SampleRatio_offset	SELECT a FROM t SAMPLE 1 / 10 OFFSET 5 / 10
+InterpolateElement	SELECT a, b FROM t ORDER BY a ASC WITH FILL INTERPOLATE (`b` AS b + 1)
+Collation	SELECT a FROM t ORDER BY a ASC COLLATE \'en\'
+CreateQuery	CREATE TABLE db.t (`id` UInt64, `name` String DEFAULT \'x\', `ts` DateTime) ENGINE = MergeTree ORDER BY id
+IndexDeclaration	CREATE TABLE t (`a` String, INDEX idx a TYPE bloom_filter GRANULARITY 4) ENGINE = MergeTree ORDER BY a
+ConstraintDeclaration	CREATE TABLE t (`a` UInt64, CONSTRAINT c CHECK a > 0) ENGINE = MergeTree ORDER BY a
+ProjectionDeclaration	CREATE TABLE t (`a` UInt64, `b` UInt64, PROJECTION p (SELECT a, sum(b) GROUP BY a)) ENGINE = MergeTree ORDER BY a
+TTLElement	CREATE TABLE t (`a` UInt64, `d` DateTime) ENGINE = MergeTree ORDER BY a TTL d + toIntervalDay(1)
+Partition	CREATE TABLE t (`a` UInt64, `d` Date) ENGINE = MergeTree PARTITION BY d ORDER BY a
+CreateQuery_AS_SELECT	CREATE TABLE t ENGINE = MergeTree ORDER BY a AS SELECT 1 AS a
+CreateView	CREATE VIEW v AS SELECT 1
+DropQuery_TABLE	DROP TABLE IF EXISTS t
+DropQuery_DATABASE	DROP DATABASE IF EXISTS db
+InsertQuery_SELECT	INSERT INTO t SELECT 1, 2
+InsertQuery_COLUMNS	INSERT INTO t (a, b) SELECT 1, 2
+AlterQuery_ADD	ALTER TABLE t (ADD COLUMN `c` UInt64)
+AlterQuery_DROP	ALTER TABLE t (DROP COLUMN c)
+AlterQuery_MODIFY	ALTER TABLE t (MODIFY COLUMN `c` String)
+AlterQuery_RENAME	ALTER TABLE t (RENAME COLUMN a TO b)
+RenameQuery	RENAME TABLE a TO b
+RenameQuery_DB	RENAME TABLE db1.a TO db2.b
+NameTypePair	SELECT CAST(1, \'UInt64\')
+FunctionWithKV	CREATE TABLE t (`a` UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192
+Dictionary	CREATE DICTIONARY dict (`id` UInt64, `name` String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LIFETIME(MIN 0 MAX 1000) LAYOUT(HASHED())
+SystemQuery	SYSTEM FLUSH LOGS
+SystemQuery_STOP	SYSTEM STOP MERGES t
+ShowTablesQuery	SHOW TABLES FROM db
+ShowTablesQuery_LIKE	SHOW TABLES LIKE \'%test%\'
+ShowDatabases	SHOW DATABASES
+ShowColumnsQuery	SHOW COLUMNS FROM t
+KillQueryQuery	KILL QUERY WHERE query_id = \'abc\' ASYNC
+OptimizeQuery	OPTIMIZE TABLE t FINAL
+OptimizeQuery_DEDUP	OPTIMIZE TABLE t FINAL DEDUPLICATE
+UseQuery	USE mydb
+CheckTableQuery	CHECK TABLE t
+DeleteQuery	DELETE FROM t WHERE id = 1
+Alias	SELECT a AS x, b AS y FROM t AS u
+Lambda	SELECT arrayMap(x -> (x * 2), [1, 2, 3])
+GlobalJoin	SELECT a FROM t1 GLOBAL LEFT JOIN t2 ON t1.id = t2.id
+TableFunction	SELECT * FROM numbers(10)
+Final	SELECT a FROM t FINAL
+GroupBy_ROLLUP	SELECT a, b, count() FROM t GROUP BY a, b WITH ROLLUP
+GroupBy_CUBE	SELECT a, b, count() FROM t GROUP BY a, b WITH CUBE
+LimitBy	SELECT a, b FROM t LIMIT 1 BY a
+Qualify	SELECT a, row_number() OVER (ORDER BY a ASC) AS rn FROM t QUALIFY rn <= 3
+SelectSettings	SELECT 1 SETTINGS max_threads = 1
+MultiJoin	SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON t2.id = t3.id
+UnionDistinct	SELECT 1 UNION DISTINCT SELECT 1
+Idempotent	1
