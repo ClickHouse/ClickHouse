@@ -73,7 +73,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 #endif
 
         /// Attempt to compile the fuzzer-supplied bytes as a WASM module.
-        auto module = engine->compileModule(wasm_bytes);
+        auto module = engine->compileModule("fuzzer_module", wasm_bytes);
 
         /// Instantiate with conservative resource limits to prevent infinite loops
         /// and excessive memory use inside guest code.

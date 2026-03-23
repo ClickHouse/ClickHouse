@@ -6,12 +6,12 @@
 #include <Columns/ColumnVector.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 
 using namespace DB;
 
-/// Fuzzers use std::vector directly for simplicity; memory tracking is not needed here.
-using DiscriminatorVec = std::vector<ColumnVariant::Discriminator>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using DiscriminatorVec = VectorWithMemoryTracking<ColumnVariant::Discriminator>;
 
 ContextMutablePtr context;
 

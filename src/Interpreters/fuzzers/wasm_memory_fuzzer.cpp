@@ -61,7 +61,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 
     const std::string_view wasm_bytes(
         reinterpret_cast<const char *>(kMinimalWasm), sizeof(kMinimalWasm));
-    wasm_module = engine->compileModule(wasm_bytes);
+    wasm_module = engine->compileModule("wasm_memory_fuzzer", wasm_bytes);
 
     return 0;
 }
