@@ -106,6 +106,17 @@ private:
     using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
     void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count);
 
+    /// Park a read request behind a same-session write in the current batch,
+    /// or collect it for immediate dispatch if no same-session write exists.
+    void parkOrDispatchRead(
+        const KeeperRequestForSession & read_request,
+        const KeeperRequestsForSessions & current_batch,
+        KeeperRequestsForSessions & pending_immediate_reads,
+        bool per_session_only);
+
+    /// Dispatch collected immediate reads that have no same-session write dependency.
+    void dispatchImmediateReads(KeeperRequestsForSessions & pending_immediate_reads);
+
     /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
