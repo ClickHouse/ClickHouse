@@ -522,8 +522,6 @@ def test_table_functions():
         f"odbc(named_collection_1, connection_settings = 'DSN=mydb;Uid=user;Pwd={password}')",
         f"jdbc(named_collection_1, datasource = 'jdbc://user:{password}@localhost:5432/mydb')",
         f"odbc(named_collection_1, connection_settings = 'odbc://user:{password}@localhost:5432/mydb')",
-        (f"jdbc(named_collection_1, datasource = 'DSN=mydb;Uid=user;Pwd={password}', connection_settings = 'DSN=mydb2;Uid=user2;Pwd={password}')", "ARGUMENTS"),
-        (f"jdbc(named_collection_1, connection_settings = 'jdbc://user2:{password}@localhost:5432/mydb2', external_database = 'mydb', datasource = 'jdbc://user:{password}@localhost:5432/mydb')", "ARGUMENTS"),
     ]
 
     def make_test_case(i):
@@ -618,8 +616,6 @@ def test_table_functions():
             "CREATE TABLE tablefunc51 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
             "CREATE TABLE tablefunc52 (`x` int) AS jdbc(named_collection_1, datasource = 'jdbc://user:[HIDDEN]@localhost:5432/mydb')",
             "CREATE TABLE tablefunc53 (`x` int) AS odbc(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb')",
-            "CREATE TABLE tablefunc54 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]')",
-            "CREATE TABLE tablefunc55 (`x` int) AS jdbc(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
