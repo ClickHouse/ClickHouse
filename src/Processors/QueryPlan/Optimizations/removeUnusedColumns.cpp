@@ -168,41 +168,30 @@ RemoveChildrenOutputResult removeChildrenOutputs(
         auto child_result = child_step->removeUnusedColumns(required_positions, false);
         const bool child_updated = child_result.changed;
 
-        // As removeUnusedColumns might leave additional columns in the output, we have to get rid of those outputs by adding a new ExpressionStep.
-        // Right now this is mostly relevant for JoinStepLogical, as it must keep at least one column in its output, even if its parent requires no input.
-        // However in the future we might have other steps with similar behavior.
         if (child_updated)
-        {
             updated_any_child = true;
-            const auto added_discarding_step
-                = addDiscardingExpressionStepIfNeeded(nodes, node, child_id, required_positions, child_result.kept_output_positions);
-            if (added_discarding_step)
-            {
-                chassert(node.children[child_id]->children.size() == 1 && (child_step) == node.children[child_id]->children[0]->step);
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-                const auto & discarding_step = *node.children[child_id]->step;
-                assertBlocksHaveEqualStructure(
-                    *discarding_step.getInputHeaders()[0], *child_step->getOutputHeader(), "after adding discarding step");
-#endif
-                added_any_discarding_step = true;
-            }
-        }
-
-        /// The child step may have extra columns in its output that the parent doesn't need
-        /// (e.g. ReadFromMergeTree with FINAL must keep sort key / version columns).
-        /// If the parent is an ExpressionStep, absorb these extra columns as consumed DAG inputs
-        /// so the step's output is unchanged but input headers match.
-        /// Otherwise, add a discarding ExpressionStep between the parent and child to remove the extra columns.
+        /// If the child's output doesn't match the parent's input (extra columns the child
+        /// couldn't remove, e.g. ReadFromMergeTree with FINAL keeping sort key columns,
+        /// or JoinStepLogical keeping a dummy column), reconcile the headers.
+        /// First try absorbing extras into the parent's DAG (no extra step needed).
+        /// Fall back to inserting a discarding ExpressionStep if absorption isn't possible.
         {
             const auto & current_parent_input = node.step->getInputHeaders()[child_id];
             const auto & child_output = node.children[child_id]->step->getOutputHeader();
-            if (child_output->columns() != current_parent_input->columns())
+            if (!blocksHaveEqualStructure(*current_parent_input, *child_output))
             {
                 if (!absorbExtraChildColumns(node, child_id, required_positions, child_result.kept_output_positions))
                 {
                     if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id, required_positions, child_result.kept_output_positions))
+                    {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+                        const auto & discarding_step = *node.children[child_id]->step;
+                        assertBlocksHaveEqualStructure(
+                            *discarding_step.getInputHeaders()[0], *child_step->getOutputHeader(), "after adding discarding step");
+#endif
                         added_any_discarding_step = true;
+                    }
                 }
             }
         }

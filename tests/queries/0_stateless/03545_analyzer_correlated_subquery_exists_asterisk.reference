@@ -1,4 +1,4 @@
-Expression ((Project names + (Projection + (WHERE + Discarding unused columns))))
+Expression ((Project names + (Projection + WHERE)))
 Actions: INPUT :: 0 -> __join_result_dummy UInt8 : 0
          COLUMN Const(UInt8) -> 1 UInt8 : 1
 Positions: 1
