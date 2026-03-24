@@ -79,9 +79,9 @@ public:
 private:
     const GroupId group_id;
     bool is_explored = false;
-    std::set<String> optimized_properties;  /// Tracks which required properties have had implementation rules applied
-    std::set<String> enforced_properties;   /// Tracks which required properties have had enforcer rules applied
-    std::set<String> fully_done_properties; /// Tracks which required properties are fully optimized (all stages complete)
+    std::unordered_set<ExpressionProperties, ExpressionPropertiesHash> optimized_properties;  /// Tracks which required properties have had implementation rules applied
+    std::unordered_set<ExpressionProperties, ExpressionPropertiesHash> enforced_properties;   /// Tracks which required properties have had enforcer rules applied
+    std::unordered_set<ExpressionProperties, ExpressionPropertiesHash> fully_done_properties; /// Tracks which required properties are fully optimized (all stages complete)
     std::unordered_set<String> physical_fingerprints;  /// Deduplicates identical physical expressions
 
     /// Encode (node_count, is_replicated) into a single key for best_implementations lookup.

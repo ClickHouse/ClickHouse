@@ -4,6 +4,7 @@
 #include <Core/SortDescription.h>
 #include <base/types.h>
 #include <vector>
+#include <functional>
 
 namespace DB
 {
@@ -29,6 +30,8 @@ struct DistributionDescription
     bool is_replicated = false;     /// All data is replicated to all nodes, so any distribution is satisfied. E.g. for small tables that are broadcasted to all nodes.
     size_t node_count = 1;          /// Number of nodes among which data is distributed. E.g. for shuffle exchange of partitioned read.
 
+    bool operator==(const DistributionDescription & other) const = default;
+
     void dump(WriteBuffer & out) const;
     String dump() const;
 };
@@ -39,6 +42,8 @@ struct ExpressionProperties
     UInt64 sort_limit = 0;  /// Limit applied together with ORDER BY. Passed to SortingStep; 0 means no limit.
     DistributionDescription distribution;
 
+    bool operator==(const ExpressionProperties & other) const = default;
+
     bool isSatisfiedBy(const ExpressionProperties & existing_properties) const;
 
     static bool isSortingSatisfiedBy(const SortDescription & required, const SortDescription & existing);
@@ -46,6 +51,41 @@ struct ExpressionProperties
 
     void dump(WriteBuffer & out) const;
     String dump() const;
+};
+
+struct ExpressionPropertiesHash
+{
+    size_t operator()(const ExpressionProperties & props) const
+    {
+        size_t h = std::hash<size_t>()(props.distribution.node_count);
+        h ^= std::hash<bool>()(props.distribution.is_replicated) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<UInt64>()(props.sort_limit) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        for (const auto & col_set : props.distribution.columns)
+            for (const auto & name : col_set)
+                h ^= std::hash<String>()(name) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        for (const auto & col : props.sorting)
+            h ^= std::hash<String>()(col.column_name) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        return h;
+    }
+};
+
+/// Composite key for tracking which (rule, properties) pairs have been applied.
+struct RulePropertiesKey
+{
+    const void * rule_ptr;  /// Address of the rule (stable for the optimizer's lifetime)
+    ExpressionProperties properties;
+
+    bool operator==(const RulePropertiesKey & other) const = default;
+};
+
+struct RulePropertiesKeyHash
+{
+    size_t operator()(const RulePropertiesKey & key) const
+    {
+        size_t h = std::hash<const void *>()(key.rule_ptr);
+        h ^= ExpressionPropertiesHash()(key.properties) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        return h;
+    }
 };
 
 }

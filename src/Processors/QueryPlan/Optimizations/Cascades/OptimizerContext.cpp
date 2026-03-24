@@ -68,14 +68,14 @@ std::pair<GroupId, ExpressionProperties> OptimizerContext::addGroup(QueryPlan::N
 {
     /// TODO: Currently CommonSubplanReferenceStep is expected to be resolved before Cascades optimizer.
     /// But it seem that we can resolve it here by just mapping the target Node to a corresponding Group.
-    auto * subplan_reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get());
+    const auto * subplan_reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get());
     if (subplan_reference)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CommonSubplanReferenceStep, it should be already resolved");
 
     /// Strip SortingStep::Full — sorting is a physical property, not a logical one.
     /// Return the child's GroupId along with the sorting as required properties, so the caller
     /// can attach them to the input link of the parent group expression.
-    auto * sorting_step = typeid_cast<const SortingStep *>(node.step.get());
+    const auto * sorting_step = typeid_cast<const SortingStep *>(node.step.get());
     if (sorting_step && sorting_step->getType() == SortingStep::Type::Full)
     {
         chassert(node.children.size() == 1);

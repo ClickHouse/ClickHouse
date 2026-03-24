@@ -35,14 +35,12 @@ const IQueryPlanStep * GroupExpression::getQueryPlanStep() const
 
 bool GroupExpression::isApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties) const
 {
-    String full_name = rule.getName() + '@' + required_properties.dump();
-    return applied_rules.contains(full_name);
+    return applied_rules.contains({&rule, required_properties});
 }
 
 void GroupExpression::setApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties)
 {
-    String full_name = rule.getName() + '@' + required_properties.dump();
-    applied_rules.insert(full_name);
+    applied_rules.insert({&rule, required_properties});
 }
 
 void GroupExpression::dump(WriteBuffer & out, const CostConfig & cost_config) const

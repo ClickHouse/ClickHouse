@@ -28,32 +28,32 @@ void Group::addPhysicalExpression(GroupExpressionPtr group_expression)
 
 bool Group::isOptimizedFor(const ExpressionProperties & required_properties) const
 {
-    return optimized_properties.contains(required_properties.dump());
+    return optimized_properties.contains(required_properties);
 }
 
 void Group::setOptimizedFor(const ExpressionProperties & required_properties)
 {
-    optimized_properties.insert(required_properties.dump());
+    optimized_properties.insert(required_properties);
 }
 
 bool Group::isEnforcedFor(const ExpressionProperties & required_properties) const
 {
-    return enforced_properties.contains(required_properties.dump());
+    return enforced_properties.contains(required_properties);
 }
 
 void Group::setEnforcedFor(const ExpressionProperties & required_properties)
 {
-    enforced_properties.insert(required_properties.dump());
+    enforced_properties.insert(required_properties);
 }
 
 bool Group::isFullyDoneFor(const ExpressionProperties & required_properties) const
 {
-    return fully_done_properties.contains(required_properties.dump());
+    return fully_done_properties.contains(required_properties);
 }
 
 void Group::setFullyDoneFor(const ExpressionProperties & required_properties)
 {
-    fully_done_properties.insert(required_properties.dump());
+    fully_done_properties.insert(required_properties);
 }
 
 void Group::updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config)

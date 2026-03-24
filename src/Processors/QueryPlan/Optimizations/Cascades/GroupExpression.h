@@ -61,7 +61,7 @@ public:
 
     ExpressionProperties properties;
 
-    std::unordered_set<String> applied_rules;   /// TODO: implement more efficiently
+    std::unordered_set<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
 
     std::optional<ExpressionCost> cost;
 };
