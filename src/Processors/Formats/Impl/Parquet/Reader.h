@@ -187,6 +187,12 @@ struct Reader
         };
         std::optional<BboxColumnIndices> covering_bbox_indices;
 
+        /// Populated during prefilterAndInitRowGroups when a spatial filter references this column
+        /// and covering_bbox_indices is set. Enables page-level spatial pruning via column index.
+        bool has_page_spatial_filter = false;
+        double spatial_query_xmin = 0, spatial_query_ymin = 0;
+        double spatial_query_xmax = 0, spatial_query_ymax = 0;
+
         /// If use_bloom_filter, these are the values that we need to find in bloom filter.
         std::vector<UInt64> bloom_filter_hashes;
 
@@ -303,7 +309,12 @@ struct Reader
         bool use_bloom_filter = false;
         bool use_dictionary_filter = false;
         bool use_column_index = false;
+        bool use_spatial_column_index = false;
         bool need_null_map = false;
+
+        /// Prefetches for the 4 covering.bbox column indexes used for page-level spatial pruning.
+        /// Valid only when use_spatial_column_index = true.
+        std::array<PrefetchHandle, 4> spatial_bbox_prefetches;
 
         /// Prefetches.
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
@@ -507,6 +518,7 @@ struct Reader
     bool applyBloomAndDictionaryFilters(RowGroup & row_group);
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
+    void applySpatialColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
 
     void decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group);

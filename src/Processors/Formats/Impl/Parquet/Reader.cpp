@@ -1,3 +1,4 @@
+#include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -40,6 +41,7 @@ namespace ProfileEvents
 {
     extern const Event ParquetRowsFilterExpression;
     extern const Event ParquetColumnsFilterExpression;
+    extern const Event ParquetPrunedPages;
 }
 
 namespace DB::Parquet
@@ -358,7 +360,27 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// Extract spatial filters from the WHERE clause for GeoParquet row group pruning.
     std::vector<SpatialFilter> spatial_filters;
     if (options.format.parquet.spatial_filter_push_down && format_filter_info->filter_actions_dag)
+    {
         spatial_filters = extractSpatialFilters(*format_filter_info->filter_actions_dag, extended_sample_block);
+        /// Link spatial filters to geometry primitive columns for page-level pruning.
+        for (auto & pc : primitive_columns)
+        {
+            if (!pc.covering_bbox_indices.has_value())
+                continue;
+            for (const auto & sf : spatial_filters)
+            {
+                if (sf.geometry_column_name == pc.name)
+                {
+                    pc.has_page_spatial_filter = true;
+                    pc.spatial_query_xmin = sf.query_xmin;
+                    pc.spatial_query_ymin = sf.query_ymin;
+                    pc.spatial_query_xmax = sf.query_xmax;
+                    pc.spatial_query_ymax = sf.query_ymax;
+                    break;
+                }
+            }
+        }
+    }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
     size_t total_rows = 0;
@@ -521,7 +543,8 @@ void Reader::prepareBloomFilterCondition()
 void Reader::initializePrefetches()
 {
     bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
-        || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.column_index_condition; });
+        || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.column_index_condition; })
+        || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.has_page_spatial_filter; });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
     for (RowGroup & row_group : row_groups)
@@ -598,6 +621,33 @@ void Reader::initializePrefetches()
                 column.column_index_prefetch = prefetcher.registerRange(
                     size_t(column.meta->column_index_offset),
                     size_t(column.meta->column_index_length), /*likely_to_be_used=*/ true);
+
+            /// Spatial column index: prefetch the 4 covering.bbox column indexes for page-level pruning.
+            if (primitive_columns[column_idx].has_page_spatial_filter && column.offset_index_prefetch)
+            {
+                const auto & bbox_idx = *primitive_columns[column_idx].covering_bbox_indices;
+                const size_t bbox_col_indices[4] = {bbox_idx.xmin_col, bbox_idx.ymin_col, bbox_idx.xmax_col, bbox_idx.ymax_col};
+                bool all_registered = true;
+                for (size_t k = 0; k < 4; ++k)
+                {
+                    const size_t bci = bbox_col_indices[k];
+                    if (bci >= row_group.meta->columns.size())
+                    {
+                        all_registered = false;
+                        break;
+                    }
+                    const auto & bchunk = row_group.meta->columns.at(bci);
+                    if (!bchunk.__isset.column_index_offset || !bchunk.__isset.column_index_length)
+                    {
+                        all_registered = false;
+                        break;
+                    }
+                    column.spatial_bbox_prefetches[k] = prefetcher.registerRange(
+                        size_t(bchunk.column_index_offset),
+                        size_t(bchunk.column_index_length), /*likely_to_be_used=*/ true);
+                }
+                column.use_spatial_column_index = all_registered;
+            }
 
             /// Data pages.
 
@@ -989,6 +1039,81 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
     }
 }
 
+void Reader::applySpatialColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group)
+{
+    chassert(column.use_spatial_column_index);
+    chassert(column_info.has_page_spatial_filter);
+    chassert(column_info.covering_bbox_indices.has_value());
+
+    const size_t num_pages = column.offset_index.page_locations.size();
+    if (num_pages == 0)
+        return;
+
+    /// Read all 4 bbox column indexes.
+    parq::ColumnIndex bbox_col_idx[4];
+    for (size_t k = 0; k < 4; ++k)
+    {
+        auto data = prefetcher.getRangeData(column.spatial_bbox_prefetches[k]);
+        deserializeThriftStruct(bbox_col_idx[k], data.data(), data.size());
+    }
+
+    /// xmin/ymin columns use min_values; xmax/ymax columns use max_values.
+    /// If any bbox column has a different page count, fall back to no page pruning.
+    if (bbox_col_idx[0].min_values.size() != num_pages  // xmin.min
+        || bbox_col_idx[1].min_values.size() != num_pages  // ymin.min
+        || bbox_col_idx[2].max_values.size() != num_pages  // xmax.max
+        || bbox_col_idx[3].max_values.size() != num_pages) // ymax.max
+    {
+        column.row_ranges_after_column_index.emplace_back(0, size_t(row_group.meta->num_rows));
+        return;
+    }
+
+    auto read_double = [](const std::string & s, double & out) -> bool
+    {
+        if (s.size() != sizeof(double)) return false;
+        std::memcpy(&out, s.data(), sizeof(double));
+        return true;
+    };
+
+    const double qxmin = column_info.spatial_query_xmin;
+    const double qymin = column_info.spatial_query_ymin;
+    const double qxmax = column_info.spatial_query_xmax;
+    const double qymax = column_info.spatial_query_ymax;
+
+    size_t prev_row_idx = 0;
+    size_t pages_pruned = 0;
+    for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
+    {
+        double page_xmin = 0, page_ymin = 0, page_xmax = 0, page_ymax = 0;
+        if (!read_double(bbox_col_idx[0].min_values[page_idx], page_xmin)
+            || !read_double(bbox_col_idx[1].min_values[page_idx], page_ymin)
+            || !read_double(bbox_col_idx[2].max_values[page_idx], page_xmax)
+            || !read_double(bbox_col_idx[3].max_values[page_idx], page_ymax))
+            continue; // can't prune this page
+
+        bool disjoint = page_xmax < qxmin || page_xmin > qxmax
+                     || page_ymax < qymin || page_ymin > qymax;
+        if (!disjoint)
+            continue;
+
+        size_t start_row = size_t(column.offset_index.page_locations[page_idx].first_row_index);
+        size_t end_row = page_idx + 1 < num_pages
+            ? size_t(column.offset_index.page_locations[page_idx + 1].first_row_index)
+            : size_t(row_group.meta->num_rows);
+
+        if (start_row > prev_row_idx)
+            column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
+        prev_row_idx = end_row;
+        ++pages_pruned;
+    }
+
+    if (size_t(row_group.meta->num_rows) > prev_row_idx)
+        column.row_ranges_after_column_index.emplace_back(prev_row_idx, size_t(row_group.meta->num_rows));
+
+    if (pages_pruned > 0)
+        ProfileEvents::increment(ProfileEvents::ParquetPrunedPages, pages_pruned);
+}
+
 void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const
 {
     if (accurateLess(range.right, range.left))
@@ -1044,7 +1169,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
 
         for (auto & col : row_group.columns)
         {
-            if (!col.use_column_index)
+            if (!col.use_column_index && !col.use_spatial_column_index)
                 continue;
             if (col.row_ranges_after_column_index.empty())
                 /// Whole row group was filtered out, leave `subgroups` empty.

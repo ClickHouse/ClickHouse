@@ -163,7 +163,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
                 for (size_t i = 0; i < row_group.columns.size(); ++i)
-                    if (row_group.columns[i].use_column_index)
+                    if (row_group.columns[i].use_column_index || row_group.columns[i].use_spatial_column_index)
                         add_tasks.push_back(Task {
                             .stage = ReadStage::ColumnIndexAndOffsetIndex,
                             .row_group_idx = row_group_idx, .column_idx = i});
@@ -835,8 +835,13 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::ColumnIndexAndOffsetIndex:
                 reader.decodeOffsetIndex(column, row_group);
                 column.offset_index_prefetch.reset(&diff);
-                reader.applyColumnIndex(column, column_info, row_group);
+                if (column.use_column_index)
+                    reader.applyColumnIndex(column, column_info, row_group);
+                if (column.use_spatial_column_index)
+                    reader.applySpatialColumnIndex(column, column_info, row_group);
                 column.column_index_prefetch.reset(&diff);
+                for (auto & h : column.spatial_bbox_prefetches)
+                    h.reset(&diff);
                 break;
             case ReadStage::OffsetIndex:
                 reader.decodeOffsetIndex(column, row_group);
