@@ -4,6 +4,7 @@
 #include <Coordination/KeeperContext.h>
 
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/Defines.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
@@ -39,6 +40,11 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int ROCKSDB_ERROR;
 
+}
+
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 write_snapshot_version;
 }
 
 KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr coordination_settings_)
@@ -377,6 +383,15 @@ const std::unordered_map<std::string, std::string> & KeeperContext::getSystemNod
 const KeeperFeatureFlags & KeeperContext::getFeatureFlags() const
 {
     return feature_flags;
+}
+
+SnapshotVersion KeeperContext::getWriteSnapshotVersion() const
+{
+    const uint64_t version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
+    if (version < SnapshotVersion::V6 || version > MAX_SUPPORTED_SNAPSHOT_VERSION)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported write snapshot version {} (must be between {} and {})",
+            version, SnapshotVersion::V6, MAX_SUPPORTED_SNAPSHOT_VERSION);
+    return static_cast<SnapshotVersion>(version);
 }
 
 void KeeperContext::dumpConfiguration(WriteBufferFromOwnString & buf) const

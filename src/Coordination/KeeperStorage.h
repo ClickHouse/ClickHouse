@@ -51,7 +51,7 @@ struct NodeStats
     int64_t ephemeralOwner() const
     {
         if (isEphemeral())
-            return ephemeral_or_children_data.ephemeral_owner;
+            return ephemeral_or_seq_num.ephemeral_owner;
 
         return 0;
     }
@@ -59,52 +59,26 @@ struct NodeStats
     void setEphemeralOwner(int64_t ephemeral_owner)
     {
         is_ephemeral_and_ctime.is_ephemeral = true;
-        ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
+        ephemeral_or_seq_num.ephemeral_owner = ephemeral_owner;
     }
 
-    int32_t numChildren() const
+    int64_t seqNum() const
     {
         if (isEphemeral())
             return 0;
 
-        return ephemeral_or_children_data.children_info.num_children;
+        return ephemeral_or_seq_num.seq_num;
     }
 
-    void setNumChildren(int32_t num_children)
+    void setSeqNum(int64_t seq_num)
     {
-        is_ephemeral_and_ctime.is_ephemeral = false;
-        ephemeral_or_children_data.children_info.num_children = num_children;
-    }
-
-    void increaseNumChildren()
-    {
-        chassert(!isEphemeral());
-        ++ephemeral_or_children_data.children_info.num_children;
-    }
-
-    void decreaseNumChildren()
-    {
-        chassert(!isEphemeral());
-        --ephemeral_or_children_data.children_info.num_children;
-    }
-
-    int32_t seqNum() const
-    {
-        if (isEphemeral())
-            return 0;
-
-        return ephemeral_or_children_data.children_info.seq_num;
-    }
-
-    void setSeqNum(int32_t seq_num)
-    {
-        ephemeral_or_children_data.children_info.seq_num = seq_num;
+        ephemeral_or_seq_num.seq_num = seq_num;
     }
 
     void increaseSeqNum()
     {
         chassert(!isEphemeral());
-        ++ephemeral_or_children_data.children_info.seq_num;
+        ++ephemeral_or_seq_num.seq_num;
     }
 
     int64_t ctime() const
@@ -126,17 +100,14 @@ private:
         int64_t ctime : 63;
     } is_ephemeral_and_ctime{false, 0};
 
-    /// ephemeral notes cannot have children so a node can set either
-    /// ephemeral_owner OR seq_num + num_children
+    /// ephemeral nodes cannot have children, so a node either stores
+    /// ephemeral_owner (the owning session) OR seq_num (the counter
+    /// for generating sequential children names under this node)
     union
     {
         int64_t ephemeral_owner;
-        struct
-        {
-            int32_t seq_num;
-            int32_t num_children;
-        } children_info;
-    } ephemeral_or_children_data{0};
+        int64_t seq_num;
+    } ephemeral_or_seq_num{0};
 };
 
 /// KeeperRocksNodeInfo is used in RocksDB keeper.
@@ -144,13 +115,25 @@ private:
 struct KeeperRocksNodeInfo
 {
     NodeStats stats;
-    uint64_t acl_id = 0; /// 0 -- no ACL by default
+    ACLId acl_id = 0; /// 0 -- no ACL by default
+    int32_t num_children = 0;
+
+    int32_t numChildren() const
+    {
+        if (stats.isEphemeral())
+            return 0;
+        return num_children;
+    }
+
+    void setNumChildren(int32_t value) { num_children = value; }
+    void increaseNumChildren() { ++num_children; }
+    void decreaseNumChildren() { --num_children; }
 
     /// dummy interface for test
     void addChild(std::string_view) {}
     auto getChildren() const
     {
-        return std::vector<int>(stats.numChildren());
+        return std::vector<int>(numChildren());
     }
 
     void copyStats(const Coordination::Stat & stat);
@@ -182,6 +165,7 @@ struct KeeperRocksNode : public KeeperRocksNodeInfo
     {
         stats = other.stats;
         acl_id = other.acl_id;
+        num_children = other.num_children;
         if (stats.data_size != 0)
         {
             data = std::unique_ptr<char[]>(new char[stats.data_size]);
@@ -222,7 +206,19 @@ struct KeeperMemNode
     std::unique_ptr<char[]> data{nullptr};
     mutable uint64_t cached_digest = 0;
 
-    uint64_t acl_id = 0; /// 0 -- no ACL by default
+    ACLId acl_id = 0; /// 0 -- no ACL by default
+    int32_t num_children = 0;
+
+    int32_t numChildren() const
+    {
+        if (stats.isEphemeral())
+            return 0;
+        return num_children;
+    }
+
+    void setNumChildren(int32_t value) { num_children = value; }
+    void increaseNumChildren() { ++num_children; }
+    void decreaseNumChildren() { --num_children; }
 
     KeeperMemNode() = default;
 
@@ -273,6 +269,11 @@ struct KeeperMemNode
 private:
     CompactChildrenSet children{};
 };
+
+/// Going to >160 bytes pushes to jemalloc bin #10 (192 bytes).
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
+static_assert(sizeof(KeeperMemNode) <= 160);
+#endif
 
 struct KeeperStorageStats
 {

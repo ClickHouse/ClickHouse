@@ -3,6 +3,9 @@
 #if USE_NLP
 
 /// Embedded SQL definitions
+///
+/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to
+/// make a scratch build.
 constexpr unsigned char resource_charset_zst[] =
 {
 #embed "../../contrib/nlp-data/charset.zst"

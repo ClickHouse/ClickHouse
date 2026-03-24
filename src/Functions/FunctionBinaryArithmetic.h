@@ -54,6 +54,7 @@
 #include <base/types.h>
 #include <base/wide_integer_to_string.h>
 #include <Common/Arena.h>
+#include <Core/AccurateComparison.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -2905,7 +2906,7 @@ public:
     bool hasInformationAboutMonotonicity() const override
     {
         const std::string_view name_view = Name::name;
-        return (name_view == "minus" || name_view == "plus" || name_view == "divide" || name_view == "intDiv");
+        return (name_view == "minus" || name_view == "plus" || name_view == "multiply" || name_view == "divide" || name_view == "intDiv");
     }
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field & left_point, const Field & right_point) const override
@@ -3038,6 +3039,101 @@ public:
                 bool is_constant_positive = accurateLess(Field(0), constant);
                 // division is saturated to `inf`, thus it doesn't have overflow issues.
                 return {true, is_constant_positive, true, is_strict};
+            }
+        }
+        if (name_view == "multiply")
+        {
+            /// variable * constant or constant * variable
+            const auto & const_side = (right.column && isColumnConst(*right.column)) ? right : left;
+            if (const_side.column && isColumnConst(*const_side.column))
+            {
+                auto constant = (*const_side.column)[0];
+                if (accurateEquals(constant, Field(0)))
+                    return {true, true, false, false}; /// x * 0 is constant, trivially monotonic but not strict
+
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
+
+                bool is_constant_positive = accurateLess(Field(0), constant);
+
+                /// Check if multiplication can overflow within [left_point, right_point].
+                ///
+                /// Multiply by constant `c` can have `c-1` wrap boundaries in modular arithmetic,
+                /// so unlike plus/minus, comparing endpoint directions does not reliably detect overflow.
+                /// Instead, we verify each endpoint is within [TYPE_MIN/c, TYPE_MAX/c].
+                /// If both are in this safe range, the entire interval is overflow-free.
+
+                auto check_overflow = [&]<typename T>(const Field & point, const Field & c, std::type_identity<T>) -> bool
+                {
+                    T type_min = std::numeric_limits<T>::min();
+                    T type_max = std::numeric_limits<T>::max();
+
+                    /// Convert Field to T, returning nullopt if the value is out of range.
+                    auto to_T = [&](const Field & f) -> std::optional<T>
+                    {
+                        return Field::dispatch([&](const auto & v) -> std::optional<T>
+                        {
+                            using V = std::decay_t<decltype(v)>;
+                            if constexpr (is_integer<V>)
+                            {
+                                if (accurate::lessOp(v, type_min) || accurate::greaterOp(v, type_max))
+                                    return std::nullopt;
+                                return static_cast<T>(v);
+                            }
+                            else
+                                return std::nullopt;
+                        }, f);
+                    };
+
+                    auto a = to_T(point);
+                    auto b = to_T(c);
+                    if (!a || !b)
+                        return true; /// value doesn't fit → overflow
+
+                    if (*b == T(0))
+                        return false;
+
+                    if constexpr (is_signed_v<T>)
+                    {
+                        /// TYPE_MIN / -1 is UB for native signed types.
+                        if (*b == T(-1))
+                            return *a == type_min;
+
+                        T lo = (*b > T(0)) ? (type_min / *b) : (type_max / *b);
+                        T hi = (*b > T(0)) ? (type_max / *b) : (type_min / *b);
+                        return *a < lo || *a > hi;
+                    }
+                    else
+                    {
+                        return *a > type_max / *b;
+                    }
+                };
+
+                auto overflows = [&]<typename T>(std::type_identity<T> tag)
+                {
+                    return check_overflow(left_point, constant, tag)
+                        || check_overflow(right_point, constant, tag);
+                };
+
+                WhichDataType which(ret_type->getTypeId());
+                bool overflow
+                    = which.isUInt8()   ? overflows(std::type_identity<UInt8>{})
+                    : which.isUInt16()  ? overflows(std::type_identity<UInt16>{})
+                    : which.isUInt32()  ? overflows(std::type_identity<UInt32>{})
+                    : which.isUInt64()  ? overflows(std::type_identity<UInt64>{})
+                    : which.isUInt128() ? overflows(std::type_identity<UInt128>{})
+                    : which.isUInt256() ? overflows(std::type_identity<UInt256>{})
+                    : which.isInt8()    ? overflows(std::type_identity<Int8>{})
+                    : which.isInt16()   ? overflows(std::type_identity<Int16>{})
+                    : which.isInt32()   ? overflows(std::type_identity<Int32>{})
+                    : which.isInt64()   ? overflows(std::type_identity<Int64>{})
+                    : which.isInt128()  ? overflows(std::type_identity<Int128>{})
+                    : which.isInt256()  ? overflows(std::type_identity<Int256>{})
+                    : true; /// unknown type — conservatively assume overflow
+
+                if (overflow)
+                    return {false, true, false, false};
+
+                return {true, is_constant_positive, false, true};
             }
         }
         return {false, true, false};

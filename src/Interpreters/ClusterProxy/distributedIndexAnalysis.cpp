@@ -62,6 +62,7 @@ namespace DB::Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool use_hedged_requests;
+    extern const SettingsBool distributed_index_analysis_only_on_coordinator;
 }
 
 namespace ProfileEvents
@@ -861,6 +862,11 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DistributedIndexAnalysisMicroseconds);
 
+    auto context_copy = Context::createCopy(context);
+    /// Disable parallel replicas to avoid O(N^2) spawned queries when the predicate has a subquery,
+    /// because each replica would independently spawn parallel replicas for the subquery.
+    context_copy->setSetting("enable_parallel_replicas", false);
+
     DistributedIndexAnalyzer analyzer(
         storage_id,
         filter_actions_dag,
@@ -869,7 +875,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         parts_with_ranges,
         vector_search_parameters,
         std::move(local_index_analysis_callback),
-        std::move(context));
+        std::move(context_copy));
 
     return analyzer.run();
 }

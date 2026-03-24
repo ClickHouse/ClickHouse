@@ -646,8 +646,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             parallel_read = false;
             LOG_TRACE(
                 getLogger("FormatFactory"),
-                "Failed to setup ParallelReadBuffer because of an exception:\n{}.\n"
-                "Falling back to the single-threaded buffer",
+                "Failed to setup ParallelReadBuffer because of an exception: {}. Falling back to the single-threaded buffer",
                 e.displayText());
         }
     }
