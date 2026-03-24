@@ -361,7 +361,14 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         case ReadStage::ColumnData:
         {
             if (row_subgroup.filter.rows_pass == 0)
+            {
+                /// PREWHERE filtered every row in this subgroup.  Count the rows as having
+                /// been read from disk so that StorageObjectStorageSource can report the
+                /// correct read_rows (i.e., rows physically scanned, not rows returned
+                /// after filtering).
+                rows_read_from_disk.fetch_add(row_subgroup.filter.rows_total, std::memory_order_relaxed);
                 break;
+            }
             if (step_idx > 0 && step_idx <= reader.steps.size())
             {
                 reader.applyPrewhere(row_subgroup, row_group, step_idx);
@@ -1124,6 +1131,10 @@ ReadManager::ReadResult ReadManager::read()
     ///       For (4) and (5), either add things to struct Progress or make progress bar use
     ///       ProfileEvents instead of Progress.
     size_t virtual_bytes_read = size_t(row_group.meta->total_compressed_size) * row_subgroup.filter.rows_total / std::max(size_t(1), size_t(row_group.meta->num_rows));
+
+    /// Count all rows physically read (before PREWHERE filtering) so that callers can report
+    /// correct read_rows progress.  rows_total is the subgroup size before any filtering.
+    rows_read_from_disk.fetch_add(row_subgroup.filter.rows_total, std::memory_order_relaxed);
 
     /// This updates `memory_usage` of previous stages, which may allow more tasks to be scheduled.
     MemoryUsageDiff diff(ReadStage::Deliver);

@@ -54,6 +54,11 @@ public:
     /// Not thread safe.
     ReadResult read();
 
+    /// Returns the total number of rows physically read from disk across all row subgroups
+    /// processed so far, including rows that were subsequently filtered out by PREWHERE.
+    /// Thread safe (may be called concurrently with worker threads).
+    size_t getRowsReadFromDisk() const { return rows_read_from_disk.load(std::memory_order_relaxed); }
+
     void cancel() noexcept;
 
 private:
@@ -106,6 +111,12 @@ private:
     std::array<Stage, size_t(ReadStage::Deallocated)> stages;
     /// First row group that hasn't reached Deallocated stage.
     std::atomic<size_t> first_incomplete_row_group {0};
+
+    /// Rows physically processed from disk (before PREWHERE filtering).
+    /// Incremented both for delivered row subgroups and for subgroups whose rows were
+    /// all eliminated by PREWHERE.  Used to report correct read_rows progress even when
+    /// PREWHERE filters every row in a file.
+    std::atomic<size_t> rows_read_from_disk {0};
 
     std::mutex delivery_mutex;
     std::priority_queue<Task, std::vector<Task>, Task::Comparator> delivery_queue;

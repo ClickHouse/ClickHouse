@@ -126,6 +126,15 @@ public:
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
+    /// Returns the cumulative number of rows physically read from the underlying storage
+    /// for this format instance, including rows that were subsequently eliminated by
+    /// PREWHERE or other in-format filtering.  The default implementation returns 0,
+    /// meaning the caller should fall back to counting rows in the returned chunk.
+    /// Formats that apply filtering internally (e.g. ParquetV3) should override this to
+    /// let StorageObjectStorageSource report the correct read_rows even when all rows are
+    /// filtered out.
+    virtual size_t getRowsReadFromDisk() const { return 0; }
+
     void needOnlyCount() { need_only_count = true; }
 
 protected:

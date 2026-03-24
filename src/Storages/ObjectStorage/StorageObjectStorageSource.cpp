@@ -480,6 +480,19 @@ Chunk StorageObjectStorageSource::generate()
             && !format_filter_info->filter_actions_dag)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
+        /// If the format reader applied PREWHERE internally (e.g. ParquetV3 with native
+        /// PREWHERE support), some rows may have been physically read from disk but then
+        /// filtered out before being returned as chunks, so total_rows_in_file underestimates
+        /// the number of rows actually scanned.  Report the gap so that
+        /// system.query_log.read_rows reflects the rows physically scanned, consistent with
+        /// how MergeTree counts read_rows when PREWHERE is used.
+        if (const auto * input_format = reader.getInputFormat())
+        {
+            const size_t rows_from_disk = input_format->getRowsReadFromDisk();
+            if (rows_from_disk > total_rows_in_file)
+                progress(rows_from_disk - total_rows_in_file, 0);
+        }
+
         total_rows_in_file = 0;
 
         assert(reader_future.valid());

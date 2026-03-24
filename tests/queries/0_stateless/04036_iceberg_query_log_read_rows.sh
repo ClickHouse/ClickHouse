@@ -2,9 +2,17 @@
 # Tags: no-fasttest
 
 # Regression test for: system.query_log.read_rows = 0 for Iceberg reads
-# IcebergIterator::next() was not calling the FileProgress callback and
-# IcebergDataObjectInfo was not populating ObjectMetadata.size_bytes.
-# This verifies that read_rows is correctly tracked when reading Iceberg tables.
+# Two related bugs are covered:
+#
+# Bug 1 (original): IcebergIterator::next() was not calling the FileProgress
+# callback and IcebergDataObjectInfo was not populating ObjectMetadata.size_bytes.
+# This caused read_rows = 0 for normal aggregate queries.
+#
+# Bug 2 (issue #97172): With Parquet native reader v3 (default since 26.2),
+# PREWHERE is applied inside the format reader.  When every row is filtered out
+# by PREWHERE the reader returns no chunks, so StorageObjectStorageSource never
+# calls progress() and read_rows = 0 even though all rows were physically read.
+# The fix tracks rows_total in ReadManager and reports the gap at file boundary.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,25 +30,51 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO t_04036 SELECT number FROM numbers(100);
 "
 
-# Run a uniquely-commented SELECT so we can identify it in system.query_log.
-# optimize_count_from_files = 0 forces actual Parquet file reads instead of
-# using the manifest record_count to answer the query without reading data.
+# --- Test 1: normal aggregate query forces actual Parquet file reads ---
+# optimize_count_from_files = 0 prevents using manifest record_count.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT /* 04036_iceberg_read_rows_test */ sum(c0)
     FROM icebergLocal('${ICEBERG_TABLE_PATH}')
     SETTINGS optimize_count_from_files = 0
 " > /dev/null
 
+# --- Test 2: PREWHERE filters every row (issue #97172 regression) ---
+# c0 values are 0..99, so PREWHERE c0 < 0 matches nothing.
+# With use_iceberg_partition_pruning = 0 the manifest stats are not used to
+# prune the file, and with input_format_parquet_filter_push_down = 0 the row
+# group statistics are not used either.  The file IS opened and all 100 rows
+# are physically read for PREWHERE evaluation, but no rows are returned to the
+# pipeline.  Before the fix read_rows was 0; after the fix it is 100.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT /* 04036_iceberg_prewhere_test */ *
+    FROM icebergLocal('${ICEBERG_TABLE_PATH}')
+    PREWHERE c0 < 0
+    SETTINGS
+        use_iceberg_partition_pruning = 0,
+        input_format_parquet_filter_push_down = 0
+" > /dev/null
+
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
-# Verify read_rows > 0: the regression caused this to be 0 even with all
-# pruning disabled, because the FileProgress callback was never invoked and
-# ObjectMetadata was not populated from the Iceberg manifest.
+# Verify test 1: read_rows > 0
 ${CLICKHOUSE_CLIENT} --query "
     SELECT read_rows > 0
     FROM system.query_log
     WHERE current_database = currentDatabase()
       AND query LIKE '%04036_iceberg_read_rows_test%'
+      AND type = 'QueryFinish'
+      AND event_date >= yesterday()
+    ORDER BY event_time DESC
+    LIMIT 1
+"
+
+# Verify test 2: read_rows equals the table row count (100) even though PREWHERE
+# filtered every row.  Before the fix this returned 0.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT read_rows
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND query LIKE '%04036_iceberg_prewhere_test%'
       AND type = 'QueryFinish'
       AND event_date >= yesterday()
     ORDER BY event_time DESC

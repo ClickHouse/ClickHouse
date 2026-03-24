@@ -36,6 +36,13 @@ public:
         return previous_approx_bytes_read_for_chunk;
     }
 
+    size_t getRowsReadFromDisk() const override
+    {
+        /// Called after pull() has returned false (reader exhausted), so the reader is
+        /// guaranteed to be initialized at this point.
+        return reader.has_value() ? reader->getRowsReadFromDisk() : 0;
+    }
+
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
 private:
