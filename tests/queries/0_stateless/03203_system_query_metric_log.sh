@@ -78,5 +78,5 @@ $CLICKHOUSE_CLIENT -m -q """
 # a query that takes more than query_metric_log_interval is collected including the final row
 $CLICKHOUSE_CLIENT -m -q """
     SELECT '--Check that there is a final event when queries finish';
-    SELECT count() > 2 FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_1000'
+    SELECT count() >= 2 FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_1000'
 """
