@@ -37,7 +37,7 @@ public:
     ITokenizer(const ITokenizer &) = default;
     ITokenizer & operator=(const ITokenizer &) = default;
 
-    Type getType() const { return type{}; }
+    Type getType() const { return type; }
 
     virtual ~ITokenizer() = default;
     virtual std::unique_ptr<ITokenizer> clone() const = 0;
@@ -94,7 +94,7 @@ public:
     virtual bool supportsStringLike() const = 0;
 
 private:
-    Type type;
+    Type type{};
 };
 
 using TokenizerPtr = const ITokenizer *;
