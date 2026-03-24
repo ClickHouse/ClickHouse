@@ -204,6 +204,9 @@ Approximate memory limit for Parquet reader v3. Limits how many row groups or co
     DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
 Skip pages using min/max values from column index.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_spatial_filter_push_down, true, R"(
+When reading GeoParquet files, skip whole row groups based on spatial predicates in the WHERE clause and the geometry bounding box statistics (geospatial_statistics.bbox or covering.bbox columns) in the Parquet metadata.
+)", 0) \
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
 )", 0) \

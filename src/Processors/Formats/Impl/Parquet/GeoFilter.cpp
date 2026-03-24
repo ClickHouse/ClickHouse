@@ -1,16 +1,13 @@
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/box.hpp>
-
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Functions/IFunction.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Common/WKB.h>
 
 #include <cmath>
 #include <cstring>
@@ -26,51 +23,80 @@ namespace
 /// Spatial predicate names where we can skip a row group if the row group bbox
 /// is DISJOINT from the constant query bbox (the predicate is provably FALSE for all rows).
 const std::unordered_set<std::string_view> kPruningPredicates = {
-    "st_intersects",
-    "st_intersects_extent",
-    "st_contains",
-    "st_within",
-    "st_covers",
-    "st_coveredby",
-    "st_containsproperly",
-    "st_touches",
-    "st_crosses",
-    "st_overlaps",
+    /// CH native geometry functions (Point/Polygon Tuple/Array arguments)
+    "polygonsIntersectCartesian",
+    "polygonsWithinCartesian",
+    "pointInPolygon",
 };
 
-/// Extract WKB bytes from a deterministic constant node.
-/// Returns empty view if the node is not a constant String.
-std::string_view tryGetConstWKB(const DB::ActionsDAG::Node * node)
+/// Recursively walk a constant column (ColumnConst / ColumnTuple / ColumnArray) at the
+/// given row index and accumulate min/max x/y. Handles:
+///   • ColumnConst   — unwrap and recurse at row 0
+///   • ColumnTuple(ColumnFloat64, ColumnFloat64)  — a 2D point
+///   • ColumnArray(…) — iterate elements
+void accumulateBboxFromColumn(
+    const DB::IColumn & col, size_t row,
+    double & xmin, double & ymin,
+    double & xmax, double & ymax,
+    bool & found)
+{
+    if (const auto * const_col = typeid_cast<const DB::ColumnConst *>(&col))
+    {
+        accumulateBboxFromColumn(const_col->getDataColumn(), 0, xmin, ymin, xmax, ymax, found);
+        return;
+    }
+    if (const auto * tuple_col = typeid_cast<const DB::ColumnTuple *>(&col))
+    {
+        if (tuple_col->tupleSize() < 2 || row >= tuple_col->size())
+            return;
+        const auto * x_col = typeid_cast<const DB::ColumnFloat64 *>(&tuple_col->getColumn(0));
+        const auto * y_col = typeid_cast<const DB::ColumnFloat64 *>(&tuple_col->getColumn(1));
+        if (!x_col || !y_col)
+            return;
+        double x = x_col->getData()[row];
+        double y = y_col->getData()[row];
+        if (!std::isfinite(x) || !std::isfinite(y))
+            return;
+        xmin = std::min(xmin, x);
+        ymin = std::min(ymin, y);
+        xmax = std::max(xmax, x);
+        ymax = std::max(ymax, y);
+        found = true;
+        return;
+    }
+    if (const auto * array_col = typeid_cast<const DB::ColumnArray *>(&col))
+    {
+        if (row >= array_col->size())
+            return;
+        const auto & offsets = array_col->getOffsets();
+        const size_t start = row > 0 ? offsets[row - 1] : 0;
+        const size_t end = offsets[row];
+        for (size_t i = start; i < end; ++i)
+            accumulateBboxFromColumn(array_col->getData(), i, xmin, ymin, xmax, ymax, found);
+    }
+}
+
+/// Try to extract the bounding box of a constant node.
+/// Handles CH native geometry in a ColumnTuple/ColumnArray (Point, Polygon, MultiPolygon).
+bool tryExtractConstBbox(
+    const DB::ActionsDAG::Node * node,
+    double & xmin, double & ymin,
+    double & xmax, double & ymax)
 {
     if (!node->column || !node->is_deterministic_constant)
-        return {};
+        return false;
 
     const DB::IColumn * raw = node->column.get();
     if (const auto * const_col = typeid_cast<const DB::ColumnConst *>(raw))
         raw = &const_col->getDataColumn();
-    const auto * str_col = typeid_cast<const DB::ColumnString *>(raw);
-    if (!str_col || str_col->size() == 0)
-        return {};
 
-    return str_col->getDataAt(0);
-}
-
-/// Compute bbox of any GeometricObject using boost::geometry::envelope.
-bool computeBbox(
-    const DB::GeometricObject & obj,
-    double & xmin, double & ymin,
-    double & xmax, double & ymax)
-{
-    boost::geometry::model::box<DB::CartesianPoint> box;
-    std::visit([&box](const auto & geom) { boost::geometry::envelope(geom, box); }, obj);
-
-    xmin = box.min_corner().x();
-    ymin = box.min_corner().y();
-    xmax = box.max_corner().x();
-    ymax = box.max_corner().y();
-
-    return std::isfinite(xmin) && std::isfinite(ymin)
-        && std::isfinite(xmax) && std::isfinite(ymax);
+    xmin = std::numeric_limits<double>::infinity();
+    ymin = std::numeric_limits<double>::infinity();
+    xmax = -std::numeric_limits<double>::infinity();
+    ymax = -std::numeric_limits<double>::infinity();
+    bool found = false;
+    accumulateBboxFromColumn(*raw, 0, xmin, ymin, xmax, ymax, found);
+    return found;
 }
 
 /// Decode a little-endian IEEE 754 double from Parquet statistics binary encoding.
@@ -103,7 +129,7 @@ std::vector<SpatialFilter> extractSpatialFilters(
         if (node.children.size() < 2)
             continue;
 
-        /// Find one INPUT child (the geometry column) and one constant COLUMN child (WKB blob).
+        /// Find one INPUT child (the geometry column) and one constant COLUMN child (geometry constant).
         const DB::ActionsDAG::Node * col_node = nullptr;
         const DB::ActionsDAG::Node * const_node = nullptr;
 
@@ -125,24 +151,13 @@ std::vector<SpatialFilter> extractSpatialFilters(
         if (!sample_block.has(col_node->result_name))
             continue;
 
-        /// Extract WKB bytes from the constant.
-        std::string_view wkb = tryGetConstWKB(const_node);
-        if (wkb.size() < 5) // minimum valid WKB is 5 bytes (1 byte order + 4 type)
-            continue;
-
-        /// Parse WKB and compute bounding box.
+        /// Extract query bounding box from the constant geometry argument.
         double xmin = 0;
         double ymin = 0;
         double xmax = 0;
         double ymax = 0;
-        try
-        {
-            DB::ReadBufferFromMemory buf(wkb.data(), wkb.size());
-            DB::GeometricObject obj = DB::parseWKBFormat(buf);
-            if (!computeBbox(obj, xmin, ymin, xmax, ymax))
-                continue;
-        }
-        catch (...) { continue; }
+        if (!tryExtractConstBbox(const_node, xmin, ymin, xmax, ymax))
+            continue;
 
         SpatialFilter filter;
         filter.geometry_column_name = col_node->result_name;
