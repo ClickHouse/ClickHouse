@@ -1,3 +1,5 @@
+-- Tags: no-tsan
+
 DROP TABLE IF EXISTS events;
 
 SET allow_suspicious_low_cardinality_types = 1;
@@ -44,6 +46,7 @@ SET query_plan_join_swap_table = 0;
 SET enable_analyzer = 1;
 SET join_algorithm = 'direct';
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
+SET query_plan_optimize_prewhere = 1;
 
 SELECT count(), countIf(t1.Attribute != ''), sum(sipHash64(t1.Attribute))
 FROM events AS t0 INNER JOIN attributes AS t1 ON t1.EventId = t0.Id
@@ -87,7 +90,7 @@ SELECT
     if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 10 AND 1_000_000, 'OK',
         format('Fail: JoinBuildTableRowCount={}, query_id={}', ProfileEvents['JoinBuildTableRowCount'], query_id)),
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_time >= yesterday() AND query_kind = 'Select'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND event_time >= yesterday() AND query_kind = 'Select'
     AND log_comment == '03712_nested_loop_join_merge_tree_indexed'
 ;
 
@@ -97,6 +100,6 @@ SELECT
     if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 1_100_000 AND 2_100_000, 'OK',
         format('Fail: JoinBuildTableRowCount={}, query_id="{}"', ProfileEvents['JoinBuildTableRowCount'], query_id)),
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_time >= yesterday() AND query_kind = 'Select'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND event_time >= yesterday() AND query_kind = 'Select'
     AND log_comment == '03712_nested_loop_join_merge_tree_full_scan'
 ;

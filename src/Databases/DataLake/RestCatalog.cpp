@@ -22,6 +22,7 @@
 #include <Common/checkStackSize.h>
 
 #include <IO/ConnectionTimeouts.h>
+#include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -214,7 +215,7 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
         result.default_base_location = object->get("default-base-location").extract<String>();
 }
 
-DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool /*update_token*/) const
+DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
 {
     /// Option 1: user specified auth header manually.
     /// Header has format: 'Authorization: <scheme> <token>'.
@@ -223,8 +224,20 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool /*update_token*/) const
         return DB::HTTPHeaderEntries{auth_header.value()};
     }
 
-    /// For base RestCatalog, if catalog_credential is provided, token should be obtained
-    /// by derived classes (OneLakeCatalog, BigLakeCatalog) which override this method.
+    /// Option 2: user provided grant_type, client_id and client_secret.
+    /// We would make OAuthClientCredentialsRequest
+    /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
+    if (!client_id.empty())
+    {
+        if (!access_token.has_value() || update_token)
+        {
+            access_token = retrieveAccessToken();
+        }
+
+        DB::HTTPHeaderEntries headers;
+        headers.emplace_back("Authorization", "Bearer " + access_token.value().token);
+        return headers;
+    }
     return {};
 }
 
@@ -252,27 +265,7 @@ OneLakeCatalog::OneLakeCatalog(
     config = loadConfig();
 }
 
-DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(bool update_token) const
-{
-    /// User provided grant_type, client_id and client_secret.
-    /// We would make OAuthClientCredentialsRequest
-    /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
-    if (!client_id.empty())
-    {
-        if (!access_token.has_value() || update_token || access_token->isExpired())
-        {
-            access_token = retrieveAccessToken();
-        }
-
-        DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token->token);
-        return headers;
-    }
-
-    return RestCatalog::getAuthHeaders(update_token);
-}
-
-AccessToken OneLakeCatalog::retrieveAccessToken() const
+AccessToken RestCatalog::retrieveAccessToken() const
 {
     static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
 
@@ -350,7 +343,9 @@ AccessToken OneLakeCatalog::retrieveAccessToken() const
     if (object->has("expires_in"))
     {
         Int64 expires_in = object->getValue<Int64>("expires_in");
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in - 300); /// 5 minutes buffer
+        /// Use 90% of the token lifetime as the validity window so that short-lived tokens
+        /// (e.g. expires_in=300) still get a sensible buffer instead of going non-positive.
+        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
     }
 
     return token;
@@ -420,103 +415,18 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
 
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() const
 {
-    static constexpr auto GOOGLE_OAUTH2_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
-
     if (google_adc_client_id.empty() || google_adc_client_secret.empty() || google_adc_refresh_token.empty())
-    {
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
             "Invalid ADC credentials: client_id, client_secret, and refresh_token are required");
-    }
-
-    Poco::URI url(GOOGLE_OAUTH2_TOKEN_ENDPOINT);
-
-    String encoded_refresh_token;
-    String encoded_client_id;
-    String encoded_client_secret;
-    Poco::URI::encode(google_adc_refresh_token, google_adc_refresh_token, encoded_refresh_token);
-    Poco::URI::encode(google_adc_client_id, google_adc_client_id, encoded_client_id);
-    Poco::URI::encode(google_adc_client_secret, google_adc_client_secret, encoded_client_secret);
-    String body = fmt::format(
-        "grant_type=refresh_token&client_id={}&client_secret={}&refresh_token={}",
-        encoded_client_id, encoded_client_secret, encoded_refresh_token
-    );
 
     const auto & context = getContext();
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-    DB::HTTPSessionPtr session;
-
-    /// For some reason session can be not initialized after first time, so we need to do retries
-    for (size_t i = 0; i < 5; ++i)
-    {
-        try
-        {
-            session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
-            break;
-        }
-        catch (...)
-        {
-            DB::tryLogCurrentException(log);
-        }
-    }
-    if (!session)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Session for big lake catalog is not initialized");
-
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery(),
-                                    Poco::Net::HTTPMessage::HTTP_1_1);
-    request.setContentType("application/x-www-form-urlencoded");
-    request.setContentLength(body.size());
-    request.set("Accept", "application/json");
-
-    LOG_DEBUG(log, "Token endpoint host={} path={}", url.getHost(), url.getPathAndQuery());
-
-    std::ostream & os = session->sendRequest(request);
-    os << body;
-
-    Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
-
-    String token_json_raw;
-    Poco::StreamCopier::copyToString(rs, token_json_raw);
-
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Failed to request Google Cloud access token using refresh token: {} (status: {})",
-            response.getReason(),
-            static_cast<int>(response.getStatus()));
-    }
-
-    Poco::JSON::Parser parser;
-    auto object = parser.parse(token_json_raw).extract<Poco::JSON::Object::Ptr>();
-
-    if (!object->has("access_token") || !object->has("token_type"))
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Unexpected structure of Google Cloud token response. Response should have fields: 'access_token', 'token_type'");
-    }
-
-    auto token_type = object->getValue<String>("token_type");
-    if (token_type != "Bearer")
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Unexpected token type in Google Cloud response. Expected Bearer token, got {}",
-            token_type);
-    }
+    auto result = fetchGCPOAuthToken(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, timeouts);
 
     AccessToken token;
-    token.token = object->getValue<String>("access_token");
-
-    /// Cache token expiration if provided (typically 3600 seconds for refresh token flow)
-    if (object->has("expires_in"))
-    {
-        Int64 expires_in = object->getValue<Int64>("expires_in");
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in - 300); /// 5 minutes buffer
-    }
-
+    token.token = std::move(result.access_token);
+    token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(result.expires_in * 9 / 10);
     return token;
 }
 
@@ -595,12 +505,10 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     AccessToken token;
     token.token = object->getValue<String>("access_token");
 
-    /// For refresh token flow, tokens typically expire in 1 hour
-    /// We'll cache for 55 minutes to be safe
     if (object->has("expires_in"))
     {
         Int64 expires_in = object->getValue<Int64>("expires_in");
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in - 300);
+        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
     }
 
     return token;
@@ -818,8 +726,11 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
             const int idx = static_cast<int>(current_namespace_array->size()) - 1;
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
-            /// Biglake for some unknown reason can return `base_namespace` as child of `base_namespace`
-            if (getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE && !base_namespace.empty() && current_namespace == base_namespace)
+            /// BigLake does not support multi-level namespaces. When asked for sub-namespaces of
+            /// a non-empty parent (via ?parent=X), BigLake ignores the filter and returns other
+            /// top-level namespaces instead. Skip all sub-namespace results to avoid constructing
+            /// fake multi-level paths like "ns1.ns2" that BigLake will reject with HTTP 400.
+            if (getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE && !base_namespace.empty())
             {
                 continue;
             }
@@ -1210,10 +1121,18 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
     {
         case StorageType::S3:
         {
+            static constexpr auto gcs_token_str = "gcs.oauth2.token";
             static constexpr auto access_key_id_str = "s3.access-key-id";
             static constexpr auto secret_access_key_str = "s3.secret-access-key";
             static constexpr auto session_token_str = "s3.session-token";
             static constexpr auto storage_endpoint_str = "s3.endpoint";
+
+            if (object->has(gcs_token_str))
+            {
+                auto gcs_token = object->get(gcs_token_str).extract<String>();
+                LOG_DEBUG(log, "Using GCS OAuth2 token for location {}", location);
+                return {std::make_shared<GCSCredentials>(gcs_token), ""};
+            }
 
             std::string access_key_id;
             std::string secret_access_key;
@@ -1289,18 +1208,28 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         Poco::Dynamic::Var json = parser.parse(json_str);
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
-        std::string location;
+        if (!object->has("config"))
         {
-            if (object->has("metadata-location"))
-            {
-                location = object->get("metadata-location").extract<String>();
-                LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
-            }
-            else
-            {
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot read table {}, because no 'location' in response", table_name);
-            }
+            LOG_DEBUG(log, "No 'config' in response for table {} – catalog does not support credential vending", table_name);
+            return nullptr;
+        }
+
+        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
+        if (!config_object)
+        {
+            LOG_DEBUG(log, "Empty 'config' in response for table {}", table_name);
+            return nullptr;
+        }
+
+        std::string location;
+        if (object->has("metadata-location"))
+        {
+            location = object->get("metadata-location").extract<String>();
+            LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
+        }
+        else
+        {
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot read table {}, because no 'metadata-location' in response", table_name);
         }
 
         auto [new_credentials, _] = getCredentialsAndEndpoint(config_object, location);

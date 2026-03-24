@@ -11,12 +11,24 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
-static const auto nastyStrings = [](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(rg.nasty_strings) + "'"; };
+const std::unordered_set<String> blockSizes = {"1", "2", "4", "8", "16", "32", "64", "1024", "2048", "4096", "16384", "1048576"}; /// 1MB
+
+static const auto nastyStrings = [](RandomGenerator & rg, FuzzConfig &)
+{
+    String ret = "'";
+
+    for (const char c : rg.pickRandomly(rg.nasty_strings))
+    {
+        ret += (c == '\'') ? "''" : String(1, c);
+    }
+    ret += "'";
+    return ret;
+};
 
 static const auto setSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &)
     {
-        static const DB::Strings & choices = {"''", "'ALL'", "'DISTINCT'"};
+        static const DB::Strings choices = {"''", "'ALL'", "'DISTINCT'"};
         return rg.pickRandomly(choices);
     },
     {},
@@ -51,8 +63,122 @@ static String settingCombinations(RandomGenerator & rg, DB::Strings && choices)
     return "'" + res + "'";
 }
 
+String generateNextCodecString(RandomGenerator & rg)
+{
+    String res;
+    DB::Strings choices;
+
+    if (rg.nextBool())
+    {
+        /// Pick just one
+        choices.emplace_back(rg.pickRandomly(codecs));
+    }
+    else
+    {
+        /// Pick a combination of some or none
+        std::vector<uint32_t> ids;
+        const uint32_t ncodecs = rg.randomInt<uint32_t>(1, std::min(UINT32_C(4), static_cast<uint32_t>(codecs.size())));
+
+        for (size_t i = 0; i < ncodecs; i++)
+        {
+            ids.emplace_back(i);
+        }
+        std::shuffle(ids.begin(), ids.end(), rg.generator);
+        for (uint32_t i = 0; i < ncodecs; i++)
+        {
+            choices.emplace_back(codecs[ids[i]]);
+        }
+    }
+
+    for (size_t i = 0; i < choices.size(); i++)
+    {
+        if (i != 0)
+        {
+            res += ",";
+        }
+        res += choices[i];
+        if (choices[i] == "LZ4HC" && rg.nextBool())
+        {
+            res += "(";
+            res += std::to_string(rg.randomInt<uint32_t>(0, 12));
+            res += ")";
+        }
+        else if (choices[i] == "ZSTD" && rg.nextBool())
+        {
+            res += "(";
+            res += std::to_string(rg.randomInt<uint32_t>(1, 22));
+            res += ")";
+        }
+        else if ((choices[i] == "Delta" || choices[i] == "DoubleDelta") && rg.nextBool())
+        {
+            res += "(";
+            res += std::to_string(UINT32_C(1) << rg.randomInt<uint32_t>(0, 3));
+            res += ")";
+        }
+        else if (choices[i] == "Gorilla" && rg.nextBool())
+        {
+            res += "(";
+            res += std::to_string(rg.nextBool() ? 4 : 8);
+            res += ")";
+        }
+        else if (choices[i] == "FPC" && rg.nextBool())
+        {
+            res += "(";
+            res += std::to_string(rg.randomInt<uint32_t>(1, 28));
+            res += ",";
+            res += std::to_string(rg.nextBool() ? 4 : 8);
+            res += ")";
+        }
+    }
+    return res;
+}
+
+String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc)
+{
+    if (rg.nextBool())
+    {
+        return fc.getRandomIcebergHistoryValue("toUnixTimestamp64Milli(\"made_current_at\")");
+    }
+    else
+    {
+        static const std::vector<uint32_t> values = {1, 2, 3, 5, 10, 15, 20};
+        const auto now = std::chrono::system_clock::now();
+
+        /// Convert to milliseconds since epoch
+        auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        ms -= (rg.pickRandomly(values) * 1000);
+        return std::to_string(ms);
+    }
+}
+
+/// Returns a DateTime string suitable for expire_snapshots positional/expire_before arguments.
+/// The parser uses readDateTimeText (expects "YYYY-MM-DD HH:MM:SS") and then multiplies by 1000,
+/// so we must produce seconds-granularity DateTime strings, not millisecond integers.
+String getNextIcebergExpireTimestamp(RandomGenerator & rg, FuzzConfig & fc)
+{
+    if (rg.nextBool())
+    {
+        /// Convert history ms timestamp to DateTime string that readDateTimeText can parse.
+        return fc.getRandomIcebergHistoryValue("toString(toDateTime(intDiv(\"made_current_at\", 1000)))");
+    }
+    else
+    {
+        char buf[32];
+        struct tm tm_buf;
+        static const std::vector<uint32_t> offsets_sec = {1, 2, 3, 5, 10, 15, 20, 30, 60};
+        const auto now = std::chrono::system_clock::now();
+        auto secs = static_cast<time_t>(duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
+
+        secs -= rg.pickRandomly(offsets_sec);
+        if (!localtime_r(&secs, &tm_buf) || !strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_buf))
+            return {};
+        return buf;
+    }
+}
+
 std::unordered_map<String, CHSetting> performanceSettings
     = {{"allow_aggregate_partitions_independently", trueOrFalseSetting},
+       {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", trueOrFalseSetting},
        {"allow_execute_multiif_columnar", trueOrFalseSetting},
        {"allow_experimental_query_deduplication", trueOrFalseSetting},
        {"allow_general_join_planning", trueOrFalseSetting},
@@ -63,6 +189,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"allow_push_predicate_when_subquery_contains_with", trueOrFalseSetting},
        {"allow_reorder_prewhere_conditions", trueOrFalseSetting},
        {"allow_simdjson", trueOrFalseSetting},
+       {"allow_statistics_optimize", trueOrFalseSetting},
        {"cluster_function_process_archive_on_multiple_nodes", trueOrFalseSetting},
        {"compile_aggregate_expressions", trueOrFalseSetting},
        {"compile_expressions", trueOrFalseSetting},
@@ -73,7 +200,7 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
+                static const DB::Strings choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
                 return rg.pickRandomly(choices);
             },
             {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"},
@@ -170,6 +297,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_use_projections", trueOrFalseSetting},
        {"optimize_use_projection_filtering", trueOrFalseSetting},
        {"optimize_inverse_dictionary_lookup", trueOrFalseSetting},
+       {"parallel_non_joined_rows_processing", trueOrFalseSetting},
        {"parallel_replicas_only_with_analyzer", trueOrFalseSetting},
        {"parallel_replicas_prefer_local_join", trueOrFalseSetting},
        {"parallel_view_processing", trueOrFalseSetting},
@@ -178,6 +306,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"prefer_global_in_and_join", trueOrFalseSetting},
        {"prefer_localhost_replica", trueOrFalseSetting},
        {"query_plan_aggregation_in_order", trueOrFalseSetting},
+       {"query_plan_convert_any_join_to_semi_or_anti_join", trueOrFalseSetting},
        {"query_plan_convert_join_to_in", trueOrFalseSetting},
        {"query_plan_convert_outer_join_to_inner_join", trueOrFalseSetting},
        {"query_plan_direct_read_from_text_index", trueOrFalseSetting},
@@ -195,7 +324,7 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"0", "1", "'auto'"};
+                static const DB::Strings choices = {"0", "1", "'auto'"};
                 return rg.pickRandomly(choices);
             },
             {"0", "1", "'auto'"},
@@ -238,7 +367,7 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'enable'", "'force_enable'", "'disable'"};
+                static const DB::Strings choices = {"'enable'", "'force_enable'", "'disable'"};
                 return rg.pickRandomly(choices);
             },
             {"'enable'", "'force_enable'", "'disable'"},
@@ -250,12 +379,11 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'lz4'", "'none'"};
+                static const DB::Strings choices = {"'lz4'", "'none'"};
                 return rg.pickRandomly(choices);
             },
             {},
             false)},
-       {"text_index_use_bloom_filter", trueOrFalseSetting},
        {"use_concurrency_control", trueOrFalseSetting},
        {"use_iceberg_partition_pruning", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries", trueOrFalseSetting},
@@ -263,6 +391,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_join_disjunctions_push_down", trueOrFalseSetting},
        /// ClickHouse cloud setting
        {"use_page_cache_with_distributed_cache", trueOrFalseSetting},
+       {"use_partition_pruning", trueOrFalseSetting},
        {"use_primary_key", trueOrFalseSetting},
        {"use_query_condition_cache", trueOrFalseSetting},
        {"use_skip_indexes", trueOrFalseSetting},
@@ -281,7 +410,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'state'", "'value'", "'array'"};
+             static const DB::Strings choices = {"'state'", "'value'", "'array'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -293,11 +422,12 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_changing_replica_until_first_data_packet", trueOrFalseSettingNoOracle},
     {"allow_dynamic_type_in_join_keys", trueOrFalseSettingNoOracle},
     {"allow_experimental_delta_kernel_rs", trueOrFalseSettingNoOracle},
-    {"allow_experimental_nullable_tuple_type", trueOrFalseSettingNoOracle},
     {"allow_get_client_http_header", trueOrFalseSettingNoOracle},
     {"allow_introspection_functions", trueOrFalseSetting},
+    {"allow_nullable_tuple_in_extracted_subcolumns", trueOrFalseSettingNoOracle},
     {"allow_special_bool_values_inside_variant", trueOrFalseSettingNoOracle},
     {"allow_special_serialization_kinds_in_output_formats", trueOrFalseSetting},
+    {"allow_unrestricted_reads_from_keeper", trueOrFalseSettingNoOracle},
     {"alter_move_to_space_execute_async", trueOrFalseSettingNoOracle},
     {"alter_partition_verbose_result", trueOrFalseSettingNoOracle},
     {"alter_sync", CHSetting(zeroOneTwo, {}, false)},
@@ -305,17 +435,21 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'heavy'", "'lightweight'", "'lightweight_force'"};
+             static const DB::Strings choices = {"'heavy'", "'lightweight'", "'lightweight_force'"};
              return rg.pickRandomly(choices);
          },
          {},
          false)},
-    {"allow_unrestricted_reads_from_keeper", trueOrFalseSettingNoOracle},
     {"analyze_index_with_space_filling_curves", trueOrFalseSetting},
     {"analyzer_compatibility_join_using_top_level_identifier", trueOrFalseSetting},
     {"apply_deleted_mask", trueOrFalseSettingNoOracle},
     {"apply_mutations_on_fly", trueOrFalseSettingNoOracle},
     {"apply_patch_parts", trueOrFalseSetting},
+    {"apply_patch_parts_join_cache_buckets",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 64)); },
+         {"0", "1", "2", "4", "16", "64"},
+         false)},
     {"apply_prewhere_after_final", trueOrFalseSettingNoOracle},
     {"apply_row_policy_after_final", trueOrFalseSettingNoOracle},
     {"apply_settings_from_server", trueOrFalseSettingNoOracle},
@@ -338,7 +472,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'best_effort'", "'best_effort_us'", "'basic'"};
+             static const DB::Strings choices = {"'best_effort'", "'best_effort_us'", "'basic'"};
              return rg.pickRandomly(choices);
          },
          {"'best_effort'", "'best_effort_us'", "'basic'"},
@@ -346,6 +480,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"cast_string_to_dynamic_use_inference", trueOrFalseSettingNoOracle},
     {"cast_string_to_variant_use_inference", trueOrFalseSettingNoOracle},
     {"check_conversion_from_numbers_to_enum", trueOrFalseSettingNoOracle},
+    {"check_named_collection_dependencies", trueOrFalseSettingNoOracle},
     {"check_query_single_value_result", trueOrFalseSetting},
     {"check_referential_table_dependencies", trueOrFalseSettingNoOracle},
     {"check_table_dependencies", trueOrFalseSettingNoOracle},
@@ -358,7 +493,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'file'", "'bucket'"};
+             static const DB::Strings choices = {"'file'", "'bucket'"};
              return rg.pickRandomly(choices);
          },
          {"'file'", "'bucket'"},
@@ -367,12 +502,13 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"collect_hash_table_stats_during_joins", trueOrFalseSetting},
     {"compatibility_ignore_auto_increment_in_create_table", trueOrFalseSettingNoOracle},
     {"compatibility_ignore_collation_in_create_table", trueOrFalseSettingNoOracle},
+    {"compatibility_s3_presigned_url_query_in_path", trueOrFalseSettingNoOracle},
     {"convert_query_to_cnf", trueOrFalseSettingNoOracle},
     {"correlated_subqueries_default_join_kind",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'left'", "'right'"};
+             static const DB::Strings choices = {"'left'", "'right'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -393,7 +529,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
+             static const DB::Strings choices
                  = {"'simple', date_time_input_format = 'basic'", "'iso', date_time_input_format = 'best_effort'"};
              return rg.pickRandomly(choices);
          },
@@ -403,7 +539,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'ignore'", "'saturate'", "'throw'"};
+             static const DB::Strings choices = {"'ignore'", "'saturate'", "'throw'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -412,6 +548,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"delta_lake_enable_engine_predicate", trueOrFalseSetting},
     {"delta_lake_enable_expression_visitor_logging", trueOrFalseSettingNoOracle},
     {"delta_lake_log_metadata", trueOrFalseSettingNoOracle},
+    {"delta_lake_reload_schema_for_consistency", trueOrFalseSettingNoOracle},
     {"delta_lake_throw_on_engine_predicate_error", trueOrFalseSettingNoOracle},
     {"describe_include_subcolumns", trueOrFalseSettingNoOracle},
     {"describe_include_virtual_columns", trueOrFalseSettingNoOracle},
@@ -431,7 +568,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'nothing'", "'on_error'", "'all'"};
+             static const DB::Strings choices = {"'nothing'", "'on_error'", "'all'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -456,7 +593,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"''", "'Persisted'", "'Streaming'"};
+             static const DB::Strings choices = {"''", "'Persisted'", "'Streaming'"};
              return rg.pickRandomly(choices);
          },
          {"''", "'Persisted'", "'Streaming'"},
@@ -467,7 +604,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'deny'", "'local'", "'global'", "'allow'"};
+             static const DB::Strings choices = {"'deny'", "'local'", "'global'", "'allow'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -567,7 +704,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
+             static const DB::Strings choices
                  = {"'none'",
                     "'metadata'",
                     "'manifest_list_metadata'",
@@ -580,27 +717,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          false)},
     {"iceberg_snapshot_id",
      CHSetting([](RandomGenerator &, FuzzConfig & fc) { return fc.getRandomIcebergHistoryValue("\"snapshot_id\""); }, {}, false)},
-    {"iceberg_timestamp_ms",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig & fc)
-         {
-             if (rg.nextBool())
-             {
-                 return fc.getRandomIcebergHistoryValue("toUnixTimestamp64Milli(\"made_current_at\")");
-             }
-             else
-             {
-                 static const std::vector<uint32_t> & values = {1, 2, 3, 5, 10, 15, 20};
-                 const auto now = std::chrono::system_clock::now();
-
-                 /// Convert to milliseconds since epoch
-                 auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-                 ms -= (rg.pickRandomly(values) * 1000);
-                 return std::to_string(ms);
-             }
-         },
-         {},
-         false)},
+    {"iceberg_timestamp_ms", CHSetting([](RandomGenerator & rg, FuzzConfig & fc) { return getNextIcebergTimestamp(rg, fc); }, {}, false)},
     /// ClickHouse cloud setting
     {"ignore_cold_parts_seconds",
      CHSetting(
@@ -703,7 +820,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"0", "1", "'auto'"};
+             static const DB::Strings choices = {"0", "1", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -712,7 +829,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'disable'", "'enable'", "'backward_compatible_choice'"};
+             static const DB::Strings choices = {"'disable'", "'enable'", "'backward_compatible_choice'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -721,8 +838,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
-                 = {"'enable_when_possible'", "'force_enable'", "'disable'", "'enable_even_for_bad_queries'"};
+             static const DB::Strings choices = {"'enable_when_possible'", "'force_enable'", "'disable'", "'enable_even_for_bad_queries'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -737,7 +853,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"0", "1", "2", "'auto'"};
+             static const DB::Strings choices = {"0", "1", "2", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -753,7 +869,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'ALL'", "'ANY'", "''"};
+             static const DB::Strings choices = {"'ALL'", "'ANY'", "''"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -763,7 +879,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 2, 32)); }, {}, false)},
     {"join_runtime_bloom_filter_hash_functions",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 20)); },
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 10)); },
          {"0", "1", "2", "3", "4", "10"},
          false)},
     {"join_runtime_bloom_filter_max_ratio_of_set_bits", probRangeSetting},
@@ -777,7 +893,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'alter_update'", "'lightweight_update'", "'lightweight_update_force'"};
+             static const DB::Strings choices = {"'alter_update'", "'lightweight_update'", "'lightweight_update_force'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -787,7 +903,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {
+             static const DB::Strings choices = {
                  "'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"};
              return rg.pickRandomly(choices);
          },
@@ -801,7 +917,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"};
+             static const DB::Strings choices = {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"};
              return rg.pickRandomly(choices);
          },
          {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"},
@@ -853,6 +969,12 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"mutations_execute_nondeterministic_on_initiator", trueOrFalseSetting},
     {"mutations_execute_subqueries_on_initiator", trueOrFalseSetting},
     {"mutations_sync", CHSetting(zeroToThree, {}, false)},
+    {"mysql_datatypes_support_level",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         { return settingCombinations(rg, {"decimal", "datetime64", "date2Date32", "date2String"}); },
+         {},
+         false)},
     {"mysql_map_fixed_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"mysql_map_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"normalize_function_names", trueOrFalseSetting},
@@ -861,6 +983,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"optimize_const_name_size",
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(-100, 100)); }, {}, false)},
     {"optimize_count_from_files", trueOrFalseSetting},
+    {"optimize_dry_run_check_part", trueOrFalseSettingNoOracle},
     {"optimize_extract_common_expressions", trueOrFalseSetting},
     {"optimize_min_equality_disjunction_chain_length",
      CHSetting(
@@ -880,7 +1003,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'lz4_frame'", "'zstd'", "'none'"};
+             static const DB::Strings choices = {"'lz4_frame'", "'zstd'", "'none'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -890,12 +1013,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_arrow_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_arrow_use_64_bit_indexes_for_dictionary", trueOrFalseSettingNoOracle},
     {"output_format_arrow_use_signed_indexes_for_dictionary", trueOrFalseSettingNoOracle},
-    {"output_format_arrow_date_as_uint16", trueOrFalseSettingNoOracle},
     {"output_format_avro_codec",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'null'", "'deflate'", "'snappy'", "'zstd'"};
+             static const DB::Strings choices = {"'null'", "'deflate'", "'snappy'", "'zstd'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -931,7 +1053,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'lz4'", "'snappy'", "'zlib'", "'zstd'", "'none'"};
+             static const DB::Strings choices = {"'lz4'", "'snappy'", "'zlib'", "'zstd'", "'none'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -954,7 +1076,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'snappy'", "'lz4'", "'brotli'", "'zstd'", "'gzip'", "'none'"};
+             static const DB::Strings choices = {"'snappy'", "'lz4'", "'brotli'", "'zstd'", "'gzip'", "'none'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -977,7 +1099,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'1.0'", "'2.4'", "'2.6'", "'2.latest'"};
+             static const DB::Strings choices = {"'1.0'", "'2.4'", "'2.6'", "'2.latest'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -988,7 +1110,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"0", "1", "'auto'"};
+             static const DB::Strings choices = {"0", "1", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1005,7 +1127,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_sql_insert_include_column_names", trueOrFalseSettingNoOracle},
     {"output_format_sql_insert_quote_names", trueOrFalseSettingNoOracle},
     {"output_format_sql_insert_use_replace", trueOrFalseSettingNoOracle},
-    {"output_format_values_escape_quote_with_quote", trueOrFalseSettingNoOracle},
     {"output_format_write_statistics", trueOrFalseSettingNoOracle},
     {"page_cache_inject_eviction", trueOrFalseSetting},
     {"parallel_distributed_insert_select", CHSetting(zeroOneTwo, {}, false)},
@@ -1025,8 +1146,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
-                 = {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"};
+             static const DB::Strings choices = {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"},
@@ -1096,7 +1216,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
+             static const DB::Strings choices
                  = {"'debug'", "'information'", "'trace'", "'error'", "'test'", "'warning'", "'fatal'", "'none'"};
              return rg.pickRandomly(choices);
          },
@@ -1114,7 +1234,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'when_necessary'", "'always'", "'user_display'"};
+             static const DB::Strings choices = {"'when_necessary'", "'always'", "'user_display'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1123,7 +1243,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'Backticks'", "'DoubleQuotes'", "'BackticksMySQL'"};
+             static const DB::Strings choices = {"'Backticks'", "'DoubleQuotes'", "'BackticksMySQL'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1138,7 +1258,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
+             static const DB::Strings choices = {"'read'", "'pread'", "'mmap'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1161,7 +1281,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
+             static const DB::Strings choices
                  = {"'before_having'", "'after_having_exclusive'", "'after_having_inclusive'", "'after_having_auto'"};
              return rg.pickRandomly(choices);
          },
@@ -1180,7 +1300,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'sync'", "'auto'"};
+             static const DB::Strings choices = {"'sync'", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1198,12 +1318,13 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_page_cache_for_disks_without_file_cache", trueOrFalseSetting},
     {"use_page_cache_for_local_disks", trueOrFalseSetting},
     {"use_page_cache_for_object_storage", trueOrFalseSetting},
+    {"use_parquet_metadata_cache", trueOrFalseSetting},
     {"use_query_cache", trueOrFalseSetting},
     {"use_roaring_bitmap_iceberg_positional_deletes", trueOrFalseSetting},
     {"use_skip_indexes_if_final_exact_mode", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"use_statistics_cache", trueOrFalseSetting},
     {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
-    {"use_text_index_dictionary_cache", trueOrFalseSetting},
+    {"use_text_index_tokens_cache", trueOrFalseSetting},
     {"use_text_index_header_cache", trueOrFalseSetting},
     {"use_text_index_postings_cache", trueOrFalseSetting},
     {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
@@ -1217,7 +1338,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'auto'", "'postfilter'", "'prefilter'"};
+             static const DB::Strings choices = {"'auto'", "'postfilter'", "'prefilter'"};
              return rg.pickRandomly(choices);
          },
          {"'auto'", "'postfilter'", "'prefilter'"},
@@ -1232,7 +1353,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'async'", "'wait'", "'wait_unknown'"};
+             static const DB::Strings choices = {"'async'", "'wait'", "'wait_unknown'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1242,9 +1363,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"write_through_distributed_cache", trueOrFalseSettingNoOracle},
     {"zstd_window_log_max",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, -100, 100)); },
-         {},
-         false)}};
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 31)); }, {}, false)}};
 
 std::unordered_map<String, CHSetting> queryOracleSettings;
 
@@ -1382,6 +1501,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "output_format_parquet_data_page_size",
            "output_format_parquet_row_group_size",
            "output_format_pretty_max_rows",
+           "query_cache_max_entries",
            "page_cache_lookahead_blocks",
            "parallel_hash_join_threshold",
            "partial_merge_join_rows_in_right_blocks",
@@ -1405,7 +1525,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"external_table_strict_query", trueOrFalseSettingNoOracle},
              {"ignore_data_skipping_indices",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2"}); }, {}, false)},
-             {"memory_worker_purge_total_memory_threshold_ratio", CHSetting(probRange, {}, false)},
              {"optimize_using_constraints", trueOrFalseSettingNoOracle},
              {"parallel_replica_offset",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
@@ -1491,8 +1610,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     for (const auto & entry : max_block_sizes)
     {
         performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "'10M'"}, false)}});
-        serverSettings.insert(
-            {{entry, CHSetting(highRange, {"1", "2", "4", "8", "16", "32", "64", "1024", "2048", "4096", "16384"}, false)}});
+        serverSettings.insert({{entry, CHSetting(highRange, blockSizes, false)}});
     }
     for (const auto & entry : max_columns_values)
     {
@@ -1546,10 +1664,10 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
     if (fc.enable_overflow_settings)
     {
-        static const auto & overflowSetting = CHSetting(
+        static const auto overflowSetting = CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'throw'", "'break'", "'any'"};
+                static const DB::Strings choices = {"'throw'", "'break'", "'any'"};
                 return rg.pickRandomly(choices);
             },
             {},
@@ -1595,7 +1713,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
     if (fc.enable_memory_settings)
     {
-        static const auto & memorySetting = CHSetting(
+        static const auto memorySetting = CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
                 return std::to_string(rg.thresholdGenerator<uint64_t>(
@@ -1642,12 +1760,13 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         {{"bool_false_representation", CHSetting(nastyStrings, {}, false)},
          {"bool_true_representation", CHSetting(nastyStrings, {}, false)},
          {"format_binary_max_array_size", CHSetting(rowsRange, {}, false)},
+         {"format_binary_max_object_size", CHSetting(bytesRange, {}, false)},
          {"format_binary_max_string_size", CHSetting(rowsRange, {}, false)},
          {"format_capn_proto_enum_comparising_mode",
           CHSetting(
               [](RandomGenerator & rg, FuzzConfig &)
               {
-                  static const DB::Strings & choices = {"'by_names'", "'by_names_case_insensitive'", "'by_values'"};
+                  static const DB::Strings choices = {"'by_names'", "'by_names_case_insensitive'", "'by_values'"};
                   return rg.pickRandomly(choices);
               },
               {},
@@ -1661,7 +1780,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           CHSetting(
               [](RandomGenerator & rg, FuzzConfig &)
               {
-                  static const DB::Strings & choices = {"'None'", "'Escaped'", "'Quoted'", "'CSV'", "'JSON'", "'XML'", "'Raw'"};
+                  static const DB::Strings choices = {"'None'", "'Escaped'", "'Quoted'", "'CSV'", "'JSON'", "'XML'", "'Raw'"};
                   return rg.pickRandomly(choices);
               },
               {},
@@ -1675,6 +1794,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"format_tsv_null_representation", CHSetting(nastyStrings, {}, false)},
          {"input_format_binary_decode_types_in_binary_format", trueOrFalseSettingNoOracle},
          {"input_format_binary_max_type_complexity", CHSetting(rowsRange, {}, false)},
+         {"input_format_connection_handling", trueOrFalseSettingNoOracle},
          {"input_format_csv_arrays_as_nested_csv", trueOrFalseSettingNoOracle},
          {"input_format_csv_detect_header", trueOrFalseSettingNoOracle},
          {"input_format_csv_enum_as_number", trueOrFalseSettingNoOracle},
@@ -1708,7 +1828,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           CHSetting(
               [](RandomGenerator & rg, FuzzConfig &)
               {
-                  static const DB::Strings & choices = {"'ext'", "'str'", "'bin'"};
+                  static const DB::Strings choices = {"'ext'", "'str'", "'bin'"};
                   return rg.pickRandomly(choices);
               },
               {},
@@ -1716,7 +1836,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          /// {"output_format_native_encode_types_in_binary_format", trueOrFalseSettingNoOracle}, may block the client
          {"output_format_orc_row_index_stride", CHSetting(rowsRange, {}, false)},
          {"output_format_parquet_write_checksums", trueOrFalseSettingNoOracle},
-         {"output_format_tsv_crlf_end_of_line", trueOrFalseSettingNoOracle}});
+         {"output_format_tsv_crlf_end_of_line", trueOrFalseSettingNoOracle},
+         {"output_format_values_escape_quote_with_quote", trueOrFalseSettingNoOracle}});
 
     /// Remove disallowed settings
     for (const auto & entry : fc.disallowed_settings)
@@ -1733,7 +1854,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
 }
 
-std::unique_ptr<SQLType> size_tp, null_tp, string_tp;
+std::unique_ptr<SQLType> size_tp, null_tp, string_tp, uint8_tp;
 
 std::vector<SystemTable> systemTables;
 
@@ -1742,6 +1863,7 @@ void loadSystemTables(FuzzConfig & fc)
     size_tp = std::make_unique<IntType>(64, true);
     null_tp = std::make_unique<BoolType>();
     string_tp = std::make_unique<StringType>(1);
+    uint8_tp = std::make_unique<IntType>(8, false);
 
     fc.loadSystemTables(systemTables);
 }

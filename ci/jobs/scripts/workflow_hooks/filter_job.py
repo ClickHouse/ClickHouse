@@ -39,21 +39,19 @@ PRELIMINARY_JOBS = [
 ]
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
-    "Build (amd_asan)",
-    "Integration tests (amd_asan, flaky)",
+    "Build (amd_asan_ubsan)",
+    "Integration tests (amd_asan_ubsan, flaky)",
 ]
 
 FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
-    "Build (amd_asan)",
+    "Build (amd_asan_ubsan)",
     "Build (amd_tsan)",
     "Build (amd_msan)",
-    "Build (amd_ubsan)",
     "Build (amd_debug)",
     "Build (amd_binary)",
-    "Stateless tests (amd_asan, flaky check)",
+    "Stateless tests (amd_asan_ubsan, flaky check)",
     "Stateless tests (amd_tsan, flaky check)",
     "Stateless tests (amd_msan, flaky check)",
-    "Stateless tests (amd_ubsan, flaky check)",
     "Stateless tests (amd_debug, flaky check)",
     "Stateless tests (amd_binary, flaky check)",
 ]
@@ -67,6 +65,15 @@ def should_skip_job(job_name):
     if _info_cache is None:
         _info_cache = Info()
         print(f"INFO: PR labels: {_info_cache.pr_labels}")
+
+    # There is no way to prevent GitHub Actions from running the PR workflow on
+    # release branches, so we skip all jobs here. The ReleaseCI workflow is used
+    # for testing on release branches instead.
+    if (
+        Labels.RELEASE in _info_cache.pr_labels
+        or Labels.RELEASE_LTS in _info_cache.pr_labels
+    ):
+        return True, "Skipped for release PR"
 
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
@@ -203,12 +210,13 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, no integration tests updates"
 
-    # skip ARM perf tests for non-performance update
+    # skip AMD perf tests for non-performance update (ARM runs by default)
     if (
-        "- Performance Improvement" not in _info_cache.pr_body
+        " Performance Improvement" not in _info_cache.pr_body
         and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
+        and Labels.PR_PERFORMANCE not in _info_cache.pr_labels
         and JobNames.PERFORMANCE in job_name
-        and "arm" in job_name
+        and "amd" in job_name
         and _info_cache.pr_number  # run all performance jobs on master
     ):
         return True, "Skipped, not labeled with 'pr-performance'"

@@ -120,6 +120,11 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # This means that this minimum need to be, at least, 1 year older than the current release
 CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
+# `Nullable(Tuple)` experimental feature is introduced in 26.1. This has lead to changes in the output return type
+# of many aggregate functions from `Tuple(...)` to `Nullable(Tuple(...))`. This version can be used as baseline to do
+# compatibility checks for features that are affected by this experimental feature.
+CLICKHOUSE_CI_PRE_NULLABLE_TUPLE_VERSION = "25.12"
+
 ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
 
 NET_LOCK_PATH = "/tmp/docker_net.lock"
@@ -517,6 +522,7 @@ class ClickHouseCluster:
         thread_fuzzer_settings={},
         azurite_default_port=0,
         server_binaries=[],
+        with_dolor=False,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -593,6 +599,8 @@ class ClickHouseCluster:
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
 
         self.docker_logs_proc = None  # type: Optional[subprocess.Popen]
+
+        self.with_dolor = with_dolor
 
         self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
@@ -675,7 +683,7 @@ class ClickHouseCluster:
 
         self.spark_session = None
         self.with_iceberg_catalog = False
-        self.iceberg_rest_catalog_port = 8182
+        self._iceberg_rest_catalog_port = None
         self.with_glue_catalog = False
         self.glue_catalog_port = 3000
         self.with_hms_catalog = False
@@ -752,7 +760,7 @@ class ClickHouseCluster:
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
-        self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
+        self.rabbitmq_cookie = "CLICKHOUSETESTCOOKIE"
 
         self.nats_host = "nats1"
         self._nats_port = 0
@@ -988,6 +996,13 @@ class ClickHouseCluster:
             return self._mongo_secure_port
         self._mongo_secure_port = self.port_pool.get_port()
         return self._mongo_secure_port
+
+    @property
+    def iceberg_rest_catalog_port(self):
+        if self._iceberg_rest_catalog_port:
+            return self._iceberg_rest_catalog_port
+        self._iceberg_rest_catalog_port = self.port_pool.get_port()
+        return self._iceberg_rest_catalog_port
 
     @property
     def redis_port(self):
@@ -1709,6 +1724,8 @@ class ClickHouseCluster:
         file_name = "docker_compose_iceberg_rest_catalog.yml"
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
+        if file_name == "docker_compose_iceberg_rest_catalog.yml":
+            env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -1987,7 +2004,6 @@ class ClickHouseCluster:
         randomize_settings=True,
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
-        with_dolor=False,
         extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
@@ -2018,7 +2034,7 @@ class ClickHouseCluster:
                 )
             with_remote_database_disk = False
 
-        if not with_dolor and with_remote_database_disk is None:
+        if not self.with_dolor and with_remote_database_disk is None:
             with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK", "0"))
 
         if with_remote_database_disk:
@@ -2120,7 +2136,6 @@ class ClickHouseCluster:
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
-            with_dolor=with_dolor,
             extra_parameters=extra_parameters,
         )
 
@@ -3334,17 +3349,26 @@ class ClickHouseCluster:
     def start(self, connection_timeout=None):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
+        logging.debug(f"Cluster start called. is_up={self.is_up}")
+        self.print_all_docker_pieces()
+
+        if self.is_up:
+            return
+
         if not os.path.exists(self.instances_dir):
             os.mkdir(self.instances_dir)
         else:
             logging.warning(
                 "Instance directory already exists. Did you call cluster.start() for second time?"
             )
-        logging.debug(f"Cluster start called. is_up={self.is_up}")
-        self.print_all_docker_pieces()
-
-        if self.is_up:
-            return
+            # Remove and recreate so that create_dir() gets a clean slate.
+            # This happens when --dist=each causes module-scoped fixtures to be torn down
+            # and re-set-up within the same pytest session (e.g. tests from different modules
+            # interleave on the same xdist worker). cluster.shutdown() does not remove
+            # instances_dir, and ClickHouseCluster.__init__ only removes it at import time,
+            # so without this cleanup create_dir() would fail with FileExistsError.
+            shutil.rmtree(self.instances_dir, ignore_errors=True)
+            os.mkdir(self.instances_dir)
 
         if self.with_net_trics:
             # Tests might share same subnet, check file docker_compose_net.yml
@@ -3387,7 +3411,13 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
-            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, nothrow=True, timeout=600)
+            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, timeout=180)
+
+            def logging_compose_up(**kwargs):
+                if "exception" in kwargs:
+                    logging.info(
+                        "Got exception in docker compose up: %s", kwargs["exception"]
+                    )
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -3399,7 +3429,9 @@ class ClickHouseCluster:
                         shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
-                run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
+                )
                 self.up_called = True
 
                 self.wait_zookeeper_secure_to_start()
@@ -3489,7 +3521,9 @@ class ClickHouseCluster:
                                 ),
                             )
 
-                run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
+                )
                 self.up_called = True
 
                 self.wait_zookeeper_to_start()
@@ -3836,6 +3870,10 @@ class ClickHouseCluster:
                 self.wait_ytsaurus_to_start()
 
             if self.with_letsencrypt_pebble and self.base_letsencrypt_pebble_cmd:
+                letsencrypt_pebble_pull_cmd = self.base_letsencrypt_pebble_cmd + ["pull"]
+                retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(
+                    run_and_check, letsencrypt_pebble_pull_cmd, timeout=180
+                )
                 letsencrypt_pebble_start_cmd = self.base_letsencrypt_pebble_cmd + common_opts
                 run_and_check(letsencrypt_pebble_start_cmd)
                 self.wait_letsencrypt_pebble_to_start()
@@ -3863,9 +3901,9 @@ class ClickHouseCluster:
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
-            # Copy binaries and start ClickHouse for dolor instances
-            for instance in self.instances.values():
-                if instance.with_dolor:
+            if self.with_dolor:
+                # Copy binaries and start ClickHouse for dolor instances
+                for instance in self.instances.values():
                     i = 0
                     for val in self.server_binaries:
                         subprocess.run(
@@ -3959,7 +3997,7 @@ class ClickHouseCluster:
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
                 # Collect exit codes for later inspection
-                if instance.with_dolor:
+                if self.with_dolor:
                     container = self.docker_client.containers.get(instance.docker_id)
                     res = container.wait()
                     exit_code = res["StatusCode"]
@@ -4036,6 +4074,7 @@ class ClickHouseCluster:
         for instance in list(self.instances.values()):
             instance.docker_client = None
             instance.ip_address = None
+            instance.ipv6_address = None
             instance.client = None
 
         if sanitizer_assert_instance is not None:
@@ -4313,7 +4352,6 @@ class ClickHouseInstance:
         extra_configs=[],
         randomize_settings=True,
         use_docker_init_flag=False,
-        with_dolor=False,
         extra_parameters=None,
     ):
         self.name = name
@@ -4462,7 +4500,7 @@ class ClickHouseInstance:
         # Use a common path for data lakes on the filesystem
         self.lakehouses_path = (
             "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses"
-            if with_dolor
+            if self.cluster.with_dolor
             else ""
         )
 
@@ -4478,7 +4516,6 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
-        self.with_dolor = with_dolor
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -4927,6 +4964,13 @@ class ClickHouseInstance:
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
 
+    def stop_clickhouse_client(self, signal="INT"):
+        client_pid = self.get_process_pid("clickhouse client")
+        self.exec_in_container(
+            ["bash", "-c", f"kill -{signal} {client_pid}"],
+            user="root",
+        )
+
     def wait_start(self, start_wait_sec):
         start_time = time.time()
         last_err = None
@@ -5308,7 +5352,7 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' /usr/share/clickhouse_fresh server --version",
+                "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' && /usr/share/clickhouse_fresh server --version",
             ]
         )
         if fix_metadata:
@@ -5325,7 +5369,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
+                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE default ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
         self.exec_in_container(
@@ -5577,7 +5621,7 @@ class ClickHouseInstance:
                 self.with_installed_binary,
             )
 
-        if not self.with_dolor:
+        if not self.cluster.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)
             if self.with_installed_binary:
                 # Ignore CPU overload in this case
@@ -5605,6 +5649,7 @@ class ClickHouseInstance:
 
         write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
+        write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
 
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
@@ -5778,6 +5823,8 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = "- " + self.odbc_ini_path
 
+        if self.cluster.with_dolor:
+            entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
         if self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
@@ -5796,17 +5843,17 @@ class ClickHouseInstance:
             if self.ipv4_address is not None:
                 ipv4_address = "ipv4_address: " + self.ipv4_address
             if self.ipv6_address is not None:
-                ipv6_address = "ipv6_address: " + self.ipv6_address
+                ipv6_address = f'ipv6_address: "{self.ipv6_address}"'
             if self.hostname != self.name:
                 net_aliases = "aliases:"
                 net_alias1 = "- " + self.hostname
 
-        if self.with_dolor:
+        if self.cluster.with_dolor:
             binary_volume = ""
         elif not self.with_installed_binary:
-            binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
+            binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse:ro"
         else:
-            binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
+            binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh:ro"
 
         external_dirs_volumes = ""
         if self.external_dirs:

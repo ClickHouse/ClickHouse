@@ -170,6 +170,20 @@ function clickhouse_client_removed_host_parameter()
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub(r'--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
 
+function wait_for_query_to_start()
+{
+    local query_id="$1"
+    local timeout="${2:-120}"
+    local start=$EPOCHSECONDS
+    while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$query_id' SETTINGS use_query_cache = 0") == 0 ]]; do
+        if ((EPOCHSECONDS - start > timeout)); then
+            echo "Timeout waiting for query $query_id to start" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+}
+
 function wait_for_queries_to_finish()
 {
     local max_tries="${1:-20}"

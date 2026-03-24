@@ -18,6 +18,20 @@ from pyiceberg.transforms import (
     VoidTransform,
 )
 
+try:
+    from pyspark.sql.types import VariantType
+
+    HAS_VARIANT_TYPE = True
+except ImportError:
+    HAS_VARIANT_TYPE = False
+
+try:
+    from pyspark.sql.types import TimestampNTZType
+
+    HAS_TIMESTAMP_NTZ = True
+except ImportError:
+    HAS_TIMESTAMP_NTZ = False
+
 
 class ClickHouseMapping(Enum):
     Unkown = 0
@@ -213,12 +227,18 @@ class ClickHouseTypeMapper:
 
                 self.increment()
                 if cname:
+                    # Sanitize non-identifier names (e.g. "1" from "`1`") so that
+                    # StructField names are valid SQL identifiers.  Spark's DDL
+                    # serialiser emits struct<1:...> without backticks, which then
+                    # fails to re-parse on Delta write operations.
+                    if not (cname[0].isalpha() or cname[0] == "_"):
+                        cname = f"col_{cname}"
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem_type, False, mapping
                     )
                     spark_elements.append(f"{cname}: {next_tp}")
                 else:
-                    cname = f"{i + 1}"
+                    cname = f"col{i + 1}"
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem, False, mapping
                     )
@@ -320,6 +340,13 @@ class ClickHouseTypeMapper:
         # Handle DateTime and Time
         for val in ["DateTime", "Time"]:
             if ch_type.startswith(val):
+                if (
+                    HAS_TIMESTAMP_NTZ
+                    and val == "DateTime"
+                    and mapping == ClickHouseMapping.Spark
+                    and random.randint(1, 2) == 1
+                ):
+                    return ("TIMESTAMP_NTZ", inside_nullable, TimestampNTZType())
                 return ("TIMESTAMP", inside_nullable, module.TimestampType())
 
         # Handle LowCardinality wrapper
@@ -329,7 +356,7 @@ class ClickHouseTypeMapper:
 
         # Handle Variant(T1, T2, ...) → Spark VariantType / Iceberg Struct with nullable fields
         if ch_type.startswith("Variant("):
-            if mapping == ClickHouseMapping.Spark:
+            if HAS_VARIANT_TYPE and mapping == ClickHouseMapping.Spark:
                 return ("VARIANT", inside_nullable, sp.VariantType())
 
             # Iceberg has no Variant type; expand into a Struct with nullable fields
@@ -367,7 +394,11 @@ class ClickHouseTypeMapper:
         # Handle JSON, Dynamic → Spark 4.0 VariantType (untyped semi-structured)
         for val in ["JSON", "Dynamic", "Enum"]:
             if ch_type.startswith(val):
-                if val != "Enum" and mapping == ClickHouseMapping.Spark:
+                if (
+                    HAS_VARIANT_TYPE
+                    and val != "Enum"
+                    and mapping == ClickHouseMapping.Spark
+                ):
                     return ("VARIANT", inside_nullable, sp.VariantType())
                 else:
                     is_text = random.randint(1, 2) == 1
@@ -460,8 +491,18 @@ class ClickHouseTypeMapper:
         - "name Type"
         - "name Tuple(Type1, Type2)"
         - "name Array(Nested(Type))"
+        - "`quoted_name` Type"  (backtick-quoted identifiers from ClickHouse)
         """
-        # Find the last space that's not inside parentheses
+        # Handle backtick-quoted identifiers at the start (e.g. "`1` Array(Int32)")
+        if element.startswith("`"):
+            end_bt = element.find("`", 1)
+            if end_bt > 0 and end_bt + 1 < len(element) and element[end_bt + 1] == " ":
+                name = element[1:end_bt]
+                elem_type = element[end_bt + 2 :].strip()
+                if name:
+                    return name, elem_type
+
+        # Find the last space that's not inside parentheses or quotes
         depth = 0
         last_space_pos = -1
         in_quotes = False
@@ -469,7 +510,7 @@ class ClickHouseTypeMapper:
 
         for i, char in enumerate(element):
             if not in_quotes:
-                if char in "\"'":
+                if char in "\"'`":
                     in_quotes = True
                     quote_char = char
                 elif char in "(<":
@@ -486,8 +527,8 @@ class ClickHouseTypeMapper:
         if last_space_pos > 0:
             name = element[:last_space_pos].strip()
             elem_type = element[last_space_pos + 1 :].strip()
-            # Validate that name is a valid identifier
-            if name and name[0].isalpha() or name[0] == "_":
+            # Validate that name is a valid identifier (alpha or underscore start)
+            if name and (name[0].isalpha() or name[0] == "_"):
                 return name, elem_type
         return None, element
 
@@ -562,6 +603,8 @@ class ClickHouseTypeMapper:
             "DATE",
             "TIMESTAMP",
         ]
+        if HAS_TIMESTAMP_NTZ:
+            primitive_types.append("TIMESTAMP_NTZ")
 
         # If we've reached max depth or complex types not allowed, return primitive
         if current_depth >= max_depth or not allow_complex:
@@ -591,7 +634,7 @@ class ClickHouseTypeMapper:
             num_fields = random.randint(1, 3)
             fields = []
             for i in range(num_fields):
-                field_name = f"`{i}`"
+                field_name = f"col{i}"
                 field_type = self.generate_random_spark_sql_type(
                     max_depth=max_depth,
                     current_depth=current_depth + 1,
@@ -600,21 +643,7 @@ class ClickHouseTypeMapper:
                 fields.append(f"{field_name}:{field_type}")
             return f"STRUCT<{','.join(fields)}>"
         elif type_choice == "variant":
-            # Generate random number of variant members (1-4)
-            num_members = random.randint(1, 4)
-            members = set()
-            while len(members) < num_members:
-                member_type = self.generate_random_spark_sql_type(
-                    max_depth=max_depth,
-                    current_depth=current_depth + 1,
-                    allow_complex=False,
-                )
-                members.add(member_type)
-            inside = ",".join(
-                f'v{i}_{re.split(r"[^a-zA-Z0-9_]", m)[0]}:{m}'
-                for i, m in enumerate(members)
-            )
-            return f"STRUCT<{inside}>"
+            return "VARIANT"
 
     def generate_random_spark_type(
         self, allow_variant=True, max_depth=3, current_depth=0
@@ -638,13 +667,15 @@ class ClickHouseTypeMapper:
             lambda: sp.CharType(length=random.randint(1, 100)),
             lambda: sp.VarcharType(length=random.randint(1, 100)),
         ]
+        if HAS_TIMESTAMP_NTZ:
+            primitive_factories.append(TimestampNTZType)
         roll = random.randint(1, 100)
 
         # At max depth only emit primitives
         if roll <= 60 or current_depth >= max_depth:
             factory = random.choice(primitive_factories)
             return factory() if callable(factory) else factory
-        elif roll <= 70 and allow_variant:
+        elif HAS_VARIANT_TYPE and roll <= 70 and allow_variant:
             return sp.VariantType()
         elif roll <= 80:
             elem = self.generate_random_spark_type(

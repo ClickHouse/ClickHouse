@@ -62,6 +62,7 @@ Receives the expression or identifier and constant string with the name of subco
 
 Returns requested subcolumn extracted from the expression.
 )",
+        .syntax = "getSubcolumn(nested_value, subcolumn_name)",
         .examples{{"getSubcolumn", "SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')", ""}},
         .introduced_in = {23, 3},
         .category = FunctionDocumentation::Category::Other
