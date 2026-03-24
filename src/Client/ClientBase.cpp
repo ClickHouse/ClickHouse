@@ -10,6 +10,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -3055,7 +3056,9 @@ bool ClientBase::processQueryText(const String & text)
 
 String ClientBase::getPrompt() const
 {
-    return prompt;
+    String result = prompt;
+    boost::replace_all(result, "{database}", default_database.empty() ? "default" : default_database);
+    return result;
 }
 
 
