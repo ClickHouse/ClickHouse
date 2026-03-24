@@ -1,7 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-parallel-replicas
--- Test that commit-order projection is NOT materialized during insert
--- (because _block_number is not finalized until commit time)
--- and IS materialized after merge.
+-- Tags: no-parallel-replicas
 
 set enable_analyzer = 1;
 

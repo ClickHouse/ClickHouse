@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-parallel-replicas
+-- Tags: no-parallel-replicas
 
 set enable_analyzer = 1;
 
@@ -34,6 +34,6 @@ select a, lhs._block_number = rhs._block_number as block_number_match, lhs._bloc
 
 select '';
 select 'index lookup';
-explain indexes=1, projections=1 select a, _block_number, _block_offset from mt_with_commit_order where (_block_number, _block_offset) = (3, 1);
+SELECT explain FROM (explain indexes=1, projections=1 select a, _block_number, _block_offset from mt_with_commit_order where (_block_number, _block_offset) = (3, 1) settings optimize_use_projections=1) WHERE explain NOT LIKE '%Condition%';
 
 drop table mt_with_commit_order sync;

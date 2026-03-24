@@ -1,6 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-parallel-replicas, replica
--- Test that commit-order projection works with ReplicatedMergeTree:
--- not materialized during insert, correctly built during merge.
+-- Tags: no-parallel-replicas
 
 set enable_analyzer = 1;
 set insert_keeper_fault_injection_probability = 0;

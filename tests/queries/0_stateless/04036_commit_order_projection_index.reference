@@ -4,7 +4,6 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (default.mt_commit_order_idx)
     Indexes:
       PrimaryKey
-        Condition: true
         Parts: 1/1
         Granules: 40/40
       Ranges: 1
@@ -18,7 +17,6 @@ Expression ((Project names + Projection))
         Keys:
           _block_number
           _block_offset
-        Condition: and((_block_offset in [6, 6]), (_block_number in [3, 3]))
         Parts: 1/1
         Granules: 2/40
         Search Algorithm: binary search

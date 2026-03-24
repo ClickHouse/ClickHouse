@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 import traceback
 from pathlib import Path
@@ -152,6 +153,13 @@ class Runner:
     def _pre_run(self, workflow, job, local_run=False):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
+        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        if dirty:
+            print(f"NOTE: Dirty repo state before job start:\n{dirty}")
+            print("NOTE: Cleaning repo")
+            Shell.check("git clean -ffd", verbose=True)
+        else:
+            print("NOTE: Repo state is clean before job start")
         env = _Environment.get()
 
         result = Result(
@@ -374,7 +382,35 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+
+            # PRAKTIKA_HOST_WORKDIR overrides the host-side path used in
+            # --volume for the working directory mount.  Two main use cases:
+            #   1. Point the mount at an arbitrary host directory.
+            #   2. Docker-in-Docker: the inner Docker daemon needs the real
+            #      host path (not the outer container's CWD) for volume mounts.
+            #      This variable makes it more flexible to set the real host path.
+            # When unset, defaults to "./" (current directory).
+            host_dir = os.environ.get("PRAKTIKA_HOST_WORKDIR", "./")
+            host_dir_q = shlex.quote(host_dir)
+
+            # Rewrite relative host paths in user-supplied --volume settings
+            # so that they resolve correctly when PRAKTIKA_HOST_WORKDIR is set
+            # (e.g. in Docker-in-Docker scenarios).
+            if host_dir != "./":
+                rewritten_settings = []
+                for s in settings:
+                    if s.startswith("--volume="):
+                        vol_arg = s.removeprefix("--volume=")
+                        src, sep, rest = vol_arg.partition(":")
+                        if src == ".":
+                            src = host_dir.rstrip("/")
+                        elif src.startswith("./"):
+                            src = host_dir.rstrip("/") + src[1:]
+                        s = f"--volume={src}{sep}{rest}"
+                    rewritten_settings.append(s)
+                settings = rewritten_settings
+
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -462,7 +498,7 @@ class Runner:
             # Get host user's UID and GID (not from inside the container)
             uid = os.getuid()
             gid = os.getgid()
-            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+            chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
             Shell.run(chown_cmd)
 
         return exit_code
@@ -835,6 +871,12 @@ class Runner:
                 except Exception as e:
                     traceback.print_exc()
                     print(f"ERROR: failed to notify Slack users: {e}")
+
+        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        if dirty:
+            print(f"NOTE: Dirty repo state after job:\n{dirty}")
+        else:
+            print("NOTE: Repo state is clean after job")
 
         return is_ok
 

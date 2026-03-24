@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Core/Names.h>
+#include <Core/Field.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -8,6 +11,7 @@
 
 #include <list>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 

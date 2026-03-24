@@ -343,6 +343,14 @@ namespace ErrorCodes
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
 }
 
+static String getPartNameFromAST(const ASTPtr & partition)
+{
+    const auto * literal = partition->as<ASTLiteral>();
+    if (!literal)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a string literal for part name, got: {}", partition->formatForErrorMessage());
+    return literal->value.safeGet<String>();
+}
+
 static void checkSuspiciousIndices(const ASTFunction * index_function)
 {
     std::unordered_set<UInt64> unique_index_expression_hashes;
@@ -1151,12 +1159,6 @@ void MergeTreeData::checkProperties(
                     "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
                     projection.name);
         }
-
-        if (projection.with_block_number + projection.with_block_offset == 1)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Projection {} uses only _block_number or _block_offset column. It is required to use both at once.",
-                projection.name);
     }
 
     const auto validate_complex_projection = [&](const std::string & projection_name, const std::vector<std::string> & forbid_columns)
@@ -3834,6 +3836,14 @@ size_t MergeTreeData::clearEmptyParts()
     if (!(*getSettings())[MergeTreeSetting::remove_empty_parts])
         return 0;
 
+    /// Do not remove empty parts while outdated data parts are still loading asynchronously.
+    /// An empty part may be covering outdated parts not yet loaded into memory — in that case
+    /// `getCoveredOutdatedParts` would return an empty list, causing the covering part to be
+    /// wrongly dropped. If the outdated parts have not been cleaned up by then, they will be
+    /// resurrected on the next ATTACH or server restart.
+    if (!outdated_data_parts_loading_finished.load(std::memory_order_relaxed))
+        return 0;
+
     std::vector<std::string> parts_names_to_drop;
 
     {
@@ -6104,7 +6114,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
 
             if (txn)
             {
-                DataPartStateAndPartitionID outdated_parts{MergeTreeDataPartState::Active, partition_id};
+                DataPartStateAndPartitionID outdated_parts{MergeTreeDataPartState::Outdated, partition_id};
 
                 insertAtEnd(
                     res,
@@ -6355,7 +6365,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
         {
             if (command.part)
             {
-                auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+                auto part_name = getPartNameFromAST(command.partition);
                 /// We are able to parse it
                 MergeTreePartInfo::fromPartName(part_name, format_version);
             }
@@ -6443,7 +6453,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     String partition_id;
 
     if (moving_part)
-        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+        partition_id = getPartNameFromAST(partition);
     else
         partition_id = getPartitionIDFromQuery(partition, local_context);
 
@@ -6513,7 +6523,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     String partition_id;
 
     if (moving_part)
-        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+        partition_id = getPartNameFromAST(partition);
     else
         partition_id = getPartitionIDFromQuery(partition, local_context);
 
@@ -6649,7 +6659,7 @@ Pipe MergeTreeData::alterPartition(
             {
                 if (command.part)
                 {
-                    auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+                    auto part_name = getPartNameFromAST(command.partition);
                     checkPartCanBeDropped(part_name, query_context);
                     dropPart(part_name, command.detach, query_context);
                 }
@@ -7741,7 +7751,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
 
     if (part)
     {
-        String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+        String part_name = getPartNameFromAST(partition);
         validateDetachedPartName(part_name);
         auto disk = getDiskForDetachedPart(part_name);
         renamed_parts.addPart(part_name, part_name, "deleting_" + part_name, disk);
@@ -7903,7 +7913,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     /// Let's compose a list of parts that should be added.
     if (command.part)
     {
-        const String part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+        const String part_name = getPartNameFromAST(command.partition);
         const String part_directory = command.from_path.empty() ? part_name : command.from_path;
         validateDetachedPartName(part_name);
         validateDetachedPartName(part_directory);
@@ -9489,6 +9499,7 @@ bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const 
 
 PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr local_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::unfreezePartitionsByMatcher");
     auto backup_path = fs::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
 
     LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());

@@ -218,6 +218,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
+    extern const SettingsBool distributed_index_analysis_only_on_coordinator;
 }
 
 namespace MergeTreeSetting
@@ -742,17 +743,21 @@ Pipe ReadFromMergeTree::readInOrder(
 
         Pipe pipe(source);
 
-        if (virtual_row_conversion && (read_type == ReadType::InOrder))
+        if (virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder))
         {
             const auto & index = part_with_ranges.data_part->getIndex();
             const auto & primary_key = storage_snapshot->metadata->primary_key;
-            size_t mark_range_begin = part_with_ranges.ranges.front().begin;
+
+            bool has_final_mark = part_with_ranges.data_part->index_granularity->hasFinalMark();
+            bool read_in_direct_order = read_type == ReadType::InOrder;
+            size_t mark_range_pos = read_in_direct_order ? part_with_ranges.ranges.front().begin : part_with_ranges.ranges.back().end;
+            bool has_pk_value = (read_in_direct_order || has_final_mark) && std::ranges::all_of(*index, [&](const auto & col) { return col->size() > mark_range_pos; });
 
             /// The index may have fewer columns than the primary key if suffix columns were
             /// removed by optimizeIndexColumns (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
             /// In that case, we cannot apply virtual row optimization because we don't have all required columns.
             size_t num_pk_columns_required = virtual_row_conversion->getRequiredColumnsWithTypes().size();
-            if (index->size() >= num_pk_columns_required)
+            if (index->size() >= num_pk_columns_required && has_pk_value)
             {
                 ColumnsWithTypeAndName pk_columns;
                 pk_columns.reserve(num_pk_columns_required);
@@ -760,7 +765,7 @@ Pipe ReadFromMergeTree::readInOrder(
                 for (size_t j = 0; j < num_pk_columns_required; ++j)
                 {
                     auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
-                    column->insert((*(*index)[j])[mark_range_begin]);
+                    column->insert((*(*index)[j])[mark_range_pos]);
                     pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
                 }
 
@@ -2038,9 +2043,26 @@ void ReadFromMergeTree::buildIndexes(
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {
-                return top_k_filter_info && skip_index->index.isSimpleSingleColumnIndex() &&
-                       skip_index->index.type == "minmax" &&
-                       top_k_filter_info->column_name == skip_index->index.column_names[0];
+                if (!top_k_filter_info || !skip_index->index.isSimpleSingleColumnIndex()
+                    || skip_index->index.type != "minmax"
+                    || top_k_filter_info->column_name != skip_index->index.column_names[0])
+                    return false;
+
+                /// The skip-index top-k path ranks granules via raw Field comparison
+                /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
+                /// or collation. Only allow types where raw Field ordering matches
+                /// the ORDER BY semantics.
+                /// TODO: generalize MinMaxGranuleItem comparison and getTopKMarks to use
+                /// nulls_direction/collator so this restriction can be lifted.
+                if (top_k_filter_info->data_type->isNullable()
+                    || !top_k_filter_info->data_type->isValueRepresentedByNumber())
+                    return false;
+
+                if (top_k_filter_info->threshold_tracker
+                    && top_k_filter_info->threshold_tracker->getCollator())
+                    return false;
+
+                return true;
         };
 
         if (settings[Setting::use_skip_indexes_for_top_k] && can_skip_index_be_used_for_top_k_filtering(index_helper))
@@ -2453,7 +2475,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .indexes = *indexes,
         .top_k_filter_info = top_k_filter_info,
         .reader_settings = reader_settings,
-        .storage_id = data.getStorageID(),
         .log = log,
         .num_streams = num_streams,
         .find_exact_ranges = find_exact_ranges,
@@ -2475,12 +2496,14 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
-        auto get_indexes_size = [&](const MergeTreeData & data_) -> size_t
+        auto get_indexes_size = [&]() -> size_t
         {
             size_t res = 0;
-            for (const auto & [_, size] : data_.getSecondaryIndexSizes())
-                res += size.data_uncompressed;
-            res += data_.getPrimaryIndexSize().data_uncompressed;
+            for (const auto & part : res_parts)
+            {
+                res += part.data_part->getTotalSecondaryIndicesSize().data_uncompressed;
+                res += part.data_part->getIndexSizeFromFile().data_uncompressed;
+            }
             return res;
         };
 
@@ -2488,11 +2511,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         bool final_second_pass = indexes->use_skip_indexes_if_final_exact_mode;
         UInt64 distributed_index_analysis_min_parts_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_parts_to_activate];
         UInt64 distributed_index_analysis_min_indexes_bytes_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_indexes_bytes_to_activate];
+        bool is_initial_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+
         bool distributed_index_analysis_enabled = !final_second_pass
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)
-            && (!distributed_index_analysis_min_indexes_bytes_to_activate || get_indexes_size(data) >= distributed_index_analysis_min_indexes_bytes_to_activate);
+            && (!distributed_index_analysis_min_indexes_bytes_to_activate || get_indexes_size() >= distributed_index_analysis_min_indexes_bytes_to_activate)
+            /// When `distributed_index_analysis_only_on_coordinator` is set, restrict distributed index analysis to the coordinator (initial query).
+            /// Otherwise, subqueries in the predicate (e.g. `IN (SELECT ...)`) on follower replicas would each independently trigger distributed index analysis, causing O(N^2) queries.
+            && (is_initial_query || !settings[Setting::distributed_index_analysis_only_on_coordinator]);
 
         if (!distributed_index_analysis_enabled)
         {
@@ -2524,6 +2552,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 vector_search_parameters,
                 local_index_analysis_callback,
                 context_);
+
             IndexAnalysisPartsRanges analyzed_parts_ranges;
 
             /// Index stats
@@ -2788,8 +2817,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     updateSortDescription();
 
     /// Set correct read_type
-    /// For some reason for projection it breaks aggregation in order, so skip it
-    if (analyzed_result_ptr && !analyzed_result_ptr->readFromProjection())
+    if (analyzed_result_ptr)
     {
         analyzed_result_ptr->read_type = (query_info.input_order_info->direction > 0)
             ? ReadType::InOrder
@@ -3351,7 +3379,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 ? CoordinationMode::WithOrder
                 : CoordinationMode::ReverseOrder;
         };
-        extension.sendInitialRequest(get_coordination_mode(), result.parts_with_ranges, /*mark_segment_size=*/1);
+        // This code is executed only if there is no parts to read, so the parameter values don't really matter
+        extension.sendInitialRequest(
+            get_coordination_mode(), result.parts_with_ranges.getDescriptions(), /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
     }
 
     if (result.parts_with_ranges.empty())
@@ -3401,15 +3431,15 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     if (!projection_index_read_desc.read_ranges.empty())
     {
         auto empty_mutations_snapshot = mutations_snapshot->cloneEmpty();
-        const auto & settings = context->getSettingsRef();
-        PartRangesReadInfo info(result.parts_with_ranges, settings, *data_settings);
+        const auto & query_settings = context->getSettingsRef();
+        PartRangesReadInfo info(result.parts_with_ranges, query_settings, *data_settings);
         PoolSettings pool_settings{
             .threads = 1,
             .sum_marks = info.sum_marks,
             .min_marks_for_concurrent_read = info.min_marks_for_concurrent_read,
-            .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
+            .preferred_block_size_bytes = query_settings[Setting::preferred_block_size_bytes],
             .use_uncompressed_cache = info.use_uncompressed_cache,
-            .use_const_size_tasks_for_remote_reading = settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
+            .use_const_size_tasks_for_remote_reading = query_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
             .total_query_nodes = 1,
         };
 

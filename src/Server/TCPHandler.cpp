@@ -638,13 +638,21 @@ void TCPHandler::runImpl()
 
                 checkIfQueryCanceled(*query_state);
 
-                /// Get blocks of temporary tables
-                readTemporaryTables(*query_state);
+                try
+                {
+                    /// Get blocks of temporary tables
+                    readTemporaryTables(*query_state);
 
-                /// Reset the input stream, as we received an empty block while receiving external table data.
-                /// So, the stream has been marked as cancelled and we can't read from it anymore.
-                query_state->block_in.reset();
-                query_state->maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
+                    /// Reset the input stream, as we received an empty block while receiving external table data.
+                    /// So, the stream has been marked as cancelled and we can't read from it anymore.
+                    query_state->block_in.reset();
+                    query_state->maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
+                }
+                catch (...)
+                {
+                    query_state->stop_query = true;
+                    throw;
+                }
             });
 
             /// Send structure of columns to client for function input()
@@ -687,12 +695,20 @@ void TCPHandler::runImpl()
 
                 checkIfQueryCanceled(*query_state);
 
-                if (receivePacketsExpectData(*query_state))
-                    return query_state->block_for_input;
+                try
+                {
+                    if (receivePacketsExpectData(*query_state))
+                        return query_state->block_for_input;
 
-                query_state->block_in.reset();
-                query_state->maybe_compressed_in.reset();
-                return {};
+                    query_state->block_in.reset();
+                    query_state->maybe_compressed_in.reset();
+                    return {};
+                }
+                catch (...)
+                {
+                    query_state->stop_query = true;
+                    throw;
+                }
             });
 
             customizeContext(query_state->query_context);
@@ -707,15 +723,23 @@ void TCPHandler::runImpl()
 
                 checkIfQueryCanceled(*query_state);
 
-                sendReadTaskRequest();
+                try
+                {
+                    sendReadTaskRequest();
 
-                ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
+                    ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
 
-                auto res = receiveClusterFunctionReadTaskResponse(*query_state);
+                    auto res = receiveClusterFunctionReadTaskResponse(*query_state);
 
-                ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
-                return res;
+                    return res;
+                }
+                catch (...)
+                {
+                    query_state->stop_query = true;
+                    throw;
+                }
             });
 
             query_state->query_context->setMergeTreeAllRangesCallback([this, &query_state](InitialAllRangesAnnouncement announcement)
@@ -742,17 +766,25 @@ void TCPHandler::runImpl()
 
                     checkIfQueryCanceled(*query_state);
 
-                    sendMergeTreeReadTaskRequest(std::move(request));
+                    try
+                    {
+                        sendMergeTreeReadTaskRequest(std::move(request));
 
-                    fiu_do_on(FailPoints::parallel_replicas_reading_response_timeout, {
-                        throw NetException(
-                            ErrorCodes::SOCKET_TIMEOUT, "Simulated network error on the first attempt to get a task from the coordinator");
-                    });
+                        fiu_do_on(FailPoints::parallel_replicas_reading_response_timeout, {
+                            throw NetException(
+                                ErrorCodes::SOCKET_TIMEOUT, "Simulated network error on the first attempt to get a task from the coordinator");
+                        });
 
-                    ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
-                    auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
-                    ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
-                    return res;
+                        ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
+                        auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
+                        ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                        return res;
+                    }
+                    catch (...)
+                    {
+                        query_state->stop_query = true;
+                        throw;
+                    }
                 });
 
             query_state->query_context->setBlockMarshallingCallback(
@@ -1401,12 +1433,14 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
+                bool stop_read_return_partial_result = false;
                 {
                     std::lock_guard lock(*callback_mutex);
                     receivePacketsExpectCancel(state);
+                    stop_read_return_partial_result = state.stop_read_return_partial_result;
                 }
 
-                if (state.stop_read_return_partial_result)
+                if (stop_read_return_partial_result)
                 {
                     executor.cancelReading();
                 }
@@ -1558,7 +1592,7 @@ void TCPHandler::sendReadTaskRequest()
 void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
-    announcement.serialize(*out, client_parallel_replicas_protocol_version);
+    announcement.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1568,7 +1602,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRang
 void TCPHandler::sendMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
-    request.serialize(*out, client_parallel_replicas_protocol_version);
+    request.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
 
     out->finishChunk();
     out->next();

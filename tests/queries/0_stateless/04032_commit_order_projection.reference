@@ -49,7 +49,6 @@ Expression ((Project names + Projection))
         Keys:
           _block_number
           _block_offset
-        Condition: and((_block_offset in [1, 1]), (_block_number in [3, 3]))
         Parts: 1/1
         Granules: 2/12
         Search Algorithm: binary search

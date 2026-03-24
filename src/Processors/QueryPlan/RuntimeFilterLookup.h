@@ -107,7 +107,8 @@ public:
     )
         : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
         , argument_can_have_nulls(hasNullable(filter_column_target_type) ||
-            WhichDataType(filter_column_target_type).isDynamic())
+            WhichDataType(filter_column_target_type).isDynamic() ||
+            WhichDataType(filter_column_target_type).isVariant())
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
         , exact_values(std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls))

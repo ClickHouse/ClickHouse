@@ -1,11 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-parallel-replicas
--- Test that commit-order projection is:
--- - NOT written during insert (level-0 parts)
--- - REBUILT during first merge (level-0 -> level-1, some parts missing projection)
--- - MERGED (not rebuilt) during subsequent merges (level-1+ -> level-2+, all parts have projection)
---
--- Use max_parts_to_merge_at_once=2 so optimize merges exactly 2 parts at a time.
--- Verify via part_log ProfileEvents that projections are rebuilt vs merged.
+-- Tags: no-parallel-replicas
 
 set enable_analyzer = 1;
 

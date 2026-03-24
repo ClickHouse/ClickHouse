@@ -131,6 +131,16 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 
 void DatabaseMemory::removeDataPath(ContextPtr)
 {
+    /// This method is called in two cases:
+    /// 1. During startup for the temporary database (_temporary_and_external_tables) to clean up
+    ///    stale directories from previous server sessions (e.g., after crash or Ctrl+C).
+    ///    Temporary tables with disk-based engines (like MergeTree) may leave behind files that
+    ///    need to be removed.
+    /// 2. On explicit DROP DATABASE to remove all data.
+    ///
+    /// We must use removeRecursive() instead of removeDirectoryIfExists() because the directory
+    /// may contain files from temporary tables. Using removeDirectoryIfExists()
+    /// would fail or throw an exception if the directory is not empty.
     auto db_disk = getDisk();
     db_disk->removeRecursive(data_path);
 }

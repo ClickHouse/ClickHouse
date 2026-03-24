@@ -69,6 +69,7 @@ class Result(MetaClasses.Serializable):
         FAIL = "FAIL"
         SKIPPED = "SKIPPED"
         ERROR = "ERROR"
+        UNKNOWN = "UNKNOWN"
         XFAIL = "XFAIL"  # expected failure: test failed as expected, not a problem
         XPASS = "XPASS"  # unexpected pass: test was expected to fail but passed
 
@@ -156,6 +157,7 @@ class Result(MetaClasses.Serializable):
                 elif result.status in (
                     Result.Status.FAILED,
                     Result.StatusExtended.FAIL,
+                    Result.StatusExtended.UNKNOWN,
                     Result.StatusExtended.XPASS,
                 ):
                     result_status = Result.Status.FAILED
@@ -586,6 +588,7 @@ class Result(MetaClasses.Serializable):
                 self.Status.FAILED,
                 self.Status.DROPPED,
                 self.StatusExtended.FAIL,
+                self.StatusExtended.UNKNOWN,
             ):
                 has_failed = True
         if has_running:
