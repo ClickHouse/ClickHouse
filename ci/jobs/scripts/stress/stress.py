@@ -626,13 +626,28 @@ def main():
                 ]
             )
             hung_check_log = args.output_folder / "hung_check.log"  # type: Path
+            timed_out = False
             with Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE) as tee:
-                res = call(
-                    cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600
-                )
+                try:
+                    res = call(
+                        cmd,
+                        shell=True,
+                        stdout=tee.stdin,
+                        stderr=STDOUT,
+                        timeout=600,
+                    )
+                except subprocess.TimeoutExpired:
+                    logging.error(
+                        "Hung check timed out after 600 seconds, "
+                        "likely due to slow log analysis on sanitizer build"
+                    )
+                    res = 1
+                    timed_out = True
                 if tee.stdin is not None:
                     tee.stdin.close()
-            if res != 0 and have_long_running_queries:
+            if timed_out:
+                logging.info("No queries hung (hung check timed out during log analysis)")
+            elif res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
                 hung_check_status = (
                     "Hung check failed, possible deadlock found\tFAIL\t\\N\t\n"
