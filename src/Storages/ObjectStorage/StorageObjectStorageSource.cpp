@@ -1047,7 +1047,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     const auto & reading_path = configuration->getPathForRead();
     if (reading_path.hasGlobs())
     {
-        const bool match_web_paths_only = configuration->getType() == ObjectStorageType::Web;
+        match_web_paths_only = configuration->getType() == ObjectStorageType::Web;
         const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
 
