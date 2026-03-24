@@ -492,9 +492,14 @@ void TCPHandler::runImpl()
             }
 
             /// If we need to shut down, or client disconnects.
-            if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
+            /// Use eofOrCanceled() instead of eof() as a safety net: if a previous
+            /// query's pipeline callback canceled the ReadBuffer but the exception
+            /// was not propagated, we must close the connection rather than hitting
+            /// chassert(!isCanceled()) inside eof().
+            if (!tcp_server.isOpen() || server.isCancelled() || in->eofOrCanceled())
             {
-                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
+                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof_or_canceled: {})",
+                    tcp_server.isOpen(), server.isCancelled(), in->eofOrCanceled());
                 return;
             }
         }

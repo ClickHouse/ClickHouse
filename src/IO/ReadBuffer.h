@@ -81,6 +81,17 @@ public:
         return !hasPendingData() && !next();
     }
 
+    /// Safe EOF check that handles canceled buffers. Returns true if the buffer
+    /// is canceled OR at EOF. Use this instead of eof() when the buffer might
+    /// have been canceled by a failed read (e.g., a broken TCP connection
+    /// detected inside a pipeline callback). Calling eof() directly on a
+    /// canceled buffer triggers chassert(!isCanceled()) in debug/sanitizer
+    /// builds — see ReadBuffer::next().
+    bool ALWAYS_INLINE eofOrCanceled()
+    {
+        return isCanceled() || eof();
+    }
+
     void ignore()
     {
         if (!eof())

@@ -115,8 +115,13 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     {
         /// If lazy format is finished, we don't cancel pipeline but wait for main thread to be finished.
         data->is_finished = true;
-        /// Wait thread and rethrow exception if any.
+        /// Wait for the pipeline thread to finish.
         cancel();
+        /// Rethrow any exception from the pipeline thread. Without this check,
+        /// exceptions from pipeline callbacks (e.g. ClusterFunctionReadTaskCallback
+        /// canceling the TCP ReadBuffer) would be silently lost when pull() returns
+        /// false, causing the caller to believe the query succeeded.
+        data->rethrowExceptionIfHas();
         return false;
     }
 
