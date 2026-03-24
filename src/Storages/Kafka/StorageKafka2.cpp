@@ -410,9 +410,7 @@ private:
         if (kafka_storage.shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
-        auto table_id = kafka_storage.getStorageID();
-        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views > 0)
+        if (kafka_storage.mv_attached)
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
 
         ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
@@ -422,10 +420,6 @@ private:
         pipes.reserve(kafka_storage.num_consumers);
         auto modified_context = Context::createCopy(getContext());
         modified_context->applySettingsChanges(kafka_storage.settings_adjustments);
-
-        Poco::Timespan max_execution_time = (*kafka_storage.kafka_settings)[KafkaSetting::kafka_flush_interval_ms].changed
-            ? (*kafka_storage.kafka_settings)[KafkaSetting::kafka_flush_interval_ms]
-            : modified_context->getSettingsRef()[Setting::stream_flush_interval_ms];
 
         for (size_t i = 0; i < kafka_storage.num_consumers; ++i)
         {
@@ -439,7 +433,6 @@ private:
                 1,
                 i,
                 (*kafka_storage.kafka_settings)[KafkaSetting::kafka_commit_on_select]);
-            source->setTimeLimit(max_execution_time);
             pipes.emplace_back(std::move(source));
         }
 
@@ -836,8 +829,12 @@ void StorageKafka2::dropReplica()
 std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
     KeeperHandlingConsumer & consumer,
     const Stopwatch & watch,
-    const ContextPtr & modified_context)
+    const ContextPtr & modified_context,
+    size_t poll_max_block_size)
 {
+    if (poll_max_block_size == 0)
+        poll_max_block_size = getMaxBlockSize();
+
     LOG_TEST(log, "Polling consumer");
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     Block non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized());
@@ -854,7 +851,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         empty_buf,
         non_virtual_header,
         modified_context,
-        getMaxBlockSize(),
+        poll_max_block_size,
         std::nullopt,
         FormatParserSharedResources::singleThreaded(modified_context->getSettingsRef()));
 
@@ -1026,7 +1023,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                             .details = DeadLetterQueueElement::KafkaDetails{
                                 .topic_name = msg_info.currentTopic(),
                                 .partition = msg_info.currentPartition(),
-                                .offset = msg_info.currentPartition(),
+                                .offset = msg_info.currentOffset(),
                                 .key = msg_info.currentKey()}});
             }
 
@@ -1051,7 +1048,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         }
 
         if (!has_more_polled_messages
-            && (total_rows >= getMaxBlockSize() || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
+            && (total_rows >= poll_max_block_size || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             LOG_TRACE(
                 log,
@@ -1066,15 +1063,11 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
     auto maybe_guard = consumer.poll(msg_sink);
 
     // Return empty optional if the consumer was unable to poll any messages or the transformation of those messages resulted in no rows
-    if (!maybe_guard.has_value() || total_rows == 0)
+    if (!maybe_guard.has_value())
         return {};
 
-    /// MATERIALIZED columns can be added here, but I think
-    // they are not needed here:
-    // and it's misleading to use them here,
-    // as columns 'materialized' that way stays 'ephemeral'
-    // i.e. will not be stored anywhere
-    // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
+    if (total_rows == 0)
+        return BlocksAndGuard{{}, std::move(*maybe_guard)};
 
     auto result_block = non_virtual_header.cloneWithColumns(executor.getResultColumns());
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
@@ -1100,6 +1093,8 @@ void StorageKafka2::threadFunc(size_t idx)
         if (num_views)
         {
             auto start_time = std::chrono::steady_clock::now();
+
+            mv_attached.store(true);
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled && num_created_consumers > 0)
@@ -1140,6 +1135,8 @@ void StorageKafka2::threadFunc(size_t idx)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    mv_attached.store(false);
 
     if (!task->stream_cancelled)
     {
@@ -1210,9 +1207,19 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
 
 StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t idx)
 {
-    std::lock_guard lock{consumers_mutex};
+    UniqueLock lock(consumers_mutex);
     if (idx >= consumers.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid consumer index: {}, number of consumers is {}", idx, consumers.size());
+
+    /// Wait until the consumer is free. This prevents concurrent use of the same consumer
+    /// by multiple direct SELECTs or by a direct SELECT and MV streaming simultaneously.
+    /// Clang Thread Safety Analysis doesn't understand std::condition_variable::wait and std::unique_lock
+    cv.wait(
+        lock.getUnderlyingLock(),
+        [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !consumers[idx]->isInUse() || shutdown_called; });
+
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
     auto consumer = consumers[idx];
     const auto created_consumer = consumer->startUsing([&](IKafkaExceptionInfoSinkPtr exception_sink)

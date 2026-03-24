@@ -170,6 +170,9 @@ private:
     /// If named_collection is specified.
     String collection_name;
     std::atomic<bool> shutdown_called = false;
+    /// True when the background streaming thread is actively consuming for materialized views.
+    /// Prevents direct SELECTs from using consumers concurrently with MV streaming.
+    std::atomic<bool> mv_attached = false;
 
     // Handling replica activation.
     std::atomic<bool> is_active = false;
@@ -222,7 +225,7 @@ private:
     void dropReplica();
 
     std::optional<BlocksAndGuard>
-    pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, const ContextPtr & modified_context);
+    pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, const ContextPtr & modified_context, size_t poll_max_block_size = 0);
 
     void setZooKeeper();
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
