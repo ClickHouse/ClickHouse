@@ -752,6 +752,9 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
+    if (file_info)
+        return *file_info;
+
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.
     if (!read_settings.http_make_head_request)
@@ -781,7 +784,8 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
         throw;
     }
 
-    return parseFileInfo(response, 0);
+    file_info = parseFileInfo(response, 0);
+    return *file_info;
 }
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin)
