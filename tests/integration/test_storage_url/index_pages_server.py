@@ -17,6 +17,7 @@ DATA_PARTS = {
     "/data/order/a/part1.tsv": "10\n",
     "/data/order/b/part1.tsv": "20\n",
     "/data/duplicates/part1.tsv": "9\n",
+    "/data/query_override/part1.tsv": "6\n",
     "/data/headers/2025/part1.tsv": "7\n",
     "/data/headers/2025/part2.tsv": "8\n",
     "/data/mixed_headers/part1.tsv": "1\n",
@@ -98,6 +99,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/order/a/",
             "/data/order/b/",
             "/data/duplicates/",
+            "/data/query_override/",
             "/data/headers/",
             "/data/headers/2025/",
             "/data/mixed_headers/",
@@ -174,6 +176,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"./part1.tsv\">./part1.tsv</a>\n"
             self._send_html(body)
             return
+        if path == "/data/query_override/":
+            body = "<a href=\"part1.tsv?download=1\">part1.tsv?download=1</a>\n"
+            self._send_html(body)
+            return
         if path == "/data/glob/":
             body = (
                 "<a href=\"parta.tsv\">parta.tsv</a>\n"
@@ -204,6 +210,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         if path in DATA_PARTS:
             if path.startswith("/data/headers/") and self.headers.get("X-Test-Header") != "1":
                 self.send_response(403)
+                self.end_headers()
+                return
+            if path == "/data/query_override/part1.tsv" and parsed.query != "download=1":
+                self.send_response(404)
                 self.end_headers()
                 return
             data = DATA_PARTS[path].encode("utf-8")

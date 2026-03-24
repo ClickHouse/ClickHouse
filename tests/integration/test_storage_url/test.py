@@ -257,6 +257,13 @@ def test_url_wildcard_limits_directory_traversal():
     assert "url_wildcard_max_directories_to_read" in error
 
 
+def test_url_wildcard_preserves_index_entry_query():
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8087/data/query_override/part*.tsv?x=1', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "6"
+
+
 def test_table_function_url_access_rights():
     node1.query("CREATE USER OR REPLACE u1")
 

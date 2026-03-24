@@ -216,11 +216,26 @@ std::string WebObjectStorage::buildURL(const std::string & path) const
     if (path.empty())
         return url + query_fragment;
 
-    std::string result = url;
-    if (!result.ends_with('/'))
-        result += '/';
-    result += stripLeadingSlashes(path);
-    return result + query_fragment;
+    Poco::URI base_uri(url, false);
+    auto base_path = base_uri.getPath();
+    if (!base_path.ends_with('/'))
+        base_path += '/';
+
+    Poco::URI path_uri(stripLeadingSlashes(path), false);
+    base_uri.setPath(base_path + stripLeadingSlashes(path_uri.getPath()));
+
+    Poco::URI source_uri(url + query_fragment, false);
+    if (!path_uri.getRawQuery().empty())
+        base_uri.setQuery(path_uri.getRawQuery());
+    else
+        base_uri.setQuery(source_uri.getRawQuery());
+
+    if (!path_uri.getFragment().empty())
+        base_uri.setFragment(path_uri.getFragment());
+    else
+        base_uri.setFragment(source_uri.getFragment());
+
+    return base_uri.toString();
 }
 
 }
