@@ -99,7 +99,7 @@ public:
         const char * p = x.data();
         // pending bits that needs to be shifted out
         const char s = (-sz & 7) * 8;
-        union // NOLINT(cppcoreguidelines-pro-type-member-init)
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             StringKey8 k8;
             StringKey16 k16;

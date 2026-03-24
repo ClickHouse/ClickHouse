@@ -124,7 +124,7 @@ namespace impl
 
         static void hex(TUInt uint_, char * out, std::string_view table)
         {
-            union // NOLINT(cppcoreguidelines-pro-type-member-init)
+            union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
             {
                 TUInt value;
                 UInt8 uint8[sizeof(TUInt)];

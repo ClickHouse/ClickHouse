@@ -32,7 +32,7 @@ public:
     using ItemPtr = std::shared_ptr<ItemBase>;
 
 private:
-    struct Rec // NOLINT(cppcoreguidelines-pro-type-member-init)
+    struct Rec // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         std::type_index type_idx;
         ItemPtr ptr;
