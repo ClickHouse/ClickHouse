@@ -1,0 +1,26 @@
+<clickhouse>
+    <custom_handlers_storage>
+        <type>zookeeper</type>
+        <path>/custom_handlers_path/</path>
+        <update_timeout_ms>5000</update_timeout_ms>
+    </custom_handlers_storage>
+
+    <remote_servers>
+        <replicated_handler_nodes_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node_with_keeper</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node_with_keeper_2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <allow_distributed_ddl_queries>true</allow_distributed_ddl_queries>
+        </replicated_handler_nodes_cluster>
+    </remote_servers>
+
+    <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
+</clickhouse>

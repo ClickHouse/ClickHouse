@@ -1,0 +1,14 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_sql_handlers>1</allow_experimental_sql_handlers>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+</clickhouse>

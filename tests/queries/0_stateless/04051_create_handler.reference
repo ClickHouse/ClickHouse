@@ -1,0 +1,15 @@
+BAD_ARGUMENTS
+DDL OK
+exact: 42
+prefix: 100
+regexp: 200
+alter before: 1
+alter after: 2
+method POST: 300
+method GET on POST-only: 0
+wrong URL matches: 0
+SUPPORT_IS_DISABLED
+before drop: 777
+after drop matches: 0
+multi GET: 500
+multi POST: 500

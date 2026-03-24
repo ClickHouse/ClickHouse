@@ -10,6 +10,9 @@
 #include <Parsers/ParserDropIndexQuery.h>
 #include <Parsers/ParserDropNamedCollectionQuery.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
+#include <Parsers/ParserCreateHandlerQuery.h>
+#include <Parsers/ParserDropHandlerQuery.h>
+#include <Parsers/ParserAlterHandlerQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
 #include <Parsers/ParserInsertQuery.h>
@@ -69,6 +72,9 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateNamedCollectionQuery create_named_collection_p;
     ParserDropNamedCollectionQuery drop_named_collection_p;
     ParserAlterNamedCollectionQuery alter_named_collection_p;
+    ParserCreateHandlerQuery create_handler_p;
+    ParserDropHandlerQuery drop_handler_p;
+    ParserAlterHandlerQuery alter_handler_p;
     ParserCreateIndexQuery create_index_p;
     ParserDropIndexQuery drop_index_p;
     ParserDropAccessEntityQuery drop_access_entity_p;
@@ -102,6 +108,9 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_named_collection_p.parse(pos, node, expected)
         || drop_named_collection_p.parse(pos, node, expected)
         || alter_named_collection_p.parse(pos, node, expected)
+        || create_handler_p.parse(pos, node, expected)
+        || drop_handler_p.parse(pos, node, expected)
+        || alter_handler_p.parse(pos, node, expected)
         || create_index_p.parse(pos, node, expected)
         || drop_index_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)

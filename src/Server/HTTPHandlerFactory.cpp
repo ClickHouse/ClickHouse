@@ -2,6 +2,7 @@
 #include <Server/HTTPHandler.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/IServer.h>
+#include <Server/CustomHandlers/CustomHandlerRequestHandlerFactory.h>
 #include <Server/IndexRequestHandler.h>
 #include <Server/InterserverIOHTTPHandler.h>
 #include <Server/PrometheusMetricsWriter.h>
@@ -143,10 +144,12 @@ static inline auto createHandlersFactoryFromConfig(
         }
     }
 
+    bool has_defaults = false;
     for (const auto & key : keys)
     {
         if (key == "defaults")
         {
+            has_defaults = true;
             addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
         }
         else if (startsWith(key, "rule"))
@@ -258,6 +261,10 @@ static inline auto createHandlersFactoryFromConfig(
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: "
                 "{}.{}, must be 'rule' or 'defaults'", prefix, key);
     }
+
+    /// Add SQL-defined custom handlers if defaults section did not already add them
+    if (!has_defaults)
+        main_handler_factory->addHandler(createCustomHandlerRequestHandlerFactory(server));
 
     return main_handler_factory;
 }
@@ -397,6 +404,9 @@ void addDefaultHandlersFactory(
     AsynchronousMetrics & async_metrics)
 {
     addCommonDefaultHandlersFactory(factory, server, config);
+
+    /// Add SQL-defined custom handlers before the default dynamic query handler
+    factory.addHandler(createCustomHandlerRequestHandlerFactory(server));
 
     auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
     {
