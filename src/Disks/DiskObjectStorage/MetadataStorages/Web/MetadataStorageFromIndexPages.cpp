@@ -212,6 +212,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
             resolved.resolve(candidate_uri);
             candidate_uri = resolved;
         }
+        candidate_uri.normalize();
 
         if (candidate_uri.getPath().empty())
             continue;
@@ -263,6 +264,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
                 resolved.resolve(candidate_uri);
                 candidate_uri = resolved;
             }
+            candidate_uri.normalize();
 
             if (candidate_uri.getPath().empty())
                 continue;
