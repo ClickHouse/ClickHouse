@@ -50,15 +50,8 @@ bool isValidWebSocketKey(const String & key)
 {
     if (key.empty() || key.size() > 128)
         return false;
-    try
-    {
-        String decoded = base64Decode(key);
-        return decoded.size() == 16;
-    }
-    catch (...)
-    {
-        return false;
-    }
+    String decoded = base64Decode(key);
+    return decoded.size() == 16;
 }
 
 /// Send all bytes to the socket, handling partial writes.
