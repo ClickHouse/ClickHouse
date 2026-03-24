@@ -60,6 +60,7 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start |
 
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < /repo/tests/docker_scripts/create.sql
+bash /repo/tests/docker_scripts/create_tpcds.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
