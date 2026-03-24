@@ -503,6 +503,12 @@ def clickhouse_execute_http(
         "http_send_timeout": timeout,
         "output_format_parallel_formatting": 0,
         "max_rows_to_read": 0,  # Some queries read from system.text_log which might get too big
+        # Disable server-side AST fuzzer for infrastructure queries (hung
+        # check, log analysis, etc.).  The stress test profile sets
+        # ast_fuzzer_runs=5, and without this override the fuzzer mutates
+        # the hung-check processlist query, spawning new queries that then
+        # appear in the processlist — causing a false-positive hung check.
+        "ast_fuzzer_runs": 0,
     }
     if settings is not None:
         params.update(settings)
@@ -1904,7 +1910,7 @@ class TestCase:
         self.case_file: str = os.path.join(suite.suite_path, case)
         (self.name, self.ext) = os.path.splitext(case)
 
-        file_suffix = f".{os.getpid()}" if is_concurrent and args.test_runs > 1 else ""
+        file_suffix = f".{os.getpid()}" if is_concurrent else ""
         self.reference_file = self.get_reference_file(args, suite.suite_path, self.name)
         self.stdout_file = (
             os.path.join(suite.suite_tmp_path, self.name) + file_suffix + ".stdout"
@@ -3411,13 +3417,48 @@ class TestSuite:
             int(self.args.test_runs * self.args.long_test_runs_ratio), 1
         )
 
-        all_tests = map(
-            lambda test: [test]
-            * (long_test_runs if self.is_long_test(test) else test_runs),
-            all_tests,
-        )
+        newly_modified_runs = {}
+        if (
+            self.args.repeat_newly_modified_tests
+            and not self.args.no_random_settings
+        ):
+            newly_modified_runs = self.get_newly_modified_test_runs(all_tests)
+            if newly_modified_runs:
+                print(
+                    f"Will repeat {len(newly_modified_runs)} recently modified tests "
+                    f"with different randomized settings"
+                )
+
+        def get_runs(test):
+            base = long_test_runs if self.is_long_test(test) else test_runs
+            extra = newly_modified_runs.get(test, 0)
+            return max(base, extra)
+
+        all_tests = [[test] * get_runs(test) for test in all_tests]
         all_tests = [item for sublist in all_tests for item in sublist]
         return all_tests
+
+    def get_newly_modified_test_runs(self, all_tests):
+        """Get repetition counts for recently added tests based on test name order.
+
+        Tests are sorted by name in descending order (newest first, since test
+        names have numeric prefixes). Each test at rank r gets
+        int(sqrt(100 / r)) repetitions. Tests with 1 or fewer computed
+        repetitions are skipped.
+        """
+        sorted_tests = sorted(all_tests, reverse=True)
+
+        runs = {}
+        for rank, test in enumerate(sorted_tests, 1):
+            count = int(math.sqrt(100.0 / rank))
+            if count <= 1:
+                break
+            runs[test] = count
+
+        for test, count in sorted(runs.items(), reverse=True):
+            print(f"  {test}: {count} runs")
+
+        return runs
 
     def is_long_test(self, test_name):
         if test_name not in self.all_tags:
@@ -4656,20 +4697,35 @@ def main(args):
             exit_code.value = 1
 
         processlist = ""
+        hung_check_failed = False
         if hung_count > 0:
             try:
                 processlist = get_processlist_with_stacktraces(args)
             except Exception as e:
-                print(
-                    colored(
-                        "\nHung check failed. Failed to get processlist with stacktraces: "
-                        + str(e),
-                        args,
-                        "red",
-                        attrs=["bold"],
+                # The stacktrace query is expensive (JOIN + symbolization) and
+                # can time out under sanitizers.  Re-check whether the queries
+                # are still running — if they finished in the meantime, it was
+                # not a real hang.
+                try:
+                    hung_count = get_processlist_size(args)
+                except Exception:
+                    hung_count = -1
+                if hung_count != 0:
+                    print(
+                        colored(
+                            "\nHung check failed. Failed to get processlist with stacktraces: "
+                            + str(e),
+                            args,
+                            "red",
+                            attrs=["bold"],
+                        )
                     )
-                )
-                exit_code.value = 1
+                    exit_code.value = 1
+                    hung_check_failed = True
+                else:
+                    print(
+                        " queries finished while collecting stacktraces, not a hang"
+                    )
 
         if processlist:
             print(
@@ -4682,7 +4738,7 @@ def main(args):
 
             print_stacktraces()
             exit_code.value = 1
-        else:
+        elif not hung_check_failed:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
     if len(restarted_tests) > 0:
@@ -4914,6 +4970,14 @@ def parse_args():
         nargs="?",
         type=float,
         help="Ratio from --test-runs for long tests",
+    )
+    parser.add_argument(
+        "--repeat-newly-modified-tests",
+        action="store_true",
+        default=False,
+        help="Repeat recently added tests multiple times with different randomized settings. "
+        "Tests are sorted by name descending; repetitions = int(sqrt(100 / rank)). "
+        "Only effective when randomized settings are enabled.",
     )
     parser.add_argument(
         "-U",

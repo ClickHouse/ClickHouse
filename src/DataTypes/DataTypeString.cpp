@@ -35,7 +35,7 @@ bool DataTypeString::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeString::doGetSerialization(const SerializationInfoSettings & settings) const
 {
-    return std::make_shared<SerializationString>(settings.string_serialization_version);
+    return SerializationString::create(settings.string_serialization_version);
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
