@@ -1223,6 +1223,10 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
                 order_info.input_order->limit);
             if (!can_read)
                 return {};
+
+            /// Aggregation-in-order benefits from multiple input streams
+            /// for parallel aggregation and memory-bound merging.
+            reading->setPreferMultipleStreams();
         }
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)

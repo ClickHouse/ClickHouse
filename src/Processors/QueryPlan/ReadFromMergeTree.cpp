@@ -1305,11 +1305,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         /// For reverse direction, the pipe order is reversed so that PrefetchingConcat
         /// outputs the highest ranges first.
         /// Between parts, MergingSorted merges the sorted streams.
+        /// PrefetchingConcat merges per-part streams into one while keeping I/O parallel.
+        /// It must be disabled when a downstream step (e.g. aggregation-in-order) benefits
+        /// from receiving multiple streams for parallel processing.
         const bool can_use_per_part_prefetching =
             !output_each_partition_through_separate_port
             && input_order_info->limit == 0
             && !has_outer_limit
+            && !prefer_multiple_streams
             && num_streams > 1;
+
+        /// Even without PrefetchingConcat, split parts into multiple streams
+        /// when the downstream wants parallel streams (e.g. aggregation-in-order).
+        const bool can_split_parts = can_use_per_part_prefetching || (prefer_multiple_streams && num_streams > 1);
 
         size_t streams_remaining = num_streams;
         size_t marks_remaining_total = info.sum_marks;
@@ -1320,7 +1328,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
             /// Allocate streams proportional to marks, bounded by the global budget.
             size_t part_streams = 1;
-            if (can_use_per_part_prefetching && streams_remaining > 1 && marks_remaining_total > 0)
+            if (can_split_parts && streams_remaining > 1 && marks_remaining_total > 0)
             {
                 part_streams = std::max<size_t>(1,
                     static_cast<size_t>(std::round(
@@ -1388,9 +1396,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     std::move(stream_parts), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
             }
 
-            /// Concatenate streams within this part using PrefetchingConcatProcessor.
-            if (part_pipes.size() > 1)
+            if (can_use_per_part_prefetching && part_pipes.size() > 1)
             {
+                /// Concatenate streams within this part using PrefetchingConcatProcessor.
                 /// For reverse direction, reverse the pipe order so that PrefetchingConcat
                 /// outputs the highest ranges first, maintaining correct descending order.
                 if (input_order_info->direction != 1)
@@ -1402,9 +1410,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
                 pipes.emplace_back(std::move(pipe));
             }
-            else if (!part_pipes.empty())
+            else
             {
-                pipes.emplace_back(std::move(part_pipes.front()));
+                /// Keep streams separate for downstream parallel processing.
+                for (auto & p : part_pipes)
+                    pipes.emplace_back(std::move(p));
             }
         }
     }

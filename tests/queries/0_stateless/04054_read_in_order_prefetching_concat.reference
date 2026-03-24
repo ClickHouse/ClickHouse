@@ -1,7 +1,7 @@
 has_prefetching_concat
 1
 correctness
-5000000
+1000000
 no_prefetching_with_limit
 0
 prefetching_multi_part

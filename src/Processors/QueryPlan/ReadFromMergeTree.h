@@ -320,6 +320,11 @@ public:
     /// to `input_order_info->limit` (e.g. because of a JOIN).
     /// Used to disable per-part prefetching that defeats early termination.
     void setHasOuterLimit() { has_outer_limit = true; }
+
+    /// Set when downstream aggregation-in-order benefits from multiple
+    /// input streams (parallel aggregation + memory-bound merging).
+    /// Disables per-part PrefetchingConcat that would collapse streams into one.
+    void setPreferMultipleStreams() { prefer_multiple_streams = true; }
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
@@ -420,6 +425,10 @@ private:
     /// True when a LIMIT exists in the query but could not be pushed
     /// to input_order_info->limit (e.g. because of a JOIN).
     bool has_outer_limit = false;
+
+    /// True when downstream step (e.g. aggregation-in-order) benefits from
+    /// receiving multiple streams for parallel processing.
+    bool prefer_multiple_streams = false;
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
