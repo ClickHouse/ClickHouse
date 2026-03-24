@@ -666,7 +666,7 @@ String StatementGenerator::getNextHTTPURL(RandomGenerator & rg, const bool secur
                                               : fmt::format("http{}://{}", secure ? "s" : "", rg.pickRandomly(servers));
 }
 
-bool StatementGenerator::joinedTableOrFunction(
+StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
     RandomGenerator & rg, const String & rel_name, const uint32_t allowed_clauses, const bool under_remote, TableOrFunction * tof)
 {
     const SQLTable * t = nullptr;
@@ -1215,8 +1215,10 @@ bool StatementGenerator::joinedTableOrFunction(
         }
         break;
     }
-    return (t && t->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3))
+    const bool supports_final = (t && t->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3))
         || (v && v->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3)) || rg.nextLargeNumber() < 4;
+    const bool supports_sample = t && t->isMergeTreeFamily();
+    return {supports_final, supports_sample};
 }
 
 void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)
@@ -1225,7 +1227,42 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     const String name = fmt::format("t{}d{}", this->levels[this->current_level].rels.size(), this->current_level);
 
     jtof->mutable_table_alias()->set_table(name);
-    jtof->set_final(joinedTableOrFunction(rg, name, allowed_clauses, false, jtof->mutable_tof()));
+    const auto src = joinedTableOrFunction(rg, name, allowed_clauses, false, jtof->mutable_tof());
+    jtof->set_final(src.supports_final);
+    /// SAMPLE is only valid for MergeTree-family tables
+    if (src.supports_sample && this->allow_not_deterministic && rg.nextMediumNumber() < 6)
+    {
+        SampleClause * sc = jtof->mutable_sample();
+
+        if (rg.nextBool())
+        {
+            /// SAMPLE with ratio (0.001 to 1.0)
+            const double ratio = static_cast<double>(rg.randomInt<uint32_t>(1, 1000)) / 1000.0;
+            sc->set_ratio(ratio);
+        }
+        else
+        {
+            /// SAMPLE with number of rows (1000 to 100000000)
+            const uint64_t num_rows = static_cast<uint64_t>(rg.randomInt<uint32_t>(1, 100000)) * 1000;
+            sc->set_num_rows(num_rows);
+        }
+        /// Occasionally add OFFSET
+        if (rg.nextSmallNumber() < 4)
+        {
+            if (rg.nextBool())
+            {
+                /// OFFSET with ratio (0 to 0.5)
+                const double offset_ratio = static_cast<double>(rg.randomInt<uint32_t>(0, 500)) / 1000.0;
+                sc->set_offset_ratio(offset_ratio);
+            }
+            else
+            {
+                /// OFFSET with number of rows (0 to 50000000)
+                const uint64_t offset_rows = static_cast<uint64_t>(rg.randomInt<uint32_t>(0, 50000)) * 1000;
+                sc->set_offset_rows(offset_rows);
+            }
+        }
+    }
 }
 
 static const std::unordered_map<BinaryOperator, SQLFunc> binopToFunc{
@@ -1787,8 +1824,10 @@ uint32_t StatementGenerator::generateFromStatement(RandomGenerator & rg, const u
             const auto & maps = StatementGenerator::joinMappings.at(jt);
             if (!maps.empty() && rg.nextSmallNumber() < 4)
             {
-                core->set_join_const(rg.pickRandomly(maps));
-                core->set_const_on_right(rg.nextBool());
+                const auto & join_const = rg.pickRandomly(maps);
+
+                core->set_join_const(join_const);
+                core->set_const_on_right(join_const != JoinConst::J_NATURAL && rg.nextBool());
             }
             generateFromElement(rg, allowed_clauses, core->mutable_tos());
             generateJoinConstraint(rg, core->mutable_join_constraint());
