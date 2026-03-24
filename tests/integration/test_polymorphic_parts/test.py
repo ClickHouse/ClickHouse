@@ -193,6 +193,11 @@ def start_cluster():
     ],
 )
 def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
+    first_node.query("TRUNCATE TABLE polymorphic_table")
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+    first_node.query("ALTER TABLE polymorphic_table DROP COLUMN IF EXISTS ss")
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+
     first_node.query("SYSTEM STOP MERGES")
     second_node.query("SYSTEM STOP MERGES")
 
@@ -265,6 +270,9 @@ def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
 
 # Checks mostly that merge from compact part to compact part works.
 def test_compact_parts_only(start_cluster):
+    node1.query("TRUNCATE TABLE compact_parts_only")
+    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=20)
+
     for i in range(20):
         insert_random_data("compact_parts_only", node1, 100)
         insert_random_data("compact_parts_only", node2, 100)
@@ -315,6 +323,9 @@ def test_compact_parts_only(start_cluster):
 def test_different_part_types_on_replicas(start_cluster, table, part_type):
     leader = node3
     follower = node4
+
+    leader.query("TRUNCATE TABLE {}".format(table))
+    follower.query("SYSTEM SYNC REPLICA {}".format(table), timeout=20)
 
     assert (
         leader.query(
@@ -420,6 +431,9 @@ def start_cluster_diff_versions():
 
 
 def test_polymorphic_parts_non_adaptive(start_cluster):
+    node1.query("TRUNCATE TABLE non_adaptive_table")
+    node2.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=20)
+
     node1.query("SYSTEM STOP MERGES")
     node2.query("SYSTEM STOP MERGES")
 
@@ -448,6 +462,7 @@ def test_polymorphic_parts_non_adaptive(start_cluster):
 
 
 def test_polymorphic_parts_index(start_cluster):
+    node1.query("DROP DATABASE IF EXISTS test_index")
     node1.query(
         "CREATE DATABASE test_index ENGINE=Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
