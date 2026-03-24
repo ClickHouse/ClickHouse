@@ -10,6 +10,22 @@ namespace DB
 class BuildRuntimeFilterStep : public ITransformingStep
 {
 public:
+    struct RuntimeBloomFilterSettings
+    {
+        UInt64 bytes;
+        UInt64 hash_functions;
+    };
+
+    /// Runtime bloom filter should be small and fast otherwise it is pointless.
+    static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
+    static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
+    static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_BYTES = 512 * 1024;
+    static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
+
+    static RuntimeBloomFilterSettings normalizeBloomFilterSettings(
+        UInt64 bloom_filter_bytes,
+        UInt64 bloom_filter_hash_functions);
+
     BuildRuntimeFilterStep(
         const SharedHeader & input_header_,
         String filter_column_name_,

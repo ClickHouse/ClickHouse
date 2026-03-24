@@ -281,11 +281,12 @@ static bool shouldDisableRuntimeFilter(
     if (n == 0)
         return false;
 
-    double k = static_cast<double>(optimization_settings.join_runtime_bloom_filter_hash_functions);
-    double m = static_cast<double>(optimization_settings.join_runtime_bloom_filter_bytes * 8);
+    const auto normalized_settings = BuildRuntimeFilterStep::normalizeBloomFilterSettings(
+        optimization_settings.join_runtime_bloom_filter_bytes,
+        optimization_settings.join_runtime_bloom_filter_hash_functions);
 
-    if (m == 0.0)
-        return true; // Filter has no space (0 bytes), so it is effectively fully saturated.
+    double k = static_cast<double>(normalized_settings.hash_functions);
+    double m = static_cast<double>(normalized_settings.bytes) * 8.0;
 
     // Calculate expected saturation: P = 1 - e^(-kn/m)
     double p = 1.0 - std::exp(-k * n / m);

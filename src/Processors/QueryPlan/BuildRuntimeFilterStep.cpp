@@ -32,12 +32,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
-/// Runtime bloom filter should be small and fast otherwise it is pointless
-static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
-static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
-static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_BYTES = 512 * 1024;
-static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
-
 
 static ITransformingStep::Traits getTraits()
 {
@@ -51,6 +45,35 @@ static ITransformingStep::Traits getTraits()
         {
             .preserves_number_of_rows = true,
         }
+    };
+}
+
+BuildRuntimeFilterStep::RuntimeBloomFilterSettings BuildRuntimeFilterStep::normalizeBloomFilterSettings(
+    UInt64 bloom_filter_bytes,
+    UInt64 bloom_filter_hash_functions)
+{
+    if (!bloom_filter_bytes)
+        bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
+    if (bloom_filter_bytes > MAX_RUNTIME_BLOOM_FILTER_BYTES)
+        throw Exception(
+            ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Specified runtime bloom filter size {} is too big, maximum: {}",
+            bloom_filter_bytes,
+            MAX_RUNTIME_BLOOM_FILTER_BYTES);
+
+    if (!bloom_filter_hash_functions)
+        bloom_filter_hash_functions = DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS;
+    if (bloom_filter_hash_functions > MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS)
+        throw Exception(
+            ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Specified runtime bloom filter hash function count {} is too big, maximum: {}",
+            bloom_filter_hash_functions,
+            MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS);
+
+    return RuntimeBloomFilterSettings
+    {
+        .bytes = bloom_filter_bytes,
+        .hash_functions = bloom_filter_hash_functions,
     };
 }
 
@@ -81,21 +104,9 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
 {
-    if (!bloom_filter_bytes)
-        bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
-    if (bloom_filter_bytes > MAX_RUNTIME_BLOOM_FILTER_BYTES)
-        throw Exception(
-            ErrorCodes::PARAMETER_OUT_OF_BOUND,
-            "Specified runtime bloom filter size {} is too big, maximum: {}",
-            bloom_filter_bytes, MAX_RUNTIME_BLOOM_FILTER_BYTES);
-
-    if (!bloom_filter_hash_functions)
-        bloom_filter_hash_functions = DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS;
-    if (bloom_filter_hash_functions > MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS)
-        throw Exception(
-            ErrorCodes::PARAMETER_OUT_OF_BOUND,
-            "Specified runtime bloom filter hash function count {} is too big, maximum: {}",
-            bloom_filter_hash_functions, MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS);
+    const auto normalized_settings = normalizeBloomFilterSettings(bloom_filter_bytes, bloom_filter_hash_functions);
+    bloom_filter_bytes = normalized_settings.bytes;
+    bloom_filter_hash_functions = normalized_settings.hash_functions;
 }
 
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
