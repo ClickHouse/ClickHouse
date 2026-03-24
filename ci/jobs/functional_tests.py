@@ -235,6 +235,16 @@ def main():
         runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long --llvm-coverage"
         os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
 
+    if (
+        not is_flaky_check
+        and not is_targeted_check
+        and not is_llvm_coverage
+        and not is_bugfix_validation
+        and not args.test
+        and "--no-random-settings" not in runner_options
+    ):
+        runner_options += " --repeat-newly-modified-tests"
+
     rerun_count = 1
     if args.count:
         print(f"Rerun count set from --count: {args.count}")
@@ -750,10 +760,6 @@ def main():
             # - At least one test must fail (bug reproduced)
             # - The overall Tests result is treated as success in that case
             test_result.set_success()
-
-        # For bugfix validation, "Check errors" (latest in the list) is only a helper step and
-        # must not affect the overall job result.
-        results[-1].set_success()
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")

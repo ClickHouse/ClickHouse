@@ -269,7 +269,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_index(Keyword::INDEX);
     ParserKeyword s_type(Keyword::TYPE);
     ParserExpressionWithOptionalArguments type_p;
-    ParserExpression expression_p;
+    ParserNotEmptyExpressionList expression_list_p(/* allow_alias_without_as_keyword */ false);
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
     ASTPtr name;
     ASTPtr query;
@@ -290,7 +290,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
     else if (s_index.ignore(pos, expected))
     {
-        if (!expression_p.parse(pos, index, expected))
+        if (!expression_list_p.parse(pos, index, expected))
             return false;
 
         if (!s_type.ignore(pos, expected))

@@ -1416,12 +1416,14 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
+                bool stop_read_return_partial_result = false;
                 {
                     std::lock_guard lock(*callback_mutex);
                     receivePacketsExpectCancel(state);
+                    stop_read_return_partial_result = state.stop_read_return_partial_result;
                 }
 
-                if (state.stop_read_return_partial_result)
+                if (stop_read_return_partial_result)
                 {
                     executor.cancelReading();
                 }
@@ -1559,7 +1561,7 @@ void TCPHandler::sendReadTaskRequest()
 void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
-    announcement.serialize(*out, client_parallel_replicas_protocol_version);
+    announcement.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1569,7 +1571,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRang
 void TCPHandler::sendMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
-    request.serialize(*out, client_parallel_replicas_protocol_version);
+    request.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
 
     out->finishChunk();
     out->next();
