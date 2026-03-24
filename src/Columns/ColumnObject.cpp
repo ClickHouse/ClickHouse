@@ -1,7 +1,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
-#include <DataTypes/Serializations/SerializationDynamic.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
@@ -29,9 +29,9 @@ const FormatSettings & getFormatSettings()
     return settings;
 }
 
-const std::shared_ptr<SerializationDynamic> & getDynamicSerialization()
+const SerializationPtr & getDynamicSerialization()
 {
-    static thread_local const std::shared_ptr<SerializationDynamic> dynamic_serialization = std::make_shared<SerializationDynamic>();
+    static thread_local const SerializationPtr dynamic_serialization = DataTypeDynamic().getDefaultSerialization();
     return dynamic_serialization;
 }
 
@@ -1173,7 +1173,7 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
         filtered_dynamic_paths[path] = column->filter(filt, result_size_hint);
 
     auto filtered_shared_data = shared_data->filter(filt, result_size_hint);
-    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 void ColumnObject::filter(const Filter & filt)
@@ -1227,7 +1227,7 @@ ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
         indexed_dynamic_paths[path] = column->index(indexes, limit);
 
     auto indexed_shared_data = shared_data->index(indexes, limit);
-    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
@@ -1243,7 +1243,7 @@ ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
         replicated_dynamic_paths[path] = column->replicate(replicate_offsets);
 
     auto replicated_shared_data = shared_data->replicate(replicate_offsets);
-    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_columns, const Selector & selector) const
@@ -1274,7 +1274,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_colu
     VectorWithMemoryTracking<MutableColumnPtr> result_columns;
     result_columns.reserve(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
-        result_columns.emplace_back(ColumnObject::create(std::move(scattered_typed_paths[i]), std::move(scattered_dynamic_paths[i]), std::move(scattered_shared_data_columns[i]), max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types));
+        result_columns.emplace_back(ColumnObject::create(std::move(scattered_typed_paths[i]), std::move(scattered_dynamic_paths[i]), std::move(scattered_shared_data_columns[i]), max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics));
     return result_columns;
 }
 

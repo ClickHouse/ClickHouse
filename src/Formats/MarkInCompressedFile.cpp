@@ -1,10 +1,16 @@
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Common/BitHelpers.h>
+#include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 String MarkInCompressedFile::toString() const
 {
@@ -94,6 +100,12 @@ MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
 
 MarkInCompressedFile MarksInCompressedFile::get(size_t idx) const
 {
+    if (idx >= num_marks)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Mark index {} is out of range [0, {})",
+            idx, num_marks);
+
     auto [block, offset] = lookUpMark(idx);
     size_t x = block->min_x + readBits(packed.data(), offset, block->bits_for_x);
     size_t y = block->min_y + (readBits(packed.data(), offset + block->bits_for_x, block->bits_for_y) << block->trailing_zero_bits_in_y);
