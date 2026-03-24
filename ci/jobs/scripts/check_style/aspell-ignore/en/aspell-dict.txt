@@ -786,6 +786,7 @@ OKLab
 OLAP
 OLTP
 ORCCompression
+ORMs
 OSCPUVirtualTimeMicroseconds
 OSCPUWaitMicroseconds
 OSContextSwitches

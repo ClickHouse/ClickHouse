@@ -2471,16 +2471,20 @@ IndexSize IMergeTreeDataPart::getIndexSizeFromFile() const
 
     if (!pk.column_names.empty())
     {
+        bool is_compressed = true;
         auto bin_checksum = checksums.files.find("primary" + getIndexExtension(true));
         if (bin_checksum == checksums.files.end())
+        {
+            is_compressed = false;
             bin_checksum = checksums.files.find("primary" + getIndexExtension(false));
+        }
 
         if (bin_checksum != checksums.files.end())
         {
             return IndexSize{
                 .marks = index_granularity->getMarksCount(),
                 .data_compressed = bin_checksum->second.file_size,
-                .data_uncompressed = bin_checksum->second.uncompressed_size,
+                .data_uncompressed = is_compressed ? bin_checksum->second.uncompressed_size : bin_checksum->second.file_size,
             };
         }
     }
