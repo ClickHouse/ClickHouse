@@ -1257,8 +1257,7 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
-    chassert(object_info->getFileFormat().has_value());
-    if (Poco::toLower(*object_info->getFileFormat()) != "parquet")
+    if (Poco::toLower(iceberg_object_info->info.file_format) != "parquet")
         return nullptr;
 
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);

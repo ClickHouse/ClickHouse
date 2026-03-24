@@ -216,11 +216,10 @@ Chunk IcebergSource::generate()
 
 void IcebergSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
-    const auto * iceberg_obj = dynamic_cast<const IcebergDataObjectInfo *>(&object_info);
-    const auto & fmt = iceberg_obj ? iceberg_obj->info.file_format : configuration->format;
+    const auto & iceberg_obj = dynamic_cast<const IcebergDataObjectInfo &>(object_info);
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
-        fmt,
+        iceberg_obj.info.file_format,
         format_settings,
         read_context);
     schema_cache.addNumRows(cache_key, num_rows);
@@ -290,7 +289,8 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
     } while (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0);
 
     auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
-    const auto & file_format = iceberg_object ? iceberg_object->info.file_format : configuration->format;
+    chassert(iceberg_object);
+    const auto & file_format = iceberg_object->info.file_format;
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;

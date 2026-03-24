@@ -246,7 +246,7 @@ static void writeDataFiles(
             /*num_streams_=*/1);
 
         auto input_format = FormatFactory::instance().getInput(
-            data_file->data_object_info->getFileFormat().value_or(write_format),
+            data_file->data_object_info->info.file_format,
             *read_buffer,
             *sample_block,
             context,

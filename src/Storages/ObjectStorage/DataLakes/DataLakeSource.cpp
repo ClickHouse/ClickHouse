@@ -255,7 +255,7 @@ void DataLakeSource::addNumRowsToCache(const ObjectInfo & object_info, size_t nu
 {
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
-        object_info.getFileFormat().value_or(configuration->format),
+        configuration->format,
         format_settings,
         read_context);
     schema_cache.addNumRows(cache_key, num_rows);
@@ -335,7 +335,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
 
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
-            object_info->getFileFormat().value_or(configuration->format),
+            configuration->format,
             format_settings,
             context_);
 
@@ -397,7 +397,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
             "Reading object '{}', size: {} bytes, with format: {}",
             object_info->getPath(),
             object_info->getObjectMetadata()->size_bytes,
-            object_info->getFileFormat().value_or(configuration->format));
+            configuration->format);
 
         bool use_native_reader_v3 = format_settings.has_value()
             ? format_settings->parquet.use_native_reader_v3
@@ -405,12 +405,12 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
 
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] && use_native_reader_v3
-            && (object_info->getFileFormat().value_or(configuration->format) == "Parquet")
+            && (configuration->format == "Parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
             const std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             input_format = FormatFactory::instance().getInputWithMetadata(
-                object_info->getFileFormat().value_or(configuration->format),
+                configuration->format,
                 *read_buf,
                 initial_header,
                 context_,
@@ -429,7 +429,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
         else
         {
             input_format = FormatFactory::instance().getInput(
-                object_info->getFileFormat().value_or(configuration->format),
+                configuration->format,
                 *read_buf,
                 initial_header,
                 context_,

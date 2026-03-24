@@ -58,8 +58,6 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr context_);
 
-    std::optional<String> getFileFormat() const override { return info.file_format; }
-
     void addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object);
 
     void addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object);
