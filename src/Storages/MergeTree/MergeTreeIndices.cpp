@@ -93,7 +93,7 @@ void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndex
 }
 
 MergeTreeIndexPtr MergeTreeIndexFactory::get(
-    const IndexDescription & index) const
+    const IndexDescription & index, const MergeTreeSettings & settings) const
 {
     auto it = creators.find(index.type);
     if (it == creators.end())
@@ -110,19 +110,19 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                 );
     }
 
-    return it->second(index);
+    return it->second(index, settings);
 }
 
 
-MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescription> & indices) const
+MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const
 {
     MergeTreeIndices result;
     for (const auto & index : indices)
-        result.emplace_back(get(index));
+        result.emplace_back(get(index, settings));
     return result;
 }
 
-void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach) const
+void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const
 {
     /// Do not allow constant and non-deterministic expressions.
     /// Do not throw on attach for compatibility.
@@ -164,7 +164,7 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
             );
     }
 
-    it->second(index, attach);
+    it->second(index, attach, settings);
 }
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()

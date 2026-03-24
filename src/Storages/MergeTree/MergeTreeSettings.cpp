@@ -616,6 +616,18 @@ namespace ErrorCodes
     ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
     ```
     )", 0) \
+    DECLARE(UInt64, text_index_dictionary_block_size, 512, R"(
+    Default dictionary block size for text indexes.
+    Can be overridden by explicit `dictionary_block_size` index argument.
+    )", 0) \
+    DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
+    Default front-coding compression for text index dictionary blocks.
+    Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
+    )", 0) \
+    DECLARE(UInt64, text_index_posting_list_block_size, 1048576, R"(
+    Default posting list block size for text indexes (bytes).
+    Can be overridden by explicit `posting_list_block_size` index argument.
+    )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in

@@ -734,7 +734,7 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
 
     for (const auto & index_description : secondary_indices)
     {
-        auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
+        auto skip_index = MergeTreeIndexFactory::instance().get(index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
         auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
 
@@ -780,7 +780,7 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
 
     for (const auto & index_description : secondary_indices)
     {
-        auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
+        auto skip_index = MergeTreeIndexFactory::instance().get(index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
         auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
 
@@ -2678,7 +2678,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 
     for (auto & index_description : secondary_indices_descriptions)
     {
-        auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
+        auto index_ptr = MergeTreeIndexFactory::instance().get(index_description, *storage.getSettings());
         auto index_name = index_ptr->getFileName();
         auto index_substreams = index_ptr->getSubstreams();
 

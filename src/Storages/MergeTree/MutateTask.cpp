@@ -1822,7 +1822,7 @@ private:
 
             if (need_recalculate)
             {
-                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
+                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx, *ctx->data->getSettings()));
             }
             else
             {
@@ -2630,7 +2630,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     {
         if (ctx->indices_to_drop_names.contains(index.name))
         {
-            ctx->indices_to_drop.insert(index_factory.get(index));
+            ctx->indices_to_drop.insert(index_factory.get(index, *ctx->data->getSettings()));
             continue;
         }
 
@@ -2640,7 +2640,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         if (need_recalculate)
         {
             bool inserted;
-            auto index_ptr = index_factory.get(index);
+            auto index_ptr = index_factory.get(index, *ctx->data->getSettings());
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;

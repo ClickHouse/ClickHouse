@@ -1106,6 +1106,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"replicated_fetches_min_part_level", 0, 0, "New setting"},
             {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
+            {"text_index_dictionary_block_size", 512, 512, "New setting"},
+            {"text_index_dictionary_block_frontcoding_compression", true, true, "New setting"},
+            {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {

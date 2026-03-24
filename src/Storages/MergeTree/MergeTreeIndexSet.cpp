@@ -778,13 +778,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index);
 }
 
-MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr setIndexCreator(const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     size_t max_rows = getFieldFromIndexArgumentAST(index.arguments->children[0]).safeGet<size_t>();
     return std::make_shared<MergeTreeIndexSet>(index, max_rows);
 }
 
-void setIndexValidator(const IndexDescription & index, bool /*attach*/)
+void setIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
 {
     if (!index.arguments || index.arguments->children.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument");

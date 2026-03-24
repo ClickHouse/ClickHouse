@@ -1518,6 +1518,9 @@ class MergeTreeSettingsRandomizer:
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
         "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
+        "text_index_dictionary_block_size": lambda: random.choice([16, 64, 128, 256, 512, 1024, 8192]),
+        "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
+        "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),
     }
 
     @staticmethod
@@ -2043,7 +2046,7 @@ class TestCase:
             and not args.zookeeper
         ):
             return FailureReason.NO_ZOOKEEPER
-        
+
         if (
             tags
             and (("shard" in tags) or ("distributed" in tags) or ("global" in tags))
@@ -2064,7 +2067,7 @@ class TestCase:
         ):
             # Tests for races and deadlocks usually are run in a loop for a significant amount of time
             return FailureReason.NO_LONG
-        
+
         if (
             tags
             and ("no-llvm-coverage" in tags)
@@ -2072,7 +2075,7 @@ class TestCase:
         ):
             # Skip tests that are incompatible with LLVM coverage
             return FailureReason.NO_LLVM_COVERAGE
-        
+
         if tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 

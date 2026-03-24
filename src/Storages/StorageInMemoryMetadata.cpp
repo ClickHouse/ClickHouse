@@ -881,7 +881,8 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             bool valid_index = true;
             try
             {
-                MergeTreeIndexFactory::instance().validate(index, false);
+                static const MergeTreeSettings default_settings;
+                MergeTreeIndexFactory::instance().validate(index, false, default_settings);
             }
             catch (const Exception & e)
             {

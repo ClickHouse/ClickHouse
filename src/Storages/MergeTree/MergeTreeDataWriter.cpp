@@ -667,10 +667,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
             for (const auto & index : index_descriptions)
                 if (!exclude_index_names.contains(index.name))
-                    indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
+                    indices.emplace_back(MergeTreeIndexFactory::instance().get(index, *data_settings));
         }
         else /// All indexes will be materialized on INSERT
-            indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
+            indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices(), *data_settings);
     }
 
     /// If we need to calculate some columns to sort.
