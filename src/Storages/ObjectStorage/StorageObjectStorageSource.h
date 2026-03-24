@@ -90,9 +90,6 @@ protected:
     size_t total_files_read = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
 
-    Map http_response_headers;
-    bool http_response_headers_initialized = false;
-
     struct ReaderHolder : private boost::noncopyable
     {
     public:

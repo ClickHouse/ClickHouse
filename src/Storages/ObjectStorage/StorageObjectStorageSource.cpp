@@ -55,8 +55,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/IReadBufferMetadataProvider.h>
-
 namespace fs = std::filesystem;
 namespace ProfileEvents
 {
@@ -76,6 +74,22 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace
+{
+    Map objectAttributesToMap(const ObjectAttributes & attributes)
+    {
+        Map result;
+        for (const auto & [key, value] : attributes)
+        {
+            Tuple element;
+            element.emplace_back(key);
+            element.emplace_back(value);
+            result.emplace_back(std::move(element));
+        }
+        return result;
+    }
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 max_download_buffer_size;
@@ -408,21 +422,13 @@ Chunk StorageObjectStorageSource::generate()
 
             if (read_from_format_info.requested_virtual_columns.contains("_headers"))
             {
-                if (!http_response_headers_initialized)
-                {
-                    if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(reader.readBuffer()))
-                    {
-                        if (auto metadata = provider->getMetadata("headers"); metadata && metadata->getType() == Field::Types::Map)
-                            http_response_headers = metadata->safeGet<Map>();
-                    }
-                    http_response_headers_initialized = true;
-                }
-
                 auto type = std::make_shared<DataTypeMap>(
                     std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                     std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
 
-                chunk.addColumn(type->createColumnConst(chunk.getNumRows(), http_response_headers)->convertToFullColumnIfConst());
+                chunk.addColumn(type->createColumnConst(
+                    chunk.getNumRows(),
+                    objectAttributesToMap(object_metadata->attributes))->convertToFullColumnIfConst());
             }
 
 #if USE_PARQUET
@@ -514,8 +520,6 @@ Chunk StorageObjectStorageSource::generate()
         if (!reader)
             break;
 
-        http_response_headers_initialized = false;
-        http_response_headers = {};
         ++total_files_read;
 
         /// Even if task is finished the thread may be not freed in pool.

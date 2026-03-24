@@ -203,6 +203,11 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::
         metadata.size_bytes = *file_info.file_size;
     if (file_info.last_modified)
         metadata.last_modified = Poco::Timestamp::fromEpochTime(*file_info.last_modified);
+    for (const auto & header : response_buf->getResponseHeaders())
+    {
+        const auto & tuple = header.safeGet<Tuple>();
+        metadata.attributes.emplace(tuple[0].safeGet<String>(), tuple[1].safeGet<String>());
+    }
     return metadata;
 }
 
