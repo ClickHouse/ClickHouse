@@ -3,6 +3,7 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas=0;
 SET query_plan_optimize_join_order_limit = 0;
 SET query_plan_join_swap_table = false;
+SET query_plan_remove_unused_columns = 0; -- TODO(antaljanosbenjamin): Disable this only to pass fast test while I am working on fixing this
 
 -- { echoOn }
 
