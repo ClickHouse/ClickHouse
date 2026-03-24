@@ -9,4 +9,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query_kind=secondary_query --query "SELECT (SELECT toUInt256(7)) EXCEPT ALL SELECT 0 EXCEPT ALL SELECT 2147483646"
-${CLICKHOUSE_CLIENT} --query_kind=secondary_query --query "SELECT (SELECT 1) UNION ALL SELECT 2"
+${CLICKHOUSE_CLIENT} --query_kind=secondary_query --query "SELECT (SELECT 1) UNION ALL SELECT 2 ORDER BY 1"
