@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 # Reproduces https://github.com/ClickHouse/ClickHouse/issues/85955
-# Reading an Iceberg table with Map(Tuple(Int), Tuple(Int)) crashed with
+# Reading an Iceberg table with Map(Tuple(Int), Tuple(Int)) throws
 # std::out_of_range in unordered_map::at during Parquet column name remapping.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
