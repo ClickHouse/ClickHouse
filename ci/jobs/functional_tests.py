@@ -751,10 +751,6 @@ def main():
             # - The overall Tests result is treated as success in that case
             test_result.set_success()
 
-        # For bugfix validation, "Check errors" (latest in the list) is only a helper step and
-        # must not affect the overall job result.
-        results[-1].set_success()
-
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
 

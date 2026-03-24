@@ -8,10 +8,10 @@ namespace BuzzHouse
 {
 
 const std::unordered_map<JoinType, std::vector<JoinConst>> StatementGenerator::joinMappings
-    = {{J_LEFT, {J_ANY, J_ALL, J_SEMI, J_ANTI, J_ASOF}},
-       {J_INNER, {J_ANY, J_ALL, J_ASOF}},
-       {J_RIGHT, {J_ANY, J_ALL, J_SEMI, J_ANTI}},
-       {J_FULL, {J_ANY, J_ALL}},
+    = {{J_LEFT, {J_ANY, J_ALL, J_SEMI, J_ANTI, J_ASOF, J_NATURAL}},
+       {J_INNER, {J_ANY, J_ALL, J_ASOF, J_NATURAL}},
+       {J_RIGHT, {J_ANY, J_ALL, J_SEMI, J_ANTI, J_NATURAL}},
+       {J_FULL, {J_ANY, J_ALL, J_NATURAL}},
        {J_PASTE, {}},
        {J_CROSS, {}}};
 
@@ -2133,6 +2133,27 @@ std::optional<String> StatementGenerator::alterSingleTable(
                      generateNextTablePartition(
                          rg, 0, rg.nextSmallNumber() < 3, false, t, ope->mutable_single_partition()->mutable_partition());
              }},
+            /// Expire snapshots (Iceberg-specific)
+            {4,
+             [&]
+             {
+                 ExpireSnapshots * es = ati->mutable_execute_command()->mutable_expire_snapshots();
+                 static const DB::Strings periods = {"1s", "15s", "1m", "1h", "1d", "7d"};
+
+                 if (rg.nextSmallNumber() < 4)
+                     es->set_positional_timestamp(getNextIcebergExpireTimestamp(rg, fc));
+                 if (rg.nextSmallNumber() < 4)
+                     es->set_expire_before(getNextIcebergExpireTimestamp(rg, fc));
+                 if (rg.nextSmallNumber() < 4)
+                     es->set_retention_period(rg.pickRandomly(periods));
+                 if (rg.nextSmallNumber() < 4)
+                     es->set_retain_last(rg.randomInt<uint32_t>(0, 10));
+                 if (rg.nextSmallNumber() < 4)
+                     for (uint32_t j = 0, cnt = rg.randomInt<uint32_t>(0, 3); j < cnt; j++)
+                         es->add_snapshot_ids(fc.getRandomIcebergHistoryValue("\"snapshot_id\""));
+                 if (rg.nextSmallNumber() < 4)
+                     es->set_dry_run(rg.nextBool());
+             }},
         });
     }
 
@@ -2821,7 +2842,7 @@ void StatementGenerator::setBackupDestination(RandomGenerator & rg, BackupRestor
     backup_file += std::to_string(bout->backup_number());
     if (rg.nextSmallNumber() < 8)
     {
-        static const DB::Strings backupFormats = {"tar", "zip", "tzst", "tgz"};
+        static const DB::Strings backupFormats = {"tar", "zip", "zipx", "tzst", "tgz"};
         const String & nsuffix = rg.pickRandomly(backupFormats);
 
         backup_file += ".";
@@ -3319,7 +3340,9 @@ static const std::vector<ExplainOptValues> explainSettings{
         ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_query_tree_passes,
         [](RandomGenerator & rg) { return rg.randomInt<uint32_t>(0, 32); }),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_projections, trueOrFalseInt),
-    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_input_headers, trueOrFalseInt)};
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_input_headers, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_column_structure, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_pretty, trueOrFalseInt)};
 
 void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq)
 {
@@ -3344,17 +3367,19 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
                     this->ids.insert(this->ids.end(), {0, 1});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_SYNTAX:
-                    this->ids.insert(this->ids.end(), {2});
+                    this->ids.insert(this->ids.end(), {2, 17, 18});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
                     this->ids.insert(this->ids.end(), {3, 4, 5, 6, 7});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_ESTIMATE:
-                    this->ids.insert(this->ids.end(), {1, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20});
+                    this->ids.insert(this->ids.end(), {1, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
                     this->ids.insert(this->ids.end(), {0, 15, 16});
+                    break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_CURRENT_TRANSACTION:
                     break;
                 default:
                     break;
@@ -3362,7 +3387,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
         }
         else
         {
-            this->ids.insert(this->ids.end(), {1, 9, 10, 11, 12, 13, 14, 15, 19, 20});
+            this->ids.insert(this->ids.end(), {1, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22});
         }
         if (!this->ids.empty())
         {
