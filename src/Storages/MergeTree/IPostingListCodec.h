@@ -34,7 +34,7 @@ public:
 
     virtual ~IPostingListCodec() = default;
 
-    Type getType() const { return type{}; }
+    Type getType() const { return type; }
 
     /// Splits the posting list into posting_list_block_size-large blocks and encodes each block separately.
     /// Also collects per-segment metadata into info and returns it to the caller (TokenPostingsInfo).
@@ -43,7 +43,7 @@ public:
     /// Reads an encoded posting list, decodes it, and returns a posting list.
     virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;
 private:
-    Type type;
+    Type type{};
 };
 
 class PostingListCodecFactory : public boost::noncopyable
