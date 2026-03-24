@@ -8,6 +8,12 @@ SET max_rows_to_read = 0;
 SET use_page_cache_for_disks_without_file_cache = 0;
 SET use_page_cache_for_object_storage = 0;
 SET enable_filesystem_cache_on_write_operations = 0;
+SET read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0;
+SET enable_filesystem_cache = 1;
+SET filesystem_prefetch_min_bytes_for_single_read_task = 1;
+SET filesystem_prefetch_step_marks = 2;
+SET filesystem_prefetch_step_bytes = 0;
+SET filesystem_prefetches_limit = 0;
 
 DROP TABLE IF EXISTS tab;
 
