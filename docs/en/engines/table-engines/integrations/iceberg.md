@@ -26,7 +26,7 @@ Note that the Iceberg table must already exist in the storage, this command does
 
 ```sql
 CREATE TABLE iceberg_table_s3
-    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])
+    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], [,extra_credentials])
 
 CREATE TABLE iceberg_table_azure
     ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
@@ -42,6 +42,8 @@ CREATE TABLE iceberg_table_local
 
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
+
+For `IcebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
 
@@ -73,6 +75,38 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 ## Aliases {#aliases}
 
 Table engine `Iceberg` is an alias to `IcebergS3` now.
+
+## Data types {#data-types}
+
+The following table shows how Iceberg data types are mapped to ClickHouse data types during schema inference (for reading purposes).
+
+### Primitive types {#primitive-types}
+
+| Iceberg type | ClickHouse type | Notes |
+|---|---|---|
+| `boolean` | `Bool` | |
+| `int` | `Int32` | |
+| `long`, `bigint` | `Int64` | |
+| `float` | `Float32` | |
+| `double` | `Float64` | |
+| `date` | `Date32` | |
+| `time` | `Int64` | Microseconds since midnight |
+| `timestamp` | `DateTime64(6)` | Microseconds, no timezone |
+| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, UTC timezone |
+| `timestamp_ns` | `DateTime64(9)` | Nanoseconds, no timezone (since Iceberg v3 only) |
+| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, UTC timezone (since Iceberg v3 only) |
+| `string`, `binary` | `String` | |
+| `uuid` | `UUID` | |
+| `fixed(N)` | `FixedString(N)` | |
+| `decimal(P, S)` | `Decimal(P, S)` | |
+
+### Complex types {#complex-types}
+
+| Iceberg type | ClickHouse type |
+|---|---|
+| `list` | `Array` |
+| `map` | `Map` |
+| `struct` | `Tuple` |
 
 ## Schema evolution {#schema-evolution}
 ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:

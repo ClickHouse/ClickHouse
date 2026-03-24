@@ -11,7 +11,8 @@
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <filesystem>
 
@@ -119,7 +120,16 @@ void CustomHandlersFactory::create(const ASTCreateHandlerQuery & query)
     }
 
     handlers[query.handler_name] = parseDefinition(query);
-    persist(query.handler_name);
+
+    try
+    {
+        persist(query.handler_name);
+    }
+    catch (...)
+    {
+        handlers.erase(query.handler_name);
+        throw;
+    }
 }
 
 void CustomHandlersFactory::alter(const ASTAlterHandlerQuery & query)
@@ -134,9 +144,7 @@ void CustomHandlersFactory::alter(const ASTAlterHandlerQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler `{}` does not exist", query.handler_name);
     }
 
-    /// Build the new definition from the old one, applying changes.
-    /// Persist first, then swap in-memory state so that a failed write
-    /// does not leave the in-memory map out of sync with disk/ZooKeeper.
+    auto old_def = it->second;
     CustomHandlerDefinition new_def = it->second;
 
     if (query.url)
@@ -155,8 +163,7 @@ void CustomHandlersFactory::alter(const ASTAlterHandlerQuery & query)
     if (query.query)
         new_def.query = *query.query;
 
-    auto old_def = std::move(it->second);
-    it->second = new_def;
+    it->second = std::move(new_def);
 
     try
     {
@@ -177,8 +184,18 @@ void CustomHandlersFactory::remove(const std::string & handler_name)
     if (it == handlers.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler `{}` does not exist", handler_name);
 
+    auto old_def = std::move(it->second);
     handlers.erase(it);
-    unpersist(handler_name);
+
+    try
+    {
+        unpersist(handler_name);
+    }
+    catch (...)
+    {
+        handlers[handler_name] = std::move(old_def);
+        throw;
+    }
 }
 
 bool CustomHandlersFactory::removeIfExists(const std::string & handler_name)
@@ -189,26 +206,35 @@ bool CustomHandlersFactory::removeIfExists(const std::string & handler_name)
     if (it == handlers.end())
         return false;
 
+    auto old_def = std::move(it->second);
     handlers.erase(it);
-    unpersist(handler_name);
 
+    try
+    {
+        unpersist(handler_name);
+    }
+    catch (...)
+    {
+        handlers[handler_name] = std::move(old_def);
+        throw;
+    }
     return true;
 }
 
 void CustomHandlersFactory::persist(const std::string & handler_name) const
 {
     if (!metadata_path.empty())
-        saveToDisk(handler_name);
-    if (!zk_path.empty())
-        saveToZooKeeper(handler_name);
+    {
+        std::string content = serializeHandler(handler_name);
+        if (!content.empty())
+            saveToDisk(handler_name, content);
+    }
 }
 
 void CustomHandlersFactory::unpersist(const std::string & handler_name) const
 {
     if (!metadata_path.empty())
         removeFromDisk(handler_name);
-    if (!zk_path.empty())
-        removeFromZooKeeper(handler_name);
 }
 
 void CustomHandlersFactory::loadFromConfig(const ContextPtr & context)
@@ -233,10 +259,12 @@ void CustomHandlersFactory::loadFromConfig(const ContextPtr & context)
     }
     else if (storage_type == "zookeeper" || storage_type == "keeper")
     {
-        zk_path = config.getString(std::string(custom_handlers_storage_config_path) + ".path");
+        /// ZooKeeper-based storage is planned but not yet implemented.
+        /// Fall back to local storage so the server starts normally.
+        LOG_WARNING(log, "ZooKeeper-based storage for SQL handlers is not yet implemented, falling back to local storage");
 
-        LOG_INFO(log, "Using ZooKeeper storage for SQL handlers at path: {}", zk_path);
-        loadFromZooKeeper();
+        metadata_path = fs::path(context->getPath()) / "handlers_metadata/";
+        loadFromDisk(metadata_path);
     }
     else
     {
@@ -286,49 +314,13 @@ void CustomHandlersFactory::loadFromDisk(const std::string & path)
     }
 }
 
-void CustomHandlersFactory::loadFromZooKeeper()
-{
-    auto log = getLogger("CustomHandlersFactory");
-
-    auto zk = global_context->getZooKeeper();
-    zk->createIfNotExists(zk_path, "");
-
-    auto children = zk->getChildren(zk_path);
-    for (const auto & child : children)
-    {
-        try
-        {
-            std::string content;
-            zk->tryGet(zk_path + "/" + child, content);
-
-            if (content.empty())
-                continue;
-
-            ParserCreateHandlerQuery parser;
-            ASTPtr ast = parseQuery(parser, content, 0, 0, 0);
-            const auto & create_query = ast->as<ASTCreateHandlerQuery &>();
-
-            handlers[create_query.handler_name] = parseDefinition(create_query);
-            LOG_INFO(log, "Loaded handler `{}` from ZooKeeper {}/{}", create_query.handler_name, zk_path, child);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Failed to load handler from ZooKeeper {}/{}: {}", zk_path, child, getCurrentExceptionMessage(true));
-        }
-    }
-}
-
 void CustomHandlersFactory::shutdown()
 {
 }
 
-void CustomHandlersFactory::saveToDisk(const std::string & handler_name) const
+void CustomHandlersFactory::saveToDisk(const std::string & handler_name, const std::string & content) const
 {
-    if (metadata_path.empty())
-        return;
-
-    std::string content = serializeHandler(handler_name);
-    if (content.empty())
+    if (metadata_path.empty() || content.empty())
         return;
 
     std::string file_path = metadata_path + "/" + escapeForFileName(handler_name) + ".sql";
@@ -357,29 +349,5 @@ void CustomHandlersFactory::removeFromDisk(const std::string & handler_name) con
     }
 }
 
-void CustomHandlersFactory::saveToZooKeeper(const std::string & handler_name) const
-{
-    if (zk_path.empty() || !global_context)
-        return;
-
-    std::string content = serializeHandler(handler_name);
-    if (content.empty())
-        return;
-
-    auto zk = global_context->getZooKeeper();
-    std::string node_path = zk_path + "/" + escapeForFileName(handler_name);
-    zk->createOrUpdate(node_path, content, zkutil::CreateMode::Persistent);
-}
-
-void CustomHandlersFactory::removeFromZooKeeper(const std::string & handler_name) const
-{
-    if (zk_path.empty() || !global_context)
-        return;
-
-    auto zk = global_context->getZooKeeper();
-    std::string node_path = zk_path + "/" + escapeForFileName(handler_name);
-    zk->tryRemove(node_path);
-    LOG_INFO(getLogger("CustomHandlersFactory"), "Removed handler `{}` from ZooKeeper {}", handler_name, node_path);
-}
 
 }

@@ -50,6 +50,9 @@ struct FormatSettings
 
     bool allow_special_serialization_kinds = false;
 
+    /// tolerates leading zeros during parsing integers
+    bool allow_number_leading_zeros = false;
+
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
     inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";

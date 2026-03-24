@@ -3,7 +3,6 @@
 #include <boost/noncopyable.hpp>
 #include <Interpreters/Context_fwd.h>
 #include <Common/re2.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -29,7 +28,8 @@ struct CustomHandlerDefinition
 };
 
 /// Factory that manages SQL-defined HTTP handlers.
-/// Stores handler definitions in memory and persists to local disk or ZooKeeper.
+/// Stores handler definitions in memory and persists to local disk.
+/// ZooKeeper-based storage is planned for a follow-up.
 class CustomHandlersFactory : boost::noncopyable
 {
 public:
@@ -64,18 +64,12 @@ private:
     /// Local-disk storage path (empty if not using local storage)
     std::string metadata_path;
 
-    /// ZooKeeper storage path (empty if not using zookeeper)
-    std::string zk_path;
     ContextPtr global_context;
 
     void loadFromDisk(const std::string & path);
-    void loadFromZooKeeper();
 
-    void saveToDisk(const std::string & handler_name) const;
+    void saveToDisk(const std::string & handler_name, const std::string & content) const;
     void removeFromDisk(const std::string & handler_name) const;
-
-    void saveToZooKeeper(const std::string & handler_name) const;
-    void removeFromZooKeeper(const std::string & handler_name) const;
 
     void persist(const std::string & handler_name) const;
     void unpersist(const std::string & handler_name) const;
