@@ -267,11 +267,9 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         /// Slow part: destroy the task outside the lock.
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
+            captured_storage_id = item_->storage_id.getNameForLogs();
             if (item_->task)
-            {
-                captured_storage_id = item_->task->getStorageID().getNameForLogs();
                 captured_query_id = item_->task->getQueryId();
-            }
             item_->resetTask();
         });
 
