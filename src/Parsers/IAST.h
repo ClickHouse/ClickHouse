@@ -76,10 +76,7 @@ public:
                 "Derived RESERVED_BITS must be greater than parent's");
         }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
         return *reinterpret_cast<BitfieldStruct *>(&flags_storage);
-#pragma clang diagnostic pop
     }
 
     template <typename BitfieldStruct>
