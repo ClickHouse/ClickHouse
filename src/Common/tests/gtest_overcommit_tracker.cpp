@@ -26,7 +26,7 @@ struct OvercommitTrackerForTest : BaseTracker
 protected:
     void pickQueryToExcludeImpl() override
     {
-        BaseTracker::picked_tracker = tracker{};
+        BaseTracker::picked_tracker = tracker;
     }
 
     MemoryTracker * tracker = nullptr;

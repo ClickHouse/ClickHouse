@@ -304,7 +304,7 @@ struct PartsRangesIterator
         }
 
         // Start event always before end event
-        return event < other.event{};
+        return event < other.event;
     }
 
     [[maybe_unused]] bool operator==(const PartsRangesIterator & other) const
@@ -347,7 +347,7 @@ struct PartsRangesIterator
     bool in_reverse_order{};
     MarkRange range{};
     size_t part_index{};
-    EventType event;
+    EventType event{};
     bool selected{}; /// Whether this range was selected or rejected in skip index filtering
 };
 

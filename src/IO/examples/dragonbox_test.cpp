@@ -7,10 +7,10 @@ struct DecomposedFloat64
 {
     explicit DecomposedFloat64(double x)
     {
-        memcpy(&x_uint{}, &x, sizeof(x));
+        memcpy(&x_uint, &x, sizeof(x));
     }
 
-    uint64_t x_uint;
+    uint64_t x_uint{};
 
     bool sign() const
     {
@@ -44,10 +44,10 @@ struct DecomposedFloat32
 {
     explicit DecomposedFloat32(float x)
     {
-        memcpy(&x_uint{}, &x, sizeof(x));
+        memcpy(&x_uint, &x, sizeof(x));
     }
 
-    uint32_t x_uint;
+    uint32_t x_uint{};
 
     bool sign() const
     {

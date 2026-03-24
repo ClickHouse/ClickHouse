@@ -42,7 +42,7 @@ struct SmallStringView
         size = size_;
 
         if (isSmall())
-            memcpy(data_small{}, data_, size_);
+            memcpy(data_small, data_, size_);
         else
             data_big = data_;
     }
