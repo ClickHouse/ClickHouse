@@ -522,6 +522,8 @@ void StorageKafka2::shutdown(bool)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::shutdown");
     shutdown_called = true;
+    /// Wake up any threads blocked in acquireConsumer waiting for a free consumer.
+    cv.notify_all();
     activating_task->deactivate();
     partialShutdown();
     LOG_TRACE(log, "Closing consumers");
