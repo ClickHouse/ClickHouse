@@ -4142,6 +4142,9 @@ Approximate probability of failing internal (for replication) PostgreSQL queries
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
 )", 0) \
+    DECLARE(UInt64, url_wildcard_max_directories_to_read, 100000, R"(
+Maximum number of directories that can be traversed while expanding URL wildcards from index pages.
+)", 0) \
     DECLARE(UInt64, odbc_bridge_connection_pool_size, 16, R"(
 Connection pool size for each connection settings string in ODBC bridge.
 )", 0) \

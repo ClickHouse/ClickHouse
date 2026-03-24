@@ -58,14 +58,14 @@ class RequestHandler(BaseHTTPRequestHandler):
         if path == "/data/deep/":
             return "<a href=\"0/\">0/</a>\n"
 
-        match = re.fullmatch(r"/data/deep/(\d+)/", path)
-        if not match:
+        if not re.fullmatch(r"/data/deep/(?:\d+/)+", path):
             return None
 
-        level = int(match.group(1))
-        if level >= 9:
+        levels = [level for level in path.removeprefix("/data/deep/").split("/") if level]
+        if len(levels) >= 10:
             return ""
-        return f"<a href=\"{level + 1}/\">{level + 1}/</a>\n"
+        next_level = len(levels)
+        return f"<a href=\"{next_level}/\">{next_level}/</a>\n"
 
     def do_HEAD(self):
         if self._handle_control():
@@ -99,7 +99,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html")
             self.end_headers()
             return
-        if re.fullmatch(r"/data/deep/\d+/", path):
+        if re.fullmatch(r"/data/deep/(?:\d+/)+", path):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()

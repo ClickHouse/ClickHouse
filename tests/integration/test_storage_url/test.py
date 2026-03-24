@@ -233,9 +233,10 @@ def test_url_wildcard_uses_head_for_metadata_probe():
 def test_url_wildcard_limits_directory_traversal():
     error = node1.query_and_get_error(
         "SELECT count() FROM url('http://resolver:8087/data/deep/**/part*.tsv', 'TSV', 'x UInt64') "
-        "SETTINGS glob_expansion_max_elements=3"
+        "SETTINGS url_wildcard_max_directories_to_read=3"
     )
     assert "Too many directories while expanding URL wildcard" in error
+    assert "url_wildcard_max_directories_to_read" in error
 
 
 def test_table_function_url_access_rights():

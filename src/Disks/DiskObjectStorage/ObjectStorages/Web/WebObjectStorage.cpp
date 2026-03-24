@@ -36,11 +36,13 @@ WebObjectStorage::WebObjectStorage(
     const String & url_,
     const String & query_fragment_,
     ContextPtr context_,
-    HTTPHeaderEntries headers_)
+    HTTPHeaderEntries headers_,
+    size_t max_directories_to_read_)
     : WithContext(context_->getGlobalContext())
     , url(url_)
     , query_fragment(query_fragment_)
     , headers(std::move(headers_))
+    , max_directories_to_read(max_directories_to_read_)
     , log(getLogger("WebObjectStorage"))
 {
 }
@@ -68,8 +70,8 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
 
     std::deque<std::string> pending_directories;
     pending_directories.push_back(normalized_path);
-
-    std::unordered_set<std::string> visited_directories;
+    std::unordered_set<std::string> known_directories;
+    known_directories.emplace(normalized_path);
 
     while (!pending_directories.empty())
     {
@@ -79,9 +81,6 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
         auto current = std::move(pending_directories.front());
         pending_directories.pop_front();
 
-        if (!visited_directories.emplace(current).second)
-            continue;
-
         auto entries = metadata_storage.listDirectory(current);
         for (const auto & entry : entries)
         {
@@ -90,13 +89,16 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
 
             if (entry.ends_with('/'))
             {
-                if (max_keys && visited_directories.size() + pending_directories.size() >= max_keys)
+                if (!known_directories.emplace(entry).second)
+                    continue;
+
+                if (max_directories_to_read && known_directories.size() > max_directories_to_read)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Too many directories while expanding URL wildcard, maximum: {}. This limit is controlled by "
-                        "`glob_expansion_max_elements`",
-                        max_keys);
+                        "setting `url_wildcard_max_directories_to_read`",
+                        max_directories_to_read);
                 }
                 pending_directories.push_back(entry);
                 continue;
