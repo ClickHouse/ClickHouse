@@ -23,6 +23,7 @@
             {port}
             {user}
             {display_name}
+            {database}
 
         You can also use colored prompt, like in [1].
           [1]: https://misc.flogisoft.com/bash/tip_colors_and_formatting
