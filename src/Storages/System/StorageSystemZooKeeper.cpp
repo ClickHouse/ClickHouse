@@ -661,7 +661,7 @@ Chunk SystemZooKeeperSource::generate()
     struct ListTask
     {
         String path;
-        ZkPathType path_type;
+        ZkPathType path_type{};
         String prefix;
         String path_corrected;
         String path_part;

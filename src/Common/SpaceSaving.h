@@ -131,7 +131,7 @@ public:
             return ((count - error) > (b.count - b.error)) || ((count - error) == (b.count - b.error) && count > b.count);
         }
 
-        TKey key;
+        TKey key{};
         size_t hash{};
         UInt64 count{};
         UInt64 error{};

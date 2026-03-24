@@ -225,7 +225,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     if (select_lists.size() == 1)
         return buildSelectExpression(select_lists[0], is_subquery, cte_data, nullptr /*aliases*/, context);
 
-    SelectUnionMode union_mode;
+    SelectUnionMode union_mode = {};
     if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL)
         union_mode = SelectUnionMode::INTERSECT_ALL;
     else if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT)

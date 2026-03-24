@@ -41,7 +41,7 @@ private:
         Default,    /// toStartOfInterval(time, interval) or toStartOfInterval(time, interval, timezone)
         Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
     };
-    mutable Overload overload;
+    mutable Overload overload{};
     const bool enable_extended_results_for_datetime_functions = false;
 
 public:
@@ -84,7 +84,7 @@ public:
             DateTime64
         };
 
-        ResultType result_type;
+        ResultType result_type = {};
         auto check_second_argument = [&]
         {
             const DataTypePtr & type_arg2 = arguments[1].type;

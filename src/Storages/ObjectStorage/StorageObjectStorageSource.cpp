@@ -615,7 +615,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
 
-        CompressionMethod compression_method;
+        CompressionMethod compression_method = {};
         if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);

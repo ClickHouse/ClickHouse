@@ -42,7 +42,7 @@ int main(int, char **)
             stopwatch.restart();
             for (size_t i = 0; i < n; ++i)
             {
-                size_t x;
+                size_t x = {};
                 DB::readIntText(x, compressed_buf);
                 compressed_buf.ignore();
 

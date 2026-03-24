@@ -2569,7 +2569,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
     {
-        SQLSecurityType default_security;
+        SQLSecurityType default_security = {};
 
         if (is_materialized_view)
             default_security = context_->getSettingsRef()[Setting::default_materialized_view_sql_security];

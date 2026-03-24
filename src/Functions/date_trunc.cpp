@@ -55,7 +55,7 @@ public:
             DateTime,
             DateTime64,
         };
-        ResultType result_type;
+        ResultType result_type = {};
 
         String datepart_param;
         auto check_first_argument = [&] {

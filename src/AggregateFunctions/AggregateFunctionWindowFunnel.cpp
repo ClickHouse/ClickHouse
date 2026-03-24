@@ -372,8 +372,8 @@ private:
         /// Stores the timestamp of the first and last i-th level event happen within time window
         struct EventMatchTimeWindow
         {
-            UInt64 first_timestamp;
-            UInt64 last_timestamp;
+            UInt64 first_timestamp{};
+            UInt64 last_timestamp{};
             std::array<UInt64, MAX_EVENTS> event_path{};
 
             EventMatchTimeWindow() = default;

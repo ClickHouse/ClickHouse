@@ -50,7 +50,7 @@ private:
     bool can_test_oracle_result;
     bool can_test_success;
     bool measure_performance;
-    bool compare_explain;
+    bool compare_explain{};
 
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;

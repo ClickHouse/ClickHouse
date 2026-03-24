@@ -33,7 +33,7 @@ public:
     public:
         String label_name;
         String label_value;
-        MatcherType matcher_type;
+        MatcherType matcher_type{};
     };
 
     using MatcherList = std::vector<Matcher>;
@@ -57,8 +57,8 @@ public:
     class Node
     {
     public:
-        NodeType node_type;
-        ResultType result_type;          /// The data type this node with its children evaluates to.
+        NodeType node_type{};
+        ResultType result_type{};          /// The data type this node with its children evaluates to.
         std::vector<const Node *> children;  /// E.g. arguments for a function, matchers for selectors.
         const Node * parent = nullptr;
         Node() = default;

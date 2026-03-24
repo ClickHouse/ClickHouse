@@ -34,7 +34,7 @@ void sleepForNanoseconds(uint64_t nanoseconds)
 #else
     constexpr auto clock_type = CLOCK_MONOTONIC;
 
-    struct timespec current_time;
+    struct timespec current_time{};
     if (0 != clock_gettime(clock_type, &current_time))
         throw std::system_error(std::error_code(errno, std::system_category()));
 

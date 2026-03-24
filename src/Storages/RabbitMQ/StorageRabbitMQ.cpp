@@ -292,7 +292,7 @@ Names StorageRabbitMQ::parseSettings(String settings_list)
 
 AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
 {
-    AMQP::ExchangeType type;
+    AMQP::ExchangeType type = {};
     if (exchange_type_ != ExchangeType::DEFAULT)
     {
         if (exchange_type_ == ExchangeType::FANOUT)              type = AMQP::ExchangeType::fanout;

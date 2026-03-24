@@ -706,7 +706,7 @@ public:
     /// Called for an empty object.
     void deserialize(ReadBuffer & buf)
     {
-        Kind kind;
+        Kind kind = {};
         readBinaryLittleEndian(kind, buf);
 
         if (kind == Kind::Tiny)

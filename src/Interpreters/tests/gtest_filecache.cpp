@@ -1016,8 +1016,8 @@ try
     ASSERT_GT(size_used_before_temporary_data, 0);
     ASSERT_GT(segments_used_before_temporary_data, 0);
 
-    size_t size_used_with_temporary_data;
-    size_t segments_used_with_temporary_data;
+    size_t size_used_with_temporary_data = {};
+    size_t segments_used_with_temporary_data = {};
 
 
     {

@@ -15,7 +15,7 @@ private:
     static const constexpr size_t inputBufferSize = 8192;
 
     Poco::MD5Engine ctx;
-    uint8_t inputBuffer[inputBufferSize];
+    uint8_t inputBuffer[inputBufferSize] = {};
 
 public:
     void hashFile(const String & filePath, Poco::DigestEngine::Digest & res);

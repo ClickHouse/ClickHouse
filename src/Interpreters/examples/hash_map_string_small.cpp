@@ -26,7 +26,7 @@ struct SmallStringView
 
     union
     {
-        const char * data_big;
+        const char * data_big{};
         char data_small[12];
     };
 
@@ -42,14 +42,14 @@ struct SmallStringView
         size = size_;
 
         if (isSmall())
-            memcpy(data_small, data_, size_);
+            memcpy(data_small{}, data_, size_);
         else
             data_big = data_;
     }
 
     SmallStringView(const unsigned char * data_, size_t size_) : SmallStringView(reinterpret_cast<const char *>(data_), size_) {}
     explicit SmallStringView(const std::string & s) : SmallStringView(s.data(), s.size()) {}
-    SmallStringView() = default;
+    SmallStringView() = default; // NOLINT(hicpp-member-init)
 
     std::string toString() const { return std::string(data(), size); }
 };
@@ -136,8 +136,8 @@ int main(int argc, char ** argv)
         using Map = HashMapWithSavedHash<std::string_view, Value>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -165,8 +165,8 @@ int main(int argc, char ** argv)
         using Map = HashMapWithSavedHash<SmallStringView, Value>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {

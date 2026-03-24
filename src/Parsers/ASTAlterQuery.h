@@ -199,7 +199,7 @@ public:
 
     bool first = false;         /// option for ADD_COLUMN, MODIFY_COLUMN
 
-    DataDestinationType move_destination_type; /// option for MOVE PART/PARTITION
+    DataDestinationType move_destination_type{}; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
 

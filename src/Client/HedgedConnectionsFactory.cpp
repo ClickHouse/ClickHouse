@@ -202,7 +202,7 @@ int HedgedConnectionsFactory::getNextIndex()
 HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnectionImpl(Connection *& connection_out)
 {
     int index = 0;
-    State state;
+    State state = {};
     do
     {
         index = getNextIndex();

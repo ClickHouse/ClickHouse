@@ -985,7 +985,7 @@ private:
         time_t deadline{};
         SSDCacheIndex index;
         size_t in_memory_partition_index{};
-        CellState state;
+        CellState state{};
 
         bool isInMemory() const { return state == in_memory; }
         bool isOnDisk() const { return state == on_disk; }

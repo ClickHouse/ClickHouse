@@ -208,7 +208,7 @@ public:
 private:
     static Int32 hashLong(Int64 value)
     {
-        std::array<char, 8> little_endian_representation;
+        std::array<char, 8> little_endian_representation{};
         for (char & i : little_endian_representation)
         {
             i = static_cast<unsigned char>(value & 0xFF);

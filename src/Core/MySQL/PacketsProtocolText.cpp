@@ -157,7 +157,7 @@ void ColumnDefinition::writePayloadImpl(WriteBuffer & buffer) const
 
 ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type)
 {
-    ColumnType column_type;
+    ColumnType column_type = {};
     CharacterSet charset = CharacterSet::binary;
     int flags = 0;
     uint8_t decimals = 0;

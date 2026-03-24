@@ -62,7 +62,7 @@ ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 rep
             version,
             DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    CoordinationMode mode;
+    CoordinationMode mode = {};
     size_t replica_num = 0;
     size_t min_marks_per_request = 0;
     RangesInDataPartsDescription description;
@@ -158,7 +158,7 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
             version,
             DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    CoordinationMode mode;
+    CoordinationMode mode = {};
     RangesInDataPartsDescription description;
     size_t replica_num = 0;
 

@@ -251,7 +251,7 @@ private:
             {
                 if (match("t"))
                 {
-                    PatternActionType type;
+                    PatternActionType type = {};
 
                     if (match("<="))
                         type = PatternActionType::TimeLessOrEqual;

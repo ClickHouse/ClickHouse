@@ -91,7 +91,7 @@ size_t parseTypeSize(const std::string & size_str)
 std::shared_ptr<NumpyDataType> parseType(String type)
 {
     /// Parse endianness
-    NumpyDataType::Endianness endianness;
+    NumpyDataType::Endianness endianness = {};
     if (type[0] == '<')
         endianness = NumpyDataType::Endianness::LITTLE;
     else if (type[0] == '>')

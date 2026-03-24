@@ -89,7 +89,7 @@ BackupEntryWithChecksumCalculation::ChecksumCalculationMethod BackupEntryWithChe
 {
     UInt64 size = getSize();
 
-    ChecksumCalculationMethod method;
+    ChecksumCalculationMethod method = {};
     if (size == 0)
     {
         method = ChecksumCalculationMethod::EmptyZero;

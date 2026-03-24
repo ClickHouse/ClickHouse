@@ -37,7 +37,7 @@ public:
     ITokenizer(const ITokenizer &) = default;
     ITokenizer & operator=(const ITokenizer &) = default;
 
-    Type getType() const { return type; }
+    Type getType() const { return type{}; }
 
     virtual ~ITokenizer() = default;
     virtual std::unique_ptr<ITokenizer> clone() const = 0;

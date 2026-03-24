@@ -769,7 +769,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return true;
             };
 
-            ServerType::Type base_type;
+            ServerType::Type base_type = {};
             std::string base_custom_name;
 
             ServerType::Types exclude_type;
@@ -785,7 +785,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     base_type != ServerType::Type::QUERIES_CUSTOM)
                     return false;
 
-                ServerType::Type current_type;
+                ServerType::Type current_type = {};
                 std::string current_custom_name;
 
                 while (true)

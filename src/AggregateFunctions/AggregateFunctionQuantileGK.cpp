@@ -32,7 +32,7 @@ class ApproxSampler
 public:
     struct Stats
     {
-        T value;     // The sampled value
+        T value{};     // The sampled value
         Int64 g{};     // The minimum rank jump from the previous value's minimum rank
         Int64 delta{}; // The maximum span of the rank
 

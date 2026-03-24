@@ -60,8 +60,8 @@ int main(int argc, char ** argv)
         using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key>>, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -96,8 +96,8 @@ int main(int argc, char ** argv)
         //using Map = HashMap<Key, Value, UniquesHashSetDefaultHash>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {

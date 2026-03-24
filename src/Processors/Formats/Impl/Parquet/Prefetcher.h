@@ -158,7 +158,7 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
 
     std::mutex read_mutex;
-    ReadMode read_mode;
+    ReadMode read_mode{};
     SeekableReadBuffer * reader = nullptr;
     PaddedPODArray<char> entire_file;
 

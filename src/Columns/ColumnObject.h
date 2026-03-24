@@ -307,7 +307,7 @@ public:
 
         struct PathInfo
         {
-            PathType type;
+            PathType type{};
             std::string_view path;
             ColumnPtr column;
             size_t row{};
@@ -338,7 +338,7 @@ public:
         size_t shared_data_end;
         const ColumnString * shared_data_paths{};
         const ColumnString * shared_data_values{};
-        PathType current_path_type;
+        PathType current_path_type{};
         size_t row;
     };
 

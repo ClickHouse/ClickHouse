@@ -15,7 +15,7 @@ struct ZooKeeperConnectionLogElement
         Disconnected = 1,
     };
 
-    EventType event_type;
+    EventType event_type{};
 
     time_t event_time{};
     Decimal64 event_time_microseconds = 0;

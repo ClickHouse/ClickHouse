@@ -279,7 +279,7 @@ struct CheckWatchRequest : virtual Request
     };
 
     String path;
-    CheckWatchType type;
+    CheckWatchType type{};
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -304,7 +304,7 @@ struct RemoveWatchRequest : virtual Request
         PERSISTENT = 4,
         PERSISTENTRECURSIVE = 5,
         ANY = 3
-    } type;
+    } type{};
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -328,7 +328,7 @@ struct AddWatchRequest : virtual Request
     };
 
     String path;
-    AddWatchMode mode;
+    AddWatchMode mode{};
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }

@@ -29,7 +29,7 @@ protected:
 
 private:
     double time_span{};
-    KQLTimespanUint time_span_unit;
+    KQLTimespanUint time_span_unit{};
 };
 
 }

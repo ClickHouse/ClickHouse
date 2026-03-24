@@ -785,7 +785,7 @@ String readLine(const String & path)
 int readNumber(const String & path)
 {
     ReadBufferFromFile in(path);
-    int result;
+    int result = {};
     readText(result, in);
     return result;
 }
@@ -1784,7 +1784,7 @@ try
 
     /// Try to increase limit on number of open files.
     {
-        rlimit rlim;
+        rlimit rlim{};
         if (getrlimit(RLIMIT_NOFILE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -1807,7 +1807,7 @@ try
 #if defined(RLIMIT_NPROC)
     /// Try to increase limit on number of threads.
     {
-        rlimit rlim;
+        rlimit rlim{};
         if (getrlimit(RLIMIT_NPROC, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -2485,7 +2485,7 @@ try
 
             /// Update core dump size limit.
             {
-                rlimit rlim;
+                rlimit rlim{};
                 if (getrlimit(RLIMIT_CORE, &rlim) == 0)
                 {
                     rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
@@ -3364,7 +3364,7 @@ void Server::createServers(
 
     for (const auto & listen_host : listen_hosts)
     {
-        const char * port_name;
+        const char * port_name = nullptr;
 
         if (server_type.shouldStart(ServerType::Type::HTTP))
         {
@@ -3651,7 +3651,7 @@ void Server::createInterserverServers(
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)
     {
-        const char * port_name;
+        const char * port_name = nullptr;
 
         if (server_type.shouldStart(ServerType::Type::INTERSERVER_HTTP))
         {

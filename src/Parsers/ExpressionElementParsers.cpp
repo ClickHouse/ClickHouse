@@ -2475,7 +2475,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parser_exp.parse(pos, ttl_expr, expected))
         return false;
 
-    TTLMode mode;
+    TTLMode mode = {};
     DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
 

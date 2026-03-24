@@ -35,7 +35,7 @@ enum class MergeTreeDeduplicationOp : uint8_t
 /// Record for deduplication on disk
 struct MergeTreeDeduplicationLogRecord
 {
-    MergeTreeDeduplicationOp operation;
+    MergeTreeDeduplicationOp operation{};
     std::string part_name;
     std::string block_id;
 };

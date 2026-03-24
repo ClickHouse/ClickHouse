@@ -755,7 +755,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     int32_t length = 0;
     XID read_xid = 0;
     int64_t zxid = 0;
-    Error err;
+    Error err = {};
 
     read(length);
     size_t count_before_event = in->count();
@@ -965,7 +965,7 @@ void ZooKeeper::receiveEvent()
     int32_t length = 0;
     XID xid = 0;
     int64_t zxid = 0;
-    Error err;
+    Error err = {};
 
     read(length);
     size_t count_before_event = in->count();

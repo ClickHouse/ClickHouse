@@ -149,7 +149,7 @@ void TraceCollector::run()
                 trace.emplace_back(static_cast<UInt64>(addr) - offset);
             }
 
-            TraceType trace_type;
+            TraceType trace_type = {};
             readPODBinary(trace_type, in);
 
             UInt64 cpu_id = 0;

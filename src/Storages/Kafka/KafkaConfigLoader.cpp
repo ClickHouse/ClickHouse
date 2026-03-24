@@ -114,7 +114,7 @@ rd_kafka_resp_err_t KafkaInterceptors<TStorageKafka>::rdKafkaOnNew(
     rd_kafka_t * rk, const rd_kafka_conf_t *, void * ctx, char * /*errstr*/, size_t /*errstr_size*/)
 {
     TStorageKafka * self = reinterpret_cast<TStorageKafka *>(ctx);
-    rd_kafka_resp_err_t status;
+    rd_kafka_resp_err_t status = {};
 
     status = rd_kafka_interceptor_add_on_thread_start(rk, "init-thread", rdKafkaOnThreadStart, ctx);
     if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
@@ -135,7 +135,7 @@ rd_kafka_resp_err_t KafkaInterceptors<TStorageKafka>::rdKafkaOnConfDup(
     rd_kafka_conf_t * new_conf, const rd_kafka_conf_t * /*old_conf*/, size_t /*filter_cnt*/, const char ** /*filter*/, void * ctx)
 {
     TStorageKafka * self = reinterpret_cast<TStorageKafka *>(ctx);
-    rd_kafka_resp_err_t status;
+    rd_kafka_resp_err_t status = {};
 
     // cppkafka copies configuration multiple times
     status = rd_kafka_conf_interceptor_add_on_conf_dup(new_conf, "init", rdKafkaOnConfDup, ctx);

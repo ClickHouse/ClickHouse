@@ -71,7 +71,7 @@ try
         stopwatch.restart();
         for (size_t i = 0; i < n; ++i)
         {
-            size_t x;
+            size_t x = {};
             DB::readIntText(x, zstd_buf);
             zstd_buf.ignore();
 

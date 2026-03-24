@@ -869,7 +869,7 @@ public:
 
         while (pos < end)
         {
-            Table::LookupResult it;
+            Table::LookupResult it = {};
 
             size_t context_size = params.order;
             while (true)
@@ -1283,7 +1283,7 @@ try
 
     bool silent = options["silent"].as<bool>();
 
-    MarkovModelParameters markov_model_params;
+    MarkovModelParameters markov_model_params{};
 
     markov_model_params.order = options["order"].as<UInt64>();
     markov_model_params.frequency_cutoff = options["frequency-cutoff"].as<UInt64>();

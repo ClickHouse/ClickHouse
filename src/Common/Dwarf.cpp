@@ -1952,7 +1952,7 @@ void Dwarf::LineNumberVM::init()
 
 bool Dwarf::LineNumberVM::next(std::string_view & program)
 {
-    Dwarf::LineNumberVM::StepResult ret;
+    Dwarf::LineNumberVM::StepResult ret = {};
     do
     {
         ret = step(program);

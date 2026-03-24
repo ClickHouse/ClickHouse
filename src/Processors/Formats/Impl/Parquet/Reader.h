@@ -263,14 +263,14 @@ struct Reader
         /// PrefetchHandle in ColumnChunk::data_pages or data_pages_prefetch).
         /// Either way the data is padded for simd.
         std::span<const char> data;
-        parq::Encoding::type encoding;
+        parq::Encoding::type encoding{};
 
         std::unique_ptr<PageDecoder> decoder;
         bool is_dictionary_encoded = false;
 
         /// If data_state is still compressed. We always decompress it before calling the decoder.
         /// Decompression is deferred a little to see if we can decompress directly into IColumn.
-        parq::CompressionCodec::type codec;
+        parq::CompressionCodec::type codec{};
         size_t values_uncompressed_size = 0;
 
         /// Empty if the corresponding max rep/def level is 0.
@@ -339,7 +339,7 @@ struct Reader
         /// Index in data_pages up to which we checked which pages need to be read, after applying prewhere.
         size_t data_pages_prefetch_idx = 0;
 
-        ReadStage stage;
+        ReadStage stage{};
     };
 
     struct ColumnSubchunk

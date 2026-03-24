@@ -176,7 +176,7 @@ struct TestKeeperFilteredListRequest : TestKeeperListRequest
     explicit TestKeeperFilteredListRequest(const ZooKeeperFilteredListRequest & base)
         : TestKeeperListRequest(base), list_request_type(base.list_request_type) {}
 
-    ListRequestType list_request_type;
+    ListRequestType list_request_type{};
 };
 
 struct TestKeeperFilteredListWithStatsAndDataRequest final : TestKeeperFilteredListRequest

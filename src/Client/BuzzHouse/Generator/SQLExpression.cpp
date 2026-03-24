@@ -267,7 +267,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         }
         break;
         case LitOp::LitDate: {
-            const SQLType * tp;
+            const SQLType * tp = nullptr;
             const bool prev_allow_not_deterministic = this->allow_not_deterministic;
             std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
 
@@ -1617,7 +1617,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             /// Exercise reinterpretAs* functions on raw bytes, stressing binary reinterpretation
             /// across all numeric, date, UUID, and variable-length String types.
             String target_type;
-            uint32_t byte_count;
+            uint32_t byte_count = {};
 
             /// String and FixedString accept any byte size — pick randomly to exercise different lengths.
             /// Other types have fixed sizes dictated by their binary representation.

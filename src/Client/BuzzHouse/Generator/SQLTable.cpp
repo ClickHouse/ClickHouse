@@ -1553,14 +1553,14 @@ void StatementGenerator::addTableColumnInternal(
     {
         if (((this->next_type_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
         {
-            Integers nint;
+            Integers nint = {};
 
             std::tie(tp, nint) = randomIntType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
         }
         else if (((this->next_type_mask & allow_datetimes) == 0) || rg.nextBool())
         {
-            Dates dd;
+            Dates dd = {};
 
             std::tie(tp, dd) = randomDateType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
@@ -1594,7 +1594,7 @@ void StatementGenerator::addTableColumnInternal(
     else if (special == ColumnSpecial::ID_COL)
     {
         /// Use generateSerialID
-        Integers nint;
+        Integers nint = {};
         DefaultModifier * def_value = cd->mutable_defaultv();
         SQLFuncCall * fcall = def_value->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 

@@ -110,9 +110,9 @@ struct FastHash64
         const uint64_t    m = 0x880355f21e6d1965ULL;
         const uint64_t *pos = reinterpret_cast<const uint64_t *>(buf);
         const uint64_t *end = pos + (len / 8);
-        const unsigned char *pos2;
+        const unsigned char *pos2 = nullptr;
         uint64_t h = len * m;
-        uint64_t v;
+        uint64_t v = {};
 
         while (pos != end)
         {
@@ -332,7 +332,7 @@ struct SMetroHash64
         {
             uint64_t u64;
             std::uint8_t u8[sizeof(u64)];
-        };
+        } = {}; // NOLINT(hicpp-member-init)
 
         metrohash64(reinterpret_cast<const std::uint8_t *>(x.data()), x.size(), 0, u8);
 
@@ -435,7 +435,7 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, const char * na
 
     Map map;
     typename Map::LookupResult it;
-    bool inserted;
+    bool inserted = {};
 
     for (const auto & value : data)
     {

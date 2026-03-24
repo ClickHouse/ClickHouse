@@ -292,7 +292,7 @@ namespace
 
             res_matcher.label_name = getLabelName(label_name_ctx);
 
-            MatcherType matcher_type;
+            MatcherType matcher_type = {};
             if (op_ctx->EQ())
                 matcher_type = MatcherType::EQ;
             else if (op_ctx->NE())

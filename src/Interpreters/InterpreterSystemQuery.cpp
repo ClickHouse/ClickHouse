@@ -739,7 +739,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
             const auto & level_str = query.delta_kernel_tracing_level;
-            ffi::Level level;
+            ffi::Level level = {};
 
             if (level_str == "ERROR")
                 level = ffi::Level::ERROR;

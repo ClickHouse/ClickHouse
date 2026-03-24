@@ -1152,7 +1152,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_alter_temporary_table(Keyword::ALTER_TEMPORARY_TABLE);
     ParserKeyword s_alter_database(Keyword::ALTER_DATABASE);
 
-    ASTAlterQuery::AlterObjectType alter_object_type;
+    ASTAlterQuery::AlterObjectType alter_object_type = {};
 
     if (s_alter_table.ignore(pos, expected) || s_alter_temporary_table.ignore(pos, expected))
     {

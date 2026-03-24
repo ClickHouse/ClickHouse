@@ -21,7 +21,7 @@ int main(int argc, char ** argv)
 
     ProcfsMetricsProvider stats_provider(0);
 
-    ::taskstats stats;
+    ::taskstats stats{};
     stats_provider.getTaskStats(stats);
 
     const auto start_cpu_time = stats.cpu_run_virtual_total;

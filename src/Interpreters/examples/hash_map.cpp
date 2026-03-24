@@ -129,8 +129,8 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         HashMap<Key, Value> map;
-        HashMap<Key, Value>::LookupResult it;
-        bool inserted;
+        HashMap<Key, Value>::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -160,8 +160,8 @@ int main(int argc, char ** argv)
 
         using Map = HashMap<Key, Value, AlternativeHash>;
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {

@@ -38,7 +38,7 @@ struct MetadataFileWithInfo
 {
     Int32 version{};
     String path;
-    CompressionMethod compression_method;
+    CompressionMethod compression_method{};
 };
 }
 

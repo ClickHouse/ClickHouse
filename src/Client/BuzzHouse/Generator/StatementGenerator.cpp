@@ -3832,7 +3832,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     else
                     {
                         SQLColumn & col = t.cols.at(cname);
-                        NestedType * ntp;
+                        NestedType * ntp = nullptr;
 
                         chassert(path.sub_cols_size() == 1);
                         if ((ntp = dynamic_cast<NestedType *>(col.tp)) && ntp->subtypes.size() > 1)
@@ -3874,7 +3874,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     else
                     {
                         SQLColumn & col = t.cols.at(old_cname);
-                        NestedType * ntp;
+                        NestedType * ntp = nullptr;
 
                         chassert(path.sub_cols_size() == 1);
                         if ((ntp = dynamic_cast<NestedType *>(col.tp)))

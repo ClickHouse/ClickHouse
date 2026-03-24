@@ -270,8 +270,8 @@ public:
     /// Increment value for key, using tryEmplace
     bool tryIncrement(const Key & key)
     {
-        Cell * found;
-        bool inserted;
+        Cell * found = nullptr;
+        bool inserted = {};
         if (tryEmplace(key, found, inserted))
         {
             found->lock.lock();
@@ -285,8 +285,8 @@ public:
     /// Blocking increment
     void increment(const Key & key)
     {
-        Cell * found;
-        bool inserted;
+        Cell * found = nullptr;
+        bool inserted = {};
         emplace(key, found, inserted);
         found->lock.lock();
         ++found->getMapped();
@@ -296,8 +296,8 @@ public:
     /// Access operator (creates default if not exists)
     Mapped & operator[](const Key & key)
     {
-        Cell * found;
-        bool inserted;
+        Cell * found = nullptr;
+        bool inserted = {};
         emplace(key, found, inserted);
         return found->getMapped();
     }
@@ -567,8 +567,8 @@ public:
 
     Mapped & operator[](const Key & key)
     {
-        Cell * cell;
-        bool inserted;
+        Cell * cell = nullptr;
+        bool inserted = {};
         emplace(key, cell, inserted);
         return cell->value;
     }
@@ -749,8 +749,8 @@ public:
         {
             if (old_ctrl[i] >= 0)  /// Not empty or deleted
             {
-                Slot * result;
-                bool inserted;
+                Slot * result = nullptr;
+                bool inserted = {};
                 emplace(old_slots[i].key, result, inserted);
                 if (inserted)
                     result->value = old_slots[i].value;
@@ -848,8 +848,8 @@ public:
 
     Mapped & operator[](const Key & key)
     {
-        Slot * slot;
-        bool inserted;
+        Slot * slot = nullptr;
+        bool inserted = {};
         emplace(key, slot, inserted);
         return slot->value;
     }
@@ -1120,7 +1120,7 @@ void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator
         }
         prev_it = it;
 
-        bool inserted;
+        bool inserted = {};
         map.emplace(*it, found, inserted);
         assert(found != nullptr);
         ++found->getMapped();
@@ -1209,7 +1209,7 @@ void aggregate2PrefetchSeq(MapTwoLevel & map, Source::const_iterator begin, Sour
         first = false;
         prev_key = *it;
 
-        bool inserted;
+        bool inserted = {};
         map.emplace(*it, found, inserted);
         ++found->getMapped();
     }
@@ -1225,7 +1225,7 @@ void aggregate2PrefetchSeq(MapTwoLevel & map, Source::const_iterator begin, Sour
         first = false;
         prev_key = *it;
 
-        bool inserted;
+        bool inserted = {};
         map.emplace(*it, found, inserted);
         ++found->getMapped();
     }
@@ -1247,7 +1247,7 @@ void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_
         first = false;
         prev_it = it;
 
-        bool inserted;
+        bool inserted = {};
         map.emplace(*it, found, inserted);
         assert(found != nullptr);
         ++found->getMapped();
@@ -1323,8 +1323,8 @@ void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const
 
     for (auto it = begin; it != end; ++it)
     {
-        Map::LookupResult found;
-        bool inserted;
+        Map::LookupResult found = {};
+        bool inserted = {};
         local_map.emplace(*it, found, inserted);
         ++found->getMapped();
 
@@ -1399,8 +1399,8 @@ void aggregate5(Map & local_map, MapSmallLocks & global_map, Source::const_itera
             ++local_map[*it];
         else
         {
-            MapSmallLocks::Cell * cell;
-            bool inserted;
+            MapSmallLocks::Cell * cell = nullptr;
+            bool inserted = {};
 
             if (global_map.tryEmplace(*it, cell, inserted))
             {

@@ -27,11 +27,11 @@ struct BlobStorageLogElement
         MultiPartUploadAbort = 6,
     };
 
-    EventType event_type;
+    EventType event_type{};
 
     String query_id;
     UInt64 thread_id = 0;
-    ThreadName thread_name;
+    ThreadName thread_name{};
 
     String disk_name;
     String bucket;

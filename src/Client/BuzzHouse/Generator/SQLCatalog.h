@@ -164,7 +164,7 @@ public:
     uint32_t replica_counter = 0;
     uint32_t shard_counter = 0;
     uint32_t backup_number = 0;
-    DatabaseEngineValues deng;
+    DatabaseEngineValues deng{};
     DetachStatus attached = DetachStatus::ATTACHED;
     IntegrationCall integration = IntegrationCall::None;
     /// For DataLakeCatalog

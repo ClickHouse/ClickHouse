@@ -49,7 +49,7 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
     for (auto value : data)
     {
         typename Map::LookupResult it;
-        bool inserted;
+        bool inserted = {};
 
         map.emplace(value, it, inserted);
         if (inserted)
@@ -77,7 +77,7 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 template <typename Map>
 void insert(Map & map, std::string_view & k)
 {
-    bool inserted;
+    bool inserted = {};
     typename Map::LookupResult it;
     map.emplace(k, it, inserted, nullptr);
     if (inserted)

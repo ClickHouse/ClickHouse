@@ -70,7 +70,7 @@ int main(int argc, char ** argv)
         std::string value = argv[4];
 
         DB::ConfigProcessor processor(argv[1], false, true);
-        bool has_zk_includes;
+        bool has_zk_includes = {};
         DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
         if (has_zk_includes)
         {

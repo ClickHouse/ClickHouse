@@ -219,11 +219,11 @@ private:
     SharedMutex fire_signal_mutex;
     mutable std::mutex sample_block_lock; /// Mutex to protect access to sample block
 
-    IntervalKind::Kind window_kind;
-    IntervalKind::Kind hop_kind;
-    IntervalKind::Kind watermark_kind;
-    IntervalKind::Kind lateness_kind;
-    IntervalKind::Kind slide_kind;
+    IntervalKind::Kind window_kind{};
+    IntervalKind::Kind hop_kind{};
+    IntervalKind::Kind watermark_kind{};
+    IntervalKind::Kind lateness_kind{};
+    IntervalKind::Kind slide_kind{};
     Int64 window_num_units{};
     Int64 hop_num_units{};
     Int64 slice_num_units{};

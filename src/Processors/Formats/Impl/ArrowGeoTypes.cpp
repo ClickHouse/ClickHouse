@@ -58,7 +58,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
         Poco::JSON::Object::Ptr column_obj = column_entry.second.extract<Poco::JSON::Object::Ptr>();
 
         String encoding_name = column_obj->getValue<std::string>("encoding");
-        GeoEncoding geo_encoding;
+        GeoEncoding geo_encoding = {};
 
         if (encoding_name == "WKB")
             geo_encoding = GeoEncoding::WKB;
@@ -72,7 +72,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
         /// Per the GeoParquet spec, a missing or empty geometry_types array means the geometry
         /// types are unknown (any type is valid). Multiple entries mean the column has mixed types.
         /// In both cases, use GeoType::Mixed which maps to the Geometry (Variant) type.
-        GeoType result_type;
+        GeoType result_type = {};
         if (!types || types->size() == 0)
         {
             result_type = GeoType::Mixed;

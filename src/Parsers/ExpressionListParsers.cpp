@@ -511,7 +511,7 @@ struct Operator
              OperatorType type_ = OperatorType::None)
         : type(type_), priority(priority_), arity(arity_), function_name(function_name_) {}
 
-    OperatorType type;
+    OperatorType type{};
     int priority{};
     int arity{};
     std::string function_name;

@@ -304,7 +304,7 @@ struct PartsRangesIterator
         }
 
         // Start event always before end event
-        return event < other.event;
+        return event < other.event{};
     }
 
     [[maybe_unused]] bool operator==(const PartsRangesIterator & other) const

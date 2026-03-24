@@ -22,7 +22,7 @@ struct DiskEncryptedSettings
     String disk_path;
     String current_key;
     UInt128 current_key_fingerprint{};
-    FileEncryption::Algorithm current_algorithm;
+    FileEncryption::Algorithm current_algorithm{};
     std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
 
     /// Returns an encryption key found by its fingerprint.

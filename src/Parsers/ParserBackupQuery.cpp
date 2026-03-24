@@ -345,7 +345,7 @@ namespace
 
 bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Kind kind;
+    Kind kind = {};
     if (ParserKeyword(Keyword::BACKUP).ignore(pos, expected))
         kind = Kind::BACKUP;
     else if (ParserKeyword(Keyword::RESTORE).ignore(pos, expected))

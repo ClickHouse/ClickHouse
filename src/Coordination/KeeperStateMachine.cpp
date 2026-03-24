@@ -457,7 +457,7 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
         }
     }
 
-    Coordination::OpNum opnum;
+    Coordination::OpNum opnum = {};
     Coordination::read(opnum, buffer);
 
     request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);

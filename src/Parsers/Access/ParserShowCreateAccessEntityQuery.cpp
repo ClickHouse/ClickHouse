@@ -65,7 +65,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
     if (!ParserKeyword{Keyword::SHOW_CREATE}.ignore(pos, expected))
         return false;
 
-    AccessEntityType type;
+    AccessEntityType type = {};
     bool plural = false;
     if (!parseEntityType(pos, expected, type, plural))
         return false;

@@ -132,7 +132,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
         }
         else
         {
-            ViewTarget::Kind kind;
+            ViewTarget::Kind kind = {};
             parseFromString(kind, name);
             res.setTargetInnerUUID(kind, parse<UUID>(value));
         }

@@ -594,7 +594,7 @@ private:
 
     struct Attribute
     {
-        AttributeUnderlyingType type;
+        AttributeUnderlyingType type{};
         bool is_nullable{};
 
         std::variant<

@@ -36,7 +36,7 @@ struct RedisConfiguration
     uint32_t port{};
     uint32_t db_index{};
     String password;
-    RedisStorageType storage_type;
+    RedisStorageType storage_type{};
     uint32_t pool_size{};
 };
 

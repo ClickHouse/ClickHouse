@@ -495,7 +495,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & compression_method,
     ContextPtr context)
 {
-    CompressionMethod method;
+    CompressionMethod method = {};
     if (use_table_fd)
         method = chooseCompressionMethod("", compression_method);
     else

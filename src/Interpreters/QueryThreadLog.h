@@ -33,7 +33,7 @@ struct QueryThreadLogElement
     Int64 memory_usage{};
     Int64 peak_memory_usage{};
 
-    ThreadName thread_name;
+    ThreadName thread_name{};
     UInt64 thread_id{};
     UInt64 master_thread_id{};
 

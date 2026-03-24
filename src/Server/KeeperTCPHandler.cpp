@@ -752,7 +752,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         xid = read_xid;
     }
 
-    Coordination::OpNum opnum;
+    Coordination::OpNum opnum = {};
     Coordination::read(opnum, read_buffer);
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
