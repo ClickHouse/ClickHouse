@@ -11,6 +11,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
+#include <functional>
 #include <memory>
 #include <set>
 
@@ -168,6 +169,12 @@ public:
             return *this;
         }
 
+        SubstreamData & withLazyColumnCreator(std::function<ColumnPtr()> lazy_column_creator_)
+        {
+            lazy_column_creator = std::move(lazy_column_creator_);
+            return *this;
+        }
+
         SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
@@ -178,6 +185,11 @@ public:
         /// when we call enumerateStreams after deserializeBinaryBulkStatePrefix
         /// to enumerate dynamic streams.
         DeserializeBinaryBulkStatePtr deserialize_state;
+
+        /// When column is null, this optional creator can materialize it on demand.
+        /// Used for derived subcolumns (e.g. String `.size`) whose data can be
+        /// computed from a parent column without being stored separately.
+        std::function<ColumnPtr()> lazy_column_creator;
     };
 
     struct Substream
