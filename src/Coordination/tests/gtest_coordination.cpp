@@ -996,21 +996,25 @@ TYPED_TEST(CoordinationTest, TestReadRequestQueueCrossSessionParking)
     current_batch.push_back(make_request(session_2, /*xid=*/2, /*is_write=*/true));
 
     KeeperRequestsForSessions pending_immediate_reads;
+    KeeperRequestsForSessions empty_prev_batch;
 
     /// per_session_only=true: read from session_1 parks behind session_1's write
     dispatcher.parkOrDispatchRead(
         make_request(session_1, /*xid=*/10, /*is_write=*/false),
-        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+        current_batch, empty_prev_batch, /*prev_result_pending=*/false,
+        pending_immediate_reads, /*per_session_only=*/true);
 
     /// per_session_only=true: read from session_2 parks behind session_2's write
     dispatcher.parkOrDispatchRead(
         make_request(session_2, /*xid=*/20, /*is_write=*/false),
-        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+        current_batch, empty_prev_batch, /*prev_result_pending=*/false,
+        pending_immediate_reads, /*per_session_only=*/true);
 
     /// per_session_only=true: read from session_3 has no write in batch -> immediate
     dispatcher.parkOrDispatchRead(
         make_request(session_3, /*xid=*/30, /*is_write=*/false),
-        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+        current_batch, empty_prev_batch, /*prev_result_pending=*/false,
+        pending_immediate_reads, /*per_session_only=*/true);
 
     {
         std::lock_guard lock(dispatcher.read_request_queue_mutex);
@@ -1076,17 +1080,21 @@ TYPED_TEST(CoordinationTest, TestReadRequestQueueSameSessionMultipleReads)
     current_batch.push_back(make_request(session_1, /*xid=*/3, /*is_write=*/true));
 
     KeeperRequestsForSessions pending_immediate_reads;
+    KeeperRequestsForSessions empty_prev_batch;
 
     /// Three reads from session_1
     dispatcher.parkOrDispatchRead(
         make_request(session_1, /*xid=*/10, /*is_write=*/false),
-        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+        current_batch, empty_prev_batch, /*prev_result_pending=*/false,
+        pending_immediate_reads, /*per_session_only=*/true);
     dispatcher.parkOrDispatchRead(
         make_request(session_1, /*xid=*/11, /*is_write=*/false),
-        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+        current_batch, empty_prev_batch, /*prev_result_pending=*/false,
+        pending_immediate_reads, /*per_session_only=*/true);
     dispatcher.parkOrDispatchRead(
         make_request(session_1, /*xid=*/12, /*is_write=*/false),
-        current_batch, pending_immediate_reads, /*per_session_only=*/true);
+        current_batch, empty_prev_batch, /*prev_result_pending=*/false,
+        pending_immediate_reads, /*per_session_only=*/true);
 
     {
         std::lock_guard lock(dispatcher.read_request_queue_mutex);
@@ -1098,6 +1106,142 @@ TYPED_TEST(CoordinationTest, TestReadRequestQueueSameSessionMultipleReads)
     }
 
     ASSERT_TRUE(pending_immediate_reads.empty());
+}
+
+/// Regression test: when prev_batch has a same-session write that hasn't
+/// committed yet (prev_result_pending=true), a read from that session must
+/// NOT be dispatched immediately. It must be parked behind the last write
+/// in current_batch to preserve per-session read-after-write ordering.
+TYPED_TEST(CoordinationTest, TestReadRequestQueuePrevBatchDependency)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    KeeperDispatcher dispatcher;
+
+    const int64_t session_1 = 100;
+    const int64_t session_2 = 200;
+    const int64_t session_3 = 300;
+
+    auto make_request = [](int64_t session_id, Coordination::XID xid, bool is_write)
+    {
+        Coordination::ZooKeeperRequestPtr req;
+        if (is_write)
+        {
+            auto w = std::make_shared<ZooKeeperCreateRequest>();
+            w->path = "/test";
+            req = std::move(w);
+        }
+        else
+        {
+            auto r = std::make_shared<ZooKeeperExistsRequest>();
+            r->path = "/test";
+            req = std::move(r);
+        }
+        req->xid = xid;
+        KeeperRequestForSession result;
+        result.session_id = session_id;
+        result.request = req;
+        return result;
+    };
+
+    /// Simulate iteration N: prev_batch has W(S1), prev_result still pending
+    KeeperRequestsForSessions prev_batch;
+    prev_batch.push_back(make_request(session_1, /*xid=*/1, /*is_write=*/true));
+
+    /// Simulate iteration N+1: current_batch has only W(S2)
+    KeeperRequestsForSessions current_batch;
+    current_batch.push_back(make_request(session_2, /*xid=*/2, /*is_write=*/true));
+
+    KeeperRequestsForSessions pending_immediate_reads;
+
+    /// R(S1): same-session write in prev_batch, must NOT be dispatched immediately
+    dispatcher.parkOrDispatchRead(
+        make_request(session_1, /*xid=*/10, /*is_write=*/false),
+        current_batch, prev_batch, /*prev_result_pending=*/true,
+        pending_immediate_reads, /*per_session_only=*/true);
+
+    /// R(S3): no write in either batch, should be dispatched immediately
+    dispatcher.parkOrDispatchRead(
+        make_request(session_3, /*xid=*/30, /*is_write=*/false),
+        current_batch, prev_batch, /*prev_result_pending=*/true,
+        pending_immediate_reads, /*per_session_only=*/true);
+
+    {
+        std::lock_guard lock(dispatcher.read_request_queue_mutex);
+
+        /// R(S1) is parked behind current_batch's last write (S2, xid=2)
+        ASSERT_TRUE(dispatcher.read_request_queue.contains(session_2));
+        ASSERT_TRUE(dispatcher.read_request_queue[session_2].contains(2));
+        ASSERT_EQ(dispatcher.read_request_queue[session_2][2].size(), 1);
+        ASSERT_EQ(dispatcher.read_request_queue[session_2][2][0].session_id, session_1);
+
+        /// S1 has no entries under its own key (the read is parked under S2's write)
+        ASSERT_FALSE(dispatcher.read_request_queue.contains(session_1));
+    }
+
+    /// Only R(S3) should be immediate
+    ASSERT_EQ(pending_immediate_reads.size(), 1);
+    ASSERT_EQ(pending_immediate_reads[0].session_id, session_3);
+}
+
+/// When prev_result has already completed, reads from sessions that had
+/// writes in prev_batch should be dispatched immediately (the writes are
+/// committed, so there is no ordering concern).
+TYPED_TEST(CoordinationTest, TestReadRequestQueuePrevBatchAlreadyCommitted)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    KeeperDispatcher dispatcher;
+
+    const int64_t session_1 = 100;
+    const int64_t session_2 = 200;
+
+    auto make_request = [](int64_t session_id, Coordination::XID xid, bool is_write)
+    {
+        Coordination::ZooKeeperRequestPtr req;
+        if (is_write)
+        {
+            auto w = std::make_shared<ZooKeeperCreateRequest>();
+            w->path = "/test";
+            req = std::move(w);
+        }
+        else
+        {
+            auto r = std::make_shared<ZooKeeperExistsRequest>();
+            r->path = "/test";
+            req = std::move(r);
+        }
+        req->xid = xid;
+        KeeperRequestForSession result;
+        result.session_id = session_id;
+        result.request = req;
+        return result;
+    };
+
+    KeeperRequestsForSessions prev_batch;
+    prev_batch.push_back(make_request(session_1, /*xid=*/1, /*is_write=*/true));
+
+    KeeperRequestsForSessions current_batch;
+    current_batch.push_back(make_request(session_2, /*xid=*/2, /*is_write=*/true));
+
+    KeeperRequestsForSessions pending_immediate_reads;
+
+    /// prev_result_pending=false: prev_batch writes are committed,
+    /// so R(S1) can be dispatched immediately
+    dispatcher.parkOrDispatchRead(
+        make_request(session_1, /*xid=*/10, /*is_write=*/false),
+        current_batch, prev_batch, /*prev_result_pending=*/false,
+        pending_immediate_reads, /*per_session_only=*/true);
+
+    {
+        std::lock_guard lock(dispatcher.read_request_queue_mutex);
+        ASSERT_TRUE(dispatcher.read_request_queue.empty());
+    }
+
+    ASSERT_EQ(pending_immediate_reads.size(), 1);
+    ASSERT_EQ(pending_immediate_reads[0].session_id, session_1);
 }
 
 /// Test legacy behavior (per_session_only=false): all reads park behind
@@ -1139,11 +1283,13 @@ TYPED_TEST(CoordinationTest, TestReadRequestQueueLegacyBehavior)
     current_batch.push_back(make_request(session_2, /*xid=*/2, /*is_write=*/true));
 
     KeeperRequestsForSessions pending_immediate_reads;
+    KeeperRequestsForSessions empty_prev_batch;
 
     /// per_session_only=false: read from session_1 parks behind last write (session_2, xid=2)
     dispatcher.parkOrDispatchRead(
         make_request(session_1, /*xid=*/10, /*is_write=*/false),
-        current_batch, pending_immediate_reads, /*per_session_only=*/false);
+        current_batch, empty_prev_batch, /*prev_result_pending=*/false,
+        pending_immediate_reads, /*per_session_only=*/false);
 
     {
         std::lock_guard lock(dispatcher.read_request_queue_mutex);

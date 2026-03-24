@@ -304,7 +304,9 @@ void KeeperDispatcher::requestThread()
                             if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
                             {
                                 parkOrDispatchRead(
-                                    request, current_batch, pending_immediate_reads,
+                                    request, current_batch, prev_batch,
+                                    prev_result && !prev_result->has_result(),
+                                    pending_immediate_reads,
                                     coordination_settings[CoordinationSetting::read_only_waits_same_session_write]);
                             }
                             else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
@@ -1045,6 +1047,8 @@ void KeeperDispatcher::finishSession(int64_t session_id)
 void KeeperDispatcher::parkOrDispatchRead(
     const KeeperRequestForSession & read_request,
     const KeeperRequestsForSessions & current_batch,
+    const KeeperRequestsForSessions & prev_batch,
+    bool prev_result_pending,
     KeeperRequestsForSessions & pending_immediate_reads,
     bool per_session_only)
 {
@@ -1061,6 +1065,20 @@ void KeeperDispatcher::parkOrDispatchRead(
             ZooKeeperOpentelemetrySpans::maybeInitialize(read_request.request->spans.read_wait_for_write, read_request.request->tracing_context);
             ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
             read_request_queue[same_session_it->session_id][same_session_it->request->xid].push_back(read_request);
+            ProfileEvents::increment(ProfileEvents::KeeperReadWaitForSameSessionWrite);
+        }
+        else if (prev_result_pending
+                 && std::any_of(prev_batch.begin(), prev_batch.end(),
+                     [&](const KeeperRequestForSession & r) { return r.session_id == read_request.session_id; }))
+        {
+            /// Same-session write exists in prev_batch which hasn't committed yet.
+            /// We cannot dispatch the read immediately — it might see stale state.
+            /// Park behind the last write in current_batch: Raft commits are
+            /// sequential, so current_batch commits after prev_batch.
+            const auto & last_request = current_batch.back();
+            ZooKeeperOpentelemetrySpans::maybeInitialize(read_request.request->spans.read_wait_for_write, read_request.request->tracing_context);
+            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
+            read_request_queue[last_request.session_id][last_request.request->xid].push_back(read_request);
             ProfileEvents::increment(ProfileEvents::KeeperReadWaitForSameSessionWrite);
         }
         else

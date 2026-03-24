@@ -131,11 +131,14 @@ public:
     /// queue of read requests that can be processed after a request with specific session ID and XID is committed
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
 
-    /// Park a read request behind a same-session write in the current batch,
-    /// or collect it for immediate dispatch if no same-session write exists.
+    /// Park a read request behind a same-session write in the current or
+    /// previous batch, or collect it for immediate dispatch if no
+    /// same-session write exists in either batch.
     void parkOrDispatchRead(
         const KeeperRequestForSession & read_request,
         const KeeperRequestsForSessions & current_batch,
+        const KeeperRequestsForSessions & prev_batch,
+        bool prev_result_pending,
         KeeperRequestsForSessions & pending_immediate_reads,
         bool per_session_only);
 
