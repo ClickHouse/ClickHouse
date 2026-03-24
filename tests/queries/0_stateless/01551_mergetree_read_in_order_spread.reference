@@ -3,13 +3,14 @@ ExpressionTransform × 3
   (Aggregating)
   MergingAggregatedBucketTransform × 3
     Resize 1 → 3
-      FinishAggregatingInOrderTransform 2 → 1
-        AggregatingInOrderTransform × 2
+      FinishAggregatingInOrderTransform 3 → 1
+        AggregatingInOrderTransform × 3
           (Expression)
-          ExpressionTransform × 2
+          ExpressionTransform × 3
             (ReadFromMergeTree)
-            ExpressionTransform × 3
+            ExpressionTransform × 4
               MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
                 ExpressionTransform
-                  PrefetchingConcat 2 → 1
-                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                    ExpressionTransform
+                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1

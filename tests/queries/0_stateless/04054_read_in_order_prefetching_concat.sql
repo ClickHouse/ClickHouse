@@ -24,12 +24,10 @@ SELECT count() > 0 FROM (
 
 -- Verify correctness: output must be sorted.
 SELECT 'correctness';
-SELECT count() FROM (
-    SELECT path FROM t_prefetching_concat
-    WHERE path LIKE '%file.log'
-    ORDER BY path
-    SETTINGS max_threads = 4, optimize_read_in_order = 1
-);
+SELECT countIf(path < prev_path) FROM (
+    SELECT path, lagInFrame(path, 1, '') OVER (ORDER BY path) AS prev_path
+    FROM t_prefetching_concat WHERE path LIKE '%file.log' ORDER BY path SETTINGS max_threads = 4, optimize_read_in_order = 1
+) WHERE prev_path != '';
 
 -- PrefetchingConcat should NOT be used with LIMIT (read_limit != 0).
 SELECT 'no_prefetching_with_limit';
