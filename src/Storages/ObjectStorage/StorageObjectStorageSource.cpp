@@ -88,6 +88,14 @@ namespace
         }
         return result;
     }
+
+    String getPathComponentForGlobMatching(const String & path)
+    {
+        const auto position = path.find_first_of("?#");
+        if (position == String::npos)
+            return path;
+        return path.substr(0, position);
+    }
 }
 
 namespace Setting
@@ -186,6 +194,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     bool with_tags)
 {
     const bool is_archive = configuration->isArchive();
+    const bool match_web_paths_only = configuration->getType() == ObjectStorageType::Web;
 
     if (distributed_processing)
     {
@@ -255,7 +264,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 for (const auto & path : paths.value())
                 {
                     const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
-                    if (RE2::FullMatch(relative_path, matcher))
+                    const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(relative_path) : relative_path;
+                    if (RE2::FullMatch(path_for_matching, matcher))
                         validated_paths.push_back(relative_path);
                 }
             }
@@ -1037,6 +1047,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     const auto & reading_path = configuration->getPathForRead();
     if (reading_path.hasGlobs())
     {
+        const bool match_web_paths_only = configuration->getType() == ObjectStorageType::Web;
         const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
 
@@ -1127,7 +1138,8 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
 
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
-                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
+                const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching((*it)->getPath()) : (*it)->getPath();
+                if (!recursive && !re2::RE2::FullMatch(path_for_matching, *matcher))
                     it = new_batch.erase(it);
                 else
                     ++it;
