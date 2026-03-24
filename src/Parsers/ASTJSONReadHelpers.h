@@ -63,7 +63,7 @@ public:
         auto child_var = obj.get(key);
         if (child_var.isEmpty())
             return nullptr;
-        auto child_obj = child_var.extract<Poco::JSON::Object::Ptr>();
+        const auto & child_obj = child_var.extract<Poco::JSON::Object::Ptr>();
         if (!child_obj)
             return nullptr;
         return IAST::createFromJSON(*child_obj);
