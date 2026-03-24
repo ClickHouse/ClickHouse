@@ -496,7 +496,25 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                 }
             }
 
-            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+            if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64> || std::is_same_v<RightDataType, DataTypeTime64>)
+            {
+#define GENERATE_DECIMAL_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
+    case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>:: \
+            execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale); \
+        break;
+                switch (settings.date_time_overflow_behavior)
+                {
+                    GENERATE_DECIMAL_OVERFLOW_MODE_CASE(Throw)
+                    GENERATE_DECIMAL_OVERFLOW_MODE_CASE(Ignore)
+                    GENERATE_DECIMAL_OVERFLOW_MODE_CASE(Saturate)
+                }
+#undef GENERATE_DECIMAL_OVERFLOW_MODE_CASE
+            }
+            else
+            {
+                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+            }
 
             return true;
         });
