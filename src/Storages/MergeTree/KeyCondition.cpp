@@ -961,7 +961,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
-    , allow_s2_keycondition(context->getSettingsRef()[Setting::enable_s2_index_pruning])
+    , enable_s2_index_pruning(context->getSettingsRef()[Setting::enable_s2_index_pruning])
     , s2_max_covering_cells(static_cast<int>(std::min<UInt64>(
           context->getSettingsRef()[Setting::s2_max_covering_cells],
           static_cast<UInt64>(std::numeric_limits<int>::max()))))
@@ -3154,7 +3154,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// generic func(key, const) path below, which would succeed (since one
             /// arg is a key column and the other is a constant) but would only call
             /// the atom_map callback without computing the S2 covering.
-            if (allow_s2_keycondition && func_name == "s2CellsIntersect")
+            if (enable_s2_index_pruning && func_name == "s2CellsIntersect")
                 return analyze_s2_covering();
 #endif
 
@@ -3387,7 +3387,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
 
 #if USE_S2_GEOMETRY
-            if (allow_s2_keycondition)
+            if (enable_s2_index_pruning)
             {
                 if (func_name == "s2RectContains"
                     || func_name == "s2CapContains")

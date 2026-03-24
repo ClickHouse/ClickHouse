@@ -576,7 +576,7 @@ private:
     bool date_time_overflow_behavior_ignore;
 
     /// Whether to use S2 spatial functions (`s2RectContains`, `s2CapContains`) as key conditions.
-    bool allow_s2_keycondition = false;
+    bool enable_s2_index_pruning = false;
 
     /// Maximum number of cells for the S2 covering (see `s2_max_covering_cells` setting).
     /// Stored as `int` to match `S2RegionCoverer::Options::set_max_cells`; clamped to
