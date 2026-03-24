@@ -219,7 +219,8 @@ def test_url_wildcard_uses_head_for_metadata_probe():
     reset_index_page_server_stats()
 
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/2025/part*.tsv', 'TSV', 'x UInt64')"
+        "SELECT sum(x) FROM url('http://resolver:8087/data/2025/part*.tsv', 'TSV', 'x UInt64') "
+        "SETTINGS use_hive_partitioning=0"
     )
     assert result.strip() == "12"
 
