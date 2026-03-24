@@ -228,61 +228,39 @@ RemoveChildrenOutputResult removeChildrenOutputs(
 
 size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
-    auto max_updated_depth = 0U;
+    if (!node->step->canRemoveUnusedColumns())
+        return 0;
 
-    for (auto child_id = 0U; child_id < node->children.size(); ++child_id)
+    const auto can_remove_inputs = canAllChildrenCanRemoveOutputs(*node);
+
+    const auto num_outputs = node->step->getOutputHeader()->columns();
+    std::vector<size_t> all_outputs(num_outputs);
+    std::iota(all_outputs.begin(), all_outputs.end(), 0);
+
+    auto required_input_positions = node->step->removeUnusedColumns(std::move(all_outputs), can_remove_inputs);
+
+    if (required_input_positions.empty())
+        return 0;
+
+    /// The step pruned some inputs. Propagate reduced requirements to children.
+    /// removeChildrenOutputs calls removeUnusedColumns on each child with the
+    /// required positions, syncs headers, and adds discarding steps if needed.
+    /// Maximum depth: 1 (this node) + 1 (child updated) + 1 (discarding step) = 3.
+    size_t depth = 1;
+    auto result = removeChildrenOutputs(nodes, *node, required_input_positions);
+    switch (result)
     {
-        auto current_update_depth = 0U;
-        auto * child_node = node->children[child_id];
-        auto & child_step = child_node->step;
-
-        if (!child_step->canRemoveUnusedColumns())
-            continue;
-
-        const auto can_remove_inputs = canAllChildrenCanRemoveOutputs(*child_node);
-
-        /// The parent's input header matches the child's output header,
-        /// so all child output positions are required by the parent.
-        const auto num_child_outputs = child_step->getOutputHeader()->columns();
-        std::vector<size_t> required_positions(num_child_outputs);
-        std::iota(required_positions.begin(), required_positions.end(), 0);
-
-        const auto output_columns_before = child_step->getOutputHeader()->columns();
-        const auto required_input_positions
-            = child_step->removeUnusedColumns(std::move(required_positions), can_remove_inputs);
-
-        const bool removed_any_input = !required_input_positions.empty();
-        const bool removed_any_output = child_step->getOutputHeader()->columns() != output_columns_before;
-        const bool updated_anything = removed_any_input || removed_any_output;
-
-        if (updated_anything)
-        {
-            ++current_update_depth;
-
-            if (removed_any_input)
-            {
-                auto result = removeChildrenOutputs(nodes, *child_node, required_input_positions);
-                switch (result)
-                {
-                    case RemoveChildrenOutputResult::NotUpdated:
-                        break;
-                    case RemoveChildrenOutputResult::Updated:
-                        ++current_update_depth;
-                        break;
-                    case RemoveChildrenOutputResult::AddedDiscardingStep:
-                        current_update_depth += 2;
-                        break;
-                }
-            }
-
-            if (addDiscardingExpressionStepIfNeeded(nodes, *node, child_id))
-                ++current_update_depth;
-        }
-
-        max_updated_depth = std::max(max_updated_depth, current_update_depth);
+        case RemoveChildrenOutputResult::NotUpdated:
+            break;
+        case RemoveChildrenOutputResult::Updated:
+            ++depth;
+            break;
+        case RemoveChildrenOutputResult::AddedDiscardingStep:
+            depth += 2;
+            break;
     }
 
-    return max_updated_depth;
+    return depth;
 }
 
 }
