@@ -46,7 +46,6 @@ public:
     bool haveSubtypes() const override { return true; }
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;
-    bool hasDynamicSubcolumnsDeprecated() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
 
     void updateHashImpl(SipHash & hash) const override;
@@ -62,7 +61,7 @@ public:
 private:
     std::string doGetName() const override;
     std::string doGetPrettyName(size_t indent) const override;
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 };
 
 /// Check if conversion from from_type to to_type is Variant extension

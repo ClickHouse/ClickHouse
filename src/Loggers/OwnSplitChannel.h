@@ -34,6 +34,7 @@ using AsyncLogQueueSize = std::pair<std::string, size_t>;
 using AsyncLogQueueSizes = std::vector<AsyncLogQueueSize>;
 
 class ExtendedLogMessage;
+enum class ThreadName : uint8_t;
 
 class OwnSplitChannelBase : public Poco::Channel
 {
@@ -84,7 +85,7 @@ public:
     void setLevel(const std::string & name, int level) override;
 
     void logSplit(
-        const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name);
+        const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadName msg_thread_name);
 
     std::map<std::string, ChannelPtr> channels;
     std::weak_ptr<DB::TextLogQueue> text_log;
@@ -121,6 +122,8 @@ public:
 
     /// Gets the current size of the queue.
     size_t getCurrentMessageSize();
+
+    std::atomic<bool> request_flush = false;
 
 private:
     Queue message_queue;
@@ -184,7 +187,6 @@ private:
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
-    std::atomic<bool> flush_text_logs = false;
 };
 
 

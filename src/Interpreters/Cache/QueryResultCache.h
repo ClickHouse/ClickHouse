@@ -8,6 +8,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
+#include <Parsers/IAST_fwd.h>
 #include <base/UUID.h>
 
 #include <optional>
@@ -15,8 +16,6 @@
 namespace DB
 {
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 struct Settings;
 
 /// Does AST contain non-deterministic functions like rand() and now()?
@@ -43,7 +42,6 @@ public:
     {
         /// ----------------------------------------------------
         /// The actual key (data which gets hashed):
-
 
         /// The hash of the query AST.
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
@@ -74,6 +72,9 @@ public:
         /// policies on some table by running the same queries as user B for whom no row policies exist.
         const bool is_shared;
 
+        /// When was the entry created?
+        const std::chrono::time_point<std::chrono::system_clock> created_at;
+
         /// When does the entry expire?
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
 
@@ -102,6 +103,7 @@ public:
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
+            std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
 
@@ -243,20 +245,32 @@ private:
 class QueryResultCacheReader
 {
 public:
-    bool hasCacheEntryForKey() const;
-    /// getSource*() moves source processors out of the Reader. Call each of these method just once.
-    std::unique_ptr<SourceFromChunks> getSource();
-    std::unique_ptr<SourceFromChunks> getSourceTotals();
-    std::unique_ptr<SourceFromChunks> getSourceExtremes();
-private:
     using Cache = QueryResultCache::Cache;
 
+    bool hasCacheEntryForKey(bool update_profile_events = true) const;
+
+    /// Must only be called if hasCacheEntryForKey is true
+    std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
+    std::chrono::time_point<std::chrono::system_clock> entryExpiresAt();
+
+    /// getSource*() moves source processors out of the Reader. Call each of these method just once.
+    std::unique_ptr<SourceFromChunks> getSource();
+    std::unique_ptr<SourceFromChunks> getSourceExtremes();
+    std::unique_ptr<SourceFromChunks> getSourceTotals();
+
+private:
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
+
+    std::chrono::time_point<std::chrono::system_clock> created_at;
+    std::chrono::time_point<std::chrono::system_clock> expires_at;
+
     LoggerPtr logger = getLogger("QueryResultCache");
+
     friend class QueryResultCache; /// for createReader()
 };
 

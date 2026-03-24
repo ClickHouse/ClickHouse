@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -15,7 +16,7 @@ extern const int LOGICAL_ERROR;
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
-    std::vector<Columns> source_columns(columns.size());
+    std::vector<VectorWithMemoryTracking<ColumnPtr>> source_columns(columns.size());
     std::vector<bool> is_replicated(columns.size());
     for (const auto & input : inputs)
     {
@@ -32,10 +33,12 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
 
     for (size_t i = 0; i != columns.size(); ++i)
     {
+        /// Sometimes header can contain Sparse columns, we don't support Sparse in merge algorithms.
+        columns[i] = recursiveRemoveSparse(std::move(columns[i]))->assumeMutable();
         if (is_replicated[i])
             columns[i] = ColumnReplicated::create(std::move(columns[i]));
         if (columns[i]->hasDynamicStructure())
-            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i]);
+            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i], max_dynamic_subcolumns);
     }
 }
 

@@ -39,6 +39,9 @@ using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+struct MaterializedCTE;
+using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
+
 class QueryPipelineBuilder
 {
 public:
@@ -51,8 +54,6 @@ public:
 
     /// All pipes must have same header.
     void init(Pipe pipe);
-    /// This is a constructor which adds some steps to pipeline.
-    void init(QueryPipeline & pipeline);
     /// Clear and release all resources.
     void reset();
 
@@ -166,9 +167,12 @@ public:
     void addCreatingSetsTransform(
         SharedHeader res_header,
         SetAndKeyPtr set_and_key,
-        StoragePtr external_table,
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache);
+
+    void addMaterializingCTETransform(
+        SharedHeader res_header,
+        MaterializedCTEPtr materialized_cte);
 
     PipelineExecutorPtr execute();
 
@@ -213,7 +217,7 @@ public:
         return concurrency_control;
     }
 
-    void addResources(QueryPlanResourceHolder resources_) { resources.append(std::move(resources_)); }
+    void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 

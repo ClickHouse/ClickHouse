@@ -115,7 +115,11 @@ class Lexer
 {
 public:
     Lexer(const char * begin_, const char * end_, size_t max_query_size_ = 0)
-            : begin(begin_), pos(begin_), end(end_), max_query_size(max_query_size_) {}
+        : begin(begin_), pos(begin_), end(end_),
+        max_query_size(max_query_size_ <= max_query_size_limit ? max_query_size_ : max_query_size_limit)
+    {
+    }
+
     Token nextToken();
 
 private:
@@ -124,6 +128,9 @@ private:
     const char * const end;
 
     const size_t max_query_size;
+
+    /// Some reasonable size to at least avoid pointer overflows.
+    static constexpr size_t max_query_size_limit = 1'000'000'000;
 
     Token nextTokenImpl();
 

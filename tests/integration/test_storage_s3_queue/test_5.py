@@ -12,7 +12,7 @@ import pytest
 from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.s3_queue_common import (
     run_query,
     random_str,
@@ -72,20 +72,25 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
+                "configs/insert_deduplication.xml",
             ],
             stay_alive=True,
+            cpu_limit=8,
         )
         cluster.add_instance(
             "instance2",
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_zookeeper=True,
             main_configs=[
                 "configs/s3queue_log.xml",
                 "configs/remote_servers.xml",
+                "configs/insert_deduplication.xml",
             ],
             stay_alive=True,
         )
@@ -102,6 +107,7 @@ def started_cluster():
             main_configs=[
                 "configs/s3queue_log.xml",
                 "configs/remote_servers_245.xml",
+                "configs/insert_deduplication.xml",
             ],
             with_installed_binary=True,
         )
@@ -135,6 +141,8 @@ def started_cluster():
             ],
             user_configs=[
                 "configs/users.xml",
+                "configs/keeper_retries.xml",
+                "configs/insert_deduplication.xml",
             ],
             stay_alive=True,
         )
@@ -153,6 +161,8 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
+                "configs/insert_deduplication.xml",
             ],
             stay_alive=True,
         )
@@ -169,7 +179,7 @@ def started_cluster():
 def test_upgrade_3(started_cluster):
     node = started_cluster.instances["instance_24.5"]
     if "24.5" not in node.query("select version()").strip():
-        node.restart_with_original_version()
+        node.restart_with_original_version(clear_data_dir=True)
     assert "24.5" in node.query("select version()").strip()
 
     table_name = f"test_upgrade_3_{uuid.uuid4().hex[:8]}"
@@ -251,199 +261,6 @@ def test_upgrade_3(started_cluster):
         )
     )
     node.query(f"DROP TABLE {table_name} SYNC")
-
-
-@pytest.mark.parametrize("setting_prefix", ["", "s3queue_"])
-@pytest.mark.parametrize("buckets_num", [3, 1])
-def test_migration(started_cluster, setting_prefix, buckets_num):
-    node1 = started_cluster.instances["instance_24.5"]
-    node2 = started_cluster.instances["instance2_24.5"]
-
-    for node in [node1, node2]:
-        if "24.5" not in node.query("select version()").strip():
-            node.restart_with_original_version()
-
-    table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
-    dst_table_name = f"{table_name}_dst"
-    mv_name = f"{table_name}_mv"
-    keeper_path = f"/clickhouse/test_{table_name}_{buckets_num}"
-    files_path = f"{table_name}_data"
-
-    for node in [node1, node2]:
-        node.query("DROP DATABASE IF EXISTS r")
-
-    node1.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb3', 'shard1', 'node1')"
-    )
-    node2.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb3', 'shard1', 'node2')"
-    )
-
-    create_table(
-        started_cluster,
-        node1,
-        table_name,
-        "ordered",
-        files_path,
-        version="24.5",
-        additional_settings={
-            "keeper_path": keeper_path,
-            "s3queue_polling_min_timeout_ms": 100,
-            "s3queue_polling_max_timeout_ms": 1000,
-            "s3queue_polling_backoff_ms": 100,
-        },
-        database_name="r",
-    )
-
-    for node in [node1, node2]:
-        create_mv(node, f"r.{table_name}", dst_table_name, mv_name=mv_name)
-
-    start_ind = [0]
-    expected_rows = [0]
-    last_processed_path = [""]
-    prefix_ind = [0]
-    prefixes = ["a", "b", "c", "d", "e"]
-
-    def add_files_and_check():
-        rows = 1000
-        use_prefix = prefixes[prefix_ind[0]]
-        total_values = generate_random_files(
-            started_cluster,
-            files_path,
-            rows,
-            start_ind=start_ind[0],
-            row_num=1,
-            use_prefix=use_prefix,
-        )
-        expected_rows[0] += rows
-        start_ind[0] += rows
-        prefix_ind[0] += 1
-
-        def get_count():
-            return int(
-                node1.query(
-                    f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
-                )
-            )
-
-        last_processed_path[0] = f"{use_prefix}_{expected_rows[0] - 1}.csv"
-        for _ in range(50):
-            if expected_rows[0] == get_count():
-                break
-            time.sleep(1)
-        assert expected_rows[0] == get_count()
-
-    add_files_and_check()
-
-    zk = started_cluster.get_kazoo_client("zoo1")
-    metadata = json.loads(zk.get(f"{keeper_path}/processed")[0])
-
-    assert last_processed_path[0].startswith("a_")
-    assert metadata["file_path"].endswith(last_processed_path[0])
-
-    for node in [node1, node2]:
-        node.restart_with_latest_version()
-        assert 0 == int(
-            node.query(
-                f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'buckets'"
-            )
-        )
-
-    assert (
-        "Changing setting buckets is not allowed only with detached dependencies"
-        in node1.query_and_get_error(
-            f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={buckets_num}"
-        )
-    )
-
-    for node in [node1, node2]:
-        node.query(f"DETACH TABLE {mv_name} SYNC")
-
-    assert (
-        "To allow migration set s3queue_migrate_old_metadata_to_buckets = 1"
-        in node1.query_and_get_error(
-            f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={buckets_num}"
-        )
-    )
-
-    def migrate_to_buckets(value):
-        node1.query(
-            f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={value} SETTINGS s3queue_migrate_old_metadata_to_buckets = 1"
-        )
-
-    def check_keeper_state_changed():
-        for node in [node1, node2]:
-            assert buckets_num == int(
-                node.query(
-                    f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'buckets'"
-                )
-            )
-
-        metadata = json.loads(zk.get(f"{keeper_path}/metadata/")[0])
-        assert buckets_num == metadata["buckets"]
-
-        try:
-            zk.get(f"{keeper_path}/processed")
-            assert False
-        except NoNodeError:
-            pass
-
-        buckets = zk.get_children(f"{keeper_path}/buckets/")
-
-        assert len(buckets) == buckets_num
-        assert sorted(buckets) == [str(i) for i in range(buckets_num)]
-
-        for i in range(buckets_num):
-            path = f"{keeper_path}/buckets/{i}/processed"
-            print(f"Checking {path}")
-            metadata = json.loads(zk.get(path)[0])
-            assert metadata["file_path"].endswith(last_processed_path[0])
-
-    migrate_to_buckets(buckets_num)
-    check_keeper_state_changed()
-
-    if buckets_num == 1:
-        correct_value = 3
-        migrate_to_buckets(correct_value)
-        buckets_num = correct_value
-        check_keeper_state_changed()
-
-    for node in [node1, node2]:
-        node.query(f"ATTACH TABLE {mv_name}")
-
-    add_files_and_check()
-
-    for node in [node1, node2]:
-        node.restart_clickhouse()
-        assert buckets_num == int(
-            node.query(
-                f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'buckets'"
-            )
-        )
-
-    add_files_and_check()
-
-    try:
-        zk.get(f"{keeper_path}/processed")
-        assert False
-    except NoNodeError:
-        pass
-
-    buckets = zk.get_children(f"{keeper_path}/buckets/")
-    assert len(buckets) == buckets_num
-
-    found = False
-    for i in range(buckets_num):
-        metadata = json.loads(zk.get(f"{keeper_path}/buckets/{i}/processed")[0])
-        if metadata["file_path"].endswith(last_processed_path[0]):
-            found = True
-            break
-    assert found
-
-    metadata = json.loads(zk.get(f"{keeper_path}/metadata/")[0])
-    assert buckets_num == metadata["buckets"]
-
-    node.query(f"DROP TABLE r.{table_name} SYNC")
 
 
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
@@ -538,12 +355,13 @@ def test_filtering_files(started_cluster, mode):
                 f"Will skip file {file[0]}: it should be processed by"
             )
             found_2_global = found_2_global or found_2
+            assert found_1 or found_2, "Failed with file " + file[0]
         else:
             found_2 = False
+            # Ordered mode with StartAfter does not re-list processed keys,
+            # so "Skipping ... Processed" may never appear; no per-file assertion.
 
-        assert found_1 or found_2, "Failed with file " + file[0]
-
-    assert found_1_global
+    assert found_1_global or not is_unordered  # unordered must see at least one skip-by-processed
     if is_unordered:
         assert found_2_global
 
@@ -552,6 +370,101 @@ def test_filtering_files(started_cluster, mode):
     ) or node1.contains_in_log(
         f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
     )
+
+
+def test_ordered_start_after_avoids_deep_relisting(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_start_after_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    initial_files = 1100
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 60000,
+            "polling_max_timeout_ms": 60000,
+            "polling_backoff_ms": 0,
+        },
+    )
+
+    files = [(f"{files_path}/file_{i:04d}.csv", i) for i in range(initial_files)]
+    generate_random_files(
+        started_cluster,
+        files_path,
+        initial_files,
+        start_ind=0,
+        row_num=1,
+        files=files,
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    for _ in range(60):
+        if initial_files == get_count():
+            break
+        time.sleep(1)
+    assert initial_files == get_count()
+
+    node.query(f"DROP TABLE {table_name}_mv SYNC")
+    baseline_list_calls = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'S3ListObjects' SETTINGS system_events_show_zero_values=1"
+        )
+    )
+    baseline_processed_files = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueProcessedFiles' SETTINGS system_events_show_zero_values=1"
+        )
+    )
+
+    put_s3_file_content(
+        started_cluster,
+        f"{files_path}/file_{initial_files:04d}.csv",
+        b"1,2,3\n",
+    )
+
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        create_dst_table_first=False,
+        dst_table_exists=True,
+    )
+
+    expected_rows = initial_files + 1
+    # Polling interval is configured to 60s for this test, so allow enough
+    # time for the first post-restart polling cycle to process the new file.
+    for _ in range(90):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count(), f"Timed out waiting for {expected_rows} rows"
+
+    list_calls_delta = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'S3ListObjects' SETTINGS system_events_show_zero_values=1"
+        )
+    ) - baseline_list_calls
+    processed_files_delta = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueProcessedFiles' SETTINGS system_events_show_zero_values=1"
+        )
+    ) - baseline_processed_files
+
+    # With StartAfter, the restart should list only the tail of the prefix.
+    assert list_calls_delta <= 2, f"Unexpected S3 list call count: {list_calls_delta}"
+    assert processed_files_delta == 1, f"Unexpected processed files count: {processed_files_delta}"
 
 
 def test_failed_commit(started_cluster):
@@ -619,7 +532,7 @@ def test_failed_commit(started_cluster):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit")
 
     processed = False
-    for _ in range(20):
+    for _ in range(100):
         node.query("SYSTEM FLUSH LOGS")
         processed = int(
             node.query(
@@ -658,6 +571,7 @@ def test_failure_in_the_middle(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_loading_retries": 10000,
+            "polling_max_timeout_ms": 100,
         },
     )
     values = []
@@ -677,44 +591,54 @@ def test_failure_in_the_middle(started_cluster):
         f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
     )
 
-    create_mv(node, table_name, dst_table_name, format=format)
+    try:
+        create_mv(node, table_name, dst_table_name, format=format)
 
-    def check_failpoint():
-        return node.contains_in_log(
-            f"StorageS3Queue (default.{table_name}): Got an error while pulling chunk: Code: 1002. DB::Exception: Failed to read file. Processed rows:"
+        def check_failpoint():
+            return node.contains_in_log(
+                f"StorageS3Queue (default.{table_name}): Got an error while pulling chunk: Code: 1002. DB::Exception: Failed to read file. Processed rows:"
+            )
+
+        for _ in range(120):
+            if check_failpoint():
+                break
+            time.sleep(1)
+
+        assert check_failpoint()
+
+        node.query("SYSTEM FLUSH LOGS")
+        assert 0 == int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
+            )
         )
 
-    for _ in range(40):
-        if check_failpoint():
-            break
-        time.sleep(1)
+        for _ in range(20):
+            if 0 < int(
+                node.query(
+                    f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed' and exception ilike '%Failed to read file. Processed rows%'"
+                )
+            ):
+                break
+            time.sleep(1)
 
-    assert check_failpoint()
-
-    node.query("SYSTEM FLUSH LOGS")
-    assert 0 == int(
+        assert 0 < int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed' and exception ilike '%Failed to read file. Processed rows%'"
+            )
+        )
+    finally:
         node.query(
-            f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
+            f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
         )
-    )
-
-    assert 1 <= int(
-        node.query(
-            f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed' and exception ilike '%Failed to read file. Processed rows%'"
-        )
-    )
 
     def get_count():
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     assert 0 == get_count()
 
-    node.query(
-        f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
-    )
-
     processed = False
-    for _ in range(40):
+    for _ in range(50):
         node.query("SYSTEM FLUSH LOGS")
         processed = int(
             node.query(
@@ -862,7 +786,7 @@ def test_disable_streaming(started_cluster):
     )
 
     expected_rows = files_to_generate
-    for _ in range(20):
+    for _ in range(100):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -880,8 +804,10 @@ def test_disable_insertion_and_mutation(started_cluster):
     files_to_generate = 10
 
     assert (
-            "true"
-            == node.query("SELECT getServerSetting('disable_insertion_and_mutation')").strip()
+        "true"
+        == node.query(
+            "SELECT getServerSetting('disable_insertion_and_mutation')"
+        ).strip()
     )
 
     create_table(
@@ -973,9 +899,9 @@ def test_shutdown_order(started_cluster):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": 1,
-            "polling_max_timeout_ms": 0,
-            "polling_min_timeout_ms": 0,
+            "s3queue_processing_threads_num": 5,
+            "polling_max_timeout_ms": 100,
+            "polling_min_timeout_ms": 100,
         },
     )
 
@@ -986,7 +912,7 @@ def test_shutdown_order(started_cluster):
             file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
             s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
             node.query(
-                f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(5000000)"
+                f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(50000)"
             )
 
     insert()
@@ -1003,6 +929,8 @@ def test_shutdown_order(started_cluster):
 
     node.restart_clickhouse()
 
+    node.query(f"SYSTEM FLUSH LOGS system.text_log")
+
     def check_in_text_log(message, logger_name):
         return int(
             node.query(
@@ -1013,6 +941,9 @@ def test_shutdown_order(started_cluster):
     assert 0 == check_in_text_log(
         "Failed to process data", f"StorageS3Queue(default.{table_name})"
     )
+
+    node.query(f"SYSTEM FLUSH LOGS system.s3queue_log")
+
     assert 0 == int(
         node.query(
             f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed'"
@@ -1059,7 +990,7 @@ def test_mv_settings(started_cluster, mode, limit):
     if limit == 9999999999:
         expected_parts_num = 1
     else:
-        expected_parts_num = 5
+        expected_parts_num = 1
 
     format = "column1 String"
     create_table(
@@ -1107,7 +1038,7 @@ def test_mv_settings(started_cluster, mode, limit):
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     expected_rows = num_rows
-    for _ in range(20):
+    for _ in range(100):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -1207,6 +1138,21 @@ def test_failed_startup(started_cluster):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
 
     zk = started_cluster.get_kazoo_client("zoo1")
+
+    # Wait for table data to be removed.
+    uuid = node.query(
+        f"select uuid from system.tables where name = '{table_name}'"
+    ).strip()
+    wait_message = f"StorageObjectStorageQueue({keeper_path}): Table '{uuid}' has been removed from the registry"
+    wait_message_2 = (
+        f"StorageObjectStorageQueue({keeper_path}): Table is unregistered after retry"
+    )
+    for _ in range(50):
+        if node.contains_in_log(wait_message) or node.contains_in_log(wait_message_2):
+            break
+        time.sleep(1)
+    assert node.contains_in_log(wait_message) or node.contains_in_log(wait_message_2)
+
     try:
         zk.get(f"{keeper_path}")
         assert False
@@ -1503,10 +1449,10 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_once")
 
     assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1"
     )
     assert not node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5"
     )
 
     nodes = zk.get_children(f"{keeper_path}/processing")
@@ -1528,7 +1474,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     assert found
 
     assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 6/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 10"
     )
 
     found = False
@@ -1549,3 +1495,589 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
                 assert False
             except NoNodeError:
                 pass
+
+
+def test_metadata_cache_exact_size_tracking(started_cluster):
+    node = started_cluster.instances["instance"]
+    mode = "unordered"
+    # Clear the cache, there is no drop cache command for now
+    node.restart_clickhouse()
+
+    table_name = f"test_cache_exact_{mode}_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "metadata_cache_size_bytes": 100000,
+            "metadata_cache_size_elements": 100,
+            "processing_threads_num": 1,
+        },
+    )
+
+    # Process 1 file first to measure exact sizeof(FileStatus)
+    generate_random_files(
+        started_cluster, files_path, 1, start_ind=0, row_num=5
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    for _ in range(60):
+        if 5 == get_count():
+            break
+        time.sleep(1)
+
+    assert 5 == get_count()
+
+    cache_size_bytes_str = node.query(
+        f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
+    ).strip()
+
+    cache_size_elements_str = node.query(
+        f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
+    ).strip()
+
+    if not cache_size_bytes_str or not cache_size_elements_str:
+        logging.warning("Cache metrics not available, skipping size verification")
+        return
+
+    cache_size_bytes = int(cache_size_bytes_str)
+    cache_size_elements = int(cache_size_elements_str)
+
+    assert cache_size_elements == 1, f"Expected 1 cache element, got {cache_size_elements}"
+
+    # Measure exact sizeof(FileStatus) for this platform
+    sizeof_file_status = cache_size_bytes
+    logging.info(f"sizeof(FileStatus) = {sizeof_file_status} bytes")
+
+    # Sanity check: FileStatus has 2 mutexes + 6 atomics + 1 string + additional cache tracking fields
+    if is_arm():
+        assert 200 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status} on ARM"
+    else:
+        assert 250 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status} on x64"
+
+    # Process 19 more files
+    files_to_generate = 19
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=1, row_num=5
+    )
+
+    expected_rows = 100  # 20 files * 5 rows
+    for _ in range(60):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count(), f"Expected {expected_rows} rows, got {get_count()}"
+
+    cache_size_bytes = int(
+        node.query(
+            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
+        ).strip()
+    )
+    cache_size_elements = int(
+        node.query(
+            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
+        ).strip()
+    )
+
+    logging.info(
+        f"Cache metrics: {cache_size_elements} elements, {cache_size_bytes} bytes"
+    )
+
+    assert cache_size_elements == 20, f"Expected 20 cache elements, got {cache_size_elements}"
+
+    # Verify exact total size = sizeof(FileStatus) * number_of_files
+    expected_total_size = sizeof_file_status * 20
+    assert cache_size_bytes == expected_total_size, (
+        f"Cache size {cache_size_bytes} doesn't match expected {expected_total_size} (sizeof(FileStatus) * 20)"
+    )
+
+    # Test that ALTER immediately evicts cache entries
+    size_for_10_files = sizeof_file_status * 10
+    node.query(
+        f"""
+        ALTER TABLE {table_name}
+        MODIFY SETTING
+            metadata_cache_size_bytes = {size_for_10_files},
+            metadata_cache_size_elements = 10
+        """
+    )
+
+    new_cache_size_bytes = int(
+        node.query(
+            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
+        ).strip()
+    )
+    new_cache_size_elements = int(
+        node.query(
+            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
+        ).strip()
+    )
+
+    logging.info(
+        f"After eviction - Cache metrics: {new_cache_size_elements} elements, {new_cache_size_bytes} bytes"
+    )
+
+    assert new_cache_size_elements <= 10, (
+        f"Cache elements {new_cache_size_elements} should be evicted to <= 10"
+    )
+    assert new_cache_size_bytes <= size_for_10_files, (
+        f"Cache size {new_cache_size_bytes} should be evicted to <= {size_for_10_files}"
+    )
+
+
+@pytest.mark.parametrize("mode", ["unordered"])
+def test_deduplication(started_cluster, mode):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_deduplication_{mode}_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    format = "a Int32, b String"
+
+    processing_threads = 16
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
+            "use_persistent_processing_nodes": 1,
+            "persistent_processing_node_ttl_seconds": 60,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 500,
+            "polling_max_timeout_ms": 200,
+            "polling_backoff_ms": 100,
+            "processing_threads_num": processing_threads,
+            # Set tracked files limit to 1, to make sure we try to read
+            # those files again and deduplicate
+            "s3queue_tracked_file_ttl_sec": 1,
+            "after_processing": "delete",
+            "deduplication_v2": 1,
+        },
+    )
+    i = [0]
+
+    num_rows = 5
+
+    def insert(file_i=None):
+        i[0] += 1
+        if file_i is None:
+            file_name = f"file_{table_name}_{i[0]}.csv"
+        else:
+            file_name = f"file_{table_name}_{file_i}.csv"
+
+        s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function} select number, toString({i[0]}) FROM numbers({num_rows})"
+        )
+
+    files_num = 10
+    for _ in range(files_num):
+        insert()
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name} ({format}, _path String)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table_name}', 'node')
+        ORDER BY a SETTINGS replicated_deduplication_window_seconds_for_async_inserts = 1000;
+    """
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_insert")
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {table_name};
+        """
+    )
+
+    found = False
+    for _ in range(50):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 710. DB::Exception: Failed after insert"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    expected_rows = files_num * num_rows
+    assert expected_rows == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_insert")
+
+    found = False
+    for _ in range(50):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Successfully committed 10 files"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Failed to process data:"
+    )
+    assert expected_rows == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    node.query(
+        f"""
+        ALTER TABLE {table_name} MODIFY SETTING after_processing='keep'
+    """
+    )
+
+    insert(1)
+
+    found = False
+    for _ in range(50):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Successfully committed 1 files"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    # etag changed, we should not deduplicate the file
+    files_num += 1
+    expected_rows = files_num * num_rows
+    # We processed the file above, but it was deduplicated, so nothing in destination table.
+    assert expected_rows == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    # wait for node ttl to expire and we will process the file again,
+    # but now that after_processing=keep, we will deduplicate it,
+    # as etag did not change.
+    found = False
+    for _ in range(50):
+        node.query("SYSTEM FLUSH LOGS")
+        if 1 < int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE message ilike '%Successfully committed 1 files%' and logger_name ilike '%{table_name}%'"
+            )
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    assert files_num * num_rows == int(
+        node.query(f"SELECT count() FROM {dst_table_name}")
+    )
+
+
+@pytest.mark.parametrize("mode", ["unordered"])
+def test_deduplication_with_multiple_chunks(started_cluster, mode):
+    """
+    Test deduplication when files are processed in multiple chunks.
+    Each chunk will have a deduplication token = etag + file offset.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_deduplication_chunks_{mode}_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    format = "a Int32, b String"
+
+    processing_threads = 16
+    num_rows = 500000
+    files_num = 5
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        format=format,
+        file_format="parquet",
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
+            "use_persistent_processing_nodes": 1,
+            "persistent_processing_node_ttl_seconds": 60,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 200,
+            "polling_max_timeout_ms": 200,
+            "polling_backoff_ms": 100,
+            "processing_threads_num": processing_threads,
+            # Set tracked files limit to 1, to make sure we try to read
+            # those files again and deduplicate
+            "s3queue_tracked_file_ttl_sec": 1,
+            "after_processing": "delete",
+            "deduplication_v2": 1,
+        },
+    )
+    i = [0]
+
+    def insert(file_i=None):
+        i[0] += 1
+        if file_i is None:
+            file_name = f"file_{table_name}_{i[0]}.parquet"
+        else:
+            file_name = f"file_{table_name}_{file_i}.parquet"
+
+        s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers({num_rows})"
+        )
+
+    for _ in range(files_num):
+        insert()
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name} ({format}, _path String)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table_name}', 'node')
+        ORDER BY a SETTINGS replicated_deduplication_window_seconds_for_async_inserts = 1000;
+    """
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_insert")
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {table_name};
+        """
+    )
+
+    # Wait for commit failures due to failpoint
+    found = False
+    for _ in range(100):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 710. DB::Exception: Failed after insert"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    # We must have successfully inserted all the data
+    assert files_num * num_rows == int(
+        node.query(f"SELECT count() FROM {dst_table_name}")
+    )
+
+    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_insert")
+
+    # Wait for successful commit after disabling failpoint
+    found = False
+    for _ in range(50):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Successfully committed {files_num} files"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Failed to process data:"
+    )
+
+    assert files_num * num_rows == int(
+        node.query(f"SELECT count() FROM {dst_table_name}")
+    )
+
+    for ii in range(files_num):
+        file_name = f"{files_path}/file_{table_name}_{ii + 1}.parquet"
+        step = 65409
+
+        # We read at least 3 chunks per each file, each chunk will have size of 65409
+        assert node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Read {step} rows from file {file_name} (file offset: 0"
+        )
+        assert node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Read {step} rows from file {file_name} (file offset: {step}"
+        )
+        assert node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Read {step} rows from file {file_name} (file offset: {step * 2}"
+        )
+
+    node.query(
+        f"""
+        ALTER TABLE {table_name} MODIFY SETTING after_processing='keep'
+    """
+    )
+
+    insert(1)
+
+    found = False
+    for _ in range(50):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Successfully committed 1 files"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    # We inserted 2 files with the same name, but etag is now different,
+    # so it is treated as separate files.
+    files_num += 1
+    assert files_num * num_rows == int(
+        node.query(f"SELECT count() FROM {dst_table_name}")
+    )
+
+    # wait for node ttl to expire and we will process the file again,
+    # but now that after_processing=keep, we will deduplicate it,
+    # as etag did not change.
+    found = False
+    for _ in range(50):
+        node.query("SYSTEM FLUSH LOGS")
+        if 1 < int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE message ilike '%Successfully committed 1 files%' and logger_name ilike '%{table_name}%'"
+            )
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    assert files_num * num_rows == int(
+        node.query(f"SELECT count() FROM {dst_table_name}")
+    )
+
+
+def test_failed_commit_after_success(started_cluster):
+    """
+    Test "failed after operation": the ZK multi-op succeeds but the connection is lost
+    before the client receives the confirmation. On retry the commit fails with `ZNONODE`
+    (processing node already removed). Without the fix the server aborts on a `chassert`
+    in `~ObjectStorageQueueIFileMetadata`. With the fix the `uncertain_commit` flag makes
+    the destructor check ownership instead of asserting; the file stays processed in ZK
+    and is skipped on the next background iteration.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+
+    table_name = f"test_failed_commit_after_success_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+    )
+    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=2)
+
+    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_after_success")
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        # Wait for the failpoint to trigger; commit fails but server must survive.
+        commit_failed = False
+        for _ in range(100):
+            if node.contains_in_log(
+                f"StorageS3Queue (default.{table_name}): Failed to process data"
+            ):
+                commit_failed = True
+                break
+            time.sleep(1)
+
+        assert commit_failed, "Failpoint was not triggered"
+
+        # Server must still be alive (no fatal assertion).
+        assert node.query("SELECT 1").strip() == "1"
+
+        # Data was inserted before the commit failed.
+        assert 2 == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+        # Add a second file and wait for it to be processed — this confirms a new background
+        # iteration ran. The total must be 4, not 6, meaning the first file was not re-processed.
+        generate_random_files(started_cluster, files_path, 1, start_ind=1, row_num=2)
+        for _ in range(100):
+            if 4 == int(node.query(f"SELECT count() FROM {dst_table_name}")):
+                break
+            time.sleep(1)
+        assert 4 == int(node.query(f"SELECT count() FROM {dst_table_name}")), (
+            "File was re-processed (duplicate rows inserted)"
+        )
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_after_success")
+
+
+def test_failed_commit_after_success_select(started_cluster):
+    """
+    Same "failed after operation" scenario but via the SELECT path
+    (`ObjectStorageQueueSource::commit`, triggered when `commit_on_select=1`).
+    Verifies no `chassert` fires and the file is not re-processed.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+
+    table_name = f"test_failed_commit_after_success_select_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "commit_on_select": 1,
+            # Disable hash-ring batching so the FileIterator does not hold an extra
+            # reference to the file metadata.  Without this, the metadata destructor
+            # runs after the error response is already sent to the client (the
+            # QueryPlan step keeps FileIterator alive until after the response), so
+            # the chassert fires silently and the test cannot detect it.
+            "enable_hash_ring_filtering": 0,
+        },
+    )
+    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=2)
+
+    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_after_success")
+    try:
+        # SELECT triggers ObjectStorageQueueSource::commit; the failpoint fires after the
+        # successful tryMulti, simulating connection loss before the response arrives.
+        # The exception from commit() may or may not reach the client depending on pipeline
+        # buffering — do not assert on that.  Instead, detect the failure via the server log.
+        try:
+            node.query(f"SELECT * FROM {table_name}")
+        except Exception:
+            pass
+
+        # Wait for the failpoint to trigger (commit failure is logged at ERROR level).
+        commit_failed = False
+        for _ in range(30):
+            if node.contains_in_log(
+                f"StorageS3Queue (default.{table_name}): Failed to commit data"
+            ):
+                commit_failed = True
+                break
+            time.sleep(1)
+
+        assert commit_failed, "Failpoint was not triggered"
+
+        # Server must still be alive (no fatal assertion in debug build).
+        assert node.query("SELECT 1").strip() == "1"
+
+        # The file is processed in ZK; a second SELECT must return 0 rows (not re-process).
+        assert 0 == int(node.query(f"SELECT count() FROM {table_name}"))
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_after_success")

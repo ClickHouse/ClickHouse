@@ -171,6 +171,7 @@ private:
     const std::optional<NameSet> supported_columns;
     const NameSet sorting_key_names;
     const NameToIndexMap primary_key_names_positions;
+    StorageMetadataPtr storage_metadata;
     LoggerPtr log;
     std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;

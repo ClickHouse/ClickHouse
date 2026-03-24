@@ -3,6 +3,8 @@
 #if USE_ARROWFLIGHT
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Storages/ArrowFlight/ArrowFlightConnection.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <arrow/table.h>
 
 
@@ -16,15 +18,21 @@ extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
 extern const int ARROWFLIGHT_INTERNAL_ERROR;
 }
 
+namespace Setting
+{
+    extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
+}
+
 ArrowFlightSource::ArrowFlightSource(
     std::shared_ptr<ArrowFlightConnection> connection_,
     const String & dataset_name_,
-    const Block & sample_block_)
+    const Block & sample_block_,
+    ContextPtr context_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , connection(connection_)
     , sample_block(sample_block_)
 {
-    initializeEndpoints(dataset_name_);
+    initializeEndpoints(dataset_name_, context_);
 }
 
 ArrowFlightSource::ArrowFlightSource(
@@ -52,12 +60,21 @@ ArrowFlightSource::ArrowFlightSource(
 ArrowFlightSource::~ArrowFlightSource() = default;
 
 
-void ArrowFlightSource::initializeEndpoints(const String & dataset_name_)
+void ArrowFlightSource::initializeEndpoints(const String & dataset_name_, ContextPtr context)
 {
     auto client = connection->getClient();
     auto options = connection->getOptions();
 
-    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
+    arrow::flight::FlightDescriptor descriptor;
+    if (context && context->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
+    {
+        String query = "SELECT * FROM " + dataset_name_;
+        descriptor = arrow::flight::FlightDescriptor::Command(query);
+    }
+    else
+    {
+        descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
+    }
 
     auto flight_info_res = client->GetFlightInfo(*options, descriptor);
     if (!flight_info_res.ok())

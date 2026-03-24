@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Interpreters/ActionsDAG.h>
 
 namespace DB

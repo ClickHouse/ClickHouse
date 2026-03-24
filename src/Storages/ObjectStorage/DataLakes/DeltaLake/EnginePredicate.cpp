@@ -65,9 +65,9 @@ namespace
 }
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception)
+    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context)
 {
-    return std::make_unique<EnginePredicate>(filter, exception);
+    return std::make_unique<EnginePredicate>(filter, exception, context);
 }
 
 /// Contains state for EngineIterator
@@ -205,7 +205,7 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Int8:
         {
             auto result = value.safeGet<Int8>();
-            return ffi::visit_expression_literal_byte(state, result); /// Accepts int8
+            return ffi::visit_expression_literal_byte(state, static_cast<int8_t>(result));
         }
         case DB::TypeIndex::UInt8:
         {
@@ -217,23 +217,23 @@ static uintptr_t visitLiteralValue(
             else
             {
                 auto result = value.safeGet<Int16>();
-                return ffi::visit_expression_literal_short(state, result); /// Accepts int16
+                return ffi::visit_expression_literal_short(state, static_cast<int16_t>(result));
             }
         }
         case DB::TypeIndex::Int16:
         {
             auto result = value.safeGet<Int16>();
-            return ffi::visit_expression_literal_short(state, result); /// Accepts int16
+            return ffi::visit_expression_literal_short(state, static_cast<int16_t>(result));
         }
         case DB::TypeIndex::UInt16:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_int(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::Int32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_int(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::UInt32:
         {
@@ -248,12 +248,12 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Date:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_date(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::Date32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_date(state, static_cast<int32_t>(result));
         }
         default:
         {
@@ -386,7 +386,8 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                             /* from */std::move(left_column),
                             /* to */column_node->result_type,
                             DB::CastType::nonAccurate,
-                            std::move(diagnostic));
+                            std::move(diagnostic),
+                            iterator_data.predicate.getContext());
 
                         DB::ActionsDAG::NodeRawConstPtrs children = { left_arg, right_arg };
                         literal_node = &dag.addFunction(func_base_cast, std::move(children), {});

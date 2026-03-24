@@ -4,6 +4,7 @@
 
 #if USE_ARROWFLIGHT
 #include <Processors/ISource.h>
+#include <Interpreters/Context_fwd.h>
 #include <arrow/flight/types.h>
 
 
@@ -14,7 +15,7 @@ class ArrowFlightConnection;
 class ArrowFlightSource : public ISource
 {
 public:
-    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, const Block & sample_block_);
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, const Block & sample_block_, ContextPtr context_);
     ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, std::vector<arrow::flight::FlightEndpoint> endpoints_, const Block & sample_block_);
     ArrowFlightSource(std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_, const Block & sample_block_);
 
@@ -25,7 +26,7 @@ protected:
     Chunk generate() override;
 
 private:
-    void initializeEndpoints(const String & dataset_name_);
+    void initializeEndpoints(const String & dataset_name_, ContextPtr context);
     bool nextEndpoint();
     void initializeSchema();
 

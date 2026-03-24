@@ -1,7 +1,12 @@
-#include <utility>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+
+#include <Columns/ColumnSet.h>
+#include <Columns/IColumn.h>
+#include <Functions/FunctionHelpers.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+
+#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -49,5 +54,86 @@ bool makeFilterNodeOnTopOf(
     return makeExpressionNodeOnTopOfImpl<FilterStep>(node, std::move(actions_dag), nodes, std::move(step_description), filter_column_name, remove_filer);
 }
 
+namespace QueryPlanOptimizations
+{
 
+FilterResult getFilterResult(const ColumnWithTypeAndName & column)
+{
+    if (!column.column)
+        return FilterResult::UNKNOWN;
+
+    if (!column.type->canBeUsedInBooleanContext())
+        return FilterResult::UNKNOWN;
+
+    return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
+}
+
+FilterResult filterResultForNotMatchedRows(
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name,
+    const Block & input_stream_header,
+    bool allow_unknown_function_arguments
+)
+{
+    /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
+    for (const auto & node : filter_dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set || !future_set->get())
+                    return FilterResult::UNKNOWN;
+            }
+        }
+    }
+
+    ActionsDAG::IntermediateExecutionResult filter_input;
+
+    /// Create constant columns with default values for inputs of the filter DAG
+    for (const auto * input : filter_dag.getInputs())
+    {
+        if (!input_stream_header.has(input->result_name))
+            continue;
+
+        if (input->column)
+        {
+            auto constant_column_with_type_and_name = ColumnWithTypeAndName{input->column, input->result_type, input->result_name};
+            filter_input.emplace(input, std::move(constant_column_with_type_and_name));
+            continue;
+        }
+
+        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
+        auto constant_column_with_type_and_name = ColumnWithTypeAndName{constant_column, input->result_type, input->result_name};
+        filter_input.emplace(input, std::move(constant_column_with_type_and_name));
+    }
+
+    const auto * filter_node = filter_dag.tryFindInOutputs(filter_column_name);
+    if (!filter_node)
+        return FilterResult::UNKNOWN;
+
+    ColumnsWithTypeAndName filter_output;
+    try
+    {
+        filter_output = ActionsDAG::evaluatePartialResult(
+            filter_input,
+            { filter_node },
+            /*input_rows_count=*/1,
+            { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments }
+        );
+    }
+    catch (const Exception &)
+    {
+        /// If we cannot evaluate the filter expression, return UNKNOWN
+        return FilterResult::UNKNOWN;
+    }
+
+    return getFilterResult(filter_output[0]);
+}
+}
 }

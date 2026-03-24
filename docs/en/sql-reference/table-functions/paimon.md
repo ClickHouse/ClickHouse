@@ -8,16 +8,20 @@ title: 'paimon'
 doc_type: 'reference'
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
 # paimon Table Function {#paimon-table-function}
+
+<ExperimentalBadge />
 
 Provides a read-only table-like interface to Apache [Paimon](https://paimon.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
 
 ## Syntax {#syntax}
 
 ```sql
-paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
-paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
 paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 
@@ -30,6 +34,8 @@ paimonLocal(path_to_table, [,format] [,compression_method])
 
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
 `format` stands for the format of data files in the Paimon table.
+
+For `paimonS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 ### Returned value {#returned-value}
 

@@ -1,7 +1,8 @@
 #pragma once
+#include <cctype>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileCacheKey.h>
-#include <time.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 
 namespace DB
 {
@@ -62,6 +63,8 @@ namespace DB
         LRU,
         SLRU_Protected,
         SLRU_Probationary,
+        SplitCache_Data,
+        SplitCache_System,
     };
 
     std::string toString(FileSegmentKind kind);
@@ -82,7 +85,6 @@ namespace DB
         uint64_t references;
         bool is_unbound;
         FileCacheQueueEntryType queue_entry_type;
-        std::string user_id;
-        uint64_t user_weight;
+        FileCacheOriginInfo origin;
     };
 }

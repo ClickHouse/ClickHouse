@@ -4,11 +4,11 @@ description: 'MongoDB engine is read-only table engine which allows to read data
 sidebar_label: 'MongoDB'
 sidebar_position: 135
 slug: /engines/table-engines/integrations/mongodb
-title: 'MongoDB'
-doc_type: 'guide'
+title: 'MongoDB table engine'
+doc_type: 'reference'
 ---
 
-# MongoDB
+# MongoDB table engine
 
 MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
 

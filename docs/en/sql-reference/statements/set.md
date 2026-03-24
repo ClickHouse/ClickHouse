@@ -29,4 +29,51 @@ SET force_index_by_date = 1
 SET force_index_by_date
 ```
 
+## SET TIME ZONE {#set-time-zone}
+
+```sql
+SET TIME ZONE [=] 'timezone'
+```
+
+Sets the session time zone. This is an alias for `SET session_timezone = 'timezone'`, provided for compatibility with PostgreSQL and other SQL databases.
+
+Many SQL clients, ORMs, and JDBC drivers automatically issue `SET TIME ZONE` when connecting. This syntax allows such tools to work with ClickHouse without custom workarounds.
+
+```sql
+SET TIME ZONE 'UTC';
+SET TIME ZONE 'Europe/Amsterdam';
+SET TIME ZONE 'America/New_York';
+
+-- Verify the current session time zone
+SELECT getSetting('session_timezone');
+```
+
+The timezone value must be a valid name from the [IANA Time Zone Database](https://www.iana.org/time-zones). An invalid timezone name will result in an error.
+
+For more information about the `session_timezone` setting, see [session_timezone](/operations/settings/settings#session_timezone).
+
+## Setting query parameters {#setting-query-parameters}
+
+The `SET` statement can also be used to define query parameters by prefixing the parameter name with `param_`.
+Query parameters allow you to write generic queries with placeholders that are replaced with actual values at execution time.
+
+```sql
+SET param_name = value
+```
+
+To use a query parameter in your query, reference it with the syntax `{name: datatype}`:
+
+```sql
+SET param_id = 42;
+SET param_name = 'John';
+
+SELECT * FROM users
+WHERE id = {id: UInt32}
+AND name = {name: String};
+```
+
+Query parameters are particularly useful when the same query needs to be executed multiple times with different values.
+
+For more detailed information about query parameters, including usage with the `Identifier` type, see [Defining and Using Query Parameters](../../sql-reference/syntax.md#defining-and-using-query-parameters).
+
 For more information, see [Settings](../../operations/settings/settings.md).

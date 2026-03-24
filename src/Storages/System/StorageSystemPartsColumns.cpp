@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
@@ -88,6 +89,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
 void StorageSystemPartsColumns::processNextStorage(
     ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemPartsColumns::processNextStorage");
     /// Prepare information about columns in storage.
     struct ColumnInfo
     {
@@ -338,8 +340,8 @@ void StorageSystemPartsColumns::processNextStorage(
             {
                 serialization->enumerateStreams([&](const auto & subpath)
                 {
-                    auto substream = ISerialization::getFileNameForStream(column.name, subpath);
-                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, ".bin", part->checksums);
+                    auto substream = ISerialization::getFileNameForStream(column.name, subpath, ISerialization::StreamFileNameSettings(*info.data->getSettings()));
+                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, ".bin", part->checksums, info.data->getSettings());
 
                     substreams.push_back(std::move(substream));
                     filenames.push_back(filename.value_or(""));
@@ -377,7 +379,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 ColumnSize size;
                 NameAndTypePair subcolumn(column.name, name, column.type, data.type);
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, info.data->getSettings());
                 if (stream_name)
                 {
                     auto bin_checksum = part->checksums.files.find(*stream_name + ".bin");

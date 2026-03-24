@@ -1,5 +1,5 @@
-The number of active parts is more than 10.	The number of active parts is more than {}.
-The number of attached databases is more than 2.	The number of attached databases is more than {}.
-The number of attached dictionaries is more than 5.	The number of attached dictionaries is more than {}.
-The number of attached tables is more than 5.	The number of attached tables is more than {}.
-The number of attached views is more than 5.	The number of attached views is more than {}.
+The number of active parts _ exceeds the warning limit of 10.	The number of active parts ({}) exceeds the warning limit of {}.
+The number of attached databases _ exceeds the warning limit of 2.	The number of attached databases ({}) exceeds the warning limit of {}.
+The number of attached dictionaries _ exceeds the warning limit of 5.	The number of attached dictionaries ({}) exceeds the warning limit of {}.
+The number of attached tables _ exceeds the warning limit of 5.	The number of attached tables ({}) exceeds the warning limit of {}.
+The number of attached views _ exceeds the warning limit of 5.	The number of attached views ({}) exceeds the warning limit of {}.

@@ -23,9 +23,12 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Poco/LRUCache.h>
+
 
 namespace zkutil
 {
@@ -48,6 +51,7 @@ class IMergeTreeReader;
 class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
+class PackedFilesReader;
 
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -69,6 +73,8 @@ enum class DataPartRemovalState : uint8_t
 };
 
 /// Description of the data part.
+/// Warning: `IStorage` must outlive all its `IMergeTreeDataPart`s. Whenever you hold a
+///          MergeTreeDataPartPtr you must also hold the corresponding StoragePtr.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
 public:
@@ -78,16 +84,19 @@ public:
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+    using ColumnSizeByNameConstPtr = std::shared_ptr<const ColumnSizeByName>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
     using Index = Columns;
     using IndexPtr = std::shared_ptr<const Index>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
+    using IndexSizeByNameConstPtr = std::shared_ptr<const IndexSizeByName>;
 
     using Type = MergeTreeDataPartType;
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
+        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
@@ -101,16 +110,19 @@ public:
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
-    ColumnSizeByName getColumnSizes() const;
+    ColumnSizeByNameConstPtr getColumnSizes() const;
+    /// Return the size of all files required to read the specified subcolumn.
+    ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
+    IndexSizeByNameConstPtr getSecondaryIndexSizes() const;
 
     /// Returns true if there is materialized index with specified name in part.
-    bool hasSecondaryIndex(const String & index_name) const;
+    bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
@@ -142,8 +154,8 @@ public:
     void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
     const NamesAndTypesList & getColumns() const { return columns; }
-    const ColumnsDescription & getColumnsDescription() const { return columns_description; }
-    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return columns_description_with_collected_nested; }
+    const ColumnsDescription & getColumnsDescription() const { return *columns_description; }
+    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return *columns_description_with_collected_nested; }
     const ColumnsSubstreams & getColumnsSubstreams() const { return columns_substreams; }
     StorageMetadataPtr getMetadataSnapshot() const;
 
@@ -164,7 +176,9 @@ public:
     void remove();
 
     ColumnsStatistics loadStatistics() const;
+    ColumnsStatistics loadStatistics(const Names & required_columns) const;
     Estimates getEstimates() const;
+    void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -177,6 +191,12 @@ public:
 
     /// Removes marks from cache for all columns in part.
     virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
+
+    /// Loads index marks for secondary indices and saves them into the index mark cache.
+    void loadIndexMarksToCache(MarkCache * index_mark_cache) const;
+
+    /// Removes index marks for secondary indices from the index mark cache.
+    void removeIndexMarksFromCache(MarkCache * index_mark_cache) const;
 
     /// Removes data related to data part from mark and primary index caches.
     void clearCaches();
@@ -217,7 +237,7 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
-    String getNewPartBlockID(std::string_view token) const;
+    String getNewPartBlockID() const;
 
     /// Returns true if it's a zero level part.
     bool isZeroLevel() const { return info.min_block == info.max_block; }
@@ -359,9 +379,9 @@ public:
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
-        static void appendFiles(const MergeTreeData & data, Strings & files);
+        static void appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage);
         /// For Store
-        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_);
+        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load
         static String getFileColumnName(const String & column_name, const Checksums & checksums_);
     };
@@ -391,6 +411,8 @@ public:
     void moveIndexToCache(PrimaryIndexCache & index_cache);
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
 
+    void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
+
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
@@ -401,7 +423,7 @@ public:
     UInt64 getIndexGranularityBytes() const;
     UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
-    UInt64 getIndexSizeFromFile() const;
+    IndexSize getIndexSizeFromFile() const;
 
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     UInt64 getBytesUncompressedOnDisk() const { return bytes_uncompressed_on_disk; }
@@ -467,7 +489,8 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder getProjectionPartBuilder(const String & projection_name, bool is_temp_projection = false);
+    MergeTreeDataPartBuilder
+    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
@@ -608,25 +631,29 @@ public:
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const Checksums & checksums_);
+        const Checksums & checksums_,
+        const MergeTreeSettingsPtr & settings);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const Checksums & checksums_);
+        const Checksums & checksums_,
+        const MergeTreeSettingsPtr & settings);
 
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const IDataPartStorage & storage_);
+        const IDataPartStorage & storage_,
+        const MergeTreeSettingsPtr & settings);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const IDataPartStorage & storage_);
+        const IDataPartStorage & storage_,
+        const MergeTreeSettingsPtr & settings);
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
@@ -642,18 +669,29 @@ protected:
     mutable IndexPtr index;
 
 private:
+    void calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
+
     /// Columns and secondary indices sizes can be calculated lazily on first request.
     mutable std::mutex columns_and_secondary_indices_sizes_mutex;
-    mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
+    mutable bool are_columns_and_secondary_indices_sizes_calculated TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex) = false;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
-    mutable ColumnSize total_columns_size;
+    mutable ColumnSize total_columns_size TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex);
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
-    mutable ColumnSizeByName columns_sizes;
+    mutable ColumnSizeByNameConstPtr columns_sizes TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex);
+    mutable ColumnSize total_secondary_indices_size TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex);
 
-    mutable ColumnSize total_secondary_indices_size;
+    mutable IndexSizeByNameConstPtr secondary_index_sizes TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex);
 
-    mutable IndexSizeByName secondary_index_sizes;
+    /// Sometimes we need to calculate the size of all files required to read a specific subcolumn.
+    /// We do it on the first request and save it in the subcolumns_sizes_cache.
+    /// The number of subcolumns can be infinite due to dynamic subcolumns in JSON, so we use LRU cache here.
+    mutable Poco::LRUCache<String, ColumnSize> subcolumns_sizes_cache = Poco::LRUCache<String, ColumnSize>(1024);
+
+    /// PackedFilesReader for statistics archive.
+    /// Lazily loaded on first access to loadStatistics when packed format is used.
+    mutable std::mutex statistics_reader_mutex;
+    mutable std::unique_ptr<PackedFilesReader> statistics_reader TSA_GUARDED_BY(statistics_reader_mutex);
 
 protected:
     /// Total size on disk, not only columns. May not contain size of
@@ -682,6 +720,9 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
+    /// Calculate the size of all files required to read a specified subcolumn.
+    virtual ColumnSize calculateSubcolumnSize(const String & /*subcolumn_name*/) const { return {}; }
+
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
     /// Checks that part can be actually removed from disk.
@@ -696,7 +737,7 @@ protected:
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
 
-    void initializeIndexGranularityInfo();
+    void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
 
@@ -715,16 +756,16 @@ private:
 
     /// Columns description for more convenient access
     /// to columns by name and getting subcolumns.
-    ColumnsDescription columns_description;
+    std::shared_ptr<const ColumnsDescription> columns_description;
 
     /// The same as above but after call of Nested::collect().
     /// It is used while reading from wide parts.
-    ColumnsDescription columns_description_with_collected_nested;
+    std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
 
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized on a first access.
     mutable std::mutex estimates_mutex;
-    mutable std::optional<Estimates> estimates;
+    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
@@ -758,15 +799,18 @@ private:
 
     void loadPartitionAndMinMaxIndex();
 
-    void calculateColumnsSizesOnDisk() const;
-
-    void calculateSecondaryIndicesSizesOnDisk() const;
+    void calculateColumnsSizesOnDisk() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
+    void calculateSecondaryIndicesSizesOnDisk() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
     void loadSourcePartsSet();
+
+    ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
+    ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
+    PackedFilesReader * getStatisticsPackedReader() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
     void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;

@@ -9,11 +9,11 @@
 
 #include <Common/HistogramMetrics.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/IThrottler.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/HTTPRequestThrottler.h>
 #include <IO/SessionAwareIOStream.h>
 #include <IO/S3Defines.h>
 
@@ -62,14 +62,16 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     bool enable_s3_requests_logging;
     bool for_disk_s3;
     std::optional<std::string> opt_disk_name;
-    ThrottlerPtr get_request_throttler;
-    ThrottlerPtr put_request_throttler;
+    HTTPRequestThrottler request_throttler;
 
     HTTPHeaderEntries extra_headers;
     String http_client;
     String service_account;
     String metadata_service;
     String request_token_path;
+    String google_adc_client_id;
+    String google_adc_client_secret;
+    String google_adc_refresh_token;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -97,8 +99,7 @@ private:
         bool for_disk_s3_,
         std::optional<std::string> opt_disk_name_,
         bool s3_use_adaptive_timeouts_,
-        const ThrottlerPtr & get_request_throttler_,
-        const ThrottlerPtr & put_request_throttler_,
+        const HTTPRequestThrottler & request_throttler_,
         std::function<void(const ProxyConfiguration &)> error_report_);
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
@@ -197,7 +198,7 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
-    static S3LatencyType getFirstByteLatencyType(const String & sdk_attempt, const String & ch_attempt);
+    static S3LatencyType getFirstByteLatencyType(size_t sdk_attempt, size_t ch_attempt);
 
 protected:
     virtual void makeRequestInternal(
@@ -214,7 +215,7 @@ protected:
     std::function<void(const ProxyConfiguration &)> error_report;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
-    unsigned int s3_max_redirects = 0;
+    unsigned int s3_max_redirects = DEFAULT_MAX_REDIRECTS;
     bool s3_use_adaptive_timeouts = true;
     const UInt64 http_max_fields = 1000000;
     const UInt64 http_max_field_name_size = 128 * 1024;
@@ -222,14 +223,7 @@ protected:
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
 
-    /// Limits get request per second rate for GET, SELECT and all other requests, excluding throttled by put throttler
-    /// (i.e. throttles GetObject, HeadObject)
-    ThrottlerPtr get_request_throttler;
-
-    /// Limits put request per second rate for PUT, COPY, POST, LIST requests
-    /// (i.e. throttles PutObject, CopyObject, ListObjects, CreateMultipartUpload, UploadPartCopy, UploadPart, CompleteMultipartUpload)
-    /// NOTE: DELETE and CANCEL requests are not throttled by either put or get throttler
-    ThrottlerPtr put_request_throttler;
+    HTTPRequestThrottler request_throttler;
 
     const HTTPHeaderEntries extra_headers;
 };
@@ -256,11 +250,15 @@ private:
     const String service_account;
     const String metadata_service;
     const String request_token_path;
+    const String google_adc_client_id;
+    const String google_adc_client_secret;
+    const String google_adc_refresh_token;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
+    BearerToken requestBearerTokenFromADC() const;
 };
 
 }

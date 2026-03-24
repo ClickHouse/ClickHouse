@@ -1,5 +1,6 @@
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
+SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1
@@ -24,7 +25,7 @@ INSERT INTO test_table_2 VALUES (2, 'Value_2'), (3, 'Value_3');
 
 
 EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE rhs.id != 0
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';
@@ -34,7 +35,7 @@ SELECT * FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.
 SELECT '--';
 
 EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';
@@ -44,7 +45,7 @@ SELECT * FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs
 SELECT '--';
 
 EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0 AND rhs.id != 0
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';

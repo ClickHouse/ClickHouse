@@ -18,5 +18,5 @@ This is a collection of links to third-party tools that provide some sort of int
 - [Proxies](../../interfaces/third-party/proxy.md)
 
 :::note
-Generic tools that support common API like [ODBC](../../interfaces/odbc.md) or [JDBC](../../interfaces/jdbc.md) usually can work with ClickHouse as well, but are not listed here because there are way too many of them.
+Generic tools that support common API like [ODBC](/interfaces/odbc) or [JDBC](/interfaces/jdbc) usually can work with ClickHouse as well, but are not listed here because there are way too many of them.
 :::

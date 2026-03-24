@@ -96,9 +96,9 @@ TEST(Statistics, Estimator)
     stats_c->build(std::move(c));
 
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
-    estimator_builder.addStatistics(stats_a);
-    estimator_builder.addStatistics(stats_b);
-    estimator_builder.addStatistics(stats_c);
+    estimator_builder.addStatistics("a", stats_a);
+    estimator_builder.addStatistics("b", stats_b);
+    estimator_builder.addStatistics("c", stats_c);
     estimator_builder.incrementRowCount(10000);
 
     auto estimator = estimator_builder.getEstimator();
@@ -110,7 +110,7 @@ TEST(Statistics, Estimator)
         RPNBuilderTreeContext tree_context(context, Block{{ DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }}, {});
         ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
         RPNBuilderTreeNode node(ast.get(), tree_context);
-        auto estimate_result = estimator->estimateRelationProfile(node);
+        auto estimate_result = estimator->estimateRelationProfile(nullptr, node);
         std::cout << expression << " " << real_result << " "<< estimate_result.rows << std::endl;
         EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimate_result.rows)), 10000 * eps);
     };

@@ -23,26 +23,28 @@ SELECT * FROM system.data_skipping_indices LIMIT 2 FORMAT Vertical;
 ```text
 Row 1:
 ──────
-database:    default
-table:       user_actions
-name:        clicks_idx
-type:        minmax
-type_full:   minmax
-expr:        clicks
-granularity: 1
+database:                default
+table:                   user_actions
+name:                    clicks_idx
+type:                    minmax
+type_full:               minmax
+expr:                    clicks
+creation:                Explicit
+granularity:             1
 data_compressed_bytes:   58
 data_uncompressed_bytes: 6
 marks_bytes:             48
 
 Row 2:
 ──────
-database:    default
-table:       users
-name:        contacts_null_idx
-type:        minmax
-type_full:   minmax
-expr:        assumeNotNull(contacts_null)
-granularity: 1
+database:                default
+table:                   users
+name:                    contacts_null_idx
+type:                    minmax
+type_full:               minmax
+expr:                    assumeNotNull(contacts_null)
+creation:                Explicit
+granularity:             1
 data_compressed_bytes:   58
 data_uncompressed_bytes: 6
 marks_bytes:             48

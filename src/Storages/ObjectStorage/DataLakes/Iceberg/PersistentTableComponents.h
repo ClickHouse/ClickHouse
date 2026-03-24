@@ -5,6 +5,8 @@
 
 #include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 namespace DB::Iceberg
 {
@@ -17,6 +19,9 @@ struct PersistentTableComponents
     const Int32 format_version;
     const String table_location;
     const CompressionMethod metadata_compression_method;
+    const String table_path;
+    const std::optional<String> table_uuid;
+    const IcebergPathResolver path_resolver;
 };
 
 }

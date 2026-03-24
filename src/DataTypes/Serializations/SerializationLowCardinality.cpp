@@ -41,6 +41,24 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 {
 }
 
+UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type_)
+{
+    SipHash hash;
+    hash.update("LowCardinality");
+    auto dict_type_name = dictionary_type_->getName();
+    hash.update(dict_type_name.size());
+    hash.update(dict_type_name);
+    hash.update(removeNullable(dictionary_type_)->getDefaultSerialization()->getHash());
+    return hash.get128();
+}
+
+SerializationPtr SerializationLowCardinality::create(const DataTypePtr & dictionary_type_)
+{
+    if (!removeNullable(dictionary_type_)->getDefaultSerialization()->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationLowCardinality(dictionary_type_));
+    return ISerialization::pooled(getHash(dictionary_type_), [&] { return new SerializationLowCardinality(dictionary_type_); });
+}
+
 void SerializationLowCardinality::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
@@ -587,7 +605,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
         if (!low_cardinality_state->index_type.need_global_dictionary && dictionary_type->isNullable())
         {
-            auto null_map = ColumnUInt8::create(num_keys, 0);
+            auto null_map = ColumnUInt8::create(num_keys, static_cast<UInt8>(0));
             if (num_keys)
                 null_map->getElement(0) = 1;
 
@@ -640,7 +658,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
                 if (dictionary_type->isNullable())
                 {
-                    ColumnPtr null_map = ColumnUInt8::create(used_add_keys->size(), 0);
+                    ColumnPtr null_map = ColumnUInt8::create(used_add_keys->size(), static_cast<UInt8>(0));
                     used_add_keys = ColumnNullable::create(used_add_keys, null_map);
                 }
 

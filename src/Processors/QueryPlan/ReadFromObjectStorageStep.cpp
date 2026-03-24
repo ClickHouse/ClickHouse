@@ -15,6 +15,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -22,7 +23,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool parallelize_output_from_storages;
 }
 
 
@@ -49,6 +50,7 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     , need_only_count(need_only_count_)
     , max_block_size(max_block_size_)
     , num_streams(num_streams_)
+    , max_num_streams(num_streams_)
     , distributed_processing(distributed_processing_)
 {
 }
@@ -61,6 +63,14 @@ QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+    // It is important to build the inplace sets for the filter here, before reading data from object storage.
+    // If we delay building these sets until later in the pipeline, the filter can be applied after the data
+    // has already been read, potentially in parallel across many streams. This can significantly reduce the
+    // effectiveness of an Iceberg partition pruning, as unnecessary data may be read. Additionally, building ordered sets
+    // at this stage enables the KeyCondition class to apply more efficient optimizations than for unordered sets.
+    if (!filter_actions_dag)
+        return;
+    VirtualColumnUtils::buildOrderedSetsForDAG(*filter_actions_dag, getContext());
 }
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
@@ -87,6 +97,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         num_streams = 1;
     }
 
+    // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
@@ -118,6 +129,13 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
+    size_t output_ports = pipe.numOutputPorts();
+    const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
+    if (parallelize_output
+        && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context)
+        && output_ports > 0 && output_ports < max_num_streams)
+        pipe.resize(max_num_streams);
+
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 
@@ -137,27 +155,8 @@ void ReadFromObjectStorageStep::createIterator()
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
-        context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback());
-}
-
-static bool isPrefixInputOrder(InputOrderInfoPtr small_input_order, InputOrderInfoPtr big_input_order)
-{
-    if (big_input_order->sort_description_for_merging.size() < small_input_order->sort_description_for_merging.size())
-    {
-        return false;
-    }
-
-    for (size_t i = 0; i < small_input_order->sort_description_for_merging.size(); ++i)
-    {
-        if (!small_input_order->sort_description_for_merging.at(i).column_name.ends_with(
-                big_input_order->sort_description_for_merging.at(i).column_name))
-            return false;
-
-        int direction = big_input_order->sort_description_for_merging.at(i).direction;
-        if (small_input_order->sort_description_for_merging.at(i).direction != direction)
-            return false;
-    }
-    return true;
+        context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
+        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
 
 static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)
@@ -165,13 +164,13 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
     SortDescription sort_description_for_merging;
     for (size_t i = 0; i < key_description.column_names.size(); ++i)
         sort_description_for_merging.push_back(
-            SortColumnDescription(key_description.column_names[i], key_description.reverse_flags[i] ? -1 : 1));
+            SortColumnDescription(key_description.column_names[i], (!key_description.reverse_flags.empty() && key_description.reverse_flags[i]) ? -1 : 1));
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 
-bool ReadFromObjectStorageStep::requestReadingInOrder(InputOrderInfoPtr order_info_) const
+bool ReadFromObjectStorageStep::requestReadingInOrder() const
 {
-    return isPrefixInputOrder(order_info_, getDataOrder());
+    return configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const

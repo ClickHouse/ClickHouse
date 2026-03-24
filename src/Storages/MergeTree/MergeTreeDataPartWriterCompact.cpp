@@ -24,7 +24,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const StorageMetadataPtr & metadata_snapshot_,
     const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
-    const ColumnsStatistics & stats_to_recalc,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -33,8 +32,9 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         data_part_name_, logger_name_, serializations_,
         data_part_storage_, index_granularity_info_, storage_settings_,
         columns_list_, metadata_snapshot_, virtual_columns_,
-        indices_to_recalc_, stats_to_recalc, marks_file_extension_,
-        default_codec_, settings_, std::move(index_granularity_))
+        indices_to_recalc_, marks_file_extension_,
+        default_codec_, settings_, std::move(index_granularity_),
+        static_cast<WrittenOffsetSubstreams *>(nullptr))
     , plain_file(getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
@@ -75,7 +75,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         assert(!substream_path.empty());
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         /// Shared offsets for Nested type.
         if (compressed_streams.contains(stream_name))
@@ -212,7 +212,6 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     }
 
     result_block = permuteBlockIfNeeded(result_block, permutation);
-    calculateAndSerializeStatistics(result_block);
 
     if (header.empty())
         header = result_block.cloneEmpty();
@@ -269,9 +268,13 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             CompressedStreamPtr prev_stream;
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
-                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
+                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
-                auto & result_stream = compressed_streams[stream_name];
+                auto stream_it = compressed_streams.find(stream_name);
+                if (stream_it == compressed_streams.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} not found", stream_name, name_and_type->name);
+
+                auto & result_stream = stream_it->second;
                 /// Write one compressed block per column in granule for more optimal reading.
                 if (prev_stream && prev_stream != result_stream)
                 {
@@ -300,7 +303,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
             auto stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
             {
-                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
+                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
                 return {plain_hashing.count(), compressed_streams[stream_name]->hashing_buf.offset()};
             };
 
@@ -317,7 +320,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
     }
 }
 
-void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksums & checksums)
+void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
 {
     if (columns_buffer.size() != 0)
     {
@@ -363,7 +366,10 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
 
         writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
     }
+}
 
+void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksums & checksums)
+{
     for (const auto & [_, stream] : streams_by_codec)
     {
         stream->hashing_buf.finalize();
@@ -398,7 +404,7 @@ void MergeTreeDataPartWriterCompact::initColumnsSubstreamsIfNeeded(const Block &
         columns_substreams.addColumn(name_and_type.name);
         auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path));
+            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
             return &buf;
         };
 
@@ -503,7 +509,11 @@ void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && column
     else
     {
         for (size_t i = 0; i < columns.size(); ++i)
+        {
+            /// Fix dynamic structure so it won't changed after insertion of new rows.
+            accumulated_columns[i]->fixDynamicStructure();
             accumulated_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+        }
     }
 }
 
@@ -532,7 +542,6 @@ void MergeTreeDataPartWriterCompact::fillChecksums(MergeTreeDataPartChecksums & 
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
-    fillStatisticsChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterCompact::finish(bool sync)
@@ -545,7 +554,6 @@ void MergeTreeDataPartWriterCompact::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
-    finishStatisticsSerialization(sync);
 }
 
 void MergeTreeDataPartWriterCompact::cancel() noexcept

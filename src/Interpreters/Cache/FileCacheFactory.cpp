@@ -52,6 +52,15 @@ FileCacheFactory::CacheByName FileCacheFactory::getAll()
     return caches_by_name;
 }
 
+FileCacheFactory::Caches FileCacheFactory::getUniqueInstances()
+{
+    std::lock_guard lock(mutex);
+    Caches caches;
+    for (const auto & [_, cache_data] : caches_by_name)
+        caches.insert(cache_data);
+    return caches;
+}
+
 FileCachePtr FileCacheFactory::get(const std::string & cache_name)
 {
     std::lock_guard lock(mutex);

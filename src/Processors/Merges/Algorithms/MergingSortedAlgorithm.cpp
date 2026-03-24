@@ -19,6 +19,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     const SortDescription & description_,
     size_t max_block_size_,
     size_t max_block_size_bytes_,
+    std::optional<size_t> max_dynamic_subcolumns_,
     SortingQueueStrategy sorting_queue_strategy_,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
@@ -26,7 +27,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     bool use_average_block_sizes,
     bool apply_virtual_row_conversions_)
     : header(std::move(header_))
-    , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_)
+    , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_, max_dynamic_subcolumns_)
     , description(description_)
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)

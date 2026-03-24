@@ -188,7 +188,7 @@ Chunk CassandraSource::generate()
             {
                 ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[col_idx]);
                 insertValue(column_nullable.getNestedColumn(), description.types[col_idx].first, val);
-                column_nullable.getNullMapData().emplace_back(0);
+                column_nullable.getNullMapData().emplace_back(false);
             }
             else
                 insertValue(*columns[col_idx], description.types[col_idx].first, val);

@@ -1,6 +1,6 @@
 <clickhouse>
     <merge_tree>
         <ratio_of_defaults_for_sparse_serialization>1.0</ratio_of_defaults_for_sparse_serialization>
-        <serialization_info_version>default</serialization_info_version>
+        <serialization_info_version>basic</serialization_info_version>
     </merge_tree>
 </clickhouse>

@@ -1,7 +1,7 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
 #include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/DataTypeObject.h>
@@ -9,8 +9,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Core/NamesAndTypes.h>
+#include <IO/ReadHelpers.h>
 #include <ranges>
 
 namespace DB
@@ -23,13 +23,33 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_)
+SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
     : serialization_version(serialization_version_)
     , dynamic_type(dynamic_type_)
-    , dynamic_serialization(dynamic_type_->getDefaultSerialization())
+    , dynamic_serialization(dynamic_serialization_)
     , buckets(buckets_)
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
+}
+
+UInt128 SerializationObjectSharedData::getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
+{
+    SipHash hash;
+    hash.update("ObjectSharedData");
+    hash.update(static_cast<int>(serialization_version_.value));
+    auto dynamic_type_name = dynamic_type_->getName();
+    hash.update(dynamic_type_name.size());
+    hash.update(dynamic_type_name);
+    hash.update(dynamic_serialization_->getHash());
+    hash.update(buckets_);
+    return hash.get128();
+}
+
+SerializationPtr SerializationObjectSharedData::create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
+{
+    if (!dynamic_serialization_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationObjectSharedData(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_));
+    return ISerialization::pooled(getHash(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_), [&] { return new SerializationObjectSharedData(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_); });
 }
 
 SerializationObjectSharedData::SerializationVersion::SerializationVersion(UInt64 version) : value(static_cast<Value>(version))
@@ -287,6 +307,9 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             data_serialization_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::NONE;
             data_serialization_settings.stream_mark_getter = [&](const SubstreamPath &) -> MarkInCompressedFile { return settings.stream_mark_getter(settings.path); };
 
+            StreamFileNameSettings stream_file_name_settings;
+            stream_file_name_settings.escape_variant_substreams = false;
+
             for (const auto & [path, path_column] : flattened_paths)
             {
                 paths_substreams.emplace_back();
@@ -294,7 +317,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 data_serialization_settings.getter = [&](const SubstreamPath & substream_path) -> WriteBuffer *
                 {
                     /// Add new substream and its mark for current path.
-                    paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path));
+                    paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings));
                     paths_substreams_marks.back().push_back(settings.stream_mark_getter(settings.path));
                     return data_stream;
                 };
@@ -476,7 +499,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
 
         const auto & values_column = shared_data_tuple_column.getColumn(1);
         if (nested_limit)
-            SerializationString().serializeBinaryBulk(values_column, *copy_values_stream, nested_offset, nested_limit);
+            SerializationString::create()->serializeBinaryBulk(values_column, *copy_values_stream, nested_offset, nested_limit);
         settings.path.pop_back();
 
         settings.path.pop_back();
@@ -682,10 +705,10 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
             structure_state.last_granule_structure.clear();
 
         size_t rows_to_read = limit + rows_offset;
-        StructureGranule current_granule;
-        std::swap(structure_state.last_granule_structure, current_granule);
         while (rows_to_read != 0)
         {
+            auto & current_granule = structure_state.last_granule_structure;
+
             /// Calculate remaining rows in current granule that can be read.
             size_t remaining_rows_in_granule = current_granule.num_rows - current_granule.limit - current_granule.offset;
 
@@ -736,12 +759,7 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
             }
 
             result->push_back(current_granule);
-            current_granule.clear();
         }
-
-        /// Remember the state of the last read granule because it can be partially read.
-        if (!result->empty())
-            structure_state.last_granule_structure = result->back();
     }
 
     /// Add deserialized data into cache.
@@ -945,6 +963,9 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
         settings.seek_stream_to_mark_callback(settings.path, mark);
     };
 
+    StreamFileNameSettings stream_file_name_settings;
+    stream_file_name_settings.escape_variant_substreams = false;
+
     for (size_t granule = 0; granule != structure_granules.size(); ++granule)
     {
         const auto & structure_granule = structure_granules[granule];
@@ -962,6 +983,9 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Info for path {} is not deserialized", requested_path);
 
             const auto & path_info = path_info_it->second;
+            /// Reset callbacks that might be different for different paths.
+            deserialization_settings.seek_stream_to_current_mark_callback = {};
+            deserialization_settings.getter = {};
 
             /// If we have only subcolumns requested for this path, read all subcolumns.
             auto paths_subcolumns_it = structure_state.requested_paths_subcolumns.find(requested_path);
@@ -975,7 +999,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
 
                 deserialization_settings.seek_stream_to_current_mark_callback = [&](const SubstreamPath & substream_path)
                 {
-                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path);
+                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings);
 
                     auto it = path_info.substream_to_mark.find(stream_name);
                     if (it == path_info.substream_to_mark.end())
@@ -1008,7 +1032,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                     EnumerateStreamsSettings enumerate_settings;
                     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
                     enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
-                    order = getSubcolumnsDeserializationOrder("", subcolumns_substream_data, path_info.substreams, enumerate_settings);
+                    order = getSubcolumnsDeserializationOrder("", subcolumns_substream_data, path_info.substreams, enumerate_settings, stream_file_name_settings);
                 }
 
                 /// Finally, deserialize data of subcolumns in determined order.
@@ -1248,7 +1272,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (!values_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy values");
 
-            SerializationString().deserializeBinaryBulk(values_column, *values_stream, skipped_nested_rows, nested_limit, 0);
+            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, skipped_nested_rows, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();
@@ -1322,7 +1346,9 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
             /// Read array sizes.
             settings.path.push_back(Substream::ObjectSharedDataCopySizes);
-            SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, rows_offset + limit, settings, cache);
+            if (!SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, rows_offset + limit, settings, cache))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data copy sizes");
+
             settings.path.pop_back();
 
             /// Read paths indexes.
@@ -1368,7 +1394,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Read values.
             settings.path.push_back(Substream::ObjectSharedDataCopyValues);
             auto * values_stream = settings.getter(settings.path);
-            SerializationString().deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
+            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();

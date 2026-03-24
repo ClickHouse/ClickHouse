@@ -1,8 +1,7 @@
--- Tags: no-parallel
-
-drop database if exists 02911_support_alias_column_in_indices;
-create database 02911_support_alias_column_in_indices;
-use 02911_support_alias_column_in_indices;
+-- add_minmax_index_for_numeric_columns=0: Different plan
+SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
+SET use_skip_indexes_on_data_read = 1;
+SET optimize_respect_aliases = 1;
 
 create table test1
 (
@@ -12,7 +11,7 @@ create table test1
 )
 engine = MergeTree
 order by c
-settings index_granularity = 8192, min_index_granularity_bytes = 1024, index_granularity_bytes = 10485760; -- default settings, prevent randomization in tests
+settings index_granularity = 8192, min_index_granularity_bytes = 1024, index_granularity_bytes = 10485760, add_minmax_index_for_numeric_columns=0; -- default settings, prevent randomization in tests
 
 insert into test1 select * from numbers(10);
 insert into test1 select * from numbers(11, 20);
@@ -29,12 +28,10 @@ create table test2
 )
 engine = MergeTree
 order by c
-settings index_granularity = 8192, min_index_granularity_bytes = 1024, index_granularity_bytes = 10485760; -- default settings, prevent randomization in tests
+settings index_granularity = 8192, min_index_granularity_bytes = 1024, index_granularity_bytes = 10485760, add_minmax_index_for_numeric_columns=0; -- default settings, prevent randomization in tests
 
 insert into test2 select * from numbers(10);
 insert into test2 select * from numbers(11, 20);
 
 explain indexes = 1 select * from test2 where a2 > 15 settings enable_analyzer = 0;
 explain indexes = 1 select * from test2 where a2 > 15 settings enable_analyzer = 1;
-
-drop database 02911_support_alias_column_in_indices;

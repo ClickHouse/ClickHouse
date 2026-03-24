@@ -40,6 +40,7 @@ try:
     import pymongo
     import pymysql
     import nats
+    from filelock import FileLock, Timeout
     from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
     # Not an easy dep
     import cassandra.cluster
@@ -53,7 +54,6 @@ from dict2xml import dict2xml
 from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
-from filelock import FileLock, Timeout
 
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException
@@ -120,6 +120,11 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # This means that this minimum need to be, at least, 1 year older than the current release
 CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
+# `Nullable(Tuple)` experimental feature is introduced in 26.1. This has lead to changes in the output return type
+# of many aggregate functions from `Tuple(...)` to `Nullable(Tuple(...))`. This version can be used as baseline to do
+# compatibility checks for features that are affected by this experimental feature.
+CLICKHOUSE_CI_PRE_NULLABLE_TUPLE_VERSION = "25.12"
+
 ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
 
 NET_LOCK_PATH = "/tmp/docker_net.lock"
@@ -167,17 +172,24 @@ def run_and_check(
         )
         return ""
 
-    res = subprocess.run(
-        args,
-        stdout=stdout,
-        stderr=stderr,
-        env=env,
-        shell=shell,
-        timeout=timeout,
-        check=False,
-    )
-    out = res.stdout.decode("utf-8", "ignore")
-    err = res.stderr.decode("utf-8", "ignore")
+    try:
+        res = subprocess.run(
+            args,
+            stdout=stdout,
+            stderr=stderr,
+            env=env,
+            shell=shell,
+            timeout=timeout,
+            check=False,
+        )
+        out = res.stdout.decode("utf-8", "ignore")
+        err = res.stderr.decode("utf-8", "ignore")
+    except subprocess.TimeoutExpired as ex:
+        out = (ex.stdout or b"").decode("utf-8", "ignore")
+        err = (ex.stderr or b"").decode("utf-8", "ignore")
+        raise Exception(
+            f"Command [{shell_args}] timed out after {timeout}s\nstdout:\n{out}\nstderr:\n{err}"
+        ) from ex
     # check_call(...) from subprocess does not print stderr, so we do it manually
     for outline in out.splitlines():
         logging.debug("Stdout:%s", outline)
@@ -330,7 +342,6 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     )
     p.communicate()
     return p.returncode == 0
-
 
 def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
@@ -517,6 +528,8 @@ class ClickHouseCluster:
         enable_thread_fuzzer=False,
         thread_fuzzer_settings={},
         azurite_default_port=0,
+        server_binaries=[],
+        with_dolor=False,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -594,6 +607,8 @@ class ClickHouseCluster:
 
         self.docker_logs_proc = None  # type: Optional[subprocess.Popen]
 
+        self.with_dolor = with_dolor
+
         self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
             self.base_cmd += ["--host", custom_dockerd_host]
@@ -627,6 +642,7 @@ class ClickHouseCluster:
         self.with_mysql57 = False
         self.with_mysql8 = False
         self.with_mysql_cluster = False
+        self.with_dremio26 = False
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
@@ -648,6 +664,7 @@ class ClickHouseCluster:
         self.with_hive = False
         self.with_coredns = False
         self.with_ytsaurus = False
+        self.with_letsencrypt_pebble = False
 
         # available when with_minio == True
         self.with_minio = False
@@ -659,6 +676,7 @@ class ClickHouseCluster:
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
         self.minio_bucket_db_disk = "root-db-disk"
+        self.minio_s3_port = 9000
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
@@ -672,8 +690,11 @@ class ClickHouseCluster:
 
         self.spark_session = None
         self.with_iceberg_catalog = False
+        self._iceberg_rest_catalog_port = None
         self.with_glue_catalog = False
+        self.glue_catalog_port = 3000
         self.with_hms_catalog = False
+        self.hms_catalog_port = 9083
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -742,10 +763,11 @@ class ClickHouseCluster:
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
         self.rabbitmq_secure_port = 5671
+        self.rabbitmq_management_port = 15672
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
-        self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
+        self.rabbitmq_cookie = "CLICKHOUSETESTCOOKIE"
 
         self.nats_host = "nats1"
         self._nats_port = 0
@@ -825,6 +847,14 @@ class ClickHouseCluster:
         self.mysql_cluster_dir = p.abspath(p.join(self.instances_dir, "mysql"))
         self.mysql_cluster_logs_dir = os.path.join(self.mysql8_dir, "logs")
 
+        # available when with_dremio26 == True
+        self.dremio26_host = "dremio26"
+        self.dremio26_port = 32010
+        self.dremio26_rest_port = 9047
+        self.dremio26_ip = None
+        self.dremio26_dir = p.abspath(p.join(self.instances_dir, "dremio26"))
+        self.dremio26_logs_dir = os.path.join(self.dremio26_dir, "logs")
+
         # available when with_zookeper_secure == True
         self.zookeeper_secure_port = 2281
         self.zookeeper_keyfile = zookeeper_keyfile
@@ -864,7 +894,14 @@ class ClickHouseCluster:
         self.prometheus_remote_write_handlers = []
         self.prometheus_remote_read_handlers = []
 
+        # available when with_ytsaurus = True
         self._ytsaurus_port = None
+        self._ytsaurus_internal_ports_list = None
+        self.ytsaurus_internal_ports_list_size = 20
+
+        # available when with_letsencrypt_pebble = True
+        self._letsencrypt_pebble_api_port = 14000
+        self._letsencrypt_pebble_management_port = 15000
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -877,20 +914,22 @@ class ClickHouseCluster:
         if with_spark:
             import pyspark
 
-            (
-                pyspark.sql.SparkSession.builder.appName("spark_test")
-                # The jars are now linked to "$SPARK_HOME/jars" and we don't
-                # need packages to be downloaded once and once again
-                # .config(
-                #     "spark.jars.packages",
-                #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
-                # )
-                .master("local")
-                .getOrCreate()
-                .stop()
-            )
+            # (
+            #     pyspark.sql.SparkSession.builder.appName("spark_test")
+            #     # The jars are now linked to "$SPARK_HOME/jars" and we don't
+            #     # need packages to be downloaded once and once again
+            #     # .config(
+            #     #     "spark.jars.packages",
+            #     #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+            #     # )
+            #     .master("local")
+            #     .getOrCreate()
+            #     .stop()
+            # )
 
         self.port_pool = PortPoolManager()
+        # For La Casa Del Dolor to run upgrades
+        self.server_binaries = server_binaries
 
     def compose_cmd(self, *args: str) -> List[str]:
         return ["docker", "compose", "--project-name", self.project_name, *args]
@@ -966,6 +1005,13 @@ class ClickHouseCluster:
         return self._mongo_secure_port
 
     @property
+    def iceberg_rest_catalog_port(self):
+        if self._iceberg_rest_catalog_port:
+            return self._iceberg_rest_catalog_port
+        self._iceberg_rest_catalog_port = self.port_pool.get_port()
+        return self._iceberg_rest_catalog_port
+
+    @property
     def redis_port(self):
         if self._redis_port:
             return self._redis_port
@@ -985,31 +1031,73 @@ class ClickHouseCluster:
             self._ytsaurus_port = self.port_pool.get_port()
         return self._ytsaurus_port
 
+    @property
+    def letsencrypt_pebble_api_port(self):
+        if not self._letsencrypt_pebble_api_port:
+            self._letsencrypt_pebble_api_port = self.port_pool.get_port()
+        return self._letsencrypt_pebble_api_port
+
+    @property
+    def letsencrypt_pebble_management_port(self):
+        if not self._letsencrypt_pebble_management_port:
+            self._letsencrypt_pebble_management_port = self.port_pool.get_port()
+        return self._letsencrypt_pebble_management_port
+
+    @property
+    def ytsaurus_internal_ports_list(self):
+        if not self._ytsaurus_internal_ports_list:
+            self._ytsaurus_internal_ports_list = []
+            for _ in range(self.ytsaurus_internal_ports_list_size):
+                self._ytsaurus_internal_ports_list.append(self.port_pool.get_port())
+        return self._ytsaurus_internal_ports_list
+
     def print_all_docker_pieces(self):
-        res_networks = subprocess.check_output(
-            f"docker network ls --filter name='{self.project_name}*'",
-            shell=True,
-            universal_newlines=True,
+        try:
+            timeout = int(os.environ.get("DOCKER_DIAG_TIMEOUT", "120"))
+        except Exception:
+            timeout = 120
+        timeout = max(5, min(timeout, 600))
+
+        def _try_list(cmd):
+            try:
+                return subprocess.check_output(
+                    cmd,
+                    shell=True,
+                    universal_newlines=True,
+                    timeout=timeout,
+                )
+            except Exception as ex:
+                logging.debug(
+                    "Failed to run docker diagnostic command [%s] with timeout=%ss: %s",
+                    cmd,
+                    timeout,
+                    ex,
+                )
+                return ""
+
+        res_networks = _try_list(
+            f"docker network ls --filter name='{self.project_name}*'"
         )
-        logging.debug(
-            f"Docker networks for project {self.project_name} are {res_networks}"
+        if res_networks:
+            logging.debug(
+                f"Docker networks for project {self.project_name} are {res_networks}"
+            )
+
+        res_containers = _try_list(
+            f"docker container ls -a --filter name='{self.project_name}*'"
         )
-        res_containers = subprocess.check_output(
-            f"docker container ls -a --filter name='{self.project_name}*'",
-            shell=True,
-            universal_newlines=True,
+        if res_containers:
+            logging.debug(
+                f"Docker containers for project {self.project_name} are {res_containers}"
+            )
+
+        res_volumes = _try_list(
+            f"docker volume ls --filter name='{self.project_name}*'"
         )
-        logging.debug(
-            f"Docker containers for project {self.project_name} are {res_containers}"
-        )
-        res_volumes = subprocess.check_output(
-            f"docker volume ls --filter name='{self.project_name}*'",
-            shell=True,
-            universal_newlines=True,
-        )
-        logging.debug(
-            f"Docker volumes for project {self.project_name} are {res_volumes}"
-        )
+        if res_volumes:
+            logging.debug(
+                f"Docker volumes for project {self.project_name} are {res_volumes}"
+            )
 
     def cleanup(self):
         logging.debug("Cleanup called")
@@ -1052,6 +1140,7 @@ class ClickHouseCluster:
                 f"docker network ls -q --filter name='{self.project_name}'",
                 shell=True,
                 universal_newlines=True,
+                timeout=30,
             ).splitlines()
             if list_networks:
                 logging.debug(f"Trying to remove networks: {list_networks}")
@@ -1060,14 +1149,16 @@ class ClickHouseCluster:
         except:
             pass
 
-        # Remove unused images
-        try:
-            logging.debug("Trying to prune unused images...")
+        # We used to remove unused images, but it is too aggressive and causes issues in
+        # CI because of races between pulling and pruning.
+        # https://github.com/ClickHouse/ClickHouse/issues/80470#issuecomment-3631989064
+        # try:
+        #     logging.debug("Trying to prune unused images...")
 
-            run_and_check(["docker", "image", "prune", "-f"])
-            logging.debug("Images pruned")
-        except:
-            pass
+        #     run_and_check(["docker", "image", "prune", "-f"])
+        #     logging.debug("Images pruned")
+        # except:
+        #     pass
 
         # Remove unused volumes
         try:
@@ -1313,6 +1404,28 @@ class ClickHouseCluster:
 
         return self.base_mysql_cluster_cmd
 
+    def setup_dremio26_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_dremio26 = True
+        env_variables["DREMIO26_HOST"] = self.dremio26_host
+        env_variables["DREMIO26_PORT"] = str(self.dremio26_port)
+        env_variables["DREMIO26_REST_PORT"] = str(self.dremio26_rest_port)
+        env_variables["DREMIO26_ROOT_HOST"] = "%"
+        env_variables["DREMIO26_LOGS"] = self.dremio26_logs_dir
+        env_variables["DREMIO26_LOGS_FS"] = "bind"
+        env_variables["DREMIO26_DOCKER_USER"] = str(os.getuid())
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_dremio_26_0.yml")]
+        )
+        self.base_dremio26_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_dremio_26_0.yml"),
+        )
+
+        return self.base_dremio26_cmd
+
     def setup_postgres_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_postgres.yml")]
@@ -1489,6 +1602,7 @@ class ClickHouseCluster:
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
         env_variables["RABBITMQ_SECURE_PORT"] = str(self.rabbitmq_secure_port)
+        env_variables["RABBITMQ_MANAGEMENT_PORT"] = str(self.rabbitmq_management_port)
         env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
         env_variables["RABBITMQ_LOGS_FS"] = "bind"
         env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
@@ -1640,6 +1754,8 @@ class ClickHouseCluster:
         file_name = "docker_compose_iceberg_rest_catalog.yml"
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
+        if file_name == "docker_compose_iceberg_rest_catalog.yml":
+            env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -1753,6 +1869,9 @@ class ClickHouseCluster:
     def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
         self.with_ytsaurus = True
         env_variables["YTSAURUS_PROXY_PORT"] = str(self.ytsaurus_port)
+        env_variables["YTSAURUS_INTERNAL_PORTS_LIST"] = " ".join(
+            str(port) for port in self.ytsaurus_internal_ports_list
+        )
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml")]
@@ -1764,6 +1883,20 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml"),
         )
         return self.base_ytsaurus_cmd
+
+    def setup_letsencrypt_pebble(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_letsencrypt_pebble = True
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_letsencrypt_pebble.yml")]
+        )
+        self.base_letsencrypt_pebble_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_letsencrypt_pebble.yml"),
+        )
+        return self.base_letsencrypt_pebble_cmd
 
     def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
         if "writer" in self.prometheus_servers:
@@ -1827,6 +1960,7 @@ class ClickHouseCluster:
         with_mysql57=False,
         with_mysql8=False,
         with_mysql_cluster=False,
+        with_dremio26=False,
         with_kafka=False,
         with_kafka_sasl=False,
         with_kerberized_kafka=False,
@@ -1864,6 +1998,7 @@ class ClickHouseCluster:
         with_glue_catalog=False,
         with_hms_catalog=False,
         with_ytsaurus=False,
+        with_letsencrypt_pebble=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
         use_old_analyzer=None,
@@ -1881,6 +2016,8 @@ class ClickHouseCluster:
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
+        cpu_limit=None,
+        pids_limit=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
         minio_data_dir=None,
@@ -1897,7 +2034,6 @@ class ClickHouseCluster:
         randomize_settings=True,
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
-        with_dolor=False,
         extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
@@ -1928,17 +2064,8 @@ class ClickHouseCluster:
                 )
             with_remote_database_disk = False
 
-        if with_remote_database_disk is None:
-            if ClickHouseInstance.is_local_server_asan_build == None:
-                build_opts = subprocess.check_output(
-                    f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
-                    stderr=subprocess.STDOUT,
-                    shell=True,
-                ).decode()
-                ClickHouseInstance.is_local_server_asan_build = (
-                    "-fsanitize=address" in build_opts
-                )
-            with_remote_database_disk = ClickHouseInstance.is_local_server_asan_build
+        if not self.with_dolor and with_remote_database_disk is None:
+            with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK", "0"))
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
@@ -1953,7 +2080,7 @@ class ClickHouseCluster:
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+            "/debug/it-%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -1981,6 +2108,7 @@ class ClickHouseCluster:
             with_mysql57=with_mysql57,
             with_mysql8=with_mysql8,
             with_mysql_cluster=with_mysql_cluster,
+            with_dremio26=with_dremio26,
             with_kafka=with_kafka,
             with_kafka_sasl=with_kafka_sasl,
             with_kerberized_kafka=with_kerberized_kafka,
@@ -2032,11 +2160,12 @@ class ClickHouseCluster:
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
+            cpu_limit=cpu_limit,
+            pids_limit=pids_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
-            with_dolor=with_dolor,
             extra_parameters=extra_parameters,
         )
 
@@ -2097,6 +2226,11 @@ class ClickHouseCluster:
                 self.setup_mysql_cluster_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
+            )
+
+        if with_dremio26 and not self.with_dremio26:
+            cmds.append(
+                self.setup_dremio26_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_postgres and not self.with_postgres:
@@ -2272,6 +2406,11 @@ class ClickHouseCluster:
                 self.setup_ytsaurus(instance, env_variables, docker_compose_yml_dir)
             )
 
+        if with_letsencrypt_pebble:
+            cmds.append(
+                self.setup_letsencrypt_pebble(instance, env_variables, docker_compose_yml_dir)
+            )
+
         if with_prometheus_writer:
             self.prometheus_servers.append('writer')
         if with_prometheus_reader:
@@ -2403,6 +2542,7 @@ class ClickHouseCluster:
                 f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}"
             )
             exec_cmd = ["docker", "exec"]
+            timeout = kwargs.pop("timeout", None)
             if "user" in kwargs:
                 exec_cmd += ["-u", kwargs["user"]]
             if "privileged" in kwargs:
@@ -2416,9 +2556,14 @@ class ClickHouseCluster:
 
             exec_cmd += [container_id]
             exec_cmd += list(cmd)
+            extra_kwargs = {}
+            if env is not None:
+                extra_kwargs["env"] = env
+            if timeout is not None:
+                extra_kwargs["timeout"] = timeout
 
             result = subprocess_check_call(
-                exec_cmd, detach=detach, nothrow=nothrow, env=env
+                exec_cmd, detach=detach, nothrow=nothrow, **extra_kwargs
             )
             return result
         else:
@@ -2526,10 +2671,20 @@ class ClickHouseCluster:
             ],
         )
 
+    def remove_directory_from_container(self, container_id, path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "rm -rf {}".format(path),
+            ],
+        )
+
     def wait_for_url(
         self, url="http://localhost:8123/ping", conn_timeout=2, interval=2, timeout=60
     ):
-        if not url.startswith("http"):
+        if not url.startswith("https") and not url.startswith("http"):
             url = "http://" + url
         if interval <= 0:
             interval = 2
@@ -2660,9 +2815,47 @@ class ClickHouseCluster:
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
+    def wait_dremio26_to_start(self, timeout=180):
+        # Data payload for the request
+        user_data = {
+            "userName": dremio_user,
+            "firstName": "FirstName",
+            "lastName": "LastName",
+            "email": "dremio@localhost",
+            "password": dremio_pass
+        }
+
+        headers = {
+            'Content-Type': 'application/json',
+            # The Authorization header for the FIRST user creation must be '_dremionull'
+            'Authorization': '_dremionull'
+        }
+
+        self.dremio26_ip = self.get_instance_ip("dremio26")
+        start = time.time()
+
+        while time.time() - start < timeout:
+            try:
+                response = requests.put(f"http://{self.dremio26_ip}:{self.dremio26_rest_port}/apiv2/bootstrap/firstuser", headers=headers, data=json.dumps(user_data), timeout=10)
+                if response.status_code == 200:
+                    logging.debug("Dremio 26 Started")
+                    return
+                raise Exception(f"Failed to create user for Dremio 26 (Status Code: {response.status_code}): {response.text}")
+            except Exception as ex:
+                logging.debug("Can't connect to Dremio 26 " + str(ex))
+                time.sleep(0.5)
+
+        run_and_check(["docker", "ps", "--all"])
+        raise Exception("Cannot wait Dremio 26 container")
+
     def wait_ytsaurus_to_start(self):
         self.wait_for_url(
             url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=300
+        )
+
+    def wait_letsencrypt_pebble_to_start(self):
+        self.wait_for_url(
+            url=f"https://10.5.11.2:{self.letsencrypt_pebble_api_port}/dir", timeout=30
         )
 
     def wait_postgres_to_start(self, timeout=260):
@@ -2803,34 +2996,45 @@ class ClickHouseCluster:
 
         raise RuntimeError("Cannot wait RabbitMQ container")
 
-    def stop_rabbitmq_app(self, timeout=120):
+    @contextmanager
+    def pause_rabbitmq(self, timeout=120):
         run_rabbitmqctl(
             self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
         )
 
-    def start_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(
-            self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
-        )
-        self.wait_rabbitmq_to_start(timeout)
-
-    @contextmanager
-    def pause_rabbitmq(self, monitor=None, timeout=120):
-        if monitor is not None:
-            monitor.stop()
-        self.stop_rabbitmq_app(timeout)
-
         try:
             yield
         finally:
-            self.start_rabbitmq_app(timeout)
-            if monitor is not None:
-                monitor.start(self)
+            run_rabbitmqctl(
+                self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
+            )
+            self.wait_rabbitmq_to_start(timeout)
 
-    def reset_rabbitmq(self, timeout=240):
-        self.stop_rabbitmq_app()
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
-        self.start_rabbitmq_app()
+    def reset_rabbitmq(self, timeout=120):
+        try:
+            resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
+                                auth=("root", "clickhouse"))
+            logging.debug(f"RabbitMQ statistics:\n{json.dumps(resp.json(), indent=2)}")
+        except:
+            pass
+        logging.debug("Resetting RabbitMQ by restarting container")
+        run_and_check(
+            f"docker stop --time {timeout} {self.rabbitmq_docker_id}",
+            shell=True,
+            nothrow=True,
+            timeout=timeout
+        )
+        run_and_check(
+            f"docker rm -f -v {self.rabbitmq_docker_id}",
+            shell=True,
+            nothrow=True,
+        )
+        subprocess_check_call(
+            self.base_rabbitmq_cmd + ["up", "-d", "--renew-anon-volumes"],
+            timeout=timeout,
+        )
+        self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
+        self.wait_rabbitmq_to_start(timeout)
 
     def run_rabbitmqctl(self, command):
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
@@ -2867,7 +3071,12 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 for node in nodes:
-                    conn = self.get_kazoo_client(node)
+                    # Use low retries/timeout per attempt since the outer loop
+                    # already retries. This avoids kazoo's internal thread join
+                    # hanging indefinitely (a known kazoo bug where
+                    # ConnectionHandler.stop joins the connection thread
+                    # without a timeout).
+                    conn = self.get_kazoo_client(node, timeout=5.0, retries=1)
                     conn.get_children("/")
                     conn.stop()
                 logging.debug("All instances of ZooKeeper started: %s", nodes)
@@ -2881,7 +3090,7 @@ class ClickHouseCluster:
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
         ) from err
 
-    def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=50):
+    def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=120):
         retries = 0
         while True:
             if check_kafka_is_available(kafka_docker_id, kafka_port):
@@ -3166,20 +3375,29 @@ class ClickHouseCluster:
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
 
-    def start(self):
+    def start(self, connection_timeout=None):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
+        logging.debug(f"Cluster start called. is_up={self.is_up}")
+        self.print_all_docker_pieces()
+
+        if self.is_up:
+            return
+
         if not os.path.exists(self.instances_dir):
             os.mkdir(self.instances_dir)
         else:
             logging.warning(
                 "Instance directory already exists. Did you call cluster.start() for second time?"
             )
-        logging.debug(f"Cluster start called. is_up={self.is_up}")
-        self.print_all_docker_pieces()
-
-        if self.is_up:
-            return
+            # Remove and recreate so that create_dir() gets a clean slate.
+            # This happens when --dist=each causes module-scoped fixtures to be torn down
+            # and re-set-up within the same pytest session (e.g. tests from different modules
+            # interleave on the same xdist worker). cluster.shutdown() does not remove
+            # instances_dir, and ClickHouseCluster.__init__ only removes it at import time,
+            # so without this cleanup create_dir() would fail with FileExistsError.
+            shutil.rmtree(self.instances_dir, ignore_errors=True)
+            os.mkdir(self.instances_dir)
 
         if self.with_net_trics:
             # Tests might share same subnet, check file docker_compose_net.yml
@@ -3222,7 +3440,13 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
-            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, nothrow=True)
+            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, timeout=180)
+
+            def logging_compose_up(**kwargs):
+                if "exception" in kwargs:
+                    logging.info(
+                        "Got exception in docker compose up: %s", kwargs["exception"]
+                    )
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -3234,7 +3458,9 @@ class ClickHouseCluster:
                         shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
-                run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
+                )
                 self.up_called = True
 
                 self.wait_zookeeper_secure_to_start()
@@ -3301,6 +3527,10 @@ class ClickHouseCluster:
                                     "check_not_exists",
                                     "create_if_not_exists",
                                     "remove_recursive",
+                                    "multi_watches",
+                                    "check_stat",
+                                    "try_remove",
+                                    "list_with_stat_and_data",
                                 ]:
                                     ff_config.write(
                                         f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
@@ -3320,7 +3550,9 @@ class ClickHouseCluster:
                                 ),
                             )
 
-                run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
+                )
                 self.up_called = True
 
                 self.wait_zookeeper_to_start()
@@ -3364,7 +3596,7 @@ class ClickHouseCluster:
                     shutil.rmtree(self.mysql57_dir, ignore_errors=True)
                 os.makedirs(self.mysql57_logs_dir, exist_ok=True)
                 os.chmod(self.mysql57_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql57_cmd + common_opts)
+                subprocess_check_call(self.base_mysql57_cmd + common_opts + ["--renew-anon-volumes"])
                 self.up_called = True
                 self.wait_mysql57_to_start()
 
@@ -3374,7 +3606,7 @@ class ClickHouseCluster:
                     shutil.rmtree(self.mysql8_dir, ignore_errors=True)
                 os.makedirs(self.mysql8_logs_dir, exist_ok=True)
                 os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql8_cmd + common_opts)
+                subprocess_check_call(self.base_mysql8_cmd + common_opts + ["--renew-anon-volumes"])
                 self.wait_mysql8_to_start()
 
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
@@ -3384,9 +3616,18 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
-                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
+                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts + ["--renew-anon-volumes"])
                 self.up_called = True
                 self.wait_mysql_cluster_to_start()
+
+            if self.with_dremio26 and self.base_dremio26_cmd:
+                logging.debug("Setup Dremio 26")
+                if os.path.exists(self.dremio26_dir):
+                    shutil.rmtree(self.dremio26_dir, ignore_errors=True)
+                os.makedirs(self.dremio26_logs_dir, exist_ok=True)
+                os.chmod(self.dremio26_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_dremio26_cmd + common_opts)
+                self.wait_dremio26_to_start()
 
             if self.with_postgres and self.base_postgres_cmd:
                 logging.debug("Setup Postgres")
@@ -3657,6 +3898,15 @@ class ClickHouseCluster:
                 run_and_check(ytsarurus_start_cmd)
                 self.wait_ytsaurus_to_start()
 
+            if self.with_letsencrypt_pebble and self.base_letsencrypt_pebble_cmd:
+                letsencrypt_pebble_pull_cmd = self.base_letsencrypt_pebble_cmd + ["pull"]
+                retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(
+                    run_and_check, letsencrypt_pebble_pull_cmd, timeout=180
+                )
+                letsencrypt_pebble_start_cmd = self.base_letsencrypt_pebble_cmd + common_opts
+                run_and_check(letsencrypt_pebble_start_cmd)
+                self.wait_letsencrypt_pebble_to_start()
+
             if self.with_arrowflight and self.base_arrowflight_cmd:
                 arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
 
@@ -3680,7 +3930,55 @@ class ClickHouseCluster:
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
+            if self.with_dolor:
+                # Copy binaries and start ClickHouse for dolor instances
+                for instance in self.instances.values():
+                    i = 0
+                    for val in self.server_binaries:
+                        subprocess.run(
+                            [
+                                "docker",
+                                "cp",
+                                val,
+                                f"{instance.docker_id}:/usr/bin/clickhouse{i}",
+                            ],
+                            check=True,
+                        )
+                        if i == 0:
+                            # The first binary will be used first
+                            instance.exec_in_container(
+                                [
+                                    "ln",
+                                    "-sf",
+                                    f"/usr/bin/clickhouse{i}",
+                                    "/usr/bin/clickhouse",
+                                ],
+                                user="root",
+                            )
+                        i += 1
+                    self.exec_in_container(
+                        instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
+                    )
+                    instance.exec_in_container(
+                        ["bash", "-c", instance.clickhouse_start_command],
+                        user=str(os.getuid()),
+                        detach=True,
+                    )
+
             start_timeout = 300.0  # seconds
+            connection_timeout = None
+            try:
+                v = os.environ.get("KEEPER_START_TIMEOUT_SEC")
+                if v:
+                    start_timeout = float(v)
+            except Exception:
+                start_timeout = 300.0
+            try:
+                v = os.environ.get("KEEPER_CONNECT_TIMEOUT_SEC")
+                if v:
+                    connection_timeout = float(v)
+            except Exception:
+                connection_timeout = None
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
@@ -3689,7 +3987,7 @@ class ClickHouseCluster:
                 logging.debug(
                     f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}..."
                 )
-                instance.wait_for_start(start_timeout)
+                instance.wait_for_start(start_timeout, connection_timeout=connection_timeout)
                 logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(
@@ -3721,9 +4019,9 @@ class ClickHouseCluster:
             bufsize=0,
         )
 
-    def shutdown(self, kill=True, ignore_fatal=True):
+    def shutdown(self, kill=True, ignore_fatal=False, ignore_logical_errors=False):
         sanitizer_assert_instance = None
-        fatal_log = None
+        failure_logs = []
 
         if self.up_called:
             if kill:
@@ -3740,6 +4038,13 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
+                # Collect exit codes for later inspection
+                if self.with_dolor:
+                    container = self.docker_client.containers.get(instance.docker_id)
+                    res = container.wait()
+                    exit_code = res["StatusCode"]
+                    logging.info(f"The server {name} exited with code: {exit_code}")
+
                 if instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
@@ -3755,14 +4060,19 @@ class ClickHouseCluster:
                         sanitizer_assert_instance,
                     )
 
-                if not ignore_fatal and instance.contains_in_log(
-                    "Fatal", from_host=True
-                ):
-                    fatal_log = instance.grep_in_log("Fatal", from_host=True)
-                    if "Child process was terminated by signal 9 (KILL)" in fatal_log:
-                        fatal_log = None
-                        continue
-                    logging.error("Crash in instance %s fatal log %s", name, fatal_log)
+                if not ignore_logical_errors:
+                    logical_error_log = instance.grep_in_log("LOGICAL_ERROR", from_host=True)
+                    if logical_error_log and '<Error>' in logical_error_log:
+                        msg = f"Logical error in instance '{name}':\n{logical_error_log}"
+                        failure_logs.append(msg)
+                        logging.error(msg)
+
+                if not ignore_fatal:
+                    fatal_log = instance.grep_in_log("<Fatal>", from_host=True)
+                    if fatal_log and "Child process was terminated by signal 9 (KILL)" not in fatal_log:
+                        msg = f"Crash in instance '{name}':\n{fatal_log}"
+                        failure_logs.append(msg)
+                        logging.error(msg)
 
             try:
                 subprocess_check_call(self.base_cmd + ["down", "--volumes"])
@@ -3806,6 +4116,7 @@ class ClickHouseCluster:
         for instance in list(self.instances.values()):
             instance.docker_client = None
             instance.ip_address = None
+            instance.ipv6_address = None
             instance.client = None
 
         if sanitizer_assert_instance is not None:
@@ -3814,14 +4125,24 @@ class ClickHouseCluster:
                     sanitizer_assert_instance
                 )
             )
-        if fatal_log is not None:
-            raise Exception("Fatal messages found: {}".format(fatal_log))
+
+        if self.spark_session:
+            self.spark_session.stop()
+
+        if failure_logs:
+            raise Exception("\n".join(failure_logs))
 
     def _pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
 
     def _unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+
+    def _pause_container_using_signal(self, instance_name):
+        subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGSTOP", instance_name])
+
+    def _unpause_container_using_signal(self, instance_name):
+        subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
 
     @contextmanager
     def pause_container(self, instance_name):
@@ -3834,6 +4155,14 @@ class ClickHouseCluster:
             yield
         finally:
             self._unpause_container(instance_name)
+
+    @contextmanager
+    def pause_container_using_signal(self, instance_name):
+        self._pause_container_using_signal(instance_name)
+        try:
+            yield
+        finally:
+            self._unpause_container_using_signal(instance_name)
 
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
@@ -3869,7 +4198,7 @@ class ClickHouseCluster:
             certfile=self.zookeeper_certfile,
             keyfile=self.zookeeper_keyfile,
         )
-        zk.start()
+        zk.start(timeout=timeout)
         return zk
 
     def run_kazoo_commands_with_retries(
@@ -3942,7 +4271,8 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
             - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
-            - {CLICKHOUSE_ROOT_DIR}:/debug:ro
+            - {CLICKHOUSE_ROOT_DIR}:/debug:rw
+            {dev_mount}
             {metrika_xml}
             {binary_volume}
             {external_dirs_volumes}
@@ -3961,6 +4291,8 @@ services:
         stop_grace_period: 10m
         tmpfs: {tmpfs}
         {mem_limit}
+        {cpu_limit}
+        {pids_limit}
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -3975,11 +4307,13 @@ services:
         security_opt:
             - label:disable
             - seccomp:unconfined
+        privileged: {privileged}
         dns_opt:
             - attempts:2
             - timeout:1
             - inet6
             - rotate
+        {ports_mappings}
         {networks}
             {app_net}
                 {ipv4_address}
@@ -3991,7 +4325,6 @@ services:
 
 
 class ClickHouseInstance:
-    is_local_server_asan_build = None
     def __init__(
         self,
         cluster,
@@ -4009,6 +4342,7 @@ class ClickHouseInstance:
         with_mysql57,
         with_mysql8,
         with_mysql_cluster,
+        with_dremio26,
         with_kafka,
         with_kafka_sasl,
         with_kerberized_kafka,
@@ -4057,11 +4391,12 @@ class ClickHouseInstance:
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
+        cpu_limit=None,
+        pids_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
         randomize_settings=True,
         use_docker_init_flag=False,
-        with_dolor=False,
         extra_parameters=None,
     ):
         self.name = name
@@ -4073,9 +4408,22 @@ class ClickHouseInstance:
         self.external_dirs = external_dirs
         self.tmpfs = tmpfs or []
         if mem_limit is not None:
-            self.mem_limit = "mem_limit : " + mem_limit
+            self.mem_limit = f"mem_limit: {mem_limit}"
         else:
-            self.mem_limit = ""
+            self.mem_limit = "mem_limit: 12g"
+
+        if cpu_limit is None:
+            self.cpu_limit = "cpus: 5"
+        elif cpu_limit == False:
+            self.cpu_limit = ""
+        else:
+            self.cpu_limit = f"cpus: {cpu_limit}"
+
+        if pids_limit is not None:
+            self.pids_limit = f"pids_limit: {pids_limit}"
+        else:
+            self.pids_limit = f"pids_limit: 5000"
+
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         )
@@ -4112,6 +4460,7 @@ class ClickHouseInstance:
         self.with_mysql57 = with_mysql57
         self.with_mysql8 = with_mysql8
         self.with_mysql_cluster = with_mysql_cluster
+        self.with_dremio26 = with_dremio26
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
@@ -4194,7 +4543,11 @@ class ClickHouseInstance:
             self.krb5_conf = ""
 
         # Use a common path for data lakes on the filesystem
-        self.lakehouses_path = "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses" if with_dolor else ""
+        self.lakehouses_path = (
+            "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses"
+            if self.cluster.with_dolor
+            else ""
+        )
 
         self.docker_client = None
         self.ip_address = None
@@ -4208,7 +4561,6 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
-        self.with_dolor = with_dolor
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -4221,6 +4573,12 @@ class ClickHouseInstance:
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
         return "NDEBUG" not in build_opts
+
+    def is_built_with_llvm_coverage(self):
+        with_coverage = self.query(
+            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
+        )
+        return "ON" in with_coverage.upper()
 
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
@@ -4555,50 +4913,50 @@ class ClickHouseInstance:
             )
         try:
             ps_clickhouse = self.exec_in_container(
-                ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
+                ["bash", "-c", "ps --no-header -C clickhouse"], nothrow=True, user="root"
             )
-            if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
+            if not ps_clickhouse:
                 logging.warning("ClickHouse process already stopped")
-                return
+                return False
 
             self.exec_in_container(
-                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")],
+                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-15")],
                 user="root",
             )
 
             start_time = time.time()
-            stopped = False
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
-                    stopped = True
-                    break
+                    return True
                 else:
                     time.sleep(1)
 
-            if not stopped:
-                pid = self.get_process_pid("clickhouse")
-                if pid is not None:
-                    logging.warning(
-                        f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
-                    )
-                    self.exec_in_container(
-                        [
-                            "bash",
-                            "-c",
-                            f"gdb -batch -ex 'thread apply all bt full' -p {pid} > /var/log/clickhouse-server/stdout.log",
-                        ],
-                        user="root",
-                    )
-                    self.stop_clickhouse(kill=True)
-                else:
-                    ps_all = self.exec_in_container(
-                        ["bash", "-c", "ps aux"], nothrow=True, user="root"
-                    )
-                    logging.warning(
-                        f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}"
-                    )
-                    return
+            # Some sanitizer report in progress?
+            while self.get_process_pid("llvm-symbolizer") is not None:
+                time.sleep(1)
+
+            pid = self.get_process_pid("clickhouse")
+            if pid is not None:
+                logging.warning(
+                    f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
+                )
+                self.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
+                    ],
+                    user="root",
+                )
+                self.stop_clickhouse(kill=True)
+            else:
+                ps_all = self.exec_in_container(
+                    ["bash", "-c", "ps aux"], nothrow=True, user="root"
+                )
+                logging.warning(
+                    f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}"
+                )
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
@@ -4651,6 +5009,13 @@ class ClickHouseInstance:
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
 
+    def stop_clickhouse_client(self, signal="INT"):
+        client_pid = self.get_process_pid("clickhouse client")
+        self.exec_in_container(
+            ["bash", "-c", f"kill -{signal} {client_pid}"],
+            user="root",
+        )
+
     def wait_start(self, start_wait_sec):
         start_time = time.time()
         last_err = None
@@ -4680,7 +5045,7 @@ class ClickHouseInstance:
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
                 user="root",
             )
         if last_err is not None:
@@ -4703,7 +5068,7 @@ class ClickHouseInstance:
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
                 user="root",
             )
         raise Exception(
@@ -4764,7 +5129,7 @@ class ClickHouseInstance:
         return len(result) > 0
 
     def grep_in_log(
-        self, substring, from_host=False, filename="clickhouse-server.log", after=None
+        self, substring, from_host=False, filename="clickhouse-server.log", after=None, only_latest=False
     ):
         logging.debug(f"grep in log called %s", substring)
         if after is not None:
@@ -4777,7 +5142,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}{"" if only_latest else "*"} || true',
                 ]
             )
         else:
@@ -4785,11 +5150,30 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}{"" if only_latest else "*"} || true',
                 ]
             )
         logging.debug("grep result %s", result)
         return result
+
+    def count_log_lines(
+        self,
+        filename="/var/log/clickhouse-server/clickhouse-server.log",
+    ):
+        result = self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                'wc -l {}'.format(
+                    filename,
+                ),
+            ]
+        )
+        separator = result.find(" ")
+        assert separator > 0, f"no separator in wc output: '{result}'"
+        wc_count = result[:separator]
+        assert wc_count.isdigit(), f"Line count is not a number: {wc_count}"
+        return int(wc_count)
 
     def count_in_log(self, substring):
         result = self.exec_in_container(
@@ -5013,7 +5397,7 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' /usr/share/clickhouse_fresh server --version",
+                "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' && /usr/share/clickhouse_fresh server --version",
             ]
         )
         if fix_metadata:
@@ -5030,7 +5414,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
+                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE default ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
         self.exec_in_container(
@@ -5054,10 +5438,49 @@ class ClickHouseInstance:
     def start(self):
         self.get_docker_handle().start()
 
-    def wait_for_start(self, start_timeout=None, connection_timeout=None):
+    def wait_for_start(self, start_timeout=180.0, connection_timeout=None):
         # Wait until TCP port is ready. Usually it means that ClickHouse is ready to accept queries.
-        self.wait_until_port_is_ready(9000, timeout=start_timeout, connection_timeout=connection_timeout)
+        ports = [9000]
+        try:
+            ports_env = os.environ.get("CH_WAIT_START_PORTS", "").strip()
+            if ports_env:
+                parts = [p.strip() for p in ports_env.split(",") if p.strip()]
+                ports = [int(p) for p in parts if p.isdigit()]
+                if not ports:
+                    ports = [9000]
+        except Exception:
+            ports = [9000]
+        self.wait_until_any_port_is_ready(ports, timeout=start_timeout, connection_timeout=connection_timeout)
         self.is_up = True
+
+    def wait_until_any_port_is_ready(self, ports, timeout=None, connection_timeout=None):
+        if not ports:
+            raise Exception("No ports to check")
+        if timeout is None or timeout <= 0:
+            raise Exception("Invalid timeout: {}".format(timeout))
+        start_time = time.time()
+        last_exc = None
+        for port in ports:
+            remaining = start_time + timeout - time.time()
+            if remaining <= 0:
+                break
+            try:
+                self.wait_until_port_is_ready(port, timeout=remaining, connection_timeout=connection_timeout)
+                return
+            except Exception as e:
+                last_exc = e
+                exited = False
+                try:
+                    h = self.get_docker_handle()
+                    h.reload()
+                    exited = h.status == "exited"
+                except Exception:
+                    pass
+                if exited:
+                    raise
+        if last_exc:
+            raise last_exc
+        raise Exception("Timed out while waiting for instance '{}' to start".format(self.name))
 
     # Waits until a specified port is ready for connections.
     def wait_until_port_is_ready(self, port, timeout=None, connection_timeout=None):
@@ -5282,7 +5705,7 @@ class ClickHouseInstance:
                 self.with_installed_binary,
             )
 
-        if not self.with_dolor:
+        if not self.cluster.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)
             if self.with_installed_binary:
                 # Ignore CPU overload in this case
@@ -5307,6 +5730,10 @@ class ClickHouseInstance:
             use_old_analyzer = self.use_old_analyzer
         if self.use_distributed_plan is not None:
             use_distributed_plan = self.use_distributed_plan
+
+        write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
+        write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
 
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
@@ -5422,6 +5849,9 @@ class ClickHouseInstance:
             depends_on.append("mysql3")
             depends_on.append("mysql4")
 
+        if self.with_dremio26:
+            depends_on.append("dremio26")
+
         if self.with_postgres_cluster:
             depends_on.append("postgres2")
             depends_on.append("postgres3")
@@ -5477,6 +5907,8 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = "- " + self.odbc_ini_path
 
+        if self.cluster.with_dolor:
+            entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
         if self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
@@ -5495,15 +5927,17 @@ class ClickHouseInstance:
             if self.ipv4_address is not None:
                 ipv4_address = "ipv4_address: " + self.ipv4_address
             if self.ipv6_address is not None:
-                ipv6_address = "ipv6_address: " + self.ipv6_address
+                ipv6_address = f'ipv6_address: "{self.ipv6_address}"'
             if self.hostname != self.name:
                 net_aliases = "aliases:"
                 net_alias1 = "- " + self.hostname
 
-        if not self.with_installed_binary:
-            binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
+        if self.cluster.with_dolor:
+            binary_volume = ""
+        elif not self.with_installed_binary:
+            binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse:ro"
         else:
-            binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
+            binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh:ro"
 
         external_dirs_volumes = ""
         if self.external_dirs:
@@ -5525,6 +5959,32 @@ class ClickHouseInstance:
             self.env_file = p.abspath(p.join(self.path, ".env"))
             _create_env_file(self.env_file, self.env_variables)
 
+        port_lines = []
+        # KEEPER_PUBLISH_CLIENT: publish keeper client port 9181 to host for keeper-bench on host
+        
+        if os.environ.get("KEEPER_PUBLISH_CLIENT") == "1":
+            base = int(os.environ.get("KEEPER_PUBLISH_CLIENT_BASE") or "19181")
+            m = re.search(r"keeper(\d+)", str(self.name or ""), re.I)
+            if m:
+                idx = int(m.group(1))
+                host_port = base + (idx - 1)
+                port_lines.append(f'"{host_port}:9181"')
+                self.keeper_client_host_port = host_port
+        # KEEPER_PUBLISH_CONTROL: publish keeper control port for a chosen node
+        try:
+            publish_ctl = (os.environ.get("KEEPER_PUBLISH_CONTROL", "") or "").strip()
+            ctrl_port = (os.environ.get("KEEPER_CONTROL_PORT", "") or "").strip()
+            publish_node = (os.environ.get("KEEPER_PUBLISH_NODE", "keeper1") or "keeper1").strip()
+            host_port = (os.environ.get("KEEPER_PUBLISH_HOST_PORT", ctrl_port) or "").strip()
+            if publish_ctl == "1" and ctrl_port.isdigit() and host_port.isdigit():
+                if self.hostname == publish_node or self.name == publish_node:
+                    port_lines.append(f'"{host_port}:{ctrl_port}"')
+        except Exception:
+            pass
+        ports_mappings = ("ports:\n            - " + "\n            - ".join(port_lines)) if port_lines else ""
+
+        is_priv = os.environ.get("KEEPER_PRIVILEGED", "") == "1"
+
         with open(self.docker_compose_path, "w") as docker_compose:
             docker_compose.write(
                 DOCKER_COMPOSE_TEMPLATE.format(
@@ -5540,6 +6000,8 @@ class ClickHouseInstance:
                     metrika_xml=metrika_xml,
                     tmpfs=str(self.tmpfs),
                     mem_limit=self.mem_limit,
+                    cpu_limit=self.cpu_limit,
+                    pids_limit=self.pids_limit,
                     logs_dir=logs_dir,
                     depends_on=str(depends_on),
                     user=os.getuid(),
@@ -5557,7 +6019,12 @@ class ClickHouseInstance:
                     net_alias1=net_alias1,
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
-                    CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR
+                    CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
+                    privileged="true" if is_priv else "false",
+                    dev_mount=(
+                        "- /dev:/dev" if is_priv else ""
+                    ),
+                    ports_mappings=ports_mappings,
                 )
             )
 
