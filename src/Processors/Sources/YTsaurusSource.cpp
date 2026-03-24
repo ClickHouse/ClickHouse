@@ -3,7 +3,7 @@
 #if USE_YTSAURUS
 #include <Processors/Sources/YTsaurusSource.h>
 #include <Storages/YTsaurus/YTsaurusSettings.h>
-
+#include <Processors/Sources/NullSource.h>
 #include <optional>
 #include <cstddef>
 #include <memory>
@@ -191,16 +191,18 @@ Pipe createPipeForDynamicTable(
     if (use_lookups)
     {
         if (source_options.lookup_input_blocks->empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "lookup_input_blocks is empty for YTsaurusTableSourceDynamicTableLookup");
+            return Pipe(std::make_shared<NullSource>(sample_block));
+
         Pipes pipes;
         LOG_DEBUG(::getLogger("YTsaurusSourceFactory"),
         "Will read dynamic table {} with {} streams and lookup mode",
             cypress_path, source_options.lookup_input_blocks->size());
 
+        YTsaurusClientPtr client_for_source(new YTsaurusClient(*client));
         for (const auto & block : *source_options.lookup_input_blocks)
         {
             pipes.emplace_back(std::make_shared<YTsaurusTableSourceDynamicTableLookup>(
-                client,
+                client_for_source,
                 cypress_path,
                 sample_block,
                 max_block_size,
