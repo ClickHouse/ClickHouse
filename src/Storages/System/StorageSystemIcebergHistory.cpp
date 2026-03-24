@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIceberg.h>
 #include <Access/ContextAccess.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -56,7 +57,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 
     const auto access = context_copy->getAccess();
 
-    auto add_history_record = [&](const DatabaseTablesIteratorPtr & it, StorageDataLake<IcebergMetadata> * object_storage)
+    auto add_history_record = [&](const DatabaseTablesIteratorPtr & it, StorageIceberg * object_storage)
     {
         if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
             return;
@@ -65,7 +66,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
         /// to handle properly all possible errors which we can get when attempting to read metadata of iceberg table
         try
         {
-            if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context_copy)); iceberg_metadata)
+            if (IcebergMetadata * iceberg_metadata = object_storage->getIcebergMetadata(context_copy); iceberg_metadata)
             {
                 IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory(context_copy);
 
@@ -105,7 +106,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     // Table was dropped while acquiring the lock, skipping table
                     continue;
 
-                if (auto * datalake_table = dynamic_cast<StorageDataLake<IcebergMetadata> *>(storage.get()))
+                if (auto * datalake_table = dynamic_cast<StorageIceberg *>(storage.get()))
                 {
                     add_history_record(iterator, datalake_table);
                 }

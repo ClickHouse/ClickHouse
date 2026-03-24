@@ -36,6 +36,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIceberg.h>
 #include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
