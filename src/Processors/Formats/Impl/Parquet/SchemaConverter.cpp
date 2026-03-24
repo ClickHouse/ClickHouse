@@ -116,35 +116,57 @@ void SchemaConverter::prepareForReading()
         missing_output.is_missing_column = true;
     }
 
-    /// Resolve covering.bbox column names → primitive_columns indices for geo columns.
-    /// Build a name→index map first (bbox columns may not be in the output block).
-    std::unordered_map<String, size_t> name_to_primitive_idx;
-    for (size_t i = 0; i < primitive_columns.size(); ++i)
-        name_to_primitive_idx.emplace(primitive_columns[i].name, i);
-
-    for (size_t i = 0; i < primitive_columns.size(); ++i)
+    /// Resolve covering.bbox column names → Parquet column indices for geo columns.
+    /// Bbox columns may not be in the sample_block, so we walk the file schema to find
+    /// their flat leaf index (which matches the ordering in RowGroup.columns).
+    if (!geo_columns.empty())
     {
-        const auto geo_it = geo_columns.find(primitive_columns[i].name);
-        if (geo_it == geo_columns.end() || !geo_it->second.covering_bbox.has_value())
-            continue;
-        const auto & bbox = *geo_it->second.covering_bbox;
-
-        auto find = [&](const String & col_name, size_t & out) -> bool
+        /// Build name → flat Parquet leaf column index by DFS-walking file_metadata.schema.
+        std::unordered_map<String, size_t> schema_name_to_col_idx;
         {
-            auto it = name_to_primitive_idx.find(col_name);
-            if (it == name_to_primitive_idx.end())
+            size_t flat_col_idx = 0;
+            size_t schema_pos = 1; // skip root at 0
+            std::function<void(const String &, int32_t)> walk = [&](const String & prefix, int32_t num_children)
+            {
+                for (int32_t c = 0; c < num_children; ++c)
+                {
+                    if (schema_pos >= file_metadata.schema.size()) break;
+                    const auto & elem = file_metadata.schema[schema_pos++];
+                    String full_name = prefix.empty() ? elem.name : prefix + "." + elem.name;
+                    if (elem.num_children > 0)
+                        walk(full_name, elem.num_children);
+                    else
+                        schema_name_to_col_idx[full_name] = flat_col_idx++;
+                }
+            };
+            if (!file_metadata.schema.empty())
+                walk("", file_metadata.schema[0].num_children);
+        }
+
+        auto find_col = [&](const String & col_name, size_t & out) -> bool
+        {
+            auto it = schema_name_to_col_idx.find(col_name);
+            if (it == schema_name_to_col_idx.end())
                 return false;
             out = it->second;
             return true;
         };
 
-        PrimitiveColumnInfo::BboxColumnIndices indices;
-        if (find(bbox.xmin_column, indices.xmin_idx)
-            && find(bbox.ymin_column, indices.ymin_idx)
-            && find(bbox.xmax_column, indices.xmax_idx)
-            && find(bbox.ymax_column, indices.ymax_idx))
+        for (size_t i = 0; i < primitive_columns.size(); ++i)
         {
-            primitive_columns[i].covering_bbox_indices = indices;
+            const auto geo_it = geo_columns.find(primitive_columns[i].name);
+            if (geo_it == geo_columns.end() || !geo_it->second.covering_bbox.has_value())
+                continue;
+            const auto & bbox = *geo_it->second.covering_bbox;
+
+            PrimitiveColumnInfo::BboxColumnIndices indices;
+            if (find_col(bbox.xmin_column, indices.xmin_col)
+                && find_col(bbox.ymin_column, indices.ymin_col)
+                && find_col(bbox.xmax_column, indices.xmax_col)
+                && find_col(bbox.ymax_column, indices.ymax_col))
+            {
+                primitive_columns[i].covering_bbox_indices = indices;
+            }
         }
     }
 }

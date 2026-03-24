@@ -1,0 +1,17 @@
+=== all rows ===
+1
+2
+3
+4
+=== south texas ===
+1
+2
+=== north texas ===
+3
+4
+=== no match (atlantic) ===
+0
+=== pruned_row_groups (pruning enabled) ===
+ParquetPrunedRowGroups: 1 (increment)
+=== pruned_row_groups (pruning disabled) ===
+no pruning

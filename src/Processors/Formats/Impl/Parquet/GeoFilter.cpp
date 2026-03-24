@@ -211,6 +211,7 @@ bool rowGroupFailsSpatialFilters(
         }
 
         /// Fall back to covering.bbox column statistics.
+        /// BboxColumnIndices stores Parquet column indices directly (into rg_meta.columns).
         if (!have_bbox && geo_col->covering_bbox_indices.has_value())
         {
             const auto & idx = *geo_col->covering_bbox_indices;
@@ -219,25 +220,27 @@ bool rowGroupFailsSpatialFilters(
             double v_xmax = 0;
             double v_ymax = 0;
 
-            auto read_min = [&](size_t prim_idx, double & out) -> bool
+            auto read_min = [&](size_t col_idx, double & out) -> bool
             {
-                const auto & cmeta = rg_meta.columns.at(primitive_columns[prim_idx].column_idx).meta_data;
+                if (col_idx >= rg_meta.columns.size()) return false;
+                const auto & cmeta = rg_meta.columns.at(col_idx).meta_data;
                 return cmeta.__isset.statistics
                     && cmeta.statistics.__isset.min_value
                     && readParquetDouble(cmeta.statistics.min_value, out);
             };
-            auto read_max = [&](size_t prim_idx, double & out) -> bool
+            auto read_max = [&](size_t col_idx, double & out) -> bool
             {
-                const auto & cmeta = rg_meta.columns.at(primitive_columns[prim_idx].column_idx).meta_data;
+                if (col_idx >= rg_meta.columns.size()) return false;
+                const auto & cmeta = rg_meta.columns.at(col_idx).meta_data;
                 return cmeta.__isset.statistics
                     && cmeta.statistics.__isset.max_value
                     && readParquetDouble(cmeta.statistics.max_value, out);
             };
 
-            if (read_min(idx.xmin_idx, v_xmin)
-                && read_min(idx.ymin_idx, v_ymin)
-                && read_max(idx.xmax_idx, v_xmax)
-                && read_max(idx.ymax_idx, v_ymax))
+            if (read_min(idx.xmin_col, v_xmin)
+                && read_min(idx.ymin_col, v_ymin)
+                && read_max(idx.xmax_col, v_xmax)
+                && read_max(idx.ymax_col, v_ymax))
             {
                 rg_xmin = v_xmin;
                 rg_ymin = v_ymin;

@@ -180,10 +180,10 @@ struct Reader
         bool used_by_key_condition = false;
 
         /// Set for WKB geometry columns that have GeoParquet covering.bbox metadata.
-        /// Stores indices into primitive_columns for the four Float64 bbox scalar columns.
+        /// Stores Parquet column indices (into RowGroup.columns) for the four Float64 bbox columns.
         struct BboxColumnIndices
         {
-            size_t xmin_idx, ymin_idx, xmax_idx, ymax_idx;
+            size_t xmin_col, ymin_col, xmax_col, ymax_col;
         };
         std::optional<BboxColumnIndices> covering_bbox_indices;
 

@@ -103,7 +103,9 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
         meta.encoding = geo_encoding;
         meta.type = result_type;
 
-        /// Parse optional covering.bbox: {"covering": {"bbox": {"xmin": {"column": "..."}, ...}}}
+        /// Parse optional covering.bbox.
+        /// GeoParquet 1.1.0 format: {"covering": {"bbox": {"xmin": ["col", "field"], ...}}}
+        /// Each value is an array of path components joined with '.' to form the primitive column name.
         if (column_obj->has("covering"))
         {
             const auto covering_obj = column_obj->getObject("covering");
@@ -114,16 +116,26 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
                     && bbox_obj->has("xmin") && bbox_obj->has("ymin")
                     && bbox_obj->has("xmax") && bbox_obj->has("ymax"))
                 {
-                    auto get_col = [&](const std::string & key) -> String
+                    /// Convert path-component array ["col", "field"] → "col.field"
+                    auto get_col = [&](const std::string & bbox_key) -> String
                     {
-                        return bbox_obj->getObject(key)->getValue<std::string>("column");
+                        const auto arr = bbox_obj->getArray(bbox_key);
+                        if (!arr || arr->size() == 0)
+                            return {};
+                        String path;
+                        for (unsigned j = 0; j < arr->size(); ++j)
+                        {
+                            if (j > 0) path += ".";
+                            path += arr->getElement<std::string>(j);
+                        }
+                        return path;
                     };
-                    meta.covering_bbox = GeoColumnMetadata::BboxCovering{
-                        .xmin_column = get_col("xmin"),
-                        .ymin_column = get_col("ymin"),
-                        .xmax_column = get_col("xmax"),
-                        .ymax_column = get_col("ymax"),
-                    };
+                    String xmin = get_col("xmin");
+                    String ymin = get_col("ymin");
+                    String xmax = get_col("xmax");
+                    String ymax = get_col("ymax");
+                    if (!xmin.empty() && !ymin.empty() && !xmax.empty() && !ymax.empty())
+                        meta.covering_bbox = GeoColumnMetadata::BboxCovering{xmin, ymin, xmax, ymax};
                 }
             }
         }
