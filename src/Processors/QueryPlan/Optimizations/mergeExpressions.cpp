@@ -50,6 +50,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
         expr->setStepDescription(fmt::format("({} + {})", parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        if (parent_expr->isInputRemovalPrevented() || child_expr->isInputRemovalPrevented())
+            expr->setPreventInputRemoval();
 
         parent_node->step = std::move(expr);
         parent_node->children.swap(child_node->children);
@@ -71,6 +73,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
         filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        if (parent_filter->isInputRemovalPrevented() || child_expr->isInputRemovalPrevented())
+            filter->setPreventInputRemoval();
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
