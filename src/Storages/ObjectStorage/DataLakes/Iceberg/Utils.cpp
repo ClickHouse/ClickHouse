@@ -25,6 +25,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <base/getThreadId.h>
 #include <base/types.h>
+#include <boost/algorithm/string/trim.hpp>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -102,7 +103,7 @@ namespace DB::Iceberg
 {
 
 using namespace DB;
-static CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
+CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
 {
     constexpr std::string_view metadata_suffix = ".metadata.json";
 
@@ -273,6 +274,7 @@ bool writeMetadataFileAndVersionHint(
             {
                 auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
                 version_hint_value = object_data;
+                boost::algorithm::trim(version_hint_value);
                 etag = object_metadata.etag;
                 write_if_none_match.clear();
             }
@@ -1143,6 +1145,8 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
+        if (explicit_metadata_path.find('\0') != String::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata file path contains a null byte");
         LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
         std::filesystem::path p(explicit_metadata_path);
         auto it = p.begin();
