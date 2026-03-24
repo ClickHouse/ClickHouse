@@ -1,5 +1,6 @@
 import sys
 import json
+import re
 from urllib.parse import urlparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -52,6 +53,20 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         return False
 
+    @staticmethod
+    def _deep_directory_response(path):
+        if path == "/data/deep/":
+            return "<a href=\"0/\">0/</a>\n"
+
+        match = re.fullmatch(r"/data/deep/(\d+)/", path)
+        if not match:
+            return None
+
+        level = int(match.group(1))
+        if level >= 9:
+            return ""
+        return f"<a href=\"{level + 1}/\">{level + 1}/</a>\n"
+
     def do_HEAD(self):
         if self._handle_control():
             return
@@ -69,6 +84,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if path in (
             "/data/",
             "/data/2025/",
+            "/data/deep/",
             "/data/empty/",
             "/data/query/",
             "/data/oversize/",
@@ -79,6 +95,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/headers/",
             "/data/headers/2025/",
         ):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            return
+        if re.fullmatch(r"/data/deep/\d+/", path):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
@@ -109,6 +130,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         if path == "/data/2025/":
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
             self._send_html(body)
+            return
+        deep_body = self._deep_directory_response(path)
+        if deep_body is not None:
+            self._send_html(deep_body)
             return
         if path == "/data/headers/":
             body = "<a href=\"2025/\">2025/</a>\n"

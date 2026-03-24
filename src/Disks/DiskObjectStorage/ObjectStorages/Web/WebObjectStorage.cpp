@@ -27,6 +27,7 @@ namespace
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int FILE_DOESNT_EXIST;
 }
@@ -89,6 +90,14 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
 
             if (entry.ends_with('/'))
             {
+                if (max_keys && visited_directories.size() + pending_directories.size() >= max_keys)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Too many directories while expanding URL wildcard, maximum: {}. This limit is controlled by "
+                        "`glob_expansion_max_elements`",
+                        max_keys);
+                }
                 pending_directories.push_back(entry);
                 continue;
             }
