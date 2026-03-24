@@ -74,6 +74,7 @@
             <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
             <allow_experimental_time_time64_type>1</allow_experimental_time_time64_type>
             <allow_experimental_ts_to_grid_aggregate_function>1</allow_experimental_ts_to_grid_aggregate_function>
+            <allow_experimental_unique_predicate>1</allow_experimental_unique_predicate>
             <allow_experimental_variant_type>1</allow_experimental_variant_type>
             <allow_experimental_vector_similarity_index>1</allow_experimental_vector_similarity_index>
             <allow_introspection_functions>1</allow_introspection_functions>

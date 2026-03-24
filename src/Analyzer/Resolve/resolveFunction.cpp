@@ -689,6 +689,37 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         QueryTreeNodePtr new_unique_argument = new_unique_subquery;
 
+        /// Resolve the rewritten subquery first to detect correlation.
+        auto unique_arguments_projection_names = resolveExpressionNode(
+            new_unique_argument,
+            scope,
+            true /*allow_lambda_expression*/,
+            true /*allow_table_expression*/,
+            allow_niladic_functions
+        );
+
+        if (new_unique_subquery->isCorrelated())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported for the UNIQUE predicate. In scope {}",
+                scope.scope_node->formatASTForErrorMessage());
+
+        if (only_analyze)
+        {
+            /// In only_analyze mode (EXPLAIN, analysis-time rewrites), do not evaluate
+            /// the scalar subquery — return a typed placeholder constant instead.
+            /// Do not attach the original node tree (std::move(node)) to the ConstantNode,
+            /// because later passes (e.g. CollectSourceColumnsVisitor) would walk into
+            /// the preserved subquery subtree and may hit a LOGICAL_ERROR if it appears
+            /// inside an alias column expression context.
+            auto res_col = ColumnUInt8::create();
+            res_col->getData().push_back(UInt8(0));
+            ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
+            auto result_const_node = std::make_shared<ConstantNode>(std::move(const_value));
+            auto res = result_const_node->getValueStringRepresentation();
+            node = std::move(result_const_node);
+            return {std::move(res)};
+        }
+
         evaluateScalarSubqueryIfNeeded(new_unique_argument, scope, false);
         const auto * const_node = new_unique_argument->as<ConstantNode>();
         auto res_col = ColumnUInt8::create();

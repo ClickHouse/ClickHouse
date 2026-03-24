@@ -1,27 +1,29 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/KeyHolderHelpers.h>
 #include <Columns/IColumn.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/SipHash.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadHelpersArena.h>
 
 
 namespace DB
 {
 
-/// State: a hash set of SipHash128 digests plus a "found duplicate" flag.
+/// State: an exact set of serialized row keys plus a "found duplicate" flag.
 struct AggregateFunctionHasNoDuplicatesData
 {
-    using Set = HashSet<UInt128, UInt128TrivialHash>;
+    using Set = HashSetWithSavedHashWithStackMemory<std::string_view, StringViewHash, 4>;
     Set set;
     bool has_duplicate = false;
 };
 
-/// Internal aggregate function `__hasNoDuplicates(*)`.
-/// Maintains a hash set of row hashes.  On each `add`, it inserts the
-/// SipHash128 of all columns; if the key already exists, it sets a flag
-/// and signals early termination via the `IAggregateFunction` interface.
+/// Aggregate function `allUnique(*)`.
+/// Maintains a set of serialized row representations.  On each `add`, it
+/// serializes all column values into the Arena and tries to insert into
+/// the set; if the key already exists (exact match), it sets a flag and
+/// signals early termination via the `IAggregateFunction` interface.
 /// Returns 1 (UInt8) when all rows are distinct, 0 otherwise.
 class AggregateFunctionHasNoDuplicates final
     : public IAggregateFunctionDataHelper<AggregateFunctionHasNoDuplicatesData, AggregateFunctionHasNoDuplicates>
@@ -33,9 +35,9 @@ public:
     {
     }
 
-    String getName() const override { return "__hasNoDuplicates"; }
+    String getName() const override { return "allUnique"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return true; }
 
     bool isEarlyTerminable() const override { return true; }
 
@@ -44,24 +46,37 @@ public:
         return data(place).has_duplicate;
     }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & state = data(place);
         if (state.has_duplicate)
             return;
 
-        SipHash hash;
+        /// Per SQL standard, rows containing NULL in any column are never
+        /// considered duplicates, so we skip them entirely.
         for (size_t i = 0; i < argument_types.size(); ++i)
-            columns[i]->updateHashWithValue(row_num, hash);
+            if (columns[i]->isNullAt(row_num))
+                return;
 
-        const auto key = hash.get128();
+        /// Serialize all column values into a contiguous Arena region
+        /// to form an exact composite key.
+        const char * begin = nullptr;
+        std::string_view value;
+        for (size_t i = 0; i < argument_types.size(); ++i)
+        {
+            auto settings = IColumn::SerializationSettings::createForAggregationState();
+            auto cur_ref = columns[i]->serializeValueIntoArena(row_num, *arena, begin, &settings);
+            value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
+        }
+
+        Set::LookupResult it;
         bool inserted;
-        state.set.emplace(key, inserted);
+        state.set.emplace(SerializedKeyHolder{value, *arena}, it, inserted);
         if (!inserted)
             state.has_duplicate = true;
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & dst = data(place);
         const auto & src = data(rhs);
@@ -77,8 +92,9 @@ public:
             if (dst.has_duplicate)
                 return;
 
+            Set::LookupResult it;
             bool inserted;
-            dst.set.emplace(elem.getValue(), inserted);
+            dst.set.emplace(ArenaKeyHolder{elem.getValue(), *arena}, it, inserted);
             if (!inserted)
                 dst.has_duplicate = true;
         }
@@ -88,30 +104,28 @@ public:
     {
         const auto & state = data(place);
         writeBinaryLittleEndian(state.has_duplicate, buf);
-        writeBinaryLittleEndian(state.set.size(), buf);
+        writeVarUInt(state.set.size(), buf);
         for (const auto & elem : state.set)
-            writeBinaryLittleEndian(elem.getValue(), buf);
+            writeStringBinary(elem.getValue(), buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & state = data(place);
         readBinaryLittleEndian(state.has_duplicate, buf);
         size_t size;
-        readBinaryLittleEndian(size, buf);
-        state.set.reserve(size);
+        readVarUInt(size, buf);
         for (size_t i = 0; i < size; ++i)
-        {
-            UInt128 key;
-            readBinaryLittleEndian(key, buf);
-            state.set.insert(key);
-        }
+            state.set.insert(readStringBinaryInto(*arena, buf));
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt8 &>(to).getData().push_back(data(place).has_duplicate ? 0 : 1);
     }
+
+private:
+    using Set = AggregateFunctionHasNoDuplicatesData::Set;
 };
 
 }

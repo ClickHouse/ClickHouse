@@ -30,9 +30,15 @@ UNIQUE(subquery)
 
 Type: [UInt8](/sql-reference/data-types/int-uint.md).
 
+**NULL handling**
+
+Per the SQL standard, rows containing `NULL` in any column are never considered duplicates. Two rows are duplicates only when every corresponding column value is non-null and equal. This means a subquery returning only `NULL` rows is considered unique.
+
 **Implementation details**
 
 Internally, `UNIQUE(subquery)` is rewritten to `SELECT __hasNoDuplicates(*) FROM (subquery)`. The `__hasNoDuplicates` aggregate function maintains a hash set and can terminate early — as soon as the first duplicate is found, it stops reading further data from the subquery.
+
+Correlated subqueries are not currently supported with `UNIQUE`.
 
 **Example**
 

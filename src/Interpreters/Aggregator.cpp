@@ -1837,17 +1837,26 @@ bool Aggregator::executeOnBlock(Columns columns,
         executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, all_keys_are_const, overflow_row_ptr);
     }
 
-    /// Check if any aggregate function requests early termination (e.g. `__hasNoDuplicates` found a duplicate).
+    /// Check if all aggregate functions agree to terminate early (e.g. `allUnique` found a duplicate).
     /// Reuses the same BREAK code path as `group_by_overflow_mode` = 'break'.
-    if (result.type == AggregatedDataVariants::Type::without_key && result.without_key)
+    /// Only terminate when every aggregate in the pipeline is early-terminable and
+    /// has reached its terminal state; otherwise non-terminable aggregates (e.g. `sum`)
+    /// would receive truncated input and produce wrong results.
+    if (result.type == AggregatedDataVariants::Type::without_key && result.without_key && params.aggregates_size > 0)
     {
+        bool all_request_termination = true;
         for (size_t i = 0; i < params.aggregates_size; ++i)
         {
             const auto & aggregate = params.aggregates[i];
-            if (aggregate.function->isEarlyTerminable()
-                && aggregate.function->shouldTerminateEarly(result.without_key + offsets_of_aggregate_states[i]))
-                return false;
+            if (!aggregate.function->isEarlyTerminable()
+                || !aggregate.function->shouldTerminateEarly(result.without_key + offsets_of_aggregate_states[i]))
+            {
+                all_request_termination = false;
+                break;
+            }
         }
+        if (all_request_termination)
+            return false;
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
