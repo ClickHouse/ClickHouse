@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
@@ -26,30 +27,32 @@ namespace ErrorCodes
 /// Just 10^9.
 static constexpr auto NS = 1000000000UL;
 
-Throttler::Throttler(size_t max_speed_, const ThrottlerPtr & parent_,
+Throttler::Throttler(const char * throttler_name_, size_t max_speed_, const ThrottlerPtr & parent_,
         ProfileEvents::Event event_amount_,
         ProfileEvents::Event event_sleep_us_)
-    : max_speed(max_speed_)
+    : throttler_name(throttler_name_)
+    , max_speed(max_speed_)
     , max_burst(max_speed_ * default_burst_seconds)
     , limit_exceeded_exception_message("")
-    , tokens(max_burst)
+    , tokens(static_cast<double>(max_burst))
     , parent(parent_)
     , event_amount(event_amount_)
     , event_sleep_us(event_sleep_us_)
 {}
 
-Throttler::Throttler(size_t max_speed_,
+Throttler::Throttler(const char * throttler_name_, size_t max_speed_,
         ProfileEvents::Event event_amount_,
         ProfileEvents::Event event_sleep_us_)
-    : Throttler(max_speed_, nullptr, event_amount_, event_sleep_us_)
+    : Throttler(throttler_name_, max_speed_, nullptr, event_amount_, event_sleep_us_)
 {}
 
-Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_, const ThrottlerPtr & parent_)
-    : max_speed(max_speed_)
+Throttler::Throttler(const char * throttler_name_, size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_, const ThrottlerPtr & parent_)
+    : throttler_name(throttler_name_)
+    , max_speed(max_speed_)
     , max_burst(max_speed_ * default_burst_seconds)
     , limit(limit_)
     , limit_exceeded_exception_message(limit_exceeded_exception_message_)
-    , tokens(max_burst)
+    , tokens(static_cast<double>(max_burst))
     , parent(parent_)
 {}
 
@@ -82,7 +85,7 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
             timer2.emplace(profile_events.timer(event_sleep_us));
 
         // Calculate how long to sleep
-        double block_ns_double = -tokens_value / max_speed_value * NS;
+        double block_ns_double = -tokens_value / static_cast<double>(max_speed_value) * NS;
         chassert(block_ns_double >= 0.0);
 
         // Clamp to be safe and avoid any UB
@@ -90,8 +93,15 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
             ? std::numeric_limits<UInt64>::max()
             : static_cast<UInt64>(block_ns_double);
 
+        UInt64 sleep_ns = std::min<UInt64>(max_block_ns, block_ns);
+        LOG_TRACE(log, "Sleeping: throttler_name={}, amount={}, count={}, tokens={}, max_speed={}, block_ns={}, max_block_ns={}, sleep_ns={}", throttler_name, amount, count_value, tokens_value, max_speed_value, block_ns, max_block_ns, sleep_ns);
+
         // Note that throwing exception from the following blocking call is safe. It is important for query cancellation.
-        sleepForNanoseconds(std::min<UInt64>(max_block_ns, block_ns));
+        sleepForNanoseconds(sleep_ns);
+    }
+    else if (max_speed_value > 0)
+    {
+        LOG_TRACE(log, "Not sleeping: throttler_name={}, amount={}, count={}, tokens={}, max_speed={}", throttler_name, amount, count_value, tokens_value, max_speed_value);
     }
 
     bool parent_block = false;
@@ -115,7 +125,8 @@ void Throttler::throttleImpl(size_t amount, size_t & count_value, double & token
     {
         max_speed_value = max_speed;
         double delta_seconds = prev_ns ? static_cast<double>(now - prev_ns) / NS : 0;
-        tokens = std::min<double>(tokens + max_speed * delta_seconds - amount, max_burst);
+        tokens = std::min<double>(
+            tokens + static_cast<double>(max_speed) * delta_seconds - static_cast<double>(amount), static_cast<double>(max_burst));
     }
     count += amount;
     count_value = count;
@@ -127,8 +138,10 @@ void Throttler::reset()
 {
     std::lock_guard lock(mutex);
 
+    LOG_TRACE(log, "Reset: throttler_name={}, count={}, tokens={}, max_burst={}", throttler_name, count, tokens, max_burst);
+
     count = 0;
-    tokens = max_burst;
+    tokens = static_cast<double>(max_burst);
     prev_ns = 0;
     // NOTE: do not zero `accumulated_sleep` to avoid races
 }
@@ -163,6 +176,8 @@ UInt64 Throttler::getMaxBurst() const
 void Throttler::setMaxSpeed(size_t max_speed_)
 {
     std::lock_guard lock(mutex);
+
+    LOG_TRACE(log, "setMaxSpeed: throttler_name={}, {} -> {}, tokens={}", throttler_name, max_speed, max_speed_, tokens);
 
     max_speed = max_speed_;
     max_burst = max_speed_ * default_burst_seconds;

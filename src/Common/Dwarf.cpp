@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -24,6 +24,10 @@
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Common/Exception.h>
+
+#if defined(OS_DARWIN)
+#include <Common/MachO.h>
+#endif
 
 #define DW_CHILDREN_no 0
 
@@ -166,6 +170,29 @@ Dwarf::Dwarf(const std::shared_ptr<Elf> & elf)
         elf_ = nullptr;
     }
 }
+
+#if defined(OS_DARWIN)
+Dwarf::Dwarf(const std::shared_ptr<MachO> & macho)
+    : elf_(nullptr)
+    , macho_(macho)
+    , abbrev_(getSection(".debug_abbrev"))
+    , addr_(getSection(".debug_addr"))
+    , aranges_(getSection(".debug_aranges"))
+    , info_(getSection(".debug_info"))
+    , line_(getSection(".debug_line"))
+    , line_str_(getSection(".debug_line_str"))
+    , loclists_(getSection(".debug_loclists"))
+    , ranges_(getSection(".debug_ranges"))
+    , rnglists_(getSection(".debug_rnglists"))
+    , str_(getSection(".debug_str"))
+    , str_offsets_(getSection(".debug_str_offsets"))
+{
+    if (info_.empty() || abbrev_.empty() || line_.empty() || str_.empty())
+    {
+        macho_ = nullptr;
+    }
+}
+#endif
 
 Dwarf::Section::Section(std::string_view d) : is64_bit(false), data(d)
 {
@@ -449,6 +476,19 @@ bool Dwarf::Section::next(std::string_view & chunk)
 
 std::string_view Dwarf::getSection(const char * name) const
 {
+#if defined(OS_DARWIN)
+    if (macho_)
+    {
+        auto section = macho_->findSectionByName(name);
+        if (!section)
+            return {};
+        return {section->begin(), section->size()};
+    }
+#endif
+
+    if (!elf_)
+        return {};
+
     std::optional<Elf::Section> elf_section = elf_->findSectionByName(name);
     if (!elf_section)
         return {};
@@ -1119,7 +1159,7 @@ bool Dwarf::findLocation(
     LineNumberVM line_vm(line_section, compilation_directory, str_, line_str_);
 
     // Execute line number VM program to find file and line
-    info.has_file_and_line = line_vm.findAddress(address, info.file, info.line);
+    info.has_file_and_line = line_vm.findAddress(address, info.file, info.line, info.column);
 
     bool check_inline = (mode == LocationInfoMode::FULL_WITH_INLINE);
 
@@ -1388,19 +1428,22 @@ void Dwarf::findInlinedSubroutineDieForAddress(
             // and line info.
             // DW_AT_specification: Incomplete, non-defining, or separate declaration
             // corresponding to a declaration
+            std::optional<CompilationUnit> spec_cu;
             auto def = getReferenceAttribute(srcu, die_to_look_for_name, DW_AT_specification);
             if (def.has_value())
             {
                 auto [def_cu, def_offset] = std::move(def.value());
-                const CompilationUnit & def_cu_ref = def_cu.has_value() ? def_cu.value() : srcu;
-                die_to_look_for_name = getDieAtOffset(def_cu_ref, def_offset);
+                if (def_cu.has_value())
+                    spec_cu = std::move(def_cu.value());
+                die_to_look_for_name = getDieAtOffset(spec_cu.has_value() ? spec_cu.value() : srcu, def_offset);
             }
 
+            const CompilationUnit & die_cu = spec_cu.has_value() ? spec_cu.value() : srcu;
             std::string_view name;
 
             // The file and line will be set in the next inline subroutine based on
             // its DW_AT_call_file and DW_AT_call_line.
-            forEachAttribute(srcu, die_to_look_for_name, [&](const Attribute & attr)
+            forEachAttribute(die_cu, die_to_look_for_name, [&](const Attribute & attr)
             {
                 switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
                 {
@@ -1457,10 +1500,14 @@ bool Dwarf::findAddress(
         return false;
     }
 
-    if (!elf_)
-    { // No file.
+    bool has_debug_info = static_cast<bool>(elf_)
+#if defined(OS_DARWIN)
+        || static_cast<bool>(macho_)
+#endif
+        ;
+
+    if (!has_debug_info)
         return false;
-    }
 
     if (!aranges_.empty())
     {
@@ -2203,7 +2250,7 @@ Dwarf::Path Dwarf::LineNumberVM::getFullFileName(uint64_t index) const
     return Path(base_dir, getIncludeDirectory(fn.directoryIndex), fn.relativeName);
 }
 
-bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & line)
+bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & line, uint64_t & column)
 {
     std::string_view program = data_;
 
@@ -2223,6 +2270,7 @@ bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & 
 
     uint64_t prev_file = 0;
     uint64_t prev_line = 0;
+    uint64_t prev_column = 0;
     while (!program.empty())
     {
         bool seq_end = !next(program);
@@ -2255,10 +2303,12 @@ bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & 
                 }
                 file = getFullFileName(prev_file);
                 line = prev_line;
+                column = prev_column;
                 return true;
             }
             prev_file = file_;
             prev_line = line_;
+            prev_column = column_;
         }
 
         if (seq_end)

@@ -12,7 +12,7 @@ workflow = Workflow.Config(
         *[
             job
             for job in JobConfigs.build_jobs
-            if any(t in job.name for t in ("amd_asan", "amd_tsan", "debug"))
+            if any(t in job.name for t in ("amd_asan_ubsan", "amd_tsan", "debug"))
         ],
         *JobConfigs.release_build_jobs,
         *[
@@ -56,6 +56,7 @@ workflow = Workflow.Config(
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/check_backport_branch.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],

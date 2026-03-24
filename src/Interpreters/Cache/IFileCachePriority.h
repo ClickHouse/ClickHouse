@@ -1,10 +1,10 @@
 #pragma once
 
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <Core/Types.h>
 #include <Interpreters/Cache/FileSegmentInfo.h>
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
-#include <Interpreters/Cache/UserInfo.h>
 
 #include <atomic>
 #include <memory>
@@ -25,8 +25,8 @@ class IFileCachePriority : private boost::noncopyable
 public:
     using Key = FileCacheKey;
     using QueueEntryType = FileCacheQueueEntryType;
-    using UserInfo = FileCacheUserInfo;
-    using UserID = UserInfo::UserID;
+    using OriginInfo = FileCacheOriginInfo;
+    using UserID = OriginInfo::UserID;
 
     struct Entry
     {
@@ -39,51 +39,80 @@ public:
 
         std::atomic<size_t> size;
         std::atomic<size_t> hits = 0;
-        std::atomic<bool> invalidated = false;
 
         std::string toString(const std::string & prefix = "") const;
 
-        bool isEvicting(const LockedKey &) const
+        enum class State
         {
-            return isEvictingUnlocked();
-        }
+            Active,
+            /// Entry is collected for eviction via IFileCachePriority::collectEvictionCandidates
+            /// and is being or soon will be removed from filesystem.
+            Evicting,
+            /// Can only be set in SLRU eviciton policy during moves
+            /// in between protected/probationary queues.
+            Moving,
+            /// Has size 0, will never get non-zero size and must soon be removed from queue.
+            Invalidated,
+            /// Removed from queue completely.
+            Removed,
+        };
 
-        /// Used when less strong guarantees are acceptable trade off for not taking a mutex.
-        bool isEvictingUnlocked() const
-        {
-            return state.load(std::memory_order_relaxed) == State::Evicting;
-        }
-
-        bool isRemoved(const CachePriorityGuard::WriteLock &) const
-        {
-            return state.load(std::memory_order_relaxed) == State::Removed;
-        }
+        /// Be aware that by default this method has relaxed guarantees.
+        /// See which locks are used in setter methods below if stronger guarantees are needed.
+        State getState() const { return state.load(std::memory_order_relaxed); }
 
         void setEvictingFlag(const LockedKey &)
         {
             [[maybe_unused]] auto prev = state.exchange(State::Evicting, std::memory_order_relaxed);
-            chassert(prev != State::Evicting, toString("Evicting flag is already set for "));
+            chassert(
+                prev == State::Active,
+                printUnexpectedState(prev, "Active", "Evicting"));
+        }
+
+        void setMovingFlag(const LockedKey &)
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Moving, std::memory_order_relaxed);
+            chassert(
+                prev == State::Active,
+                printUnexpectedState(prev, "Active", "Moving"));
         }
 
         void setRemoved(const CachePriorityGuard::WriteLock &)
         {
             [[maybe_unused]] auto prev = state.exchange(State::Removed, std::memory_order_relaxed);
-            chassert(prev != State::Removed, toString("Removed flag is already set for "));
+            chassert(
+                prev == State::Active || prev == State::Evicting || prev == State::Invalidated,
+                printUnexpectedState(prev, "Active or Evicting or Invalidated", "Removed"));
         }
 
-        void resetEvictingFlag()
+        void setInvalidatedFlag()
         {
-            [[maybe_unused]] auto prev = state.exchange(State::Active, std::memory_order_relaxed);
-            chassert(prev == State::Evicting, toString("Evicting flag is not set for "));
+            [[maybe_unused]] auto prev = state.exchange(State::Invalidated);
+            /// Active in case of FileCache::remove
+            /// Evicting in case of FileCache::tryReserve
+            /// Moving in case of SLRU queue moves
+            chassert(
+                prev == State::Active || prev == State::Evicting || prev == State::Moving,
+                printUnexpectedState(prev, "Active or Moving or Evicting", "Invalidated"));
+        }
+
+        void resetFlag(State from_state, State to_state = State::Active)
+        {
+            [[maybe_unused]] auto prev = state.exchange(to_state, std::memory_order_relaxed);
+            chassert(
+                prev == from_state,
+                printUnexpectedState(prev, magic_enum::enum_name(from_state), fmt::format("{}", magic_enum::enum_name(to_state))));
         }
 
     private:
-        enum class State
+        std::string printUnexpectedState(
+            State prev_state, std::string_view expected_state, std::string type) const
         {
-            Active,
-            Evicting,
-            Removed
-        };
+            return fmt::format(
+                "Previous state is {}, but expected state to be {} while setting {} flag for {}",
+                magic_enum::enum_name(prev_state), expected_state, type, toString());
+        }
+
         std::atomic<State> state = State::Active;
     };
     using EntryPtr = std::shared_ptr<Entry>;
@@ -102,7 +131,7 @@ public:
 
         virtual void decrementSize(size_t size) = 0;
 
-        virtual bool isValid(const CachePriorityGuard::WriteLock &) = 0;
+        virtual bool isValid(const CachePriorityGuard::WriteLock &) const = 0;
 
         virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
 
@@ -161,8 +190,7 @@ public:
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
-        bool is_dynamic_resize,
-        const IFileCachePriority::UserInfo & user,
+        const IFileCachePriority::OriginInfo & origin,
         const CacheStateGuard::Lock &) = 0;
 
     enum class IterationResult : uint8_t
@@ -182,7 +210,6 @@ public:
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
-        const UserInfo & user,
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
         bool best_effort = false) = 0;
@@ -195,6 +222,7 @@ public:
         size_t elements,
         const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
+        const OriginInfo & origin_info = {},
         bool best_effort = false) const = 0;
 
     virtual bool tryIncreasePriority(
@@ -207,8 +235,13 @@ public:
 
     struct IPriorityDump
     {
+        std::vector<FileSegmentInfo> infos;
+        IPriorityDump() = default;
+        explicit IPriorityDump(const std::vector<FileSegmentInfo> & infos_) : infos(infos_) {}
+        void merge(const IPriorityDump & other) { infos.insert(infos.end(), other.infos.begin(), other.infos.end()); }
         virtual ~IPriorityDump() = default;
     };
+
     using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) = 0;
@@ -224,7 +257,7 @@ public:
         bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
-        const UserInfo & user,
+        const OriginInfo & origin_info,
         CachePriorityGuard &,
         CacheStateGuard &) = 0;
 
@@ -244,6 +277,16 @@ public:
         size_t max_elements_,
         double size_ratio_,
         const CacheStateGuard::Lock &) = 0;
+
+    /// Compute eviction info needed to resize the cache to the given limits.
+    /// Unlike collectEvictionInfo which takes total amounts to evict,
+    /// this method takes desired limits and computes per-sub-queue eviction
+    /// correctly for priority types with internal structure (e.g., SLRU).
+    virtual EvictionInfoPtr collectEvictionInfoForResize(
+        size_t desired_max_size,
+        size_t desired_max_elements,
+        const OriginInfo & origin_info,
+        const CacheStateGuard::Lock & lock) = 0;
 
     virtual void resetEvictionPos() = 0;
 
@@ -328,5 +371,7 @@ protected:
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
 };
+
+using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
 
 }

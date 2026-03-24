@@ -174,7 +174,7 @@ struct Reader
 
         bool use_bloom_filter = false;
         const KeyCondition * column_index_condition = nullptr;
-        std::unordered_set<size_t> steps_to_calculate;
+        size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
@@ -416,7 +416,7 @@ struct Reader
 
 
         /// Fields below are used only by ReadManager.
-        std::vector<std::atomic<size_t>> next_subgroup_for_step;
+        std::atomic<size_t> read_ptr {0};
 
         std::atomic<size_t> delivery_ptr {0};
 
@@ -474,6 +474,11 @@ struct Reader
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
     std::vector<Step> steps;
+
+    /// Per-column KeyConditions for page-level filter push-down (column index).
+    /// Stored here to keep the shared_ptrs alive, since raw pointers from them
+    /// are referenced by PrimitiveColumnInfo::column_index_condition.
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
 
@@ -541,7 +546,7 @@ private:
     void decompressPageIfCompressed(PageState & page);
     void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup = nullptr);
 };
 
 }

@@ -1,4 +1,5 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/Cache/EvictionCandidates.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
@@ -79,7 +80,10 @@ void IFileCachePriority::removeEntries(
         /// (which is an iterator pointing to the same entry)
         /// because `it` could become invalid,
         /// so we use `entry` to check validity of the iterator.
-        if (!entry->isRemoved(lock))
+        const auto entry_state = entry->getState();
+        chassert(entry_state == Entry::State::Invalidated || entry_state == Entry::State::Removed,
+                 fmt::format("Unexpected state: {}", magic_enum::enum_name(entry_state)));
+        if (entry_state != Entry::State::Removed)
             it->remove(lock);
     }
 }

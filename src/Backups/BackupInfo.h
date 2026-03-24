@@ -5,11 +5,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
-
 namespace DB
 {
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 /// Information about a backup.
 struct BackupInfo

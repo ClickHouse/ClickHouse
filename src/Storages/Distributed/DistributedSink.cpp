@@ -1,3 +1,4 @@
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -124,13 +125,13 @@ static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & 
 
 static ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Names & column_names)
 {
-    auto query = std::make_shared<ASTInsertQuery>();
+    auto query = make_intrusive<ASTInsertQuery>();
     query->table_id = StorageID(database, table);
-    auto columns = std::make_shared<ASTExpressionList>();
+    auto columns = make_intrusive<ASTExpressionList>();
     query->columns = columns;
     query->children.push_back(columns);
     for (const auto & column_name : column_names)
-        columns->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+        columns->children.push_back(make_intrusive<ASTIdentifier>(column_name));
     return query;
 }
 
@@ -505,7 +506,7 @@ void DistributedSink::writeSync(const Block & block)
         if (!throttler && (settings[Setting::max_network_bandwidth] || settings[Setting::max_network_bytes]))
         {
             throttler = std::make_shared<Throttler>(
-                settings[Setting::max_network_bandwidth], settings[Setting::max_network_bytes], "Network bandwidth limit for a query exceeded.");
+                "network_distributed_query", settings[Setting::max_network_bandwidth], settings[Setting::max_network_bytes], "Network bandwidth limit for a query exceeded.");
         }
 
         watch.restart();
@@ -572,7 +573,7 @@ void DistributedSink::onFinish()
     auto log_performance = [this]()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
+        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, static_cast<double>(inserted_rows) / elapsed, getCurrentStateDescription());
     };
 
     std::lock_guard lock(execution_mutex);
@@ -682,7 +683,7 @@ Blocks DistributedSink::splitBlock(const Block & block)
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
+        auto split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
         for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
             split_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(split_columns[shard_idx]);
     }

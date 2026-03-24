@@ -48,11 +48,11 @@ namespace
             {
                 const auto & child = tuple_function->arguments->children[index++];
 
-                concat_args.push_back(std::make_shared<ASTLiteral>(partition_column.name + "="));
+                concat_args.push_back(make_intrusive<ASTLiteral>(partition_column.name + "="));
 
                 concat_args.push_back(makeASTFunction("toString", child));
 
-                concat_args.push_back(std::make_shared<ASTLiteral>("/"));
+                concat_args.push_back(make_intrusive<ASTLiteral>("/"));
             }
         }
         else
@@ -65,9 +65,9 @@ namespace
             }
 
             ASTs to_string_args = {1, partition_by};
-            concat_args.push_back(std::make_shared<ASTLiteral>(partition_columns.front().name + "="));
+            concat_args.push_back(make_intrusive<ASTLiteral>(partition_columns.front().name + "="));
             concat_args.push_back(makeASTFunction("toString", std::move(to_string_args)));
-            concat_args.push_back(std::make_shared<ASTLiteral>("/"));
+            concat_args.push_back(make_intrusive<ASTLiteral>("/"));
         }
 
         return makeASTFunction("concat", std::move(concat_args));
@@ -95,6 +95,7 @@ namespace
         ContextPtr context,
         const std::string & file_format,
         bool globbed_path,
+        bool contains_partition_wildcard,
         bool partition_columns_in_data_file)
     {
         if (!partition_by)
@@ -105,6 +106,11 @@ namespace
         if (globbed_path)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with a globbed path", "hive");
+        }
+
+        if (contains_partition_wildcard)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy hive can not be used with a '_partition_id' wildcard in the path");
         }
 
         if (file_format.empty() || file_format == "auto")
@@ -241,6 +247,7 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                 context,
                 file_format,
                 globbed_path,
+                contains_partition_wildcard,
                 partition_columns_in_data_file);
         case StrategyType::NONE:
         {

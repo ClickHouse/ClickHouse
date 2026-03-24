@@ -12,6 +12,7 @@
 /build
 /build_*
 /build-*
+/ci/tmp
 /tests/venv
 /obj-x86_64-linux-gnu/
 
@@ -111,6 +112,7 @@ nbproject/*
 
 # Microsoft Visual Studio Code
 .vscode
+.devcontainer/
 
 config-preprocessed.xml
 

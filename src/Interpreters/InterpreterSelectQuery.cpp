@@ -130,6 +130,7 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
@@ -253,10 +254,10 @@ try
     const auto & table_name = table_id.getTableName();
 
     /// TODO: implement some AST builders for this kind of stuff
-    ASTPtr query_ast = std::make_shared<ASTSelectQuery>();
+    ASTPtr query_ast = make_intrusive<ASTSelectQuery>();
     auto * select_ast = query_ast->as<ASTSelectQuery>();
 
-    select_ast->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+    select_ast->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
     auto expr_list = select_ast->select();
 
     /// The first column is our filter expression.
@@ -277,14 +278,14 @@ try
             context->getSettingsRef()[Setting::max_parser_backtracks]));
     }
 
-    select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+    select_ast->setExpression(ASTSelectQuery::Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
     auto tables = select_ast->tables();
-    auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
-    auto table_expr = std::make_shared<ASTTableExpression>();
+    auto tables_elem = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto table_expr = make_intrusive<ASTTableExpression>();
     tables->children.push_back(tables_elem);
     tables_elem->table_expression = table_expr;
     tables_elem->children.push_back(table_expr);
-    table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(db_name, table_name);
+    table_expr->database_and_table_name = make_intrusive<ASTTableIdentifier>(db_name, table_name);
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
@@ -540,7 +541,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     query_info.is_internal = options.is_internal;
 
     initSettings();
+
+    // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for
+    // the case of unsupported settings combination: enabled PRs + enabled AutoPR. Since it is not supported, we just
+    // disable both which is technically a correct behaviour: AutoPR is allowed to execute the query without PRs.
     const Settings & settings = context->getSettingsRef();
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+        && settings[Setting::automatic_parallel_replicas_mode] != 0)
+    {
+        LOG_DEBUG(
+            log,
+            "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
+            " This combination of settings is not supported in the old SELECT query analyzer."
+            " To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    }
 
     if (settings[Setting::max_subquery_depth] && options.subquery_depth > settings[Setting::max_subquery_depth])
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", settings[Setting::max_subquery_depth].toString());
@@ -814,12 +830,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
-                const auto parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
+                RangesInDataParts parts_for_estimator;
+                if (storage_snapshot->data)
+                {
+                    const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
+                    if (parts)
+                        parts_for_estimator = *parts;
+                }
+
+                /// Just attempting to read statistics files on disk can increase query latencies
+                /// First check the in-memory metadata if statistics are present at all
+                auto estimator = storage_snapshot->metadata->hasStatistics()
+                                    ? storage->getConditionSelectivityEstimator(parts_for_estimator, queried_columns, context)
+                                    : nullptr;
 
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     storage_snapshot,
-                    storage->getConditionSelectivityEstimator(parts ? *parts : RangesInDataParts{}, context),
+                    estimator,
                     queried_columns,
                     supported_prewhere_columns,
                     log};
@@ -902,7 +930,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query_info.filter_asts.clear();
 
             /// Fix source_header for filter actions.
-            if (row_policy_filter && !row_policy_filter->empty())
+            if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             {
                 row_policy_info = generateFilterActions(
                     table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
@@ -976,7 +1004,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (analysis_result.prewhere_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
         else
-            query.setExpression(ASTSelectQuery::Expression::PREWHERE, std::make_shared<ASTLiteral>(0u));
+            query.setExpression(ASTSelectQuery::Expression::PREWHERE, make_intrusive<ASTLiteral>(0u));
         need_analyze_again = true;
     }
 
@@ -986,7 +1014,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (analysis_result.where_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::WHERE, {});
         else
-            query.setExpression(ASTSelectQuery::Expression::WHERE, std::make_shared<ASTLiteral>(0u));
+            query.setExpression(ASTSelectQuery::Expression::WHERE, make_intrusive<ASTLiteral>(0u));
         need_analyze_again = true;
     }
 
@@ -1309,7 +1337,7 @@ static std::pair<Field, DataTypePtr> getWithFillFieldValue(const ASTPtr & node, 
     return field_type;
 }
 
-static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPtr & node, const ContextPtr & context)
+static std::pair<Field, std::optional<IntervalKind>> getWithFillValueWithIntervalKind(const ASTPtr & node, const ContextPtr & context)
 {
     auto [field, type] = evaluateConstantExpression(node, context);
 
@@ -1333,9 +1361,18 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         std::tie(descr.fill_to, descr.fill_to_type) = getWithFillFieldValue(order_by_elem.getFillTo(), context);
 
     if (order_by_elem.getFillStep())
-        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.getFillStep(), context);
+        std::tie(descr.fill_step, descr.step_kind) = getWithFillValueWithIntervalKind(order_by_elem.getFillStep(), context);
     else
         descr.fill_step = order_by_elem.direction;
+
+    if (order_by_elem.getFillStaleness())
+    {
+        std::tie(descr.fill_staleness, descr.staleness_kind) = getWithFillValueWithIntervalKind(order_by_elem.getFillStaleness(), context);
+
+        if (order_by_elem.getFillFrom())
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL STALENESS cannot be used together with WITH FILL FROM");
+    }
 
     if (accurateEquals(descr.fill_step, Field{0}))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be zero");
@@ -1351,6 +1388,10 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
         }
+
+        if (accurateLess(descr.fill_staleness, Field{0}))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL STALENESS value cannot be negative for sorting in ascending direction");
     }
     else
     {
@@ -1363,6 +1404,10 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
         }
+
+        if (accurateLess(Field{0}, descr.fill_staleness))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL STALENESS value cannot be positive for sorting in descending direction");
     }
 
     return descr;
@@ -1409,7 +1454,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
     {
         NamesAndTypesList source_columns;
         ColumnsWithTypeAndName result_columns;
-        ASTPtr exprs = std::make_shared<ASTExpressionList>();
+        ASTPtr exprs = make_intrusive<ASTExpressionList>();
 
         if (query.interpolate()->children.empty())
         {
@@ -1423,7 +1468,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             {
                 source_columns.emplace_back(name, type);
                 result_columns.emplace_back(type, name);
-                exprs->children.emplace_back(std::make_shared<ASTIdentifier>(name));
+                exprs->children.emplace_back(make_intrusive<ASTIdentifier>(name));
             }
         }
         else
@@ -1512,10 +1557,7 @@ static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node
             Int64 int_value = converted_value.safeGet<Int64>();
             assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
-            // We need to be careful because -Int64::min() is not representable as Int64
-            const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
-                ? (static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1ULL)
-                : static_cast<UInt64>(-int_value);
+            const UInt64 magnitude = -static_cast<UInt64>(int_value);
             return {magnitude, 0, true};
         }
     }
@@ -1794,7 +1836,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                 /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
                 if (query.limitLength() && !query.limitBy() && !query.limit_with_ties)
-                    executePreLimit(query_plan, true);
+                {
+                    /// Preliminary Limits mustn't be added if there is a fractional limit/offset
+                    /// because in order to correctly calculate the number of rows to be produced
+                    /// based on the given fraction the final limit/offset processor must count the entire dataset.
+                    /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+                    LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+                    if (lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0)
+                        executePreLimit(query_plan, true);
+                }
             }
         };
 
@@ -2385,10 +2435,10 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         NameSet required_aliases_from_prewhere; /// Set of ALIAS required columns for PREWHERE
 
         /// Expression, that contains all raw required columns
-        ASTPtr required_columns_all_expr = std::make_shared<ASTExpressionList>();
+        ASTPtr required_columns_all_expr = make_intrusive<ASTExpressionList>();
 
         /// Expression, that contains raw required columns for PREWHERE
-        ASTPtr required_columns_from_prewhere_expr = std::make_shared<ASTExpressionList>();
+        ASTPtr required_columns_from_prewhere_expr = make_intrusive<ASTExpressionList>();
 
         /// Sort out already known required columns between expressions,
         /// also populate `required_aliases_from_prewhere`.
@@ -2410,7 +2460,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 column_expr = setAlias(column_expr, column);
             }
             else
-                column_expr = std::make_shared<ASTIdentifier>(column);
+                column_expr = make_intrusive<ASTIdentifier>(column);
 
             if (required_columns_from_prewhere.contains(column))
             {
@@ -2443,7 +2493,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 if (columns_to_remove.contains(column.name))
                     continue;
 
-                required_columns_all_expr->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                required_columns_all_expr->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
                 required_columns_after_prewhere.emplace_back(column.name, column.type);
             }
 
@@ -2718,7 +2768,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
         {
-            if (auto streams_with_ratio = max_streams * settings[Setting::max_streams_to_max_threads_ratio];
+            if (auto streams_with_ratio = static_cast<double>(max_streams) * settings[Setting::max_streams_to_max_threads_ratio];
                 canConvertTo<size_t>(streams_with_ratio))
                 max_streams = static_cast<size_t>(streams_with_ratio);
             else
@@ -3106,6 +3156,10 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         if (need_sort)
         {
             SortingStep::Settings sort_settings(context->getSettingsRef());
+
+            /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
+            /// would produce incomplete data and cause the pipeline to get stuck.
+            sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),

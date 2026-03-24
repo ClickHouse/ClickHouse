@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/IFactoryWithAliases.h>
+#include <Parsers/IAST_fwd.h>
 #include <Columns/IColumn_fwd.h>
 
 #include <functional>
@@ -14,9 +15,6 @@ namespace DB
 {
 
 static constexpr auto DEFAULT_CODEC_NAME = "Default";
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class ICompressionCodec;
 class IDataType;
@@ -85,6 +83,8 @@ public:
 
     /// Register codec without parameters
     void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator);
+
+    std::vector<String> getAllRegisteredNames() const;
 
 protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;
