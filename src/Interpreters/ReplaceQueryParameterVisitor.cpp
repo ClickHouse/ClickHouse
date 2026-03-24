@@ -143,7 +143,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     if (it == query_parameters.end())
     {
         /// If a parameter has Nullable type and is not specified, assume its value is NULL.
-        if (!data_type->isNullable())
+        if (!isNullableOrLowCardinalityNullable(data_type))
             throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(ast_param.name));
 
         ast = makeASTForQueryParameter(Field(), type_name, data_type);

@@ -405,10 +405,10 @@ public:
     }
 
 private:
-    DataLakeMetadataPtr current_metadata;
-    LoggerPtr log = getLogger("DataLakeConfiguration");
     const DataLakeStorageSettingsPtr settings;
     ObjectStoragePtr ready_object_storage;
+    DataLakeMetadataPtr current_metadata;
+    LoggerPtr log = getLogger("DataLakeConfiguration");
 
     void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
     {

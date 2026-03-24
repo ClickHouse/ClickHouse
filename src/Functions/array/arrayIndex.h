@@ -92,12 +92,12 @@ private:
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsign-compare"
 
-    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i) noexcept
+    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
     {
         return left == right[i];
     }
 
-    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
+    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
         if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
         {
@@ -114,7 +114,7 @@ private:
     }
 
     static constexpr bool compare(
-            const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j) noexcept
+            const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j)
     {
         if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
         {
@@ -147,7 +147,7 @@ private:
         return accurateEquals(arr[pos], rhs);
     }
 
-    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
+    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
         if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
         {
@@ -1189,7 +1189,11 @@ private:
             const auto & value = (*item_arg)[0];
             if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
-                current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
+                if (isColumnNullableOrLowCardinalityNullable(
+                        assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
+                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
+                else
+                    current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
             }
             else
             {
