@@ -1,5 +1,6 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Core/Field.h>
 #include <Common/FieldVisitorDump.h>
 
@@ -12,6 +13,8 @@ void JSONObjectWriter::writeAlias(const ASTWithAlias & node)
         writeString("alias", node.alias);
     if (node.preferAliasToColumnName())
         writeBool("prefer_alias_to_column_name", true);
+    if (node.parametrised_alias)
+        writeChild("parametrised_alias", node.parametrised_alias.get());
 }
 
 

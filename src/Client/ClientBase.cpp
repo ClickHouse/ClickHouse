@@ -140,6 +140,7 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
     extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool allow_experimental_json_ast_dialect;
     extern const SettingsString polyglot_dialect;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
@@ -409,6 +410,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
     if (dialect == Dialect::clickhouse_json)
     {
+        if (!settings[Setting::allow_experimental_json_ast_dialect])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Support for clickhouse_json dialect is disabled "
+                "(turn on setting 'allow_experimental_json_ast_dialect')");
+
         try
         {
             res = IAST::createFromJSON(String(pos, end));

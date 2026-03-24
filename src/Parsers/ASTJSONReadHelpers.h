@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Core/Field.h>
 #include <Common/Exception.h>
 
@@ -10,6 +11,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 /// Helper for reading AST nodes from JSON objects.
 /// Provides convenient methods symmetric to JSONObjectWriter.
@@ -81,7 +87,9 @@ public:
         result.reserve(arr->size());
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
-            const auto & child_obj = arr->getObject(i);
+            auto child_obj = arr->getObject(i);
+            if (!child_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'children' array during AST JSON deserialization", i);
             result.push_back(IAST::createFromJSON(*child_obj));
         }
         return result;
@@ -106,6 +114,12 @@ public:
             node.setAlias(alias);
         if (getBool("prefer_alias_to_column_name"))
             node.setPreferAliasToColumnName(true);
+        if (has("parametrised_alias"))
+        {
+            auto param_ast = readChild("parametrised_alias");
+            if (param_ast)
+                node.parametrised_alias = boost::dynamic_pointer_cast<ASTQueryParameter>(param_ast);
+        }
     }
 
     /// Read a JSON array of strings.

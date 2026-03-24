@@ -402,6 +402,8 @@ void IAST::readJSON(const Poco::JSON::Object & json)
             for (unsigned int i = 0; i < arr->size(); ++i)
             {
                 auto child_obj = arr->getObject(i);
+                if (!child_obj)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'children' array during AST JSON deserialization", i);
                 children.push_back(IAST::createFromJSON(*child_obj));
             }
         }

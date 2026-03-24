@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Core/Defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -49,7 +50,8 @@ public:
             auto sql = col->getDataAt(i);
 
             ParserQuery parser(sql.data() + sql.size());
-            auto ast = parseQuery(parser, sql.data(), sql.data() + sql.size(), "", 0, 0, 0);
+            auto ast = parseQuery(parser, sql.data(), sql.data() + sql.size(), "",
+                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
             result->insert(serializeASTToJSON(*ast));
         }

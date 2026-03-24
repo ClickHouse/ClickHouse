@@ -53,6 +53,7 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
     struct SignificantToken
     {
         std::string_view text;
+        TokenType type;
         size_t index; /// Index in the full token array.
     };
 
@@ -61,7 +62,7 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
         std::vector<SignificantToken> result;
         for (size_t i = 0; i < tokens.size(); ++i)
             if (tokens[i].isSignificant() && !tokens[i].isEnd())
-                result.push_back({std::string_view(tokens[i].begin, tokens[i].size()), i});
+                result.push_back({std::string_view(tokens[i].begin, tokens[i].size()), tokens[i].type, i});
         return result;
     };
 
@@ -131,18 +132,25 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
     size_t ci = 0; /// Index into canon_sig.
     size_t oi = 0; /// Index into orig_sig.
 
-    /// Check if two tokens are equivalent (case-insensitive for keywords).
-    auto tokensMatch = [](std::string_view a, std::string_view b) -> bool
+    /// Check if two tokens are equivalent.
+    /// Case-insensitive only for BareWord tokens (SQL keywords and identifiers);
+    /// string literals, quoted identifiers, and other tokens must match exactly.
+    auto tokensMatch = [](const SignificantToken & a, const SignificantToken & b) -> bool
     {
-        if (a.size() != b.size())
+        if (a.text.size() != b.text.size())
             return false;
-        for (size_t i = 0; i < a.size(); ++i)
+
+        bool case_insensitive = (a.type == TokenType::BareWord && b.type == TokenType::BareWord);
+
+        for (size_t i = 0; i < a.text.size(); ++i)
         {
-            if (a[i] == b[i])
+            if (a.text[i] == b.text[i])
                 continue;
+            if (!case_insensitive)
+                return false;
             /// Case-insensitive comparison for ASCII.
-            char la = (a[i] >= 'A' && a[i] <= 'Z') ? static_cast<char>(a[i] + 32) : a[i];
-            char lb = (b[i] >= 'A' && b[i] <= 'Z') ? static_cast<char>(b[i] + 32) : b[i];
+            char la = (a.text[i] >= 'A' && a.text[i] <= 'Z') ? static_cast<char>(a.text[i] + 32) : a.text[i];
+            char lb = (b.text[i] >= 'A' && b.text[i] <= 'Z') ? static_cast<char>(b.text[i] + 32) : b.text[i];
             if (la != lb)
                 return false;
         }
@@ -151,7 +159,7 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
 
     while (ci < canon_sig.size())
     {
-        if (oi < orig_sig.size() && tokensMatch(canon_sig[ci].text, orig_sig[oi].text))
+        if (oi < orig_sig.size() && tokensMatch(canon_sig[ci], orig_sig[oi]))
         {
             /// Tokens match — use original inter-token material and original token text.
             result += getInterTokenMaterial(orig_tokens, oi, original);
@@ -180,7 +188,7 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
             {
                 for (size_t olook = 0; olook < 20 && next_oi + olook < orig_sig.size(); ++olook)
                 {
-                    if (tokensMatch(canon_sig[next_ci + look].text, orig_sig[next_oi + olook].text))
+                    if (tokensMatch(canon_sig[next_ci + look], orig_sig[next_oi + olook]))
                     {
                         /// Found re-alignment. Output canonical text for the divergent part.
                         const char * end = canon_sig[next_ci + look].text.data();

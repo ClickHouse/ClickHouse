@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool allow_experimental_json_ast_dialect;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsString promql_database;
@@ -56,6 +57,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
@@ -210,6 +212,11 @@ void LocalConnection::sendQuery(
         ASTPtr parsed_query;
         if (dialect == Dialect::clickhouse_json)
         {
+            if (!settings[Setting::allow_experimental_json_ast_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Support for clickhouse_json dialect is disabled "
+                    "(turn on setting 'allow_experimental_json_ast_dialect')");
+
             parsed_query = IAST::createFromJSON(String(begin, end));
         }
         else
