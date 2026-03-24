@@ -4,9 +4,10 @@
 namespace DB
 {
 
-PrefetchingConcatProcessor::PrefetchingConcatProcessor(SharedHeader header, size_t num_inputs, size_t max_buffered_chunks_)
+PrefetchingConcatProcessor::PrefetchingConcatProcessor(SharedHeader header, size_t num_inputs, size_t max_buffered_chunks_, size_t max_prefetch_inputs_)
     : IProcessor(InputPorts(num_inputs, header), OutputPorts{header})
     , max_buffered_chunks(max_buffered_chunks_)
+    , max_prefetch_inputs(max_prefetch_inputs_)
     , buffers(num_inputs)
 {
 }
@@ -38,17 +39,21 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
         }
     }
 
-    /// Mark non-current inputs as needed/not-needed based on buffer capacity.
-    /// This is the key to parallelism: the pipeline executor will schedule
-    /// upstream sources for all "needed" inputs simultaneously.
-    /// setNotNeeded provides backpressure when the buffer is full.
+    /// Mark a limited number of upcoming inputs as needed for prefetching.
+    /// Only prefetch the next few inputs (not all) to limit overhead:
+    /// running too many sources in parallel wastes CPU on decompression and
+    /// filtering for data that won't be consumed until much later.
     {
         size_t idx = 0;
         for (auto & input : inputs)
         {
             if (idx != current_input_idx && !input.isFinished())
             {
-                if (buffers[idx].size() < max_buffered_chunks)
+                bool should_prefetch = idx > current_input_idx
+                    && idx <= current_input_idx + max_prefetch_inputs
+                    && buffers[idx].size() < max_buffered_chunks;
+
+                if (should_prefetch)
                     input.setNeeded();
                 else
                     input.setNotNeeded();

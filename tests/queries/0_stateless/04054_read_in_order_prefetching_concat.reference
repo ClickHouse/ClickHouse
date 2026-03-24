@@ -1,4 +1,4 @@
-has_prefetching_concat
+no_prefetching_single_part
 1
 correctness
 0
@@ -8,7 +8,7 @@ prefetching_multi_part
 1
 multi_part_correctness
 0
-reverse_has_prefetching
+reverse_no_prefetching_single_part
 1
 reverse_correctness
 0

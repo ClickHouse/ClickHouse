@@ -26,7 +26,7 @@ namespace DB
 class PrefetchingConcatProcessor final : public IProcessor
 {
 public:
-    PrefetchingConcatProcessor(SharedHeader header, size_t num_inputs, size_t max_buffered_chunks_ = 2);
+    PrefetchingConcatProcessor(SharedHeader header, size_t num_inputs, size_t max_buffered_chunks_ = 2, size_t max_prefetch_inputs_ = 2);
 
     String getName() const override { return "PrefetchingConcat"; }
 
@@ -37,6 +37,7 @@ public:
 private:
     size_t current_input_idx = 0;
     size_t max_buffered_chunks;
+    size_t max_prefetch_inputs;
     std::vector<std::deque<Chunk>> buffers;
 };
 
