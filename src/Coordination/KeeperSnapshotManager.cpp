@@ -147,7 +147,7 @@ namespace
         else if (version >= SnapshotVersion::V1)
         {
             /// V1-V6 stored acl_id as uint64_t
-            uint64_t acl_id_64;
+            uint64_t acl_id_64 = 0;
             readBinary(acl_id_64, in);
 
             /// Some strange ACL ID during deserialization from ZooKeeper

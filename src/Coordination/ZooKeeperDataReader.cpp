@@ -109,7 +109,7 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
         Coordination::read(data, in);
         node.setData(data);
         {
-            int64_t acl_id_64;
+            int64_t acl_id_64 = 0;
             Coordination::read(acl_id_64, in);
             /// Some strange ACL ID during deserialization from ZooKeeper
             if (acl_id_64 == -1)
