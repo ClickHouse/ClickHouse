@@ -35,7 +35,7 @@ def _start_docker_in_docker():
             break
         if i == retries - 1:
             raise RuntimeError(
-                f"Docker daemon didn't responded after {retries} attempts"
+                f"Docker daemon did not respond after {retries} attempts"
             )
         time.sleep(2)
     print(f"Started docker-in-docker asynchronously with PID {dockerd_proc.pid}")
