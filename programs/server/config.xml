@@ -1001,6 +1001,8 @@
                     <!-- <secure>0</secure> -->
                     <!-- Optional. Bind to specific host before connecting to use a specific network. -->
                     <!-- <bind_host>10.0.0.1</bind_host> -->
+                    <!-- Optional. Exclude this replica from ON CLUSTER DDL queries while still using it for Distributed table routing. Default: false. -->
+                    <!-- <skip_distributed_ddl>0</skip_distributed_ddl> -->
                 </replica>
             </shard>
         </default>

@@ -134,6 +134,7 @@ Cluster::Address::Address(
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
     is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
+    skip_distributed_ddl = config.getBool(config_prefix + ".skip_distributed_ddl", false);
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.

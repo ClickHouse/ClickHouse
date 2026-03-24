@@ -29,5 +29,18 @@
                 </replica>
             </shard>
         </test_loopback_cluster2>
+        <test_skip_ddl_cluster>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                    <skip_distributed_ddl>1</skip_distributed_ddl>
+                </replica>
+            </shard>
+        </test_skip_ddl_cluster>
     </remote_servers>
 </clickhouse>

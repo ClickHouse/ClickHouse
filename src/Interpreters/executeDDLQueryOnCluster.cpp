@@ -124,7 +124,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     std::vector<HostID> hosts;
     hosts.reserve(addresses.size());
     for (const auto * address : addresses)
-        hosts.emplace_back(*address);
+    {
+        if (!address->skip_distributed_ddl)
+            hosts.emplace_back(*address);
+    }
 
     /// The current database in a distributed query need to be replaced with either
     /// the local current database or a shard's default database.

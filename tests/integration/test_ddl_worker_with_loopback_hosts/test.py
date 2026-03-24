@@ -96,3 +96,23 @@ def test_ddl_worker_with_loopback_hosts(
     node2.query("DROP TABLE IF EXISTS t3 SYNC")
     node1.query("DROP TABLE IF EXISTS t4 SYNC")
     node2.query("DROP TABLE IF EXISTS t4 SYNC")
+
+
+def test_skip_distributed_ddl(started_cluster):
+    node1.query("DROP TABLE IF EXISTS t_skip SYNC")
+    node2.query("DROP TABLE IF EXISTS t_skip SYNC")
+
+    # test_skip_ddl_cluster has node2 with skip_distributed_ddl=1,
+    # so the DDL should only be executed on node1.
+    node1.query(
+        "CREATE TABLE t_skip ON CLUSTER 'test_skip_ddl_cluster' (x INT) ENGINE=MergeTree() ORDER BY x",
+        settings={
+            "distributed_ddl_task_timeout": 10,
+        },
+    )
+
+    assert count_table(node1, "t_skip") == 1
+    assert count_table(node2, "t_skip") == 0
+
+    node1.query("DROP TABLE IF EXISTS t_skip SYNC")
+    node2.query("DROP TABLE IF EXISTS t_skip SYNC")
