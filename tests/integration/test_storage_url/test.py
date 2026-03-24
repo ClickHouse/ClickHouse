@@ -200,6 +200,13 @@ def test_url_wildcard_glob_patterns():
     assert result.strip() == "9"
 
 
+def test_url_wildcard_deduplicates_normalized_links():
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8087/data/duplicates/part*.tsv', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "9"
+
+
 def test_url_wildcard_listing_order():
     result = node1.query(
         "SELECT sum(x) FROM url('http://resolver:8087/data/order/**/part*.tsv', 'TSV', 'x UInt64') "

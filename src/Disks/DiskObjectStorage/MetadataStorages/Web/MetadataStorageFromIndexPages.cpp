@@ -182,7 +182,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     const std::string & page_body, const std::string & listing_url, const std::string & path) const
 {
     std::vector<std::string> result;
-    std::unordered_set<std::string> seen;
+    std::unordered_set<std::string> seen_relative;
     const auto & regex = getURLRegex();
     re2::StringPiece input(page_body);
     re2::StringPiece match;
@@ -195,8 +195,6 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     {
         used_href_extraction = true;
         std::string url_candidate(href_match.data(), href_match.size());
-        if (!seen.emplace(url_candidate).second)
-            continue;
 
         Poco::URI candidate_uri;
         try
@@ -236,6 +234,9 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
         if (!relative.starts_with(path))
             continue;
 
+        if (!seen_relative.emplace(relative).second)
+            continue;
+
         result.push_back(relative);
 
     }
@@ -245,8 +246,6 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
         while (re2::RE2::FindAndConsume(&input, regex, &match))
         {
             std::string url_candidate(match.data(), match.size());
-            if (!seen.emplace(url_candidate).second)
-                continue;
 
             Poco::URI candidate_uri;
             try
@@ -284,6 +283,9 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
                 continue;
 
             if (!relative.starts_with(path))
+                continue;
+
+            if (!seen_relative.emplace(relative).second)
                 continue;
 
             result.push_back(relative);
