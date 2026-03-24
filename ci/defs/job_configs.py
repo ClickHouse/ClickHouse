@@ -12,6 +12,11 @@ from ci.defs.defs import (
 )
 
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
+# Keeper stress spins nested Docker inside the integration-tests-runner container.
+# Using nearly all host RAM for the outer container can starve the host runner
+# and lead to "runner lost communication". Reserve a larger margin on the host
+# by capping Keeper to ~70% of physical memory.
+KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
 
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host"
@@ -93,6 +98,7 @@ common_ft_job_config = Job.Config(
             "./tests/config",
             "./tests/*.txt",
             "./ci/docker/stateless-test",
+            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
         ],
     ),
     result_name_for_cidb="Tests",
@@ -166,8 +172,6 @@ class JobConfigs:
         name=JobNames.CODE_REVIEW,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --pre",
-        allow_merge_on_failure=True,
-        enable_gh_auth=True,
     )
     ci_results_review = Job.Config(
         name=JobNames.CI_RESULTS_REVIEW,
@@ -900,6 +904,31 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
         )
+    )
+    # Keeper stress job config — shared by PR and nightly workflows.
+    # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job
+    # script via Info().pr_number and Info().workflow_name.
+    keeper_stress_job = Job.Config(
+        name="Keeper Stress",
+        runs_on=RunnerLabels.ARM_LARGE,
+        command="python3 ./ci/jobs/keeper_stress_job.py",
+        run_in_docker=(
+            f"clickhouse/integration-tests-runner+root+--memory={KEEPER_DIND_MEM}+--privileged+--dns-search='.'+"
+            f"--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--ulimit nofile=262144:262144"
+        ),
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/keeper_stress_job.py",
+                "./ci/jobs/scripts/docker_in_docker.sh",
+                "./tests/stress/keeper/",
+                "./tests/integration/helpers/",
+                "./src/Coordination/",
+            ],
+        ),
+        requires=[ArtifactNames.CH_ARM_BINARY],
+        result_name_for_cidb="Keeper Stress",
+        timeout=24 * 3600,
+        post_hooks=["python3 ./ci/jobs/scripts/ingest_keeper_metrics.py"],
     )
     compatibility_test_jobs = Job.Config(
         name=JobNames.COMPATIBILITY,
