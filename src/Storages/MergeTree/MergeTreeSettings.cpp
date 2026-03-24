@@ -346,6 +346,9 @@ namespace ErrorCodes
     - `v2`
     - `v3`
     )", 0) \
+    DECLARE(Bool, propagate_types_serialization_versions_to_nested_types, true, R"(
+    If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple elements.
+    )", 0)\
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
@@ -535,6 +538,17 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(UInt64, min_compressed_bytes_to_fsync_after_fetch, 0, R"(
     Minimal number of compressed bytes to do fsync for part after fetch (0 - disabled)
+    )", 0) \
+    DECLARE(UInt64, replicated_fetches_min_part_level, 0, R"(
+    Minimum part level to fetch from other replicas. Parts with level below this threshold are postponed
+    (kept in the replication queue and re-evaluated each scheduling cycle, not permanently skipped).
+    Use 1 to postpone fetching level-0 (unmerged) parts, reducing replication overhead during heavy ingestion.
+    Default: 0 (fetch all parts regardless of level).
+    )", 0) \
+    DECLARE(UInt64, replicated_fetches_min_part_level_timeout_seconds, 300, R"(
+    Timeout in seconds after which a part below replicated_fetches_min_part_level will be fetched anyway.
+    Use 0 to disable the timeout (parts below the minimum level are postponed indefinitely until merged).
+    Default: 300 (force fetch after 5 minutes).
     )", 0) \
     DECLARE(Bool, fsync_after_insert, false, R"(
     Do fsync for every inserted part. Significantly decreases performance of
@@ -1352,6 +1366,9 @@ namespace ErrorCodes
     DECLARE(Bool, shared_merge_tree_disable_merges_and_mutations_assignment, false, R"(
     Stop merges assignment for shared merge tree. Only available in ClickHouse
     Cloud
+    )", 0) \
+    DECLARE(Bool, shared_merge_tree_use_zookeeper_connection_pool, false, R"(
+    If enabled, SharedMergeTree uses one of server-level pooled ZooKeeper sessions.
     )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_outdated_parts_check, true, R"(
     Enable outdated parts check. Only available in ClickHouse Cloud
