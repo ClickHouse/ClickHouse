@@ -1,4 +1,4 @@
-#include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIcebergCluster.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -19,13 +19,6 @@
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIceberg.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIcebergCluster.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
-
 namespace DB
 {
 namespace Setting
@@ -39,27 +32,36 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename DataLakeMetadata>
-void StorageDataLakeCluster<DataLakeMetadata>::ensureMetadataInitialized(ContextPtr context) const
+static std::shared_ptr<IcebergMetadata> createIcebergMetadata(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    ContextPtr context)
+{
+    auto metadata = IcebergMetadata::create(object_storage, configuration, context);
+    auto * raw = dynamic_cast<IcebergMetadata *>(metadata.get());
+    chassert(raw);
+    (void)metadata.release();
+    return std::shared_ptr<IcebergMetadata>(raw);
+}
+
+void StorageDataLakeCluster<IcebergMetadata>::ensureMetadataInitialized(ContextPtr context) const
 {
     if (current_metadata)
         return;
-    current_metadata = DataLakeMetadata::create(object_storage, configuration, context);
+    current_metadata = createIcebergMetadata(object_storage, configuration, context);
 }
 
-template <typename DataLakeMetadata>
-void StorageDataLakeCluster<DataLakeMetadata>::updateMetadata(ContextPtr context) const
+void StorageDataLakeCluster<IcebergMetadata>::updateMetadata(ContextPtr context) const
 {
-    if (current_metadata && current_metadata->supportsUpdate())
+    if (current_metadata)
     {
         current_metadata->update(context);
         return;
     }
-    current_metadata = DataLakeMetadata::create(object_storage, configuration, context);
+    current_metadata = createIcebergMetadata(object_storage, configuration, context);
 }
 
-template <typename DataLakeMetadata>
-StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
+StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
     const String & cluster_name_,
     StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
@@ -71,7 +73,7 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
     DataLakeStorageSettingsPtr datalake_settings_,
     bool is_table_function)
     : IStorageCluster(
-        cluster_name_, table_id_, getLogger(fmt::format("{}({})", String(DataLakeMetadata::name) + configuration_->getEngineName(), table_id_.table_name)))
+        cluster_name_, table_id_, getLogger(fmt::format("{}({})", String(IcebergMetadata::name) + configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
     , datalake_settings(std::move(datalake_settings_))
@@ -90,7 +92,7 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
     /// so no lazy initialization is allowed.
     configuration->update(object_storage, context_);
 
-    current_metadata = DataLakeMetadata::create(object_storage, configuration, context_);
+    current_metadata = createIcebergMetadata(object_storage, configuration, context_);
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
@@ -127,28 +129,24 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
     setInMemoryMetadata(metadata);
 }
 
-template <typename DataLakeMetadata>
-std::string StorageDataLakeCluster<DataLakeMetadata>::getName() const
+std::string StorageDataLakeCluster<IcebergMetadata>::getName() const
 {
-    return String(DataLakeMetadata::name) + configuration->getEngineName();
+    return String(IcebergMetadata::name) + configuration->getEngineName();
 }
 
-template <typename DataLakeMetadata>
-std::optional<UInt64> StorageDataLakeCluster<DataLakeMetadata>::totalRows(ContextPtr query_context) const
+std::optional<UInt64> StorageDataLakeCluster<IcebergMetadata>::totalRows(ContextPtr query_context) const
 {
     ensureMetadataInitialized(query_context);
     return current_metadata->totalRows(query_context);
 }
 
-template <typename DataLakeMetadata>
-std::optional<UInt64> StorageDataLakeCluster<DataLakeMetadata>::totalBytes(ContextPtr query_context) const
+std::optional<UInt64> StorageDataLakeCluster<IcebergMetadata>::totalBytes(ContextPtr query_context) const
 {
     ensureMetadataInitialized(query_context);
     return current_metadata->totalBytes(query_context);
 }
 
-template <typename DataLakeMetadata>
-void StorageDataLakeCluster<DataLakeMetadata>::updateQueryToSendIfNeeded(
+void StorageDataLakeCluster<IcebergMetadata>::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
@@ -162,7 +160,7 @@ void StorageDataLakeCluster<DataLakeMetadata>::updateQueryToSendIfNeeded(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected SELECT query from table function {}, got '{}'",
-            String(DataLakeMetadata::name) + configuration->getEngineName(), query->formatForErrorMessage());
+            String(IcebergMetadata::name) + configuration->getEngineName(), query->formatForErrorMessage());
     }
 
     ASTs & args = expression_list->children;
@@ -172,7 +170,7 @@ void StorageDataLakeCluster<DataLakeMetadata>::updateQueryToSendIfNeeded(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unexpected empty list of arguments for {}Cluster table function",
-            String(DataLakeMetadata::name) + configuration->getEngineName());
+            String(IcebergMetadata::name) + configuration->getEngineName());
     }
 
     ASTPtr settings_temporary_storage = nullptr;
@@ -202,8 +200,7 @@ void StorageDataLakeCluster<DataLakeMetadata>::updateQueryToSendIfNeeded(
     }
 }
 
-template <typename DataLakeMetadata>
-void StorageDataLakeCluster<DataLakeMetadata>::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+void StorageDataLakeCluster<IcebergMetadata>::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
     /// Always force an update to pick up the latest snapshot version.
     updateMetadata(query_context);
@@ -224,8 +221,7 @@ void StorageDataLakeCluster<DataLakeMetadata>::updateExternalDynamicMetadataIfEx
     setInMemoryMetadata(new_metadata);
 }
 
-template <typename DataLakeMetadata>
-RemoteQueryExecutor::Extension StorageDataLakeCluster<DataLakeMetadata>::getTaskIteratorExtension(
+RemoteQueryExecutor::Extension StorageDataLakeCluster<IcebergMetadata>::getTaskIteratorExtension(
     const ActionsDAG::Node * /*predicate*/,
     const ActionsDAG * filter,
     const ContextPtr & local_context,
@@ -280,17 +276,5 @@ RemoteQueryExecutor::Extension StorageDataLakeCluster<DataLakeMetadata>::getTask
 
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
-
-#if USE_AVRO
-template class StorageDataLakeCluster<PaimonMetadata>;
-#endif
-
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
-template class StorageDataLakeCluster<DeltaLakeMetadata>;
-#endif
-
-#if USE_AWS_S3
-template class StorageDataLakeCluster<HudiMetadata>;
-#endif
 
 }
