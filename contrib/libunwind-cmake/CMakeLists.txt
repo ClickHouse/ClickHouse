@@ -33,9 +33,8 @@ target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_REMEMBER_STACK_ALLOC=1)
 # NOTE: from this macros sizeof(unw_context_t)/sizeof(unw_cursor_t) is depends, so it should be set always
 target_compile_definitions(unwind PUBLIC -D_LIBUNWIND_IS_NATIVE_ONLY)
 
-# We should enable optimizations (otherwise it will be too slow in debug)
-# and disable sanitizers (otherwise infinite loop may happen)
-target_compile_options(unwind PRIVATE -O3 -fno-exceptions -funwind-tables -fno-sanitize=all $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++ -fno-rtti>)
+# We should enable optimizations (otherwise it will be too slow in debug).
+target_compile_options(unwind PRIVATE -O3 -fno-exceptions -funwind-tables $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++ -fno-rtti>)
 
 target_compile_options(unwind PRIVATE -Wno-unused-but-set-variable)
 
