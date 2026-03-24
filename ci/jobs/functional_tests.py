@@ -95,7 +95,8 @@ def run_tests(
     global_time_limit_option = (
         f"--global_time_limit={global_time_limit}" if global_time_limit > 0 else ""
     )
-    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {5*2**30} --trace \
+    memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
+    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
                 {extra_args} {global_time_limit_option} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
@@ -107,6 +108,7 @@ def run_tests(
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
+    "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
     "DatabaseReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -232,6 +234,16 @@ def main():
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
         runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long --llvm-coverage"
         os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
+
+    if (
+        not is_flaky_check
+        and not is_targeted_check
+        and not is_llvm_coverage
+        and not is_bugfix_validation
+        and not args.test
+        and "--no-random-settings" not in runner_options
+    ):
+        runner_options += " --repeat-newly-modified-tests"
 
     rerun_count = 1
     if args.count:
@@ -409,7 +421,7 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/*",
+            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
             f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
@@ -430,9 +442,12 @@ def main():
 
         if is_flaky_check or is_targeted_check:
             commands.append(CH.enable_thread_fuzzer_config)
+            sanitizers = ("asan", "tsan", "msan", "ubsan")
+            if any(san in args.options for san in sanitizers):
+                commands.append(lambda: CH.set_memory_ratio(0.8))
 
         os.environ["MALLOC_CONF"] = (
-            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+            f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
         if not is_coverage:
@@ -515,9 +530,10 @@ def main():
 
         # For flaky check, set a soft time limit so that the test runner stops
         # gracefully before the job hard timeout, allowing results to be posted.
-        # The job timeout is 2.5 hours (9000s); leave a 5-minute margin.
+        # The job timeout is 2.5 hours (9000s); leave a 1-hour margin for cleanup
+        # (server shutdown, system table export, log collection — all slow under sanitizers).
         job_timeout = int(3600 * 2.5)
-        soft_limit_margin = 300
+        soft_limit_margin = 3600
         global_time_limit = 0
         if is_flaky_check or is_targeted_check:
             global_time_limit = max(
@@ -543,6 +559,11 @@ def main():
                 global_time_limit = max(
                     job_timeout - soft_limit_margin - int(stop_watch.duration), 0
                 )
+                if global_time_limit <= 0:
+                    print(
+                        "NOTE: Soft time limit exhausted; stopping before next iteration"
+                    )
+                    break
 
             run_tests(
                 batch_num=batch_num if not tests_to_run else 0,
@@ -600,12 +621,15 @@ def main():
 
                 # On final run, replace results with collected ones
                 if is_final_run or stop_by_elapsed_time:
-                    test_result.results = collected_test_results
-                    # Set overall status to failed if any collected test cases failed
-                    has_failures = any(not t.is_ok() for t in collected_test_results)
-                    if has_failures and test_result.is_ok():
-                        test_result.set_failed()
                     break
+
+        # Apply collected results from multi-run mode
+        if run_sets_cnt > 1 and collected_test_results:
+            test_result.results = collected_test_results
+            # Set overall status to failed if any collected test cases failed
+            has_failures = any(not t.is_ok() for t in collected_test_results)
+            if has_failures and test_result.is_ok():
+                test_result.set_failed()
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -737,10 +761,6 @@ def main():
             # - The overall Tests result is treated as success in that case
             test_result.set_success()
 
-        # For bugfix validation, "Check errors" (latest in the list) is only a helper step and
-        # must not affect the overall job result.
-        results[-1].set_success()
-
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
 
@@ -818,7 +838,9 @@ def main():
                 print(f"Using {llvm_profdata} to merge coverage files")
 
                 # Merge all profraw files to current directory
-                merged_file = f"./ft-{batch_num}.profdata"
+                joined_test_options = "_".join(test_options) if test_options else "all"
+                joined_test_options = joined_test_options.replace(" ", "_").replace("/", "_")
+                merged_file = f"./ft-{joined_test_options}.profdata"
                 merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
                 merge_output = Shell.get_output(merge_cmd, verbose=True)
 
@@ -835,6 +857,11 @@ def main():
                     )
                     for corrupted in corrupted_files:
                         print(f"  {corrupted}")
+
+                # Attach profdata file to the result report so it is uploaded
+                # unconditionally (even when tests fail) and visible in the CI report.
+                if os.path.exists(merged_file):
+                    R.files.append(merged_file)
 
         else:
             print("No .profraw files found for coverage")

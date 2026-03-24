@@ -1667,10 +1667,56 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     size_t max_step_description_length)
 {
     const auto & left_header = left_plan.getCurrentHeader();
-    const auto & right_header = right_plan.getCurrentHeader();
+    auto right_header = right_plan.getCurrentHeader();
 
     auto columns_from_left_table = left_header->getNamesAndTypesList();
     auto columns_from_right_table = right_header->getNamesAndTypesList();
+
+    /// Remove non-key right columns that overlap with left column names.
+    /// Such columns cause a count mismatch in `HashJoin::getNonJoinedBlocks` because
+    /// `AddedColumns` skips right columns matching left column names (deduplication),
+    /// but the assertion expects the arithmetic sum.
+    {
+        NameSet left_column_names;
+        for (const auto & col : columns_from_left_table)
+            left_column_names.insert(col.name);
+
+        NameSet right_key_names;
+        for (const auto & clause : table_join->getClauses())
+            for (const auto & key_name : clause.key_names_right)
+                right_key_names.insert(key_name);
+
+        bool has_overlapping = false;
+        for (const auto & col : columns_from_right_table)
+        {
+            if (left_column_names.contains(col.name) && !right_key_names.contains(col.name))
+            {
+                has_overlapping = true;
+                break;
+            }
+        }
+
+        if (has_overlapping)
+        {
+            ActionsDAG dag(right_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+            ActionsDAG::NodeRawConstPtrs updated_outputs;
+            for (const auto * output : dag.getOutputs())
+            {
+                if (!left_column_names.contains(output->result_name)
+                    || right_key_names.contains(output->result_name))
+                    updated_outputs.push_back(output);
+            }
+            dag.getOutputs() = std::move(updated_outputs);
+
+            auto step = std::make_unique<ExpressionStep>(
+                right_plan.getCurrentHeader(), std::move(dag));
+            step->setStepDescription("Remove columns overlapping with left side of JOIN");
+            right_plan.addStep(std::move(step));
+
+            right_header = right_plan.getCurrentHeader();
+            columns_from_right_table = right_header->getNamesAndTypesList();
+        }
+    }
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1814,6 +1860,17 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
         }
 
         auto join_pipeline_type = join_algorithm->pipelineType();
+
+        /// `required_columns_after_join` starts as `outer_scope_columns`, which may
+        /// include columns from unrelated tables (e.g. from the right side of a CROSS
+        /// JOIN that wraps this join). Remove columns that don't exist in either join
+        /// input — the join cannot produce them and their presence confuses the
+        /// JoinStep's column-permutation logic (it treats "no matching required columns"
+        /// as "keep all columns", which breaks when the join output changes after swap).
+        std::erase_if(required_columns_after_join, [&](const String & name)
+        {
+            return !left_header->has(name) && !right_header->has(name);
+        });
 
         if (required_columns_after_join.empty())
         {
@@ -2639,8 +2696,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     bool is_full_join = false;
     bool is_global_join = false;
     bool is_right_join_with_remote_table = false;
-    int first_left_or_inner_join_pos = -1;
-    int first_right_join_pos = -1;
+    int first_join_pos = -1;
+    int last_right_join_pos = -1;
     bool is_cross_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
@@ -2661,23 +2718,25 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         {
             ++joins_count;
             const auto & join_node = table_expression->as<const JoinNode &>();
-            if (join_node.getKind() == JoinKind::Full)
+            const auto join_kind = join_node.getKind();
+
+            if (join_kind == JoinKind::Full)
                 is_full_join = true;
 
             if (join_node.getLocality() == JoinLocality::Global)
                 is_global_join = true;
 
-            // if right join position is after left/inner join then we can't parallelize the left/inner join
-            if (first_left_or_inner_join_pos < 0 && (join_node.getKind() == JoinKind::Left || join_node.getKind() == JoinKind::Inner))
-                first_left_or_inner_join_pos = static_cast<int>(i);
-            if (first_right_join_pos < 0 && join_node.getKind() == JoinKind::Right)
-                first_right_join_pos = static_cast<int>(i);
+            // save join positions for later check
+            if (first_join_pos < 0 && (join_kind == JoinKind::Left || join_kind == JoinKind::Inner || join_kind == JoinKind::Right))
+                first_join_pos = static_cast<int>(i);
+            if (join_kind == JoinKind::Right)
+                last_right_join_pos = static_cast<int>(i);
 
             /// For RIGHT JOIN with a distributed table on the right side, disable parallel replicas.
             /// The distributed table on the right side would be wrapped into a subquery,
             /// causing parallel replicas to incorrectly choose the left table for parallel reading.
             /// Each replica would then independently read the full distributed table, resulting in duplicate data.
-            if (join_node.getKind() == JoinKind::Right)
+            if (join_kind == JoinKind::Right)
             {
                 const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpression());
                 is_right_join_with_remote_table = right_expression_data.isRemote();
@@ -2691,8 +2750,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     auto should_disable_parallel_replicas = [&]() -> bool
     {
-        /// n-way join like LEFT/INNER ... RIGHT ...
-        if (first_left_or_inner_join_pos >= 0 && first_right_join_pos >= 0 && first_left_or_inner_join_pos < first_right_join_pos)
+        /// n-way join like LEFT/INNER/RIGHT ... RIGHT ...
+        /// if last RIGHT join position is after LEFT/INNER/RIGHT(another) join then the left side of the RIGHT join can't be parallelized
+        if (first_join_pos >= 0 && last_right_join_pos >= 0 && first_join_pos < last_right_join_pos)
             return true;
 
         /// for n-way join with FULL JOIN or GLOBAL JOINS or CROSS JOIN

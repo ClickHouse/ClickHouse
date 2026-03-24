@@ -721,7 +721,7 @@ std::string ZooKeeperCheckWatchRequest::toStringImpl(bool /*short_format*/) cons
 
 ZooKeeperResponsePtr ZooKeeperCheckWatchRequest::makeResponse() const
 {
-    return std::make_shared<ZooKeeperAddWatchResponse>();
+    return std::make_shared<ZooKeeperCheckWatchResponse>();
 }
 
 void ZooKeeperCheckWatchResponse::readImpl(ReadBuffer &)
@@ -765,7 +765,7 @@ std::string ZooKeeperRemoveWatchRequest::toStringImpl(bool /*short_format*/) con
 
 ZooKeeperResponsePtr ZooKeeperRemoveWatchRequest::makeResponse() const
 {
-    return std::make_shared<ZooKeeperAddWatchResponse>();
+    return std::make_shared<ZooKeeperRemoveWatchResponse>();
 }
 
 void ZooKeeperRemoveWatchResponse::readImpl(ReadBuffer &)
@@ -812,17 +812,23 @@ ZooKeeperResponsePtr ZooKeeperAddWatchRequest::makeResponse() const
     return std::make_shared<ZooKeeperAddWatchResponse>();
 }
 
-void ZooKeeperAddWatchResponse::readImpl(ReadBuffer &)
+void ZooKeeperAddWatchResponse::readImpl(ReadBuffer & in)
 {
+    int32_t err;
+    Coordination::read(err, in);
 }
 
-void ZooKeeperAddWatchResponse::writeImpl(WriteBuffer &) const
+void ZooKeeperAddWatchResponse::writeImpl(WriteBuffer & out) const
 {
+    /// The Java ZooKeeper client uses ErrorResponse as the response type for
+    /// addWatch, which expects a 4-byte error code in the response body.
+    /// Without it, the client gets EOFException and disconnects.
+    Coordination::write(static_cast<int32_t>(error), out);
 }
 
 size_t ZooKeeperAddWatchResponse::sizeImpl() const
 {
-    return 0;
+    return sizeof(int32_t);
 }
 
 void ZooKeeperSetWatchesRequest::readImpl(ReadBuffer & in)
