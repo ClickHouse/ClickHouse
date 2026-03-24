@@ -132,6 +132,28 @@ public:
     /// Returns true if the step has implemented removeUnusedColumns.
     virtual bool canRemoveUnusedColumns() const { return false; }
 
+    struct RemoveUnusedColumnsResult
+    {
+        /// Sentinel for kept_output_positions entries that were added
+        /// (e.g., a dummy column in JoinStepLogical) and have no original output position.
+        static constexpr size_t NEWLY_ADDED_COLUMN_POSITION = std::numeric_limits<size_t>::max();
+
+        /// Required input positions per child (outer index = child_id).
+        /// Empty means no inputs were changed.
+        std::vector<std::vector<size_t>> required_input_positions;
+
+        /// Which original output positions survived, in order.
+        /// Maps new output position to the original output position.
+        /// Entries with NEWLY_ADDED_COLUMN_POSITION indicate columns that weren't present in the original header.
+        /// Empty means the output was not changed.
+        std::vector<size_t> kept_output_positions;
+
+        /// Whether the step was actually modified.
+        /// Needed to distinguish "removed all outputs" from "nothing changed",
+        /// since both can have empty required_input_positions and kept_output_positions.
+        bool changed = false;
+    };
+
     /// Removes the unnecessary inputs and outputs from the step based on required_output_positions.
     /// required_output_positions must be a sorted vector of indices into the step's current output header.
     /// Each position uniquely identifies a column even when names are duplicated.
@@ -139,11 +161,7 @@ public:
     /// and might contain some other columns too.
     /// Can be used only if canRemoveUnusedColumns returns true.
     /// The order of the remaining outputs must be preserved.
-    ///
-    /// Returns the required input positions per child (outer index = child_id).
-    /// An empty outer vector means no inputs were changed (either the step is a leaf,
-    /// remove_inputs was false, or no pruning was possible).
-    virtual std::vector<std::vector<size_t>> removeUnusedColumns(std::vector<size_t> /*required_output_positions*/, bool /*remove_inputs*/);
+    virtual RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/);
 
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;

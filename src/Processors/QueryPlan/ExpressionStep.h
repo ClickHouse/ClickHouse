@@ -45,7 +45,7 @@ public:
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
     bool canRemoveUnusedColumns() const override;
-    std::vector<std::vector<size_t>> removeUnusedColumns(std::vector<size_t> required_output_positions, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     /// Prevent future input removal by removeUnusedColumns.

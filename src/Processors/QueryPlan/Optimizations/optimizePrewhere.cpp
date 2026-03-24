@@ -243,14 +243,14 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         for (size_t i = 0; i < parent_output->columns(); ++i)
             all_positions.push_back(i);
 
-        const auto required_input_positions = parent_step->removeUnusedColumns(std::move(all_positions), true);
+        const auto unused_column_removal_result = parent_step->removeUnusedColumns(all_positions, true);
 
-        if (!required_input_positions.empty())
+        if (!unused_column_removal_result.required_input_positions.empty())
         {
             /// The parent step returned the positions it needs from its child (child 0).
             /// Pass them directly to the source step.
-            chassert(required_input_positions.size() == 1);
-            source_step_with_filter->removeUnusedColumns(required_input_positions[0], true);
+            chassert(unused_column_removal_result.required_input_positions.size() == 1);
+            source_step_with_filter->removeUnusedColumns(unused_column_removal_result.required_input_positions[0], true);
 
             // Here the output of the source step should match the input of the parent step, even though that is not
             // generally true after unused column removal. There might be outputs that are not removed in some step

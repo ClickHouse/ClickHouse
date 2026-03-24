@@ -4155,7 +4155,7 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
     return true;
 }
 
-std::vector<std::vector<size_t>> ReadFromMergeTree::removeUnusedColumns(std::vector<size_t> required_output_positions, bool /*remove_inputs*/)
+ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool /*remove_inputs*/)
 {
     if (output_header == nullptr)
         return {};
@@ -4230,6 +4230,8 @@ std::vector<std::vector<size_t>> ReadFromMergeTree::removeUnusedColumns(std::vec
     if (!removed_output_from_prewhere && !removed_output_from_row_level_filter && new_column_names.size() == all_column_names.size())
         return {};
 
+    const auto old_output_header = output_header;
+
     all_column_names = std::move(new_column_names);
 
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
@@ -4237,13 +4239,27 @@ std::vector<std::vector<size_t>> ReadFromMergeTree::removeUnusedColumns(std::vec
         query_info.row_level_filter,
         query_info.prewhere_info));
 
+    /// Compute kept output positions: for each column in the new output, find its position
+    /// in the old output header. ReadFromMergeTree has unique column names, so name lookup is safe.
+    /// We compute this after transformHeader because transformHeader may remove columns
+    /// (e.g., prewhere/row_level_filter columns whose remove flag was set during this optimization).
+    std::vector<size_t> kept_output_positions;
+    kept_output_positions.reserve(output_header->columns());
+    for (size_t i = 0; i < output_header->columns(); ++i)
+    {
+        const auto & column_name = output_header->getByPosition(i).name;
+        auto old_pos = old_output_header->findPositionByName(column_name);
+        chassert(old_pos.has_value() && "New output column must exist in the old output header");
+        kept_output_positions.push_back(*old_pos);
+    }
+
     /// Update analysis result if it exists
     if (analyzed_result_ptr)
         analyzed_result_ptr->column_names_to_read = all_column_names;
 
     required_source_columns = all_column_names;
 
-    return {};
+    return {{}, std::move(kept_output_positions), true};
 }
 
 bool ReadFromMergeTree::canRemoveColumnsFromOutput() const

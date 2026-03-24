@@ -341,7 +341,7 @@ bool JoinStepLogical::canRemoveUnusedColumns() const
     return true;
 }
 
-std::vector<std::vector<size_t>> JoinStepLogical::removeUnusedColumns(std::vector<size_t> required_output_positions, bool remove_inputs)
+JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
 {
     auto & actions_dag = *expression_actions.getActionsDAG();
     const size_t original_input_count = actions_dag.getInputs().size();
@@ -352,6 +352,10 @@ std::vector<std::vector<size_t>> JoinStepLogical::removeUnusedColumns(std::vecto
     /// Build a set of required DAG output positions.
     std::set<size_t> required_positions_set(required_output_positions.begin(), required_output_positions.end());
 
+    /// Track which original output positions survive (required + non-removable like dummy).
+    std::vector<size_t> kept_output_positions;
+    kept_output_positions.reserve(required_output_positions.size());
+
     bool removed_any_output = false;
     const auto & dag_outputs = actions_dag.getOutputs();
     for (size_t i = 0; i < dag_outputs.size(); ++i)
@@ -360,6 +364,7 @@ std::vector<std::vector<size_t>> JoinStepLogical::removeUnusedColumns(std::vecto
         if (required_positions_set.contains(i))
         {
             required_nodes.push_back(output_node);
+            kept_output_positions.push_back(i);
         }
         else if (!isDummyColumnOfThisStep(output_node))
         {
@@ -367,6 +372,12 @@ std::vector<std::vector<size_t>> JoinStepLogical::removeUnusedColumns(std::vecto
             removed_any_output = true;
             new_actions_after_join.erase(
                 std::remove(new_actions_after_join.begin(), new_actions_after_join.end(), output_node), new_actions_after_join.end());
+        }
+        else
+        {
+            /// Dummy column kept even though not required.
+            required_nodes.push_back(output_node);
+            kept_output_positions.push_back(i);
         }
     }
 
@@ -378,6 +389,7 @@ std::vector<std::vector<size_t>> JoinStepLogical::removeUnusedColumns(std::vecto
         new_actions_after_join.push_back(node);
         required_nodes.push_back(node);
         actions_dag.getOutputs().push_back(node);
+        kept_output_positions.push_back(RemoveUnusedColumnsResult::NEWLY_ADDED_COLUMN_POSITION);
     }
 
     ActionsDAG::NodeRawConstPtrs new_outputs = required_nodes;
@@ -476,11 +488,11 @@ std::vector<std::vector<size_t>> JoinStepLogical::removeUnusedColumns(std::vecto
 
         updateInputHeaders({std::move(new_left_header), std::move(new_right_header)});
 
-        return {std::move(left_positions), std::move(right_positions)};
+        return {{std::move(left_positions), std::move(right_positions)}, std::move(kept_output_positions), true};
     }
 
     updateOutputHeader();
-    return {};
+    return {{}, std::move(kept_output_positions), true};
 }
 
 bool JoinStepLogical::canRemoveColumnsFromOutput() const

@@ -135,7 +135,7 @@ bool ExpressionStep::canRemoveUnusedColumns() const
     return true;
 }
 
-std::vector<std::vector<size_t>> ExpressionStep::removeUnusedColumns(std::vector<size_t> required_output_positions, bool remove_inputs)
+ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
@@ -224,12 +224,13 @@ std::vector<std::vector<size_t>> ExpressionStep::removeUnusedColumns(std::vector
         SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
         updateInputHeader(std::move(new_shared_input_header), 0);
 
-        return {std::move(result_positions)};
+        return {{std::move(result_positions)}, required_output_positions, true};
     }
 
     updateOutputHeader();
 
-    return {};
+    /// Outputs changed but inputs didn't.
+    return {{}, required_output_positions, true};
 }
 
 bool ExpressionStep::canRemoveColumnsFromOutput() const

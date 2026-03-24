@@ -300,7 +300,7 @@ bool FilterStep::canRemoveUnusedColumns() const
     return true;
 }
 
-std::vector<std::vector<size_t>> FilterStep::removeUnusedColumns(std::vector<size_t> required_output_positions, bool remove_inputs)
+FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
@@ -443,12 +443,12 @@ std::vector<std::vector<size_t>> FilterStep::removeUnusedColumns(std::vector<siz
 
         SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
         updateInputHeader(std::move(new_shared_input_header), 0);
-        return {std::move(required_input_positions)};
+        return {{std::move(required_input_positions)}, required_output_positions, true};
     }
 
     updateOutputHeader();
 
-    return {};
+    return {{}, required_output_positions, true};
 }
 
 bool FilterStep::canRemoveColumnsFromOutput() const

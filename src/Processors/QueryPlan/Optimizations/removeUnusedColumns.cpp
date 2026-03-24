@@ -19,40 +19,34 @@ namespace QueryPlanOptimizations
 {
 namespace
 {
-bool addDiscardingExpressionStepIfNeeded(QueryPlan::Nodes & nodes, QueryPlan::Node & parent, const size_t child_id)
+/// Position-based overload: compare kept_output_positions (what the child actually kept)
+/// against required_positions (what the parent asked for) to determine extras to discard.
+/// Correct even with duplicate column names.
+bool addDiscardingExpressionStepIfNeeded(
+    QueryPlan::Nodes & nodes,
+    QueryPlan::Node & parent,
+    const size_t child_id,
+    const std::vector<size_t> & required_positions,
+    const std::vector<size_t> & kept_output_positions)
 {
-    const auto input_header = parent.step->getInputHeaders()[child_id];
     const auto output_header = parent.children[child_id]->step->getOutputHeader();
 
-    std::vector<const ColumnWithTypeAndName *> columns_to_discard;
-    auto input_it = input_header->begin();
-    auto output_it = output_header->begin();
-    while (input_it != input_header->end() && output_it != output_header->end())
-    {
-        if (input_it->name == output_it->name)
-        {
-            ++input_it;
-            ++output_it;
-        }
-        else
-        {
-            columns_to_discard.push_back(&(*output_it));
-            ++output_it;
-        }
-    }
-    if (input_it != input_header->end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input header is not a subset of output header");
+    std::set<size_t> required_set(required_positions.begin(), required_positions.end());
 
-    for (; output_it != output_header->end(); ++output_it)
-        columns_to_discard.push_back(&(*output_it));
+    std::vector<const ColumnWithTypeAndName *> columns_to_discard;
+    for (size_t new_pos = 0; new_pos < kept_output_positions.size(); ++new_pos)
+    {
+        if (!required_set.contains(kept_output_positions[new_pos]))
+            columns_to_discard.push_back(&output_header->getByPosition(new_pos));
+    }
 
     if (columns_to_discard.empty())
     {
         /// Even when all column names match, the column representations might differ
         /// (e.g., Const vs materialized after JoinStepLogical materializes its dummy column).
         /// Sync the parent's input header with the child's output header.
-        if (!blocksHaveEqualStructure(*input_header, *output_header))
-            parent.step->updateInputHeader(parent.children[child_id]->step->getOutputHeader(), child_id);
+        if (!blocksHaveEqualStructure(*parent.step->getInputHeaders()[child_id], *output_header))
+            parent.step->updateInputHeader(output_header, child_id);
         return false;
     }
 
@@ -71,11 +65,12 @@ bool addDiscardingExpressionStepIfNeeded(QueryPlan::Nodes & nodes, QueryPlan::No
     return true;
 }
 
-enum class RemoveChildrenOutputResult
+enum class RemoveChildrenOutputResult : UInt8
 {
-    NotUpdated,
-    Updated,
-    AddedDiscardingStep,
+    NotUpdated = 0,
+    Updated = 1,
+    AddedDiscardingStep = 2,
+    UpdatedAndAddedDiscardingStep = 3,
 };
 }
 
@@ -94,7 +89,15 @@ bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
 /// Also sets the `prevent_input_removal` flag to ensure these absorbed columns are not
 /// removed on subsequent optimization passes.
 /// Works with both ExpressionStep and FilterStep parents.
-bool absorbExtraChildColumns(QueryPlan::Node & node, size_t child_id)
+///
+/// Uses required_positions (what the parent asked for) and kept_output_positions
+/// (what the child actually kept) to identify extra columns by position,
+/// which is correct even with duplicate column names.
+bool absorbExtraChildColumns(
+    QueryPlan::Node & node,
+    size_t child_id,
+    const std::vector<size_t> & required_positions,
+    const std::vector<size_t> & kept_output_positions)
 {
     ActionsDAG * dag = nullptr;
 
@@ -108,18 +111,17 @@ bool absorbExtraChildColumns(QueryPlan::Node & node, size_t child_id)
     else
         return false;
 
-    const auto & parent_input = node.step->getInputHeaders()[child_id];
     const auto & child_output = node.children[child_id]->step->getOutputHeader();
 
-    NameSet parent_input_names;
-    for (const auto & col : *parent_input)
-        parent_input_names.insert(col.name);
+    /// Identify extra columns: positions in kept_output_positions that are not in required_positions.
+    std::set<size_t> required_set(required_positions.begin(), required_positions.end());
 
     bool added_any = false;
-    for (const auto & col : *child_output)
+    for (size_t new_pos = 0; new_pos < kept_output_positions.size(); ++new_pos)
     {
-        if (!parent_input_names.contains(col.name))
+        if (!required_set.contains(kept_output_positions[new_pos]))
         {
+            const auto & col = child_output->getByPosition(new_pos);
             dag->addInput(col.name, col.type);
             added_any = true;
         }
@@ -151,7 +153,7 @@ RemoveChildrenOutputResult removeChildrenOutputs(
     QueryPlan::Node & node,
     const std::vector<std::vector<size_t>> & required_input_positions)
 {
-    bool updated = false;
+    bool updated_any_child = false;
     bool added_any_discarding_step = false;
 
     for (auto child_id = 0U; child_id < node.children.size(); ++child_id)
@@ -160,19 +162,20 @@ RemoveChildrenOutputResult removeChildrenOutputs(
         chassert(child_step->canRemoveUnusedColumns());
 
         chassert(child_id < required_input_positions.size());
-        auto required_positions = required_input_positions[child_id];
+        const auto & required_positions = required_input_positions[child_id];
 
         // Here we never want to remove inputs because the grandchildren might not be able to remove outputs.
-        const auto output_columns_before = child_step->getOutputHeader()->columns();
-        child_step->removeUnusedColumns(std::move(required_positions), false);
-        const bool updated_anything = child_step->getOutputHeader()->columns() != output_columns_before;
+        auto child_result = child_step->removeUnusedColumns(required_positions, false);
+        const bool child_updated = child_result.changed;
 
         // As removeUnusedColumns might leave additional columns in the output, we have to get rid of those outputs by adding a new ExpressionStep.
         // Right now this is mostly relevant for JoinStepLogical, as it must keep at least one column in its output, even if its parent requires no input.
         // However in the future we might have other steps with similar behavior.
-        if (updated_anything)
+        if (child_updated)
         {
-            const auto added_discarding_step = addDiscardingExpressionStepIfNeeded(nodes, node, child_id);
+            updated_any_child = true;
+            const auto added_discarding_step
+                = addDiscardingExpressionStepIfNeeded(nodes, node, child_id, required_positions, child_result.kept_output_positions);
             if (added_discarding_step)
             {
                 chassert(node.children[child_id]->children.size() == 1 && (child_step) == node.children[child_id]->children[0]->step);
@@ -196,10 +199,9 @@ RemoveChildrenOutputResult removeChildrenOutputs(
             const auto & child_output = node.children[child_id]->step->getOutputHeader();
             if (child_output->columns() != current_parent_input->columns())
             {
-                // TODO(antaljanosbenjamin): check if this is still okay with repeated column names
-                if (!absorbExtraChildColumns(node, child_id))
+                if (!absorbExtraChildColumns(node, child_id, required_positions, child_result.kept_output_positions))
                 {
-                    if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id))
+                    if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id, required_positions, child_result.kept_output_positions))
                         added_any_discarding_step = true;
                 }
             }
@@ -212,15 +214,15 @@ RemoveChildrenOutputResult removeChildrenOutputs(
                 *node.children[child_id]->step->getOutputHeader(), *final_parent_inputs[child_id], "after removing unused columns");
         }
 #endif
-
-        if (updated_anything)
-            updated = true;
     }
+
+    if (updated_any_child && added_any_discarding_step)
+        return RemoveChildrenOutputResult::UpdatedAndAddedDiscardingStep;
 
     if (added_any_discarding_step)
         return RemoveChildrenOutputResult::AddedDiscardingStep;
 
-    if (updated)
+    if (updated_any_child)
         return RemoveChildrenOutputResult::Updated;
 
     return RemoveChildrenOutputResult::NotUpdated;
@@ -228,39 +230,60 @@ RemoveChildrenOutputResult removeChildrenOutputs(
 
 size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
-    if (!node->step->canRemoveUnusedColumns())
-        return 0;
+    std::vector<std::vector<size_t>> required_input_positions;
 
+    size_t depth = 0;
     const auto can_remove_inputs = canAllChildrenCanRemoveOutputs(*node);
 
-    const auto num_outputs = node->step->getOutputHeader()->columns();
-    std::vector<size_t> all_outputs(num_outputs);
-    std::iota(all_outputs.begin(), all_outputs.end(), 0);
-
-    auto required_input_positions = node->step->removeUnusedColumns(std::move(all_outputs), can_remove_inputs);
-
-    if (required_input_positions.empty())
-        return 0;
-
-    /// The step pruned some inputs. Propagate reduced requirements to children.
-    /// removeChildrenOutputs calls removeUnusedColumns on each child with the
-    /// required positions, syncs headers, and adds discarding steps if needed.
-    /// Maximum depth: 1 (this node) + 1 (child updated) + 1 (discarding step) = 3.
-    size_t depth = 1;
-    auto result = removeChildrenOutputs(nodes, *node, required_input_positions);
-    switch (result)
+    /// If the node supports removeUnusedColumns, call it to prune its own DAG.
+    if (node->step->canRemoveUnusedColumns())
     {
-        case RemoveChildrenOutputResult::NotUpdated:
-            break;
-        case RemoveChildrenOutputResult::Updated:
+        const auto num_outputs = node->step->getOutputHeader()->columns();
+        std::vector<size_t> all_outputs(num_outputs);
+        std::iota(all_outputs.begin(), all_outputs.end(), 0);
+
+        auto remove_result = node->step->removeUnusedColumns(all_outputs, can_remove_inputs);
+
+        if (remove_result.changed)
             ++depth;
-            break;
-        case RemoveChildrenOutputResult::AddedDiscardingStep:
-            depth += 2;
-            break;
+
+        required_input_positions = std::move(remove_result.required_input_positions);
     }
 
-    return depth;
+    /// If the children don't support unused column removal, let's return
+    if (!can_remove_inputs)
+        return depth;
+
+    /// If we don't have required input positions (either the node didn't prune inputs,
+    /// or it doesn't support removeUnusedColumns), compute them from the node's input
+    /// headers: each child must produce at least what the node's input header expects.
+    if (required_input_positions.empty())
+    {
+        const auto & input_headers = node->step->getInputHeaders();
+        required_input_positions.resize(input_headers.size());
+        for (size_t child_id = 0; child_id < input_headers.size(); ++child_id)
+        {
+            const auto num_input_cols = input_headers[child_id]->columns();
+            required_input_positions[child_id].resize(num_input_cols);
+            std::iota(required_input_positions[child_id].begin(), required_input_positions[child_id].end(), 0);
+        }
+    }
+
+    /// Propagate reduced requirements to children.
+
+    auto result = removeChildrenOutputs(nodes, *node, required_input_positions);
+    switch(result)
+    {
+        case RemoveChildrenOutputResult::NotUpdated:
+            return depth; // Only report if the node was changed
+        case RemoveChildrenOutputResult::Updated:
+        case RemoveChildrenOutputResult::AddedDiscardingStep:
+            return 2;     // Node + its children were changed or node + discarding step was added
+        case RemoveChildrenOutputResult::UpdatedAndAddedDiscardingStep:
+            return 3;     // Node + its children were changed and one or more discarding steps were added
+    }
+
+    UNREACHABLE();
 }
 
 }
