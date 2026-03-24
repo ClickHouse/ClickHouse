@@ -25,7 +25,8 @@ public:
         ContextPtr context_,
         const DictionaryStructure & dict_struct_,
         std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
-        const Block & sample_block_);
+        const Block & sample_block_,
+        const String & name);
 
     YTsarususDictionarySource(const YTsarususDictionarySource & other);
 
@@ -63,6 +64,7 @@ private:
     YTsaurusClientPtr client;
     bool throttler_initialized = false;
     ThrottlerPtr lookup_throttler;
+    const String name;
 };
 
 }

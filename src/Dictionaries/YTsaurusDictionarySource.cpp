@@ -72,7 +72,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 {
     #if USE_YTSAURUS
     auto create_dictionary_source = [](
-        const String& /*name*/,
+        const String& name,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
@@ -114,7 +114,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
                 configuration->ytsaurus_columns_description = config.getString(config_prefix + ".ytsaurus_columns_description");
         }
 
-        return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block);
+        return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block, name);
     };
 
     #else
@@ -144,7 +144,8 @@ YTsarususDictionarySource::YTsarususDictionarySource(
     ContextPtr context_,
     const DictionaryStructure & dict_struct_,
     std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
-    const Block & sample_block_)
+    const Block & sample_block_,
+    const String & name_)
     : context(context_)
     , dict_struct{dict_struct_}
     , configuration{configuration_}
@@ -156,11 +157,12 @@ YTsarususDictionarySource::YTsarususDictionarySource(
             .encode_utf8 = configuration->settings[YTsaurusSetting::encode_utf8],
             .enable_heavy_proxy_redirection = configuration->settings[YTsaurusSetting::enable_heavy_proxy_redirection],
         }))
+    , name(name_)
 {
 }
 
 YTsarususDictionarySource::YTsarususDictionarySource(const YTsarususDictionarySource & other)
-    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block}
+    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block, other.name}
 {
 }
 
@@ -273,7 +275,9 @@ void YTsarususDictionarySource::initializeLookupThrottlerIfNeeded()
     auto max_lookups_per_sec = configuration->settings[YTsaurusSetting::lookup_throttler_max_requests_per_second].value;
     if (!supportsSelectiveLoad() || !max_lookups_per_sec)
         return;
+    auto throttler_name = fmt::format("YTsaurusLookupThrottler({})", name);
     lookup_throttler = std::make_shared<Throttler>(
+        throttler_name.c_str(),
         max_lookups_per_sec,
         0,
         ProfileEvents::YTsaurusLookupThrottled,
