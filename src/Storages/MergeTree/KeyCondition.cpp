@@ -52,10 +52,7 @@
 
 #include "config.h"
 #if USE_S2_GEOMETRY
-#include <Functions/s2_fwd.h>
-#include <s2/s2cell.h>
-#include <s2/s2cell_union.h>
-#include <s2/s2region_coverer.h>
+#include <Storages/MergeTree/KeyConditionS2.h>
 #endif
 
 
@@ -74,47 +71,6 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 }
-
-#if USE_S2_GEOMETRY
-/// S2 index pruning: at parse time the query region is decomposed into a
-/// tight S2CellUnion covering via S2RegionCoverer (controlled by
-/// the `s2_max_covering_cells` setting, default 8). At eval time
-/// each granule's actual [cell_min, cell_max] Hilbert-curve interval is
-/// tested directly against the covering using coveringIntersectsRange
-/// (one binary search, pure integer comparisons, no trigonometry).
-/// Conservative: may produce false positives but never false negatives.
-///
-/// Used by: s2RectContains, s2CapContains, s2CellsIntersect.
-struct KeyCondition::RPNElement::S2CoveringData
-{
-    S2CellUnion covering;
-    String function_name;   /// for toString()
-};
-
-/// Returns true if any cell in `covering` has a Hilbert-curve range that
-/// overlaps the granule's actual interval [cell_min.range_min(), cell_max.range_max()].
-///
-/// This is more precise than S2CellUnion::Intersects(ancestor) because it
-/// tests the granule's actual range directly, without first lifting
-/// [cell_min, cell_max] to a (larger) common ancestor cell.
-///
-/// Algorithm: binary search for the first covering cell not entirely before
-/// cell_min, then check that it starts before cell_max ends.
-/// Identical structure to S2CellUnion::Intersects(S2CellId) but uses
-/// [cell_min, cell_max] as the target interval instead of a single cell's
-/// [range_min, range_max].
-static bool coveringIntersectsRange(
-    const S2CellUnion & covering,
-    S2CellId cell_min,
-    S2CellId cell_max)
-{
-    auto it = std::lower_bound(
-        covering.begin(), covering.end(), cell_min,
-        [](S2CellId a, S2CellId b) { return a.range_max() < b.range_min(); });
-    return it != covering.end()
-        && it->range_min() <= cell_max.range_max();
-}
-#endif
 
 /// for "^prefix..." string it returns "prefix"
 static String extractFixedPrefixFromRegularExpression(const String & regexp)
@@ -500,29 +456,21 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             }
         },
 #if USE_S2_GEOMETRY
+        /// S2 functions are handled by tryAnalyzeS2Covering before the generic
+        /// atom_map callback path, but they must be present in atom_map so that
+        /// the gate check at the top of extractAtomFromTree does not reject them.
+        /// The callbacks below are never actually called.
+        {
+            "s2CellsIntersect",
+            [] (RPNElement &, const Field &) { return false; }
+        },
         {
             "s2RectContains",
-            [] (RPNElement & out, const Field &)
-            {
-                out.function = RPNElement::FUNCTION_S2_COVERING;
-                return true;
-            }
+            [] (RPNElement &, const Field &) { return false; }
         },
         {
             "s2CapContains",
-            [] (RPNElement & out, const Field &)
-            {
-                out.function = RPNElement::FUNCTION_S2_COVERING;
-                return true;
-            }
-        },
-        {
-            "s2CellsIntersect",
-            [] (RPNElement & out, const Field &)
-            {
-                out.function = RPNElement::FUNCTION_S2_COVERING;
-                return true;
-            }
+            [] (RPNElement &, const Field &) { return false; }
         },
 #endif
 };
@@ -2989,113 +2937,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return atom_it->second(out, const_value);
         };
 
-#if USE_S2_GEOMETRY
-        /// Unified S2 covering analysis.
-        /// Builds an S2CellUnion covering for the query region and stores it
-        /// in out.s2_covering_data. Works for all S2 spatial predicates:
-        /// s2RectContains, s2CapContains, s2CellsIntersect.
-        auto analyze_s2_covering = [&, this]() -> bool
-        {
-            auto make_result = [&](size_t key_arg_idx, S2CellUnion s2_covering) -> bool
-            {
-                auto col_name = func.getArgumentAt(key_arg_idx).getColumnName();
-                auto it = key_columns.find(col_name);
-                if (it == key_columns.end())
-                    return false;
-
-                out.key_columns.push_back(it->second);
-                out.s2_covering_data = std::make_shared<RPNElement::S2CoveringData>();
-                out.s2_covering_data->covering = std::move(s2_covering);
-                out.s2_covering_data->function_name = func_name;
-
-                const auto atom_it = atom_map.find(func_name);
-                if (atom_it == atom_map.end())
-                    return false;
-                Field dummy;
-                return atom_it->second(out, dummy);
-            };
-
-            if (func_name == "s2RectContains")
-            {
-                /// s2RectContains(lo_const, hi_const, s2_point_column)
-                Field lo_val, hi_val;
-                DataTypePtr lo_type, hi_type;
-
-                if (!func.getArgumentAt(0).tryGetConstant(lo_val, lo_type))
-                    return false;
-                if (!func.getArgumentAt(1).tryGetConstant(hi_val, hi_type))
-                    return false;
-
-                UInt64 lo_id = lo_val.safeGet<UInt64>();
-                UInt64 hi_id = hi_val.safeGet<UInt64>();
-                S2LatLngRect rect(S2CellId(lo_id).ToLatLng(), S2CellId(hi_id).ToLatLng());
-                if (!rect.is_valid())
-                    return false;
-
-                S2RegionCoverer::Options opts;
-                opts.set_max_cells(s2_max_covering_cells);
-                return make_result(2, S2RegionCoverer(opts).GetCovering(rect));
-            }
-            else if (func_name == "s2CapContains")
-            {
-                /// s2CapContains(center_const, degrees_const, s2_point_column)
-                Field center_val, degrees_val;
-                DataTypePtr center_type, degrees_type;
-
-                if (!func.getArgumentAt(0).tryGetConstant(center_val, center_type))
-                    return false;
-                if (!func.getArgumentAt(1).tryGetConstant(degrees_val, degrees_type))
-                    return false;
-
-                UInt64 center_id = center_val.safeGet<UInt64>();
-                Float64 degrees = degrees_val.safeGet<Float64>();
-                S2Cap cap(S2CellId(center_id).ToPoint(), S1Angle::Degrees(degrees));
-                if (!cap.is_valid())
-                    return false;
-
-                S2RegionCoverer::Options opts;
-                opts.set_max_cells(s2_max_covering_cells);
-                return make_result(2, S2RegionCoverer(opts).GetCovering(cap));
-            }
-            else if (func_name == "s2CellsIntersect")
-            {
-                /// s2CellsIntersect(s2index1, s2index2) — either arg can be the key column.
-                ///
-                /// Semantics: s2CellsIntersect(a, b) is true iff a and b share any area,
-                /// i.e. one is an ancestor (or equal) of the other on the S2 cell hierarchy.
-                ///
-                /// Index pruning soundness: wrapping `const_cell` in a single-element
-                /// S2CellUnion and testing it via `coveringIntersectsRange` is correct because
-                /// the Hilbert-curve range [const_cell.range_min(), const_cell.range_max()]
-                /// is exactly the set of all leaf-cell descendants of `const_cell`.  A granule
-                /// with interval [cell_min, cell_max] can only contain a cell that intersects
-                /// `const_cell` if some leaf-cell in that interval falls inside const_cell's
-                /// range — which is precisely what `coveringIntersectsRange` tests.  The check
-                /// is conservative: false positives are possible, false negatives are not.
-                Field cell_val;
-                DataTypePtr cell_type;
-                size_t key_arg_idx;
-
-                if (func.getArgumentAt(0).tryGetConstant(cell_val, cell_type))
-                    key_arg_idx = 1;
-                else if (func.getArgumentAt(1).tryGetConstant(cell_val, cell_type))
-                    key_arg_idx = 0;
-                else
-                    return false;
-
-                UInt64 const_id = cell_val.safeGet<UInt64>();
-                S2CellId const_cell(const_id);
-                if (!const_cell.is_valid())
-                    return false;
-
-                /// A single cell is already a perfect covering — no S2RegionCoverer needed.
-                return make_result(key_arg_idx, S2CellUnion({const_cell}));
-            }
-
-            return false;
-        };
-#endif
-
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
@@ -3155,7 +2996,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// arg is a key column and the other is a constant) but would only call
             /// the atom_map callback without computing the S2 covering.
             if (enable_s2_index_pruning && func_name == "s2CellsIntersect")
-                return analyze_s2_covering();
+                return tryAnalyzeS2Covering(func, key_columns, s2_max_covering_cells, out);
 #endif
 
             /// Looking for func(key, const) or func(const, key).
@@ -3391,7 +3232,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 if (func_name == "s2RectContains"
                     || func_name == "s2CapContains")
-                    return analyze_s2_covering();
+                    return tryAnalyzeS2Covering(func, key_columns, s2_max_covering_cells, out);
             }
 #endif
 
@@ -4590,35 +4431,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 #if USE_S2_GEOMETRY
         else if (element.function == RPNElement::FUNCTION_S2_COVERING)
         {
-            /// Granule contains S2CellId values in range [s2_min, s2_max].
-            /// The pre-computed covering is tested directly against this
-            /// Hilbert-curve interval using coveringIntersectsRange
-            /// (one binary search, pure integer comparisons, no trigonometry).
-
-            const Range & key_range = hyperrectangle[element.key_columns[0]];
-
-            if (unlikely(!element.s2_covering_data))
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
-
-            /// The range boundaries may be ±infinity (Null) when this granule corresponds to
-            /// a non-prefix key column in `forAnyHyperrectangle`. `FieldVisitorConvertToNumber`
-            /// throws on Null, so we must guard against it.  An unbounded side means the
-            /// granule could contain any S2CellId value, so we conservatively report a
-            /// possible intersection rather than risk a false negative.
-            if (unlikely(key_range.left.isNegativeInfinity() || key_range.left.isPositiveInfinity()
-                || key_range.right.isNegativeInfinity() || key_range.right.isPositiveInfinity()))
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
-
-            S2CellId cell_min(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), key_range.left));
-            S2CellId cell_max(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), key_range.right));
-            bool intersects = coveringIntersectsRange(element.s2_covering_data->covering, cell_min, cell_max);
-            rpn_stack.emplace_back(intersects, true);
+            rpn_stack.emplace_back(evalS2Covering(element, hyperrectangle));
         }
 #endif
         else if (
