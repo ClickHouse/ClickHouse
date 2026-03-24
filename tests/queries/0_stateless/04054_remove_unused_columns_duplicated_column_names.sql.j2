@@ -1,0 +1,62 @@
+SET enable_analyzer = 1;
+SET any_join_distinct_right_table_keys = 1;
+SET joined_subquery_requires_alias = 0;
+-- 0 to verify that the duplicated columns name are present, 1 to verify that the duplicated columns name are removed
+{% for enable_remove_unused_columns in [0, 1] -%}
+{% for explain in [0, 1] -%}
+SET query_plan_remove_unused_columns = {{ enable_remove_unused_columns }};
+
+SELECT '#############################################';
+SELECT 'enable_remove_unused_columns = {{ enable_remove_unused_columns }}, explain = {{ explain }}';
+SELECT '#############################################';
+
+-- These are just some queries that has duplicated column names in their original plan
+{% if explain %}EXPLAIN header = 1{% endif %}
+SELECT c, a, a, b, b
+FROM
+(
+    SELECT 1 AS a, 1 AS a, 42 AS c
+    GROUP BY c
+    ORDER BY a, c
+) AS js1
+ANY LEFT JOIN
+(
+    SELECT 2 AS b, 2 AS b, 41 AS c
+    GROUP BY c
+    ORDER BY b, c
+) AS js2 USING (c);
+
+{% if explain %}EXPLAIN header = 1{% endif %}
+SELECT x, y
+FROM
+(
+    SELECT 1 AS x, 2 AS y, x, y
+);
+
+{% if explain %}EXPLAIN header = 1{% endif %}
+SELECT a, b, c
+FROM
+(
+    SELECT 42 AS a, 1 AS b, 2 AS c, 1 AS b, 2 AS c
+)
+ANY LEFT JOIN
+(
+    SELECT 42 AS a, 3 AS d
+) USING (a);
+
+{% if explain %}EXPLAIN header = 1{% endif %}
+SELECT k, a1, b1, a2, b2
+FROM
+(
+    SELECT 0 AS k, 'hello' AS a1, 'world' AS b1, a1, 'world' AS b1
+)
+ANY FULL OUTER JOIN
+(
+    -- The second 'k' column is not removed, because the first 'k' column is used after the join, while the second 'k' column is used to do the join.
+    -- This can be improved in the future, but it is not trivial, because we cannot swap inputs purely based on their names in ActionsDAG.
+    SELECT 1 AS k, 'hello' AS a2, 'world' AS b2, a2, 1 AS k
+) USING (k)
+ORDER BY k ASC;
+
+{% endfor -%}
+{% endfor -%}

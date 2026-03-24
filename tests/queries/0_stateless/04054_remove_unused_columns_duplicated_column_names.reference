@@ -1,0 +1,327 @@
+#############################################
+enable_remove_unused_columns = 0, explain = 0
+#############################################
+42	1	1	0	0
+1	2
+42	1	2
+0	hello	world
+1			hello	world
+#############################################
+enable_remove_unused_columns = 0, explain = 1
+#############################################
+Expression ((Project names + Projection))
+Header: c UInt8
+        a UInt8
+        a UInt8
+        b UInt8
+        b UInt8
+  Expression (Post Join Actions)
+  Header: __table1.a UInt8
+          __table1.a UInt8
+          __table1.c UInt8
+          __table3.b UInt8
+          __table3.b UInt8
+    Join (JOIN FillRightFirst)
+    Header: __table1.c UInt8
+            __table1.a UInt8
+            __table1.a UInt8
+            __table3.b UInt8
+            __table3.b UInt8
+      Expression (Left Pre Join Actions)
+      Header: __table1.c UInt8
+              __table1.a UInt8
+              __table1.a UInt8
+        Expression ((Change column names to column identifiers + Project names))
+        Header: __table1.a UInt8
+                __table1.a UInt8
+                __table1.c UInt8
+          Sorting (Sorting for ORDER BY)
+          Header: 1_UInt8 UInt8
+                  42_UInt8 UInt8
+            Expression ((Before ORDER BY + Projection))
+            Header: 1_UInt8 UInt8
+                    42_UInt8 UInt8
+              Aggregating
+              Header: 42_UInt8 UInt8
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                Header: 42_UInt8 UInt8
+                  ReadFromSystemOne
+                  Header: dummy UInt8
+      Expression (Right Pre Join Actions)
+      Header: __table3.c UInt8
+              __table3.b UInt8
+              __table3.b UInt8
+        Expression ((Change column names to column identifiers + Project names))
+        Header: __table3.b UInt8
+                __table3.b UInt8
+                __table3.c UInt8
+          Sorting (Sorting for ORDER BY)
+          Header: 2_UInt8 UInt8
+                  41_UInt8 UInt8
+            Expression ((Before ORDER BY + Projection))
+            Header: 2_UInt8 UInt8
+                    41_UInt8 UInt8
+              Aggregating
+              Header: 41_UInt8 UInt8
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                Header: 41_UInt8 UInt8
+                  ReadFromSystemOne
+                  Header: dummy UInt8
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+Header: x UInt8
+        y UInt8
+  ReadFromSystemOne
+  Header: dummy UInt8
+Expression ((Project names + Projection))
+Header: a UInt8
+        b UInt8
+        c UInt8
+  Expression (Post Join Actions)
+  Header: __table1.a UInt8
+          __table1.b UInt8
+          __table1.c UInt8
+          __table1.b UInt8
+          __table1.c UInt8
+    Join (JOIN FillRightFirst)
+    Header: __table1.a UInt8
+            __table1.b UInt8
+            __table1.c UInt8
+            __table1.b UInt8
+            __table1.c UInt8
+      Expression (Left Pre Join Actions)
+      Header: __table1.a UInt8
+              __table1.b UInt8
+              __table1.c UInt8
+              __table1.b UInt8
+              __table1.c UInt8
+        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+        Header: __table1.a UInt8
+                __table1.b UInt8
+                __table1.c UInt8
+                __table1.b UInt8
+                __table1.c UInt8
+          ReadFromSystemOne
+          Header: dummy UInt8
+      Expression (Right Pre Join Actions)
+      Header: __table3.a UInt8
+        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+        Header: __table3.a UInt8
+          ReadFromSystemOne
+          Header: dummy UInt8
+Expression (Project names)
+Header: k UInt8
+        a1 String
+        b1 String
+        a2 String
+        b2 String
+  Sorting (Sorting for ORDER BY)
+  Header: firstNonDefault(__table1.k, __table3.k) UInt8
+          __table1.a1 String
+          __table1.b1 String
+          __table3.a2 String
+          __table3.b2 String
+    Expression ((Before ORDER BY + Projection))
+    Header: firstNonDefault(__table1.k, __table3.k) UInt8
+            __table1.a1 String
+            __table1.b1 String
+            __table3.a2 String
+            __table3.b2 String
+      Expression (Post Join Actions)
+      Header: __table1.k UInt8
+              __table1.a1 String
+              __table1.b1 String
+              __table1.a1 String
+              __table1.b1 String
+              __table3.k UInt8
+              __table3.a2 String
+              __table3.b2 String
+              __table3.a2 String
+              __table3.k UInt8
+        Join (JOIN FillRightFirst)
+        Header: __table1.k UInt8
+                __table1.a1 String
+                __table1.b1 String
+                __table1.a1 String
+                __table1.b1 String
+                __table3.k UInt8
+                __table3.k UInt8
+                __table3.a2 String
+                __table3.b2 String
+                __table3.a2 String
+          Expression (Left Pre Join Actions)
+          Header: __table1.k UInt8
+                  __table1.a1 String
+                  __table1.b1 String
+                  __table1.a1 String
+                  __table1.b1 String
+            Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+            Header: __table1.k UInt8
+                    __table1.a1 String
+                    __table1.b1 String
+                    __table1.a1 String
+                    __table1.b1 String
+              ReadFromSystemOne
+              Header: dummy UInt8
+          Expression (Right Pre Join Actions)
+          Header: __table3.k UInt8
+                  __table3.k UInt8
+                  __table3.a2 String
+                  __table3.b2 String
+                  __table3.a2 String
+            Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+            Header: __table3.k UInt8
+                    __table3.a2 String
+                    __table3.b2 String
+                    __table3.a2 String
+                    __table3.k UInt8
+              ReadFromSystemOne
+              Header: dummy UInt8
+#############################################
+enable_remove_unused_columns = 1, explain = 0
+#############################################
+42	1	1	0	0
+1	2
+42	1	2
+0	hello	world
+1			hello	world
+#############################################
+enable_remove_unused_columns = 1, explain = 1
+#############################################
+Expression ((Project names + Projection))
+Header: c UInt8
+        a UInt8
+        a UInt8
+        b UInt8
+        b UInt8
+  Expression (Post Join Actions)
+  Header: __table1.a UInt8
+          __table1.c UInt8
+          __table3.b UInt8
+    Join (JOIN FillRightFirst)
+    Header: __table1.c UInt8
+            __table1.a UInt8
+            __table3.b UInt8
+      Expression (Left Pre Join Actions)
+      Header: __table1.c UInt8
+              __table1.a UInt8
+        Expression ((Change column names to column identifiers + Project names))
+        Header: __table1.a UInt8
+                __table1.c UInt8
+          Sorting (Sorting for ORDER BY)
+          Header: 1_UInt8 UInt8
+                  42_UInt8 UInt8
+            Expression ((Before ORDER BY + Projection))
+            Header: 1_UInt8 UInt8
+                    42_UInt8 UInt8
+              Aggregating
+              Header: 42_UInt8 UInt8
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                Header: 42_UInt8 UInt8
+                  ReadFromSystemOne
+                  Header: dummy UInt8
+      Expression (Right Pre Join Actions)
+      Header: __table3.c UInt8
+              __table3.b UInt8
+        Expression ((Change column names to column identifiers + Project names))
+        Header: __table3.b UInt8
+                __table3.c UInt8
+          Sorting (Sorting for ORDER BY)
+          Header: 2_UInt8 UInt8
+                  41_UInt8 UInt8
+            Expression ((Before ORDER BY + Projection))
+            Header: 2_UInt8 UInt8
+                    41_UInt8 UInt8
+              Aggregating
+              Header: 41_UInt8 UInt8
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                Header: 41_UInt8 UInt8
+                  ReadFromSystemOne
+                  Header: dummy UInt8
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+Header: x UInt8
+        y UInt8
+  ReadFromSystemOne
+  Header: dummy UInt8
+Expression ((Project names + Projection))
+Header: a UInt8
+        b UInt8
+        c UInt8
+  Expression (Post Join Actions)
+  Header: __table1.a UInt8
+          __table1.b UInt8
+          __table1.c UInt8
+    Join (JOIN FillRightFirst)
+    Header: __table1.a UInt8
+            __table1.b UInt8
+            __table1.c UInt8
+      Expression (Left Pre Join Actions)
+      Header: __table1.a UInt8
+              __table1.b UInt8
+              __table1.c UInt8
+        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+        Header: __table1.a UInt8
+                __table1.b UInt8
+                __table1.c UInt8
+          ReadFromSystemOne
+          Header: dummy UInt8
+      Expression (Right Pre Join Actions)
+      Header: __table3.a UInt8
+        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+        Header: __table3.a UInt8
+          ReadFromSystemOne
+          Header: dummy UInt8
+Expression (Project names)
+Header: k UInt8
+        a1 String
+        b1 String
+        a2 String
+        b2 String
+  Sorting (Sorting for ORDER BY)
+  Header: firstNonDefault(__table1.k, __table3.k) UInt8
+          __table1.a1 String
+          __table1.b1 String
+          __table3.a2 String
+          __table3.b2 String
+    Expression ((Before ORDER BY + Projection))
+    Header: firstNonDefault(__table1.k, __table3.k) UInt8
+            __table1.a1 String
+            __table1.b1 String
+            __table3.a2 String
+            __table3.b2 String
+      Expression (Post Join Actions)
+      Header: __table1.k UInt8
+              __table1.a1 String
+              __table1.b1 String
+              __table3.k UInt8
+              __table3.a2 String
+              __table3.b2 String
+        Join (JOIN FillRightFirst)
+        Header: __table1.k UInt8
+                __table1.a1 String
+                __table1.b1 String
+                __table3.k UInt8
+                __table3.k UInt8
+                __table3.a2 String
+                __table3.b2 String
+          Expression (Left Pre Join Actions)
+          Header: __table1.k UInt8
+                  __table1.a1 String
+                  __table1.b1 String
+            Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+            Header: __table1.k UInt8
+                    __table1.a1 String
+                    __table1.b1 String
+              ReadFromSystemOne
+              Header: dummy UInt8
+          Expression (Right Pre Join Actions)
+          Header: __table3.k UInt8
+                  __table3.k UInt8
+                  __table3.a2 String
+                  __table3.b2 String
+            Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+            Header: __table3.k UInt8
+                    __table3.a2 String
+                    __table3.b2 String
+                    __table3.k UInt8
+              ReadFromSystemOne
+              Header: dummy UInt8
