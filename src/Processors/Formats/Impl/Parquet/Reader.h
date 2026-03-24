@@ -179,6 +179,14 @@ struct Reader
 
         bool used_by_key_condition = false;
 
+        /// Set for WKB geometry columns that have GeoParquet covering.bbox metadata.
+        /// Stores indices into primitive_columns for the four Float64 bbox scalar columns.
+        struct BboxColumnIndices
+        {
+            size_t xmin_idx, ymin_idx, xmax_idx, ymax_idx;
+        };
+        std::optional<BboxColumnIndices> covering_bbox_indices;
+
         /// If use_bloom_filter, these are the values that we need to find in bloom filter.
         std::vector<UInt64> bloom_filter_hashes;
 

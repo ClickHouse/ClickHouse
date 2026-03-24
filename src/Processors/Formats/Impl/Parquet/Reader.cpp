@@ -10,6 +10,7 @@
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
@@ -354,6 +355,11 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
     }
 
+    /// Extract spatial filters from the WHERE clause for GeoParquet row group pruning.
+    std::vector<SpatialFilter> spatial_filters;
+    if (options.format.parquet.spatial_filter_push_down && format_filter_info->filter_actions_dag)
+        spatial_filters = extractSpatialFilters(*format_filter_info->filter_actions_dag, extended_sample_block);
+
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
     size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
@@ -376,6 +382,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                     hyperrectangle, extended_sample_block_data_types).can_be_true)
                 continue;
         }
+
+        if (!spatial_filters.empty() && rowGroupFailsSpatialFilters(*meta, primitive_columns, spatial_filters))
+            continue;
 
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;

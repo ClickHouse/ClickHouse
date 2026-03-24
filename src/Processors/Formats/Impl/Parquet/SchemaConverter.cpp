@@ -115,6 +115,38 @@ void SchemaConverter::prepareForReading()
         missing_output.output_type = missing_output.input_type;
         missing_output.is_missing_column = true;
     }
+
+    /// Resolve covering.bbox column names → primitive_columns indices for geo columns.
+    /// Build a name→index map first (bbox columns may not be in the output block).
+    std::unordered_map<String, size_t> name_to_primitive_idx;
+    for (size_t i = 0; i < primitive_columns.size(); ++i)
+        name_to_primitive_idx.emplace(primitive_columns[i].name, i);
+
+    for (size_t i = 0; i < primitive_columns.size(); ++i)
+    {
+        const auto geo_it = geo_columns.find(primitive_columns[i].name);
+        if (geo_it == geo_columns.end() || !geo_it->second.covering_bbox.has_value())
+            continue;
+        const auto & bbox = *geo_it->second.covering_bbox;
+
+        auto find = [&](const String & col_name, size_t & out) -> bool
+        {
+            auto it = name_to_primitive_idx.find(col_name);
+            if (it == name_to_primitive_idx.end())
+                return false;
+            out = it->second;
+            return true;
+        };
+
+        PrimitiveColumnInfo::BboxColumnIndices indices;
+        if (find(bbox.xmin_column, indices.xmin_idx)
+            && find(bbox.ymin_column, indices.ymin_idx)
+            && find(bbox.xmax_column, indices.xmax_idx)
+            && find(bbox.ymax_column, indices.ymax_idx))
+        {
+            primitive_columns[i].covering_bbox_indices = indices;
+        }
+    }
 }
 
 NamesAndTypesList SchemaConverter::inferSchema()

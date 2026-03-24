@@ -99,7 +99,36 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
             result_type = GeoType::Mixed;
         }
 
-        geo_columns[column_name] = GeoColumnMetadata{.encoding = geo_encoding, .type = result_type};
+        GeoColumnMetadata meta;
+        meta.encoding = geo_encoding;
+        meta.type = result_type;
+
+        /// Parse optional covering.bbox: {"covering": {"bbox": {"xmin": {"column": "..."}, ...}}}
+        if (column_obj->has("covering"))
+        {
+            const auto covering_obj = column_obj->getObject("covering");
+            if (covering_obj && covering_obj->has("bbox"))
+            {
+                const auto bbox_obj = covering_obj->getObject("bbox");
+                if (bbox_obj
+                    && bbox_obj->has("xmin") && bbox_obj->has("ymin")
+                    && bbox_obj->has("xmax") && bbox_obj->has("ymax"))
+                {
+                    auto get_col = [&](const std::string & key) -> String
+                    {
+                        return bbox_obj->getObject(key)->getValue<std::string>("column");
+                    };
+                    meta.covering_bbox = GeoColumnMetadata::BboxCovering{
+                        .xmin_column = get_col("xmin"),
+                        .ymin_column = get_col("ymin"),
+                        .xmax_column = get_col("xmax"),
+                        .ymax_column = get_col("ymax"),
+                    };
+                }
+            }
+        }
+
+        geo_columns[column_name] = std::move(meta);
     }
 
     return geo_columns;
