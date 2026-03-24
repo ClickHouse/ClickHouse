@@ -3,6 +3,8 @@
 SET use_query_condition_cache = 0;
 SET enable_parallel_replicas = 0;
 SET use_statistics = 0;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS 03591_test;
 

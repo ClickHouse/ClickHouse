@@ -147,6 +147,12 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int UNSUPPORTED_METHOD;
     extern const int DELTA_KERNEL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char restart_replica_fail_after_detach[];
 }
 
 namespace ActionLocks
@@ -1254,55 +1260,86 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     /// metadata, which causes metadata digest mismatches in DatabaseReplicated.
     /// We retry on all exceptions, not just ZooKeeper ones, because re-creating from valid metadata
     /// should always eventually succeed for transient errors.
+    /// If all retries fail (or the query is cancelled), we adjust the in-memory metadata digest
+    /// to reflect the table's absence, preventing false "Digest does not match" assertions.
 
     StoragePtr new_table;
-    size_t non_zk_retries = 0;
-    constexpr size_t max_non_zk_retries = 10;
-    while (true)
+    try
     {
-        try
+        size_t non_zk_retries = 0;
+        constexpr size_t max_non_zk_retries = 10;
+        while (true)
         {
-            new_table = StorageFactory::instance().get(create,
-                data_path,
-                system_context,
-                system_context->getGlobalContext(),
-                columns,
-                constraints,
-                LoadingStrictnessLevel::ATTACH);
+            try
+            {
+                fiu_do_on(FailPoints::restart_replica_fail_after_detach,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED,
+                        "Injected failure by failpoint restart_replica_fail_after_detach");
+                });
 
-            break;
+                new_table = StorageFactory::instance().get(create,
+                    data_path,
+                    system_context,
+                    system_context->getGlobalContext(),
+                    columns,
+                    constraints,
+                    LoadingStrictnessLevel::ATTACH);
+
+                break;
+            }
+            catch (const Coordination::Exception & e)
+            {
+                /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
+                if (!Coordination::isHardwareError(e.code))
+                    throw;
+
+                tryLogCurrentException(
+                    getLogger("InterpreterSystemQuery"),
+                    fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
+
+                /// Check if the query was cancelled (e.g. server is shutting down)
+                if (auto process_list_element = getContext()->getProcessListElementSafe())
+                    process_list_element->checkTimeLimit();
+
+                sleepForSeconds(1);
+            }
+            catch (...)
+            {
+                if (++non_zk_retries > max_non_zk_retries)
+                    throw;
+
+                tryLogCurrentException(
+                    getLogger("InterpreterSystemQuery"),
+                    fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
+                        replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+
+                if (auto process_list_element = getContext()->getProcessListElementSafe())
+                    process_list_element->checkTimeLimit();
+
+                sleepForSeconds(1);
+            }
         }
-        catch (const Coordination::Exception & e)
+    }
+    catch (...)
+    {
+        /// The table is left permanently detached from the in-memory tables map.
+        /// Adjust the metadata digest so it stays consistent with the tables map,
+        /// preventing false "Digest does not match" LOGICAL_ERROR exceptions.
+        /// The table's metadata file still exists on disk, so it will be restored
+        /// on server restart or after DatabaseReplicated recovery.
+        if (auto * replicated_db = typeid_cast<DatabaseReplicated *>(database.get()))
         {
-            /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
-            if (!Coordination::isHardwareError(e.code))
-                throw;
-
-            tryLogCurrentException(
-                getLogger("InterpreterSystemQuery"),
-                fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
-
-            /// Check if the query was cancelled (e.g. server is shutting down)
-            if (auto process_list_element = getContext()->getProcessListElementSafe())
-                process_list_element->checkTimeLimit();
-
-            sleepForSeconds(1);
+            try
+            {
+                replicated_db->adjustDigestOnTableLostFromRestart(replica_table_id.table_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to adjust digest after failed SYSTEM RESTART REPLICA for table " + replica_table_id.table_name + "; digest mismatch will persist until server restart or DatabaseReplicated recovery");
+            }
         }
-        catch (...)
-        {
-            if (++non_zk_retries > max_non_zk_retries)
-                throw;
-
-            tryLogCurrentException(
-                getLogger("InterpreterSystemQuery"),
-                fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
-                    replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
-
-            if (auto process_list_element = getContext()->getProcessListElementSafe())
-                process_list_element->checkTimeLimit();
-
-            sleepForSeconds(1);
-        }
+        throw;
     }
 
     database->attachTable(system_context, replica_table_id.table_name, new_table, data_path);

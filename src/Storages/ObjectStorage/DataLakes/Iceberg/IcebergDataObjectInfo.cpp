@@ -75,7 +75,7 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
         return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_);
 }
 
-void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object)
+void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path)
 {
     if (Poco::toUpper(info.file_format) != "PARQUET")
     {
@@ -85,13 +85,13 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFi
             info.file_format);
     }
     info.position_deletes_objects.emplace_back(
-        position_delete_object->file_path, position_delete_object->parsed_entry->file_format, std::nullopt);
+        resolved_storage_path, position_delete_object->parsed_entry->file_format, std::nullopt);
 }
 
-void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object)
+void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path)
 {
     info.equality_deletes_objects.emplace_back(
-        equality_delete_object->file_path,
+        resolved_storage_path,
         equality_delete_object->parsed_entry->file_format,
         equality_delete_object->parsed_entry->equality_ids,
         equality_delete_object->resolved_schema_id);
@@ -102,7 +102,7 @@ void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedMani
 void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const
 {
     checkVersion(protocol_version);
-    writeStringBinary(data_object_file_path_key, out);
+    writeStringBinary(data_object_file_path_key.serialize(), out);
     writeVarInt(underlying_format_read_schema_id, out);
     writeVarInt(schema_id_relevant_to_iterator, out);
     writeVarInt(sequence_number, out);
@@ -151,7 +151,11 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
 void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version)
 {
     checkVersion(protocol_version);
-    readStringBinary(data_object_file_path_key, in);
+    {
+        String raw_path;
+        readStringBinary(raw_path, in);
+        data_object_file_path_key = IcebergPathFromMetadata::deserialize(std::move(raw_path));
+    }
     readVarInt(underlying_format_read_schema_id, in);
     readVarInt(schema_id_relevant_to_iterator, in);
     readVarInt(sequence_number, in);
