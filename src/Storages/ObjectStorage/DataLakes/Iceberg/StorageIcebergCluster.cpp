@@ -36,7 +36,7 @@ void StorageDataLakeCluster<IcebergMetadata>::ensureMetadataInitialized(ContextP
 {
     if (current_metadata)
         return;
-    current_metadata = IcebergMetadata::create(object_storage, configuration, context);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context);
 }
 
 void StorageDataLakeCluster<IcebergMetadata>::updateMetadata(ContextPtr context) const
@@ -46,7 +46,7 @@ void StorageDataLakeCluster<IcebergMetadata>::updateMetadata(ContextPtr context)
         current_metadata->update(context);
         return;
     }
-    current_metadata = IcebergMetadata::create(object_storage, configuration, context);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context);
 }
 
 StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
@@ -66,9 +66,6 @@ StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
     , object_storage(object_storage_)
     , datalake_settings(std::move(datalake_settings_))
 {
-    if (datalake_settings)
-        configuration->setDataLakeSettings(datalake_settings);
-
     /// Ensure trailing slash on the raw path for data lake storages.
     auto path = configuration->getRawPath();
     if (!path.path.ends_with('/'))
@@ -80,7 +77,7 @@ StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
     /// so no lazy initialization is allowed.
     configuration->update(object_storage, context_);
 
-    current_metadata = IcebergMetadata::create(object_storage, configuration, context_);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context_);
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;

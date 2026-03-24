@@ -617,6 +617,7 @@ void generateManifestList(
 IcebergStorageSink::IcebergStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
+    const DataLakeStorageSettingsPtr & datalake_settings_,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_,
@@ -631,7 +632,7 @@ IcebergStorageSink::IcebergStorageSink(
     , catalog(catalog_)
     , table_id(table_id_)
     , persistent_table_components(persistent_table_components_)
-    , data_lake_settings(configuration_->getDataLakeSettings())
+    , data_lake_settings(datalake_settings_ ? *datalake_settings_ : DataLakeStorageSettings{})
     , write_format(configuration_->format)
     , blob_storage_type_name(configuration_->getTypeName())
     , blob_storage_namespace_name(configuration_->getNamespace())

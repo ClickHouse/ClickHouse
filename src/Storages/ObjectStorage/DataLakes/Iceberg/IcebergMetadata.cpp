@@ -157,12 +157,13 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
 Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableComponents(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
+    const DataLakeStorageSettings & datalake_settings,
     IcebergMetadataFilesCachePtr cache_ptr,
     ContextPtr context_,
     LoggerPtr log)
 {
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, true);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, datalake_settings, cache_ptr, context_, log.get(), std::nullopt, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
@@ -212,12 +213,13 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
+    const DataLakeStorageSettingsPtr & datalake_settings_,
     Iceberg::PersistentTableComponents && persistent_components_,
     ContextPtr context_)
     : log(getLogger("IcebergMetadata"))
     , object_storage(std::move(object_storage_))
     , persistent_components(std::move(persistent_components_))
-    , data_lake_settings(configuration_->getDataLakeSettings())
+    , data_lake_settings(datalake_settings_ ? *datalake_settings_ : DataLakeStorageSettings{})
     , write_format(configuration_->format)
 {
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
@@ -720,6 +722,7 @@ Pipe IcebergMetadata::executeCommand(
 void IcebergMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const DataLakeStorageSettingsPtr & datalake_settings,
     const ContextPtr & local_context,
     const std::optional<ColumnsDescription> & columns,
     ASTPtr partition_by,
@@ -755,7 +758,7 @@ void IcebergMetadata::createInitial(
         location_path
             = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
-        location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+        location_path, *columns, partition_by, order_by, local_context, datalake_settings ? (*datalake_settings)[DataLakeStorageSetting::iceberg_format_version] : 2);
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
     auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
 
@@ -780,7 +783,7 @@ void IcebergMetadata::createInitial(
         throw;
     }
 
-    if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+    if (datalake_settings && (*datalake_settings)[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
         auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
         writeMessageToFile(filename, filename_version_hint, object_storage, local_context, "*", "");
@@ -818,6 +821,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
 std::unique_ptr<IcebergMetadata> IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const DataLakeStorageSettingsPtr & datalake_settings,
     const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
@@ -833,8 +837,9 @@ std::unique_ptr<IcebergMetadata> IcebergMetadata::create(
     else
         LOG_TRACE(
             log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
-    auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
-    return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, std::move(persistent_components), local_context);
+    const auto & settings = datalake_settings ? *datalake_settings : DataLakeStorageSettings{};
+    auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, settings, cache_ptr, local_context, log);
+    return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, datalake_settings, std::move(persistent_components), local_context);
 }
 
 ReadFromFormatInfo IcebergMetadata::prepareReadingFromFormat(
@@ -1232,7 +1237,7 @@ SinkToStoragePtr IcebergMetadata::write(
 {
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
+        return std::make_shared<IcebergStorageSink>(object_storage, configuration, std::make_shared<DataLakeStorageSettings>(data_lake_settings), format_settings, sample_block, context, catalog, persistent_components, table_id);
     }
     else
     {

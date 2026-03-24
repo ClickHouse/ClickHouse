@@ -47,6 +47,7 @@ public:
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
+        const DataLakeStorageSettingsPtr & datalake_settings_,
         Iceberg::PersistentTableComponents && persistent_components_,
         ContextPtr context_);
 
@@ -62,6 +63,7 @@ public:
     static void createInitial(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const DataLakeStorageSettingsPtr & datalake_settings,
         const ContextPtr & local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
@@ -73,6 +75,7 @@ public:
     static std::unique_ptr<IcebergMetadata> create(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const DataLakeStorageSettingsPtr & datalake_settings,
         const ContextPtr & local_context);
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const;
@@ -158,6 +161,7 @@ private:
     static Iceberg::PersistentTableComponents initializePersistentTableComponents(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr configuration,
+        const DataLakeStorageSettings & datalake_settings,
         IcebergMetadataFilesCachePtr cache_ptr,
         ContextPtr context_,
         LoggerPtr log);
@@ -177,7 +181,7 @@ private:
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
     const DB::Iceberg::PersistentTableComponents persistent_components;
-    const DataLakeStorageSettings & data_lake_settings;
+    DataLakeStorageSettings data_lake_settings;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
 

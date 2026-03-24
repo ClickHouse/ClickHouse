@@ -68,9 +68,6 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
     , catalog(catalog_)
     , storage_id(table_id_)
 {
-    if (datalake_settings)
-        configuration->setDataLakeSettings(datalake_settings);
-
     /// Ensure trailing slash on the raw path for data lake storages.
     auto path = configuration->getRawPath();
     if (!path.path.ends_with('/'))
@@ -90,7 +87,7 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
         LOG_DEBUG(log, "Creating new storage with specified columns");
         configuration->update(object_storage, context);
         IcebergMetadata::createInitial(
-            object_storage, configuration, context, columns_in_table_or_function_definition, partition_by_, order_by_, /*if_not_exists=*/ false, catalog, storage_id);
+            object_storage, configuration, datalake_settings, context, columns_in_table_or_function_definition, partition_by_, order_by_, /*if_not_exists=*/ false, catalog, storage_id);
     }
 
     try
@@ -181,7 +178,7 @@ void StorageDataLake<IcebergMetadata>::ensureMetadataInitialized(ContextPtr cont
     if (current_metadata)
         return;
     configuration->update(object_storage, context);
-    current_metadata = IcebergMetadata::create(object_storage, configuration, context);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context);
 }
 
 void StorageDataLake<IcebergMetadata>::updateMetadata(ContextPtr context) const
@@ -192,7 +189,7 @@ void StorageDataLake<IcebergMetadata>::updateMetadata(ContextPtr context) const
         current_metadata->update(context);
         return;
     }
-    current_metadata = IcebergMetadata::create(object_storage, configuration, context);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context);
 }
 
 String StorageDataLake<IcebergMetadata>::getName() const

@@ -158,14 +158,6 @@ public:
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
 
-    const DataLakeStorageSettings & getDataLakeSettings() const
-    {
-        chassert(datalake_settings);
-        return *datalake_settings;
-    }
-
-    void setDataLakeSettings(DataLakeStorageSettingsPtr settings_) { datalake_settings = std::move(settings_); }
-
     virtual bool supportsPrewhere() const
     {
         return true;
@@ -199,9 +191,6 @@ protected:
     /// Object storage obtained from a named disk during `fromDisk` initialization.
     /// Used by `createObjectStorage` to return the pre-created storage instead of creating a new one.
     ObjectStoragePtr ready_object_storage;
-
-    /// DataLake storage settings, injected by StorageDataLake/StorageDataLakeCluster.
-    DataLakeStorageSettingsPtr datalake_settings;
 
 private:
     // Path used for reading, by default it is the same as `getRawPath`

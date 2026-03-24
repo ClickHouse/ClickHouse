@@ -76,9 +76,6 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
     , object_storage(object_storage_)
     , datalake_settings(std::move(datalake_settings_))
 {
-    if (datalake_settings)
-        configuration->setDataLakeSettings(datalake_settings);
-
     /// Ensure trailing slash on the raw path for data lake storages.
     auto path = configuration->getRawPath();
     if (!path.path.ends_with('/'))

@@ -78,6 +78,7 @@ public:
     IcebergStorageSink(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
+        const DataLakeStorageSettingsPtr & datalake_settings_,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
         ContextPtr context_,
@@ -125,7 +126,7 @@ private:
     StorageID table_id;
     CompressionMethod metadata_compression_method;
     Iceberg::PersistentTableComponents persistent_table_components;
-    const DataLakeStorageSettings & data_lake_settings;
+    DataLakeStorageSettings data_lake_settings;
     const String write_format;
     const String blob_storage_type_name;
     const String blob_storage_namespace_name;

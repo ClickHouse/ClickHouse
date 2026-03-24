@@ -79,9 +79,6 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     , catalog(catalog_)
     , storage_id(table_id_)
 {
-    if (datalake_settings)
-        configuration->setDataLakeSettings(datalake_settings);
-
     /// Ensure trailing slash on the raw path for data lake storages.
     auto path = configuration->getRawPath();
     if (!path.path.ends_with('/'))
