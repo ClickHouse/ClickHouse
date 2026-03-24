@@ -329,6 +329,30 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Parse SET TRANSACTION ... queries using ParserTransactionControl
         if (ParserKeyword{Keyword::TRANSACTION}.check(pos, expected))
             return false;
+
+        /// Parse SET TIME ZONE 'tz' as an alias for SET session_timezone = 'tz'
+        if (ParserKeyword{Keyword::TIME_ZONE}.ignore(pos, expected))
+        {
+            ParserToken eq(TokenType::Equals);
+            eq.ignore(pos, expected); // optional, for PostgreSQL compatibility
+            ASTPtr value_node;
+            ParserLiteralOrMap literal_parser;
+
+            if (!literal_parser.parse(pos, value_node, expected))
+                return false;
+
+            auto query = make_intrusive<ASTSetQuery>();
+            node = query;
+
+            query->is_standalone = !parse_only_internals;
+
+            SettingChange change;
+            change.name = "session_timezone";
+            change.value = value_node->as<ASTLiteral &>().value;
+            query->changes.push_back(std::move(change));
+
+            return true;
+        }
     }
 
     SettingsChanges changes;
