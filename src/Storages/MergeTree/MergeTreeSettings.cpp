@@ -1953,6 +1953,10 @@ namespace ErrorCodes
 
     **Default Value:** false
     )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_commit_order_projection, false, R"(
+    Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
+    Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     )", EXPERIMENTAL) \
