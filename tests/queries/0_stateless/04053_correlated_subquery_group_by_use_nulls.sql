@@ -3,7 +3,7 @@
 -- because the decorrelated expression DAG kept the pre-Nullable types for
 -- correlated columns that became Nullable due to ROLLUP + group_by_use_nulls.
 
-SET allow_experimental_correlated_subqueries = 1;
+SET enable_analyzer = 1;
 SET group_by_use_nulls = 1;
 
 SELECT number, (SELECT number % 2), sum(number) AS val
