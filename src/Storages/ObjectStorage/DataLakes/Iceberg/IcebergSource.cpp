@@ -20,6 +20,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergSource.h>
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -215,9 +216,11 @@ Chunk IcebergSource::generate()
 
 void IcebergSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
+    const auto * iceberg_obj = dynamic_cast<const IcebergDataObjectInfo *>(&object_info);
+    const auto & fmt = iceberg_obj ? iceberg_obj->info.file_format : configuration->format;
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
-        object_info.getFileFormat().value_or(configuration->format),
+        fmt,
         format_settings,
         read_context);
     schema_cache.addNumRows(cache_key, num_rows);
@@ -286,6 +289,9 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
         }
     } while (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0);
 
+    auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
+    const auto & file_format = iceberg_object ? iceberg_object->info.file_format : configuration->format;
+
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
@@ -297,7 +303,7 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
 
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
-            object_info->getFileFormat().value_or(configuration->format),
+            file_format,
             format_settings,
             context_);
 
@@ -359,7 +365,7 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
             "Reading object '{}', size: {} bytes, with format: {}",
             object_info->getPath(),
             object_info->getObjectMetadata()->size_bytes,
-            object_info->getFileFormat().value_or(configuration->format));
+            file_format);
 
         bool use_native_reader_v3 = format_settings.has_value()
             ? format_settings->parquet.use_native_reader_v3
@@ -367,12 +373,12 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
 
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] && use_native_reader_v3
-            && (object_info->getFileFormat().value_or(configuration->format) == "Parquet")
+            && (file_format == "Parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
             const std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             input_format = FormatFactory::instance().getInputWithMetadata(
-                object_info->getFileFormat().value_or(configuration->format),
+                file_format,
                 *read_buf,
                 initial_header,
                 context_,
@@ -391,7 +397,7 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
         else
         {
             input_format = FormatFactory::instance().getInput(
-                object_info->getFileFormat().value_or(configuration->format),
+                file_format,
                 *read_buf,
                 initial_header,
                 context_,
