@@ -63,7 +63,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_s2_keycondition;
+    extern const SettingsBool enable_s2_index_pruning;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsUInt64 s2_max_covering_cells;
@@ -961,7 +961,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
-    , allow_s2_keycondition(context->getSettingsRef()[Setting::allow_experimental_s2_keycondition])
+    , allow_s2_keycondition(context->getSettingsRef()[Setting::enable_s2_index_pruning])
     , s2_max_covering_cells(static_cast<int>(std::min<UInt64>(
           context->getSettingsRef()[Setting::s2_max_covering_cells],
           static_cast<UInt64>(std::numeric_limits<int>::max()))))

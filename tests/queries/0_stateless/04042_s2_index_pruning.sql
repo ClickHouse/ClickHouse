@@ -3,7 +3,7 @@
 -- for primary-key index pruning, plus the `s2_max_covering_cells` setting.
 -- no-parallel-replicas: EXPLAIN output for granule counts differs under parallel replicas.
 
-SET allow_experimental_s2_keycondition = 1;
+SET enable_s2_index_pruning = 1;
 
 -- ── Table 1: large grid for no-false-negatives checks ────────────────────────
 
@@ -33,7 +33,7 @@ SELECT
     =
     (SELECT count() FROM t_s2_idx
      WHERE s2RectContains(geoToS2(-5.0, -5.0), geoToS2(5.0, 5.0), s2_loc)
-     SETTINGS allow_experimental_s2_keycondition = 0);
+     SETTINGS enable_s2_index_pruning = 0);
 
 -- 2. s2CapContains: pruning must not lose any rows
 SELECT
@@ -42,7 +42,7 @@ SELECT
     =
     (SELECT count() FROM t_s2_idx
      WHERE s2CapContains(geoToS2(0.0, 0.0), 5.0, s2_loc)
-     SETTINGS allow_experimental_s2_keycondition = 0);
+     SETTINGS enable_s2_index_pruning = 0);
 
 DROP TABLE t_s2_idx;
 
