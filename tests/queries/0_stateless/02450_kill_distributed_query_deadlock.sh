@@ -13,7 +13,7 @@ do
     $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" --max_rows_to_read 0 --max_bytes_to_read 0 --max_result_rows 0 --max_result_bytes 0 -q "select * from remote('127.{1|2|3|4|5|6}', numbers(1e12))" 2>/dev/null &
     while true
     do
-        killed_queries="$($CLICKHOUSE_CLIENT -q "kill query where query_id = '$query_id' sync" | wc -l)"
+        killed_queries="$($CLICKHOUSE_CLIENT -q "kill query where query_id = '$query_id' sync SETTINGS kill_throw_if_noop = false" | wc -l)"
         if [[ "$killed_queries" -ge 1 ]]
         then
             break
