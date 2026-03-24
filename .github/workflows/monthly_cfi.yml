@@ -359,9 +359,47 @@ jobs:
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
+  stress_test_amd_cfi:
+    runs-on: [self-hosted, amd-medium]
+    needs: [build_amd_cfi, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF9jZmkp') }}
+    name: "Stress test (amd_cfi)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stress test (amd_cfi)' --workflow "MonthlyCFI" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [build_amd_cfi, config_workflow, dockers_build_amd, dockers_build_arm, integration_tests_amd_cfi_1_4, integration_tests_amd_cfi_2_4, integration_tests_amd_cfi_3_4, integration_tests_amd_cfi_4_4, stateless_tests_amd_cfi]
+    needs: [build_amd_cfi, config_workflow, dockers_build_amd, dockers_build_arm, integration_tests_amd_cfi_1_4, integration_tests_amd_cfi_2_4, integration_tests_amd_cfi_3_4, integration_tests_amd_cfi_4_4, stateless_tests_amd_cfi, stress_test_amd_cfi]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

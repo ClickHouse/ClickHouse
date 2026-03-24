@@ -450,6 +450,7 @@ class ArtifactNames:
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
     CH_AMD_CFI = "CH_AMD_CFI"
+    DEB_AMD_CFI = "DEB_AMD_CFI"
 
 
 LLVM_FT_NUM_BATCHES = 3
@@ -565,6 +566,7 @@ class ArtifactConfigs:
             ArtifactNames.DEB_ARM_TSAN,
             ArtifactNames.DEB_ARM_MSAN,
             ArtifactNames.DEB_ARM_UBSAN,
+            ArtifactNames.DEB_AMD_CFI,
         ]
     )
     clickhouse_rpms = Artifact.Config(

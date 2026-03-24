@@ -20,9 +20,11 @@ workflow = Workflow.Config(
         *JobConfigs.cfi_build_job,
         *JobConfigs.cfi_stateless_jobs,
         *JobConfigs.cfi_integration_jobs,
+        *JobConfigs.cfi_stress_job,
     ],
     artifacts=[
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.clickhouse_debians,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,

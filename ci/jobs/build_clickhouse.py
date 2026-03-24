@@ -61,6 +61,7 @@ BUILD_TYPE_TO_DEB_PACKAGE_TYPE = {
     BuildTypes.ARM_MSAN: "msan",
     BuildTypes.ARM_UBSAN: "ubsan",
     BuildTypes.AMD_TSAN: "tsan",
+    BuildTypes.AMD_CFI: "cfi",
 }
 
 
