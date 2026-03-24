@@ -169,7 +169,8 @@ public:
         Block prev_reader_header_,
         const PrewhereExprStep * prewhere_info_,
         ReadStepPerformanceCountersPtr performance_counters_,
-        bool main_reader_);
+        bool main_reader_,
+        bool can_read_incomplete_granules_);
 
     MergeTreeRangeReader() = default;
 
@@ -330,7 +331,7 @@ public:
         /// Add current step filter to the result and then for each granule calculate the number of filtered rows at the end.
         /// Remove them and update filter.
         /// Apply the filter to the columns and update num_rows if required
-        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules, bool must_apply_filter);
+        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules_, bool must_apply_filter);
 
         /// Remove all rows from granules.
         void clear();
@@ -410,7 +411,7 @@ public:
 
         /// Builds updated filter by cutting zeros in granules tails
         void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
-        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
+        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         LoggerPtr log;
@@ -453,6 +454,7 @@ private:
 
     ReadStepPerformanceCountersPtr performance_counters;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
+    bool can_read_incomplete_granules = false; /// Combined flag: true only if ALL readers in the chain support incomplete granules
 
     LoggerPtr log = getLogger("MergeTreeRangeReader");
 };

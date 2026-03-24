@@ -156,9 +156,13 @@ static struct InitFiu
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
+    REGULAR(restart_replica_fail_after_detach) \
+    REGULAR(database_replicated_force_metadata_digest_check) \
+    PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
-    REGULAR(storage_merge_tree_background_schedule_merge_fail)
+    REGULAR(storage_merge_tree_background_schedule_merge_fail) \
+    REGULAR(patch_parts_reverse_column_order)
 
 namespace FailPoints
 {

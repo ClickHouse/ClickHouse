@@ -472,7 +472,7 @@ uint64_t updateJemallocEpoch()
 {
     uint64_t value = 0;
     size_t size = sizeof(value);
-    mallctl("epoch", &value, &size, &value, size);
+    je_mallctl("epoch", &value, &size, &value, size);
     return value;
 }
 

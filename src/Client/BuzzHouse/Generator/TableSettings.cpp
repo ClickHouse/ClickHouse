@@ -820,8 +820,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                     String key;
                     for (size_t i = 0; i < alg.hex_len / 16; i++)
                         key += fmt::format("{:016x}", rg.randomInt<uint64_t>(0, std::numeric_limits<uint64_t>::max()));
-                    return "disk(type = encrypted, disk = '" + enc_it->name + "', path = 'encrypted_" + enc_it->name
-                        + "/', algorithm = " + alg.algo + ", key_hex = " + key + ")";
+                    return "disk(type = encrypted, disk = '" + enc_it->name + "', path = '/var/lib/clickhouse/disks/encrypted_"
+                        + enc_it->name + "/', algorithm = " + alg.algo + ", key_hex = " + key + ")";
                 }
                 /// Inline cache disk wrapping a non-cached local disk
                 const auto cache_it = std::find_if(
@@ -830,7 +830,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                     [&](const DiskInfo & d) { return !d.is_cached && d.type == "Local" && d.name != di.name; });
                 if (!di.is_cached && cache_it != fc.disks.end() && rg.nextSmallNumber() < 3)
                 {
-                    String res = "disk(type = cache, disk = '" + cache_it->name + "', path = 'inline_cache_" + cache_it->name + "/'";
+                    String res = "disk(type = cache, disk = '" + cache_it->name + "', path = '/var/lib/clickhouse/disks/inline_cache_"
+                        + cache_it->name + "/'";
                     res += ", max_size = '"
                         + std::to_string(rg.thresholdGenerator<uint64_t>(
                             0.2, 0.2, UINT64_C(1024) * UINT64_C(1024), UINT64_C(1024) * UINT64_C(1024) * UINT64_C(1024)))
