@@ -19,6 +19,8 @@ SET
     distributed_plan_force_exchange_kind='Streaming';
 
 SET enable_join_runtime_filters=1;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de');
 
