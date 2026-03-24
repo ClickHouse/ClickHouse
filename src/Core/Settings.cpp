@@ -7720,8 +7720,8 @@ Number of blocks that are skipped before trying to dynamically re-enable a runti
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
 If the ratio of set bits in a runtime bloom filter exceeds this threshold, the filter is disabled at runtime to reduce overhead.
 )", EXPERIMENTAL) \
-    DECLARE(Double, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits, std::numeric_limits<double>::infinity(), R"(
-If the estimated ratio of set bits in a runtime bloom filter exceeds this threshold at planning time, the planner skips building this filter. Set this setting to +inf to disable planning-time saturation based disabling.
+    DECLARE(Double, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits, 1.0, R"(
+If the estimated ratio of set bits in a runtime bloom filter exceeds this threshold at planning time, the planner skips building this filter. Set this setting to 1.0 (or higher) to disable planning-time saturation based disabling.
 )", EXPERIMENTAL) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.

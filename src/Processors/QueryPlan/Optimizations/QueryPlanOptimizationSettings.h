@@ -7,7 +7,6 @@
 
 #include <chrono>
 #include <cstddef>
-#include <limits>
 
 namespace DB
 {
@@ -152,7 +151,7 @@ struct QueryPlanOptimizationSettings
     Float64 join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
     UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
 
-    Float64 join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = std::numeric_limits<Float64>::infinity();
+    Float64 join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0;
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
     size_t join_runtime_bloom_filter_bytes = 0;
     size_t join_runtime_bloom_filter_hash_functions = 0;
