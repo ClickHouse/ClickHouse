@@ -468,20 +468,53 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Move condition and all other conditions depend on the same set of columns.
     auto move_condition = [&](Conditions::iterator cond_it)
     {
-        move_to_prewhere_conditions(cond_it);
-        total_size_of_moved_conditions += cond_it->columns_size;
-        total_number_of_moved_columns += cond_it->table_columns.size();
+        /// Save the group key before any splicing.
+        const UInt64 group_columns_size = cond_it->columns_size;
+        const NameSet group_table_columns = cond_it->table_columns;
 
-        /// Move all other viable conditions that depend on the same set of columns.
-        for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
+        total_size_of_moved_conditions += group_columns_size;
+        total_number_of_moved_columns += group_table_columns.size();
+
+        if (where_optimizer_context.allow_reorder_prewhere_conditions)
         {
-            if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
+            /// Collect all viable conditions in this group (same table columns) and move them
+            /// in their original WHERE clause order, regardless of which condition was selected
+            /// as "best" by the statistics estimator.
+            ///
+            /// This preserves semantic ordering within the group. Conditions with data
+            /// dependencies must keep their relative order for short-circuit evaluation to be
+            /// correct. For example, `IS NOT NULL` must precede `CAST(nullable_col, non_nullable_type)`
+            /// so that the CAST is never executed on NULL values (which would throw an exception).
+            ///
+            /// Statistics-driven reordering still applies *across* groups (the group whose
+            /// representative condition wins `min_element` is moved first), so selectivity-based
+            /// I/O optimisation across differently-sized column sets is preserved.
+            std::vector<Conditions::iterator> group;
+            group.push_back(cond_it);
+            for (auto jt = where_conditions.begin(); jt != where_conditions.end(); ++jt)
             {
-                move_to_prewhere_conditions(jt++);
+                if (jt != cond_it && jt->viable
+                    && jt->columns_size == group_columns_size
+                    && jt->table_columns == group_table_columns)
+                    group.push_back(jt);
             }
-            else
+            std::sort(group.begin(), group.end(), [&](const auto & a, const auto & b)
             {
-                ++jt;
+                return condition_positions.at(&(*a)) < condition_positions.at(&(*b));
+            });
+            for (auto it : group)
+                move_to_prewhere_conditions(it);
+        }
+        else
+        {
+            move_to_prewhere_conditions(cond_it);
+            /// Move all other viable conditions that depend on the same set of columns.
+            for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
+            {
+                if (jt->viable && jt->columns_size == group_columns_size && jt->table_columns == group_table_columns)
+                    move_to_prewhere_conditions(jt++);
+                else
+                    ++jt;
             }
         }
     };
