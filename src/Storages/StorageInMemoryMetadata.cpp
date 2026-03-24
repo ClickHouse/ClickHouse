@@ -19,6 +19,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 
 namespace DB

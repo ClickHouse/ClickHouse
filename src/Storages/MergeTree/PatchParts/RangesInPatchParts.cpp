@@ -6,6 +6,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>

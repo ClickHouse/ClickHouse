@@ -30,7 +30,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/TextIndexCache.h>
-
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <base/range.h>
 #include <base/types.h>
@@ -67,7 +67,6 @@ namespace MergeTreeSetting
 }
 
 static constexpr String DEFAULT_POSTING_LIST_CODEC = "none";
-
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
 static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
 
@@ -1536,8 +1535,10 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index, const MergeTr
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
+
     UInt64 dictionary_block_frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_frontcoding_compression]);
+
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
@@ -1547,8 +1548,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index, const MergeTr
         posting_list_block_size,
         std::move(preprocessor_ast)};
 
-    String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
-        .value_or(DEFAULT_POSTING_LIST_CODEC);
+    String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
     auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
 
     if (!options.empty())
@@ -1567,21 +1567,25 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
+
     if (dictionary_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_DICTIONARY_BLOCK_SIZE, dictionary_block_size);
 
     UInt64 dictionary_block_use_fc_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_frontcoding_compression]);
+
     if (dictionary_block_use_fc_compression > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION, dictionary_block_use_fc_compression);
 
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
+
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(DEFAULT_POSTING_LIST_CODEC);
+
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
 
     if (!options.empty())

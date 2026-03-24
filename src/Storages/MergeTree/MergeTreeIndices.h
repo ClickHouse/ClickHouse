@@ -5,7 +5,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <memory>
@@ -312,6 +311,8 @@ struct MergeTreeIndexWithCondition
 
     MergeTreeIndexWithCondition() = default;
 };
+
+struct MergeTreeSettings;
 
 class MergeTreeIndexFactory : private boost::noncopyable
 {
