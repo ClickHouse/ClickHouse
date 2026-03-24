@@ -503,6 +503,12 @@ def clickhouse_execute_http(
         "http_send_timeout": timeout,
         "output_format_parallel_formatting": 0,
         "max_rows_to_read": 0,  # Some queries read from system.text_log which might get too big
+        # Disable server-side AST fuzzer for infrastructure queries (hung
+        # check, log analysis, etc.).  The stress test profile sets
+        # ast_fuzzer_runs=5, and without this override the fuzzer mutates
+        # the hung-check processlist query, spawning new queries that then
+        # appear in the processlist — causing a false-positive hung check.
+        "ast_fuzzer_runs": 0,
     }
     if settings is not None:
         params.update(settings)
@@ -4656,20 +4662,35 @@ def main(args):
             exit_code.value = 1
 
         processlist = ""
+        hung_check_failed = False
         if hung_count > 0:
             try:
                 processlist = get_processlist_with_stacktraces(args)
             except Exception as e:
-                print(
-                    colored(
-                        "\nHung check failed. Failed to get processlist with stacktraces: "
-                        + str(e),
-                        args,
-                        "red",
-                        attrs=["bold"],
+                # The stacktrace query is expensive (JOIN + symbolization) and
+                # can time out under sanitizers.  Re-check whether the queries
+                # are still running — if they finished in the meantime, it was
+                # not a real hang.
+                try:
+                    hung_count = get_processlist_size(args)
+                except Exception:
+                    hung_count = -1
+                if hung_count != 0:
+                    print(
+                        colored(
+                            "\nHung check failed. Failed to get processlist with stacktraces: "
+                            + str(e),
+                            args,
+                            "red",
+                            attrs=["bold"],
+                        )
                     )
-                )
-                exit_code.value = 1
+                    exit_code.value = 1
+                    hung_check_failed = True
+                else:
+                    print(
+                        " queries finished while collecting stacktraces, not a hang"
+                    )
 
         if processlist:
             print(
@@ -4682,7 +4703,7 @@ def main(args):
 
             print_stacktraces()
             exit_code.value = 1
-        else:
+        elif not hung_check_failed:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
     if len(restarted_tests) > 0:
