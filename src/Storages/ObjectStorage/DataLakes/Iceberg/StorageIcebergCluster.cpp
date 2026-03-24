@@ -32,23 +32,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static std::shared_ptr<IcebergMetadata> createIcebergMetadata(
-    const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
-    ContextPtr context)
-{
-    auto metadata = IcebergMetadata::create(object_storage, configuration, context);
-    auto * raw = dynamic_cast<IcebergMetadata *>(metadata.get());
-    chassert(raw);
-    (void)metadata.release();
-    return std::shared_ptr<IcebergMetadata>(raw);
-}
-
 void StorageDataLakeCluster<IcebergMetadata>::ensureMetadataInitialized(ContextPtr context) const
 {
     if (current_metadata)
         return;
-    current_metadata = createIcebergMetadata(object_storage, configuration, context);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, context);
 }
 
 void StorageDataLakeCluster<IcebergMetadata>::updateMetadata(ContextPtr context) const
@@ -58,7 +46,7 @@ void StorageDataLakeCluster<IcebergMetadata>::updateMetadata(ContextPtr context)
         current_metadata->update(context);
         return;
     }
-    current_metadata = createIcebergMetadata(object_storage, configuration, context);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, context);
 }
 
 StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
@@ -92,7 +80,7 @@ StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
     /// so no lazy initialization is allowed.
     configuration->update(object_storage, context_);
 
-    current_metadata = createIcebergMetadata(object_storage, configuration, context_);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, context_);
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;

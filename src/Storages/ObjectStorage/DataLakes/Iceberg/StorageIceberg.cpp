@@ -175,24 +175,12 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
     setInMemoryMetadata(metadata);
 }
 
-static std::shared_ptr<IcebergMetadata> createIcebergMetadata(
-    const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
-    ContextPtr context)
-{
-    auto metadata = IcebergMetadata::create(object_storage, configuration, context);
-    auto * raw = dynamic_cast<IcebergMetadata *>(metadata.get());
-    chassert(raw);
-    (void)metadata.release();
-    return std::shared_ptr<IcebergMetadata>(raw);
-}
-
 void StorageDataLake<IcebergMetadata>::ensureMetadataInitialized(ContextPtr context) const
 {
     if (current_metadata)
         return;
     configuration->update(object_storage, context);
-    current_metadata = createIcebergMetadata(object_storage, configuration, context);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, context);
 }
 
 void StorageDataLake<IcebergMetadata>::updateMetadata(ContextPtr context) const
@@ -203,7 +191,7 @@ void StorageDataLake<IcebergMetadata>::updateMetadata(ContextPtr context) const
         current_metadata->update(context);
         return;
     }
-    current_metadata = createIcebergMetadata(object_storage, configuration, context);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, context);
 }
 
 String StorageDataLake<IcebergMetadata>::getName() const

@@ -814,7 +814,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
 
-DataLakeMetadataPtr IcebergMetadata::create(
+std::unique_ptr<IcebergMetadata> IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context)
@@ -834,6 +834,16 @@ DataLakeMetadataPtr IcebergMetadata::create(
             log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
     auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, std::move(persistent_components), local_context);
+}
+
+ReadFromFormatInfo IcebergMetadata::prepareReadingFromFormat(
+    const Strings & requested_columns,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    bool supports_subset_of_columns,
+    bool supports_tuple_elements)
+{
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns, supports_tuple_elements);
 }
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
