@@ -3349,17 +3349,26 @@ class ClickHouseCluster:
     def start(self, connection_timeout=None):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
+        logging.debug(f"Cluster start called. is_up={self.is_up}")
+        self.print_all_docker_pieces()
+
+        if self.is_up:
+            return
+
         if not os.path.exists(self.instances_dir):
             os.mkdir(self.instances_dir)
         else:
             logging.warning(
                 "Instance directory already exists. Did you call cluster.start() for second time?"
             )
-        logging.debug(f"Cluster start called. is_up={self.is_up}")
-        self.print_all_docker_pieces()
-
-        if self.is_up:
-            return
+            # Remove and recreate so that create_dir() gets a clean slate.
+            # This happens when --dist=each causes module-scoped fixtures to be torn down
+            # and re-set-up within the same pytest session (e.g. tests from different modules
+            # interleave on the same xdist worker). cluster.shutdown() does not remove
+            # instances_dir, and ClickHouseCluster.__init__ only removes it at import time,
+            # so without this cleanup create_dir() would fail with FileExistsError.
+            shutil.rmtree(self.instances_dir, ignore_errors=True)
+            os.mkdir(self.instances_dir)
 
         if self.with_net_trics:
             # Tests might share same subnet, check file docker_compose_net.yml
@@ -4065,6 +4074,7 @@ class ClickHouseCluster:
         for instance in list(self.instances.values()):
             instance.docker_client = None
             instance.ip_address = None
+            instance.ipv6_address = None
             instance.client = None
 
         if sanitizer_assert_instance is not None:
@@ -5833,7 +5843,7 @@ class ClickHouseInstance:
             if self.ipv4_address is not None:
                 ipv4_address = "ipv4_address: " + self.ipv4_address
             if self.ipv6_address is not None:
-                ipv6_address = "ipv6_address: " + self.ipv6_address
+                ipv6_address = f'ipv6_address: "{self.ipv6_address}"'
             if self.hostname != self.name:
                 net_aliases = "aliases:"
                 net_alias1 = "- " + self.hostname
