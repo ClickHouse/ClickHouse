@@ -142,7 +142,7 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
         /// This is done eagerly because select queries for table functions may bypass
         /// updateExternalDynamicMetadataIfExists.
         ensureMetadataInitialized(context);
-        if (auto state = current_metadata ? current_metadata->getTableStateSnapshot(context) : std::nullopt)
+        if (auto state = current_metadata->getTableStateSnapshot(context))
         {
             metadata.setDataLakeTableState(*state);
 
@@ -175,23 +175,35 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
     setInMemoryMetadata(metadata);
 }
 
+static std::shared_ptr<IcebergMetadata> createIcebergMetadata(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    ContextPtr context)
+{
+    auto metadata = IcebergMetadata::create(object_storage, configuration, context);
+    auto * raw = dynamic_cast<IcebergMetadata *>(metadata.get());
+    chassert(raw);
+    (void)metadata.release();
+    return std::shared_ptr<IcebergMetadata>(raw);
+}
+
 void StorageDataLake<IcebergMetadata>::ensureMetadataInitialized(ContextPtr context) const
 {
     if (current_metadata)
         return;
     configuration->update(object_storage, context);
-    current_metadata = IcebergMetadata::create(object_storage, configuration, context);
+    current_metadata = createIcebergMetadata(object_storage, configuration, context);
 }
 
 void StorageDataLake<IcebergMetadata>::updateMetadata(ContextPtr context) const
 {
     configuration->update(object_storage, context);
-    if (current_metadata && current_metadata->supportsUpdate())
+    if (current_metadata)
     {
         current_metadata->update(context);
         return;
     }
-    current_metadata = IcebergMetadata::create(object_storage, configuration, context);
+    current_metadata = createIcebergMetadata(object_storage, configuration, context);
 }
 
 String StorageDataLake<IcebergMetadata>::getName() const
@@ -234,16 +246,10 @@ IStorage::ColumnSizeByName StorageDataLake<IcebergMetadata>::getColumnSizes() co
     return getInMemoryMetadataPtr()->getFakeColumnSizes();
 }
 
-IDataLakeMetadata * StorageDataLake<IcebergMetadata>::getExternalMetadata(ContextPtr query_context)
-{
-    updateMetadata(query_context);
-    return current_metadata.get();
-}
-
 IcebergMetadata * StorageDataLake<IcebergMetadata>::getIcebergMetadata(ContextPtr context)
 {
-    auto * metadata = getExternalMetadata(context);
-    return dynamic_cast<IcebergMetadata *>(metadata);
+    updateMetadata(context);
+    return current_metadata.get();
 }
 
 void StorageDataLake<IcebergMetadata>::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
@@ -253,7 +259,7 @@ void StorageDataLake<IcebergMetadata>::updateExternalDynamicMetadataIfExists(Con
     /// stale from the first query and silently omit new files.
     updateMetadata(query_context);
 
-    auto state = current_metadata ? current_metadata->getTableStateSnapshot(query_context) : std::nullopt;
+    auto state = current_metadata->getTableStateSnapshot(query_context);
     if (!state)
         return;
 
@@ -276,25 +282,15 @@ void StorageDataLake<IcebergMetadata>::updateExternalDynamicMetadataIfExists(Con
 
 std::optional<UInt64> StorageDataLake<IcebergMetadata>::totalRows(ContextPtr query_context) const
 {
-    if (!IcebergMetadata::supportsTotalRows(query_context, object_storage->getType()))
-        return std::nullopt;
-
-    /// Trivial count optimization can be applied only on initiator replica.
-    /// (distributed_processing=true on non-initiator replicas).
-    /// This is needed only for old analyzer.
     if (distributed_processing)
         return std::nullopt;
 
     is_table_function ? ensureMetadataInitialized(query_context) : updateMetadata(query_context);
-
     return current_metadata->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageDataLake<IcebergMetadata>::totalBytes(ContextPtr query_context) const
 {
-    if (!IcebergMetadata::supportsTotalBytes(query_context, object_storage->getType()))
-        return std::nullopt;
-
     if (distributed_processing)
         return std::nullopt;
 
@@ -374,9 +370,6 @@ SinkToStoragePtr StorageDataLake<IcebergMetadata>::write(
     bool /* async_insert */)
 {
     ensureMetadataInitialized(local_context);
-    if (!current_metadata || !current_metadata->supportsWrites())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
-
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     return current_metadata->write(sample_block, storage_id, object_storage, configuration, format_settings, local_context, catalog);
 }
@@ -430,15 +423,12 @@ void StorageDataLake<IcebergMetadata>::mutate([[maybe_unused]] const MutationCom
 
 void StorageDataLake<IcebergMetadata>::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    if (current_metadata)
-        current_metadata->checkMutationIsPossible(commands);
+    current_metadata->checkMutationIsPossible(commands);
 }
 
 Pipe StorageDataLake<IcebergMetadata>::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
-    auto * metadata = getExternalMetadata(context);
-    if (!metadata)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
+    auto * metadata = getIcebergMetadata(context);
     return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
 }
 
@@ -447,8 +437,7 @@ void StorageDataLake<IcebergMetadata>::alter(const AlterCommands & params, Conte
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
-    if (current_metadata)
-        current_metadata->alter(params, context);
+    current_metadata->alter(params, context);
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
@@ -458,8 +447,7 @@ void StorageDataLake<IcebergMetadata>::alter(const AlterCommands & params, Conte
 
 void StorageDataLake<IcebergMetadata>::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
 {
-    if (current_metadata)
-        current_metadata->checkAlterIsPossible(commands);
+    current_metadata->checkAlterIsPossible(commands);
 }
 
 }

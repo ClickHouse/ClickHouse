@@ -89,9 +89,7 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
-    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
-
-    /// Iceberg-specific: returns the `IcebergMetadata` pointer directly.
+    /// Returns the `IcebergMetadata` pointer, initializing it if needed.
     IcebergMetadata * getIcebergMetadata(ContextPtr context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
@@ -107,9 +105,9 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
-    bool supportsDelete() const override { return current_metadata && current_metadata->supportsDelete(); }
+    bool supportsDelete() const override { return true; }
 
-    bool supportsParallelInsert() const override { return current_metadata && current_metadata->supportsParallelInsert(); }
+    bool supportsParallelInsert() const override { return true; }
 
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
@@ -132,7 +130,7 @@ protected:
     LoggerPtr log;
 
     DataLakeStorageSettingsPtr datalake_settings;
-    mutable DataLakeMetadataPtr current_metadata;
+    mutable std::shared_ptr<IcebergMetadata> current_metadata;
 
     void ensureMetadataInitialized(ContextPtr context) const;
     void updateMetadata(ContextPtr context) const;
