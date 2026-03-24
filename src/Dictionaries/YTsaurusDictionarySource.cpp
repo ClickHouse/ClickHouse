@@ -194,7 +194,7 @@ BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64
     if (!supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
 
-    initilizeLookupThrottlerIfNeeded();
+    initializeLookupThrottlerIfNeeded();
     BlockIO io;
     auto ids_vectors = divideVectorByChunkSize(ids, configuration->settings[YTsaurusSetting::lookup_max_rows_per_query]);
     VectorWithMemoryTracking<Block> lookup_blocks;
@@ -229,7 +229,7 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const V
 
     if (key_columns.size() != dict_struct.key->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
-    initilizeLookupThrottlerIfNeeded();
+    initializeLookupThrottlerIfNeeded();
     auto rows_vectors = divideVectorByChunkSize(requested_rows, configuration->settings[YTsaurusSetting::lookup_max_rows_per_query]);
     VectorWithMemoryTracking<Block> lookup_blocks;
     for (const auto & row_chunk : rows_vectors)
@@ -265,7 +265,7 @@ std::string YTsarususDictionarySource::toString() const
     return fmt::format("YTsaurus: {}", configuration->cypress_path);
 }
 
-void YTsarususDictionarySource::initilizeLookupThrottlerIfNeeded()
+void YTsarususDictionarySource::initializeLookupThrottlerIfNeeded()
 {
     if (throttler_initialized)
         return;

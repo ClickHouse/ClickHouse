@@ -54,7 +54,7 @@ public:
     std::string toString() const override;
 
 private:
-    void initilizeLookupThrottlerIfNeeded();
+    void initializeLookupThrottlerIfNeeded();
 
     ContextPtr context;
     const DictionaryStructure dict_struct;
