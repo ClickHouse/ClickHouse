@@ -4054,6 +4054,8 @@ void MergeTreeData::dropAllData()
         if (disk->existsDirectory(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
 
+        /// Mutation files (mutation_*, tmp_mutation_*) are stored directly in the data directory,
+        /// not in a subdirectory, so they are not removed by the recursive removal of part directories above.
         if ((*getSettings())[MergeTreeSetting::table_disk])
             dropMutationsOnDisk(disk);
 
@@ -4215,14 +4217,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     const auto & settings = local_context->getSettingsRef();
     const auto & settings_from_storage = getSettings();
-
-    if ((*settings_from_storage)[MergeTreeSetting::disk].changed)
-    {
-        const auto disk = local_context->getDisk((*settings_from_storage)[MergeTreeSetting::disk]);
-        if (disk->isCustomDisk())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE commands are not supported for tables configured with custom disks");
-    }
 
     if (!settings[Setting::allow_non_metadata_alters])
     {

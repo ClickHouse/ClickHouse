@@ -371,6 +371,9 @@ public:
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
 
+    /// Replicated tables store mutations in ZooKeeper, not on disk
+    void dropMutationsOnDisk(const DiskPtr &) const override {}
+
 private:
     std::atomic_bool are_restoring_replica {false};
 

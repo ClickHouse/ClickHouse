@@ -1240,9 +1240,17 @@ void StorageMergeTree::loadMutations()
 
 void StorageMergeTree::dropMutationsOnDisk(const DiskPtr & disk) const
 {
+    size_t removed_count = 0;
     for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+    {
         if (startsWith(it->name(), "mutation_") || startsWith(it->name(), "tmp_mutation_"))
+        {
             disk->removeFile(it->path());
+            ++removed_count;
+        }
+    }
+    if (removed_count > 0)
+        LOG_INFO(log, "Removed {} mutation file(s) from disk {}", removed_count, disk->getName());
 }
 
 std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::selectPartsToMerge(

@@ -132,7 +132,7 @@ ${CLICKHOUSE_CLIENT} -nm -q "
             );
 "
 
-echo "# Data with new column on reader after recreate"
+echo "# Data without column on reader after recreate"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM 03787_reader ORDER BY key FORMAT TabSeparatedWithNamesAndTypes;"
 
 ${CLICKHOUSE_CLIENT} -nm -q "

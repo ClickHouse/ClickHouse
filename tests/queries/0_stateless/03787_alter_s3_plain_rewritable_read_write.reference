@@ -54,7 +54,7 @@ Int32	String	Date
 2	val-2	1970-01-01
 3	val-3	1970-01-01
 4	val-4	1970-01-01
-# Data with new column on reader after recreate
+# Data without column on reader after recreate
 key	val
 Int32	String
 0	val-0

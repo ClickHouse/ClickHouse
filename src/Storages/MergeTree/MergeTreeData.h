@@ -937,8 +937,8 @@ public:
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
-    /// Drops mutation files on specified disk
-    virtual void dropMutationsOnDisk(const DiskPtr &) const {}
+    /// Drops mutation files on specified disk, for cases when mutation records are stored on disk
+    virtual void dropMutationsOnDisk(const DiskPtr &) const = 0;
 
     /// This flag is for hardening and assertions.
     bool all_data_dropped = false;
