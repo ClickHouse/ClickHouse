@@ -133,8 +133,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_expire_default_max_ref_age_ms", 9223372036854775807, 9223372036854775807, "New setting."},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
-            {"allow_experimental_s2_keycondition", false, false, "New experimental setting to enable S2 spatial functions as primary key conditions for granule-level index pruning."},
-            {"s2_max_covering_cells", 8, 8, "New setting to control the maximum number of S2 cells used to approximate the query region for `allow_experimental_s2_keycondition`."},
+            {"enable_s2_index_pruning", false, false, "New setting to enable S2 spatial functions as primary key conditions for granule-level index pruning."},
+            {"s2_max_covering_cells", 8, 8, "New setting to control the maximum number of S2 cells used to approximate the query region for `enable_s2_index_pruning`."},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
