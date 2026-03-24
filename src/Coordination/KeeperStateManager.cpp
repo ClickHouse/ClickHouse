@@ -75,11 +75,15 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
         "prometheus.port"s,
     };
 
+    Int64 port_offset = config.getInt64("port_offset", 0);
     std::unordered_map<UInt64, std::string> ports;
     for (const auto & config_port_name : config_port_names)
     {
         if (config.has(config_port_name))
-            ports[config.getUInt64(config_port_name)] = config_port_name;
+        {
+            UInt64 port = config.getUInt64(config_port_name);
+            ports[port + port_offset] = config_port_name;
+        }
     }
     return ports;
 }
@@ -168,6 +172,8 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         int new_server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
         int port = config.getInt(full_prefix + ".port");
+        if (hostname == "localhost" || isLocalhost(hostname))
+            port += config.getInt64("port_offset", 0);
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);

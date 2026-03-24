@@ -189,9 +189,22 @@ UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfigu
                                                const std::string & connection_host)
 {
     bool is_secure = enableSecureConnection(config, connection_host);
-    return static_cast<UInt16>(config.getInt(
+    UInt16 port = static_cast<UInt16>(config.getInt(
         "port",
         static_cast<UInt16>(
             config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT))));
+
+    if (config.has("port_offset"))
+    {
+        Int64 offset = config.getInt64("port_offset");
+        Int64 effective_port = static_cast<Int64>(port) + offset;
+        if (effective_port < 1 || effective_port > 65535)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Port {} with offset {} results in invalid port {}: must be in range 1-65535",
+                port, offset, effective_port);
+        port = static_cast<UInt16>(effective_port);
+    }
+
+    return port;
 }
 }

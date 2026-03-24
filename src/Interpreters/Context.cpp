@@ -5361,14 +5361,15 @@ const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 UInt16 Context::getTCPPort() const
 {
     const auto & config = getConfigRef();
-    return static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
+    UInt16 port = static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
+    return static_cast<UInt16>(port + config.getInt64("port_offset", 0));
 }
 
 std::optional<UInt16> Context::getTCPPortSecure() const
 {
     const auto & config = getConfigRef();
     if (config.has("tcp_port_secure"))
-        return config.getInt("tcp_port_secure");
+        return static_cast<UInt16>(config.getInt("tcp_port_secure") + config.getInt64("port_offset", 0));
     return {};
 }
 

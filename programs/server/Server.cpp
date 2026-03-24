@@ -208,6 +208,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
+    extern const ServerSettingsInt32 port_offset;
     extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
@@ -618,6 +619,7 @@ void Server::createServer(
     const char * port_name,
     bool listen_try,
     bool start_server,
+    const ServerSettings & server_settings,
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
@@ -633,13 +635,42 @@ void Server::createServer(
     }
 
     auto port = config.getInt(port_name);
+    UInt16 original_port = static_cast<UInt16>(port);
+
+    // Apply port offset only to server ports.
+    // We should apply it to all ports, including interserver and keeper,
+    // to allow running multiple instances on the same host without collisions.
+    bool should_apply_offset = true;
+    int applied_offset = 0;
+
+    if (should_apply_offset)
+    {
+        applied_offset = server_settings[ServerSetting::port_offset];
+        if (applied_offset != 0)
+        {
+            Int64 effective_port = static_cast<Int64>(port) + applied_offset;
+
+            // Validate port range (1-65535)
+            if (effective_port < 1 || effective_port > 65535)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Port {} with offset {} results in invalid port {}: must be in range 1-65535",
+                    port, applied_offset, effective_port);
+
+            port = static_cast<int>(effective_port);
+        }
+    }
+
     try
     {
         servers.push_back(func(static_cast<UInt16>(port)));
         if (start_server)
         {
             servers.back().start();
-            LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
+            if (applied_offset != 0)
+                LOG_INFO(&logger(), "Listening for {} (configured port {} + offset {} = {})",
+                    servers.back().getDescription(), original_port, applied_offset, port);
+            else
+                LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
         }
         global_context->registerServerPort(port_name, static_cast<UInt16>(port));
     }
@@ -1923,6 +1954,17 @@ try
             if (port > 0xFFFF)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
 
+            int applied_offset = server_settings[ServerSetting::port_offset];
+            if (applied_offset != 0)
+            {
+                Int64 effective_port = static_cast<Int64>(port) + applied_offset;
+                if (effective_port < 1 || effective_port > 65535)
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Port {} with offset {} results in invalid port {}: must be in range 1-65535",
+                        port, applied_offset, effective_port);
+                port = static_cast<UInt64>(effective_port);
+            }
+
             global_context->setInterserverIOAddress(this_host, static_cast<UInt16>(port));
             global_context->setInterserverScheme(scheme);
         }
@@ -2520,6 +2562,7 @@ try
             const char * port_name = "keeper_server.tcp_port";
             createServer(
                 config(), listen_host, port_name, listen_try, /* start_server: */ false,
+                server_settings,
                 servers_to_start_before_tables,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -2545,6 +2588,7 @@ try
             const char * secure_port_name = "keeper_server.tcp_port_secure";
             createServer(
                 config(), listen_host, secure_port_name, listen_try, /* start_server: */ false,
+                server_settings,
                 servers_to_start_before_tables,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -2575,6 +2619,7 @@ try
             /// HTTP control endpoints
             port_name = "keeper_server.http_control.port";
             createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
+            server_settings,
             servers_to_start_before_tables,
             [&](UInt16 port) -> ProtocolServerAdapter
             {
@@ -3329,7 +3374,7 @@ void Server::createServers(
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
 
-            createServer(config, host, port_name.c_str(), listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, host, port_name.c_str(), listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, host, port, is_secure);
@@ -3358,7 +3403,7 @@ void Server::createServers(
         {
             /// HTTP
             port_name = "http_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -3378,7 +3423,7 @@ void Server::createServers(
         {
             /// HTTPS
             port_name = "https_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
@@ -3402,7 +3447,7 @@ void Server::createServers(
         {
             /// TCP
             port_name = "tcp_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -3425,7 +3470,7 @@ void Server::createServers(
         {
             /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
             port_name = "tcp_with_proxy_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -3448,7 +3493,7 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT))
         {
             port_name = "arrowflight_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
@@ -3468,7 +3513,7 @@ void Server::createServers(
         {
             /// TCP with SSL
             port_name = "tcp_port_secure";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
     #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
@@ -3501,6 +3546,7 @@ void Server::createServers(
                 port_name,
                 listen_try,
                 start_servers,
+                server_settings,
                 servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -3527,7 +3573,7 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::MYSQL))
         {
             port_name = "mysql_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
@@ -3550,7 +3596,7 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::POSTGRESQL))
         {
             port_name = "postgresql_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
@@ -3583,7 +3629,7 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::GRPC))
         {
             port_name = "grpc_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::SocketAddress server_address(listen_host, port);
                 return ProtocolServerAdapter(
@@ -3601,7 +3647,7 @@ void Server::createServers(
 
             const char * handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
 
-            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -3645,7 +3691,7 @@ void Server::createInterserverServers(
         {
             /// Interserver IO HTTP
             port_name = "interserver_http_port";
-            createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, interserver_listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, interserver_listen_host, port);
@@ -3670,7 +3716,7 @@ void Server::createInterserverServers(
         if (server_type.shouldStart(ServerType::Type::INTERSERVER_HTTPS))
         {
             port_name = "interserver_https_port";
-            createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, interserver_listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;

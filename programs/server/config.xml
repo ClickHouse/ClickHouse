@@ -182,6 +182,12 @@
     -->
     <tcp_port>9000</tcp_port>
 
+    <!-- Offset for all listening ports (TCP, HTTP, Interserver, Keeper, etc.).
+         This is useful for running multiple instances of ClickHouse on the same host.
+         For example, if port_offset is 1, tcp_port 9000 becomes 9001.
+    -->
+    <!-- <port_offset>0</port_offset> -->
+
     <!-- Chunked capabilities for native protocol by server.
          Can be enabled separately for send and receive channels.
          Supported modes:

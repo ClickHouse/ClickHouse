@@ -1505,6 +1505,20 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <listen_try>0</listen_try>
     ```
     )", 0) \
+    DECLARE(Int32, port_offset, 0, R"(
+    Offset applied to all configured server ports. This allows shifting port numbers without
+    modifying individual port configurations. Can be positive or negative. The resulting port
+    must be in range 1-65535, otherwise the server will refuse to start.
+
+    **Example**
+
+    With `<port_offset>100</port_offset>`, `tcp_port=9000` will listen on port 9100.
+    With `<port_offset>-5</port_offset>`, `http_port=8123` will listen on port 8118.
+
+    ```xml
+    <port_offset>0</port_offset>
+    ```
+    )", 0) \
     DECLARE(Bool, mysql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [mysql_port](/operations/server-configuration-parameters/settings#mysql_port). Connection with option `<--ssl-mode=none>` will be refused. Use it with [OpenSSL](/operations/server-configuration-parameters/settings#openssl) settings.)", 0) \
     DECLARE(Bool, postgresql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [postgresql_port](/operations/server-configuration-parameters/settings#postgresql_port). Connection with option `<sslmode=disable>` will be refused. Use it with [OpenSSL](/operations/server-configuration-parameters/settings#openssl) settings.)", 0) \
     DECLARE(Bool, skip_check_for_incorrect_settings, false, R"(
