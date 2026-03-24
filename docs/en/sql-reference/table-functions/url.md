@@ -63,7 +63,7 @@ For `url()` and the URL table engine, ClickHouse can expand wildcards by fetchin
 
 Notes:
 - Relative URLs are resolved against the index page URL.
-- Matching is strict: the pattern must match the full URL, including query string and fragment if present.
+- Wildcard matching is applied to the URL path component. Query string and fragment, if present, are preserved in resolved URLs but are not used for glob matching.
 - An empty listing is allowed; HTTP errors (e.g. 404) for index pages raise exceptions.
 - The maximum index page size is limited by [max_http_index_page_size](/operations/server-configuration-parameters/settings.md#max_http_index_page_size).
 
