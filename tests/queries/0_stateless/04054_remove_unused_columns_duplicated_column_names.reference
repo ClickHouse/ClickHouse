@@ -4,7 +4,7 @@ enable_remove_unused_columns = 0, explain = 0
 42	1	1	0	0
 1	2
 42	1	2
-0	hello	world
+0	hello	world		
 1			hello	world
 #############################################
 enable_remove_unused_columns = 0, explain = 1
@@ -182,7 +182,7 @@ enable_remove_unused_columns = 1, explain = 0
 42	1	1	0	0
 1	2
 42	1	2
-0	hello	world
+0	hello	world		
 1			hello	world
 #############################################
 enable_remove_unused_columns = 1, explain = 1

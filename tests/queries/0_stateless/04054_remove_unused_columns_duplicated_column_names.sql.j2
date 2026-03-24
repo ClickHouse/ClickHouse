@@ -10,7 +10,7 @@ SELECT '#############################################';
 SELECT 'enable_remove_unused_columns = {{ enable_remove_unused_columns }}, explain = {{ explain }}';
 SELECT '#############################################';
 
--- These are just some queries that has duplicated column names in their original plan
+-- These are just some queries that have duplicated column names in their original plan
 {% if explain %}EXPLAIN header = 1{% endif %}
 SELECT c, a, a, b, b
 FROM
