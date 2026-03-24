@@ -18,7 +18,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergSource.h>
-#include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -27,7 +26,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/ProfileEvents.h>
-#include <Core/SettingsEnums.h>
 
 namespace fs = std::filesystem;
 
@@ -260,33 +258,16 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
     bool need_only_count,
     IcebergMetadata * metadata)
 {
-    ObjectInfoPtr object_info;
-    auto query_settings = configuration->getQuerySettings(context_);
+    ObjectInfoPtr object_info = file_iterator->next(processor);
 
-    do
+    if (!object_info || object_info->getPath().empty())
+        return {};
+
+    if (!object_info->getObjectMetadata())
     {
-        object_info = file_iterator->next(processor);
-
-        if (!object_info || object_info->getPath().empty())
-            return {};
-
-        if (!object_info->getObjectMetadata())
-        {
-            bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
-            const auto & path = object_info->getPath();
-
-            if (query_settings.ignore_non_existent_file)
-            {
-                auto obj_metadata = object_storage->tryGetObjectMetadata(path, with_tags);
-                if (!obj_metadata)
-                    return {};
-
-                object_info->setObjectMetadata(obj_metadata.value());
-            }
-            else
-                object_info->setObjectMetadata(object_storage->getObjectMetadata(path, with_tags));
-        }
-    } while (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0);
+        bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
+        object_info->setObjectMetadata(object_storage->getObjectMetadata(object_info->getPath(), with_tags));
+    }
 
     auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
     chassert(iceberg_object);
@@ -420,28 +401,9 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
 
         metadata->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
-        if (object_info->data_lake_metadata
-            && object_info->data_lake_metadata->excluded_rows
-            && object_info->data_lake_metadata->excluded_rows->size() > 0)
-        {
-            builder.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
-            });
-        }
-
         std::optional<ActionsDAG> schema_transform;
-        if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
-        {
-            schema_transform = object_info->data_lake_metadata->schema_transform->clone();
-            schema_transform->removeUnusedActions(read_from_format_info.requested_columns.getNames());
-        }
-        if (!schema_transform)
-        {
-            auto transform = metadata->getSchemaTransformer(context_, object_info);
-            if (transform)
-                schema_transform = transform->clone();
-        }
+        if (auto transform = metadata->getSchemaTransformer(context_, object_info))
+            schema_transform = transform->clone();
 
         if (schema_transform.has_value())
         {
