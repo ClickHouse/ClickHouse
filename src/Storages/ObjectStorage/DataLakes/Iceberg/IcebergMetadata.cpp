@@ -30,6 +30,7 @@
 #include <Common/Exception.h>
 
 #include <Interpreters/PreparedSets.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
 
 #include <Databases/DataLake/Common.h>

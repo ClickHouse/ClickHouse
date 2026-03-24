@@ -5,7 +5,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -13,7 +12,6 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/DataLake/ICatalog.h>
-#include <Storages/MutationCommands.h>
 
 #include <memory>
 
@@ -62,12 +60,6 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        bool async_insert) override;
-
     void truncate(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -110,29 +102,6 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
-
-    bool optimize(
-        const ASTPtr & /*query*/,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ASTPtr & /*partition*/,
-        bool /*final*/,
-        bool /*deduplicate*/,
-        const Names & /* deduplicate_by_columns */,
-        bool /*cleanup*/,
-        ContextPtr context) override;
-
-    bool supportsDelete() const override { return current_metadata && current_metadata->supportsDelete(); }
-
-    bool supportsParallelInsert() const override { return current_metadata && current_metadata->supportsParallelInsert(); }
-
-    void mutate(const MutationCommands &, ContextPtr) override;
-    void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
-
-    Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
-
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
-
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
 protected:
     /// Storage configuration (data lake specific).

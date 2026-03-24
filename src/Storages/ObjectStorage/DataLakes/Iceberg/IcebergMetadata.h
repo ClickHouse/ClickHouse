@@ -32,6 +32,8 @@
 namespace DB
 {
 
+class AlterCommands;
+
 class IcebergMetadata
 {
 public:

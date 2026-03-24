@@ -7,6 +7,8 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
 
+namespace DataLake { class ICatalog; }
+
 namespace DB
 {
 

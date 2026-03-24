@@ -89,7 +89,7 @@ void ReadFromDataLakeStep::initializePipeline(QueryPipelineBuilder & pipeline, c
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         filter_actions_dag,
         context,
-        metadata->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+        nullptr,
         query_info.row_level_filter,
         query_info.prewhere_info);
 
@@ -156,7 +156,7 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
 
 bool ReadFromDataLakeStep::requestReadingInOrder() const
 {
-    return metadata->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
+    return false;
 }
 
 InputOrderInfoPtr ReadFromDataLakeStep::getDataOrder() const

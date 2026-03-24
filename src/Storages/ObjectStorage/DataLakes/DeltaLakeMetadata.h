@@ -13,6 +13,8 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/JSON/Object.h>
 
+namespace DataLake { class ICatalog; }
+
 namespace DB
 {
 

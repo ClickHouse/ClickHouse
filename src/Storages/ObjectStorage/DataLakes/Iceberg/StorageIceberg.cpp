@@ -24,6 +24,7 @@
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/AlterCommands.h>
 
 namespace DB
 {

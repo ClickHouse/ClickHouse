@@ -5,6 +5,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 

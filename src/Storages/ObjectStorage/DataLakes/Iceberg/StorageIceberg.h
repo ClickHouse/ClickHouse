@@ -6,6 +6,8 @@
 namespace DB
 {
 
+class AlterCommands;
+
 /**
  * Full explicit specialization of `StorageDataLake` for Iceberg.
  * Provides the same public interface as the generic template, plus

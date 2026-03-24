@@ -23,6 +23,8 @@ using TableChangesPtr = std::shared_ptr<TableChanges>;
 using TableChangesVersionRange = std::pair<size_t, std::optional<size_t>>;
 }
 
+namespace DataLake { class ICatalog; }
+
 namespace DB
 {
 
@@ -96,7 +98,7 @@ public:
         StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
-        std::shared_ptr<DataLake::ICatalog> catalog) override;
+        std::shared_ptr<DataLake::ICatalog> catalog);
 
 private:
     using TableSnapshotCache = CacheBase<SnapshotVersion, DeltaLake::TableSnapshot>;

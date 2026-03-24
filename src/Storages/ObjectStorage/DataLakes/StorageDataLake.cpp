@@ -11,10 +11,7 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -461,36 +458,6 @@ void StorageDataLake<DataLakeMetadata>::read(
 }
 
 template <typename DataLakeMetadata>
-SinkToStoragePtr StorageDataLake<DataLakeMetadata>::write(
-    const ASTPtr &,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr local_context,
-    bool /* async_insert */)
-{
-    ensureMetadataInitialized(local_context);
-    if (!current_metadata || !current_metadata->supportsWrites())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
-
-    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-    return current_metadata->write(sample_block, storage_id, object_storage, configuration, format_settings, local_context, catalog);
-}
-
-template <typename DataLakeMetadata>
-bool StorageDataLake<DataLakeMetadata>::optimize(
-    const ASTPtr & /*query*/,
-    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    const ASTPtr & /*partition*/,
-    bool /*final*/,
-    bool /*deduplicate*/,
-    const Names & /* deduplicate_by_columns */,
-    bool /*cleanup*/,
-    [[maybe_unused]] ContextPtr context)
-{
-    ensureMetadataInitialized(context);
-    return current_metadata->optimize(metadata_snapshot, context, format_settings);
-}
-
-template <typename DataLakeMetadata>
 void StorageDataLake<DataLakeMetadata>::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
@@ -517,52 +484,6 @@ template <typename DataLakeMetadata>
 void StorageDataLake<DataLakeMetadata>::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
-}
-
-template <typename DataLakeMetadata>
-void StorageDataLake<DataLakeMetadata>::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
-{
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto storage = getStorageID();
-    current_metadata->mutate(commands, configuration, context_, storage, metadata_snapshot, catalog, format_settings);
-}
-
-template <typename DataLakeMetadata>
-void StorageDataLake<DataLakeMetadata>::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
-{
-    if (current_metadata)
-        current_metadata->checkMutationIsPossible(commands);
-}
-
-template <typename DataLakeMetadata>
-Pipe StorageDataLake<DataLakeMetadata>::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
-{
-    auto * metadata = getExternalMetadata(context);
-    if (!metadata)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
-    return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
-}
-
-template <typename DataLakeMetadata>
-void StorageDataLake<DataLakeMetadata>::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
-{
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, context);
-
-    if (current_metadata)
-        current_metadata->alter(params, context);
-
-    DatabaseCatalog::instance()
-        .getDatabase(storage_id.database_name)
-        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
-    setInMemoryMetadata(new_metadata);
-}
-
-template <typename DataLakeMetadata>
-void StorageDataLake<DataLakeMetadata>::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
-{
-    if (current_metadata)
-        current_metadata->checkAlterIsPossible(commands);
 }
 
 #if USE_AVRO

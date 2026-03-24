@@ -20,6 +20,8 @@
 #include <Common/SharedLockGuard.h>
 
 
+namespace DataLake { class ICatalog; }
+
 namespace DB
 {
 class PaimonMetadata : public IDataLakeMetadata, private WithContext

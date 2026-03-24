@@ -294,7 +294,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
-    IDataLakeMetadata * metadata)
+    IDataLakeMetadata * /* metadata */)
 {
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -367,28 +367,8 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
         read_buf = createReadBuffer(object_info->relative_path_with_metadata, object_storage, context_, log);
 
         Block initial_header = read_from_format_info.format_header;
-        bool schema_changed = false;
 
-        if (auto initial_schema = metadata->getInitialSchemaByPath(context_, object_info))
-        {
-            Block sample_header;
-            for (const auto & [col_name, type] : *initial_schema)
-            {
-                sample_header.insert({type->createColumn(), type, col_name});
-            }
-            initial_header = sample_header;
-            schema_changed = true;
-        }
-
-        auto filter_info = [&]()
-        {
-            if (!schema_changed)
-                return format_filter_info;
-            auto mapper = metadata->getColumnMapperForObject(object_info);
-            if (!mapper)
-                return format_filter_info;
-            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
-        }();
+        auto filter_info = format_filter_info;
 
         chassert(object_info->getObjectMetadata().has_value());
 
@@ -450,8 +430,6 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
 
         builder.init(Pipe(input_format));
 
-        metadata->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
-
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows
             && object_info->data_lake_metadata->excluded_rows->size() > 0)
@@ -467,12 +445,6 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
         {
             schema_transform = object_info->data_lake_metadata->schema_transform->clone();
             schema_transform->removeUnusedActions(read_from_format_info.requested_columns.getNames());
-        }
-        if (!schema_transform)
-        {
-            auto transform = metadata->getSchemaTransformer(context_, object_info);
-            if (transform)
-                schema_transform = transform->clone();
         }
 
         if (schema_transform.has_value())
