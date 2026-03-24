@@ -6,7 +6,7 @@ The main reason is that ClickHouse is an open source project, and if you don't w
 
 Many developers can say that the code is the best docs by itself, and they are right. But, ClickHouse is not a project for C++ developers. Most of its users don't know C++, and they can't understand the code quickly. ClickHouse is large enough to absorb almost any change without a noticeable trace. Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in the documentation.
 
-If you want to help ClickHouse with documentation you can face, for example, the following questions:
+If you want to help ClickHouse with documentation you can face, for example, the following questioens:
 
 - "I don't know how to write."
 
