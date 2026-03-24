@@ -1707,9 +1707,27 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
     bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
     if (!flag_per_row)
     {
-        /// With multiple disjuncts, all keys are in sample_block_with_columns_to_add, so invariant is not held
-        size_t expected_columns_count = left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns();
-        if (expected_columns_count != result_sample_block.columns())
+        /// With multiple disjuncts, all keys are in sample_block_with_columns_to_add, so invariant is not held.
+        /// After join side swapping (e.g., LEFT ANTI → RIGHT ANTI), a column name
+        /// can appear in both the left block and `sample_block_with_columns_to_add` or
+        /// `required_right_keys`, and there can also be duplicates within the left block.
+        /// The result_sample_block deduplicates such columns, so compare unique name sets
+        /// rather than raw column counts.
+        NameSet expected_names;
+        if (canRemoveColumnsFromLeftBlock())
+            for (const auto & col : table_join->getOutputColumns(JoinTableSide::Left))
+                expected_names.insert(col.name);
+        else
+            for (const auto & name : left_sample_block.getNames())
+                expected_names.insert(name);
+
+        for (size_t i = 0; i < required_right_keys.columns(); ++i)
+            expected_names.insert(required_right_keys.getByPosition(i).name);
+
+        for (size_t i = 0; i < sample_block_with_columns_to_add.columns(); ++i)
+            expected_names.insert(sample_block_with_columns_to_add.getByPosition(i).name);
+
+        if (expected_names.size() != result_sample_block.columns())
         {
             Names left_block_names;
             if (canRemoveColumnsFromLeftBlock())
@@ -1721,7 +1739,7 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
 
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Unexpected number of columns in result sample block: {} expected {} ([{}] = [{}] + [{}] + [{}])",
-                            result_sample_block.columns(), expected_columns_count,
+                            result_sample_block.columns(), expected_names.size(),
                             result_sample_block.dumpNames(), fmt::join(left_block_names, ", "),
                             required_right_keys.dumpNames(), sample_block_with_columns_to_add.dumpNames());
         }
