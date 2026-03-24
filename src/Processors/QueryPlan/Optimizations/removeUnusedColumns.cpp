@@ -256,7 +256,7 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, 
     /// Propagate reduced requirements to children.
 
     auto result = removeChildrenOutputs(nodes, *node, required_input_positions);
-    switch(result)
+    switch (result)
     {
         case RemoveChildrenOutputResult::NotUpdated:
             return depth; // Only report if the node was changed
