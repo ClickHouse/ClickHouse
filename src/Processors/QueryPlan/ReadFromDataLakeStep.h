@@ -27,7 +27,8 @@ public:
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_,
-        IDataLakeMetadata * metadata_);
+        IDataLakeMetadata * metadata_,
+        bool distributed_processing_);
 
     static constexpr auto STEP_NAME = "ReadFromDataLake";
 
@@ -62,6 +63,8 @@ private:
 
     /// Non-owning pointer to datalake metadata, owned by StorageDataLake.
     IDataLakeMetadata * metadata;
+
+    const bool distributed_processing;
 
     void createIterator();
 };

@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/Sources/NullSource.h>
 #include <Formats/FormatFactory.h>
@@ -16,6 +17,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
+    extern const SettingsMaxThreads max_threads;
 }
 
 
@@ -32,7 +34,8 @@ ReadFromDataLakeStep::ReadFromDataLakeStep(
     ContextPtr context_,
     size_t max_block_size_,
     size_t num_streams_,
-    IDataLakeMetadata * metadata_)
+    IDataLakeMetadata * metadata_,
+    bool distributed_processing_)
     : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), columns_to_read, query_info_, storage_snapshot_, context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -44,6 +47,7 @@ ReadFromDataLakeStep::ReadFromDataLakeStep(
     , num_streams(num_streams_)
     , max_num_streams(num_streams_)
     , metadata(metadata_)
+    , distributed_processing(distributed_processing_)
 {
 }
 
@@ -135,14 +139,26 @@ void ReadFromDataLakeStep::createIterator()
         return;
 
     auto context = getContext();
-    auto query_settings = configuration->getQuerySettings(context);
 
-    iterator_wrapper = metadata->iterate(
-        filter_actions_dag.get(),
-        context->getFileProgressCallback(),
-        query_settings.list_object_keys_size,
-        storage_snapshot->metadata,
-        context);
+    if (distributed_processing)
+    {
+        iterator_wrapper = std::make_unique<StorageObjectStorageSource::ReadTaskIterator>(
+            context->getClusterFunctionReadTaskCallback(),
+            context->getSettingsRef()[Setting::max_threads],
+            /*is_archive_=*/false,
+            object_storage,
+            context);
+    }
+    else
+    {
+        auto query_settings = configuration->getQuerySettings(context);
+        iterator_wrapper = metadata->iterate(
+            filter_actions_dag.get(),
+            context->getFileProgressCallback(),
+            query_settings.list_object_keys_size,
+            storage_snapshot->metadata,
+            context);
+    }
 }
 
 static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)

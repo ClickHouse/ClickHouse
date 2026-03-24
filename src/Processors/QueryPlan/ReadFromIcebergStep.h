@@ -27,7 +27,8 @@ public:
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_,
-        IcebergMetadata * metadata_);
+        IcebergMetadata * metadata_,
+        bool distributed_processing_);
 
     static constexpr auto STEP_NAME = "ReadFromIceberg";
 
@@ -62,6 +63,8 @@ private:
 
     /// Non-owning pointer to Iceberg metadata, owned by StorageDataLake.
     IcebergMetadata * metadata;
+
+    const bool distributed_processing;
 
     void createIterator();
 };

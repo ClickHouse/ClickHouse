@@ -452,7 +452,8 @@ void StorageDataLake<DataLakeMetadata>::read(
         local_context,
         max_block_size,
         num_streams,
-        read_metadata);
+        read_metadata,
+        distributed_processing);
 
     query_plan.addStep(std::move(read_step));
 }
