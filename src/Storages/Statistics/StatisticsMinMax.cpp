@@ -1,3 +1,4 @@
+#include <DataTypes/IDataType.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -90,7 +91,7 @@ bool minMaxStatisticsValidator(const SingleStatisticsDescription & /*description
 {
     auto inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber();
+    return inner_data_type->isValueRepresentedByNumber() && !isIPv4(inner_data_type);
 }
 
 StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
