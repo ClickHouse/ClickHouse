@@ -1958,9 +1958,14 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
             LOG_DEBUG(log, "Log pointer moved from {} to {}, will retry", max_log_ptr, new_max_log_ptr);
             max_log_ptr = new_max_log_ptr;
         }
+        else if (max_log_ptr > new_max_log_ptr)
+        {
+            /// Log pointer moved backwards, the database was probably recreated.
+            LOG_DEBUG(log, "Log pointer moved backwards from {} to {}, the database was probably recreated, will retry", max_log_ptr, new_max_log_ptr);
+            max_log_ptr = new_max_log_ptr;
+        }
         else
         {
-            chassert(max_log_ptr == new_max_log_ptr);
             chassert(escaped_table_names.size() != table_name_to_metadata.size());
             LOG_DEBUG(log, "Cannot get metadata of some tables due to ZooKeeper error, will retry");
         }
