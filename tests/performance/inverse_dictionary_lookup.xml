@@ -1,0 +1,369 @@
+<test>
+    <create_query>
+        CREATE TABLE inverse_lookup_source_table
+        (
+            id UInt64,
+            attr_string String,
+            attr_uint UInt64
+        ) ENGINE = MergeTree ORDER BY id;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE inverse_lookup_fact_table
+        (
+            key UInt64,
+            payload String
+        ) ENGINE = MergeTree ORDER BY key;
+    </create_query>
+
+    <!-- Composite key dictionary setup -->
+    <create_query>
+        CREATE TABLE composite_key_source_table
+        (
+            key1 UInt64,
+            key2 String,
+            attr_string String,
+            attr_uint UInt64
+        ) ENGINE = MergeTree ORDER BY (key1, key2);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE composite_key_fact_table
+        (
+            key1 UInt64,
+            key2 String,
+            payload String
+        ) ENGINE = MergeTree ORDER BY (key1, key2);
+    </create_query>
+
+    <create_query>
+        CREATE DICTIONARY composite_key_dictionary
+        (
+            key1 UInt64,
+            key2 String,
+            attr_string String,
+            attr_uint UInt64
+        )
+        PRIMARY KEY key1, key2
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'composite_key_source_table'))
+        LAYOUT(COMPLEX_KEY_HASHED())
+        LIFETIME(0);
+    </create_query>
+
+    <create_query>
+        CREATE DICTIONARY inverse_lookup_dictionary
+        (
+            id UInt64,
+            attr_string String,
+            attr_uint UInt64
+        )
+        PRIMARY KEY id
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'inverse_lookup_source_table'))
+        LAYOUT(HASHED())
+        LIFETIME(0);
+    </create_query>
+
+    <fill_query>
+        INSERT INTO inverse_lookup_source_table
+        SELECT number, toString(number % 10), number % 10
+        FROM numbers(1000000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO inverse_lookup_fact_table
+        SELECT rand64() % 10, toString(number % 10)
+        FROM numbers(5000000);
+    </fill_query>
+
+    <!-- Fill composite key dictionary source table -->
+    <fill_query>
+        INSERT INTO composite_key_source_table
+        SELECT number % 100, toString(number % 10), toString(number % 10), number % 10
+        FROM numbers(1000000);
+    </fill_query>
+
+    <!-- Fill composite key fact table -->
+    <fill_query>
+        INSERT INTO composite_key_fact_table
+        SELECT rand64() % 100, toString(rand64() % 10), toString(number % 10)
+        FROM numbers(5000000);
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>elements_count</name>
+            <values>
+                <value>5000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Test equality comparison: dictGet(...) = 'value' -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) = '4'
+        FORMAT Null;
+    </query>
+
+    <!-- Test notEquals comparison: dictGet(...) != 'value' -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) != '4'
+        FORMAT Null;
+    </query>
+
+    <!-- Test greater than comparison (UInt64) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) &gt; 5
+        FORMAT Null;
+    </query>
+
+    <!-- Test less or equals comparison (UInt64) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) &lt;= 5
+        FORMAT Null;
+    </query>
+
+    <!-- Test less than comparison (String) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) &lt; '5'
+        FORMAT Null;
+    </query>
+
+    <!-- Test greater or equals comparison (String) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) &gt;= '5'
+        FORMAT Null;
+    </query>
+
+    <!-- Test greater than comparison (String) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) &gt; '5'
+        FORMAT Null;
+    </query>
+
+    <!-- Test less or equals comparison (String) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) &lt;= '5'
+        FORMAT Null;
+    </query>
+
+    <!-- Test less than comparison -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) &lt; 4
+        FORMAT Null;
+    </query>
+
+    <!-- Test greater or equals comparison -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) &gt;= 4
+        FORMAT Null;
+    </query>
+
+    <!-- Test LIKE comparison -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) LIKE '5%'
+        FORMAT Null;
+    </query>
+
+    <!-- Test NOT LIKE comparison -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) NOT LIKE '5%'
+        FORMAT Null;
+    </query>
+
+    <!-- Test IN with constant tuple: dictGet(...) IN (a, b) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) IN ('0', '1', '2', '3', '4')
+        FORMAT Null;
+    </query>
+
+    <!-- Test NOT IN with constant tuple: dictGet(...) NOT IN (a, b) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) NOT IN ('0', '1', '2', '3', '4')
+        FORMAT Null;
+    </query>
+
+    <!-- Test IN with numeric attribute -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) IN (0, 1, 2, 3, 4)
+        FORMAT Null;
+    </query>
+
+    <!-- Test NOT IN with numeric attribute -->
+    <query>
+        SELECT key
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) NOT IN (0, 1, 2, 3, 4)
+        FORMAT Null;
+    </query>
+
+    <!-- Test combined with AND -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) IN ('0', '1', '2', '3', '4')
+          AND dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) &lt; 4
+        FORMAT Null;
+    </query>
+
+    <!-- Test combined with OR -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) NOT IN ('0', '1', '2', '3', '4')
+           OR dictGetString('inverse_lookup_dictionary', 'attr_string', key) &gt;= '4'
+        FORMAT Null;
+    </query>
+
+    <!-- ==================== Composite key tests ==================== -->
+
+    <!-- Test composite key: equality comparison -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) = '4'
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: notEquals comparison -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) != '4'
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: greater than comparison (UInt64) -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetUInt64('composite_key_dictionary', 'attr_uint', (key1, key2)) &gt; 5
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: less or equals comparison (UInt64) -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetUInt64('composite_key_dictionary', 'attr_uint', (key1, key2)) &lt;= 5
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: less than comparison (String) -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) &lt; '5'
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: greater or equals comparison (String) -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) &gt;= '5'
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: LIKE comparison -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) LIKE '5%'
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: NOT LIKE comparison -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) NOT LIKE '5%'
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: IN with constant tuple -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) IN ('0', '1', '2', '3', '4')
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: NOT IN with constant tuple -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) NOT IN ('0', '1', '2', '3', '4')
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: IN with numeric attribute -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetUInt64('composite_key_dictionary', 'attr_uint', (key1, key2)) IN (0, 1, 2, 3, 4)
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: NOT IN with numeric attribute -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetUInt64('composite_key_dictionary', 'attr_uint', (key1, key2)) NOT IN (0, 1, 2, 3, 4)
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: combined with AND -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) IN ('0', '1', '2', '3', '4')
+          AND dictGetUInt64('composite_key_dictionary', 'attr_uint', (key1, key2)) &lt; 4
+        FORMAT Null;
+    </query>
+
+    <!-- Test composite key: combined with OR -->
+    <query>
+        SELECT count()
+        FROM composite_key_fact_table
+        WHERE dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) NOT IN ('0', '1', '2', '3', '4')
+           OR dictGetString('composite_key_dictionary', 'attr_string', (key1, key2)) &gt;= '4'
+        FORMAT Null;
+    </query>
+
+    <drop_query>DROP DICTIONARY IF EXISTS inverse_lookup_dictionary;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS inverse_lookup_source_table;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS inverse_lookup_fact_table;</drop_query>
+    <drop_query>DROP DICTIONARY IF EXISTS composite_key_dictionary;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS composite_key_source_table;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS composite_key_fact_table;</drop_query>
+</test>

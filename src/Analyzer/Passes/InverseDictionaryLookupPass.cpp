@@ -166,7 +166,7 @@ public:
         auto where_condition = buildWhereCondition(*ctx, node_function, function_name, is_in_function);
         auto subquery = buildSubquery(*ctx, where_condition);
 
-        auto final_in_expr = buildFinalInExpression(*ctx, subquery, "in");
+        auto final_in_expr = buildFinalInExpression(*ctx, subquery);
 
         DataTypePtr original_result_type = node_function->getResultType();
         QueryTreeNodePtr replacement_node = final_in_expr;
@@ -347,13 +347,12 @@ private:
         return subquery_node;
     }
 
-    QueryTreeNodePtr
-    buildFinalInExpression(const TransformContext & ctx, const QueryTreeNodePtr & subquery, const String & result_function_name)
+    QueryTreeNodePtr buildFinalInExpression(const TransformContext & ctx, const QueryTreeNodePtr & subquery)
     {
-        auto in_function_node = std::make_shared<FunctionNode>(result_function_name);
+        auto in_function_node = std::make_shared<FunctionNode>("in");
         in_function_node->markAsOperator();
         in_function_node->getArguments().getNodes() = {ctx.dictget_info.key_expr_node, subquery};
-        resolveOrdinaryFunctionNodeByName(*in_function_node, result_function_name, getContext());
+        resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
         return in_function_node;
     }
 };
