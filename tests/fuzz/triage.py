@@ -15,6 +15,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -79,9 +80,8 @@ SANITIZER_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 
-# When `--fuzzer-binary` is provided, the sanitizer is told to write its log
-# here so we can read it back.
-ASAN_LOG_PATH = "/tmp/asan_triage.log"
+# Basename used for per-invocation sanitizer log files inside a temporary directory.
+ASAN_LOG_BASENAME = "asan_triage.log"
 
 
 # ---------------------------------------------------------------------------
@@ -182,35 +182,36 @@ def _run_fuzzer_on_crash(binary: Path, crash_path: Path) -> Optional[str]:
     """
     Execute `binary crash_path` with sanitizer log-path options and return
     the captured stderr/log content, or None on failure.
+
+    A per-invocation temporary directory is used for the sanitizer log so that
+    concurrent triage runs do not interfere with each other.
     """
     env = os.environ.copy()
-    log_prefix = ASAN_LOG_PATH
-    sanitizer_opts = (
-        f"log_path={log_prefix}:halt_on_error=0:exitcode=0"
-    )
-    env["ASAN_OPTIONS"] = sanitizer_opts
-    env["MSAN_OPTIONS"] = sanitizer_opts
-    env["UBSAN_OPTIONS"] = f"log_path={log_prefix}:halt_on_error=0:exitcode=0"
-
     try:
-        result = subprocess.run(
-            [str(binary), str(crash_path)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-        )
-        output = result.stderr + result.stdout
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            log_prefix = os.path.join(tmp_dir, ASAN_LOG_BASENAME)
+            sanitizer_opts = f"log_path={log_prefix}:halt_on_error=0:exitcode=0"
+            env["ASAN_OPTIONS"] = sanitizer_opts
+            env["MSAN_OPTIONS"] = sanitizer_opts
+            env["UBSAN_OPTIONS"] = f"log_path={log_prefix}:halt_on_error=0:exitcode=0"
 
-        # Also try to read the file written by log_path.
-        for candidate in Path("/tmp").glob("asan_triage.log*"):
-            try:
-                output += candidate.read_text(errors="replace")
-                candidate.unlink(missing_ok=True)
-            except OSError:
-                pass
+            result = subprocess.run(
+                [str(binary), str(crash_path)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=env,
+            )
+            output = result.stderr + result.stdout
 
-        return output if output.strip() else None
+            # Also read any files written by log_path (sanitizer appends PID suffix).
+            for candidate in Path(tmp_dir).glob(f"{ASAN_LOG_BASENAME}*"):
+                try:
+                    output += candidate.read_text(errors="replace")
+                except OSError:
+                    pass
+
+            return output if output.strip() else None
     except (subprocess.TimeoutExpired, OSError):
         return None
 
@@ -287,11 +288,20 @@ def group_crashes(crash_infos: List[CrashInfo]) -> List[CrashGroup]:
 
 
 def collect_crash_files(crashes_dir: Path) -> List[Path]:
-    """Return all crash files in `crashes_dir` matching known prefixes."""
+    """Return all crash input files in `crashes_dir` matching known prefixes.
+
+    Companion log/text files (e.g. ``crash-abc.log``) share the same prefix but
+    are excluded so they are not mistakenly treated as fuzzer inputs.
+    """
     prefixes = tuple(PREFIX_SEVERITY.keys())
+    excluded_suffixes = {".log", ".txt", ".md"}
     crash_files: List[Path] = []
     for entry in sorted(crashes_dir.iterdir()):
-        if entry.is_file() and entry.name.startswith(prefixes):
+        if (
+            entry.is_file()
+            and entry.name.startswith(prefixes)
+            and entry.suffix not in excluded_suffixes
+        ):
             crash_files.append(entry)
     return crash_files
 

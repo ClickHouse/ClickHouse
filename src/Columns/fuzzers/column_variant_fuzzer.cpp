@@ -41,19 +41,7 @@ static MutableColumnPtr buildSourceVariantColumn(const DiscriminatorVec & local_
 
     auto col = ColumnVariant::create(std::move(nested), local_to_global);
 
-    /// Determine the local discriminator for String (global=0) by reversing the mapping.
-    ColumnVariant::Discriminator local_string = ColumnVariant::NULL_DISCRIMINATOR;
-    for (size_t i = 0; i < local_to_global.size(); ++i)
-    {
-        if (local_to_global[i] == 0)
-            local_string = static_cast<ColumnVariant::Discriminator>(i);
-    }
-
-    /// Insert: String "hello", UInt64 42, NULL, String "world", UInt64 100
-    if (local_string != ColumnVariant::NULL_DISCRIMINATOR)
-        col->insertIntoVariantFrom(0 /* global String */, *ColumnString::create(), 0);
-
-    /// Use Field-based insertion which is safer for building test data
+    /// Insert rows via Field-based API which handles local↔global mapping automatically.
     col->insert(Field(String("hello")));
     col->insert(Field(UInt64(42)));
     col->insertDefault(); /// NULL
