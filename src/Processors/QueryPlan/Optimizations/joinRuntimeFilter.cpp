@@ -345,6 +345,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
+    bool key_expression_nodes_inserted = false;
 
     ColumnsWithTypeAndName join_keys_probe_side;
     ColumnsWithTypeAndName join_keys_build_side;
@@ -381,16 +382,18 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             join_keys_probe_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->first.keys | std::views::transform(get_node_column_with_type_and_name));
             join_keys_build_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->second.keys | std::views::transform(get_node_column_with_type_and_name));
             if (!isPassthroughActions(key_dags->first.actions_dag))
-                makeExpressionNodeOnTopOf(*apply_filter_node, std::move(key_dags->first.actions_dag), nodes, makeDescription("Calculate left join keys"));
+                key_expression_nodes_inserted |= makeExpressionNodeOnTopOf(
+                    *apply_filter_node, std::move(key_dags->first.actions_dag), nodes, makeDescription("Calculate left join keys"));
             if (!isPassthroughActions(key_dags->second.actions_dag))
-                makeExpressionNodeOnTopOf(*build_filter_node, std::move(key_dags->second.actions_dag), nodes, makeDescription("Calculate right join keys"));
+                key_expression_nodes_inserted |= makeExpressionNodeOnTopOf(
+                    *build_filter_node, std::move(key_dags->second.actions_dag), nodes, makeDescription("Calculate right join keys"));
         }
     }
 
     // Skip runtime filters if there are no join keys
     if (join_keys_build_side.empty())
     {
-        return false;
+        return key_expression_nodes_inserted;
     }
 
     /// When negation will be use for the set of rows in filter, double check that all original predicates were transformed into equality predicates
@@ -594,7 +597,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         {
             LOG_DEBUG(getLogger("joinRuntimeFilter"),
                 "All runtime filters disabled due to high saturation. Skipping FilterStep creation.");
-            return false;
+            return key_expression_nodes_inserted;
         }
 
         if (all_filter_conditions.size() == 1)
