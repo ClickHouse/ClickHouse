@@ -23,7 +23,7 @@ protected:
 
 bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
-    const auto * join_step = typeid_cast<JoinStepLogical*>(expression->getQueryPlanStep());
+    const auto * join_step = typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep());
     if (!join_step)
         return false;
 
@@ -48,14 +48,13 @@ static std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & joi
 std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     chassert(expression->inputs.size() == 2);
-    const auto * join_step = typeid_cast<JoinStepLogical*>(expression->getQueryPlanStep());
+    const auto * join_step = typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep());
     chassert(join_step);
 
     auto swapped_join_step = cloneSwapped(*join_step);
     swapped_join_step->setStepDescription(fmt::format("{} swapped", join_step->getStepDescription()), 200);
 
-    GroupExpressionPtr expression_with_swapped_inputs = std::make_shared<GroupExpression>(nullptr);
-    expression_with_swapped_inputs->plan_step = std::move(swapped_join_step);
+    GroupExpressionPtr expression_with_swapped_inputs = std::make_shared<GroupExpression>(std::move(swapped_join_step));
     expression_with_swapped_inputs->inputs = {expression->inputs[1], expression->inputs[0]};
     expression_with_swapped_inputs->setApplied(*this, {});  /// Don't apply commutativity rule to the new expression
     memo.getGroup(expression->group_id)->addLogicalExpression(expression_with_swapped_inputs);

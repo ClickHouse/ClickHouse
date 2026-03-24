@@ -132,7 +132,6 @@ private:
         const DistributionDescription & distribution) const
     {
         auto implementation_expression = std::make_shared<GroupExpression>(*expression);
-        implementation_expression->plan_step->setStepDescription(*expression->plan_step);
         implementation_expression->setApplied(*this, required_properties);
 
         chassert(implementation_expression->inputs.size() == 1);
@@ -152,9 +151,9 @@ private:
             if (!input_props.distribution.columns.empty())
             {
                 const ActionsDAG * dag = nullptr;
-                if (auto * expr_step = typeid_cast<ExpressionStep *>(implementation_expression->plan_step.get()))
+                if (const auto * expr_step = typeid_cast<const ExpressionStep *>(implementation_expression->plan_step.get()))
                     dag = &expr_step->getExpression();
-                else if (auto * filter_step = typeid_cast<FilterStep *>(implementation_expression->plan_step.get()))
+                else if (const auto * filter_step = typeid_cast<const FilterStep *>(implementation_expression->plan_step.get()))
                     dag = &filter_step->getExpression();
 
                 if (dag && !translateDistributionColumns(*dag, input_props.distribution.columns))

@@ -95,8 +95,8 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         : distribution_node_count;
 
     ExpressionCost total_cost;
-    IQueryPlanStep * expression_plan_step = expression->getQueryPlanStep();
-    if (const auto * join_step = typeid_cast<JoinStepLogical *>(expression_plan_step))
+    const IQueryPlanStep * expression_plan_step = expression->getQueryPlanStep();
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(expression_plan_step))
     {
         const auto & left_input = expression->inputs[0];
         const auto & right_input = expression->inputs[1];
@@ -105,28 +105,28 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         const auto * join_strategy = dynamic_cast<const IJoinStrategy *>(expression->strategy.get());
         total_cost = estimateHashJoinCost(*join_step, join_strategy, *group->statistics, *left_input_group->statistics, *right_input_group->statistics, parallelism);
     }
-    else if (const auto * read_step = typeid_cast<ReadFromMergeTree *>(expression_plan_step))
+    else if (const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression_plan_step))
     {
         const auto * read_strategy = dynamic_cast<const IReadStrategy *>(expression->strategy.get());
         total_cost = estimateReadCost(*read_step, read_strategy, *group->statistics, distribution_node_count);
     }
-    else if (typeid_cast<FilterStep *>(expression_plan_step))
+    else if (typeid_cast<const FilterStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
         total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count / parallelism;
     }
-    else if (typeid_cast<ExpressionStep *>(expression_plan_step))
+    else if (typeid_cast<const ExpressionStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
         total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count / parallelism;
     }
-    else if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(expression_plan_step))
+    else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
         const auto * aggregation_strategy = dynamic_cast<const IAggregationStrategy *>(expression->strategy.get());
         total_cost = estimateAggregationCost(*aggregating_step, aggregation_strategy, *group->statistics, *input_group->statistics, parallelism);
     }
-    else if (typeid_cast<MergingAggregatedStep *>(expression_plan_step))
+    else if (typeid_cast<const MergingAggregatedStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
         /// Merging intermediate aggregate states: CPU proportional to input + output rows.
@@ -135,7 +135,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         /// Merge phase is sequential (single-threaded merge of partial states).
         total_cost.cost.sequential += input_group->statistics->estimated_row_count / parallelism;
     }
-    else if (dynamic_cast<BroadcastExchangeStep *>(expression_plan_step))
+    else if (dynamic_cast<const BroadcastExchangeStep *>(expression_plan_step))
     {
         auto bytes_per_row = group->statistics->estimated_bytes_per_row;
         /// Broadcast replicates all rows to every destination node.
@@ -146,7 +146,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         /// Fixed overhead for connection setup / metadata exchange is sequential.
         total_cost.cost.sequential += memo.getCostConfig().exchange_fixed_overhead;
     }
-    else if (dynamic_cast<LogicalExchangeStep *>(expression_plan_step))
+    else if (dynamic_cast<const LogicalExchangeStep *>(expression_plan_step))
     {
         auto bytes_per_row = group->statistics->estimated_bytes_per_row;
         /// Gather, Shuffle, Scatter: each row is sent exactly once; cost is proportional to data volume.
@@ -154,7 +154,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         /// Fixed overhead for connection setup / metadata exchange is sequential.
         total_cost.cost.sequential += memo.getCostConfig().exchange_fixed_overhead;
     }
-    else if (typeid_cast<SortingStep *>(expression_plan_step))
+    else if (typeid_cast<const SortingStep *>(expression_plan_step))
     {
         /// Sorting: N log N CPU cost (parallel partial sort across streams).
         /// At N nodes each node sorts 1/N of the data (replicated = no parallelism benefit).

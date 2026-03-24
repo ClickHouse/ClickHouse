@@ -62,14 +62,14 @@ protected:
 
 bool AggregationImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
-    const auto * agg_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
+    const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     return agg_step != nullptr &&
         expression->strategy == nullptr;
 }
 
 std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    const auto * agg_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
+    const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     if (!agg_step)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "AggregationImplementation::applyImpl called for non-AggregatingStep expression '{}'",
@@ -214,7 +214,7 @@ OptimizationRulePtr createAggregationImplementation() { return std::make_shared<
 
 bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
-    const auto * agg_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
+    const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     return agg_step != nullptr &&
         expression->strategy == nullptr &&
         agg_step->getFinal() &&
@@ -223,7 +223,7 @@ bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expressi
 
 std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
-    const auto * agg_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
+    const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     if (!agg_step)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "TwoPhaseAggregationTransformation::applyImpl called for non-AggregatingStep expression '{}'",

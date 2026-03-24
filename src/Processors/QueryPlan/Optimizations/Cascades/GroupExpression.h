@@ -20,24 +20,25 @@ using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 class GroupExpression final
 {
 public:
+    /// Initial creation from the query plan (takes ownership via unique_ptr,
+    /// then stored as shared_ptr<const> for sharing across GroupExpressions).
     explicit GroupExpression(QueryPlanStepPtr plan_step_)
         : plan_step(std::move(plan_step_))
     {}
 
+    /// Shallow copy: shares the immutable plan_step, copies only metadata.
+    /// Rules that need a different step assign a new one to `plan_step`.
     GroupExpression(const GroupExpression & other_)
         : group_id(other_.group_id)
-        , plan_step(other_.getQueryPlanStep()->clone())
+        , plan_step(other_.plan_step)
         , strategy(other_.strategy)
-//        , original_node(nullptr)
+        , description_suffix(other_.description_suffix)
         , inputs(other_.inputs)
-    {
-        /// clone() may not preserve the step description, so copy it from the original
-        plan_step->setStepDescription(*other_.plan_step);
-    }
+    {}
 
     String getName() const;
     String getDescription() const;
-    IQueryPlanStep * getQueryPlanStep() const;
+    const IQueryPlanStep * getQueryPlanStep() const;
     bool isApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties) const;
     void setApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties);
 
@@ -46,9 +47,9 @@ public:
     String fingerprint() const;
 
     GroupId group_id = INVALID_GROUP_ID;
-    QueryPlanStepPtr plan_step;             /// Main implementation step
+    std::shared_ptr<const IQueryPlanStep> plan_step;  /// Shared immutable plan step
     ImplementationStrategyPtr strategy;     /// Implementation strategy (nullptr = logical / default)
-//    QueryPlan::Node * original_node;    /// Node form the original query plan if the expression was directly created from it
+    String description_suffix;             /// Extra description set by rules (e.g., "(by col)" for single-key shuffle)
 
     struct Input
     {

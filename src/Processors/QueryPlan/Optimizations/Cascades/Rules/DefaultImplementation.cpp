@@ -27,15 +27,15 @@ public:
 
     bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
-        auto * step = expression->getQueryPlanStep();
+        const auto * step = expression->getQueryPlanStep();
         /// Steps with specialized implementation rules.
-        if (typeid_cast<AggregatingStep *>(step) != nullptr
-            || typeid_cast<JoinStepLogical *>(step) != nullptr)
+        if (typeid_cast<const AggregatingStep *>(step) != nullptr
+            || typeid_cast<const JoinStepLogical *>(step) != nullptr)
             return false;
         /// Distribution-passthrough steps handled by `DistributionPassthrough`.
-        if (typeid_cast<ExpressionStep *>(step) != nullptr
-            || typeid_cast<FilterStep *>(step) != nullptr
-            || typeid_cast<BuildRuntimeFilterStep *>(step) != nullptr)
+        if (typeid_cast<const ExpressionStep *>(step) != nullptr
+            || typeid_cast<const FilterStep *>(step) != nullptr
+            || typeid_cast<const BuildRuntimeFilterStep *>(step) != nullptr)
             return false;
         return true;
     }
@@ -47,7 +47,6 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
         auto implementation_expression = std::make_shared<GroupExpression>(*expression);
-        implementation_expression->plan_step->setStepDescription(*expression->plan_step);
         implementation_expression->setApplied(*this, required_properties);
         /// No distribution propagation: output stays at default {1 node}.
 

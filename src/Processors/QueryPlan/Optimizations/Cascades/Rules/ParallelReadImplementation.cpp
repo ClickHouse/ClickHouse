@@ -33,14 +33,14 @@ protected:
 
 bool ParallelReadImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
 {
-    return typeid_cast<ReadFromMergeTree *>(expression->getQueryPlanStep()) != nullptr &&
+    return typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep()) != nullptr &&
         required_properties.distribution.node_count > 1 &&
         !required_properties.distribution.is_replicated;
 }
 
 std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    auto * read_step = typeid_cast<ReadFromMergeTree *>(expression->getQueryPlanStep());
+    const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep());
     const size_t node_count = required_properties.distribution.node_count;
 
     /// Produce a distributed read that splits work uniformly across all nodes.
@@ -87,14 +87,14 @@ protected:
 
 bool ReplicatedReadImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
 {
-    return typeid_cast<ReadFromMergeTree *>(expression->getQueryPlanStep()) != nullptr &&
+    return typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep()) != nullptr &&
         required_properties.distribution.node_count > 1 &&
         required_properties.distribution.is_replicated;
 }
 
 std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    auto * read_step = typeid_cast<ReadFromMergeTree *>(expression->getQueryPlanStep());
+    const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep());
     const size_t node_count = required_properties.distribution.node_count;
 
     LOG_TEST(getLogger("ReplicatedRead"), "Creating replicated read for '{}' at {} nodes",

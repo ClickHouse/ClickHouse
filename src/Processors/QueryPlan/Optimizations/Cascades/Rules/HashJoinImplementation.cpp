@@ -35,13 +35,13 @@ protected:
 
 bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
-    return typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep()) != nullptr &&
+    return typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()) != nullptr &&
         expression->strategy == nullptr;
 }
 
 std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    auto * join_step = typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep());
+    const auto * join_step = typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep());
     chassert(join_step);
     chassert(expression->inputs.size() == 2);
 
@@ -54,11 +54,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     /// Always applicable; when cluster has only 1 node it is also the only strategy
     /// because all distributed strategies produce the same plan on a single-node cluster.
     {
-        auto new_join_step = join_step->clone();
-        new_join_step->setStepDescription(fmt::format("Local HashJoin {}", join_step->getStepDescription()), 200);
-
         GroupExpressionPtr local_join = std::make_shared<GroupExpression>(*expression);
-        local_join->plan_step = std::move(new_join_step);
         local_join->strategy = std::make_shared<LocalJoinStrategy>();
 
         DistributionDescription single_node;     /// node_count=1, not replicated (default)
@@ -115,9 +111,6 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
         /// replicating the output side causes duplicate rows across nodes.
         if (!right_output_unsafe)
         {
-            auto new_join_step = join_step->clone();
-            new_join_step->setStepDescription(fmt::format("Broadcast HashJoin {}", join_step->getStepDescription()), 200);
-
             /// Left input: partitioned across N nodes (any column set is acceptable)
             DistributionDescription left_dist;
             left_dist.node_count = candidate_node_count;
@@ -128,7 +121,6 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             right_dist.is_replicated = true;
 
             GroupExpressionPtr broadcast_join = std::make_shared<GroupExpression>(*expression);
-            broadcast_join->plan_step = std::move(new_join_step);
             broadcast_join->strategy = std::make_shared<BroadcastJoinStrategy>();
             broadcast_join->inputs[0].required_properties.distribution = left_dist;
             broadcast_join->inputs[1].required_properties.distribution = right_dist;
@@ -204,11 +196,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
                 }
             }
 
-            auto new_join_step = join_step->clone();
-            new_join_step->setStepDescription(fmt::format("Shuffle HashJoin {}", join_step->getStepDescription()), 200);
-
             GroupExpressionPtr partitioned_join = std::make_shared<GroupExpression>(*expression);
-            partitioned_join->plan_step = std::move(new_join_step);
             partitioned_join->strategy = std::make_shared<ShuffleJoinStrategy>();
             partitioned_join->inputs[0].required_properties.distribution = left_dist;
             partitioned_join->inputs[1].required_properties.distribution = right_dist;
@@ -241,13 +229,9 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
                 single_output_dist.node_count = candidate_node_count;
                 single_output_dist.columns.push_back({left_col, right_col});
 
-                auto new_join_step = join_step->clone();
-                new_join_step->setStepDescription(
-                    fmt::format("Shuffle HashJoin (by {}) {}", left_col, join_step->getStepDescription()), 200);
-
                 GroupExpressionPtr single_key_join = std::make_shared<GroupExpression>(*expression);
-                single_key_join->plan_step = std::move(new_join_step);
                 single_key_join->strategy = std::make_shared<ShuffleJoinStrategy>();
+                single_key_join->description_suffix = fmt::format("(by {})", left_col);
                 single_key_join->inputs[0].required_properties.distribution = single_left_dist;
                 single_key_join->inputs[1].required_properties.distribution = single_right_dist;
                 single_key_join->properties.distribution = single_output_dist;

@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/Context.h>
@@ -126,6 +127,24 @@ void addConvertingExpression(QueryPlan & plan, const SharedHeader & expected_hea
     }
 }
 
+/// Clone the shared immutable plan_step and apply the strategy-based description.
+/// Join strategies share the logical step, so the description is formatted here.
+/// Other strategies (aggregation, read) set descriptions during rule application.
+static QueryPlanStepPtr cloneStepForBestPlan(const GroupExpression & expression)
+{
+    auto step = expression.getQueryPlanStep()->clone();
+    if (const auto * join_strategy = dynamic_cast<const IJoinStrategy *>(expression.strategy.get()))
+    {
+        const auto & suffix = expression.description_suffix;
+        const auto & original = expression.getQueryPlanStep()->getStepDescription();
+        if (suffix.empty())
+            step->setStepDescription(fmt::format("{} {}", join_strategy->getName(), original), 200);
+        else
+            step->setStepDescription(fmt::format("{} {} {}", join_strategy->getName(), suffix, original), 200);
+    }
+    return step;
+}
+
 QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties, const Memo & memo)
 {
     const auto & cost_config = memo.getCostConfig();
@@ -201,18 +220,18 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         if (frame.expression->inputs.empty())
         {
             result = std::make_unique<QueryPlan>();
-            result->addStep(frame.expression->getQueryPlanStep()->clone());
+            result->addStep(cloneStepForBestPlan(*frame.expression));
         }
         else if (frame.expression->inputs.size() == 1)
         {
             result = std::move(frame.child_plans[0]);
-            auto step = frame.expression->getQueryPlanStep()->clone();
+            auto step = cloneStepForBestPlan(*frame.expression);
             addConvertingExpression(*result, step->getInputHeaders().at(0));
             result->addStep(std::move(step));
         }
         else
         {
-            auto step = frame.expression->getQueryPlanStep()->clone();
+            auto step = cloneStepForBestPlan(*frame.expression);
             for (size_t i = 0; i < frame.child_plans.size(); ++i)
                 addConvertingExpression(*frame.child_plans[i], step->getInputHeaders().at(i));
             result = std::make_unique<QueryPlan>();

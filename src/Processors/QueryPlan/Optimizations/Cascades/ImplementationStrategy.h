@@ -24,17 +24,17 @@ struct IReadStrategy : IImplementationStrategy {};
 
 struct LocalJoinStrategy final : IJoinStrategy
 {
-    String getName() const override { return "LocalJoin"; }
+    String getName() const override { return "Local HashJoin"; }
 };
 
 struct BroadcastJoinStrategy final : IJoinStrategy
 {
-    String getName() const override { return "BroadcastJoin"; }
+    String getName() const override { return "Broadcast HashJoin"; }
 };
 
 struct ShuffleJoinStrategy final : IJoinStrategy
 {
-    String getName() const override { return "ShuffleJoin"; }
+    String getName() const override { return "Shuffle HashJoin"; }
 };
 
 /// --- Aggregation strategies ---

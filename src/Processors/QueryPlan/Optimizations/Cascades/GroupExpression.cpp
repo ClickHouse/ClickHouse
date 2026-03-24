@@ -28,13 +28,9 @@ String GroupExpression::getDescription() const
     return getName() + " " + description;
 }
 
-IQueryPlanStep * GroupExpression::getQueryPlanStep() const
+const IQueryPlanStep * GroupExpression::getQueryPlanStep() const
 {
-//    if (plan_step)
-        return plan_step.get();
-//    if (original_node)
-//        return original_node->step.get();
-//    return nullptr;
+    return plan_step.get();
 }
 
 bool GroupExpression::isApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties) const

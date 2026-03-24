@@ -44,7 +44,7 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     }
 
     auto expression = group->logical_expressions.front();
-    IQueryPlanStep * plan_step = expression->getQueryPlanStep();
+    const IQueryPlanStep * plan_step = expression->getQueryPlanStep();
 
     /// Ensure all input groups have statistics first (bottom-up derivation)
     for (const auto & input : expression->inputs)
@@ -55,7 +55,7 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     }
 
     /// Derive statistics based on the step type
-    if (const auto * join_step = typeid_cast<JoinStepLogical *>(plan_step))
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(plan_step))
     {
         const auto & left_input = expression->inputs[0];
         const auto & right_input = expression->inputs[1];
@@ -63,31 +63,31 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
         auto right_input_group = memo.getGroup(right_input.group_id);
         group->statistics = deriveJoinStatistics(*join_step, *left_input_group->statistics, *right_input_group->statistics);
     }
-    else if (const auto * read_step = typeid_cast<ReadFromMergeTree *>(plan_step))
+    else if (const auto * read_step = typeid_cast<const ReadFromMergeTree *>(plan_step))
     {
         group->statistics = deriveReadStatistics(*read_step);
     }
-    else if (const auto * filter_step = typeid_cast<FilterStep *>(plan_step))
+    else if (const auto * filter_step = typeid_cast<const FilterStep *>(plan_step))
     {
         auto input_group = memo.getGroup(expression->inputs[0].group_id);
         group->statistics = deriveFilterStatistics(*filter_step, *input_group->statistics);
     }
-    else if (const auto * expression_step = typeid_cast<ExpressionStep *>(plan_step))
+    else if (const auto * expression_step = typeid_cast<const ExpressionStep *>(plan_step))
     {
         auto input_group = memo.getGroup(expression->inputs[0].group_id);
         group->statistics = deriveExpressionStatistics(*expression_step, *input_group->statistics);
     }
-    else if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(plan_step))
+    else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(plan_step))
     {
         auto input_group = memo.getGroup(expression->inputs[0].group_id);
         group->statistics = deriveAggregatingStatistics(*aggregating_step, *input_group->statistics);
     }
-    else if (const auto * sorting_step = typeid_cast<SortingStep *>(plan_step))
+    else if (const auto * sorting_step = typeid_cast<const SortingStep *>(plan_step))
     {
         auto input_group = memo.getGroup(expression->inputs[0].group_id);
         group->statistics = deriveSortingStatistics(*sorting_step, *input_group->statistics);
     }
-    else if (const auto * limit_step = typeid_cast<LimitStep *>(plan_step))
+    else if (const auto * limit_step = typeid_cast<const LimitStep *>(plan_step))
     {
         auto input_group = memo.getGroup(expression->inputs[0].group_id);
         group->statistics = deriveLimitStatistics(*limit_step, *input_group->statistics);
