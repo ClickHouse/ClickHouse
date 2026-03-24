@@ -342,7 +342,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
     /// that would have matches in the right table. This means we need to add something like NOT IN filter.
-    const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
+    const bool is_left_anti_join = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
 
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
@@ -358,12 +358,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (predicate_op != JoinConditionOperator::Equals)
             return false;
 
-        /// For the case of ANTI JOIN (more specifically for check_left_does_not_contain) the hash table in JOIN can have extra rows that can be filtered
-        /// out by post-condition. In this case we cannot build set of keys for runtime filter from right-side rows because the set will contain more rows
-        /// and thus 'NOT IN set' operation will filter out rows that should not be filtered.
-        /// So in this case we check that all JOIN predicates are equality between expr from left columns and expr from right columns, but not something
-        /// like "func(left, right) = const"
-        if (check_left_does_not_contain &&
+        /// For `LEFT ANTI JOIN`, the hash table may contain rows that are later filtered by post-condition.
+        /// In this case we cannot build a runtime-filter key set from raw right-side rows, because it can be over-inclusive
+        /// and make `NOT IN` semantics incorrect by filtering out rows that should pass.
+        /// Therefore all `JOIN ON` predicates must be equalities between left-side and right-side expressions,
+        /// and we reject shapes like `func(left, right) = const`.
+        if (is_left_anti_join &&
             !(lhs.fromLeft() && rhs.fromRight()) &&
             !(lhs.fromRight() && rhs.fromLeft()))
         {
@@ -397,9 +397,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         return key_expression_nodes_inserted;
     }
 
-    /// When negation will be use for the set of rows in filter, double check that all original predicates were transformed into equality predicates
-    /// between left and right side
-    if (check_left_does_not_contain &&
+    /// For `LEFT ANTI JOIN` we use negated membership, so all original predicates must be preserved
+    /// as left-right equality keys after key extraction.
+    if (is_left_anti_join &&
         (join_keys_build_side.size() != total_join_on_predicates_count ||
         join_keys_probe_side.size() != total_join_on_predicates_count))
     {
@@ -407,7 +407,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             total_join_on_predicates_count, join_keys_probe_side.size(), join_keys_build_side.size());
     }
 
-    const String filter_name_prefix = fmt::format("{}_runtime_filter_{}", check_left_does_not_contain ? "_exclusion_" : "", thread_local_rng());
+    const String filter_name_prefix = fmt::format("{}_runtime_filter_{}", is_left_anti_join ? "_exclusion_" : "", thread_local_rng());
 
     /// Compute common types for each key pair
     DataTypes common_types;
@@ -441,7 +441,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// NOT_IN(a, set_a) AND NOT_IN(b, set_b) would incorrectly drop rows where one key is in its per-column set
     /// but the full tuple has no match in the right table.
     /// Instead, wrap all keys into a single Tuple and build one NOT IN filter on the tuple for exact tuple membership check.
-    const bool use_tuple_filter = check_left_does_not_contain && join_keys_build_side.size() > 1;
+    const bool use_tuple_filter = is_left_anti_join && join_keys_build_side.size() > 1;
 
     /// Filter that will be applied on the probe side
     ActionsDAG filter_dag(apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
@@ -555,7 +555,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             if (build_stats && build_stats->distinct_values > 0)
                 effective_n = static_cast<size_t>(build_stats->distinct_values);
 
-            if (shouldDisableRuntimeFilter(build_stats, optimization_settings, effective_n))
+            /// Planning-time saturation is only meaningful for Bloom-capable runtime filters.
+            if (!is_left_anti_join && shouldDisableRuntimeFilter(build_stats, optimization_settings, effective_n))
             {
                 LOG_DEBUG(getLogger("joinRuntimeFilter"),
                     "Saturation Check: Disabling filter for '{}' (n={})",
@@ -568,7 +569,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
             /// Add filter lookup to the probe subtree
             const auto & filter_condition = createRuntimeFilterCondition(filter_dag, filter_name, join_key_probe_side, common_type);
-            all_filter_conditions.push_back(check_left_does_not_contain
+            all_filter_conditions.push_back(is_left_anti_join
                 ? addNullBypassForAntiJoin(filter_dag, &filter_condition, {join_key_probe_side})
                 : &filter_condition);
 
@@ -586,7 +587,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
                     optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                     optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
+                    /*allow_to_use_not_exact_filter_=*/!is_left_anti_join);
 
                 new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
                 new_build_filter_node->children = {build_filter_node};
