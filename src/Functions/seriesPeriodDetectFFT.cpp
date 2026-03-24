@@ -118,7 +118,7 @@ public:
         size_t len = end - start;
         if (len < 4)
         {
-            period = 0; // At least four data points are required to detect period
+            period = NAN; // At least four data points are required to detect period
             return true;
         }
 
