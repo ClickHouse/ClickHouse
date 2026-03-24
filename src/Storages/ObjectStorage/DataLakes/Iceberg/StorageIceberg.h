@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 
 namespace DB
@@ -122,6 +123,7 @@ public:
 
 protected:
     StorageObjectStorageConfigurationPtr configuration;
+    StorageObjectStorageTableOptions table_options;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     const bool distributed_processing;

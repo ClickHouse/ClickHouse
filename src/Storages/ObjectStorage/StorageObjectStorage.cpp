@@ -108,10 +108,17 @@ StorageObjectStorage::StorageObjectStorage(
     , is_table_function(is_table_function_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
-    const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
+    /// Copy storage metadata fields from configuration to table_options.
+    table_options.format = configuration->format;
+    table_options.compression_method = configuration->compression_method;
+    table_options.structure = configuration->structure;
+    table_options.partition_strategy_type = configuration->partition_strategy_type;
+    table_options.partition_columns_in_data_file = configuration->partition_columns_in_data_file;
+
+    table_options.initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context, configuration->getRawPath());
+    const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (table_options.format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->partition_strategy;
+        && !table_options.partition_strategy;
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
     LOG_DEBUG(
@@ -149,17 +156,17 @@ StorageObjectStorage::StorageObjectStorage(
 
     if (configuration->getRawPath().hasSchemaHashWildcard())
     {
-        if (configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+        if (table_options.partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported with hive partition strategy");
 
         if (columns.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use _schema_hash placeholder without explicitly specifying columns");
 
-        configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
+        configuration->setSchemaHash(StorageObjectStorageTableOptions::computeSchemaHash(columns));
     }
 
     if (need_resolve_columns_or_format)
-        resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+        resolveSchemaAndFormat(columns, table_options.format, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
 
@@ -167,7 +174,7 @@ StorageObjectStorage::StorageObjectStorage(
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
-    if (updated_configuration && sample_path.empty() && need_resolve_sample_path && !configuration->partition_strategy)
+    if (updated_configuration && sample_path.empty() && need_resolve_sample_path && !table_options.partition_strategy)
     {
         try
         {
@@ -199,7 +206,7 @@ StorageObjectStorage::StorageObjectStorage(
             sample_path);
     }
 
-    bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+    bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(table_options.format, context, format_settings);
 
     /// TODO: Known problems with datalake prewhere:
     ///  * If the iceberg table went through schema evolution, columns read from file may need to
@@ -230,14 +237,14 @@ StorageObjectStorage::StorageObjectStorage(
 
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
-    if (configuration->partition_strategy)
-        metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
+    if (table_options.partition_strategy)
+        metadata.partition_key = table_options.partition_strategy->getPartitionKeyDescription();
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context,
         format_settings,
-        configuration->partition_strategy_type,
+        table_options.partition_strategy_type,
         sample_path));
 
     setInMemoryMetadata(metadata);
@@ -250,17 +257,17 @@ String StorageObjectStorage::getName() const
 
 bool StorageObjectStorage::prefersLargeBlocks() const
 {
-    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration->format);
+    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(table_options.format);
 }
 
 bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) const
 {
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(table_options.format, context);
 }
 
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(table_options.format, context, format_settings);
 }
 
 bool StorageObjectStorage::supportsPrewhere() const
@@ -312,7 +319,7 @@ void StorageObjectStorage::read(
     }
 
 
-    if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
+    if (table_options.partition_strategy && table_options.partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Reading from a partitioned {} storage is not implemented yet",
@@ -397,7 +404,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    if (configuration->partition_strategy)
+    if (table_options.partition_strategy)
     {
         return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
     }
@@ -415,8 +422,8 @@ SinkToStoragePtr StorageObjectStorage::write(
         format_settings,
         sample_block,
         local_context,
-        configuration->format,
-        configuration->compression_method);
+        table_options.format,
+        table_options.compression_method);
 }
 
 void StorageObjectStorage::truncate(
@@ -466,7 +473,7 @@ void StorageObjectStorage::drop()
 
 void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
-    configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+    configuration->addStructureAndFormatToArgsIfNeeded(args, "", table_options.format, context, /*with_structure=*/false);
 }
 
 }

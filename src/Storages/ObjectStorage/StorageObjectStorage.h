@@ -8,6 +8,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -111,6 +112,7 @@ protected:
     /// Contains information about table engine configuration
     /// and underlying storage access.
     StorageObjectStorageConfigurationPtr configuration;
+    StorageObjectStorageTableOptions table_options;
     /// `object_storage` to allow direct access to data storage.
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;

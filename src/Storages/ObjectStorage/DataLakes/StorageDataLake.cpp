@@ -83,8 +83,14 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     auto path = configuration->getRawPath();
     if (!path.path.ends_with('/'))
         configuration->setRawPath(StorageObjectStorageConfiguration::Path(path.path + "/"));
-    configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
-    const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
+    table_options.format = configuration->format;
+    table_options.compression_method = configuration->compression_method;
+    table_options.structure = configuration->structure;
+    table_options.partition_strategy_type = configuration->partition_strategy_type;
+    table_options.partition_columns_in_data_file = configuration->partition_columns_in_data_file;
+
+    table_options.initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context, configuration->getRawPath());
+    const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (table_options.format == "auto");
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
 
     LOG_DEBUG(
@@ -138,13 +144,13 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported for DataLake engines");
 
     if (need_resolve_columns_or_format)
-        resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+        resolveSchemaAndFormat(columns, table_options.format, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
 
     configuration->check(context);
 
-    bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+    bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(table_options.format, context, format_settings);
 
     /// TODO: Known problems with datalake prewhere:
     ///  * If the iceberg table went through schema evolution, columns read from file may need to
@@ -203,14 +209,14 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
 
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
-    if (configuration->partition_strategy)
-        metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
+    if (table_options.partition_strategy)
+        metadata.partition_key = table_options.partition_strategy->getPartitionKeyDescription();
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context,
         format_settings,
-        configuration->partition_strategy_type,
+        table_options.partition_strategy_type,
         sample_path));
 
     setInMemoryMetadata(metadata);
@@ -246,19 +252,19 @@ String StorageDataLake<DataLakeMetadata>::getName() const
 template <typename DataLakeMetadata>
 bool StorageDataLake<DataLakeMetadata>::prefersLargeBlocks() const
 {
-    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration->format);
+    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(table_options.format);
 }
 
 template <typename DataLakeMetadata>
 bool StorageDataLake<DataLakeMetadata>::parallelizeOutputAfterReading(ContextPtr context) const
 {
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(table_options.format, context);
 }
 
 template <typename DataLakeMetadata>
 bool StorageDataLake<DataLakeMetadata>::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(table_options.format, context, format_settings);
 }
 
 template <typename DataLakeMetadata>
@@ -367,7 +373,7 @@ void StorageDataLake<DataLakeMetadata>::read(
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 
-    if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
+    if (table_options.partition_strategy && table_options.partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Reading from a partitioned {} storage is not implemented yet",
@@ -481,7 +487,7 @@ void StorageDataLake<DataLakeMetadata>::drop()
 template <typename DataLakeMetadata>
 void StorageDataLake<DataLakeMetadata>::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
-    configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+    configuration->addStructureAndFormatToArgsIfNeeded(args, "", table_options.format, context, /*with_structure=*/false);
 }
 
 #if USE_AVRO
