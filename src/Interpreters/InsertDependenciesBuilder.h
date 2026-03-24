@@ -149,11 +149,15 @@ private:
     LoggerPtr logger;
 
 public:
-    // expose settings value into public
     bool deduplicate_blocks_in_dependent_materialized_views = false;
     bool insert_null_as_default = false;
     bool materialized_views_ignore_errors = false;
     bool ignore_materialized_views_with_dropped_target_table = false;
+
+    /// Returns true if errors should be ignored for the given view.
+    /// INSERT-level materialized_views_ignore_errors overrides all views;
+    /// otherwise checks the per-MV setting from the view's SELECT definition.
+    bool shouldIgnoreErrorsForView(const StorageID & view_id) const;
 };
 
 }

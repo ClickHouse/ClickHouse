@@ -17,6 +17,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
@@ -414,7 +417,7 @@ public:
             if (!view_errors.current_exception.set(exception_with_storage))
                 continue;
 
-            if (!insert_dependencies->materialized_views_ignore_errors)
+            if (!insert_dependencies->shouldIgnoreErrorsForView(status.view_id))
             {
                 output.pushException(exception_with_storage);
                 return Status::PortFull;
@@ -448,7 +451,7 @@ public:
             if (!errors.needLogQueryView())
                 continue;
 
-            if (insert_dependencies->materialized_views_ignore_errors)
+            if (insert_dependencies->shouldIgnoreErrorsForView(status.view_id))
             {
                 if (status.is_finished)
                 {
@@ -836,6 +839,30 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     return {select_context, insert_context};
 }
 
+bool InsertDependenciesBuilder::shouldIgnoreErrorsForView(const StorageID & view_id) const
+{
+    if (materialized_views_ignore_errors)
+        return true;
+
+    auto it = select_queries.find(view_id);
+    if (it != select_queries.end())
+    {
+        if (const auto * select = it->second->as<ASTSelectQuery>())
+        {
+            if (auto settings_ast = select->settings())
+            {
+                if (const auto * set_query = settings_ast->as<ASTSetQuery>())
+                {
+                    if (const Field * value = set_query->changes.tryGet("materialized_views_ignore_errors"))
+                        return value->safeGet<bool>();
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 String InsertDependenciesBuilder::debugTree() const
 {
     WriteBufferFromOwnString output_buffer;
@@ -1127,15 +1154,15 @@ void InsertDependenciesBuilder::collectAllDependencies()
         }
         catch (...)
         {
-            if (!materialized_views_ignore_errors)
-                throw;
-
             if (id == init_table_id)
                 throw;
 
             auto view_id = isView(id) ? id : path.parent(1);
 
             if (view_id == init_table_id)
+                throw;
+
+            if (!shouldIgnoreErrorsForView(view_id))
                 throw;
 
             auto exception = addStorageToException(std::current_exception(), view_id);

@@ -1,0 +1,40 @@
+-- { echoOn }
+
+-- Case 1: Insert with no error — all MVs receive data
+insert into source_03595 values (1, 100), (2, 200);
+select 'source after insert 1', count() from source_03595;
+source after insert 1	2
+select 'target_ok1 after insert 1', count() from target_ok1_03595;
+target_ok1 after insert 1	2
+select 'target_fail after insert 1', count() from target_fail_03595;
+target_fail after insert 1	2
+select 'target_ok2 after insert 1', count() from target_ok2_03595;
+target_ok2 after insert 1	2
+-- Case 2: Insert that triggers mv_fail error (id=0).
+-- Because mv_fail has per-MV materialized_views_ignore_errors=1,
+-- the INSERT should succeed and data should reach source and the OK MVs.
+-- mv_fail's error is ignored; it may receive partial data.
+insert into source_03595 values (3, 300), (0, 400);
+select 'source after insert 2', count() from source_03595;
+source after insert 2	4
+select 'target_ok1 after insert 2', count() from target_ok1_03595;
+target_ok1 after insert 2	4
+select 'target_ok2 after insert 2', count() from target_ok2_03595;
+target_ok2 after insert 2	4
+-- Case 3: Verify that without the per-MV setting, errors still propagate.
+drop view mv_fail_03595;
+create materialized view mv_fail_03595 to target_fail_03595 as
+    select id, toUInt64(throwIf(id = 0, 'deliberate error in mv_fail')) as bad_val
+    from source_03595;
+insert into source_03595 values (4, 500), (0, 600); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+-- Source may have the new rows (blocks written before MV error)
+select 'source after insert 3 (failed)', count() from source_03595;
+source after insert 3 (failed)	6
+-- Case 4: INSERT-level setting still overrides everything
+insert into source_03595 settings materialized_views_ignore_errors = 1 values (5, 700), (0, 800);
+select 'source after insert 4', count() from source_03595;
+source after insert 4	8
+select 'target_ok1 after insert 4', count() from target_ok1_03595;
+target_ok1 after insert 4	6
+select 'target_ok2 after insert 4', count() from target_ok2_03595;
+target_ok2 after insert 4	6
