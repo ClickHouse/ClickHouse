@@ -376,6 +376,33 @@ void KeeperDispatcher::requestThread()
                     if (!result)
                     {
                         addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
+
+                        /// Reads parked behind writes in this batch (in read_request_queue)
+                        /// will never be released because the commit callback won't fire.
+                        /// Fail them explicitly so clients don't hang until session timeout.
+                        {
+                            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
+                            KeeperRequestsForSessions orphaned_reads;
+                            for (const auto & req : current_batch)
+                            {
+                                auto session_it = read_request_queue.find(req.session_id);
+                                if (session_it != read_request_queue.end())
+                                {
+                                    auto xid_it = session_it->second.find(req.request->xid);
+                                    if (xid_it != session_it->second.end())
+                                    {
+                                        for (auto & r : xid_it->second)
+                                            orphaned_reads.push_back(std::move(r));
+                                        session_it->second.erase(xid_it);
+                                    }
+                                    if (session_it->second.empty())
+                                        read_request_queue.erase(session_it);
+                                }
+                            }
+                            if (!orphaned_reads.empty())
+                                addErrorResponses(orphaned_reads, Coordination::Error::ZCONNECTIONLOSS);
+                        }
+
                         current_batch.clear();
                         current_batch_bytes_size = 0;
                     }
@@ -1039,8 +1066,30 @@ void KeeperDispatcher::finishSession(int64_t session_id)
     }
 
     {
-        ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
-        read_request_queue.erase(session_id);
+        KeeperRequestsForSessions orphaned_reads;
+        {
+            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
+            auto it = read_request_queue.find(session_id);
+            if (it != read_request_queue.end())
+            {
+                /// Collect reads from OTHER sessions that were parked under this
+                /// session's write key (prev_batch fallback in parkOrDispatchRead).
+                /// These reads would be silently orphaned if we just erase the map
+                /// entry, because the commit callback for this session will never
+                /// fire (the session is being finished).
+                for (auto & [xid, reads] : it->second)
+                {
+                    for (auto & r : reads)
+                    {
+                        if (r.session_id != session_id)
+                            orphaned_reads.push_back(std::move(r));
+                    }
+                }
+                read_request_queue.erase(it);
+            }
+        }
+        if (!orphaned_reads.empty())
+            addErrorResponses(orphaned_reads, Coordination::Error::ZOPERATIONTIMEOUT);
     }
 }
 
@@ -1076,6 +1125,10 @@ void KeeperDispatcher::parkOrDispatchRead(
             /// Park behind the last write in current_batch: Raft commits are
             /// sequential, so current_batch commits after prev_batch.
             const auto & last_request = current_batch.back();
+            LOG_TRACE(log, "Parking read (session {}, xid {}) behind current_batch write (session {}, xid {}): "
+                "same-session write pending in prev_batch",
+                read_request.session_id, read_request.request->xid,
+                last_request.session_id, last_request.request->xid);
             ZooKeeperOpentelemetrySpans::maybeInitialize(read_request.request->spans.read_wait_for_write, read_request.request->tracing_context);
             ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
             read_request_queue[last_request.session_id][last_request.request->xid].push_back(read_request);

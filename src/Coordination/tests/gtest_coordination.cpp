@@ -1244,6 +1244,73 @@ TYPED_TEST(CoordinationTest, TestReadRequestQueuePrevBatchAlreadyCommitted)
     ASSERT_EQ(pending_immediate_reads[0].session_id, session_1);
 }
 
+/// When both prev_batch and current_batch have writes from the same session,
+/// the read should be parked behind the current_batch write (first branch),
+/// NOT the prev_batch fallback. current_batch is checked first.
+TYPED_TEST(CoordinationTest, TestReadRequestQueueSameSessionInBothBatches)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    KeeperDispatcher dispatcher;
+
+    const int64_t session_1 = 100;
+    const int64_t session_2 = 200;
+
+    auto make_request = [](int64_t session_id, Coordination::XID xid, bool is_write)
+    {
+        Coordination::ZooKeeperRequestPtr req;
+        if (is_write)
+        {
+            auto w = std::make_shared<ZooKeeperCreateRequest>();
+            w->path = "/test";
+            req = std::move(w);
+        }
+        else
+        {
+            auto r = std::make_shared<ZooKeeperExistsRequest>();
+            r->path = "/test";
+            req = std::move(r);
+        }
+        req->xid = xid;
+        KeeperRequestForSession result;
+        result.session_id = session_id;
+        result.request = req;
+        return result;
+    };
+
+    /// S1 has writes in BOTH batches
+    KeeperRequestsForSessions prev_batch;
+    prev_batch.push_back(make_request(session_1, /*xid=*/1, /*is_write=*/true));
+
+    KeeperRequestsForSessions current_batch;
+    current_batch.push_back(make_request(session_2, /*xid=*/2, /*is_write=*/true));
+    current_batch.push_back(make_request(session_1, /*xid=*/3, /*is_write=*/true));
+
+    KeeperRequestsForSessions pending_immediate_reads;
+
+    /// R(S1) should park behind current_batch's S1 write (xid=3), not prev_batch
+    dispatcher.parkOrDispatchRead(
+        make_request(session_1, /*xid=*/10, /*is_write=*/false),
+        current_batch, prev_batch, /*prev_result_pending=*/true,
+        pending_immediate_reads, /*per_session_only=*/true);
+
+    {
+        std::lock_guard lock(dispatcher.read_request_queue_mutex);
+
+        /// Parked under S1's own write in current_batch (xid=3)
+        ASSERT_TRUE(dispatcher.read_request_queue.contains(session_1));
+        ASSERT_TRUE(dispatcher.read_request_queue[session_1].contains(3));
+        ASSERT_EQ(dispatcher.read_request_queue[session_1][3].size(), 1);
+        ASSERT_EQ(dispatcher.read_request_queue[session_1][3][0].session_id, session_1);
+
+        /// NOT parked under S2's write
+        ASSERT_FALSE(dispatcher.read_request_queue.contains(session_2));
+    }
+
+    ASSERT_TRUE(pending_immediate_reads.empty());
+}
+
 /// Test legacy behavior (per_session_only=false): all reads park behind
 /// the last write in the batch regardless of session.
 TYPED_TEST(CoordinationTest, TestReadRequestQueueLegacyBehavior)
