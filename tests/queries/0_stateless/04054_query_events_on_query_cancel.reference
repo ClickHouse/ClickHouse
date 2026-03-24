@@ -1,0 +1,8 @@
+Row 1:
+──────
+type:                     ExceptionWhileProcessing
+exception_code:           735
+FailedQuery:              0
+FailedSelectQuery:        0
+FailedInitialQuery:       0
+FailedInitialSelectQuery: 0

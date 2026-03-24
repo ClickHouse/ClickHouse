@@ -1,0 +1,8 @@
+Row 1:
+──────
+type:                     ExceptionBeforeStart
+exception_code:           394
+FailedQuery:              0
+FailedSelectQuery:        0
+FailedInitialQuery:       0
+FailedInitialSelectQuery: 0
