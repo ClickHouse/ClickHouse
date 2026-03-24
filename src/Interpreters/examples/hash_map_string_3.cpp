@@ -328,11 +328,11 @@ struct SMetroHash64
 {
     size_t operator() (std::string_view x) const
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             uint64_t u64;
             std::uint8_t u8[sizeof(u64)];
-        } = {}; // NOLINT(hicpp-member-init)
+        };
 
         metrohash64(reinterpret_cast<const std::uint8_t *>(x.data()), x.size(), 0, u8);
 
