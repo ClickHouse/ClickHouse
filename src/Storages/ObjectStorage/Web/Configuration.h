@@ -61,6 +61,12 @@ public:
     std::string getNamespaceType() const override { return "host"; }
 
     Path getRawPath() const override { return path; }
+    void setRawPath(const Path & path_) override
+    {
+        path = path_;
+        paths = {path};
+        setPathForRead(path);
+    }
     const String & getRawURI() const override { return raw_url; }
 
     bool supportsPartialPathPrefix() const override { return false; }
