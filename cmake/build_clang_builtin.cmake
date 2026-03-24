@@ -58,6 +58,10 @@ function (build_clang_builtin target_triple OUT_VARIABLE)
     if (SANITIZE)
         if (SANITIZE STREQUAL "address")
             set (EXTRA_BUILTINS_LIBRARIES "asan_static" "asan" "asan_cxx")
+        elseif (SANITIZE STREQUAL "address,undefined")
+            # When ASan and UBSan are combined, the ASan runtime covers UBSan too.
+            # ubsan_standalone must NOT be added — it shares sanitizer_common symbols with asan and causes duplicate symbol errors.
+            set (EXTRA_BUILTINS_LIBRARIES "asan_static" "asan" "asan_cxx")
         elseif (SANITIZE STREQUAL "memory")
             set (EXTRA_BUILTINS_LIBRARIES "msan" "msan_cxx")
         elseif (SANITIZE STREQUAL "thread")

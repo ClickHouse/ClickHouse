@@ -9,6 +9,7 @@ import re
 import signal
 import subprocess
 import sys
+import shutil
 import tempfile
 import textwrap
 import time
@@ -986,6 +987,17 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             sys.stdout = self.original_stdout
+
+    @staticmethod
+    def link(src: Path, dst: Path) -> None:
+        dst.unlink(missing_ok=True)
+        dst.symlink_to(src)
+
+    @staticmethod
+    def clean_dir(path: Path) -> None:
+        if path.exists():
+            shutil.rmtree(path)
+        path.mkdir(parents=True, exist_ok=True)
 
 
 class TeePopen:

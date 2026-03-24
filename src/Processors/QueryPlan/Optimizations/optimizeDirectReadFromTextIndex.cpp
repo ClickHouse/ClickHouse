@@ -34,7 +34,7 @@ struct TextIndexReadInfo
 {
     const MergeTreeIndexWithCondition * index;
     bool is_materialized;
-    bool is_fully_materialied;
+    bool is_fully_materialized;
 };
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
@@ -172,7 +172,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         {
             .index = &index,
             .is_materialized = num_materialized_parts > 0,
-            .is_fully_materialied = num_materialized_parts == unique_parts.size()
+            .is_fully_materialized = num_materialized_parts == unique_parts.size()
         };
     }
 }
@@ -657,7 +657,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     /// Log partially materialized text indexes
     for (const auto & [index_name, info] : text_index_read_infos)
     {
-        if (!info.is_fully_materialied)
+        if (!info.is_fully_materialized)
             LOG_DEBUG(logger, "Text index '{}' is not fully materialized. In some parts, direct read from text index cannot be used.", index_name);
     }
 

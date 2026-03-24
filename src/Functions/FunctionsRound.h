@@ -756,8 +756,10 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
     {
+        if (isNaNField(left) || isNaNField(right))
+            return {};
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 };

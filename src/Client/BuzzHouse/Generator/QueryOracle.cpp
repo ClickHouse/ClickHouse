@@ -37,8 +37,7 @@ static void finishSettings(SettingValues * svs)
 
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
-/// or
-/// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
+/// (GROUP BY / HAVING variant is TODO — see `combination` below)
 void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
@@ -94,8 +93,8 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 }
 
 /// SELECT ifNull(SUM(PRED),0) FROM <FROM_CLAUSE>;
-/// or
-/// SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
+/// (or ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY … when sq1 has a GROUP BY,
+///  but that path is currently unreachable because combination=0 in generateCorrectnessTestFirstQuery)
 void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
@@ -301,6 +300,86 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
     gen.setAllowNotDetermistic(true);
 }
 
+/// Row policy correctness oracle.
+///
+/// Picks an existing catalog row policy (with a stored USING predicate) on a suitable table.
+///
+/// Query 1 (sq1):
+///   SELECT count() FROM db.t [FINAL] INTO OUTFILE qcfile TRUNCATE FORMAT CSV
+///   Run after "EXECUTE AS oracleUser" → row policy active → filtered count.
+///
+/// Query 2 (sq2):
+///   SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE qcfile TRUNCATE FORMAT CSV
+///   Run as admin (after reconnect) → explicit WHERE equivalent to policy filter.
+///
+/// The two counts must be equal: the policy USING pred must be semantically identical to
+/// an explicit WHERE pred.  No setup or teardown — the policy already exists in the catalog.
+void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2)
+{
+    can_test_oracle_result = fc.compare_success_results;
+    /// Don't compare error codes: EXECUTE AS may introduce different failure modes
+    can_test_success = false;
+
+    gen.setAllowNotDetermistic(false);
+    gen.enforceFinal(true);
+    gen.resetAliasCounter();
+
+    // ---- Build sq2: SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE ----
+    // (run as admin with explicit WHERE predicate matching the policy's USING clause)
+    TopSelect * ts2 = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
+    Select * sel2 = ts2->mutable_sel();
+    SelectStatementCore * ssc2 = sel2->mutable_select_core();
+    // FROM db.t [FINAL]
+    JoinedTableOrFunction * jtf2 = ssc2->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+    /// Pick an existing row policy with a USING predicate on a suitable table
+    const SQLPolicy & policy = rg.pickRandomly(gen.filterCollection<SQLPolicy>(gen.row_policies_for_oracle));
+    if (gen.hasTable(policy.table_id))
+    {
+        const SQLTable & t = gen.lookupTable(policy.table_id);
+
+        t.setName(jtf2->mutable_tof()->mutable_est(), false);
+        jtf2->set_final(t.supportsFinal());
+    }
+    else
+    {
+        /// The policy's table is gone — this can happen if the policy is detached but not dropped, or if the table was dropped without detaching the policy.
+        /// In either case we can't generate a valid oracle query, so we build a dummy query that selects from system.one with a constant WHERE to produce a predictable result (1 row).
+        jtf2->mutable_tof()->mutable_est()->mutable_database()->set_database("system");
+        jtf2->mutable_tof()->mutable_est()->mutable_table()->set_table("one");
+    }
+    // count() result column
+    ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
+        FUNCcount);
+    // WHERE pred — copied from the stored USING predicate of the catalog policy.
+    // In the fallback path (table gone, querying system.one) we cannot reuse column references
+    // from the original table; use a constant TRUE predicate instead so the result is always 1.
+    if (gen.hasTable(policy.table_id))
+        ssc2->mutable_where()->CopyFrom(policy.where_expr.value());
+    else
+        ssc2->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
+            SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ONE);
+
+    finishSettings(sel2->mutable_setting_values());
+    ts2->set_format(OutFormat::OUT_CSV);
+    const auto err2 = std::filesystem::remove(qcfile);
+    UNUSED(err2);
+    ts2->mutable_intofile()->set_path(qcfile.generic_string());
+    ts2->mutable_intofile()->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+
+    // ---- Build sq1: EXECUTE AS oracleUser; SELECT count() FROM db.t [FINAL] INTO OUTFILE ----
+    // The execute_as field causes SQLProtoStr to prepend "EXECUTE AS 'oracleUser';\n"
+    // so the session switches to the oracle user before the SELECT runs (row policy applies).
+    sq1.CopyFrom(sq2);
+    {
+        ExplainQuery * eq1 = sq1.mutable_single_query()->mutable_explain();
+        eq1->set_execute_as(FuzzConfig::oracleUser);
+        eq1->mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core()->clear_where();
+    }
+
+    gen.enforceFinal(false);
+    gen.setAllowNotDetermistic(true);
+}
+
 /// ifNull(COUNT(DISTINCT expr), 0) consistency oracle — first query
 /// SELECT ifNull(COUNT(DISTINCT expr), 0) FROM <from_clause>
 void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq)
@@ -356,8 +435,10 @@ void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, Statemen
 }
 
 /// ifNull(COUNT(DISTINCT expr), 0) consistency oracle — second query
-/// SELECT COUNT(*) FROM (SELECT DISTINCT expr FROM <from_clause>) AS sub
+/// SELECT COUNT(*) FROM (SELECT DISTINCT expr FROM <from_clause> WHERE isNotNull(expr)) AS sub
 ///
+/// COUNT(DISTINCT expr) skips NULLs, so the inner DISTINCT subquery filters them out
+/// with WHERE isNotNull(expr) to keep the outer COUNT(*) equivalent.
 /// Moves the FROM clause and expression out of sq1 to build sq2,
 /// mirroring the pattern used by `generateCorrectnessTestSecondQuery`.
 void QueryOracle::generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq2)

@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
@@ -1154,8 +1155,10 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 16)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
-        /// TODO [parquet]: Support UUIDs. Make sure to get the byte order right, it seems tricky.
-        /// For now, fall through to reading as FixedString(16).
+        out_inferred_type = std::make_shared<DataTypeUUID>();
+        out_decoder.allow_stats = true; // UUIDs support min/max stats
+        out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+        return;
     }
     else if (logical.__isset.FLOAT16)
     {
@@ -1252,12 +1255,19 @@ void SchemaConverter::processPrimitiveColumn(
         {
             if (type_hint)
             {
-                /// If parquet type is FIXED_LEN_BYTE_ARRAY(16), and type hint is [U]Int128, assume
-                /// it's binary little-endian [U]Int128. That's how clickhouse parquet writer writes
-                /// [U]Int128 (btw, we should probably change that to Decimal).
-                /// Same for FIXED_LEN_BYTE_ARRAY(32) and [U]Int256.
-                /// We can't leave this conversion to castColumn because it would parse as text.
                 WhichDataType which(type_hint->getTypeId());
+
+                /// Handle explicit UUID type hint (e.g. SELECT x::UUID)
+                if (which.isUUID() && element.type_length == 16)
+                {
+                    out_inferred_type = type_hint;
+                    out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+                    out_decoder.allow_stats = true;
+                    return;
+                }
+
+                /// Legacy ClickHouse binary formats for [U]Int128 and [U]Int256.
+                /// These are written as FIXED_LEN_BYTE_ARRAY(16/32) but without logical types.
                 if (which.isInteger() && !which.isNativeInteger() &&
                     type_hint->getSizeOfValueInMemory() == size_t(element.type_length))
                 {
@@ -1265,14 +1275,26 @@ void SchemaConverter::processPrimitiveColumn(
                 }
             }
 
+            /// Automatic Inference: If no hint is provided, but the Parquet
+            /// file metadata explicitly flags this column as a UUID.
+            if (logical.__isset.UUID && element.type_length == 16)
+            {
+                out_inferred_type = std::make_shared<DataTypeUUID>();
+                out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+                out_decoder.allow_stats = true;
+                return;
+            }
+
+            /// Default Fallback: If it's not a UUID or a BigInt hint, treat it as FixedString.
             if (!out_inferred_type)
                 out_inferred_type = std::make_shared<DataTypeFixedString>(size_t(element.type_length));
+
             auto converter = std::make_shared<FixedStringConverter>();
             converter->input_size = size_t(element.type_length);
             out_decoder.fixed_size_converter = std::move(converter);
 
-            /// (The case where type_hint is FixedString is handled above, no need to check for it here.)
-            out_decoder.allow_stats = !logical.__isset.UUID && WhichDataType(get_output_type_index()).isString();
+            /// Stats are only allowed for FixedString if the output is actually a string.
+            out_decoder.allow_stats = WhichDataType(get_output_type_index()).isString();
             return;
         }
     }

@@ -86,6 +86,7 @@ protected:
     SchemaCache & schema_cache;
     bool initialized = false;
     size_t total_rows_in_file = 0;
+    size_t total_files_read = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
 
     struct ReaderHolder : private boost::noncopyable
@@ -225,6 +226,10 @@ private:
     const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
+
+    size_t total_listed = 0;
+    size_t total_glob_filtered = 0;
+    size_t total_predicate_filtered = 0;
 };
 
 class StorageObjectStorageSource::KeysIterator : public IObjectIterator
@@ -282,6 +287,12 @@ public:
     ObjectInfoPtr next(size_t processor) override;
 
     size_t estimatedKeysCount() override;
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        archives_iterator->setEmitProfileEvents(value);
+    }
 
     struct ObjectInfoInArchive : public ObjectInfo
     {
