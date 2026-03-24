@@ -12,7 +12,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromDataLakeStep.h>
+#include <Processors/QueryPlan/ReadFromIcebergStep.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
@@ -312,7 +312,7 @@ void StorageDataLake<IcebergMetadata>::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto * read_metadata = getExternalMetadata(local_context);
+    auto * read_metadata = getIcebergMetadata(local_context);
 
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
@@ -349,7 +349,7 @@ void StorageDataLake<IcebergMetadata>::read(
 
     read_metadata->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
-    auto read_step = std::make_unique<ReadFromDataLakeStep>(
+    auto read_step = std::make_unique<ReadFromIcebergStep>(
         object_storage,
         configuration,
         column_names,
