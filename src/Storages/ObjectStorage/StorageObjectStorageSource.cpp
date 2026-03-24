@@ -515,6 +515,7 @@ Chunk StorageObjectStorageSource::generate()
             break;
 
         http_response_headers_initialized = false;
+        http_response_headers = {};
         ++total_files_read;
 
         /// Even if task is finished the thread may be not freed in pool.

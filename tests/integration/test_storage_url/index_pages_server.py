@@ -18,6 +18,8 @@ DATA_PARTS = {
     "/data/order/b/part1.tsv": "20\n",
     "/data/headers/2025/part1.tsv": "7\n",
     "/data/headers/2025/part2.tsv": "8\n",
+    "/data/mixed_headers/part1.tsv": "1\n",
+    "/data/mixed_headers/part2.tsv": "2\n",
 }
 
 
@@ -94,6 +96,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/order/b/",
             "/data/headers/",
             "/data/headers/2025/",
+            "/data/mixed_headers/",
         ):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -147,6 +150,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
             self._send_html(body)
             return
+        if path == "/data/mixed_headers/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
         if path == "/data/order/":
             body = "<a href=\"a/\">a/</a>\n<a href=\"b/\">b/</a>\n"
             self._send_html(body)
@@ -195,6 +202,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", str(len(data)))
+            if path.startswith("/data/mixed_headers/"):
+                self.send_header("X-Source-File", path.rsplit("/", 1)[-1])
             self.end_headers()
             self.wfile.write(data)
             return

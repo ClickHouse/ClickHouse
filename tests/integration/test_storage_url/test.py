@@ -230,6 +230,16 @@ def test_url_wildcard_uses_head_for_metadata_probe():
     assert stats["GET /data/2025/part2.tsv"] == 1
 
 
+def test_url_wildcard_resets_headers_between_files():
+    result = node1.query(
+        "SELECT _file, any(_headers['X-Source-File']) "
+        "FROM url('http://resolver:8087/data/mixed_headers/part*.tsv', 'TSV', 'x UInt64') "
+        "GROUP BY _file "
+        "ORDER BY _file"
+    )
+    assert result == "part1.tsv\tpart1.tsv\npart2.tsv\tpart2.tsv\n"
+
+
 def test_url_wildcard_limits_directory_traversal():
     error = node1.query_and_get_error(
         "SELECT count() FROM url('http://resolver:8087/data/deep/**/part*.tsv', 'TSV', 'x UInt64') "
