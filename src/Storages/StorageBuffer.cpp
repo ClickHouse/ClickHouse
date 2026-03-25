@@ -470,8 +470,7 @@ void StorageBuffer::read(
             auto storage = std::make_shared<StorageValues>(
                     getStorageID(),
                     storage_snapshot->getAllColumnsDescription(),
-                    std::move(pipe_from_buffers),
-                    *getVirtualsPtr());
+                    std::move(pipe_from_buffers));
 
             auto interpreter
                 = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);

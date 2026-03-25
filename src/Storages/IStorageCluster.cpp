@@ -1,4 +1,5 @@
 #include <Storages/IStorageCluster.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Common/Exception.h>
 #include <Core/Settings.h>
@@ -169,10 +170,12 @@ void IStorageCluster::read(
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
 
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromCluster>(
-        column_names,
+        physical_column_names,
         query_info,
         storage_snapshot,
         context,
@@ -184,6 +187,8 @@ void IStorageCluster::read(
         log);
 
     query_plan.addStep(std::move(reading));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

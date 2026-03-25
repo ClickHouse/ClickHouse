@@ -286,6 +286,7 @@ void StorageSystemDatabaseReplicas::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
 
     const auto access = context->getAccess();
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
@@ -303,7 +304,7 @@ void StorageSystemDatabaseReplicas::read(
     }
 
     bool with_zk_fields = false;
-    for (const auto & column_name : column_names)
+    for (const auto & column_name : physical_column_names)
     {
         if (column_name == "max_log_ptr" || column_name == "log_ptr" || column_name == "total_replicas")
         {
@@ -314,7 +315,7 @@ void StorageSystemDatabaseReplicas::read(
 
     auto header = storage_snapshot->metadata->getSampleBlock();
     auto reading = std::make_unique<ReadFromSystemDatabaseReplicas>(
-        column_names,
+        physical_column_names,
         query_info,
         storage_snapshot,
         std::move(context),
@@ -325,6 +326,7 @@ void StorageSystemDatabaseReplicas::read(
         with_zk_fields);
 
     query_plan.addStep(std::move(reading));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 }

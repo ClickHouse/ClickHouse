@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemSymbols.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InstrumentationManager.h>
@@ -130,13 +131,16 @@ Pipe StorageSystemSymbols::read(
     context->getAccess()->checkAccess(AccessType::INTROSPECTION);
 
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
-    auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+    auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, physical_column_names);
 
     const auto & symbols = SymbolIndex::instance().symbols();
 
-    return Pipe(std::make_shared<SymbolsBlockSource>(
+    auto pipe = Pipe(std::make_shared<SymbolsBlockSource>(
         symbols.cbegin(), symbols.cend(), std::move(columns_mask), std::move(res_block), max_block_size));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(pipe), column_names, shared_from_this());
 }
 
 }

@@ -887,8 +887,10 @@ void StorageHive::read(
 
     auto this_ptr = std::static_pointer_cast<StorageHive>(shared_from_this());
 
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     auto reading = std::make_unique<ReadFromHive>(
-        column_names,
+        physical_column_names,
         query_info,
         storage_snapshot,
         context_,
@@ -904,6 +906,7 @@ void StorageHive::read(
         num_streams);
 
     query_plan.addStep(std::move(reading));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

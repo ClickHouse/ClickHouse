@@ -30,6 +30,7 @@
 #include <Core/Settings.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -119,9 +120,11 @@ void StorageMySQL::read(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     String query = transformQueryForExternalDatabase(
         query_info,
-        column_names,
+        physical_column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
         LiteralEscapingStyle::Regular,
@@ -131,7 +134,7 @@ void StorageMySQL::read(
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
-    for (const String & column_name : column_names)
+    for (const String & column_name : physical_column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
 
@@ -149,6 +152,7 @@ void StorageMySQL::read(
         pool,
         query,
         mysql_input_stream_settings));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 

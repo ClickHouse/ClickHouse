@@ -1,5 +1,6 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -771,10 +772,12 @@ Pipe StorageJoin::read(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
 
-    auto source_sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
+    auto source_sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(physical_column_names));
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
-    return Pipe(std::make_shared<JoinSource>(join, std::move(holder), max_block_size, source_sample_block));
+    auto pipe = Pipe(std::make_shared<JoinSource>(join, std::move(holder), max_block_size, source_sample_block));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(pipe), column_names, shared_from_this());
 }
 
 }

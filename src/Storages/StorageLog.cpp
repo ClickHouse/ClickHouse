@@ -1,6 +1,7 @@
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
@@ -556,10 +557,6 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, Compr
     if (const auto * column_desc = columns.tryGet(column_name))
         return get_codec_or_default(*column_desc);
 
-    const auto & virtual_columns = storage.getVirtualsPtr();
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
-
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
 }
 
@@ -1034,14 +1031,15 @@ void StorageLog::read(
     size_t num_streams)
 {
     storage_snapshot->check(column_names);
-
     plan.addStep(std::make_unique<ReadFromStorageLogStep>(
-        column_names,
+        VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()),
         local_context,
         std::static_pointer_cast<StorageLog>(shared_from_this()),
         storage_snapshot,
         max_block_size,
         num_streams));
+
+    plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(plan), column_names, shared_from_this());
 }
 
 SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)

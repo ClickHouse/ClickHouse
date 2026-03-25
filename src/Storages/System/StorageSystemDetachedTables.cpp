@@ -198,14 +198,17 @@ void StorageSystemDetachedTables::read(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     auto sample_block = storage_snapshot->metadata->getSampleBlock();
 
-    auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+    auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, physical_column_names);
 
     auto reading = std::make_unique<ReadFromSystemDetachedTables>(
-        column_names, query_info, storage_snapshot, context, std::move(res_block), std::move(columns_mask), max_block_size);
+        physical_column_names, query_info, storage_snapshot, context, std::move(res_block), std::move(columns_mask), max_block_size);
 
     query_plan.addStep(std::move(reading));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 ReadFromSystemDetachedTables::ReadFromSystemDetachedTables(

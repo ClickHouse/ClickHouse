@@ -10,9 +10,10 @@ namespace ErrorCodes
 }
 
 VirtualColumnDescription::VirtualColumnDescription(
-    String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_)
+    String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_, bool is_common_)
     : ColumnDescription(std::move(name_), std::move(type_), std::move(codec_), std::move(comment_))
     , kind(kind_)
+    , is_common(is_common_)
 {
 }
 
@@ -24,14 +25,14 @@ void VirtualColumnsDescription::add(VirtualColumnDescription desc)
     container.get<0>().push_back(std::move(desc));
 }
 
-void VirtualColumnsDescription::addEphemeral(String name, DataTypePtr type, String comment)
+void VirtualColumnsDescription::addEphemeral(String name, DataTypePtr type, String comment, bool is_common)
 {
-    add({std::move(name), std::move(type), nullptr, std::move(comment), VirtualsKind::Ephemeral});
+    add({std::move(name), std::move(type), nullptr, std::move(comment), VirtualsKind::Ephemeral, is_common});
 }
 
-void VirtualColumnsDescription::addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment)
+void VirtualColumnsDescription::addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment, bool is_common)
 {
-    add({std::move(name), std::move(type), std::move(codec), std::move(comment), VirtualsKind::Persistent});
+    add({std::move(name), std::move(type), std::move(codec), std::move(comment), VirtualsKind::Persistent, is_common});
 }
 
 std::optional<ColumnDefault> VirtualColumnsDescription::getDefault(const String & column_name) const
@@ -82,20 +83,17 @@ Block VirtualColumnsDescription::getSampleBlock() const
     return result;
 }
 
-NamesAndTypesList VirtualColumnsDescription::getNamesAndTypesList() const
-{
-    NamesAndTypesList result;
-    for (const auto & desc : container)
-        result.emplace_back(desc.name, desc.type);
-    return result;
-}
-
-NamesAndTypesList VirtualColumnsDescription::getNamesAndTypesList(VirtualsKind kind) const
+NamesAndTypesList VirtualColumnsDescription::getNamesAndTypesList(VirtualsKind kind, bool exclude_common) const
 {
     NamesAndTypesList result;
     for (const auto & column : container)
-        if (static_cast<UInt8>(column.kind) & static_cast<UInt8>(kind))
-            result.emplace_back(column.name, column.type);
+    {
+        if (!(static_cast<UInt8>(column.kind) & static_cast<UInt8>(kind)))
+            continue;
+        if (exclude_common && column.is_common)
+            continue;
+        result.emplace_back(column.name, column.type);
+    }
     return result;
 }
 

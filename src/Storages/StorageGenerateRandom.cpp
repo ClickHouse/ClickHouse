@@ -2,6 +2,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -992,7 +993,7 @@ Pipe StorageGenerateRandom::read(
 
     const ColumnsDescription & our_columns = storage_snapshot->metadata->getColumns();
     Block block_header;
-    for (const auto & name : column_names)
+    for (const auto & name : VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()))
     {
         const auto & name_type = our_columns.get(name);
         MutableColumnPtr column = name_type.type->createColumn();
@@ -1038,7 +1039,7 @@ Pipe StorageGenerateRandom::read(
         pipes.emplace_back(std::move(source));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(Pipe::unitePipes(std::move(pipes)), column_names, shared_from_this());
 }
 
 }

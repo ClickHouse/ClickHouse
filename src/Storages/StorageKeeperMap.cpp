@@ -37,6 +37,7 @@
 #include <Storages/KVStorageUtils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Common/Base64.h>
@@ -708,10 +709,11 @@ void StorageKeeperMap::read(
     auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::read");
     checkTable<true>(context_);
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     bool with_version_column = false;
-    for (const auto & column : column_names)
+    for (const auto & column : physical_column_names)
     {
         if (column == version_column_name)
         {
@@ -725,9 +727,11 @@ void StorageKeeperMap::read(
                     std::make_shared<DataTypeInt32>(), std::string{version_column_name}});
 
     auto reading = std::make_unique<ReadFromKeeperMap>(
-        column_names, query_info, storage_snapshot, context_, std::make_shared<const Block>(std::move(sample_block)), *this, max_block_size, num_streams, with_version_column);
+        physical_column_names, query_info, storage_snapshot, context_, std::make_shared<const Block>(std::move(sample_block)), *this, max_block_size, num_streams, with_version_column);
 
     query_plan.addStep(std::move(reading));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromKeeperMap::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

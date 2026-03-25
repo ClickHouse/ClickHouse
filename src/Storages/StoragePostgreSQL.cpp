@@ -47,6 +47,7 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
@@ -207,9 +208,10 @@ void StoragePostgreSQL::read(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
 
     Block sample_block;
-    for (const String & column_name : column_names)
+    for (const String & column_name : physical_column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         WhichDataType which(column_data.type);
@@ -219,7 +221,7 @@ void StoragePostgreSQL::read(
     }
 
     auto reading = std::make_unique<ReadFromPostgreSQL>(
-        column_names,
+        physical_column_names,
         query_info,
         storage_snapshot,
         local_context,
@@ -229,6 +231,7 @@ void StoragePostgreSQL::read(
         remote_table_name,
         pool);
     query_plan.addStep(std::move(reading));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 

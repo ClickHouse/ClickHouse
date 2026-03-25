@@ -346,17 +346,20 @@ void StorageSystemDetachedParts::read(
     const size_t num_streams)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
-    auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+    auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, physical_column_names);
 
     auto this_ptr = std::static_pointer_cast<StorageSystemDetachedParts>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromSystemDetachedParts>(
-        column_names, query_info, storage_snapshot,
+        physical_column_names, query_info, storage_snapshot,
         std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), max_block_size, num_streams);
 
     query_plan.addStep(std::move(reading));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

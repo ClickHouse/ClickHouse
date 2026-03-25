@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
@@ -38,8 +39,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_BEING_RESTARTED;
 }
 
-const VirtualColumnsDescription IStorage::common_virtuals = IStorage::createCommonVirtuals();
-
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
     : storage_id(std::move(storage_id_))
     , virtuals(std::make_unique<VirtualColumnsDescription>())
@@ -48,21 +47,14 @@ IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadat
         metadata.set(std::move(metadata_));
     else
         metadata.set(std::make_unique<StorageInMemoryMetadata>());
+
+    setVirtuals(VirtualColumnsDescription{});
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column
-    return !metadata_snapshot->getColumns().has(column_name) && (virtuals.get()->has(column_name) || common_virtuals.has(column_name));
-}
-
-VirtualColumnsDescription IStorage::createCommonVirtuals()
-{
-    VirtualColumnsDescription desc;
-
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
-
-    return desc;
+    return !metadata_snapshot->getColumns().has(column_name) && virtuals.get()->has(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(

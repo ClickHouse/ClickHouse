@@ -14,6 +14,7 @@
 #include <Storages/ArrowFlight/ArrowFlightConnection.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <arrow/flight/client.h>
 
@@ -179,13 +180,13 @@ Pipe StorageArrowFlight::read(
     storage_snapshot->check(column_names);
 
     Block sample_block;
-    for (const String & column_name : column_names)
+    for (const String & column_name : VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()))
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<ArrowFlightSource>(connection, dataset_name, sample_block, context_));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(Pipe(std::make_shared<ArrowFlightSource>(connection, dataset_name, sample_block, context_)), column_names, shared_from_this());
 }
 
 class ArrowFlightSink : public SinkToStorage

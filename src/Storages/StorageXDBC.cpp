@@ -4,6 +4,7 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -11,6 +12,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTLiteral.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <QueryPipeline/Pipe.h>
@@ -130,7 +132,9 @@ void StorageXDBC::read(
     storage_snapshot->check(column_names);
 
     bridge_helper->startBridgeSync();
-    IStorageURLBase::read(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    IStorageURLBase::read(query_plan, VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()), storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)

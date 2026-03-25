@@ -1810,8 +1810,10 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     auto read_from_format_info = prepareReadingFromFormat(
-        column_names,
+        physical_column_names,
         storage_snapshot,
         context,
         supportsSubsetOfColumns(context),
@@ -1826,7 +1828,7 @@ void StorageFile::read(
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto reading = std::make_unique<ReadFromFile>(
-        column_names,
+        physical_column_names,
         query_info,
         storage_snapshot,
         context,
@@ -1837,6 +1839,8 @@ void StorageFile::read(
         num_streams);
 
     query_plan.addStep(std::move(reading));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)

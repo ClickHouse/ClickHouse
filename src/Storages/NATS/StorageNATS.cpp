@@ -27,6 +27,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
@@ -382,7 +383,8 @@ void StorageNATS::read(
     if (!getStreamName().empty() && getConsumerName().empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "To read from NATS jet stream, you must specify `nats_consumer_name` setting");
 
-    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(physical_column_names);
     auto modified_context = addSettings(local_context);
 
     if (!consumers_connection->isConnected())
@@ -393,7 +395,7 @@ void StorageNATS::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
+        auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, physical_column_names, 1, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -413,7 +415,7 @@ void StorageNATS::read(
 
     if (pipe.empty())
     {
-        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        auto header = storage_snapshot->getSampleBlockForColumns(physical_column_names);
         InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
     }
     else
@@ -422,6 +424,7 @@ void StorageNATS::read(
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 

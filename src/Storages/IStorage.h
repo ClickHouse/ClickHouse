@@ -227,6 +227,13 @@ public:
 
     void setVirtuals(VirtualColumnsDescription virtuals_)
     {
+        auto add_common_virtual_column = [&](const std::string & name, DataTypePtr type, const std::string & comment)
+        {
+            if (!virtuals_.has(name))
+                virtuals_.addEphemeral(name, std::move(type), comment, /*is_common=*/true);
+        };
+
+        add_common_virtual_column("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
         virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
     }
 
@@ -238,13 +245,9 @@ public:
     ///
     /// User can create columns with the same name as virtual column. After that
     /// virtual column will be overridden and inaccessible.
-    ///
-    /// By default return empty list of columns.
     VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
     NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
     Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
-
-    static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
 
     Names getAllRegisteredNames() const override;
 
@@ -320,10 +323,6 @@ private:
     /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
 
-    /// Description of common virtual columns.
-    static const VirtualColumnsDescription common_virtuals;
-
-    static VirtualColumnsDescription createCommonVirtuals();
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(

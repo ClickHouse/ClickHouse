@@ -19,14 +19,12 @@ public:
     StorageValues(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
-        Block res_block_,
-        VirtualColumnsDescription virtuals_ = {});
+        Block res_block_);
 
     StorageValues(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
-        Pipe prepared_pipe_,
-        VirtualColumnsDescription virtuals_ = {});
+        Pipe prepared_pipe_);
 
     std::string getName() const override { return "Values"; }
 
@@ -38,7 +36,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-
 
     /// FIXME probably it should return false, but StorageValues is used in ExecutingInnerQueryFromViewTransform (whatever it is)
     bool supportsTransactions() const override { return true; }

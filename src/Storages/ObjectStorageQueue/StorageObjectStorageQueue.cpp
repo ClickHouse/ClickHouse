@@ -618,8 +618,10 @@ void StorageObjectStorageQueue::read(
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
 
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
-        column_names,
+        physical_column_names,
         query_info,
         storage_snapshot,
         local_context,
@@ -630,6 +632,7 @@ void StorageObjectStorageQueue::read(
         do_commit_on_select);
 
     query_plan.addStep(std::move(reading));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

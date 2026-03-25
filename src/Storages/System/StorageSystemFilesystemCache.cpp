@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemFilesystemCache.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
@@ -263,7 +264,7 @@ void StorageSystemFilesystemCache::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::All, /*exclude_common=*/ true));
     auto read_step = std::make_unique<ReadFromSystemFilesystemCache>(
         column_names,
         query_info,

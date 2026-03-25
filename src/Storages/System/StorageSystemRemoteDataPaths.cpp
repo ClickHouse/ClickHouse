@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/VirtualColumnUtils.h>
 
 namespace fs = std::filesystem;
 
@@ -187,16 +188,19 @@ void StorageSystemRemoteDataPaths::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::All, /*exclude_common=*/ true));
     auto read_step = std::make_unique<ReadFromSystemRemoteDataPaths>(
         context->getDisksMap(),
-        column_names,
+        physical_column_names,
         query_info,
         storage_snapshot,
         context,
         header,
         max_block_size);
     query_plan.addStep(std::move(read_step));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)

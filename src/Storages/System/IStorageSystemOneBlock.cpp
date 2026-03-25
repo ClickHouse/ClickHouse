@@ -59,12 +59,14 @@ void IStorageSystemOneBlock::read(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
+    Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::All, /*exclude_common=*/ true));
     std::vector<UInt8> columns_mask;
 
     if (supportsColumnsMask())
     {
-        auto [columns_mask_, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+        auto [columns_mask_, header] = getQueriedColumnsMaskAndHeader(sample_block, physical_column_names);
         columns_mask = std::move(columns_mask_);
         sample_block = std::move(header);
     }
@@ -72,10 +74,12 @@ void IStorageSystemOneBlock::read(
     auto this_ptr = std::static_pointer_cast<IStorageSystemOneBlock>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromSystemOneBlock>(
-        column_names, query_info, storage_snapshot,
+        physical_column_names, query_info, storage_snapshot,
         std::move(context), std::make_shared<const Block>(std::move(sample_block)), std::move(this_ptr), std::move(columns_mask));
 
     query_plan.addStep(std::move(reading));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

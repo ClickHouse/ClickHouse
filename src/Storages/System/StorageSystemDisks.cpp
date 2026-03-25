@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDisks.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Columns/ColumnString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -49,6 +50,7 @@ Pipe StorageSystemDisks::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
 
     MutableColumnPtr col_name = ColumnString::create();
     MutableColumnPtr col_path = ColumnString::create();
@@ -111,7 +113,8 @@ Pipe StorageSystemDisks::read(
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock()), std::move(chunk)));
+    auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock()), std::move(chunk)));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(pipe), column_names, shared_from_this());
 }
 
 }

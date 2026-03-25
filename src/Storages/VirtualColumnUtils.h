@@ -14,6 +14,8 @@ namespace DB
 class Block;
 class Chunk;
 class NamesAndTypesList;
+class QueryPlan;
+class Pipe;
 
 class ExpressionActions;
 class IMergeTreeDataPart;
@@ -158,6 +160,25 @@ std::string_view findHivePartitioningInPath(const String & path);
 DataPartsVector filterDataPartsWithExpression(
     const DataPartsVector & data_parts,
     const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
+
+/// Append common virtual columns (marked with is_common) to the query plan as constant ExpressionSteps.
+/// Only adds columns that are in requested_columns but not already in the plan's header.
+QueryPlan extendWithCommonVirtualColumns(
+    QueryPlan && query_plan,
+    const Names & requested_columns,
+    const StoragePtr & storage);
+
+/// Append common virtual columns (marked with is_common) to a Pipe via ExpressionTransform.
+/// Only adds columns that are in requested_columns but not already in the pipe's header.
+Pipe extendWithCommonVirtualColumns(
+    Pipe && pipe,
+    const Names & requested_columns,
+    const StoragePtr & storage);
+
+/// Filter out common virtual column names (marked with is_common) from the given list.
+Names filterCommonVirtualColumns(
+    const Names & column_names,
+    const StoragePtr & storage);
 
 }
 

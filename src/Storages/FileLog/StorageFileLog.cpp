@@ -26,6 +26,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -436,8 +437,10 @@ void StorageFileLog::read(
     size_t /* num_streams */)
 
 {
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
     query_plan.addStep(
-        std::make_unique<ReadFromStorageFileLog>(column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
+        std::make_unique<ReadFromStorageFileLog>(physical_column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void StorageFileLog::increaseStreams()

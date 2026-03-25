@@ -2,6 +2,7 @@
 
 #include <QueryPipeline/Pipe.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #if USE_JEMALLOC
 #    include <Core/Settings.h>
@@ -55,8 +56,9 @@ Pipe StorageSystemJemallocProfileText::read(
 {
 #if USE_JEMALLOC
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::All, /*exclude_common=*/ true));
 
     /// Get the last flushed profile filename
     auto last_profile = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
@@ -75,7 +77,8 @@ Pipe StorageSystemJemallocProfileText::read(
         symbolize_with_inline,
         collapsed_use_count);
 
-    return Pipe(std::move(source));
+    auto pipe = Pipe(std::move(source));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(pipe), column_names, shared_from_this());
 #else
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "jemalloc is not enabled");
 #endif

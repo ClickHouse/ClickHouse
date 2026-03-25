@@ -6,6 +6,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Storages/VirtualColumnUtils.h>
 
 namespace DB
 {
@@ -43,11 +44,13 @@ void StorageDummy::read(QueryPlan & query_plan,
     size_t)
 {
     query_plan.addStep(std::make_unique<ReadFromDummy>(
-        column_names,
+        VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()),
         query_info,
         original_storage_snapshot ? original_storage_snapshot : storage_snapshot,
         local_context,
         *this));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 ReadFromDummy::ReadFromDummy(

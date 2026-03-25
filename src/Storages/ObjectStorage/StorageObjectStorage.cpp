@@ -504,10 +504,12 @@ void StorageObjectStorage::read(
 
     configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
-        column_names,
+        physical_column_names,
         getVirtualsList(),
         query_info,
         storage_snapshot,
@@ -520,6 +522,7 @@ void StorageObjectStorage::read(
         num_streams);
 
     query_plan.addStep(std::move(read_step));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 SinkToStoragePtr StorageObjectStorage::write(

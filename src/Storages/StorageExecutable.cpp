@@ -29,6 +29,7 @@
 #include <Storages/ExecutableSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -203,8 +204,10 @@ void StorageExecutable::read(
     }
 
     auto pipe = coordinator->createPipe(script_path, settings->script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
-    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, shared_from_this());
+    IStorage::readFromPipe(query_plan, std::move(pipe), VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()), storage_snapshot, query_info, context, shared_from_this());
     query_plan.addResources(std::move(resources));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void registerStorageExecutable(StorageFactory & factory)

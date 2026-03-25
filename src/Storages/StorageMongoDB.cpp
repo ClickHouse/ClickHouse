@@ -28,6 +28,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMongoDB.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <bsoncxx/json.hpp>
@@ -97,7 +98,7 @@ Pipe StorageMongoDB::read(
     storage_snapshot->check(column_names);
 
     Block sample_block;
-    for (const String & column_name : column_names)
+    for (const String & column_name : VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()))
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         sample_block.insert({ column_data.type, column_data.name });
@@ -106,8 +107,9 @@ Pipe StorageMongoDB::read(
     auto options = mongocxx::options::find{};
 
     bsoncxx::document::view_or_value mongo_query = buildMongoDBQuery(context, options, query_info, sample_block);
-    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, mongo_query,
-        std::move(options), std::make_shared<const Block>(std::move(sample_block)), max_block_size));
+
+    auto pipe = Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, mongo_query, std::move(options), std::make_shared<const Block>(std::move(sample_block)), max_block_size));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(pipe), column_names, shared_from_this());
 }
 
 static String encodeString(const String & str)

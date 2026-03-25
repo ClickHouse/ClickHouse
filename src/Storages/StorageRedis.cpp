@@ -29,6 +29,7 @@
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 #include <Common/JSONBuilder.h>
+#include <Storages/VirtualColumnUtils.h>
 
 namespace DB
 {
@@ -268,9 +269,10 @@ void StorageRedis::read(
     auto sample_block = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
 
     auto reading = std::make_unique<ReadFromRedis>(
-        column_names, query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams);
+        VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()), query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams);
 
     query_plan.addStep(std::move(reading));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromRedis::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

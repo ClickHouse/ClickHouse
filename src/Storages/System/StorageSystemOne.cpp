@@ -7,6 +7,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -35,8 +36,10 @@ void StorageSystemOne::read(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
 
-    query_plan.addStep(std::make_unique<ReadFromSystemOneStep>(column_names, storage_snapshot));
+    query_plan.addStep(std::make_unique<ReadFromSystemOneStep>(physical_column_names, storage_snapshot));
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 

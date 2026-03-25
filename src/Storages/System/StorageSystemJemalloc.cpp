@@ -1,6 +1,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemJemalloc.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Core/NamesAndTypes.h>
@@ -136,8 +137,9 @@ Pipe StorageSystemJemallocBins::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::All, /*exclude_common=*/ true));
     MutableColumns res_columns = header.cloneEmptyColumns();
 
     fillJemallocBins(res_columns);
@@ -145,7 +147,8 @@ Pipe StorageSystemJemallocBins::read(
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(header)), std::move(chunk)));
+    auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(header)), std::move(chunk)));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(pipe), column_names, shared_from_this());
 }
 
 }

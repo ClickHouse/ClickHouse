@@ -23,6 +23,8 @@
 
 #include <Interpreters/Context.h>
 
+#include <Storages/VirtualColumnUtils.h>
+
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageLogSettings.h>
@@ -388,8 +390,8 @@ Pipe StorageStripeLog::read(
     if (!data_file_size)
         return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
 
-    auto indices_for_selected_columns
-        = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{column_names.begin(), column_names.end()}));
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
 
     size_t size = indices_for_selected_columns->blocks.size();
     num_streams = std::min(num_streams, size);
@@ -406,12 +408,11 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            std::static_pointer_cast<const StorageStripeLog>(shared_from_this()), storage_snapshot, column_names, read_settings, indices_for_selected_columns, begin, end, data_file_size));
+            std::static_pointer_cast<const StorageStripeLog>(shared_from_this()), storage_snapshot, physical_column_names, read_settings, indices_for_selected_columns, begin, end, data_file_size));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
-
-    return Pipe::unitePipes(std::move(pipes));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(Pipe::unitePipes(std::move(pipes)), column_names, shared_from_this());
 }
 
 

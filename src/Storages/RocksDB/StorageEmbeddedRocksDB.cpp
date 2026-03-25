@@ -10,6 +10,7 @@
 #include <Storages/KVStorageUtils.h>
 #include <Storages/RocksDB/RocksDBSettings.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Parsers/ASTCreateQuery.h>
 
@@ -661,10 +662,11 @@ void StorageEmbeddedRocksDB::read(
     size_t num_streams)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     auto reading = std::make_unique<ReadFromEmbeddedRocksDB>(
-        column_names,
+        physical_column_names,
         query_info,
         storage_snapshot,
         context_,
@@ -674,6 +676,8 @@ void StorageEmbeddedRocksDB::read(
         num_streams);
 
     query_plan.addStep(std::move(reading));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

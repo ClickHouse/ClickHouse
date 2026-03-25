@@ -27,7 +27,10 @@
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <Processors/Port.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/Pipe.h>
 
 #include <Columns/ColumnSet.h>
 #include <Common/typeid_cast.h>
@@ -42,6 +45,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/HashTable/HashSet.h>
 
@@ -702,6 +706,101 @@ DataPartsVector filterDataPartsWithExpression(
             filtered_parts.push_back(part);
 
     return filtered_parts;
+}
+
+static ActionsDAG constructMaterializingCommonVirtualColumnDAG(const std::string & name, const DataTypePtr & data_type, const StoragePtr & storage)
+{
+    ColumnWithTypeAndName column;
+    column.name = name;
+    column.type = data_type;
+
+    if (name == "_table")
+        column.column = column.type->createColumnConst(0, Field(storage->getStorageID().getTableName()));
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown common virtual column");
+
+    return ActionsDAG::makeAddingColumnActions(std::move(column));
+}
+
+QueryPlan extendWithCommonVirtualColumns(
+    QueryPlan && query_plan,
+    const Names & requested_columns,
+    const StoragePtr & storage)
+{
+    if (!query_plan.isInitialized())
+        return query_plan;
+
+    const auto virtual_columns = storage->getVirtualsPtr();
+    const auto & table_name = storage->getStorageID().getTableName();
+
+    for (const auto & column_name : requested_columns)
+    {
+        const auto & plan_header = query_plan.getCurrentHeader();
+        if (plan_header->has(column_name))
+            continue;
+
+        const auto * desc = virtual_columns->tryGetDescription(column_name);
+        if (!desc || !desc->isCommon())
+            continue;
+
+        auto adding_column_dag = constructMaterializingCommonVirtualColumnDAG(desc->name, desc->type, storage);
+        auto expression_step = std::make_unique<ExpressionStep>(plan_header, std::move(adding_column_dag));
+        query_plan.addStep(std::move(expression_step));
+    }
+
+    return query_plan;
+}
+
+Pipe extendWithCommonVirtualColumns(
+    Pipe && pipe,
+    const Names & requested_columns,
+    const StoragePtr & storage)
+{
+    if (pipe.empty())
+        return pipe;
+
+    const auto virtual_columns = storage->getVirtualsPtr();
+    const auto & table_name = storage->getStorageID().getTableName();
+
+    for (const auto & column_name : requested_columns)
+    {
+        const auto & pipe_header = pipe.getHeader();
+        if (pipe_header.has(column_name))
+            continue;
+
+        const auto * desc = virtual_columns->tryGetDescription(column_name);
+        if (!desc || !desc->isCommon())
+            continue;
+
+        auto adding_column_dag = constructMaterializingCommonVirtualColumnDAG(desc->name, desc->type, storage);
+        auto expression = std::make_shared<ExpressionActions>(std::move(adding_column_dag));
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+        {
+            return std::make_shared<ExpressionTransform>(header, expression);
+        });
+    }
+
+    return pipe;
+}
+
+Names filterCommonVirtualColumns(
+    const Names & column_names,
+    const StoragePtr & storage)
+{
+    const auto virtual_columns = storage->getVirtualsPtr();
+
+    Names result;
+    result.reserve(column_names.size());
+    for (const auto & name : column_names)
+    {
+        const auto * desc = virtual_columns->tryGetDescription(name);
+        if (desc && desc->isCommon())
+            continue;
+
+        result.push_back(name);
+    }
+
+    return result;
 }
 
 }

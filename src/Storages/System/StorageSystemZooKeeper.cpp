@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -302,7 +303,7 @@ void StorageSystemZooKeeper::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::All, /*exclude_common=*/ true));
     auto read_step = std::make_unique<ReadFromSystemZooKeeper>(
         column_names,
         query_info,

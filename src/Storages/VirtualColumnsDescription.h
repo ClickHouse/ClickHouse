@@ -9,12 +9,14 @@ struct VirtualColumnDescription : public ColumnDescription
 {
     using Self = VirtualColumnDescription;
     VirtualsKind kind;
+    bool is_common = false;
 
     VirtualColumnDescription() = default;
-    VirtualColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_);
+    VirtualColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_, bool is_common_ = false);
 
     bool isEphemeral() const { return kind == VirtualsKind::Ephemeral; }
     bool isPersistent() const { return kind == VirtualsKind::Persistent; }
+    bool isCommon() const { return is_common; }
 
     /// This method is needed for boost::multi_index because field
     /// of base class cannot be referenced in boost::multi_index::member.
@@ -38,8 +40,8 @@ public:
     VirtualColumnsDescription() = default;
 
     void add(VirtualColumnDescription desc);
-    void addEphemeral(String name, DataTypePtr type, String comment);
-    void addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment);
+    void addEphemeral(String name, DataTypePtr type, String comment, bool is_common = false);
+    void addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment, bool is_common = false);
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
     size_t size() const { return container.size(); }
@@ -59,8 +61,7 @@ public:
     const VirtualColumnDescription & getDescription(const String & name) const { return getDescription(name, VirtualsKind::All); }
 
     Block getSampleBlock() const;
-    NamesAndTypesList getNamesAndTypesList() const;
-    NamesAndTypesList getNamesAndTypesList(VirtualsKind kind) const;
+    NamesAndTypesList getNamesAndTypesList(VirtualsKind kind = VirtualsKind::All, bool exclude_common = false) const;
 
 private:
     Container container;

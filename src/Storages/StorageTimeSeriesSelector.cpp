@@ -18,6 +18,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
@@ -450,11 +451,15 @@ void StorageTimeSeriesSelector::read(
         config.timestamp_data_type,
         config.scalar_data_type);
 
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    InterpreterSelectQueryAnalyzer interpreter(select_query_from_data_table, context, options, column_names);
+    InterpreterSelectQueryAnalyzer interpreter(select_query_from_data_table, context, options, physical_column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 }

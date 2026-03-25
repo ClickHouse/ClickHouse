@@ -16,6 +16,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <QueryPipeline/Pipe.h>
@@ -104,10 +105,11 @@ Pipe StorageSQLite::read(
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
 
     String query = transformQueryForExternalDatabase(
         query_info,
-        column_names,
+        physical_column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
         LiteralEscapingStyle::Regular,
@@ -117,13 +119,13 @@ Pipe StorageSQLite::read(
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
-    for (const String & column_name : column_names)
+    for (const String & column_name : physical_column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<SQLiteSource>(sqlite_db, query, sample_block, max_block_size));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(Pipe(std::make_shared<SQLiteSource>(sqlite_db, query, sample_block, max_block_size)), column_names, shared_from_this());
 }
 
 

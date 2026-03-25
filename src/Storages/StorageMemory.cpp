@@ -40,6 +40,7 @@
 #include <IO/copyData.h>
 #include <Common/FailPoint.h>
 #include <Common/FileChecker.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -195,7 +196,15 @@ void StorageMemory::read(
     size_t num_streams)
 {
     query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(
-        column_names, query_info, storage_snapshot, context, shared_from_this(), num_streams, delay_read_for_global_subqueries));
+        VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()),
+        query_info,
+        storage_snapshot,
+        context,
+        shared_from_this(),
+        num_streams,
+        delay_read_for_global_subqueries));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 

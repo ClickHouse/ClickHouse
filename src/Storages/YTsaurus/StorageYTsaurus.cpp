@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -72,17 +73,19 @@ Pipe StorageYTsaurus::read(
     size_t num_streams)
 {
     storage_snapshot->check(column_names);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
 
     BlockPtr sample_block = std::make_shared<Block>();
     ColumnsDescription columns_description = storage_snapshot->metadata->getColumns();
-    for (const String & column_name : column_names)
+    for (const String & column_name : physical_column_names)
     {
         auto column_data = columns_description.getPhysical(column_name);
         sample_block->insert({ column_data.type, column_data.name });
     }
 
     YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));
-    return YTsaurusSourceFactory::createPipe(client, cypress_path, {.settings = settings}, sample_block, max_block_size, num_streams);
+    auto pipe = YTsaurusSourceFactory::createPipe(client, cypress_path, {.settings = settings}, sample_block, max_block_size, num_streams);
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(pipe), column_names, shared_from_this());
 }
 
 YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(

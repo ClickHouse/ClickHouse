@@ -9,6 +9,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesColumnsValidator.h>
 #include <Storages/TimeSeries/TimeSeriesDefinitionNormalizer.h>

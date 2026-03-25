@@ -2,6 +2,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
@@ -184,6 +185,7 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const size_t threads)
 {
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
 
@@ -198,7 +200,7 @@ Pipe StorageDictionary::read(
     if (!has_dict_get && !has_select)
         local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
 
-    return dictionary->read(column_names, max_block_size, threads);
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(dictionary->read(physical_column_names, max_block_size, threads), column_names, shared_from_this());
 }
 
 std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const

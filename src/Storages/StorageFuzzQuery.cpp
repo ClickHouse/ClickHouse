@@ -4,6 +4,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserQuery.h>
@@ -90,7 +91,7 @@ Pipe StorageFuzzQuery::read(
 
     const ColumnsDescription & our_columns = storage_snapshot->metadata->getColumns();
     Block block_header;
-    for (const auto & name : column_names)
+    for (const auto & name : VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()))
     {
         const auto & name_type = our_columns.get(name);
         MutableColumnPtr column = name_type.type->createColumn();
@@ -106,7 +107,7 @@ Pipe StorageFuzzQuery::read(
     for (UInt64 i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<FuzzQuerySource>(max_block_size, std::make_shared<const Block>(block_header), config, query));
 
-    return Pipe::unitePipes(std::move(pipes));
+    return VirtualColumnUtils::extendWithCommonVirtualColumns(Pipe::unitePipes(std::move(pipes)), column_names, shared_from_this());
 }
 
 StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine_args, ContextPtr local_context)

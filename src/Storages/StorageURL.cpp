@@ -1191,9 +1191,11 @@ void IStorageURLBase::read(
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 
-    auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
+    auto params = getReadURIParams(physical_column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
-        column_names,
+        physical_column_names,
         storage_snapshot,
         local_context,
         supportsSubsetOfColumns(local_context),
@@ -1218,7 +1220,7 @@ void IStorageURLBase::read(
     auto this_ptr = std::static_pointer_cast<IStorageURLBase>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromURL>(
-        column_names,
+        physical_column_names,
         query_info,
         storage_snapshot,
         local_context,
@@ -1233,6 +1235,8 @@ void IStorageURLBase::read(
         num_streams);
 
     query_plan.addStep(std::move(reading));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
@@ -1372,9 +1376,11 @@ void StorageURLWithFailover::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
+    auto params = getReadURIParams(physical_column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
-        column_names,
+        physical_column_names,
         storage_snapshot,
         local_context,
         supportsSubsetOfColumns(local_context),
@@ -1399,7 +1405,7 @@ void StorageURLWithFailover::read(
     auto this_ptr = std::static_pointer_cast<StorageURL>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromURL>(
-        column_names,
+        physical_column_names,
         query_info,
         storage_snapshot,
         local_context,
@@ -1414,6 +1420,8 @@ void StorageURLWithFailover::read(
         num_streams);
 
     query_plan.addStep(std::move(reading));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 

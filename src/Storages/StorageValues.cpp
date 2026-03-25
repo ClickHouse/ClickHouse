@@ -15,27 +15,23 @@ namespace DB
 StorageValues::StorageValues(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
-    Block res_block_,
-    VirtualColumnsDescription virtuals_)
+    Block res_block_)
     : IStorage(table_id_), res_block(std::move(res_block_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(std::move(virtuals_));
 }
 
 StorageValues::StorageValues(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
-    Pipe prepared_pipe_,
-    VirtualColumnsDescription virtuals_)
+    Pipe prepared_pipe_)
     : IStorage(table_id_), prepared_pipe(std::move(prepared_pipe_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(std::move(virtuals_));
 }
 
 Pipe StorageValues::read(

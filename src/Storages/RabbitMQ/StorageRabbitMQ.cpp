@@ -28,6 +28,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StreamingStorageRegistry.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
@@ -803,9 +804,11 @@ void StorageRabbitMQ::read(
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
 
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     std::lock_guard lock(loop_mutex);
 
-    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(physical_column_names);
     auto modified_context = addSettings(local_context);
 
     if (!connection->isConnected())
@@ -826,7 +829,7 @@ void StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, modified_context, column_names, /* max_block_size */1,
+            *this, storage_snapshot, modified_context, physical_column_names, /* max_block_size */1,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode], reject_unhandled_messages,
             /* ack_in_suffix */(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_commit_on_select], log);
 
@@ -851,7 +854,7 @@ void StorageRabbitMQ::read(
 
     if (pipe.empty())
     {
-        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        auto header = storage_snapshot->getSampleBlockForColumns(physical_column_names);
         InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
     }
     else
@@ -860,6 +863,7 @@ void StorageRabbitMQ::read(
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }
 
 
