@@ -1,0 +1,8 @@
+lazy_sparse_and
+1	1	1
+lazy_dense_and_bruteforce
+1	1
+materialize_no_lazy_events
+1	1	1	1
+sparse_fewer_blocks_than_bruteforce
+1

@@ -832,3 +832,239 @@ TEST(PostingListCursorTest, IntersectSingleCursor)
     std::vector<uint32_t> expected = {5, 10, 15, 20, 25};
     EXPECT_EQ(result, expected);
 }
+
+
+// =============================================================================
+// Section 13: Extreme Selectivity and Large-scale Consistency
+// =============================================================================
+
+TEST(PostingListCursorTest, IntersectExtremeSelectivityDifference)
+{
+    // Cursor A: every 3rd doc (40 docs), Cursor B: every 30th doc (4 docs)
+    // over range [0, 120). Selectivity ratio 10x. Intersection = multiples of LCM(3, 30) = 30.
+    const uint32_t range = 120;
+    std::vector<uint32_t> docs_a;
+    std::vector<uint32_t> docs_b;
+    std::vector<uint32_t> expected;
+
+    for (uint32_t i = 0; i < range; i += 3)
+        docs_a.push_back(i);
+    for (uint32_t i = 0; i < range; i += 30)
+        docs_b.push_back(i);
+    for (uint32_t i = 0; i < range; i += 30)
+        expected.push_back(i);
+
+    auto info_a = makeEmbeddedInfo(docs_a);
+    auto info_b = makeEmbeddedInfo(docs_b);
+
+    PostingListCursorMap postings;
+    postings["dense"] = makeEmbeddedCursor(info_a);
+    postings["ultrarare"] = makeEmbeddedCursor(info_b);
+
+    auto result = intersectAndCollect(postings, {"dense", "ultrarare"}, 0, range, 100.0f);
+    EXPECT_EQ(result, expected);
+}
+
+TEST(PostingListCursorTest, IntersectFourExtremeSelectivity)
+{
+    // Cursors: every 2 / every 5 / every 10 / every 30
+    // LCM(2, 5, 10, 30) = 30
+    const uint32_t range = 120;
+    std::vector<uint32_t> docs_2, docs_5, docs_10, docs_30, expected;
+
+    for (uint32_t i = 0; i < range; i += 2)
+        docs_2.push_back(i);
+    for (uint32_t i = 0; i < range; i += 5)
+        docs_5.push_back(i);
+    for (uint32_t i = 0; i < range; i += 10)
+        docs_10.push_back(i);
+    for (uint32_t i = 0; i < range; i += 30)
+        docs_30.push_back(i);
+    for (uint32_t i = 0; i < range; i += 30)
+        expected.push_back(i);
+
+    auto info_2 = makeEmbeddedInfo(docs_2);
+    auto info_5 = makeEmbeddedInfo(docs_5);
+    auto info_10 = makeEmbeddedInfo(docs_10);
+    auto info_30 = makeEmbeddedInfo(docs_30);
+
+    PostingListCursorMap postings;
+    postings["dense"] = makeEmbeddedCursor(info_2);
+    postings["medium"] = makeEmbeddedCursor(info_5);
+    postings["rare"] = makeEmbeddedCursor(info_10);
+    postings["ultrarare"] = makeEmbeddedCursor(info_30);
+
+    auto result = intersectAndCollect(postings, {"dense", "medium", "rare", "ultrarare"}, 0, range, 100.0f);
+    EXPECT_EQ(result, expected);
+}
+
+TEST(PostingListCursorTest, BruteForceHighDensity)
+{
+    // Two 90%+ density cursors. With density_threshold = 0.5, should take brute-force path.
+    const uint32_t range = 100;
+    std::vector<uint32_t> docs_a, docs_b, expected;
+
+    // Cursor A: every doc except multiples of 10 (90% density)
+    for (uint32_t i = 0; i < range; ++i)
+        if (i % 10 != 0)
+            docs_a.push_back(i);
+
+    // Cursor B: every doc except multiples of 7 (≈85.7% density)
+    for (uint32_t i = 0; i < range; ++i)
+        if (i % 7 != 0)
+            docs_b.push_back(i);
+
+    // Expected: docs present in both
+    for (uint32_t i = 0; i < range; ++i)
+        if (i % 10 != 0 && i % 7 != 0)
+            expected.push_back(i);
+
+    auto info_a = makeEmbeddedInfo(docs_a);
+    auto info_b = makeEmbeddedInfo(docs_b);
+
+    PostingListCursorMap postings;
+    postings["a"] = makeEmbeddedCursor(info_a);
+    postings["b"] = makeEmbeddedCursor(info_b);
+
+    // density_threshold = 0.5 → both cursors have density > 0.5 → brute-force
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, range, 0.5f);
+    EXPECT_EQ(result, expected);
+}
+
+TEST(PostingListCursorTest, LeapfrogVsBruteForceConsistencyLargeScale)
+{
+    // 120-doc range with multiple selectivities. Compare threshold=100 (force leapfrog)
+    // vs threshold=0 (force brute-force) for result consistency.
+    const uint32_t range = 120;
+
+    auto make_docs = [&](uint32_t step)
+    {
+        std::vector<uint32_t> docs;
+        for (uint32_t i = 0; i < range; i += step)
+            docs.push_back(i);
+        return docs;
+    };
+
+    auto docs_a = make_docs(3);
+    auto docs_b = make_docs(7);
+    auto docs_c = make_docs(13);
+
+    // Leapfrog pass (threshold = 100.0)
+    {
+        auto info_a = makeEmbeddedInfo(docs_a);
+        auto info_b = makeEmbeddedInfo(docs_b);
+        auto info_c = makeEmbeddedInfo(docs_c);
+
+        PostingListCursorMap postings_lf;
+        postings_lf["a"] = makeEmbeddedCursor(info_a);
+        postings_lf["b"] = makeEmbeddedCursor(info_b);
+        postings_lf["c"] = makeEmbeddedCursor(info_c);
+        auto lf_result = intersectAndCollect(postings_lf, {"a", "b", "c"}, 0, range, 100.0f);
+
+        // Brute-force pass (threshold = 0.0)
+        auto info_a2 = makeEmbeddedInfo(docs_a);
+        auto info_b2 = makeEmbeddedInfo(docs_b);
+        auto info_c2 = makeEmbeddedInfo(docs_c);
+
+        PostingListCursorMap postings_bf;
+        postings_bf["a"] = makeEmbeddedCursor(info_a2);
+        postings_bf["b"] = makeEmbeddedCursor(info_b2);
+        postings_bf["c"] = makeEmbeddedCursor(info_c2);
+        auto bf_result = intersectAndCollect(postings_bf, {"a", "b", "c"}, 0, range, 0.0f);
+
+        EXPECT_EQ(lf_result, bf_result);
+
+        // Verify against ground truth: LCM(3, 7, 13) = 273
+        std::vector<uint32_t> expected;
+        for (uint32_t i = 0; i < range; i += 273)
+            expected.push_back(i);
+        EXPECT_EQ(lf_result, expected);
+    }
+}
+
+
+// =============================================================================
+// Section 14: linearOr Skip Optimizations
+// =============================================================================
+
+TEST(PostingListCursorTest, DenseEmbeddedFullCoverage)
+{
+    /// A dense embedded cursor (all rows present) should trigger the Level 1 memset path.
+    auto docs = generateRange(0, 100); // 0..99, density = 1.0
+    auto info = makeEmbeddedInfo(docs);
+    auto cursor = makeEmbeddedCursor(info);
+
+    auto result = linearOrToDocIds(cursor, 0, 100);
+    EXPECT_EQ(result, docs);
+}
+
+TEST(PostingListCursorTest, DenseEmbeddedWithRowClipping)
+{
+    /// Dense cursor with row clipping: memset should only cover the clipped range.
+    auto docs = generateRange(10, 50); // 10..59
+    auto info = makeEmbeddedInfo(docs);
+    auto cursor = makeEmbeddedCursor(info);
+
+    /// Window [20, 50) — only rows 20..49 should be set.
+    auto result = linearOrToDocIds(cursor, 20, 30);
+    auto expected = generateRange(20, 30); // 20..49
+    EXPECT_EQ(result, expected);
+}
+
+TEST(PostingListCursorTest, SparseEmbeddedNoFalseSkip)
+{
+    /// A sparse cursor must NOT trigger the dense memset path —
+    /// only the actual doc IDs should appear in output.
+    std::vector<uint32_t> docs = {0, 10, 20, 30, 40};
+    auto info = makeEmbeddedInfo(docs);
+    auto cursor = makeEmbeddedCursor(info);
+
+    auto result = linearOrToDocIds(cursor, 0, 50);
+    EXPECT_EQ(result, docs);
+
+    /// Verify positions that should NOT be set.
+    std::vector<UInt8> buf(50, 0);
+    auto cursor2_info = makeEmbeddedInfo(docs);
+    auto cursor2 = makeEmbeddedCursor(cursor2_info);
+    cursor2->linearOr(buf.data(), 0, 50);
+    EXPECT_EQ(buf[1], 0);
+    EXPECT_EQ(buf[5], 0);
+    EXPECT_EQ(buf[15], 0);
+}
+
+TEST(PostingListCursorTest, MultiCursorUnionCoverageSkip)
+{
+    /// Two cursors in union: the first (dense) fills the output buffer completely,
+    /// so the second cursor should effectively be a no-op.
+    auto dense_docs = generateRange(0, 100); // 0..99, dense
+    auto sparse_docs = std::vector<uint32_t>{10, 50, 90};
+
+    auto info_dense = makeEmbeddedInfo(dense_docs);
+    auto info_sparse = makeEmbeddedInfo(sparse_docs);
+
+    PostingListCursorMap postings;
+    postings["dense"] = makeEmbeddedCursor(info_dense);
+    postings["sparse"] = makeEmbeddedCursor(info_sparse);
+
+    auto result = unionAndCollect(postings, {"dense", "sparse"}, 0, 100);
+    EXPECT_EQ(result, dense_docs);
+}
+
+TEST(PostingListCursorTest, MultiCursorPartialOverlap)
+{
+    /// Two cursors with partial overlap: union should contain all unique doc IDs.
+    /// This tests that block-level skipping does not lose data when the overlap is partial.
+    auto docs_a = generateRange(0, 50);    // 0..49
+    auto docs_b = generateRange(25, 50);   // 25..74
+
+    auto info_a = makeEmbeddedInfo(docs_a);
+    auto info_b = makeEmbeddedInfo(docs_b);
+
+    PostingListCursorMap postings;
+    postings["a"] = makeEmbeddedCursor(info_a);
+    postings["b"] = makeEmbeddedCursor(info_b);
+
+    auto result = unionAndCollect(postings, {"a", "b"}, 0, 75);
+    auto expected = generateRange(0, 75); // 0..74 — full union
+    EXPECT_EQ(result, expected);
+}

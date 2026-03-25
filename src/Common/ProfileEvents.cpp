@@ -130,6 +130,9 @@
     M(TextIndexLazySegmentsPrepared, "Number of segments prepared (Index Section loaded) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBruteForceIntersections, "Number of brute-force intersections performed in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyLeapfrogIntersections, "Number of leapfrog intersections performed in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsSkippedDense, "Number of segments skipped via dense-memset optimization in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsSkippedCovered, "Number of segments skipped because the output region was already all-ones in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBlocksSkippedCovered, "Number of packed blocks skipped because the output region was already all-ones in lazy posting list mode.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \

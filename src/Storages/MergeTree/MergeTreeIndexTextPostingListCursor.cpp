@@ -6,6 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
+#include <Common/TargetSpecific.h>
 #include <algorithm>
 #include <cstring>
 #include <numeric>
@@ -17,6 +18,9 @@ namespace ProfileEvents
     extern const Event TextIndexLazySegmentsPrepared;
     extern const Event TextIndexLazyBruteForceIntersections;
     extern const Event TextIndexLazyLeapfrogIntersections;
+    extern const Event TextIndexLazySegmentsSkippedDense;
+    extern const Event TextIndexLazySegmentsSkippedCovered;
+    extern const Event TextIndexLazyBlocksSkippedCovered;
 }
 
 namespace DB
@@ -340,12 +344,78 @@ inline void padColumn(UInt8 * __restrict out, const uint32_t * values, size_t ro
     }
 }
 
+#if USE_MULTITARGET_CODE
+DECLARE_X86_64_V3_SPECIFIC_CODE(
+/// Check whether a byte range contains no zero bytes (i.e., all positions are already set).
+/// Uses 256-bit (AVX2) loads with 4x loop unrolling for the hot path (128 bytes/iter).
+bool hasNoZeros(const UInt8 * data, size_t count)
+{
+    const __m256i * ptr = reinterpret_cast<const __m256i *>(data);
+
+    /// Process 128 bytes (4 × 32-byte vectors) per iteration.
+    size_t i = 0;
+    for (; i + 128 <= count; i += 128, ptr += 4)
+    {
+        __m256i v0 = _mm256_loadu_si256(ptr);
+        __m256i v1 = _mm256_loadu_si256(ptr + 1);
+        __m256i v2 = _mm256_loadu_si256(ptr + 2);
+        __m256i v3 = _mm256_loadu_si256(ptr + 3);
+
+        __m256i combined = _mm256_and_si256(_mm256_and_si256(v0, v1), _mm256_and_si256(v2, v3));
+        __m256i zero = _mm256_setzero_si256();
+        __m256i cmp = _mm256_cmpeq_epi8(combined, zero);
+        if (_mm256_movemask_epi8(cmp) != 0)
+            return false;
+    }
+
+    /// Scalar tail.
+    const UInt8 * tail = data + i;
+    size_t remaining = count - i;
+    return memchr(tail, 0, remaining) == nullptr;
+}
+) /// DECLARE_X86_64_V3_SPECIFIC_CODE
+#endif
+
+/// Runtime-dispatched `hasNoZeros`: returns true if all bytes in [data, data + count) are non-zero.
+bool hasNoZeros(const UInt8 * data, size_t count)
+{
+    if (count == 0)
+        return true;
+
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return TargetSpecific::x86_64_v3::hasNoZeros(data, count);
+#endif
+
+    return memchr(data, 0, count) == nullptr;
+}
+
 } // anonymous namespace
 
 void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
 {
     if (is_embedded)
     {
+        /// Level 1 (dense memset): if every row in the range is in the posting list, just memset.
+        if (!info.ranges.empty())
+        {
+            size_t range_begin = info.ranges.front().begin;
+            size_t range_end = info.ranges.back().end;
+            size_t range_span = range_end - range_begin + 1;
+
+            if (info.cardinality == range_span)
+            {
+                size_t clip_begin = std::max(range_begin, row_offset);
+                size_t clip_end = std::min(range_end + 1, row_offset + num_rows);
+                if (clip_begin < clip_end)
+                {
+                    ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedDense);
+                    memset(data + (clip_begin - row_offset), 1, clip_end - clip_begin);
+                    return;
+                }
+            }
+        }
+
         /// Find range within decoded_values.
         auto * begin_it = std::lower_bound(decoded_values, decoded_values + decoded_count, static_cast<uint32_t>(row_offset));
         auto * end_it = std::lower_bound(begin_it, decoded_values + decoded_count, static_cast<uint32_t>(row_offset + num_rows));
@@ -365,9 +435,44 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
         if (row_offset + num_rows <= seg_begin)
             break;
 
+        /// Level 2a: segment-level "already-covered" skip.
+        /// If the output region for this segment is already all-ones, skip entirely
+        /// (saves the I/O cost of prepareSegment).
+        {
+            size_t clip_begin = std::max(seg_begin, row_offset);
+            size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
+            if (clip_begin < clip_end)
+            {
+                size_t clip_off = clip_begin - row_offset;
+                size_t clip_count = clip_end - clip_begin;
+                if (hasNoZeros(data + clip_off, clip_count))
+                {
+                    ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedCovered);
+                    continue;
+                }
+            }
+        }
+
         /// Skip re-preparing the segment if it is already loaded.
         if (i != current_segment_idx || !has_prepared_first_segment)
             prepareSegment(i);
+
+        /// Level 1: dense segment memset.
+        /// If every row in the segment range has a posting, we can memset instead of decoding blocks.
+        {
+            size_t range_span = seg_end - seg_begin + 1;
+            if (segment_doc_count == range_span)
+            {
+                size_t clip_begin = std::max(seg_begin, row_offset);
+                size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
+                if (clip_begin < clip_end)
+                {
+                    ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedDense);
+                    memset(data + (clip_begin - row_offset), 1, clip_end - clip_begin);
+                    continue;
+                }
+            }
+        }
 
         /// Decode all blocks in this segment that overlap with [row_offset, row_offset + num_rows).
         for (size_t b = 0; b < block_count; ++b)
@@ -381,6 +486,22 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
                 continue;
             if (block_first >= row_offset + num_rows)
                 break;
+
+            /// Level 2b: block-level "already-covered" skip.
+            {
+                size_t blk_clip_begin = std::max(static_cast<size_t>(block_first), row_offset);
+                size_t blk_clip_end = std::min(static_cast<size_t>(block_last) + 1, row_offset + num_rows);
+                if (blk_clip_begin < blk_clip_end)
+                {
+                    size_t blk_off = blk_clip_begin - row_offset;
+                    size_t blk_cnt = blk_clip_end - blk_clip_begin;
+                    if (hasNoZeros(data + blk_off, blk_cnt))
+                    {
+                        ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedCovered);
+                        continue;
+                    }
+                }
+            }
 
             decodeBlock(b);
 
