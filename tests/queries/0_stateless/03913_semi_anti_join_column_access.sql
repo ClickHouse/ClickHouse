@@ -101,6 +101,12 @@ SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT 
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT JOIN (SELECT 3 AS c) t3 ON t1.a = t3.c;
 -- Test that inner SEMI JOIN's own ON expression can still access both sides
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON t1.a = t2.b LEFT JOIN (SELECT 3 AS c) t3 ON t1.a = t3.c;
+-- Nested `JOIN` resolution inside a scalar subquery in outer `ON` must not lose outer `JOIN` context
+SELECT *
+FROM (SELECT 1 AS a) t1
+LEFT SEMI JOIN (SELECT 1 AS b) t2
+    ON (SELECT count() FROM (SELECT 1 AS c) t3 INNER JOIN (SELECT 1 AS d) t4 ON t3.c = t4.d) > 0
+    AND t1.a = t2.b;
 
 -- (t1 LEFT SEMI JOIN t2) LEFT SEMI JOIN t3: outer sees t2 on its preserved left side, but
 -- the inner LEFT SEMI JOIN places t2 on its non-preserved right side -- must be denied.

@@ -4769,8 +4769,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         auto join_expression = join_node_typed.getJoinExpression();
 
         /// Set pointer to current JOIN node to allow access to both sides in its ON expression
+        const auto * previous_resolving_join_on_expression = scope.resolving_join_on_expression;
         scope.resolving_join_on_expression = join_node.get();
-        SCOPE_EXIT(scope.resolving_join_on_expression = nullptr);
+        SCOPE_EXIT(scope.resolving_join_on_expression = previous_resolving_join_on_expression);
         resolveExpressionNode(join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         join_node_typed.getJoinExpression() = std::move(join_expression);
