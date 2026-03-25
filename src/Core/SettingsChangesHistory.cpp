@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"enable_materialized_cte", false, false, "New setting"},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
+            {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting"},
             {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.3",

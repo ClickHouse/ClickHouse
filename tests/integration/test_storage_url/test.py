@@ -9,6 +9,7 @@ from helpers.test_tools import TSV
 from helpers.mock_servers import start_mock_servers
 
 cluster = ClickHouseCluster(__file__)
+URL_WILDCARD_EXPERIMENTAL_SETTING = "allow_experimental_url_wildcard_from_index_pages=1"
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/conf.xml", "configs/named_collections.xml", "configs/query_log.xml"],
@@ -46,6 +47,12 @@ def get_index_page_server_stats():
             ["curl", "-s", "http://localhost:8087/__stats__"],
         )
     )
+
+
+def with_url_wildcard_setting(query):
+    if "SETTINGS" in query:
+        return f"{query}, {URL_WILDCARD_EXPERIMENTAL_SETTING}"
+    return f"{query} SETTINGS {URL_WILDCARD_EXPERIMENTAL_SETTING}"
 
 
 def test_partition_by():
@@ -113,71 +120,73 @@ def test_url_cluster_with_named_collection():
 
 def test_url_wildcard_from_index_pages():
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')")
     )
     assert result.strip() == "12"
 
 
 def test_url_wildcard_size_virtual_column():
     result = node1.query(
-        "SELECT sum(size) FROM ("
+        with_url_wildcard_setting("SELECT sum(size) FROM ("
         "SELECT _file, any(_size) AS size "
         "FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64') "
-        "GROUP BY _file)"
+        "GROUP BY _file)")
     )
     assert result.strip() == "8"
 
 
 def test_url_wildcard_headers_virtual_column():
     result = node1.query(
-        "SELECT sum(length(mapKeys(_headers))) "
-        "FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64') "
+        with_url_wildcard_setting(
+            "SELECT sum(length(mapKeys(_headers))) "
+            "FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64') "
+        )
     )
     assert int(result.strip()) > 0
 
 
 def test_url_wildcard_empty_listing():
     result = node1.query(
-        "SELECT count() FROM url('http://resolver:8087/data/empty/**/part*.tsv', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT count() FROM url('http://resolver:8087/data/empty/**/part*.tsv', 'TSV', 'x UInt64')")
     )
     assert result.strip() == "0"
 
 
 def test_url_wildcard_missing_listing():
     error = node1.query_and_get_error(
-        "SELECT count() FROM url('http://resolver:8087/missing/**/part*.tsv', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT count() FROM url('http://resolver:8087/missing/**/part*.tsv', 'TSV', 'x UInt64')")
     )
     assert "There is no path" in error
 
 
 def test_url_wildcard_oversize_index_page():
     error = node1.query_and_get_error(
-        "SELECT count() FROM url('http://resolver:8087/data/oversize/**/part*.tsv', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT count() FROM url('http://resolver:8087/data/oversize/**/part*.tsv', 'TSV', 'x UInt64')")
     )
     assert "exceeds max_http_index_page_size" in error
 
 
 def test_url_wildcard_query_fragment_matching():
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/query/part*.tsv', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/query/part*.tsv', 'TSV', 'x UInt64')")
     )
     assert result.strip() == "3"
 
 
 def test_url_wildcard_with_headers():
     result = node1.query(
-        "SELECT sum(x) FROM url("
+        with_url_wildcard_setting("SELECT sum(x) FROM url("
         "'http://resolver:8087/data/headers/**/part*.tsv', "
         "'TSV', "
         "'x UInt64', "
-        "headers('X-Test-Header'='1'))"
+        "headers('X-Test-Header'='1'))")
     )
     assert result.strip() == "15"
 
 
 def test_url_wildcard_with_raw_query():
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv?x={1,2}', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv?x={1,2}', 'TSV', 'x UInt64')")
     )
     assert result.strip() == "12"
 
@@ -185,39 +194,41 @@ def test_url_wildcard_with_raw_query():
 def test_url_wildcard_glob_patterns():
     # '?' is reserved in URLs as a query delimiter, so use '*' to cover wildcard matching in URL paths.
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/glob/part*.tsv', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/glob/part*.tsv', 'TSV', 'x UInt64')")
     )
     assert result.strip() == "15"
 
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/glob/part{a,b,c}.tsv', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/glob/part{a,b,c}.tsv', 'TSV', 'x UInt64')")
     )
     assert result.strip() == "6"
 
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/glob/part{1..2}.tsv', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/glob/part{1..2}.tsv', 'TSV', 'x UInt64')")
     )
     assert result.strip() == "9"
 
 
 def test_url_wildcard_deduplicates_normalized_links():
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/duplicates/part*.tsv', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/duplicates/part*.tsv', 'TSV', 'x UInt64')")
     )
     assert result.strip() == "9"
 
 
 def test_url_wildcard_listing_order():
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/order/**/part*.tsv', 'TSV', 'x UInt64') "
-        "SETTINGS glob_expansion_max_elements=1"
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://resolver:8087/data/order/**/part*.tsv', 'TSV', 'x UInt64') "
+            "SETTINGS glob_expansion_max_elements=1"
+        )
     )
     assert result.strip() == "10"
 
 
 def test_url_wildcard_normalizes_leading_slashes():
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087///data/**/part*.tsv', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087///data/**/part*.tsv', 'TSV', 'x UInt64')")
     )
     assert result.strip() == "12"
 
@@ -226,8 +237,10 @@ def test_url_wildcard_uses_head_for_metadata_probe():
     reset_index_page_server_stats()
 
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/2025/part*.tsv', 'TSV', 'x UInt64') "
-        "SETTINGS use_hive_partitioning=0"
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://resolver:8087/data/2025/part*.tsv', 'TSV', 'x UInt64') "
+            "SETTINGS use_hive_partitioning=0"
+        )
     )
     assert result.strip() == "12"
 
@@ -240,18 +253,22 @@ def test_url_wildcard_uses_head_for_metadata_probe():
 
 def test_url_wildcard_resets_headers_between_files():
     result = node1.query(
-        "SELECT _file, any(_headers['X-Source-File']) "
-        "FROM url('http://resolver:8087/data/mixed_headers/part*.tsv', 'TSV', 'x UInt64') "
-        "GROUP BY _file "
-        "ORDER BY _file"
+        with_url_wildcard_setting(
+            "SELECT _file, any(_headers['X-Source-File']) "
+            "FROM url('http://resolver:8087/data/mixed_headers/part*.tsv', 'TSV', 'x UInt64') "
+            "GROUP BY _file "
+            "ORDER BY _file"
+        )
     )
     assert result == "part1.tsv\tpart1.tsv\npart2.tsv\tpart2.tsv\n"
 
 
 def test_url_wildcard_limits_directory_traversal():
     error = node1.query_and_get_error(
-        "SELECT count() FROM url('http://resolver:8087/data/deep/**/part*.tsv', 'TSV', 'x UInt64') "
-        "SETTINGS url_wildcard_max_directories_to_read=3"
+        with_url_wildcard_setting(
+            "SELECT count() FROM url('http://resolver:8087/data/deep/**/part*.tsv', 'TSV', 'x UInt64') "
+            "SETTINGS url_wildcard_max_directories_to_read=3"
+        )
     )
     assert "Too many directories while expanding URL wildcard" in error
     assert "url_wildcard_max_directories_to_read" in error
@@ -259,9 +276,16 @@ def test_url_wildcard_limits_directory_traversal():
 
 def test_url_wildcard_preserves_index_entry_query():
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/query_override/part*.tsv?x=1', 'TSV', 'x UInt64')"
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/query_override/part*.tsv?x=1', 'TSV', 'x UInt64')")
     )
     assert result.strip() == "6"
+
+
+def test_url_wildcard_is_experimental():
+    error = node1.query_and_get_error(
+        "SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"
+    )
+    assert "allow_experimental_url_wildcard_from_index_pages" in error
 
 
 def test_table_function_url_access_rights():
