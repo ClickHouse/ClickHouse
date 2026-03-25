@@ -82,11 +82,13 @@ TotalsHavingTransform::TotalsHavingTransform(
     finalizeBlock(finalized_header, aggregates_mask);
 
     /// Port for Totals.
+    /// Use updateHeader (same method as transformHeader for the main output) to ensure
+    /// the totals port header has the same column constness as the main output port.
+    /// Previously this used ExpressionActions::execute which can produce different constness
+    /// via a different code path in defaultImplementationForNulls at 0 rows.
     if (expression)
     {
-        auto totals_header = finalized_header;
-        size_t num_rows = totals_header.rows();
-        expression->execute(totals_header, num_rows);
+        auto totals_header = expression->getActionsDAG().updateHeader(finalized_header);
         filter_column_pos = totals_header.getPositionByName(filter_column_name);
         if (remove_filter)
             totals_header.erase(filter_column_name);

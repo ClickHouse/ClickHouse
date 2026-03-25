@@ -285,6 +285,7 @@ def run_func_test(
                 "KEEPER_EXCEPTION",
                 "DATABASE_REPLICATION_FAILED",
                 "QUERY_WAS_CANCELLED",
+                "UNKNOWN_STATUS_OF_INSERT",
             ]
             if any(err in e.stdout or err in e.stderr for err in ignored_errors):
                 logging.warning(

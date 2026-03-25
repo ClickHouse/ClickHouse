@@ -214,7 +214,7 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     void filter(const Filter & filt) override
@@ -235,12 +235,12 @@ public:
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
-        return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override
     {
-        return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override
@@ -249,7 +249,7 @@ public:
         VectorWithMemoryTracking<MutableColumnPtr> scattered_columns;
         scattered_columns.reserve(num_columns);
         for (auto & scattered_variant_column : scattered_variant_columns)
-            scattered_columns.emplace_back(create(std::move(scattered_variant_column), variant_info, max_dynamic_types, global_max_dynamic_types));
+            scattered_columns.emplace_back(create(std::move(scattered_variant_column), variant_info, max_dynamic_types, global_max_dynamic_types, statistics));
 
         return scattered_columns;
     }
