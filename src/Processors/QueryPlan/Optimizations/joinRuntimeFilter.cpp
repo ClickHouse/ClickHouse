@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionsLogical.h>
@@ -133,6 +134,55 @@ const ReadFromMergeTree * getMergeTreeStep(QueryPlan::Node * node)
         node = node->children.front();
     }
     return nullptr;
+}
+
+std::optional<UInt64> estimateBuildSubtreeRows(QueryPlan::Node * node, const ActionsDAG::Node * filter = nullptr)
+{
+    if (!node || !node->step)
+        return std::nullopt;
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(node->step.get()); join_step && join_step->isOptimized())
+        return join_step->getResultRowsEstimation();
+
+    if (const auto * read_step = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+    {
+        auto estimator = read_step->getConditionSelectivityEstimator(read_step->getAllColumnNames());
+        if (!estimator)
+            return std::nullopt;
+
+        const auto * prewhere_info = read_step->getPrewhereInfo().get();
+        const auto * prewhere_node = prewhere_info
+            ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+            : nullptr;
+
+        auto profile = estimator->estimateRelationProfile(read_step->getStorageMetadata(), filter, prewhere_node);
+        return profile.rows;
+    }
+
+    if (node->children.size() != 1)
+        return std::nullopt;
+
+    QueryPlan::Node * child = node->children.front();
+    if (const auto * limit_step = typeid_cast<const LimitStep *>(node->step.get()))
+    {
+        auto child_rows = estimateBuildSubtreeRows(child, filter);
+        if (!child_rows)
+            return static_cast<UInt64>(limit_step->getLimit());
+        return std::min<UInt64>(*child_rows, limit_step->getLimit());
+    }
+
+    if (const auto * filter_step = typeid_cast<const FilterStep *>(node->step.get()))
+    {
+        const auto & dag = filter_step->getExpression();
+        const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+        return estimateBuildSubtreeRows(child, predicate ? predicate : filter);
+    }
+
+    /// Expression-like unary steps preserve row count.
+    if (typeid_cast<const ExpressionStep *>(node->step.get()))
+        return estimateBuildSubtreeRows(child, filter);
+
+    return estimateBuildSubtreeRows(child, filter);
 }
 
 }
@@ -337,9 +387,19 @@ static bool shouldDisableRuntimeFilter(
     // 1. Specific column NDV from statistics (most accurate).
     // 2. Fallback to total row count if NDV is unknown/missing.
     double n = 0;
-    if (build_stats && build_stats->distinct_values > 0)
-        n = static_cast<double>(build_stats->distinct_values);
-    else if (build_side_row_count > 0)
+    if (build_stats)
+    {
+        if (build_stats->distinct_values > 0)
+            n = static_cast<double>(build_stats->distinct_values);
+
+        if (build_stats->total_rows > 0)
+        {
+            double total_rows = static_cast<double>(build_stats->total_rows);
+            n = n > 0 ? std::min(n, total_rows) : total_rows;
+        }
+    }
+
+    if (n == 0 && build_side_row_count > 0)
         n = static_cast<double>(build_side_row_count);
 
     // If still have no estimate for n, default to ENABLED (return false) to be safe.
@@ -603,6 +663,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 build_side_row_count = *top_limit;
         }
 
+        if (auto build_subtree_rows = estimateBuildSubtreeRows(build_filter_node); build_subtree_rows && *build_subtree_rows > 0)
+        {
+            if (build_side_row_count == 0 || build_side_row_count > *build_subtree_rows)
+                build_side_row_count = *build_subtree_rows;
+        }
+
         for (size_t i = 0; i < join_keys_build_side.size(); ++i)
         {
             const String filter_name = filter_name_prefix + "_" + toString(i);
@@ -612,6 +678,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             const auto build_key_name = join_key_build_side.name;
 
             auto build_stats = getJoinKeyStats(build_filter_node, build_key_name);
+            if (build_stats && build_side_row_count > 0)
+            {
+                if (build_stats->total_rows == 0 || build_stats->total_rows > build_side_row_count)
+                    build_stats->total_rows = build_side_row_count;
+            }
 
             // Determine effective n
             // Priority 1: NDV from column stats (if > 0)
@@ -620,7 +691,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             if (build_stats && build_stats->total_rows > 0)
                 effective_n = static_cast<size_t>(build_stats->total_rows);
             if (build_stats && build_stats->distinct_values > 0)
-                effective_n = static_cast<size_t>(build_stats->distinct_values);
+            {
+                size_t ndv = static_cast<size_t>(build_stats->distinct_values);
+                effective_n = effective_n > 0 ? std::min(effective_n, ndv) : ndv;
+            }
 
             /// Planning-time saturation is only meaningful for Bloom-capable runtime filters.
             if (!is_left_anti_join && shouldDisableRuntimeFilter(build_stats, optimization_settings, effective_n))
