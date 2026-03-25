@@ -1,4 +1,4 @@
-#include <Functions/LLM/LLMQuotaTracker.h>
+#include <Functions/AI/LLMQuotaTracker.h>
 #include <Common/Exception.h>
 
 namespace DB

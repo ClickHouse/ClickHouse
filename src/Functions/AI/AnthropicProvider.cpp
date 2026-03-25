@@ -1,4 +1,4 @@
-#include <Functions/LLM/AnthropicProvider.h>
+#include <Functions/AI/AnthropicProvider.h>
 #include <IO/HTTPCommon.h>
 #include <Common/Exception.h>
 

@@ -1,4 +1,4 @@
-#include <Functions/LLM/LLMResultCache.h>
+#include <Functions/AI/LLMResultCache.h>
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 

@@ -1,8 +1,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/LLM/ILLMProvider.h>
-#include <Functions/LLM/LLMResultCache.h>
-#include <Functions/LLM/LLMQuotaTracker.h>
+#include <Functions/AI/ILLMProvider.h>
+#include <Functions/AI/LLMResultCache.h>
+#include <Functions/AI/LLMQuotaTracker.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>

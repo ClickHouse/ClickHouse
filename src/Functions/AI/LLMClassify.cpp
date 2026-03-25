@@ -1,4 +1,4 @@
-#include <Functions/LLM/LLMFunctionBase.h>
+#include <Functions/AI/LLMFunctionBase.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>

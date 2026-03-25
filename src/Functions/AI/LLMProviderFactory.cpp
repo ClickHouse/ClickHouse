@@ -1,6 +1,6 @@
-#include <Functions/LLM/ILLMProvider.h>
-#include <Functions/LLM/OpenAIProvider.h>
-#include <Functions/LLM/AnthropicProvider.h>
+#include <Functions/AI/ILLMProvider.h>
+#include <Functions/AI/OpenAIProvider.h>
+#include <Functions/AI/AnthropicProvider.h>
 #include <Common/Exception.h>
 
 namespace DB

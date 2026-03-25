@@ -1,4 +1,4 @@
-#include <Functions/LLM/OpenAIProvider.h>
+#include <Functions/AI/OpenAIProvider.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

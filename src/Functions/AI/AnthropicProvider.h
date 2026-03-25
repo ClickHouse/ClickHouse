@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/LLM/ILLMProvider.h>
+#include <Functions/AI/ILLMProvider.h>
 
 namespace DB
 {

@@ -1,4 +1,4 @@
-#include <Functions/LLM/LLMFunctionBase.h>
+#include <Functions/AI/LLMFunctionBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
