@@ -292,6 +292,17 @@ def test_create_table():
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@domain.com'",
         f"S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '{password}', compression_method = 'gzip')",
         f"Redis('localhost', 0, '{password}') PRIMARY KEY x;",
+        f"JDBC('DSN=mydb;Uid=user;Pwd={password}', 'mydb', 'mytable')",
+        f"ODBC('DSN=mydb;Uid=user;Pwd={password}', 'mydb', 'mytable')",
+        f"JDBC('jdbc://user:{password}@localhost:5432/mydb', 'mydb', 'mytable')",
+        f"ODBC('odbc://user:{password}@localhost:5432/mydb', 'mydb', 'mytable')",
+        f"JDBC(named_collection_1, datasource = 'DSN=mydb;Uid=user;Pwd={password}', external_database = 'mydb', external_table = 'mytable')",
+        f"ODBC(named_collection_1, connection_settings = 'DSN=mydb;Uid=user;Pwd={password}', external_database = 'mydb', external_table = 'mytable')",
+        f"JDBC(named_collection_1, datasource = 'jdbc://user:{password}@localhost:5432/mydb', external_database = 'mydb', external_table = 'mytable')",
+        f"ODBC(named_collection_1, connection_settings = 'odbc://user:{password}@localhost:5432/mydb', external_database = 'mydb', external_table = 'mytable')",
+        (f"JDBC(named_collection_1, datasource = 'DSN=mydb;Uid=user;Pwd={password}', connection_settings = 'DSN=mydb2;Uid=user2;Pwd={password}', external_database = 'mydb', external_table = 'mytable')", "ARGUMENTS"),
+        (f"JDBC(named_collection_1, connection_settings = 'jdbc://user2:{password}@localhost:5432/mydb2', external_database = 'mydb', datasource = 'jdbc://user:{password}@localhost:5432/mydb', external_table = 'mytable')", "ARGUMENTS"),
+        (f"NATS() SETTINGS nats_url = 'localhost:4222', nats_subjects = 'subject', nats_format = 'JSONEachRow', nats_token = '{password}'", "CANNOT_CONNECT_NATS"),
     ]
 
     def make_test_case(i):
@@ -372,6 +383,17 @@ def test_create_table():
             "CREATE TABLE table34 (`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@domain.com'",
             "CREATE TABLE table35 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '[HIDDEN]', compression_method = 'gzip')",
             "CREATE TABLE table36 (`x` int) ENGINE = Redis('localhost', 0, '[HIDDEN]') PRIMARY KEY x",
+            "CREATE TABLE table37 (`x` int) ENGINE = JDBC('[HIDDEN]', 'mydb', 'mytable')",
+            "CREATE TABLE table38 (`x` int) ENGINE = ODBC('[HIDDEN]', 'mydb', 'mytable')",
+            "CREATE TABLE table39 (`x` int) ENGINE = JDBC('jdbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
+            "CREATE TABLE table40 (`x` int) ENGINE = ODBC('odbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
+            "CREATE TABLE table41 (`x` int) ENGINE = JDBC(named_collection_1, datasource = '[HIDDEN]', external_database = 'mydb', external_table = 'mytable')",
+            "CREATE TABLE table42 (`x` int) ENGINE = ODBC(named_collection_1, connection_settings = '[HIDDEN]', external_database = 'mydb', external_table = 'mytable')",
+            "CREATE TABLE table43 (`x` int) ENGINE = JDBC(named_collection_1, datasource = 'jdbc://user:[HIDDEN]@localhost:5432/mydb', external_database = 'mydb', external_table = 'mytable')",
+            "CREATE TABLE table44 (`x` int) ENGINE = ODBC(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb', external_database = 'mydb', external_table = 'mytable')",
+            "CREATE TABLE table45 (`x` int) ENGINE = JDBC(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', external_table = '[HIDDEN]')",
+            "CREATE TABLE table46 (`x` int) ENGINE = JDBC(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]', external_table = '[HIDDEN]')",
+            "CREATE TABLE table47 (`x` int) ENGINE = NATS SETTINGS nats_url = 'localhost:4222', nats_subjects = 'subject', nats_format = 'JSONEachRow', nats_token = '[HIDDEN]'",
         ],
         must_not_contain=[password],
     )
@@ -491,7 +513,15 @@ def test_table_functions():
         f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
         f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
         f"hudi('http://minio1:9001/root/data/test7.csv', 'minio', '{password}')",
-        f"redis('localhost', 'key', 'key Int64', 0, '{password}')"
+        f"redis('localhost', 'key', 'key Int64', 0, '{password}')",
+        f"jdbc('DSN=mydb;Uid=user;Pwd={password}', 'mydb', 'mytable')",
+        f"odbc('DSN=mydb;Uid=user;Pwd={password}', 'mydb', 'mytable')",
+        f"jdbc('jdbc://user:{password}@localhost:5432/mydb', 'mydb', 'mytable')",
+        f"odbc('odbc://user:{password}@localhost:5432/mydb', 'mydb', 'mytable')",
+        f"jdbc(named_collection_1, datasource = 'DSN=mydb;Uid=user;Pwd={password}')",
+        f"odbc(named_collection_1, connection_settings = 'DSN=mydb;Uid=user;Pwd={password}')",
+        f"jdbc(named_collection_1, datasource = 'jdbc://user:{password}@localhost:5432/mydb')",
+        f"odbc(named_collection_1, connection_settings = 'odbc://user:{password}@localhost:5432/mydb')",
     ]
 
     def make_test_case(i):
@@ -578,6 +608,14 @@ def test_table_functions():
             f"CREATE TABLE tablefunc43 (`x` int) AS deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
             "CREATE TABLE tablefunc44 (`x` int) AS hudi('http://minio1:9001/root/data/test7.csv', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc45 (`x` int) AS redis('localhost', 'key', 'key Int64', 0, '[HIDDEN]')",
+            "CREATE TABLE tablefunc46 (`x` int) AS jdbc('[HIDDEN]', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc47 (`x` int) AS odbc('[HIDDEN]', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc48 (`x` int) AS jdbc('jdbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc49 (`x` int) AS odbc('odbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc50 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]')",
+            "CREATE TABLE tablefunc51 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
+            "CREATE TABLE tablefunc52 (`x` int) AS jdbc(named_collection_1, datasource = 'jdbc://user:[HIDDEN]@localhost:5432/mydb')",
+            "CREATE TABLE tablefunc53 (`x` int) AS odbc(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb')",
         ],
         must_not_contain=[password],
     )
