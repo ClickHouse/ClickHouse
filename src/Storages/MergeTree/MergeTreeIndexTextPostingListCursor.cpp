@@ -39,10 +39,8 @@ PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const Toke
     /// Compute global density once: cardinality / total_range_span.
     if (!info.ranges.empty())
     {
-        uint32_t min_row = static_cast<uint32_t>(info.ranges.front().begin);
-        uint32_t max_row = static_cast<uint32_t>(info.ranges.back().end);
-        uint32_t span = max_row - min_row + 1;
-        density_val = span > 0 ? static_cast<double>(info.cardinality) / static_cast<double>(span) : 0.0;
+        double span = static_cast<double>(info.ranges.back().end) - static_cast<double>(info.ranges.front().begin) + 1.0;
+        density_val = span > 0.0 ? static_cast<double>(info.cardinality) / span : 0.0;
     }
 }
 
@@ -73,10 +71,8 @@ PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
 
         if (!info.ranges.empty())
         {
-            uint32_t min_row = static_cast<uint32_t>(info.ranges.front().begin);
-            uint32_t max_row = static_cast<uint32_t>(info.ranges.back().end);
-            uint32_t span = max_row - min_row + 1;
-            density_val = span > 0 ? static_cast<double>(info.cardinality) / static_cast<double>(span) : 0.0;
+            double span = static_cast<double>(info.ranges.back().end) - static_cast<double>(info.ranges.front().begin) + 1.0;
+            density_val = span > 0.0 ? static_cast<double>(info.cardinality) / span : 0.0;
         }
     }
     else
@@ -111,6 +107,11 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     /// Read the segment header.
     UInt64 codec_type;
     readVarUInt(codec_type, *data_buffer);
+
+    if (codec_type != static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy cursor: expected codec type Bitpacking, got {}", codec_type);
+
     UInt64 payload_bytes;
     readVarUInt(payload_bytes, *data_buffer);
     UInt64 seg_cardinality;
@@ -184,6 +185,11 @@ void PostingListCursor::decodeBlock(size_t block_idx)
 
     /// Read from payload buffer at the relative offset.
     size_t payload_offset = static_cast<size_t>(block_offsets[block_idx]);
+
+    if (payload_offset >= payload_buffer.size())
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data: block offset {} is out of payload bounds {}", payload_offset, payload_buffer.size());
+
     std::span<const std::byte> block_data(
         reinterpret_cast<const std::byte *>(payload_buffer.data() + payload_offset),
         payload_buffer.size() - payload_offset);
