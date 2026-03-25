@@ -3,11 +3,14 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/WKB.h>
 #include <Core/Block.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <cmath>
 #include <cstring>
@@ -66,8 +69,76 @@ void accumulateBboxFromColumn(
     }
 }
 
-/// Try to extract the bounding box of a constant node.
-/// Handles CH native geometry in a ColumnTuple/ColumnArray (Point, Polygon, MultiPolygon).
+/// Accumulate bounding box from a CH-native GeometricObject (CartesianPoint / LineString / Polygon / …).
+struct BboxAccumulator
+{
+    double xmin = std::numeric_limits<double>::infinity();
+    double ymin = std::numeric_limits<double>::infinity();
+    double xmax = -std::numeric_limits<double>::infinity();
+    double ymax = -std::numeric_limits<double>::infinity();
+    bool found = false;
+
+    void add(double x, double y)
+    {
+        if (!std::isfinite(x) || !std::isfinite(y)) return;
+        xmin = std::min(xmin, x);
+        ymin = std::min(ymin, y);
+        xmax = std::max(xmax, x);
+        ymax = std::max(ymax, y);
+        found = true;
+    }
+
+    void add(const DB::CartesianPoint & p) { add(p.x(), p.y()); }
+
+    template <typename Container>
+    void addAll(const Container & pts) { for (const auto & p : pts) add(p); }
+};
+
+bool tryExtractWkbBbox(std::string_view wkb,
+                       double & xmin, double & ymin,
+                       double & xmax, double & ymax)
+{
+    DB::ReadBufferFromMemory buf(wkb);
+    BboxAccumulator acc;
+    try
+    {
+        auto geo = DB::parseWKBFormat(buf);
+        std::visit([&](const auto & g)
+        {
+            using T = std::decay_t<decltype(g)>;
+            if constexpr (std::is_same_v<T, DB::CartesianPoint>)
+            {
+                acc.add(g);
+            }
+            else if constexpr (std::is_same_v<T, DB::LineString<DB::CartesianPoint>>)
+            {
+                acc.addAll(g);
+            }
+            else if constexpr (std::is_same_v<T, DB::Polygon<DB::CartesianPoint>>)
+            {
+                acc.addAll(g.outer());
+            }
+            else if constexpr (std::is_same_v<T, DB::MultiLineString<DB::CartesianPoint>>)
+            {
+                for (const auto & ls : g) acc.addAll(ls);
+            }
+            else if constexpr (std::is_same_v<T, DB::MultiPolygon<DB::CartesianPoint>>)
+            {
+                for (const auto & poly : g) acc.addAll(poly.outer());
+            }
+        }, geo);
+    }
+    catch (...) { return false; }
+
+    if (!acc.found) return false;
+    xmin = acc.xmin; ymin = acc.ymin;
+    xmax = acc.xmax; ymax = acc.ymax;
+    return true;
+}
+
+/// Try to extract the bounding box of a constant ActionsDAG node.
+/// Handles WKB-encoded String (st_geomfromgeojson / st_geomfromtext constants)
+/// and CH native geometry (ColumnTuple / ColumnArray).
 bool tryExtractConstBbox(
     const DB::ActionsDAG::Node * node,
     double & xmin, double & ymin,
@@ -80,6 +151,14 @@ bool tryExtractConstBbox(
     if (const auto * const_col = typeid_cast<const DB::ColumnConst *>(raw))
         raw = &const_col->getDataColumn();
 
+    /// WKB-encoded String (e.g., constant from st_geomfromgeojson / st_geomfromtext).
+    if (const auto * str_col = typeid_cast<const DB::ColumnString *>(raw))
+    {
+        if (str_col->size() == 0) return false;
+        return tryExtractWkbBbox(str_col->getDataAt(0), xmin, ymin, xmax, ymax);
+    }
+
+    /// CH native geometry (Tuple of floats, Array of Tuples, etc.).
     xmin = std::numeric_limits<double>::infinity();
     ymin = std::numeric_limits<double>::infinity();
     xmax = -std::numeric_limits<double>::infinity();
