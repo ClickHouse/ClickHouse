@@ -786,7 +786,7 @@ bool extractRequiredNonTableColumnsFromStorage(
 /// - Single SELECT from one table (no UNION)
 /// - No row transformations (JOIN, GROUP BY, DISTINCT, window functions)
 /// - No existing ORDER BY/LIMIT in the view
-void tryPushOrderByIntoView(
+void pushOrderByIntoView(
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & select_query_info,
@@ -894,7 +894,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         if (const auto & filter_actions = table_expression_data.getFilterActions())
             table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
 
-        tryPushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, table_expression_query_info);
+        pushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, table_expression_query_info);
 
         size_t max_streams = settings[Setting::max_threads];
         size_t max_threads_execute_query = settings[Setting::max_threads];
