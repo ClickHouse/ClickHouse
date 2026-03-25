@@ -11,6 +11,25 @@ KAFKA_TOPIC=$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr '_' '-')
 KAFKA_GROUP="${CLICKHOUSE_TEST_UNIQUE_NAME}_group"
 KAFKA_BROKER="127.0.0.1:9092"
 
+cleanup()
+{
+    local exit_code=$?
+
+    trap - EXIT INT TERM
+    set +e
+
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka" 2>/dev/null
+    timeout 10 rpk topic delete $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
+
+    exit $exit_code
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # Create topic
 rpk topic create $KAFKA_TOPIC -p 1 --brokers $KAFKA_BROKER > /dev/null 2>&1 && echo "Created topic."
 
@@ -68,9 +87,3 @@ $CLICKHOUSE_CLIENT -q "SELECT id, data, kafka_key, kafka_offset, kafka_partition
 
 # Verify topic name
 $CLICKHOUSE_CLIENT -q "SELECT kafka_topic = '$KAFKA_TOPIC' AS topic_matches FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst LIMIT 1"
-
-# Cleanup
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv" 2>/dev/null
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst" 2>/dev/null
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka" 2>/dev/null
-timeout 10 rpk topic delete $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1

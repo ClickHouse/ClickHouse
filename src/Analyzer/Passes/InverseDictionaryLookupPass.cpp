@@ -142,12 +142,6 @@ public:
         if (getSettings()[Setting::rewrite_in_to_join])
             return;
 
-        /// This rewrite turns `dictGet(...)` predicates into `IN (SELECT ... FROM dictionary(...))`.
-        /// The `dictionary()` table function requires `CREATE TEMPORARY TABLE`; if that grant is missing,
-        /// skip the optimization to avoid `ACCESS_DENIED`.
-        if (!getContext()->getAccess()->isGranted(AccessType::CREATE_TEMPORARY_TABLE))
-            return;
-
         auto * node_function = node->as<FunctionNode>();
 
         if (!node_function)
@@ -301,6 +295,12 @@ public:
 
 void InverseDictionaryLookupPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    /// This rewrite turns `dictGet(...)` predicates into `IN (SELECT ... FROM dictionary(...))`.
+    /// The `dictionary()` table function requires `CREATE TEMPORARY TABLE`; if that grant is missing,
+    /// skip the optimization to avoid `ACCESS_DENIED`.
+    if (!context->getAccess()->isGranted(AccessType::CREATE_TEMPORARY_TABLE))
+        return;
+
     InverseDictionaryLookupVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }

@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/Types.h>
 #include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
@@ -11,6 +12,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
+#include <functional>
 #include <memory>
 #include <set>
 
@@ -34,6 +36,7 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
+using SerializationUniquePtr = std::unique_ptr<const ISerialization>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
@@ -57,8 +60,10 @@ struct MergeTreeSettings;
  */
 class ISerialization : private boost::noncopyable, public std::enable_shared_from_this<ISerialization>
 {
-public:
+protected:
     ISerialization() = default;
+
+public:
     virtual ~ISerialization() = default;
 
     enum class Kind : UInt8
@@ -168,6 +173,12 @@ public:
             return *this;
         }
 
+        SubstreamData & withLazyColumnCreator(std::function<ColumnPtr()> lazy_column_creator_)
+        {
+            lazy_column_creator = std::move(lazy_column_creator_);
+            return *this;
+        }
+
         SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
@@ -178,6 +189,11 @@ public:
         /// when we call enumerateStreams after deserializeBinaryBulkStatePrefix
         /// to enumerate dynamic streams.
         DeserializeBinaryBulkStatePtr deserialize_state;
+
+        /// When column is null, this optional creator can materialize it on demand.
+        /// Used for derived subcolumns (e.g. String `.size`) whose data can be
+        /// computed from a parent column without being stored separately.
+        std::function<ColumnPtr()> lazy_column_creator;
     };
 
     struct Substream
@@ -661,7 +677,27 @@ public:
     /// Perform insertion from column found in substreams cache.
     static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
 
+    /// Returns the total number of bytes allocated for this serialization object,
+    /// including sizeof(*this) and any heap allocations (strings, vectors, etc.).
+    virtual size_t allocatedBytes() const { return sizeof(*this); }
+
+    /// Returns true if this serialization supports pooling (caching by hash).
+    /// Returns false if the serialization or any of its nested serializations
+    /// cannot be cached (e.g. SerializationJSON which contains mutable state).
+    virtual bool supportsPooling() const { return true; }
+
+    /// Returns the hash that uniquely identifies this serialization object.
+    /// Set by pooled() or manually for non-pooled objects.
+    /// Throws LOGICAL_ERROR if the hash has not been set.
+    UInt128 getHash() const;
+
 protected:
+    std::optional<UInt128> cached_hash;
+
+    /// Look up the pool by hash; on cache miss call the creator to build
+    /// the object.  The creator is invoked at most once and only on miss.
+    static SerializationPtr pooled(UInt128 hash, std::function<ISerialization *()> creator);
+
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
 
     template <typename State, typename StatePtr>

@@ -59,10 +59,6 @@ def get_run_command(
     )
 
 
-def _test_name_to_basename(test_name: str) -> str:
-    return test_name[:-1] if test_name.endswith(".") else test_name
-
-
 def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[str], Result]:
     targeter = Targeting(info=info)
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
@@ -76,16 +72,23 @@ def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[st
     available_queries: dict[str, list[str]] = {}
 
     for query_file in stateless_tests_dir.rglob("*.sql"):
-        base_name = query_file.name.removesuffix(".sql")
+        base_name = query_file.stem
         available_queries.setdefault(base_name, []).append(
             f"/repo/{query_file.relative_to(cwd)}"
         )
 
+    logging.debug("Indexed %d unique SQL query base names from %s", len(available_queries), stateless_tests_dir)
+
     targeted_queries: list[str] = []
     seen_queries = set()
     for test in tests:
-        base_name = _test_name_to_basename(test)
-        for query_path in available_queries.get(base_name, []):
+        base_name = Path(test).stem.rstrip(".")
+        matches = available_queries.get(base_name, [])
+        if matches:
+            logging.debug("  %s -> %s", test, matches)
+        else:
+            logging.debug("  %s -> no .sql file found (stem: %r)", test, base_name)
+        for query_path in matches:
             if query_path not in seen_queries:
                 seen_queries.add(query_path)
                 targeted_queries.append(query_path)
@@ -141,12 +144,15 @@ def run_fuzz_job(check_name: str):
     compatibility_setting: str | None = None
     if not buzzhouse:
         if is_old_compatibility:
-            compatibility_setting = "22.1"
+            # The minimum version is 24.3 because that's when enable_analyzer
+            # became enabled by default, and the fuzzer has a readonly constraint
+            # on enable_analyzer to avoid wasting cycles on the old interpreter.
+            compatibility_setting = "24.3"
         elif is_targeted:
             compatibility_setting = None
         else:
             compatibility_setting = (
-                f"{random.randint(22, 27)}.{random.randint(1, 12)}"
+                f"{random.randint(24, 27)}.{random.randint(1, 12)}"
             )
         if compatibility_setting:
             logging.info("AST fuzzer compatibility setting: %s", compatibility_setting)
