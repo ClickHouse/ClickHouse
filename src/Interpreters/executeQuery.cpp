@@ -991,7 +991,8 @@ void logExceptionBeforeStart(
         query_span->finish(query_end_time);
     }
 
-    auditLog(elem, context);
+    if (!internal)
+        auditLog(elem, context);
 }
 
 void auditLog(const QueryLogElement & elem, ContextPtr context)

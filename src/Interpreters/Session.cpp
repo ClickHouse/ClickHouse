@@ -438,7 +438,7 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
     {
         LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",
                 user_name.has_value() ? user_name.value() : "",
-                getClientInfo().current_address->host().toString());
+                address_.host().toString());
     }
 
     LOG_DEBUG(log, "Authentication failed with error: {}", e.what());
