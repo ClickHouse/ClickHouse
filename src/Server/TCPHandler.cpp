@@ -492,9 +492,13 @@ void TCPHandler::runImpl()
             }
 
             /// If we need to shut down, or client disconnects.
-            if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
+            /// Check in->isCanceled() before in->eof() because eof() calls next() which
+            /// asserts that the buffer is not canceled. The buffer can be canceled, but the exception
+            /// about the cancellation might not be propagated properly
+            if (!tcp_server.isOpen() || server.isCancelled() || in->isCanceled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
+                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, in_canceled: {}, eof: {})",
+                    tcp_server.isOpen(), server.isCancelled(), in->isCanceled(), !in->isCanceled() && in->eof());
                 return;
             }
         }
