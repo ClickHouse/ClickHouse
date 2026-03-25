@@ -196,6 +196,14 @@ public:
 
     virtual bool isStateful() const { return false; }
 
+    /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
+      * Specifically: if the bounding boxes of the geometry arguments are disjoint,
+      * the function is guaranteed to return 0/false for all such rows.
+      * Default: false. Spatial intersection/containment functions override this to return true.
+      * UDFs with spatial semantics can also override this to enable Parquet row group / page pruning.
+      */
+    virtual bool isSpatialPredicate() const { return false; }
+
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -566,6 +574,7 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
+    virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }

@@ -11,8 +11,6 @@
 
 #include <cmath>
 #include <cstring>
-#include <string_view>
-#include <unordered_set>
 
 namespace DB::Parquet
 {
@@ -20,14 +18,6 @@ namespace DB::Parquet
 namespace
 {
 
-/// Spatial predicate names where we can skip a row group if the row group bbox
-/// is DISJOINT from the constant query bbox (the predicate is provably FALSE for all rows).
-const std::unordered_set<std::string_view> kPruningPredicates = {
-    /// CH native geometry functions (Point/Polygon Tuple/Array arguments)
-    "polygonsIntersectCartesian",
-    "polygonsWithinCartesian",
-    "pointInPolygon",
-};
 
 /// Recursively walk a constant column (ColumnConst / ColumnTuple / ColumnArray) at the
 /// given row index and accumulate min/max x/y. Handles:
@@ -123,8 +113,7 @@ std::vector<SpatialFilter> extractSpatialFilters(
         if (!node.function_base)
             continue;
 
-        const std::string & func_name = node.function_base->getName();
-        if (!kPruningPredicates.contains(func_name))
+        if (!node.function_base->isSpatialPredicate())
             continue;
         if (node.children.size() < 2)
             continue;
