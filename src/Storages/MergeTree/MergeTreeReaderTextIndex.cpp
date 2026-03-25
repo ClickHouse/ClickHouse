@@ -25,6 +25,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsFloat text_index_hint_max_selectivity;
+    extern const SettingsBool allow_experimental_text_index_lazy_apply;
     extern const SettingsString text_index_posting_list_apply_mode;
     extern const SettingsFloat text_index_density_threshold;
 }
@@ -33,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
@@ -65,7 +67,13 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     }
 
     auto data_part = getDataPart();
-    auto substreams = index.index->getSubstreams();
+
+    /// Detect the on-disk format first so we open the correct file extensions
+    /// (.idx for V1, .idx2 for V2).  getSubstreams() always returns the latest
+    /// (write-path) extension, which would break reading old V1 parts.
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
+    chassert(index_format);
+    const auto & substreams = index_format.substreams;
 
     auto make_stream = [&](const auto & substream)
     {
@@ -79,9 +87,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     sparse_index_stream = make_stream(substreams[0]);
     dictionary_stream = make_stream(substreams[1]);
     small_postings_stream = make_stream(substreams[2]);
-
-    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
-    chassert(index_format);
 
     MergeTreeIndexDeserializationState state
     {
@@ -102,6 +107,10 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Invalid value '{}' for setting text_index_posting_list_apply_mode, expected 'materialize' or 'lazy'",
             apply_mode);
+
+    if (apply_mode == "lazy" && !ctx_settings[Setting::allow_experimental_text_index_lazy_apply])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Lazy posting list apply mode requires setting allow_experimental_text_index_lazy_apply = 1");
 
     use_lazy_mode = (apply_mode == "lazy") && (deserialization_state->version >= 2);
     lazy_density_threshold = ctx_settings[Setting::text_index_density_threshold].value;
@@ -203,7 +212,8 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
     const auto & remaining_tokens = granule_text.getRemainingTokens();
 
     auto data_part = getDataPart();
-    auto substream = index.index->getSubstreams()[2];
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
+    auto substream = index_format.substreams[2];
 
     auto make_stream = [&]
     {

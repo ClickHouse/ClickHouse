@@ -2,6 +2,7 @@
 -- Test: text_index_lazy_profile_events
 -- Verifies that lazy posting list mode correctly increments ProfileEvents counters.
 
+SET allow_experimental_text_index_lazy_apply = 1;
 SET query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE IF EXISTS t_text_idx_pe;

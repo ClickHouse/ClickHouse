@@ -1,6 +1,8 @@
 -- Test: text_index_lazy_apply_mode
 -- Verifies that lazy posting list apply mode produces the same results as materialize mode.
 
+SET allow_experimental_text_index_lazy_apply = 1;
+
 DROP TABLE IF EXISTS t_text_idx_lazy;
 
 CREATE TABLE t_text_idx_lazy
