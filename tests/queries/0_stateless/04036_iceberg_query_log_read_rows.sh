@@ -9,10 +9,11 @@
 # This caused read_rows = 0 for normal aggregate queries.
 #
 # Bug 2 (issue #97172): With Parquet native reader v3 (default since 26.2),
-# PREWHERE is applied inside the format reader.  When every row is filtered out
-# by PREWHERE the reader returns no chunks, so StorageObjectStorageSource never
-# calls progress() and read_rows = 0 even though all rows were physically read.
-# The fix tracks rows_total in ReadManager and reports the gap at file boundary.
+# PREWHERE is applied inside the format reader.  Rows that are filtered out
+# inside ReadManager are never returned as chunks, so StorageObjectStorageSource
+# never calls progress() for them and read_rows undercounts the physical scan.
+# The fix tracks rows_total in ReadManager and reports the gap between
+# rows_read_from_disk and rows delivered as chunks at file boundary.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,17 +39,22 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS optimize_count_from_files = 0
 " > /dev/null
 
-# --- Test 2: PREWHERE filters every row (issue #97172 regression) ---
-# c0 values are 0..99, so PREWHERE c0 < 0 matches nothing.
-# With use_iceberg_partition_pruning = 0 the manifest stats are not used to
-# prune the file, and with input_format_parquet_filter_push_down = 0 the row
-# group statistics are not used either.  The file IS opened and all 100 rows
-# are physically read for PREWHERE evaluation, but no rows are returned to the
-# pipeline.  Before the fix read_rows was 0; after the fix it is 100.
+# --- Test 2: PREWHERE filters rows inside the V3 reader (issue #97172 regression) ---
+# c0 values are 0..99.  We use PREWHERE c0 < 50 (not c0 < 0) deliberately:
+# the condition c0 < 0 would let the Parquet V3 reader's row-group statistics
+# check (min=0 >= 0) eliminate the row group entirely before ReadManager creates
+# any subgroups, so rows_read_from_disk would never be incremented regardless of
+# the fix.  With c0 < 50 the statistics (min=0, max=99) straddle the boundary,
+# so the row group is NOT skipped; PREWHERE is applied to each row inside
+# ReadManager instead.  50 rows pass (returned as chunks via the normal progress
+# path) and 50 are filtered out (counted via the gap-reporting fix at file
+# boundary).  read_rows must therefore equal 100 — the full physical scan count.
+# Before the fix read_rows was 50 (only the delivered rows); after the fix it
+# is 100.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT /* 04036_iceberg_prewhere_test */ *
     FROM icebergLocal('${ICEBERG_TABLE_PATH}')
-    PREWHERE c0 < 0
+    PREWHERE c0 < 50
     SETTINGS
         use_iceberg_partition_pruning = 0,
         input_format_parquet_filter_push_down = 0
@@ -68,8 +74,9 @@ ${CLICKHOUSE_CLIENT} --query "
     LIMIT 1
 "
 
-# Verify test 2: read_rows equals the table row count (100) even though PREWHERE
-# filtered every row.  Before the fix this returned 0.
+# Verify test 2: read_rows equals the total physical row count (100) even though
+# PREWHERE filtered half of them inside the reader.  Before the fix this returned
+# 50 (only the rows delivered as chunks); after the fix it is 100.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT read_rows
     FROM system.query_log
