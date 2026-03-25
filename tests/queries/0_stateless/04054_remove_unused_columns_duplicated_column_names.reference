@@ -292,23 +292,34 @@ Header: k UInt8
       Header: __table1.k UInt8
               __table1.a1 String
               __table1.b1 String
+              __table1.a1 String
+              __table1.b1 String
               __table3.k UInt8
               __table3.a2 String
               __table3.b2 String
+              __table3.a2 String
+              __table3.k UInt8
         Join (JOIN FillRightFirst)
         Header: __table1.k UInt8
+                __table1.a1 String
+                __table1.b1 String
                 __table1.a1 String
                 __table1.b1 String
                 __table3.k UInt8
                 __table3.k UInt8
                 __table3.a2 String
                 __table3.b2 String
+                __table3.a2 String
           Expression (Left Pre Join Actions)
           Header: __table1.k UInt8
                   __table1.a1 String
                   __table1.b1 String
+                  __table1.a1 String
+                  __table1.b1 String
             Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
             Header: __table1.k UInt8
+                    __table1.a1 String
+                    __table1.b1 String
                     __table1.a1 String
                     __table1.b1 String
               ReadFromSystemOne
@@ -318,10 +329,12 @@ Header: k UInt8
                   __table3.k UInt8
                   __table3.a2 String
                   __table3.b2 String
+                  __table3.a2 String
             Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
             Header: __table3.k UInt8
                     __table3.a2 String
                     __table3.b2 String
+                    __table3.a2 String
                     __table3.k UInt8
               ReadFromSystemOne
               Header: dummy UInt8

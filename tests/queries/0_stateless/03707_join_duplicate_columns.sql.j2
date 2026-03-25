@@ -1,5 +1,4 @@
 SET enable_analyzer = 1;
-SET query_plan_remove_unused_columns = 0; -- TODO(antaljanosbenjamin): Disable this only to pass fast test while I am working on fixing this
 
 {% for join_use_nulls in ["0", "1"] -%}
 {% for join_algorithm in ["DEFAULT", "'full_sorting_merge'"] -%}

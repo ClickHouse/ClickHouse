@@ -338,7 +338,58 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
 
 bool JoinStepLogical::canRemoveUnusedColumns() const
 {
-    return true;
+    /// Position-based unused column removal can break HashJoin (and probably other joins too).
+    /// It is not clear yet why exactly, but the issue is probably around dealing with duplicate
+    /// columns by name instead of positions in TableJoin/HashJoin.
+
+    /// Collect all INPUT nodes reachable from join condition nodes.
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::unordered_set<std::string_view> left_condition_input_names;
+    std::unordered_set<std::string_view> right_condition_input_names;
+
+    std::vector<const ActionsDAG::Node *> stack;
+    for (const auto & join_action : join_operator.expression)
+        stack.push_back(join_action.getNode());
+    for (const auto & join_action : join_operator.residual_filter)
+        stack.push_back(join_action.getNode());
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            auto ref = JoinActionRef(node, expression_actions);
+            if (ref.fromLeft())
+                left_condition_input_names.insert(node->result_name);
+            else if (ref.fromRight())
+                right_condition_input_names.insert(node->result_name);
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    auto has_duplicated_condition_input = [](const Block & header, const std::unordered_set<std::string_view> & condition_names)
+    {
+        for (const auto & name : condition_names)
+        {
+            size_t count = 0;
+            for (size_t i = 0; i < header.columns(); ++i)
+            {
+                if (header.getByPosition(i).name == name && ++count > 1)
+                    return true;
+            }
+        }
+        return false;
+    };
+
+    return !has_duplicated_condition_input(*input_headers.at(0), left_condition_input_names)
+        && !has_duplicated_condition_input(*input_headers.at(1), right_condition_input_names);
 }
 
 JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
