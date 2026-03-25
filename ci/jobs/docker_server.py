@@ -222,20 +222,14 @@ def build_and_push_image(
         cmd_args = list(init_args)
         urls = []
         if direct_urls:
-            # distroless and ubuntu-server use an Ubuntu builder with dpkg, so they
-            # need .deb packages. alpine and ubuntu-keeper use .tgz packages.
-            uses_deb = os == "distroless" or (
-                os == "ubuntu" and "clickhouse-server" in image.name
-            )
+            # distroless uses an Ubuntu builder (dpkg), so it needs .deb packages.
+            # alpine and the keeper ubuntu variant use .tgz packages.
+            uses_deb = (os == "ubuntu" and "clickhouse-server" in image.name) or os == "distroless"
             if uses_deb:
-                urls = [
-                    url
-                    for url in direct_urls[arch]
-                    if ".deb" in url and "-dbg" not in url
-                ]
+                urls = [url for url in direct_urls[arch] if ".deb" in url]
             else:
-                # For keeper/alpine tgz builds, only pass the keeper tgz.
-                # Excluding clickhouse-common-static.tgz avoids a large unnecessary download.
+                # For keeper tgz builds (alpine/ubuntu), only pass the keeper tgz.
+                # Excluding clickhouse-common-static.tgz avoids a very large unnecessary download.
                 tgz_urls = [url for url in direct_urls[arch] if ".tgz" in url]
                 if "keeper" in image.name:
                     urls = [url for url in tgz_urls if "clickhouse-keeper" in url]
@@ -406,15 +400,8 @@ def main():
                     "clickhouse-common-static",
                 ]
             elif "clickhouse-keeper" in image_repo:
-                # Both packages are needed to cover all three keeper image variants:
-                #   distroless: installs from .deb via dpkg; clickhouse-common-static
-                #               provides the clickhouse multi-tool binary (clickhouse-keeper
-                #               is a symlink to it). clickhouse-keeper .deb is not published
-                #               separately, so the common-static .deb is the only source.
-                #   alpine/ubuntu: installs from .tgz; clickhouse-keeper provides the
-                #               standalone keeper binary and its symlinks. The common-static
-                #               .tgz is implicitly excluded because the url filter below
-                #               keeps only urls containing "clickhouse-keeper" in the name.
+                # clickhouse-common-static provides the actual binary (required for distroless).
+                # clickhouse-keeper provides the standalone binary/symlink for alpine/ubuntu.
                 PACKAGES = ["clickhouse-common-static", "clickhouse-keeper"]
             else:
                 assert False, "BUG"
