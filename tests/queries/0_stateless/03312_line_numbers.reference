@@ -4,5 +4,3 @@ QueryStart	1	4	SELECT \'This is the first query, and it is located on line 4\',\
 QueryFinish	1	4	SELECT \'This is the first query, and it is located on line 4\',\n1, -- Just random stuff to ensure proper counting of lines.\n2, 3;
 QueryStart	2	8	SELECT \'This is the second query, and it is located on line 8\';
 QueryFinish	2	8	SELECT \'This is the second query, and it is located on line 8\';
-Ok
-Ok
