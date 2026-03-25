@@ -20,7 +20,6 @@ StorageLocalConfiguration::StorageLocalConfiguration(const String & path_, const
 {
     path = path_;
     disk_name = disk_name_;
-    paths = {path};
 }
 
 ConfigWithOptions fromLocalAST(ASTs & args, ContextPtr context, bool with_structure)

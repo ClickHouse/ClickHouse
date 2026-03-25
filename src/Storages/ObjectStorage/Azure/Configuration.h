@@ -106,9 +106,6 @@ public:
     void setRawPath(const Path & path) override { blob_path = path; }
     const String & getRawURI() const override { return blob_path.path; }
 
-    const Paths & getPaths() const override { return blobs_paths; }
-    void setPaths(const Paths & paths) override { blobs_paths = paths; }
-
     String getNamespace() const override { return connection_params.getContainer(); }
     String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
@@ -136,7 +133,6 @@ private:
     ASTPtr extractExtraCredentials(ASTs & args);
 
     Path blob_path;
-    Paths blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
     DiskPtr disk;
 

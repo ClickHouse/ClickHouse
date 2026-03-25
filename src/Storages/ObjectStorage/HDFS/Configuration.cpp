@@ -141,7 +141,6 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
         path = '/' + path.path;
 
     url = url_.substr(0, pos);
-    paths = {path};
 
     LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path.path);
 }

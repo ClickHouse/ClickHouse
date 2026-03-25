@@ -59,6 +59,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
 
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
+        object_paths,
         query_settings,
         object_storage,
         nullptr, // storage_metadata
@@ -102,6 +103,7 @@ StorageObjectStorage::StorageObjectStorage(
     bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
+    , object_paths({configuration_->getRawPath()})
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , distributed_processing(distributed_processing_)
@@ -155,7 +157,8 @@ StorageObjectStorage::StorageObjectStorage(
         if (columns.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use _schema_hash placeholder without explicitly specifying columns");
 
-        table_options.setSchemaHash(StorageObjectStorageTableOptions::computeSchemaHash(columns), *configuration);
+        table_options.setSchemaHash(StorageObjectStorageTableOptions::computeSchemaHash(columns), object_paths);
+        configuration->setRawPath(object_paths[0]);
     }
 
     if (need_resolve_columns_or_format)
@@ -404,15 +407,13 @@ SinkToStoragePtr StorageObjectStorage::write(
         return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, table_options, format_settings, sample_block, local_context);
     }
 
-    auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, object_paths.front().path, object_paths.size()))
     {
-        paths.push_back({*new_key});
+        object_paths.push_back({*new_key});
     }
-    configuration->setPaths(paths);
 
     return std::make_shared<StorageObjectStorageSink>(
-        paths.back().path,
+        object_paths.back().path,
         object_storage,
         format_settings,
         sample_block,
@@ -453,7 +454,7 @@ void StorageObjectStorage::truncate(
     }
 
     StoredObjects objects;
-    for (const auto & key : configuration->getPaths())
+    for (const auto & key : object_paths)
     {
         objects.emplace_back(key.path);
     }

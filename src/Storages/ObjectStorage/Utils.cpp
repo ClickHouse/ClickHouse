@@ -252,6 +252,7 @@ std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
 {
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
+        {configuration->getRawPath()},
         configuration->getQuerySettings(context),
         object_storage,
         nullptr, /* storage_metadata */

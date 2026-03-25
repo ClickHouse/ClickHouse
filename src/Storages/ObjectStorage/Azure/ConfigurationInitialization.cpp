@@ -25,7 +25,6 @@ StorageAzureConfiguration::StorageAzureConfiguration(
     blob_path = std::move(blob_path_);
     connection_params = std::move(connection_params_);
     disk = std::move(disk_);
-    setPaths({blob_path});
 }
 
 ConfigWithOptions fromAzureNamedCollection(const NamedCollection & collection, ContextPtr context)
@@ -75,8 +74,8 @@ ConfigWithOptions fromAzureDisk(const String & disk_name, ASTs & args, ContextPt
         parsed_arguments.blob_path,
         parsed_arguments.connection_params,
         disk);
+    config->setRawPath(parsed_arguments.blob_path.path + "/");
     table_options.setPathForRead(parsed_arguments.blob_path.path + "/");
-    config->setPaths({parsed_arguments.blob_path.path + "/"});
     return {config, std::move(table_options)};
 }
 

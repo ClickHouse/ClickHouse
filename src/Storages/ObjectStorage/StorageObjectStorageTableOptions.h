@@ -31,7 +31,9 @@ struct StorageObjectStorageTableOptions
 
     static String computeSchemaHash(const ColumnsDescription & columns);
 
-    void setSchemaHash(const String & hash, StorageObjectStorageConfiguration & configuration);
+    using Paths = StorageObjectStorageConfiguration::Paths;
+
+    void setSchemaHash(const String & hash, Paths & paths);
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context, const Path & raw_path);
 

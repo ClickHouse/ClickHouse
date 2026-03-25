@@ -116,12 +116,6 @@ public:
     void setRawPath(const Path & path) override { url.key = path.path; }
     const String & getRawURI() const override { return url.uri_str; }
 
-    const Paths & getPaths() const override { return keys; }
-    void setPaths(const Paths & paths) override
-    {
-        keys = paths;
-    }
-
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
@@ -146,9 +140,6 @@ public:
     static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
 
     S3::URI url;
-
-
-    Paths keys;
 
     std::unique_ptr<S3Settings> s3_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;

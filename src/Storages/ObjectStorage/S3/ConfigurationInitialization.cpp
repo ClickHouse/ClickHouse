@@ -42,7 +42,6 @@ StorageS3Configuration::StorageS3Configuration(
     s3_settings = std::move(s3_settings_);
     s3_capabilities = std::move(s3_capabilities_);
     headers_from_ast = std::move(headers_from_ast_);
-    keys = {url.key};
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 }
@@ -76,8 +75,8 @@ ConfigWithOptions fromS3Disk(const String & disk_name, ASTs & args, ContextPtr c
     {
         String path = object_storage_disk->getObjectStorage()->getCommonKeyPrefix();
         fs::path root = path;
+        config->setRawPath(String(root / suffix));
         table_options.setPathForRead(String(root / suffix));
-        config->setPaths({String(root / suffix)});
     }
     return {config, std::move(table_options)};
 }

@@ -113,6 +113,7 @@ protected:
     /// and underlying storage access.
     StorageObjectStorageConfigurationPtr configuration;
     StorageObjectStorageTableOptions table_options;
+    StorageObjectStorageConfiguration::Paths object_paths;
     /// `object_storage` to allow direct access to data storage.
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;

@@ -66,12 +66,6 @@ public:
     void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return url; }
 
-    const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override
-    {
-        paths = paths_;
-    }
-
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return url; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
@@ -89,7 +83,6 @@ private:
 
     String url;
     Path path;
-    Paths paths;
 };
 
 ConfigWithOptions fromHDFSAST(ASTs & args, ContextPtr context, bool with_structure);

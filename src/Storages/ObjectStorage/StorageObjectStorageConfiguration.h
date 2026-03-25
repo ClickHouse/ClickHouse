@@ -104,14 +104,6 @@ public:
     /// Raw URI, specified by a user. Used in permission check.
     virtual const String & getRawURI() const = 0;
 
-    /*
-     * When using `s3_create_new_file_on_insert`, each new file path generated will be appended to the path list.
-     * This list is used to determine the next file name and the set of files that shall be read from remote storage.
-     * This is not ideal, there are much better ways to implement reads and writes. It should be eventually removed
-     */
-    virtual const Paths & getPaths() const = 0;
-    virtual void setPaths(const Paths & paths) = 0;
-
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
 

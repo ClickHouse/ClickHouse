@@ -48,17 +48,14 @@ String StorageObjectStorageTableOptions::computeSchemaHash(const ColumnsDescript
     return getSipHash128AsHexString(hash);
 }
 
-void StorageObjectStorageTableOptions::setSchemaHash(const String & hash, StorageObjectStorageConfiguration & configuration)
+void StorageObjectStorageTableOptions::setSchemaHash(const String & hash, Paths & paths)
 {
     schema_hash = hash;
     boost::replace_all(read_path.path, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
 
-    if (configuration.getPaths().size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", configuration.getPaths().size());
-    auto path = configuration.getRawPath();
-    boost::replace_all(path.path, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
-    configuration.setRawPath(path);
-    configuration.setPaths({path});
+    if (paths.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", paths.size());
+    boost::replace_all(paths[0].path, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
 }
 
 void StorageObjectStorageTableOptions::initPartitionStrategy(

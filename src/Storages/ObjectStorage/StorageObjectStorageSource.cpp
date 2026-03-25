@@ -151,6 +151,7 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     StorageObjectStorageConfigurationPtr configuration,
+    const StorageObjectStorageConfiguration::Paths & object_paths,
     const StorageObjectStorageQuerySettings & query_settings,
     ObjectStoragePtr object_storage,
     StorageMetadataPtr /* storage_metadata */,
@@ -262,7 +263,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context, hive_columns);
         if (filter_dag)
         {
-            const auto configuration_paths = configuration->getPaths();
+            const auto & configuration_paths = object_paths;
 
             std::vector<std::string> keys;
             keys.reserve(configuration_paths.size());
@@ -283,7 +284,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         }
         else
         {
-            const auto configuration_paths = configuration->getPaths();
+            const auto & configuration_paths = object_paths;
             paths.reserve(configuration_paths.size());
             for (const auto & path: configuration_paths)
             {

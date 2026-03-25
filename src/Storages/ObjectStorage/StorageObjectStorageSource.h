@@ -51,6 +51,7 @@ public:
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         StorageObjectStorageConfigurationPtr configuration,
+        const StorageObjectStorageConfiguration::Paths & object_paths,
         const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
         StorageMetadataPtr storage_metadata,

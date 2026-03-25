@@ -66,13 +66,6 @@ public:
     void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return path.path; }
 
-    const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override
-    {
-        paths = paths_;
-        path = paths_[0];
-    }
-
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return ""; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
@@ -88,7 +81,6 @@ public:
 private:
     String disk_name;
     Path path;
-    Paths paths;
 };
 
 ConfigWithOptions fromLocalAST(ASTs & args, ContextPtr context, bool with_structure);
