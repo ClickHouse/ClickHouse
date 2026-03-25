@@ -160,24 +160,4 @@ void ReadFromObjectStorageStep::createIterator()
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
-
-static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)
-{
-    SortDescription sort_description_for_merging;
-    for (size_t i = 0; i < key_description.column_names.size(); ++i)
-        sort_description_for_merging.push_back(
-            SortColumnDescription(key_description.column_names[i], (!key_description.reverse_flags.empty() && key_description.reverse_flags[i]) ? -1 : 1));
-    return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
-}
-
-bool ReadFromObjectStorageStep::requestReadingInOrder() const
-{
-    return false;
-}
-
-InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const
-{
-    return convertSortingKeyToInputOrder(getStorageMetadata()->getSortingKey());
-}
-
 }

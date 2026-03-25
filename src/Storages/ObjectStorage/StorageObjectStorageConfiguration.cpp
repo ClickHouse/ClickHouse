@@ -53,7 +53,7 @@ ObjectStoragePtr StorageObjectStorageConfiguration::createObjectStorage(
 {
     if (ready_object_storage)
         return ready_object_storage;
-    return doCreateObjectStorage(context, is_readonly, refresh_credentials_callback);
+    return createObjectStorageImpl(context, is_readonly, refresh_credentials_callback);
 }
 
 ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
@@ -68,47 +68,27 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
-namespace
-{
-
-/// Dispatch a static factory call to the concrete configuration type via a generic lambda.
-/// The lambda receives a `std::type_identity<ConcreteConfig>` tag and must call
-/// the appropriate static `from*` method, returning a pair of (config, table_options).
-template <typename Func>
-std::pair<StorageObjectStorageConfigurationPtr, StorageObjectStorageTableOptions>
-dispatchByStorageType(ObjectStorageType type, Func && func)
+StorageObjectStorageConfigurationPtr StorageObjectStorageConfiguration::createByType(ObjectStorageType type)
 {
     switch (type)
     {
 #if USE_AWS_S3
         case ObjectStorageType::S3:
-            return func(std::type_identity<StorageS3Configuration>{});
+            return std::make_shared<StorageS3Configuration>();
 #endif
 #if USE_AZURE_BLOB_STORAGE
         case ObjectStorageType::Azure:
-            return func(std::type_identity<StorageAzureConfiguration>{});
+            return std::make_shared<StorageAzureConfiguration>();
 #endif
 #if USE_HDFS
         case ObjectStorageType::HDFS:
-            return func(std::type_identity<StorageHDFSConfiguration>{});
+            return std::make_shared<StorageHDFSConfiguration>();
 #endif
         case ObjectStorageType::Local:
-            return func(std::type_identity<StorageLocalConfiguration>{});
+            return std::make_shared<StorageLocalConfiguration>();
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported object storage type: {}", static_cast<int>(type));
     }
-}
-
-}
-
-StorageObjectStorageConfigurationPtr StorageObjectStorageConfiguration::createByType(ObjectStorageType type)
-{
-    auto [config, _] = dispatchByStorageType(type, [](auto tag)
-    {
-        using ConfigType = typename decltype(tag)::type;
-        return std::pair<StorageObjectStorageConfigurationPtr, StorageObjectStorageTableOptions>{std::make_shared<ConfigType>(), {}};
-    });
-    return config;
 }
 
 StorageObjectStorageTableOptions StorageObjectStorageConfiguration::postInitializeExisting(
@@ -172,32 +152,54 @@ StorageObjectStorageConfiguration::initialize(
                 "The list of allowed disks is defined by `allowed_disks_for_table_engines`", disk_name);
     }
 
-    auto [configuration, table_options] = [&]
+    using FromAST = std::function<ConfigWithOptions(ASTs &, ContextPtr, bool)>;
+    using FromNamedCollection = std::function<ConfigWithOptions(const NamedCollection &, ContextPtr)>;
+    using FromDisk = std::function<ConfigWithOptions(const String &, ASTs &, ContextPtr, bool)>;
+
+    FromAST from_ast;
+    FromNamedCollection from_named_collection;
+    FromDisk from_disk;
+
+    switch (type)
+    {
+#if USE_AWS_S3
+        case ObjectStorageType::S3:
+            from_ast = fromS3AST;
+            from_named_collection = fromS3NamedCollection;
+            from_disk = fromS3Disk;
+            break;
+#endif
+#if USE_AZURE_BLOB_STORAGE
+        case ObjectStorageType::Azure:
+            from_ast = fromAzureAST;
+            from_named_collection = fromAzureNamedCollection;
+            from_disk = fromAzureDisk;
+            break;
+#endif
+#if USE_HDFS
+        case ObjectStorageType::HDFS:
+            from_ast = fromHDFSAST;
+            from_named_collection = fromHDFSNamedCollection;
+            from_disk = fromHDFSDisk;
+            break;
+#endif
+        case ObjectStorageType::Local:
+            from_ast = fromLocalAST;
+            from_named_collection = fromLocalNamedCollection;
+            from_disk = fromLocalDisk;
+            break;
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported object storage type: {}", static_cast<int>(type));
+    }
+
+    auto [configuration, table_options] = [&]() -> ConfigWithOptions
     {
         if (!disk_name.empty())
-        {
-            return dispatchByStorageType(type, [&](auto tag)
-            {
-                using ConfigType = typename decltype(tag)::type;
-                return ConfigType::fromDisk(disk_name, engine_args, local_context, with_table_structure);
-            });
-        }
+            return from_disk(disk_name, engine_args, local_context, with_table_structure);
         else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
-        {
-            return dispatchByStorageType(type, [&](auto tag)
-            {
-                using ConfigType = typename decltype(tag)::type;
-                return ConfigType::fromNamedCollection(*named_collection, local_context);
-            });
-        }
+            return from_named_collection(*named_collection, local_context);
         else
-        {
-            return dispatchByStorageType(type, [&](auto tag)
-            {
-                using ConfigType = typename decltype(tag)::type;
-                return ConfigType::fromAST(engine_args, local_context, with_table_structure);
-            });
-        }
+            return from_ast(engine_args, local_context, with_table_structure);
     }();
 
     postInitializeExisting(*configuration, table_options, local_context, disk_name);

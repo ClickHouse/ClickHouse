@@ -83,6 +83,8 @@ public:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
     void fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
+    /// Move-extract the privately inherited `StorageParsedArguments` base.
+    StorageParsedArguments extractBaseArguments();
     S3StorageParsedArguments() = default;
 };
 
@@ -96,9 +98,11 @@ public:
     /// All possible signatures for S3 storage with structure argument (for example for s3 table function).
 
     StorageS3Configuration() = default;
-
-    /// Apply BigLake GCP OAuth credentials. Must be called after `fromAST`.
-    void setInitializationAsBigLake(const String & client_id_, const String & client_secret_, const String & refresh_token_);
+    StorageS3Configuration(
+        S3::URI url_,
+        std::unique_ptr<S3Settings> s3_settings_,
+        std::unique_ptr<S3Capabilities> s3_capabilities_,
+        HTTPHeaderEntries headers_from_ast_);
 
     ObjectStorageType getType() const override { return type; }
 
@@ -129,7 +133,8 @@ public:
     void validateNamespace(const String & name) const override;
     bool isStaticConfiguration() const override { return static_configuration; }
 
-    ObjectStoragePtr doCreateObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
+    ObjectStoragePtr
+    createObjectStorageImpl(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,
@@ -157,12 +162,12 @@ public:
     String biglake_adc_client_secret;
     String biglake_adc_refresh_token;
 
-    static std::pair<std::shared_ptr<StorageS3Configuration>, StorageObjectStorageTableOptions> fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
-    static std::pair<std::shared_ptr<StorageS3Configuration>, StorageObjectStorageTableOptions> fromNamedCollection(const NamedCollection & collection, ContextPtr context);
-    static std::pair<std::shared_ptr<StorageS3Configuration>, StorageObjectStorageTableOptions> fromAST(ASTs & args, ContextPtr context, bool with_structure);
-
-private:
 };
+
+ConfigWithOptions fromS3AST(ASTs & args, ContextPtr context, bool with_structure);
+ConfigWithOptions fromS3NamedCollection(const NamedCollection & collection, ContextPtr context);
+ConfigWithOptions fromS3Disk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
+void setS3BigLakeCredentials(StorageS3Configuration & config, const String & client_id, const String & client_secret, const String & refresh_token);
 }
 
 #endif

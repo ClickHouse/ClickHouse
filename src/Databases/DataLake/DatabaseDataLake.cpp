@@ -312,10 +312,10 @@ ObjectStorageType DatabaseDataLake::getObjectStorageType(DatabaseDataLakeStorage
         case DatabaseDataLakeStorageType::Azure: return ObjectStorageType::Azure;
         case DatabaseDataLakeStorageType::HDFS:  return ObjectStorageType::HDFS;
         case DatabaseDataLakeStorageType::Local:
-        case DatabaseDataLakeStorageType::Other: return ObjectStorageType::Local;
+            return ObjectStorageType::Local;
+        case DatabaseDataLakeStorageType::Other:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Other");
     }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Server does not contain support for storage type {}", type);
 }
 
 std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const
@@ -467,12 +467,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto rest_catalog = std::static_pointer_cast<DataLake::OneLakeCatalog>(catalog);
         if (!rest_catalog)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
-        auto [config, table_options] = StorageAzureConfiguration::fromOneLake(
-            args, context_copy,
-            rest_catalog->getClientId(),
-            rest_catalog->getClientSecret(),
-            rest_catalog->getTenantId());
-        StorageObjectStorageConfiguration::postInitializeExisting(*config, table_options, context_copy);
+        auto [config, table_options] = fromAzureOneLake(
+            args, context_copy, rest_catalog->getClientId(), rest_catalog->getClientSecret(), rest_catalog->getTenantId());
         configuration = config;
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Azure for Iceberg OneLake catalog");
@@ -492,7 +488,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             if (!s3_configuration)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not S3 type for BigLake catalog");
             auto biglake_catalog = std::static_pointer_cast<DataLake::BigLakeCatalog>(catalog);
-            s3_configuration->setInitializationAsBigLake(
+            setS3BigLakeCredentials(
+                *s3_configuration,
                 biglake_catalog->getGoogleADCClientId(),
                 biglake_catalog->getGoogleADCClientSecret(),
                 biglake_catalog->getGoogleADCRefreshToken());
@@ -555,23 +552,44 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 #if USE_AVRO
             case DataLakeType::Iceberg:
                 storage_cluster = std::make_shared<StorageDataLakeCluster<IcebergMetadata>>(
-                    parallel_replicas_cluster_name, configuration, object_storage, storage_id,
-                    columns, ConstraintsDescription{}, nullptr, context_,
-                    /* datalake_settings */ nullptr, /* is_table_function */ true);
+                    parallel_replicas_cluster_name,
+                    configuration,
+                    object_storage,
+                    storage_id,
+                    columns,
+                    ConstraintsDescription{},
+                    nullptr,
+                    context_,
+                    /* datalake_settings */ nullptr,
+                    /* is_table_function */ false);
                 break;
             case DataLakeType::Paimon:
                 storage_cluster = std::make_shared<StorageDataLakeCluster<PaimonMetadata>>(
-                    parallel_replicas_cluster_name, configuration, object_storage, storage_id,
-                    columns, ConstraintsDescription{}, nullptr, context_,
-                    /* datalake_settings */ nullptr, /* is_table_function */ true);
+                    parallel_replicas_cluster_name,
+                    configuration,
+                    object_storage,
+                    storage_id,
+                    columns,
+                    ConstraintsDescription{},
+                    nullptr,
+                    context_,
+                    /* datalake_settings */ nullptr,
+                    /* is_table_function */ false);
                 break;
 #endif
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
             case DataLakeType::DeltaLake:
                 storage_cluster = std::make_shared<StorageDataLakeCluster<DeltaLakeMetadata>>(
-                    parallel_replicas_cluster_name, configuration, object_storage, storage_id,
-                    columns, ConstraintsDescription{}, nullptr, context_,
-                    /* datalake_settings */ nullptr, /* is_table_function */ true);
+                    parallel_replicas_cluster_name,
+                    configuration,
+                    object_storage,
+                    storage_id,
+                    columns,
+                    ConstraintsDescription{},
+                    nullptr,
+                    context_,
+                    /* datalake_settings */ nullptr,
+                    /* is_table_function */ false);
                 break;
 #endif
         }
@@ -592,24 +610,60 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 #if USE_AVRO
         case DataLakeType::Iceberg:
             return std::make_shared<StorageDataLake<IcebergMetadata>>(
-                configuration, object_storage, context_copy, table_id, columns,
-                ConstraintsDescription{}, "", getFormatSettings(context_copy),
-                LoadingStrictnessLevel::CREATE, storage_settings, getCatalog(),
-                can_use_distributed_iterator, nullptr, nullptr, true, true);
+                configuration,
+                object_storage,
+                context_copy,
+                table_id,
+                columns,
+                ConstraintsDescription{},
+                "",
+                getFormatSettings(context_copy),
+                LoadingStrictnessLevel::CREATE,
+                storage_settings,
+                getCatalog(),
+                can_use_distributed_iterator,
+                nullptr,
+                nullptr,
+                false,
+                true);
         case DataLakeType::Paimon:
             return std::make_shared<StorageDataLake<PaimonMetadata>>(
-                configuration, object_storage, context_copy, table_id, columns,
-                ConstraintsDescription{}, "", getFormatSettings(context_copy),
-                LoadingStrictnessLevel::CREATE, storage_settings, getCatalog(),
-                can_use_distributed_iterator, nullptr, nullptr, true, true);
+                configuration,
+                object_storage,
+                context_copy,
+                table_id,
+                columns,
+                ConstraintsDescription{},
+                "",
+                getFormatSettings(context_copy),
+                LoadingStrictnessLevel::CREATE,
+                storage_settings,
+                getCatalog(),
+                can_use_distributed_iterator,
+                nullptr,
+                nullptr,
+                false,
+                true);
 #endif
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
         case DataLakeType::DeltaLake:
             return std::make_shared<StorageDataLake<DeltaLakeMetadata>>(
-                configuration, object_storage, context_copy, table_id, columns,
-                ConstraintsDescription{}, "", getFormatSettings(context_copy),
-                LoadingStrictnessLevel::CREATE, storage_settings, getCatalog(),
-                can_use_distributed_iterator, nullptr, nullptr, true, true);
+                configuration,
+                object_storage,
+                context_copy,
+                table_id,
+                columns,
+                ConstraintsDescription{},
+                "",
+                getFormatSettings(context_copy),
+                LoadingStrictnessLevel::CREATE,
+                storage_settings,
+                getCatalog(),
+                can_use_distributed_iterator,
+                nullptr,
+                nullptr,
+                false,
+                true);
 #endif
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported datalake type for creating storage");

@@ -1,12 +1,13 @@
 #include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -16,22 +17,21 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/ReadFromIcebergStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Core/Settings.h>
 
 #include <stack>
 
@@ -88,7 +88,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         return merge;
     }
 
-    if (auto * reading = typeid_cast<ReadFromObjectStorageStep *>(step))
+    if (auto * reading = typeid_cast<ReadFromIcebergStep *>(step))
     {
         /// Already read-in-order, skip.
         if (!allow_existing_order && reading->getQueryInfo().input_order_info)
@@ -935,7 +935,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
 }
 
 SortingInputOrder buildInputOrderFromSortDescription(
-    const ReadFromObjectStorageStep * reading,
+    const ReadFromIcebergStep * reading,
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
     const SortDescription & description,
@@ -1008,10 +1008,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
-    ReadFromObjectStorageStep * reading,
-    const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
-    const Names & unordered_keys)
+    ReadFromIcebergStep * reading, const FixedColumns & fixed_columns, const std::optional<ActionsDAG> & dag, const Names & unordered_keys)
 {
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
     const auto & sorting_key_columns = sorting_key.column_names;
@@ -1154,17 +1151,17 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         return order_info.input_order;
     }
-    if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
+    if (auto * iceberg_step = typeid_cast<ReadFromIcebergStep *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromSortDescription(
-            object_storage_step,
+            iceberg_step,
             fixed_columns,
             dag, description,
             limit);
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder();
+            bool can_read = iceberg_step->requestReadingInOrder();
             if (!can_read)
                 return nullptr;
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1242,16 +1239,16 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
         return order_info;
     }
 
-    if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
+    if (auto * iceberg_step = typeid_cast<ReadFromIcebergStep *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
-            object_storage_step,
+            iceberg_step,
             fixed_columns,
             dag, keys);
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder();
+            bool can_read = iceberg_step->requestReadingInOrder();
             if (!can_read)
                 return {};
         }
@@ -1361,17 +1358,17 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         return order_info;
     }
 
-    if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
+    if (auto * iceberg_step = typeid_cast<ReadFromIcebergStep *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
-            object_storage_step,
+            iceberg_step,
             fixed_columns,
             dag, keys);
 
-        if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
+        if (!canImproveOrderForDistinct(order_info, iceberg_step->getDataOrder()))
             return {};
 
-        if (!object_storage_step->requestReadingInOrder())
+        if (!iceberg_step->requestReadingInOrder())
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)

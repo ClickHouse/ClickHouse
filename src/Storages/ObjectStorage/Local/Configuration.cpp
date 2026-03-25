@@ -93,44 +93,4 @@ StorageObjectStorageQuerySettings StorageLocalConfiguration::getQuerySettings(co
         .ignore_non_existent_file = false};
 }
 
-std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions>
-StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
-{
-    auto config = std::make_shared<StorageLocalConfiguration>();
-    LocalStorageParsedArguments parsed_arguments;
-    parsed_arguments.fromAST(args, context, with_structure);
-    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
-    config->path = parsed_arguments.path;
-    config->paths = {config->path};
-    return {config, std::move(table_options)};
-}
-
-std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions>
-StorageLocalConfiguration::fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure)
-{
-    auto config = std::make_shared<StorageLocalConfiguration>();
-    config->disk_name = disk_name_;
-    LocalStorageParsedArguments parsed_arguments;
-    auto disk = context->getDisk(disk_name_);
-    parsed_arguments.fromDisk(disk, args, context, with_structure);
-    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
-    fs::path root = disk->getPath();
-    fs::path suffix = parsed_arguments.path_suffix;
-    config->path = String(root / suffix);
-    table_options.setPathForRead(config->path);
-    config->setPaths({config->path});
-    return {config, std::move(table_options)};
-}
-
-std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions>
-StorageLocalConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
-{
-    auto config = std::make_shared<StorageLocalConfiguration>();
-    LocalStorageParsedArguments parsed_arguments;
-    parsed_arguments.fromNamedCollection(collection, context);
-    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
-    config->path = parsed_arguments.path;
-    config->paths = {config->path};
-    return {config, std::move(table_options)};
-}
 }

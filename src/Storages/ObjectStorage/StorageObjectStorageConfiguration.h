@@ -79,15 +79,6 @@ public:
         bool with_table_structure,
         const StorageID * table_id = nullptr,
         const String & disk_name = "");
-
-    /// Initialize a pre-created configuration (for special cases like BigLake/OneLake
-    /// that need to set fields on the configuration before parsing).
-    static StorageObjectStorageTableOptions postInitializeExisting(
-        StorageObjectStorageConfiguration & configuration_to_initialize,
-        StorageObjectStorageTableOptions & table_options,
-        ContextPtr local_context,
-        const String & disk_name = "");
-
     /// Create a configuration shared_ptr of the given concrete type.
     static std::shared_ptr<StorageObjectStorageConfiguration> createByType(ObjectStorageType type);
 
@@ -140,7 +131,9 @@ public:
     virtual void validateNamespace(const String & /* name */) const {}
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback);
-    virtual ObjectStoragePtr doCreateObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
+    virtual ObjectStoragePtr
+    createObjectStorageImpl(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback)
+        = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
@@ -168,6 +161,14 @@ public:
 
     virtual void drop(ContextPtr) {}
 
+    /// Apply post-initialization processing: namespace validation, format detection,
+    /// partition promotion, read_path setup.
+    static StorageObjectStorageTableOptions postInitializeExisting(
+        StorageObjectStorageConfiguration & configuration_to_initialize,
+        StorageObjectStorageTableOptions & table_options,
+        ContextPtr local_context,
+        const String & disk_name = "");
+
 protected:
     void assertInitialized() const;
 
@@ -180,6 +181,6 @@ protected:
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 using StorageObjectStorageConfigurationWeakPtr = std::weak_ptr<StorageObjectStorageConfiguration>;
-
+using ConfigWithOptions = std::pair<StorageObjectStorageConfigurationPtr, StorageObjectStorageTableOptions>;
 
 }

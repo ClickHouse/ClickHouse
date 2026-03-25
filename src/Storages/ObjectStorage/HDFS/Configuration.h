@@ -36,6 +36,7 @@ struct HDFSStorageParsedArguments : private StorageParsedArguments
 
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
+    StorageParsedArguments extractBaseArguments();
 
     std::string url_str;
 };
@@ -49,6 +50,7 @@ public:
     /// All possible signatures for HDFS engine with structure argument (for example for hdfs table function).
 
     StorageHDFSConfiguration() = default;
+    explicit StorageHDFSConfiguration(const std::string & url_str);
 
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
@@ -76,14 +78,11 @@ public:
 
     void check(ContextPtr context) override;
 
-    ObjectStoragePtr doCreateObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) override;
+    ObjectStoragePtr createObjectStorageImpl(
+        ContextPtr context, bool is_readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
-
-    static std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions> fromAST(ASTs & args, ContextPtr context, bool with_structure);
-    static std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions> fromNamedCollection(const NamedCollection & collection, ContextPtr context);
-    static std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions> fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
 
 private:
     void setURL(const std::string & url_);
@@ -92,6 +91,11 @@ private:
     Path path;
     Paths paths;
 };
+
+ConfigWithOptions fromHDFSAST(ASTs & args, ContextPtr context, bool with_structure);
+ConfigWithOptions fromHDFSNamedCollection(const NamedCollection & collection, ContextPtr context);
+ConfigWithOptions fromHDFSDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
+
 }
 
 #endif

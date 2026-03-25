@@ -45,6 +45,7 @@ struct LocalStorageParsedArguments : private StorageParsedArguments
     void fromNamedCollection(const NamedCollection & collection, ContextPtr);
     void fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
+    StorageParsedArguments extractBaseArguments();
 };
 
 class StorageLocalConfiguration : public StorageObjectStorageConfiguration
@@ -55,6 +56,7 @@ public:
     /// All possible signatures for Local engine with structure argument (for example for local table function).
     StorageLocalConfiguration() = default;
     StorageLocalConfiguration(const StorageLocalConfiguration & other) = default;
+    explicit StorageLocalConfiguration(const String & path_, const String & disk_name_ = "");
 
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
@@ -75,21 +77,22 @@ public:
     String getDataSourceDescription() const override { return ""; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    ObjectStoragePtr doCreateObjectStorage(ContextPtr, bool readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) override
+    ObjectStoragePtr
+    createObjectStorageImpl(ContextPtr, bool readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) override
     {
         return std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings(disk_name, "/", readonly));
     }
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
-    static std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions> fromAST(ASTs & args, ContextPtr context, bool with_structure);
-    static std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions> fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure);
-    static std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions> fromNamedCollection(const NamedCollection & collection, ContextPtr context);
-
 private:
     String disk_name;
     Path path;
     Paths paths;
 };
+
+ConfigWithOptions fromLocalAST(ASTs & args, ContextPtr context, bool with_structure);
+ConfigWithOptions fromLocalDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure);
+ConfigWithOptions fromLocalNamedCollection(const NamedCollection & collection, ContextPtr context);
 
 }

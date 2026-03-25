@@ -63,14 +63,14 @@ class StorageAzureConfigurationFriend
 public:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context)
     {
-        auto [c, _] = StorageAzureConfiguration::fromNamedCollection(collection, context);
-        config = c;
+        auto [c, _] = fromAzureNamedCollection(collection, context);
+        config = std::dynamic_pointer_cast<StorageAzureConfiguration>(c);
     }
 
     void fromAST(ASTs & args, ContextPtr context, bool with_structure)
     {
-        auto [c, _] = StorageAzureConfiguration::fromAST(args, context, with_structure);
-        config = c;
+        auto [c, _] = fromAzureAST(args, context, with_structure);
+        config = std::dynamic_pointer_cast<StorageAzureConfiguration>(c);
     }
 
     const AzureBlobStorage::ConnectionParams & getConnectionParams()

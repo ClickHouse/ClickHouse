@@ -70,6 +70,7 @@ struct AzureStorageParsedArguments : private StorageParsedArguments
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
     void fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
+    StorageParsedArguments extractBaseArguments();
     void initializeForOneLake(
         ASTs & args,
         ContextPtr context);
@@ -92,6 +93,10 @@ public:
     /// All possible signatures for Azure engine with structure argument (for example for azureBlobStorage table function).
 
     StorageAzureConfiguration() = default;
+    StorageAzureConfiguration(
+        Path blob_path_,
+        AzureBlobStorage::ConnectionParams connection_params_,
+        DiskPtr disk_ = nullptr);
 
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
@@ -110,7 +115,8 @@ public:
 
     void check(ContextPtr context) override;
 
-    ObjectStoragePtr doCreateObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
+    ObjectStoragePtr
+    createObjectStorageImpl(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,
@@ -126,12 +132,6 @@ public:
         onelake_tenant_id = tenant_id_;
     }
 
-    static std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions> fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
-    static std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions> fromNamedCollection(const NamedCollection & collection, ContextPtr context);
-    static std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions> fromAST(ASTs & args, ContextPtr context, bool with_structure);
-    static std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions> fromOneLake(
-        ASTs & args, ContextPtr context, const String & client_id, const String & client_secret, const String & tenant_id);
-
 private:
     ASTPtr extractExtraCredentials(ASTs & args);
 
@@ -145,6 +145,12 @@ private:
     String onelake_tenant_id;
 
 };
+
+ConfigWithOptions fromAzureAST(ASTs & args, ContextPtr context, bool with_structure);
+ConfigWithOptions fromAzureNamedCollection(const NamedCollection & collection, ContextPtr context);
+ConfigWithOptions fromAzureDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
+ConfigWithOptions fromAzureOneLake(ASTs & args, ContextPtr context, const String & client_id, const String & client_secret, const String & tenant_id);
+
 }
 
 #endif

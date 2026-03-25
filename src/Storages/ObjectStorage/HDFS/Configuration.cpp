@@ -49,7 +49,7 @@ void StorageHDFSConfiguration::check(ContextPtr context)
     checkHDFSURL(fs::path(url) / path.path.substr(1));
 }
 
-ObjectStoragePtr StorageHDFSConfiguration::doCreateObjectStorage( /// NOLINT
+ObjectStoragePtr StorageHDFSConfiguration::createObjectStorageImpl( /// NOLINT
     ContextPtr context,
     bool /* is_readonly */,
     CredentialsConfigurationCallback /*refresh_credentials_callback*/)
@@ -209,34 +209,6 @@ static void addStructureAndFormatToArgsIfNeededHDFS(
                 args[2] = structure_literal;
         }
     }
-}
-
-std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions>
-StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
-{
-    auto config = std::make_shared<StorageHDFSConfiguration>();
-    HDFSStorageParsedArguments parsed_arguments;
-    parsed_arguments.fromAST(args, context, with_structure);
-    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
-    config->setURL(parsed_arguments.url_str);
-    return {config, std::move(table_options)};
-}
-
-std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions>
-StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
-{
-    auto config = std::make_shared<StorageHDFSConfiguration>();
-    HDFSStorageParsedArguments parsed_arguments;
-    parsed_arguments.fromNamedCollection(collection, context);
-    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
-    config->setURL(parsed_arguments.url_str);
-    return {config, std::move(table_options)};
-}
-
-std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions>
-StorageHDFSConfiguration::fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method fromDisk is not implemented for HDFS");
 }
 
 void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
