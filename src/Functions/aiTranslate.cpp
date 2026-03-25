@@ -74,7 +74,7 @@ REGISTER_FUNCTION(AiTranslate)
         .returned_value = {"Translated text as String.", {"String"}},
         .examples = {{"basic", "SELECT aiTranslate(body, 'French') FROM articles", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 }

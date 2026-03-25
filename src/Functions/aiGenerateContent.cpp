@@ -78,7 +78,7 @@ REGISTER_FUNCTION(AiGenerateContent)
         .returned_value = {"Generated text as String.", {"String"}},
         .examples = {{"basic", "SELECT aiGenerateContent('Explain what ClickHouse is in one sentence')", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 }

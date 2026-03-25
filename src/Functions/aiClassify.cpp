@@ -131,7 +131,7 @@ REGISTER_FUNCTION(AiClassify)
         .returned_value = {"The category label from the provided array.", {"String"}},
         .examples = {{"basic", "SELECT aiClassify(body, ['positive', 'negative']) FROM reviews", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 }

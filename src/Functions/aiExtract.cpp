@@ -164,7 +164,7 @@ REGISTER_FUNCTION(AiExtract)
         .returned_value = {"Extracted value as String.", {"String"}},
         .examples = {{"basic", "SELECT aiExtract(body, 'main complaint') FROM reviews", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 }

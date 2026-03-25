@@ -506,7 +506,7 @@ REGISTER_FUNCTION(AiGenerateEmbeddingOrNull)
             {"basic", "SELECT generateEmbeddingOrNull('Hello world', 256)", ""},
             {"error_safe", "SELECT generateEmbeddingOrNull(text, 256) FROM docs", ""}},
         .introduced_in = {26, 4},
-        .category = FunctionDocumentation::Category::Other});
+        .category = FunctionDocumentation::Category::AI});
 }
 
 }
