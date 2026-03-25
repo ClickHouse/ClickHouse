@@ -1,0 +1,18 @@
+MergeTree	1	t_mt
+MergeTree+_part	1	t_mt	all_1_1_0
+ReplicatedMergeTree	2	t_rmt
+Memory	3	t_memory
+Log	4	t_log
+StripeLog	5	t_stripelog
+Merge	1	t_mt
+Distributed	1	t_mt
+Alias	1	t_mt
+Join	9	t_join
+GenerateRandom	t_gen
+system.one	one
+system.numbers	numbers
+MaterializedView	14	t_mview_inner
+WHERE_filter	1	t_mt
+WHERE_filter	14	t_mt
+Merge_WHERE	t_mt
+virtual_only	t_memory
