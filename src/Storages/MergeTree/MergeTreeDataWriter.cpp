@@ -906,6 +906,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
+        /// Commit-order projections use `_block_number` which is only finalized at commit time.
+        /// Skip during insert; they will be built correctly during the first merge.
+        if (projection.with_block_number)
+            continue;
+
         Block projection_block;
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
