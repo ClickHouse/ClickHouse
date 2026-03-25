@@ -1,4 +1,4 @@
-#include <Functions/AI/LLMFunctionBase.h>
+#include <Functions/FunctionBaseAI.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -17,7 +17,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionLLMTranslate final : public LLMFunctionBase
+class FunctionLLMTranslate final : public FunctionBaseAI
 {
 public:
     static constexpr auto name = "LLMTranslate";
@@ -25,7 +25,7 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMTranslate>(context); }
 
     explicit FunctionLLMTranslate(ContextPtr context)
-        : LLMFunctionBase(context)
+        : FunctionBaseAI(context)
     {}
 
     String getName() const override { return name; }

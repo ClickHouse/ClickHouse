@@ -1,4 +1,4 @@
-#include <Functions/AI/LLMFunctionBase.h>
+#include <Functions/FunctionBaseAI.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
@@ -59,14 +59,14 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-LLMFunctionBase::LLMFunctionBase(ContextPtr context_) : context_weak(context_)
+FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context_weak(context_)
 {
     if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
 }
 
-bool LLMFunctionBase::hasNamedCollectionArg(const ColumnsWithTypeAndName & arguments) const
+bool FunctionBaseAI::hasNamedCollectionArg(const ColumnsWithTypeAndName & arguments) const
 {
     if (arguments.empty())
         return false;
@@ -85,12 +85,12 @@ bool LLMFunctionBase::hasNamedCollectionArg(const ColumnsWithTypeAndName & argum
     return NamedCollectionFactory::instance().exists(first_arg);
 }
 
-size_t LLMFunctionBase::getFirstDataArgIndex(const ColumnsWithTypeAndName & arguments) const
+size_t FunctionBaseAI::getFirstDataArgIndex(const ColumnsWithTypeAndName & arguments) const
 {
     return hasNamedCollectionArg(arguments) ? 1 : 0;
 }
 
-LLMFunctionBase::ResolvedConfig LLMFunctionBase::resolveConfig(const ColumnsWithTypeAndName & arguments) const
+FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
 {
     ResolvedConfig config;
     const auto & settings = getContext()->getSettingsRef();
@@ -129,7 +129,7 @@ LLMFunctionBase::ResolvedConfig LLMFunctionBase::resolveConfig(const ColumnsWith
     return config;
 }
 
-float LLMFunctionBase::resolveTemperature(const ColumnsWithTypeAndName & arguments, const ResolvedConfig & config) const
+float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & arguments, const ResolvedConfig & config) const
 {
     if (arguments.empty())
         return config.temperature;
@@ -149,7 +149,7 @@ float LLMFunctionBase::resolveTemperature(const ColumnsWithTypeAndName & argumen
     return config.temperature;
 }
 
-ColumnPtr LLMFunctionBase::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
 {
     auto config = resolveConfig(arguments);
     auto provider = createLLMProvider(config.provider, config.endpoint, config.api_key);

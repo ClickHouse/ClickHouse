@@ -1,4 +1,4 @@
-#include <Functions/AI/LLMFunctionBase.h>
+#include <Functions/FunctionBaseAI.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -26,7 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionLLMClassify final : public LLMFunctionBase
+class FunctionLLMClassify final : public FunctionBaseAI
 {
 public:
     static constexpr auto name = "LLMClassify";
@@ -37,7 +37,7 @@ public:
     }
 
     explicit FunctionLLMClassify(ContextPtr context)
-        : LLMFunctionBase(context)
+        : FunctionBaseAI(context)
     {}
 
     String getName() const override { return name; }
