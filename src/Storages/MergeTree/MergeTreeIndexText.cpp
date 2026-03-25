@@ -144,19 +144,19 @@ void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & pos
     }
 }
 
-void PostingsSerialization::serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr)
+void PostingsSerialization::serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, UInt64 version, WriteBuffer & ostr)
 {
     chassert(info.header & IsCompressed);
     chassert(posting_list_codec);
     chassert(posting_list_codec->getType() != IPostingListCodec::Type::None);
-    posting_list_codec->encode(postings, posting_list_block_size, info, ostr);
+    posting_list_codec->encode(postings, posting_list_block_size, version, info, ostr);
 }
 
-void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr)
+void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, UInt64 version, WriteBuffer & ostr)
 {
     if (info.header & IsCompressed)
     {
-        serialize(postings.getLarge(), info, posting_list_block_size, ostr);
+        serialize(postings.getLarge(), info, posting_list_block_size, version, ostr);
     }
     else if (postings.isLarge())
     {
@@ -806,6 +806,8 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
     {
         info.header |= IsCompressed;
+        if (params.version >= 2)
+            info.header |= HasBlockIndex;
     }
 
     /// Apply posting list compression only to non-embedded,
@@ -832,13 +834,13 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     /// The codec splits the posting list into blocks according to the posting_list_block_size setting.
     if (info.header & IsCompressed)
     {
-        postings_serialization.serialize(postings, info, params.posting_list_block_size, postings_stream.plain_hashing);
+        postings_serialization.serialize(postings, info, params.posting_list_block_size, params.version, postings_stream.plain_hashing);
     }
     else if (info.header & SingleBlock)
     {
         info.offsets.emplace_back(postings_stream.plain_hashing.count());
         info.ranges.emplace_back(postings.minimum(), postings.maximum());
-        postings_serialization.serialize(postings, info, params.posting_list_block_size, postings_stream.plain_hashing);
+        postings_serialization.serialize(postings, info, params.posting_list_block_size, params.version, postings_stream.plain_hashing);
     }
     else
     {
@@ -1127,7 +1129,7 @@ DictionarySparseIndex serializeTokensAndPostings(
             TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
 
             if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-                postings_serialization.serialize(postings, token_info, params.posting_list_block_size, dictionary_stream.compressed_hashing);
+                postings_serialization.serialize(postings, token_info, params.posting_list_block_size, params.version, dictionary_stream.compressed_hashing);
         }
     }
 
@@ -1453,6 +1455,8 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
+static const String ARGUMENT_VERSION = "version";
+static constexpr UInt64 DEFAULT_VERSION = 1;
 
 namespace
 {
@@ -1548,12 +1552,14 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
     UInt64 dictionary_block_frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
+    UInt64 version = extractFieldOption<UInt64>(options, ARGUMENT_VERSION).value_or(DEFAULT_VERSION);
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
-        std::move(preprocessor_ast)};
+        std::move(preprocessor_ast),
+        version};
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
     auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
@@ -1583,6 +1589,10 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
+
+    UInt64 version = extractFieldOption<UInt64>(options, ARGUMENT_VERSION).value_or(DEFAULT_VERSION);
+    if (version < 1 || version > 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 1 or 2, but got {}", ARGUMENT_VERSION, version);
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);

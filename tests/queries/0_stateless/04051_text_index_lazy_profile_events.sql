@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas, no-random-settings
 -- Test: text_index_lazy_profile_events
 -- Verifies that lazy posting list mode correctly increments ProfileEvents counters.
 
@@ -10,7 +10,7 @@ CREATE TABLE t_text_idx_pe
 (
     id UInt64,
     text String,
-    INDEX idx_text text TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking') GRANULARITY 1
+    INDEX idx_text text TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', version = 2) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -37,7 +37,8 @@ SELECT count()
 FROM t_text_idx_pe
 WHERE hasAllTokens(text, ['dense', 'ultrarare'])
 SETTINGS text_index_posting_list_apply_mode = 'lazy',
-         log_comment = 'lazy_sparse_and';
+         log_comment = 'lazy_sparse_and'
+FORMAT Null;
 
 -- Dense AND in lazy mode with low threshold (should trigger brute-force intersection)
 SELECT count()
@@ -45,14 +46,16 @@ FROM t_text_idx_pe
 WHERE hasAllTokens(text, ['dense', 'medium'])
 SETTINGS text_index_posting_list_apply_mode = 'lazy',
          text_index_density_threshold = 0.0,
-         log_comment = 'lazy_dense_and_bruteforce';
+         log_comment = 'lazy_dense_and_bruteforce'
+FORMAT Null;
 
 -- Same query in materialize mode (lazy counters should be zero)
 SELECT count()
 FROM t_text_idx_pe
 WHERE hasAllTokens(text, ['dense', 'ultrarare'])
 SETTINGS text_index_posting_list_apply_mode = 'materialize',
-         log_comment = 'materialize_sparse_and';
+         log_comment = 'materialize_sparse_and'
+FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 

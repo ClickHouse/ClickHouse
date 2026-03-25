@@ -7,7 +7,7 @@ CREATE TABLE t_text_idx_lazy
 (
     id UInt64,
     text String,
-    INDEX idx_text text TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking') GRANULARITY 1
+    INDEX idx_text text TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', version = 2) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id

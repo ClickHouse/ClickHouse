@@ -127,30 +127,75 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     payload_buffer.resize(payload_bytes);
     data_buffer->readStrict(reinterpret_cast<char *>(payload_buffer.data()), payload_bytes);
 
-    /// The Index Section follows immediately after the payload in the .pst stream.
-    /// No additional seek needed — just continue reading.
-
-    UInt64 num_blocks;
-    readVarUInt(num_blocks, *data_buffer);
-
-    block_last_row_ids.resize(num_blocks);
-    block_offsets.resize(num_blocks);
-
-    for (size_t i = 0; i < num_blocks; ++i)
+    if (info.header & PostingsSerialization::Flags::HasBlockIndex)
     {
-        UInt64 v;
-        readVarUInt(v, *data_buffer);
-        block_last_row_ids[i] = static_cast<UInt32>(v);
-    }
+        /// V2 Index Section follows immediately after the payload in the .pst stream.
+        /// No additional seek needed — just continue reading.
+        UInt64 num_blocks;
+        readVarUInt(num_blocks, *data_buffer);
 
-    for (size_t i = 0; i < num_blocks; ++i)
+        block_last_row_ids.resize(num_blocks);
+        block_offsets.resize(num_blocks);
+
+        for (size_t i = 0; i < num_blocks; ++i)
+        {
+            UInt64 v;
+            readVarUInt(v, *data_buffer);
+            block_last_row_ids[i] = static_cast<UInt32>(v);
+        }
+
+        for (size_t i = 0; i < num_blocks; ++i)
+        {
+            UInt64 v;
+            readVarUInt(v, *data_buffer);
+            block_offsets[i] = v;
+        }
+
+        block_count = num_blocks;
+    }
+    else
     {
-        UInt64 v;
-        readVarUInt(v, *data_buffer);
-        block_offsets[i] = v;
-    }
+        /// V1 format: no Index Section. Rebuild block metadata by scanning
+        /// the payload buffer to determine each block's offset and last_row_id.
+        block_count = (segment_doc_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        block_offsets.resize(block_count);
+        block_last_row_ids.resize(block_count);
 
-    block_count = num_blocks;
+        size_t offset = 0;
+        uint32_t running_row_id = segment_first_row_id;
+        for (size_t b = 0; b < block_count; ++b)
+        {
+            block_offsets[b] = offset;
+
+            size_t count = BLOCK_SIZE;
+            if (b == block_count - 1 && segment_doc_count % BLOCK_SIZE != 0)
+                count = segment_doc_count % BLOCK_SIZE;
+
+            if (offset >= payload_buffer.size())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted V1 posting list: block offset {} out of payload bounds {}", offset, payload_buffer.size());
+
+            uint8_t bits = static_cast<uint8_t>(payload_buffer[offset]);
+            size_t packed_bytes = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
+            offset += 1 + packed_bytes;
+
+            /// Decode block to determine its last_row_id.
+            std::span<const std::byte> block_data(
+                reinterpret_cast<const std::byte *>(payload_buffer.data() + block_offsets[b] + 1),
+                packed_bytes);
+            uint32_t temp[BLOCK_SIZE];
+            std::span<uint32_t> out_span(temp, count);
+            BitpackingBlockCodec::decode(block_data, count, bits, out_span);
+
+            /// Convert deltas to absolute row ids.
+            for (size_t i = 0; i < count; ++i)
+            {
+                running_row_id += temp[i];
+                temp[i] = running_row_id;
+            }
+            block_last_row_ids[b] = temp[count - 1];
+        }
+    }
     tail_size = segment_doc_count % BLOCK_SIZE;
     current_block = 0;
     decoded_count = 0;

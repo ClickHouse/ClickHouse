@@ -79,6 +79,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     ASTPtr preprocessor;
+    UInt64 version = 1;
 };
 
 using PostingList = roaring::Roaring;
@@ -153,10 +154,13 @@ struct PostingsSerialization
         SingleBlock = 1ULL << 2,
         /// If set, the posting list is encoded using posting_list_codec.
         IsCompressed = 1ULL << 3,
+        /// If set, each compressed segment has a V2 Index Section with per-block metadata
+        /// (last_row_id + relative_offset arrays) enabling binary-search in PostingListCursor.
+        HasBlockIndex = 1ULL << 4,
     };
 
-    void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
+    void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, UInt64 version, WriteBuffer & ostr);
+    void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, UInt64 version, WriteBuffer & ostr);
     void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec; }

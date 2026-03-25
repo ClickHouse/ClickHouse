@@ -127,12 +127,12 @@ public:
     ///
     /// Flushes any pending partial block and writes per-segment headers
     /// followed by the segment payload bytes.
-    void encode(WriteBuffer & out, TokenPostingsInfo & info)
+    void encode(WriteBuffer & out, TokenPostingsInfo & info, UInt64 version = 1)
     {
         if (!current_segment.empty())
             encodeBlock(current_segment);
 
-        serializeTo(out, info);
+        serializeTo(out, info, version);
     }
 
     /// Deserialize a postings list from input `in` into `out`.
@@ -178,7 +178,7 @@ private:
     /// Write all segments to output and fill TokenPostingsInfo:
     /// - offsets: byte offsets in output where each segment begins
     /// - ranges: [row_begin, row_end] row range for each segment
-    void serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const;
+    void serializeTo(WriteBuffer & out, TokenPostingsInfo & info, UInt64 version) const;
 
     /// Encode one block of delta values and append it to `compressed_data`.
     ///
@@ -234,7 +234,7 @@ public:
 
     PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
 
-    void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    void encode(const PostingList & postings, size_t max_rowids_in_segment, UInt64 version, TokenPostingsInfo & info, WriteBuffer & out) const override;
     void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
@@ -246,7 +246,7 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    void encode(const PostingList &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
+    void encode(const PostingList &, size_t, UInt64, TokenPostingsInfo &, WriteBuffer &) const override {}
     void decode(ReadBuffer &, PostingList &) const override {}
 };
 

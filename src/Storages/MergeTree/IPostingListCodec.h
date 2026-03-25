@@ -38,7 +38,8 @@ public:
 
     /// Splits the posting list into posting_list_block_size-large blocks and encodes each block separately.
     /// Also collects per-segment metadata into info and returns it to the caller (TokenPostingsInfo).
-    virtual void encode(const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
+    /// When version >= 2, appends a per-block Index Section after each segment for lazy cursor support.
+    virtual void encode(const PostingList & postings, size_t posting_list_block_size, UInt64 version, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
 
     /// Reads an encoded posting list, decodes it, and returns a posting list.
     virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;
