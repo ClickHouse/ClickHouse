@@ -29,7 +29,6 @@
 
 #include <unordered_map>
 #include <unordered_set>
-#include <sstream>
 
 namespace ProfileEvents
 {
@@ -105,14 +104,18 @@ class FunctionGenerateEmbeddingImpl final : public IFunction
 {
 public:
     static constexpr auto name = or_null ? "generateEmbeddingOrNull" : "generateEmbedding";
-    static FunctionPtr create(ContextPtr ctx)
+
+    static FunctionPtr create(ContextPtr context)
     {
-        if (!ctx->getSettingsRef()[Setting::allow_experimental_ai_functions])
+        if (!context->getSettingsRef()[Setting::allow_experimental_ai_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "AI function '{}' is experimental. Set `allow_experimental_ai_functions` setting to enable it", name);
-        return std::make_shared<FunctionGenerateEmbeddingImpl>(std::move(ctx));
+        return std::make_shared<FunctionGenerateEmbeddingImpl>(context);
+
     }
-    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_) : context_weak(context_) {}
+    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_)
+        : context_weak(context_)
+    {}
 
     ContextWeakPtr context_weak;
     ContextPtr getContext() const { return context_weak.lock(); }

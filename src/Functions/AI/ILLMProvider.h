@@ -3,7 +3,6 @@
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/JSON/Object.h>
-#include <optional>
 #include <memory>
 #include <vector>
 
@@ -41,23 +40,6 @@ struct LLMEmbeddingResponse
     UInt64 input_tokens = 0;
 };
 
-/// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
-/// Tabs and newlines are preserved as they're valid in most LLM contexts;
-/// everything else is replaced with a space.
-inline String sanitizeTextForLLM(const String & input)
-{
-    String output;
-    output.reserve(input.size());
-    for (unsigned char ch : input)
-    {
-        if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r')
-            output.push_back(' ');
-        else
-            output.push_back(static_cast<char>(ch));
-    }
-    return output;
-}
-
 class ILLMProvider
 {
 public:
@@ -65,6 +47,8 @@ public:
     virtual LLMResponse call(const LLMRequest & request, const ConnectionTimeouts & timeouts) = 0;
     virtual LLMEmbeddingResponse embed(const LLMEmbeddingRequest & request, const ConnectionTimeouts & timeouts);
     virtual String providerName() const = 0;
+protected:
+    String sanitizeTextForLLM(const String & input);
 };
 
 using LLMProviderPtr = std::shared_ptr<ILLMProvider>;

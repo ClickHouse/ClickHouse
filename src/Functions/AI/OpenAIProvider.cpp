@@ -23,7 +23,9 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
-static String extractProviderError(const std::string & response_body, int status_code)
+namespace
+{
+String extractProviderError(const std::string & response_body, int status_code)
 {
     try
     {
@@ -47,10 +49,13 @@ static String extractProviderError(const std::string & response_body, int status
     return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
         response_body.substr(0, std::min(response_body.size(), max_len)));
 }
+}
 
 
 OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
-    : endpoint(endpoint_), api_key(api_key_), uri(endpoint_)
+    : endpoint(endpoint_)
+    , api_key(api_key_)
+    , uri(endpoint_)
 {
 }
 

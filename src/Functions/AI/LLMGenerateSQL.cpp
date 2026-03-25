@@ -26,8 +26,15 @@ class FunctionLLMGenerateSQL final : public LLMFunctionBase
 {
 public:
     static constexpr auto name = "LLMGenerateSQL";
-    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMGenerateSQL>(std::move(ctx)); }
-    explicit FunctionLLMGenerateSQL(ContextPtr ctx) : LLMFunctionBase(std::move(ctx)) {}
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionLLMGenerateSQL>(context);
+    }
+
+    explicit FunctionLLMGenerateSQL(ContextPtr context)
+        : LLMFunctionBase(context)
+    {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

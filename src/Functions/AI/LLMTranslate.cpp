@@ -21,8 +21,12 @@ class FunctionLLMTranslate final : public LLMFunctionBase
 {
 public:
     static constexpr auto name = "LLMTranslate";
-    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionLLMTranslate>(std::move(ctx)); }
-    explicit FunctionLLMTranslate(ContextPtr ctx) : LLMFunctionBase(std::move(ctx)) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMTranslate>(context); }
+
+    explicit FunctionLLMTranslate(ContextPtr context)
+        : LLMFunctionBase(context)
+    {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

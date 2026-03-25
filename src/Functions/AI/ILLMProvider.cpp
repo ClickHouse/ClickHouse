@@ -12,6 +12,24 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+/// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
+/// Tabs and newlines are preserved as they're valid in most LLM contexts;
+/// everything else is replaced with a space.
+String ILLMProvider::sanitizeTextForLLM(const String & input)
+{
+    String output;
+    output.reserve(input.size());
+    for (unsigned char ch : input)
+    {
+        if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r')
+            output.push_back(' ');
+        else
+            output.push_back(static_cast<char>(ch));
+    }
+    return output;
+}
+
+
 LLMEmbeddingResponse ILLMProvider::embed(const LLMEmbeddingRequest & /*request*/, const ConnectionTimeouts & /*timeouts*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
