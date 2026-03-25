@@ -1,41 +1,41 @@
 -- Function registration
-LLMClassify
-LLMExtract
-LLMGenerateContent
-LLMGenerateSQL
-LLMTranslate
+aiClassify
+aiExtract
+aiGenerateContent
+aiGenerateSQL
+aiTranslate
 generateEmbedding
 generateEmbeddingOrNull
--- LLMClassify: too few arguments
--- LLMClassify: too many arguments
--- LLMClassify: missing named collection
--- LLMExtract: too few arguments
--- LLMExtract: too many arguments
--- LLMExtract: missing named collection
--- LLMTranslate: too few arguments
--- LLMTranslate: too many arguments
--- LLMTranslate: missing named collection
--- LLMGenerateSQL: too few arguments
--- LLMGenerateSQL: too many arguments
--- LLMGenerateSQL: missing named collection
--- LLMGenerateContent: too few arguments
--- LLMGenerateContent: too many arguments
--- LLMGenerateContent: missing named collection
+-- aiClassify: too few arguments
+-- aiClassify: too many arguments
+-- aiClassify: missing named collection
+-- aiExtract: too few arguments
+-- aiExtract: too many arguments
+-- aiExtract: missing named collection
+-- aiTranslate: too few arguments
+-- aiTranslate: too many arguments
+-- aiTranslate: missing named collection
+-- aiGenerateSQL: too few arguments
+-- aiGenerateSQL: too many arguments
+-- aiGenerateSQL: missing named collection
+-- aiGenerateContent: too few arguments
+-- aiGenerateContent: too many arguments
+-- aiGenerateContent: missing named collection
 -- generateEmbedding: too few arguments
 -- generateEmbedding: too many arguments
 -- generateEmbedding: missing named collection
 -- generateEmbeddingOrNull: too few arguments
 -- generateEmbeddingOrNull: too many arguments
 -- generateEmbeddingOrNull: missing named collection
--- LLMClassify return type
+-- aiClassify return type
 result	Nullable(String)
--- LLMExtract return type
+-- aiExtract return type
 result	Nullable(String)
--- LLMTranslate return type
+-- aiTranslate return type
 result	Nullable(String)
--- LLMGenerateSQL return type
+-- aiGenerateSQL return type
 result	Nullable(String)
--- LLMGenerateContent return type
+-- aiGenerateContent return type
 result	Nullable(String)
 -- generateEmbedding return type
 result	Array(Float32)

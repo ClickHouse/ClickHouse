@@ -29,7 +29,7 @@ namespace
 class FunctionLLMClassify final : public FunctionBaseAI
 {
 public:
-    static constexpr auto name = "LLMClassify";
+    static constexpr auto name = "aiClassify";
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -128,14 +128,14 @@ protected:
 
 }
 
-REGISTER_FUNCTION(LLMClassify)
+REGISTER_FUNCTION(AiClassify)
 {
     factory.registerFunction<FunctionLLMClassify>(FunctionDocumentation{
         .description = "Classifies input text into one of the provided categories using an LLM.",
-        .syntax = "LLMClassify([collection,] text, categories[, temperature])",
+        .syntax = "aiClassify([collection,] text, categories[, temperature])",
         .arguments = {{"text", "Input text to classify"}, {"categories", "Array of category labels"}},
         .returned_value = {"The category label from the provided array.", {"String"}},
-        .examples = {{"basic", "SELECT LLMClassify(body, ['positive', 'negative']) FROM reviews", ""}},
+        .examples = {{"basic", "SELECT aiClassify(body, ['positive', 'negative']) FROM reviews", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::Other});
 }

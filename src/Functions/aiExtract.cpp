@@ -23,7 +23,7 @@ namespace
 class FunctionLLMExtract final : public FunctionBaseAI
 {
 public:
-    static constexpr auto name = "LLMExtract";
+    static constexpr auto name = "aiExtract";
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -161,14 +161,14 @@ protected:
 
 }
 
-REGISTER_FUNCTION(LLMExtract)
+REGISTER_FUNCTION(AiExtract)
 {
     factory.registerFunction<FunctionLLMExtract>(FunctionDocumentation{
         .description = "Extracts structured information from unstructured text using an LLM.",
-        .syntax = "LLMExtract([collection,] text, instruction_or_schema[, temperature])",
+        .syntax = "aiExtract([collection,] text, instruction_or_schema[, temperature])",
         .arguments = {{"text", "Input text"}, {"instruction_or_schema", "Extraction instruction or JSON schema"}},
         .returned_value = {"Extracted value as String.", {"String"}},
-        .examples = {{"basic", "SELECT LLMExtract(body, 'main complaint') FROM reviews", ""}},
+        .examples = {{"basic", "SELECT aiExtract(body, 'main complaint') FROM reviews", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::Other});
 }

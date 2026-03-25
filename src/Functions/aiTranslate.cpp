@@ -20,7 +20,7 @@ namespace
 class FunctionLLMTranslate final : public FunctionBaseAI
 {
 public:
-    static constexpr auto name = "LLMTranslate";
+    static constexpr auto name = "aiTranslate";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMTranslate>(context); }
 
@@ -68,14 +68,14 @@ protected:
 
 }
 
-REGISTER_FUNCTION(LLMTranslate)
+REGISTER_FUNCTION(AiTranslate)
 {
     factory.registerFunction<FunctionLLMTranslate>(FunctionDocumentation{
         .description = "Translates input text into the specified target language using an LLM.",
-        .syntax = "LLMTranslate([collection,] text, target_language[, instructions][, temperature])",
+        .syntax = "aiTranslate([collection,] text, target_language[, instructions][, temperature])",
         .arguments = {{"text", "Input text"}, {"target_language", "Target language name or BCP-47 code"}},
         .returned_value = {"Translated text as String.", {"String"}},
-        .examples = {{"basic", "SELECT LLMTranslate(body, 'French') FROM articles", ""}},
+        .examples = {{"basic", "SELECT aiTranslate(body, 'French') FROM articles", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::Other});
 }

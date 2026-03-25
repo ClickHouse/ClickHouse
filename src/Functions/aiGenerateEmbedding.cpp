@@ -172,7 +172,7 @@ public:
                 String collection_name = first_arg.empty() ? String(settings[Setting::default_ai_provider].value) : first_arg;
                 if (collection_name.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "No LLM named collection specified and default_ai_provider is not set");
+                        "No AI named collection specified and default_ai_provider is not set");
 
                 const auto & nc = NamedCollectionFactory::instance().get(collection_name);
                 provider_name = nc->getOrDefault<String>("provider", "openai");
@@ -186,7 +186,7 @@ public:
             String collection_name = settings[Setting::default_ai_provider].value;
             if (collection_name.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "No LLM named collection specified and default_ai_provider is not set");
+                    "No AI named collection specified and default_ai_provider is not set");
 
             const auto & nc = NamedCollectionFactory::instance().get(collection_name);
             provider_name = nc->getOrDefault<String>("provider", "openai");
@@ -196,7 +196,7 @@ public:
         }
 
         if (endpoint_val.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM embedding endpoint is not configured");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI embedding endpoint is not configured");
 
         size_t max_batch_size = settings[Setting::embedding_max_batch_size].value;
         if (max_batch_size == 0)
@@ -349,7 +349,7 @@ public:
                                     }
                                     else
                                         throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-                                            "LLM embedding provider returned empty response for batch of {} inputs", batch_items.size());
+                                            "AI embedding provider returned empty response for batch of {} inputs", batch_items.size());
                                 }
 
                                 for (size_t i = 0; i < batch_items.size(); ++i)

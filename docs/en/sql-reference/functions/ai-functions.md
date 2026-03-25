@@ -1,5 +1,5 @@
 ---
-description: 'Documentation for LLM (Large Language Model) Functions'
+description: 'Documentation for AI Functions'
 sidebar_label: 'AI'
 slug: /sql-reference/functions/ai-functions
 title: 'AI Functions'
@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 # AI functions
 
-AI Functions are built-in functions in ClickHouse that you can use to call LLM or generate embeddings to work with your data, extract information, classify data, etc...
+AI Functions are built-in functions in ClickHouse that you can use to call AI or generate embeddings to work with your data, extract information, classify data, etc...
 
 :::note
 AI functions can return unpredictable inputs. The result will highly depend on the quality of the prompt and the model used.
@@ -25,10 +25,10 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-LLM functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection. If omitted, the [`default_ai_provider`](/operations/settings/settings#default_ai_provider) setting is used.
+AI functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection. If omitted, the [`default_ai_provider`](/operations/settings/settings#default_ai_provider) setting is used.
 
 ```sql
-CREATE NAMED COLLECTION my_llm AS
+CREATE NAMED COLLECTION ai_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o-mini',
@@ -67,14 +67,14 @@ Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `p
 | [`embedding_max_batch_size`](/operations/settings/settings#embedding_max_batch_size) | UInt64 | `100` | Maximum number of texts per HTTP request for embedding functions. Texts are grouped into batches of this size to reduce API call overhead. |
 | [`ai_on_quota_exceeded`](/operations/settings/settings#ai_on_quota_exceeded) | String | `'throw'` | Behavior when quota is exceeded: `'throw'` raises an exception, `'null'` returns NULL for remaining rows. |
 
-## LLMClassify {#llmclassify}
+## aiClassify {#aiclassify}
 
 Classifies input text into one of the provided categories.
 
 **Syntax**
 
 ```sql
-LLMClassify([collection,] text, categories[, temperature])
+aiClassify([collection,] text, categories[, temperature])
 ```
 
 **Arguments**
@@ -91,7 +91,7 @@ LLMClassify([collection,] text, categories[, temperature])
 **Example**
 
 ```sql
-SELECT LLMClassify('my_llm', 'I absolutely love ClickHouse!', ['positive', 'negative', 'neutral']) AS sentiment;
+SELECT aiClassify('ai_credentials', 'I absolutely love ClickHouse!', ['positive', 'negative', 'neutral']) AS sentiment;
 ```
 
 ```response
@@ -105,19 +105,19 @@ Classify multiple rows:
 ```sql
 SELECT
     review,
-    LLMClassify('my_llm', review, ['positive', 'negative', 'neutral']) AS sentiment
+    aiClassify('ai_credentials', review, ['positive', 'negative', 'neutral']) AS sentiment
 FROM product_reviews
 LIMIT 10;
 ```
 
-## LLMExtract {#llmextract}
+## aiExtract {#aiextract}
 
 Extracts information from text.
 
 **Syntax**
 
 ```sql
-LLMExtract([collection,] text, what_to_extract[, temperature])
+aiExtract([collection,] text, what_to_extract[, temperature])
 ```
 
 **Arguments**
@@ -134,7 +134,7 @@ LLMExtract([collection,] text, what_to_extract[, temperature])
 **Example**
 
 ```sql
-SELECT LLMExtract('my_llm', 'John Doe works at Acme Corp since 2020.', 'company name') AS company;
+SELECT aiExtract('ai_credentials', 'John Doe works at Acme Corp since 2020.', 'company name') AS company;
 ```
 
 ```response
@@ -154,8 +154,8 @@ SELECT
     JSONExtractString(info, 'remote') AS remote
 FROM
 (
-    SELECT LLMExtract(
-        'my_llm',
+    SELECT aiExtract(
+        'ai_credentials',
         text,
         '{"company": "company name", "location": "city and state or country", "stack": "main technologies, comma-separated", "contact": "email address or application URL if mentioned, or null", "remote": "yes, no, or hybrid"}'
     ) AS info
@@ -183,14 +183,14 @@ ORDER BY company ASC;
 
 This works with any JSON schema, you can add or remove keys to control exactly what will be extracted.
 
-## LLMTranslate {#llmtranslate}
+## aiTranslate {#aitranslate}
 
 Translates text into the specified target language.
 
 **Syntax**
 
 ```sql
-LLMTranslate([collection,] text, target_language[, instructions][, temperature])
+aiTranslate([collection,] text, target_language[, instructions][, temperature])
 ```
 
 **Arguments**
@@ -208,7 +208,7 @@ LLMTranslate([collection,] text, target_language[, instructions][, temperature])
 **Example**
 
 ```sql
-SELECT LLMTranslate('my_llm', 'Hello, how are you?', 'French') AS translated;
+SELECT aiTranslate('ai_credentials', 'Hello, how are you?', 'French') AS translated;
 ```
 
 ```response
@@ -222,19 +222,19 @@ Translate a whole column:
 ```sql
 SELECT
     original_text,
-    LLMTranslate('my_llm', original_text, 'German') AS german_text
+    aiTranslate('ai_credentials', original_text, 'German') AS german_text
 FROM articles
 LIMIT 5;
 ```
 
-## LLMGenerateSQL {#llmgeneratesql}
+## aiGenerateSQL {#aigeneratesql}
 
-Generates a SQL query from a natural language description using an LLM. The function automatically discovers the database schema from the ClickHouse catalog, introspecting all accessible databases and tables to build context for the LLM.
+Generates a SQL query from a natural language description using AI. The function automatically discovers the database schema from the ClickHouse catalog, introspecting all accessible databases and tables to build context for AI.
 
 **Syntax**
 
 ```sql
-LLMGenerateSQL([collection,] prompt[, temperature])
+aiGenerateSQL([collection,] prompt[, temperature])
 ```
 
 **Arguments**
@@ -250,8 +250,8 @@ LLMGenerateSQL([collection,] prompt[, temperature])
 **Example**
 
 ```sql
-SELECT LLMGenerateSQL(
-    'my_llm',
+SELECT aiGenerateSQL(
+    'ai_credentials',
     'Find the top 5 customers by total order amount'
 ) AS generated_sql;
 ```
@@ -262,20 +262,20 @@ SELECT LLMGenerateSQL(
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## LLMGenerateContent {#llmgeneratecontent}
+## aiGenerateContent {#aigeneratecontent}
 
 Generates free-form text content from a prompt.
 
 **Syntax**
 
 ```sql
-LLMGenerateContent([collection,] prompt[, system_prompt][, temperature])
+aiGenerateContent([collection,] prompt[, system_prompt][, temperature])
 ```
 
 **Arguments**
 
 - `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_ai_provider`](/operations/settings/settings#default_ai_provider) is set.
-- `prompt`: The prompt or question for the LLM. [String](../data-types/string.md).
+- `prompt`: The prompt or question for AI. [String](../data-types/string.md).
 - `system_prompt`: System-level instruction for the model. [String](../data-types/string.md). Optional.
 - `temperature`: Sampling temperature. Default: `0.7`. [Float64](../data-types/float.md). Optional.
 
@@ -286,7 +286,7 @@ LLMGenerateContent([collection,] prompt[, system_prompt][, temperature])
 **Example**
 
 ```sql
-SELECT LLMGenerateContent('my_llm', 'What is 2 + 2? Reply with just the number.') AS answer;
+SELECT aiGenerateContent('ai_credentials', 'What is 2 + 2? Reply with just the number.') AS answer;
 ```
 
 ```response
@@ -300,7 +300,7 @@ Summarize column values:
 ```sql
 SELECT
     article_title,
-    LLMGenerateContent('my_llm', concat('Summarize in one sentence: ', article_body)) AS summary
+    aiGenerateContent('ai_credentials', concat('Summarize in one sentence: ', article_body)) AS summary
 FROM articles
 LIMIT 5;
 ```
