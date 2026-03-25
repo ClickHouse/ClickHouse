@@ -297,6 +297,7 @@ private:
     std::mutex operations_mutex;
 
     Watches watches TSA_GUARDED_BY(watches_mutex);
+    Watches list_watches TSA_GUARDED_BY(watches_mutex);
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference
