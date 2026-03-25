@@ -193,6 +193,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
 
             auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool().createTask(DB::StorageID::createEmpty(), "ZKReconnect", [this, optimal_host = shuffled_hosts[0]]()
             {
+                auto component_guard = Coordination::setCurrentComponent("ZooKeeper::reconnect");
                 try
                 {
                     LOG_DEBUG(log, "Trying to connect to a more optimal node {}", optimal_host.host);
@@ -326,6 +327,12 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     // skip reload testkeeper cause it's for test and data in memory
     if (new_args.implementation == args.implementation && args.implementation == "testkeeper")
         return false;
+
+    /// These fields are set out-of-band from server settings, not from the ZooKeeper XML config,
+    /// so they won't be present in new_args parsed from config. Copy them over before comparing
+    /// to avoid spurious "config changed" results.
+    new_args.enforce_component_tracking = args.enforce_component_tracking;
+    new_args.send_receive_os_threads_nice_value = args.send_receive_os_threads_nice_value;
 
     return args != new_args;
 }
@@ -1924,16 +1931,21 @@ Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version
     return request;
 }
 
+Coordination::RequestPtr makeRemoveRecursiveRequest(const std::string & path, uint32_t remove_nodes_limit)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperRemoveRecursiveRequest>();
+    request->path = path;
+    request->remove_nodes_limit = remove_nodes_limit;
+    return request;
+}
+
 template <class Client>
 Coordination::RequestPtr makeRemoveRecursiveRequest(const Client & client, const std::string & path, uint32_t remove_nodes_limit)
 {
     if (!client.isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Trying to use RemoveRecursive request while Keeper doesn't support it or feature flag is disabled");
 
-    auto request = std::make_shared<Coordination::ZooKeeperRemoveRecursiveRequest>();
-    request->path = path;
-    request->remove_nodes_limit = remove_nodes_limit;
-    return request;
+    return makeRemoveRecursiveRequest(path, remove_nodes_limit);
 }
 
 template Coordination::RequestPtr makeRemoveRecursiveRequest<zkutil::ZooKeeper>(const zkutil::ZooKeeper & client, const std::string & path, uint32_t remove_nodes_limit);

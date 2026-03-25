@@ -5,6 +5,7 @@
 #include <deque>
 
 #include <Parsers/IAST_fwd.h>
+#include <Common/Exception.h>
 #include <Common/TypePromotion.h>
 
 #include <city.h>

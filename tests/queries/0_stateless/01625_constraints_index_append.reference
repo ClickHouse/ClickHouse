@@ -12,8 +12,8 @@
   Filter column: 2 * b < 100 AND indexHint(i < 100) (removed)
     Prewhere info
       Prewhere filter
-      Prewhere filter column: 2 * b < 100
-  Filter column: indexHint(i + 40 > 0) AND a = 0 (removed)
+      Prewhere filter column: less(multiply(2, b), 100)
+  Filter column: and(equals(a, 0), indexHint(greater(plus(i, 40), 0))) (removed)
     Prewhere info
       Prewhere filter
       Prewhere filter column: a = 0
@@ -23,8 +23,8 @@
   Filter column: a >= 0 AND indexHint(i + 40 > 0) (removed)
     Prewhere info
       Prewhere filter
-      Prewhere filter column: a >= 0
-  Filter column: indexHint(i < 100) AND 2 * b < 100 (removed)
+      Prewhere filter column: greaterOrEquals(a, 0)
+  Filter column: and(less(multiply(2, b), 100), indexHint(less(i, 100))) (removed)
     Prewhere info
       Prewhere filter
       Prewhere filter column: 2 * b < 100

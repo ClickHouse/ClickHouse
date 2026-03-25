@@ -2,7 +2,6 @@
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
-
 namespace DB
 {
 
@@ -15,8 +14,13 @@ private:
     /// 'nested' is an Array(Tuple(key_type, value_type))
     SerializationPtr nested;
 
-public:
     SerializationMap(const SerializationPtr & key_type_, const SerializationPtr & value_type_, const SerializationPtr & nested_);
+
+public:
+    static UInt128 getHash(const SerializationPtr & nested_);
+    static SerializationPtr create(const SerializationPtr & key_type_, const SerializationPtr & value_type_, const SerializationPtr & nested_);
+
+    bool supportsPooling() const override { return nested->supportsPooling(); }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -84,4 +88,3 @@ private:
 };
 
 }
-

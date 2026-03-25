@@ -188,7 +188,8 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql},
-     {"promql", Dialect::promql}})
+     {"promql", Dialect::promql},
+     {"polyglot", Dialect::polyglot}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -340,6 +341,7 @@ IMPLEMENT_SETTING_ENUM(
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
+     {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
 
 IMPLEMENT_SETTING_ENUM(
@@ -348,7 +350,11 @@ IMPLEMENT_SETTING_ENUM(
     {{"lru", FileCachePolicy::LRU},
      {"LRU", FileCachePolicy::LRU},
      {"slru", FileCachePolicy::SLRU},
-     {"SLRU", FileCachePolicy::SLRU}})
+     {"SLRU", FileCachePolicy::SLRU},
+     {"lru_overcommit", FileCachePolicy::LRU_OVERCOMMIT},
+     {"LRU_OVERCOMMIT", FileCachePolicy::LRU_OVERCOMMIT},
+     {"slru_overcommit", FileCachePolicy::SLRU_OVERCOMMIT},
+     {"SLRU_OVERCOMMIT", FileCachePolicy::SLRU_OVERCOMMIT}})
 
 IMPLEMENT_SETTING_ENUM(
     VectorSearchFilterStrategy,
@@ -450,4 +456,10 @@ IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
     {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
      {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
      {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
+
+IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"raw", JemallocProfileFormat::Raw},
+     {"symbolized", JemallocProfileFormat::Symbolized},
+     {"collapsed", JemallocProfileFormat::Collapsed}})
+
 }

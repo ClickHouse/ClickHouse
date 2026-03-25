@@ -35,7 +35,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     grep -vP $EXCLUDE |
     grep -v 'src/Storages/System/StorageSystemDashboards.cpp' |
     grep -vP $EXCLUDE_DOCS |
-    xargs grep $@ -n -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
+    xargs grep $@ -n -P '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
     grep -v -P '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
@@ -192,8 +192,15 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE |
     xargs grep -P 'std::[io]?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"
 
+# Forbid hardware_destructive_interference_size because it provides unrealistic values for ARM (see https://github.com/ClickHouse/ClickHouse/pull/97357)
+find "$ROOT_PATH"/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP "$EXCLUDE" |
+    xargs grep -P '(hardware_destructive_interference_size|hardware_constructive_interference_size)' | grep -vP ':\s*//' && echo "Use CH_CACHE_LINE_SIZE from Common/CacheLine.h instead"
+
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
+    src/Columns
+    src/Dictionaries
 )
 
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do

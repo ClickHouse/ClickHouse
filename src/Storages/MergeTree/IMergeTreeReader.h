@@ -71,6 +71,11 @@ public:
     ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
     size_t numColumnsInResult() const { return getColumns().size(); }
 
+    /// Returns column names and types as they are stored on disk (may differ from requested types
+    /// when there are pending type-changing mutations). Used to build correct `ColumnsWithTypeAndName`
+    /// before `performRequiredConversions` is applied.
+    const NamesAndTypes & getColumnsToRead() const { return columns_to_read; }
+
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;

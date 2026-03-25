@@ -24,6 +24,7 @@ RUN apt-get update \
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get install --yes \
+        binutils-dev \
         build-essential \
         python3-boto3 \
         yasm \
@@ -37,7 +38,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Optional PGO+BOLT optimized toolchain override
-ARG TOOLCHAIN_COMMIT=none
+ARG TOOLCHAIN_COMMIT=19da6af712ebc2678cc34b8f2f4251e8056766ba
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \

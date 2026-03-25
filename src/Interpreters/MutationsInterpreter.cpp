@@ -87,10 +87,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_STATISTICS;
 }
 
-
-namespace
-{
-
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
@@ -124,6 +120,9 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 
     return select;
 }
+
+namespace
+{
 
 QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
@@ -678,15 +677,45 @@ void MutationsInterpreter::prepare(bool dry_run)
     std::unordered_map<String, Names> column_to_affected_materialized;
     if (!updated_columns.empty())
     {
+        /// Collect ephemeral columns and include them in the analysis set so
+        /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
+        NamesAndTypesList all_columns_with_ephemeral = all_columns;
+        std::unordered_set<String> ephemeral_columns;
+        for (const auto & col : columns_desc.getEphemeral())
+        {
+            ephemeral_columns.insert(col.name);
+            all_columns_with_ephemeral.push_back(col);
+        }
+
         for (const auto & column : columns_desc)
         {
             if (column.default_desc.kind == ColumnDefaultKind::Materialized && available_columns_set.contains(column.name))
             {
                 auto query = column.default_desc.expression->clone();
-                /// Replace all subcolumns to the getSubcolumn() to get only top level columns as required source columns.
-                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-                for (const auto & dependency : syntax_result->requiredSourceColumns())
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
+                auto required_columns = syntax_result->requiredSourceColumns();
+
+                /// If the MATERIALIZED expression depends on any EPHEMERAL column,
+                /// skip it — EPHEMERAL columns are only available during INSERT
+                /// and cannot be read from disk during mutations.
+                if (std::ranges::any_of(required_columns,
+                    [&](const auto & dep) { return ephemeral_columns.contains(dep); }))
+                {
+                    /// Warn if the mutation also updates a non-ephemeral dependency
+                    /// of this MATERIALIZED column — the on-disk value will become stale.
+                    if (std::ranges::any_of(required_columns, [&](const auto & dep)
+                        { return !ephemeral_columns.contains(dep) && updated_columns.contains(dep); }))
+                        LOG_WARNING(logger,
+                            "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
+                            "columns that are being updated. Its value will NOT be recalculated "
+                            "during this mutation — the on-disk value may become inconsistent. "
+                            "To fix this, re-INSERT the affected rows.",
+                            column.name);
+                    continue;
+                }
+
+                for (const auto & dependency : required_columns)
                     if (updated_columns.contains(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
             }
@@ -714,6 +743,15 @@ void MutationsInterpreter::prepare(bool dry_run)
     bool need_rebuild_indexes_for_update_delete = false;
     bool need_rebuild_projections = false;
     std::vector<String> read_columns;
+
+    /// Columns that are being cleared and need default values in the pipeline
+    /// for correct projection/materialized-column rebuild (instead of passing
+    /// through original values).
+    NameSet cleared_columns_with_dependencies;
+
+    /// Whether any MATERIALIZED column depends on a cleared column and needs
+    /// to be recalculated with the type-default value.
+    bool need_recalculate_materialized_for_clear = false;
 
     if (has_lightweight_delete_materialization || has_rewrite_parts)
     {
@@ -861,7 +899,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages.emplace_back(context);
                 for (const auto & column : columns_desc)
                 {
-                    if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+                    if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                        && affected_materialized.contains(column.name))
                     {
                         auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
@@ -920,7 +959,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                         return index.name == command.index_name;
                     });
             if (it == std::cend(indices_desc))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown index: {}", command.index_name);
+            {
+                LOG_WARNING(logger, "Index {} does not exist, skipping materialization", command.index_name);
+                continue;
+            }
 
             if (!source.hasSecondaryIndex(it->name, metadata_snapshot))
             {
@@ -959,6 +1001,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
+            if (!projections_desc.has(command.projection_name))
+            {
+                LOG_WARNING(logger, "Projection {} does not exist, skipping materialization", command.projection_name);
+                continue;
+            }
             const auto & projection = projections_desc.get(command.projection_name);
             if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
             {
@@ -1125,6 +1172,60 @@ void MutationsInterpreter::prepare(bool dry_run)
                 if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
                     dropped_indices.insert(index.name);
             }
+            /// When clearing a column, we also need to rebuild any projections that depend on it,
+            /// otherwise stale projection data with outdated sort order will be hardlinked unchanged.
+            /// We add the projection's required columns as dependencies so that they are available
+            /// in the mutation pipeline for projection rebuild. The cleared column itself is tracked
+            /// separately so the readonly stage can replace it with the type default value.
+            for (const auto & projection : metadata_snapshot->getProjections())
+            {
+                const auto & projection_cols = projection.required_columns;
+                if (std::find(projection_cols.begin(), projection_cols.end(), command.column_name) != projection_cols.end())
+                {
+                    for (const auto & col : projection_cols)
+                        dependencies.emplace(col, ColumnDependency::PROJECTION);
+                    cleared_columns_with_dependencies.insert(command.column_name);
+                    materialized_projections.insert(projection.name);
+                }
+            }
+
+            /// When clearing a column, any MATERIALIZED column whose expression
+            /// depends on the cleared column must be recalculated so its stored
+            /// data stays consistent with the new (default) value.
+            /// We must check every CLEAR COLUMN command (not short-circuit after the
+            /// first match) so that all cleared columns used by materialized
+            /// expressions are registered in `cleared_columns_with_dependencies`.
+            bool has_dependent_materialized = false;
+            for (const auto & column : columns_desc)
+            {
+                if (column.default_desc.kind != ColumnDefaultKind::Materialized
+                    || !available_columns_set.contains(column.name))
+                    continue;
+
+                auto query = column.default_desc.expression->clone();
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+                for (const auto & dep : syntax_result->requiredSourceColumns())
+                {
+                    if (dep == command.column_name)
+                    {
+                        has_dependent_materialized = true;
+                        break;
+                    }
+                }
+                if (has_dependent_materialized)
+                    break;
+            }
+
+            if (has_dependent_materialized)
+            {
+                need_recalculate_materialized_for_clear = true;
+                /// Ensure the cleared column enters the readonly stage
+                /// with its default value so the materialized expression
+                /// evaluates correctly.
+                dependencies.emplace(command.column_name, ColumnDependency::PROJECTION);
+                cleared_columns_with_dependencies.insert(command.column_name);
+            }
         }
         /// The following mutations handled separately:
         else if (command.type == MutationCommand::APPLY_DELETED_MASK
@@ -1185,6 +1286,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     for (const auto & [name, ast] : stage.column_to_updated)
                         stages_copy.back().column_to_updated.emplace(name, ast->clone());
                     stages_copy.back().output_columns = stage.output_columns;
+                    stages_copy.back().affects_all_columns = stage.affects_all_columns;
                     for (const auto & filter : stage.filters)
                         stages_copy.back().filters.push_back(filter->clone());
                 }
@@ -1201,8 +1303,50 @@ void MutationsInterpreter::prepare(bool dry_run)
             stages.emplace_back(context);
             stages.back().is_readonly = true;
             for (const auto & column : unchanged_columns)
+            {
+                if (cleared_columns_with_dependencies.contains(column))
+                {
+                    /// For columns being cleared, provide the type default value
+                    /// instead of the original value from the source part.
+                    auto col_decl = metadata_snapshot->getColumns().getPhysical(column);
+                    stages.back().column_to_updated.emplace(
+                        column,
+                        makeASTFunction("_CAST",
+                            make_intrusive<ASTLiteral>(col_decl.type->getDefault()),
+                            make_intrusive<ASTLiteral>(col_decl.type->getName())));
+                }
+                else
+                {
+                    stages.back().column_to_updated.emplace(
+                        column, make_intrusive<ASTIdentifier>(column));
+                }
+            }
+        }
+    }
+
+    /// Recalculate all MATERIALIZED columns when at least one of them depends
+    /// on a cleared column.  This mirrors the logic used for UPDATE (see the
+    /// `affected_materialized` block above): we re-evaluate *every*
+    /// MATERIALIZED expression so that transitive dependencies are covered.
+    if (need_recalculate_materialized_for_clear)
+    {
+        stages.emplace_back(context);
+        for (const auto & column : columns_desc)
+        {
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+            {
+                auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
+
+                ASTPtr materialized_column = makeASTFunction("_CAST",
+                    column.default_desc.expression->clone(),
+                    type_literal);
+
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
+
                 stages.back().column_to_updated.emplace(
-                    column, make_intrusive<ASTIdentifier>(column));
+                    column.name,
+                    materialized_column);
+            }
         }
     }
 
@@ -1674,12 +1818,21 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
+    ///
+    /// Only check sort order when mutating MergeTree parts. In MergeTree, mutations
+    /// process one part at a time and each part is physically sorted by the sorting key,
+    /// so the check is a valid invariant assertion. Other storages (e.g. Iceberg) may declare
+    /// a sorting key but process the entire table at once, reading multiple independently
+    /// sorted data files whose combined stream is not globally sorted.
+    if (source.getMergeTreeData())
     {
-        builder.addSimpleTransform([&](const SharedHeader & header)
+        if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
         {
-            return std::make_shared<CheckSortedTransform>(header, *sort_desc);
-        });
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<CheckSortedTransform>(header, *sort_desc);
+            });
+        }
     }
 
     if (!updated_header)

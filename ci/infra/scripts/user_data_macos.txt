@@ -87,8 +87,10 @@ else
   wget --directory-prefix=/tmp "https://s3.amazonaws.com/amazoncloudwatch-agent/darwin/${CLOUDWATCH_ARCH}/latest/amazon-cloudwatch-agent.pkg"
   sudo installer -pkg /tmp/amazon-cloudwatch-agent.pkg -target /
 
-  # Download and configure CloudWatch agent config
-  aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text | sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null
+  # Download and configure CloudWatch agent config, replacing Linux log path with macOS equivalent
+  aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text \
+    | jq 'walk(if type == "object" and .file_path == "/var/log/cloud-init-output.log" then .file_path = "/var/log/amazon/ec2/ec2-macos-init.log" else . end)' \
+    | sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null
 
   # Start CloudWatch agent service
   sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \

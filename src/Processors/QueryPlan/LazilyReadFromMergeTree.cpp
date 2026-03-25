@@ -73,7 +73,7 @@ void LazilyReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline
 
 void LazilyReadFromMergeTree::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
 
     settings.out << prefix << "Lazily read columns: ";
 

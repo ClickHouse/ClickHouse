@@ -10,11 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 KAFKA_TOPIC=$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr '_' '-')
 KAFKA_GROUP="${CLICKHOUSE_TEST_UNIQUE_NAME}_group"
 KAFKA_BROKER="127.0.0.1:9092"
-KAFKA_PRODUCER_OPTS="--producer-property delivery.timeout.ms=30000 --producer-property linger.ms=0"
 
 # Create topic
-timeout 30 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --create --topic $KAFKA_TOPIC \
-    --partitions 1 --replication-factor 1 2>/dev/null | sed 's/Created topic .*/Created topic./'
+rpk topic create $KAFKA_TOPIC -p 1 --brokers $KAFKA_BROKER > /dev/null 2>&1 && echo "Created topic."
 
 # Produce a mix of valid and invalid JSON messages
 {
@@ -23,8 +21,7 @@ timeout 30 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --create --topic $KA
     echo '{"id": 2, "value": "good_2"}'
     echo '{broken json'
     echo '{"id": 3, "value": "good_3"}'
-} | timeout 30 kafka-console-producer.sh --bootstrap-server $KAFKA_BROKER --topic $KAFKA_TOPIC \
-    $KAFKA_PRODUCER_OPTS 2>/dev/null
+} | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
 
 # Create Kafka table with kafka_skip_broken_messages enabled
 $CLICKHOUSE_CLIENT -q "
@@ -50,8 +47,8 @@ $CLICKHOUSE_CLIENT -q "
     SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka;
 "
 
-# Wait for valid messages to be consumed
-for i in $(seq 1 30); do
+# Wait for valid messages to be consumed (120s to allow for slow consumer group assignment)
+for i in $(seq 1 120); do
     count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst")
     if [ "$count" -ge 3 ]; then
         break
@@ -66,4 +63,4 @@ $CLICKHOUSE_CLIENT -q "SELECT id, value FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv" 2>/dev/null
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst" 2>/dev/null
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka" 2>/dev/null
-timeout 10 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --delete --topic $KAFKA_TOPIC 2>/dev/null
+timeout 10 rpk topic delete $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1

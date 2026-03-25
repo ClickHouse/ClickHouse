@@ -102,6 +102,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool use_split_cache;
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
+    extern const FileCacheSettingsBool skip_cache_on_disk_failure;
 }
 
 namespace
@@ -206,6 +207,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
     , use_split_cache(settings[FileCacheSetting::use_split_cache])
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
+    , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
     , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))
     , metadata(settings[FileCacheSetting::path],
@@ -246,7 +248,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             creator_function = [](size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
-                    overcommit_eviction_evict_steps,
+                    overcommit_eviction_evict_step,
                     max_size,
                     max_elements,
                     "overcommit");
@@ -266,6 +268,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             };
             break;
         }
+#else
+        case FileCachePolicy::LRU_OVERCOMMIT:
+        case FileCachePolicy::SLRU_OVERCOMMIT:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overcommit cache policies are not supported without distributed cache");
 #endif
     }
     if (use_split_cache)
@@ -338,6 +344,11 @@ void FileCache::throwInitExceptionIfNeeded()
 const String & FileCache::getBasePath() const
 {
     return metadata.getBaseDirectory();
+}
+
+bool FileCache::skipCacheOnDiskFailure() const
+{
+    return skip_cache_on_disk_failure;
 }
 
 String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const

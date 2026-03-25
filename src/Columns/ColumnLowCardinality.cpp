@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/WeakHash.h>
@@ -20,6 +21,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+}
+
+void throwUnexpectedLowCardinalityIndexType(size_t size)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column: {}", size);
 }
 
 namespace
@@ -287,6 +293,11 @@ char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, c
     return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory, settings);
 }
 
+std::optional<size_t> ColumnLowCardinality::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
+{
+    return getDictionary().getSerializedValueSize(getIndexes().getUInt(n), settings);
+}
+
 void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     /// nullable is handled internally.
@@ -394,7 +405,7 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     /// TODO: optimize with sse.
 
     /// Get indexes per row in column_unique.
-    std::vector<std::vector<size_t>> indexes_per_row(getDictionary().size());
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> indexes_per_row(getDictionary().size());
     size_t indexes_size = getIndexes().size();
     for (size_t row = 0; row < indexes_size; ++row)
         indexes_per_row[getIndexes().getUInt(row)].push_back(row);
@@ -560,7 +571,7 @@ size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutatio
     return elements.size();
 }
 
-std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
 {
     auto columns = getIndexes().scatter(num_columns, selector);
     ColumnPtr global_unique_ptr = IColumn::mutate(dictionary.getColumnUniquePtr());

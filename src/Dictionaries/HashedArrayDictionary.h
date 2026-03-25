@@ -136,10 +136,10 @@ private:
         HashMapWithSavedHash<std::string_view, size_t, DefaultHash<std::string_view>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
+    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>;
 
     template <typename Value>
-    using AttributeContainerShardsType = std::vector<AttributeContainerType<Value>>;
+    using AttributeContainerShardsType = VectorWithMemoryTracking<AttributeContainerType<Value>>;
 
     struct Attribute final
     {
@@ -171,8 +171,8 @@ private:
             containers;
 
         /// One container per shard
-        using RowsMask = std::vector<bool>;
-        std::optional<std::vector<RowsMask>> is_index_null;
+        using RowsMask = VectorWithMemoryTracking<bool>;
+        std::optional<VectorWithMemoryTracking<RowsMask>> is_index_null;
 
         AttributeUnderlyingType type;
     };
@@ -180,7 +180,7 @@ private:
     struct KeyAttribute final
     {
         /// One container per shard
-        std::vector<KeyContainerType> containers;
+        VectorWithMemoryTracking<KeyContainerType> containers;
     };
 
     void createAttributes();
@@ -263,20 +263,20 @@ private:
     const DictionarySourcePtr source_ptr;
     const HashedArrayDictionaryStorageConfiguration configuration;
 
-    std::vector<Attribute> attributes;
+    VectorWithMemoryTracking<Attribute> attributes;
 
     KeyAttribute key_attribute;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;
     std::atomic<size_t> total_element_count = 0;
-    std::vector<size_t> element_counts;
+    VectorWithMemoryTracking<size_t> element_counts;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    std::vector<std::unique_ptr<Arena>> string_arenas;
+    VectorWithMemoryTracking<std::unique_ptr<Arena>> string_arenas;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 
