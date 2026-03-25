@@ -115,6 +115,12 @@ public:
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
+                /// ColumnsDescription validation (ColumnsDescription.cpp) rejects top-level
+                /// subqueries in ALIAS expressions, but the check is shallow — it only inspects
+                /// direct children of the default expression AST. A correlated subquery nested
+                /// inside function arguments (e.g. `ALIAS toString(intDivOrZero(x, (SELECT ...)))`)
+                /// slips through validation and reaches the planner. Rather than crashing with
+                /// LOGICAL_ERROR, surface a user-facing error so the server stays up.
                 if (correlated_subtrees.notEmpty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Correlated subqueries in ALIAS column expressions are not supported. Column: {}", column_node->getColumnName());
