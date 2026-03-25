@@ -800,6 +800,16 @@ Names filterCommonVirtualColumns(
         result.push_back(name);
     }
 
+    /// If all requested columns were common virtuals, we still need at least one
+    /// physical column so the storage has something to read.
+    if (result.empty())
+    {
+        const auto & metadata = storage->getInMemoryMetadataPtr();
+        const auto & all_physical = metadata->getColumns().getAllPhysical();
+        if (!all_physical.empty())
+            result.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
+    }
+
     return result;
 }
 
