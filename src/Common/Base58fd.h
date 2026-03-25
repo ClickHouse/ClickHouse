@@ -108,7 +108,7 @@ static inline uint32_t b58_bswap32(uint32_t x)
 
 static inline uint32_t b58_load_u32_be(const uint8_t * p)
 {
-    uint32_t v;
+    uint32_t v = 0;
     memcpy(&v, p, 4);
     return b58_bswap32(v);
 }
@@ -136,7 +136,7 @@ static inline size_t encodeBase58_32(const uint8_t * src, uint8_t * dst)
         if (src[in_leading_0s])
             break;
 
-    uint32_t binary[BINARY_SZ];
+    uint32_t binary[BINARY_SZ] = {};
     for (size_t i = 0; i < BINARY_SZ; i++)
         binary[i] = b58_load_u32_be(src + i * 4);
 
@@ -152,7 +152,7 @@ static inline size_t encodeBase58_32(const uint8_t * src, uint8_t * dst)
         intermediate[i] %= R1div;
     }
 
-    uint8_t raw[RAW58_SZ];
+    uint8_t raw[RAW58_SZ] = {};
     for (size_t i = 0; i < INTERMEDIATE_SZ; i++)
     {
         uint32_t v = static_cast<uint32_t>(intermediate[i]);
@@ -186,7 +186,7 @@ static size_t encodeBase58_64(const uint8_t * src, uint8_t * dst)
         if (src[in_leading_0s])
             break;
 
-    uint32_t binary[BINARY_SZ];
+    uint32_t binary[BINARY_SZ] = {};
     for (size_t i = 0; i < BINARY_SZ; i++)
         binary[i] = b58_load_u32_be(src + i * 4);
 
@@ -209,7 +209,7 @@ static size_t encodeBase58_64(const uint8_t * src, uint8_t * dst)
         intermediate[i] %= R1div;
     }
 
-    uint8_t raw[RAW58_SZ];
+    uint8_t raw[RAW58_SZ] = {};
     for (size_t i = 0; i < INTERMEDIATE_SZ; i++)
     {
         uint32_t v = static_cast<uint32_t>(intermediate[i]);
@@ -252,12 +252,12 @@ static std::optional<size_t> decodeBase58_32(const uint8_t * src, size_t src_len
             return std::nullopt;
     }
 
-    uint8_t raw[RAW58_SZ];
+    uint8_t raw[RAW58_SZ] = {};
     size_t prepend_0 = RAW58_SZ - src_length;
     for (size_t j = 0; j < RAW58_SZ; j++)
         raw[j] = (j < prepend_0) ? 0 : base58_inverse[static_cast<uint8_t>(src[j - prepend_0]) - BASE58_INVERSE_TABLE_OFFSET];
 
-    uint64_t intermediate[INTERMEDIATE_SZ];
+    uint64_t intermediate[INTERMEDIATE_SZ] = {};
     for (size_t i = 0; i < INTERMEDIATE_SZ; i++)
         intermediate[i] = static_cast<uint64_t>(raw[5 * i + 0]) * 11316496ULL + static_cast<uint64_t>(raw[5 * i + 1]) * 195112ULL
             + static_cast<uint64_t>(raw[5 * i + 2]) * 3364ULL + static_cast<uint64_t>(raw[5 * i + 3]) * 58ULL
@@ -319,12 +319,12 @@ static std::optional<size_t> decodeBase58_64(const uint8_t * src, size_t src_len
             return std::nullopt;
     }
 
-    uint8_t raw[RAW58_SZ];
+    uint8_t raw[RAW58_SZ] = {};
     size_t prepend_0 = RAW58_SZ - src_length;
     for (size_t j = 0; j < RAW58_SZ; j++)
         raw[j] = (j < prepend_0) ? 0 : base58_inverse[static_cast<uint8_t>(src[j - prepend_0]) - BASE58_INVERSE_TABLE_OFFSET];
 
-    uint64_t intermediate[INTERMEDIATE_SZ];
+    uint64_t intermediate[INTERMEDIATE_SZ] = {};
     for (size_t i = 0; i < INTERMEDIATE_SZ; i++)
         intermediate[i] = static_cast<uint64_t>(raw[5 * i + 0]) * 11316496ULL + static_cast<uint64_t>(raw[5 * i + 1]) * 195112ULL
             + static_cast<uint64_t>(raw[5 * i + 2]) * 3364ULL + static_cast<uint64_t>(raw[5 * i + 3]) * 58ULL
@@ -504,7 +504,7 @@ static size_t encodeBase58_32(const uint8_t * src, uint8_t * dst)
     __m256i _bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src));
     uint64_t in_leading_0s = b58_count_leading_zeros_32(_bytes);
 
-    uint32_t binary[BINARY_SZ];
+    uint32_t binary[BINARY_SZ] = {};
     for (size_t i = 0; i < BINARY_SZ; i++)
         binary[i] = b58_load_u32_be(src + i * 4);
 
@@ -582,7 +582,7 @@ static size_t encodeBase58_64(const uint8_t * src, uint8_t * dst)
     __m256i bytes_1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + 32));
     uint64_t in_leading_0s = b58_count_leading_zeros_64(bytes_0, bytes_1);
 
-    uint32_t binary[BINARY_SZ];
+    uint32_t binary[BINARY_SZ] = {};
     for (size_t i = 0; i < BINARY_SZ; i++)
         binary[i] = b58_load_u32_be(src + i * 4);
 
