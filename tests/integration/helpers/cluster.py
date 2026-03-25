@@ -4133,10 +4133,32 @@ class ClickHouseCluster:
             raise Exception("\n".join(failure_logs))
 
     def _pause_container(self, instance_name):
-        subprocess_check_call(self.base_cmd + ["pause", instance_name])
+        try:
+            subprocess_check_call(self.base_cmd + ["pause", instance_name])
+        except Exception as e:
+            if "unable to freeze" in str(e) or "OCI runtime pause failed" in str(e):
+                logging.warning(
+                    "docker pause failed (%s), falling back to SIGSTOP for %s",
+                    e,
+                    instance_name,
+                )
+                self._pause_container_using_signal(instance_name)
+            else:
+                raise
 
     def _unpause_container(self, instance_name):
-        subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+        try:
+            subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+        except Exception as e:
+            if "unable to freeze" in str(e) or "OCI runtime" in str(e) or "is not paused" in str(e):
+                logging.warning(
+                    "docker unpause failed (%s), falling back to SIGCONT for %s",
+                    e,
+                    instance_name,
+                )
+                self._unpause_container_using_signal(instance_name)
+            else:
+                raise
 
     def _pause_container_using_signal(self, instance_name):
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGSTOP", instance_name])
