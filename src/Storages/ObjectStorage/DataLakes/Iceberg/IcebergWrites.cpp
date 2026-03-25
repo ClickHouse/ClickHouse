@@ -624,7 +624,8 @@ IcebergStorageSink::IcebergStorageSink(
     ContextPtr context_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     const Iceberg::PersistentTableComponents & persistent_table_components_,
-    const StorageID & table_id_)
+    const StorageID & table_id_,
+    String write_format_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , object_storage(object_storage_)
@@ -634,7 +635,7 @@ IcebergStorageSink::IcebergStorageSink(
     , table_id(table_id_)
     , persistent_table_components(persistent_table_components_)
     , data_lake_settings(datalake_settings_ ? *datalake_settings_ : DataLakeStorageSettings{})
-    , write_format("Parquet")
+    , write_format(write_format_)
     , blob_storage_type_name(configuration_->getTypeName())
     , blob_storage_namespace_name(configuration_->getNamespace())
 {

@@ -60,10 +60,10 @@ DataLakeMetadataPtr PaimonMetadata::create(
     LOG_TEST(
         &Poco::Logger::get("PaimonMetadata"),
         "path: {} raw path: {}",
-        configuration_ptr->getPathForRead().path,
+        configuration_ptr->getRawPath().path,
         configuration_ptr->getRawPath().path);
     PaimonTableClientPtr table_client_ptr
-        = std::make_shared<PaimonTableClient>(object_storage, configuration_ptr->getPathForRead().path, local_context);
+        = std::make_shared<PaimonTableClient>(object_storage, configuration_ptr->getRawPath().path, local_context);
     auto schema_json = table_client_ptr->getTableSchemaJSON(table_client_ptr->getLastestTableSchemaInfo());
     Int32 version = -1;
     Paimon::getValueFromJSON(version, schema_json, "version");
@@ -149,7 +149,7 @@ PaimonMetadata::PaimonMetadata(
     , log(getLogger("PaimonMetadata"))
     , table_client_ptr(table_client_ptr_)
     , last_metadata_object(schema_json_object_)
-    , table_path(configuration_->getPathForRead().path)
+    , table_path(configuration_->getRawPath().path)
 {
     updateState();
 }

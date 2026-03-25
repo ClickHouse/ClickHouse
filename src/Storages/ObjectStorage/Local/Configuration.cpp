@@ -22,6 +22,12 @@ namespace ErrorCodes
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+StorageLocalConfiguration::StorageLocalConfiguration(const String & path_, const String & disk_name_)
+{
+    path = path_;
+    disk_name = disk_name_;
+}
+
 void LocalStorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr)
 {
     path = collection.get<String>("path");

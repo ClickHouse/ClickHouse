@@ -129,6 +129,21 @@ std::string StorageS3Configuration::getPathInArchive() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getRawPath().path);
 }
 
+StorageS3Configuration::StorageS3Configuration(
+    S3::URI url_,
+    std::unique_ptr<S3Settings> s3_settings_,
+    std::unique_ptr<S3Capabilities> s3_capabilities_,
+    HTTPHeaderEntries headers_from_ast_)
+{
+    url = std::move(url_);
+    s3_settings = std::move(s3_settings_);
+    s3_capabilities = std::move(s3_capabilities_);
+    headers_from_ast = std::move(headers_from_ast_);
+    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
+        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+}
+
+
 void StorageS3Configuration::check(ContextPtr context)
 {
     validateNamespace(url.bucket);

@@ -161,18 +161,23 @@ Chunk IcebergSource::generate()
 
             const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
 
+            const String * iceberg_metadata_file_path = nullptr;
+#if USE_AVRO
+            if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+                iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
+#endif
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
-                {
-                    .path = path,
-                    .size = object_metadata->size_bytes,
-                    .filename = &filename,
-                    .last_modified = object_metadata->last_modified,
-                    .etag = &(object_metadata->etag),
-                    .tags = &(object_metadata->tags),
-                    .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
-                },
+                {.path = path,
+                 .size = object_metadata->size_bytes,
+                 .filename = &filename,
+                 .last_modified = object_metadata->last_modified,
+                 .etag = &(object_metadata->etag),
+                 .tags = &(object_metadata->tags),
+                 .data_lake_snapshot_version = std::nullopt,
+                 .iceberg_metadata_file_path = iceberg_metadata_file_path},
                 read_context);
 
             /// Convert any Const columns to full columns before returning.

@@ -43,6 +43,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+StorageParsedArguments HDFSStorageParsedArguments::extractBaseArguments()
+{
+    return std::move(static_cast<StorageParsedArguments &>(*this));
+}
+
 void StorageHDFSConfiguration::check(ContextPtr context)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));

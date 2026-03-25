@@ -179,6 +179,7 @@ Chunk DataLakeSource::generate()
                     .etag = &(object_metadata->etag),
                     .tags = &(object_metadata->tags),
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
+                    .iceberg_metadata_file_path = nullptr,
                 },
                 read_context);
 
@@ -372,8 +373,6 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
 
         Block initial_header = read_from_format_info.format_header;
 
-        auto filter_info = format_filter_info;
-
         chassert(object_info->getObjectMetadata().has_value());
 
         LOG_DEBUG(
@@ -402,7 +401,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
                 object_with_metadata,
                 format_settings,
                 parser_shared_resources,
-                filter_info,
+                format_filter_info,
                 true /* is_remote_fs */,
                 compression_method,
                 need_only_count,
@@ -420,7 +419,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
                 max_block_size,
                 format_settings,
                 parser_shared_resources,
-                filter_info,
+                format_filter_info,
                 true /* is_remote_fs */,
                 compression_method,
                 need_only_count);

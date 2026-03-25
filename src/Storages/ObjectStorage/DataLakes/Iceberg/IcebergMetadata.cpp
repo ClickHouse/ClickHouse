@@ -162,8 +162,16 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     ContextPtr context_,
     LoggerPtr log)
 {
-    const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getRawPath().path, datalake_settings, cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        configuration->getRawPath().path,
+        datalake_settings,
+        cache_ptr,
+        context_,
+        log.get(),
+        std::nullopt,
+        CompressionMethod::None,
+        true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
@@ -185,7 +193,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                 Iceberg::f_table_uuid);
         }
     }
-    auto table_path = configuration->getPathForRead().path;
+    auto table_path = configuration->getRawPath().path;
     return PersistentTableComponents{
         .schema_processor = std::make_shared<IcebergSchemaProcessor>(),
         .metadata_cache = cache_ptr,
@@ -733,7 +741,7 @@ void IcebergMetadata::createInitial(
     std::vector<String> metadata_files;
     try
     {
-        metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        metadata_files = listFiles(*object_storage, configuration_ptr->getRawPath().path, "metadata", ".metadata.json");
     }
     catch (const Exception & ex)
     {
@@ -745,7 +753,9 @@ void IcebergMetadata::createInitial(
             return;
         else
             throw Exception(
-                ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+                ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Iceberg table with path {} already exists",
+                configuration_ptr->getRawPath().path);
     }
 
     String location_path = configuration_ptr->getRawPath().path;
@@ -1235,7 +1245,18 @@ SinkToStoragePtr IcebergMetadata::write(
 {
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, std::make_shared<DataLakeStorageSettings>(data_lake_settings), format_settings, sample_block, context, catalog, persistent_components, table_id);
+        // TODO: change passing of write_format to a correct write format resolution
+        return std::make_shared<IcebergStorageSink>(
+            object_storage,
+            configuration,
+            std::make_shared<DataLakeStorageSettings>(data_lake_settings),
+            format_settings,
+            sample_block,
+            context,
+            catalog,
+            persistent_components,
+            table_id,
+            write_format);
     }
     else
     {

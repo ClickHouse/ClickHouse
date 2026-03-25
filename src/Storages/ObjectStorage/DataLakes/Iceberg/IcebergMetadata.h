@@ -101,9 +101,7 @@ public:
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
-    static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalRows(ContextPtr local_context) const;
-    static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalBytes(ContextPtr local_context) const;
 
     bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const;

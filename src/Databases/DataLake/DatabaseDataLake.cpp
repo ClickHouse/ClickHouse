@@ -312,9 +312,9 @@ ObjectStorageType DatabaseDataLake::getObjectStorageType(DatabaseDataLakeStorage
         case DatabaseDataLakeStorageType::Azure: return ObjectStorageType::Azure;
         case DatabaseDataLakeStorageType::HDFS:  return ObjectStorageType::HDFS;
         case DatabaseDataLakeStorageType::Local:
-            return ObjectStorageType::Local;
         case DatabaseDataLakeStorageType::Other:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Other");
+            return ObjectStorageType::Local;
+            // throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Other");
     }
 }
 
@@ -624,7 +624,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 can_use_distributed_iterator,
                 nullptr,
                 nullptr,
-                false,
+                true,
                 true);
         case DataLakeType::Paimon:
             return std::make_shared<StorageDataLake<PaimonMetadata>>(
@@ -642,7 +642,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 can_use_distributed_iterator,
                 nullptr,
                 nullptr,
-                false,
+                true,
                 true);
 #endif
 #if USE_PARQUET
@@ -662,7 +662,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 can_use_distributed_iterator,
                 nullptr,
                 nullptr,
-                false,
+                true,
                 true);
 #endif
     }

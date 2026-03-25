@@ -97,10 +97,6 @@ public:
     virtual Path getRawPath() const = 0;
     virtual void setRawPath(const Path & path) = 0;
 
-    /// Returns the raw path as the default reading path.
-    /// The partition-strategy-aware read path is managed by `StorageObjectStorageTableOptions`.
-    Path getPathForRead() const { return getRawPath(); }
-
     /// Raw URI, specified by a user. Used in permission check.
     virtual const String & getRawURI() const = 0;
 

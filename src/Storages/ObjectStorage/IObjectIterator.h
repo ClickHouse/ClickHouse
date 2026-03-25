@@ -64,7 +64,7 @@ struct IObjectIterator
     /// rather than for actual data reading.
     bool emit_profile_events = true;
 
-
+    /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
 };
 

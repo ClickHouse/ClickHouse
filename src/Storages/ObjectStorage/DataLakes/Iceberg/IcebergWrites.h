@@ -84,7 +84,8 @@ public:
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         const Iceberg::PersistentTableComponents & persistent_table_components_,
-        const StorageID & table_id_);
+        const StorageID & table_id_,
+        String write_format_);
 
     ~IcebergStorageSink() override;
 

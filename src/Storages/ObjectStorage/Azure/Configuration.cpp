@@ -68,6 +68,13 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
     "tenant_id",
 };
 
+StorageAzureConfiguration::StorageAzureConfiguration(Path blob_path_, AzureBlobStorage::ConnectionParams connection_params_, DiskPtr disk_)
+{
+    blob_path = std::move(blob_path_);
+    connection_params = std::move(connection_params_);
+    disk = std::move(disk_);
+}
+
 void StorageAzureConfiguration::check(ContextPtr context)
 {
     auto url = Poco::URI(connection_params.getConnectionURL());

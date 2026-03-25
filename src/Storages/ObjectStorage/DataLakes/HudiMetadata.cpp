@@ -88,7 +88,7 @@ Strings HudiMetadata::getDataFilesImpl() const
 HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationPtr configuration_, ContextPtr context_)
     : WithContext(context_)
     , object_storage(object_storage_)
-    , table_path(configuration_->getPathForRead().path)
+    , table_path(configuration_->getRawPath().path)
     , format("Parquet")
 {
 }

@@ -126,7 +126,7 @@ struct DeltaLakeMetadataImpl
      */
     DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationWeakPtr configuration_, ContextPtr context_)
         : object_storage(object_storage_)
-        , table_path(configuration_.lock()->getPathForRead().path)
+        , table_path(configuration_.lock()->getRawPath().path)
         , context(context_)
     {
     }

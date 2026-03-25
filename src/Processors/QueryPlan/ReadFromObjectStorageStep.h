@@ -42,12 +42,6 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 
-    bool requestReadingInOrder() const;
-
-    // The name of the returned type is misleading, this order has nothing in common with the corresponding SELECT query
-    // and is taken from the storage metadata.
-    InputOrderInfoPtr getDataOrder() const;
-
 private:
     ObjectStoragePtr object_storage;
     ObjectStorageConnectionConfigurationPtr configuration;

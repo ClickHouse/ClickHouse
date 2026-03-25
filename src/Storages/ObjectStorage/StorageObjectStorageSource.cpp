@@ -194,7 +194,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
 
     std::unique_ptr<IObjectIterator> iterator;
-    const auto & reading_path = configuration->getPathForRead();
+    const auto & reading_path = configuration->getRawPath();
     if (reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
         auto paths = expandSelectionGlob(reading_path.path);
@@ -365,12 +365,6 @@ Chunk StorageObjectStorageSource::generate()
                     path);
             }
 
-            const String * iceberg_metadata_file_path = nullptr;
-#if USE_AVRO
-            if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
-                iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
-#endif
-
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
@@ -382,7 +376,7 @@ Chunk StorageObjectStorageSource::generate()
                     .etag = &(object_metadata->etag),
                     .tags = &(object_metadata->tags),
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
-                    .iceberg_metadata_file_path = iceberg_metadata_file_path,
+                    .iceberg_metadata_file_path = nullptr,
                 },
                 read_context);
 
@@ -902,7 +896,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , local_context(context_)
     , file_progress_callback(file_progress_callback_)
 {
-    const auto & reading_path = configuration->getPathForRead();
+    const auto & reading_path = configuration->getRawPath();
     if (reading_path.hasGlobs())
     {
         const auto & key_with_globs = reading_path;
@@ -951,9 +945,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::next(size_t processor)
     auto object_info = nextUnlocked(processor);
     if (first_iteration && !object_info && throw_on_zero_files_match)
     {
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
-                        "Can not match any files with path {}",
-                        configuration->getPathForRead().path);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files with path {}", configuration->getRawPath().path);
     }
     first_iteration = false;
     return object_info;
