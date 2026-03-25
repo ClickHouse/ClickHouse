@@ -13,22 +13,41 @@ namespace DB
   */
 class ASTQueryWithOutput : public IAST
 {
+protected:
+    struct ASTQueryWithOutputFlags
+    {
+        using ParentFlags = void;
+        static constexpr UInt32 RESERVED_BITS = 3;
+
+        UInt32 is_into_outfile_with_stdout : 1;
+        UInt32 is_outfile_append : 1;
+        UInt32 is_outfile_truncate : 1;
+        UInt32 unused : 29;
+    };
 public:
     ASTPtr out_file;
-    bool is_into_outfile_with_stdout = false;
-    bool is_outfile_append = false;
-    bool is_outfile_truncate = false;
     ASTPtr format_ast;
     ASTPtr settings_ast;
     ASTPtr compression;
     ASTPtr compression_level;
+
+    /// Note that flags are initialized to zero (false) by default
+    ASTQueryWithOutput() = default;
+
+    bool isIntoOutfileWithStdout() const { return flags<ASTQueryWithOutputFlags>().is_into_outfile_with_stdout; }
+    void setIsIntoOutfileWithStdout(bool value) { flags<ASTQueryWithOutputFlags>().is_into_outfile_with_stdout = value; }
+
+    bool isOutfileAppend() const { return flags<ASTQueryWithOutputFlags>().is_outfile_append; }
+    void setIsOutfileAppend(bool value) { flags<ASTQueryWithOutputFlags>().is_outfile_append = value; }
+
+    bool isOutfileTruncate() const { return flags<ASTQueryWithOutputFlags>().is_outfile_truncate; }
+    void setIsOutfileTruncate(bool value) { flags<ASTQueryWithOutputFlags>().is_outfile_truncate = value; }
 
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
     static bool resetOutputASTIfExist(IAST & ast);
 
     bool hasOutputOptions() const;
 
-protected:
     /// NOTE: call this helper at the end of the clone() method of descendant class.
     void cloneOutputOptions(ASTQueryWithOutput & cloned) const;
 

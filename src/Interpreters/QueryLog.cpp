@@ -28,7 +28,6 @@
 #include <Common/IPv6ToBinary.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
-#include <Common/maskURIPassword.h>
 
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -97,6 +96,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"stack_trace", std::make_shared<DataTypeString>(), "Stack trace. An empty string, if the query was completed successfully."},
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution."},
+        {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which connection was made."},
+        {"connection_port", std::make_shared<DataTypeUInt16>(), "The client port from which connection was made."},
         {"user", low_cardinality_string, "Name of the user who initiated the current query."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query."},
@@ -200,9 +201,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(memory_usage);
 
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(current_database.data(), current_database.size());
-    auto encoded_query = query;
-    maskURIPassword(&encoded_query);
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(encoded_query.data(), encoded_query.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(query.data(), query.size());
     typeid_cast<ColumnString &>(*columns[i++]).insertData(formatted_query.data(), formatted_query.size());
     typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(normalized_query_hash);
 
@@ -348,6 +347,9 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
 {
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
+
+    typeid_cast<ColumnIPv6 &>(*columns[i++]).insertData(IPv6ToBinary(client_info.connection_address->host()).data(), 16);
+    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.connection_address->port());
 
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.current_user.data(), client_info.current_user.size());
     typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.current_query_id.data(), client_info.current_query_id.size());

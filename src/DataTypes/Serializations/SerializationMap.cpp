@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeMap.h>
@@ -15,7 +16,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 
-
 namespace DB
 {
 
@@ -23,6 +23,14 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_MAP_FROM_TEXT;
     extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+UInt128 SerializationMap::getHash(const SerializationPtr & nested_)
+{
+    SipHash hash;
+    hash.update("Map");
+    hash.update(nested_->getHash());
+    return hash.get128();
 }
 
 SerializationMap::SerializationMap(const SerializationPtr & key_, const SerializationPtr & value_, const SerializationPtr & nested_)
@@ -91,6 +99,44 @@ void SerializationMap::serializeForHashCalculation(const IColumn & column, size_
     nested->serializeForHashCalculation(extractNestedColumn(column), row_num, ostr);
 }
 
+void SerializationMap::readMapSafe(DB::IColumn & column, std::function<void()> && read_func)
+{
+    size_t initial_size = column.size();
+    try
+    {
+        read_func();
+    }
+    catch (...)
+    {
+        ColumnMap & column_map = assert_cast<ColumnMap &>(column);
+        ColumnArray & column_array = column_map.getNestedColumn();
+        ColumnArray::Offsets & offsets = column_array.getOffsets();
+        ColumnTuple & nested_columns = column_map.getNestedData();
+        IColumn & keys_column = nested_columns.getColumn(0);
+        IColumn & values_column = nested_columns.getColumn(1);
+
+        if (offsets.size() > initial_size)
+        {
+            chassert(offsets.size() - initial_size == 1);
+            offsets.pop_back();
+        }
+
+        if (keys_column.size() > offsets.back())
+            keys_column.popBack(keys_column.size() - offsets.back());
+
+        if (values_column.size() > offsets.back())
+            values_column.popBack(values_column.size() - offsets.back());
+
+        throw;
+    }
+}
+
+SerializationPtr SerializationMap::create(const SerializationPtr & key_type_, const SerializationPtr & value_type_, const SerializationPtr & nested_)
+{
+    if (!nested_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationMap(key_type_, value_type_, nested_));
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationMap(key_type_, value_type_, nested_); });
+}
 
 template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(

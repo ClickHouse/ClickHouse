@@ -102,7 +102,7 @@ inline size_t minimum_memory_for_elements(size_t num_elements, size_t element_si
 template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
-protected:
+public:
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = integerRoundUp(pad_right_, ELEMENT_SIZE);
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
@@ -110,6 +110,7 @@ protected:
     /// Empty array will point to this static memory as padding and begin/end.
     static constexpr char * null = const_cast<char *>(empty_pod_array) + pad_left;
 
+protected:
     static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
     static_assert(pad_left % ELEMENT_SIZE == 0, "pad_left must be multiple of element alignment");
 

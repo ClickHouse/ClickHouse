@@ -56,7 +56,7 @@ VolumeJBOD::VolumeJBOD(
         }
         if (sizes.size() == disks.size())
         {
-            max_data_part_size = static_cast<UInt64>(sum_size * ratio / disks.size());
+            max_data_part_size = static_cast<UInt64>(static_cast<double>(sum_size) * ratio / static_cast<double>(disks.size()));
             for (size_t i = 0; i < disks.size(); ++i)
             {
                 if (sizes[i] < max_data_part_size)

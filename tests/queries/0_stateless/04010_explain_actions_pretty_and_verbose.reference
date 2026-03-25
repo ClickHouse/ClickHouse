@@ -1,0 +1,70 @@
+Limit (preliminary LIMIT)
+Limit 5
+Offset 0
+  Sorting (Sorting for ORDER BY)
+  Sort description: multiply(sum(__table1.number), 2_UInt8) DESC
+  Limit 5
+    Aggregating
+    Keys: modulo(__table1.number, 10_UInt8)
+    Aggregates:
+        sum(__table1.number)
+          Function: sum(UInt64) → UInt64
+          Arguments: __table1.number
+    Skip merging: 0
+      Filter ((WHERE + Change column names to column identifiers))
+      Filter column: greater(__table1.number, 100_UInt8) (removed)
+        ReadFromSystemNumbers
+Expression (Project names)
+│  Actions: INPUT : 0 -> modulo(__table1.number, 10_UInt8) UInt8 : 0
+│           INPUT : 1 -> multiply(sum(__table1.number), 2_UInt8) UInt64 : 1
+│           ALIAS modulo(__table1.number, 10_UInt8) :: 0 -> key UInt8 : 2
+│           ALIAS multiply(sum(__table1.number), 2_UInt8) :: 1 -> total UInt64 : 0
+│  Positions: 2 0
+└──Limit (preliminary LIMIT)
+   │  Limit 5
+   │  Offset 0
+   └──Sorting (Sorting for ORDER BY)
+      │  Sort description: multiply(sum(__table1.number), 2_UInt8) DESC
+      │  Limit 5
+      └──Expression ((Before ORDER BY + Projection))
+         │  Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
+         │           INPUT :: 1 -> modulo(__table1.number, 10_UInt8) UInt8 : 1
+         │           COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 2
+         │           FUNCTION multiply(sum(__table1.number) :: 0, 2_UInt8 :: 2) -> multiply(sum(__table1.number), 2_UInt8) UInt64 : 3
+         │  Positions: 3 1
+         └──Aggregating
+            │  Keys: modulo(__table1.number, 10_UInt8)
+            │  Aggregates:
+            │      sum(__table1.number)
+            │        Function: sum(UInt64) → UInt64
+            │        Arguments: __table1.number
+            │  Skip merging: 0
+            └──Expression (Before GROUP BY)
+               │  Actions: INPUT : 0 -> __table1.number UInt64 : 0
+               │           COLUMN Const(UInt8) -> 10_UInt8 UInt8 : 1
+               │           FUNCTION modulo(__table1.number : 0, 10_UInt8 :: 1) -> modulo(__table1.number, 10_UInt8) UInt8 : 2
+               │  Positions: 2 0
+               └──Filter ((WHERE + Change column names to column identifiers))
+                  │  Filter column: greater(__table1.number, 100_UInt8) (removed)
+                  │  Actions: INPUT : 0 -> number UInt64 : 0
+                  │           COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
+                  │           ALIAS number : 0 -> __table1.number UInt64 : 2
+                  │           FUNCTION greater(number :: 0, 100_UInt8 :: 1) -> greater(__table1.number, 100_UInt8) UInt8 : 3
+                  │  Positions: 3 2
+                  └──ReadFromSystemNumbers
+Limit (preliminary LIMIT)
+│  Limit 5
+│  Offset 0
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: multiply(sum(__table1.number), 2_UInt8) DESC
+   │  Limit 5
+   └──Aggregating
+      │  Keys: modulo(__table1.number, 10_UInt8)
+      │  Aggregates:
+      │      sum(__table1.number)
+      │        Function: sum(UInt64) → UInt64
+      │        Arguments: __table1.number
+      │  Skip merging: 0
+      └──Filter ((WHERE + Change column names to column identifiers))
+         │  Filter column: greater(__table1.number, 100_UInt8) (removed)
+         └──ReadFromSystemNumbers

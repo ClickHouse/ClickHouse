@@ -4,6 +4,7 @@
 
 #if USE_EMBEDDED_COMPILER
 
+#    include <base/sanitizer_defs.h>
 #    include <AggregateFunctions/IAggregateFunction_fwd.h>
 #    include <Core/SortDescription.h>
 #    include <Functions/IFunction.h>
@@ -21,6 +22,7 @@ struct ColumnData
 {
     const char * data = nullptr;
     const char * null_data = nullptr;
+    const char * offset_data = nullptr; // For String type, points to offsets data
 };
 
 /** Returns ColumnData for column.
@@ -32,6 +34,17 @@ using ColumnDataRowsOffset = size_t;
 using ColumnDataRowsSize = size_t;
 
 using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
+
+/** Wrapper to call JIT-compiled functions.
+  * UBSan's `-fsanitize=function` reads a type signature at `function_pointer - 8` before every indirect call.
+  * JIT-compiled functions don't have this prologue, and when JIT code is at a page boundary,
+  * the read accesses unmapped memory, causing a SIGSEGV.
+  */
+template <typename F, typename... Args>
+NO_SANITIZE_UNDEFINED inline decltype(auto) callJITFunction(F && f, Args &&... args)
+{
+    return f(std::forward<Args>(args)...);
+}
 
 struct CompiledFunction
 {

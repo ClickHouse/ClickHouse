@@ -308,18 +308,23 @@ std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties()
 
 void JoinStepLogical::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, settings.indent_char);
+    const String & prefix = settings.detail_prefix;
 
     for (const auto & [name, value] : describeJoinProperties())
         settings.out << prefix << name << ": " << value << '\n';
 
-    settings.out << prefix << "Expression:\n";
-    auto actions_dag = expression_actions.getActionsDAG();
-    ExpressionActions(actions_dag->clone()).describeActions(settings.out, prefix);
+    if (!settings.compact)
+    {
+        settings.out << prefix << "Expression:\n";
 
-    settings.out << prefix << "Expression Sources:\n";
-    for (const auto * input_ptr : actions_dag->getInputs())
-        settings.out << prefix << JoinActionRef(input_ptr, expression_actions).dump() << "\n";
+        auto actions_dag = expression_actions.getActionsDAG();
+        ExpressionActions(actions_dag->clone()).describeActions(settings.out, prefix);
+
+        settings.out << prefix << "Expression Sources:\n";
+
+        for (const auto * input_ptr : actions_dag->getInputs())
+            settings.out << prefix << JoinActionRef(input_ptr, expression_actions).dump() << "\n";
+    }
 }
 
 void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
@@ -1484,6 +1489,15 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
     });
 }
 
+std::vector<JoinActionRef> JoinStepLogical::getInputActions() const
+{
+    std::vector<JoinActionRef> input_actions;
+    const auto & raw_inputs = expression_actions.getActionsDAG()->getInputs();
+    for (const auto * node : raw_inputs)
+        input_actions.emplace_back(node, expression_actions);
+    return input_actions;
+}
+
 
 std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 {
@@ -1549,7 +1563,7 @@ static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const A
     return nodes;
 }
 
-std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & ctx)
+QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 2)
         throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical must have two input streams");

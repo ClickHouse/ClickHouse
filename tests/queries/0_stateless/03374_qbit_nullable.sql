@@ -1,5 +1,3 @@
-SET enable_qbit_type = 1;
-
 DROP TABLE IF EXISTS qbit_nullable_test;
 
 SELECT 'Test QBit within Nullable columns';

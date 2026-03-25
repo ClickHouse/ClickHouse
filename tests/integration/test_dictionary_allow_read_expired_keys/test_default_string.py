@@ -29,7 +29,8 @@ def get_random_string(string_length=8):
 def started_cluster():
     try:
         cluster.start()
-        dictionary_node.query("CREATE DATABASE IF NOT EXISTS test;")
+        dictionary_node.query("DROP DATABASE IF EXISTS test;")
+        dictionary_node.query("CREATE DATABASE test;")
         dictionary_node.query("DROP TABLE IF EXISTS test.strings;")
         dictionary_node.query(
             """

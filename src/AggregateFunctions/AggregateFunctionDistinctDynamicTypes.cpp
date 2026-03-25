@@ -7,9 +7,11 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnDynamic.h>
 
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -26,7 +28,7 @@ struct AggregateFunctionDistinctDynamicTypesData
 {
     constexpr static size_t MAX_ARRAY_SIZE = 0xFFFFFF;
 
-    std::unordered_set<String> data;
+    UnorderedSetWithMemoryTracking<String> data;
 
     void add(const String & type)
     {
@@ -66,7 +68,7 @@ struct AggregateFunctionDistinctDynamicTypesData
         /// Insert types in sorted order for better output.
         auto & array_column = assert_cast<ColumnArray &>(column);
         auto & string_column = assert_cast<ColumnString &>(array_column.getData());
-        std::vector<String> sorted_data(data.begin(), data.end());
+        VectorWithMemoryTracking<String> sorted_data(data.begin(), data.end());
         std::sort(sorted_data.begin(), sorted_data.end());
         for (const auto & type : sorted_data)
             string_column.insertData(type.data(), type.size());
@@ -187,7 +189,7 @@ SELECT distinctDynamicTypes(d) FROM test_dynamic;
     FunctionDocumentation::Category category_distinctDynamicTypes = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_distinctDynamicTypes = {description_distinctDynamicTypes, syntax_distinctDynamicTypes, arguments_distinctDynamicTypes, {}, returned_value_distinctDynamicTypes, examples_distinctDynamicTypes, introduced_in_distinctDynamicTypes, category_distinctDynamicTypes};
 
-    factory.registerFunction("distinctDynamicTypes", {createAggregateFunctionDistinctDynamicTypes, {}, documentation_distinctDynamicTypes});
+    factory.registerFunction("distinctDynamicTypes", {createAggregateFunctionDistinctDynamicTypes, documentation_distinctDynamicTypes});
 }
 
 }

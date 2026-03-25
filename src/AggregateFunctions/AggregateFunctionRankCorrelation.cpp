@@ -10,9 +10,12 @@
 #include <DataTypes/DataTypesNumber.h>
 
 
+namespace DB
+{
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
 }
 
 namespace DB
@@ -37,7 +40,7 @@ struct RankCorrelationData : public StatisticalSample<Float64, Float64>
 
         /// Count d^2 sum
         Float64 answer = 0;
-        for (size_t j = 0; j < size; ++j)
+        for (size_t j = 0; j < static_cast<size_t>(size); ++j)
             answer += (ranks_x[j] - ranks_y[j]) * (ranks_x[j] - ranks_y[j]);
 
         answer *= 6;
@@ -162,7 +165,7 @@ SELECT roundBankers(rankCorr(exp(number), sin(number)), 3) FROM numbers(100);
     FunctionDocumentation::Category category_rankCorr = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_rankCorr = {description_rankCorr, syntax_rankCorr, arguments_rankCorr, parameters_rankCorr, returned_value_rankCorr, examples_rankCorr, introduced_in_rankCorr, category_rankCorr};
 
-    factory.registerFunction("rankCorr", {createAggregateFunctionRankCorrelation, {}, documentation_rankCorr});
+    factory.registerFunction("rankCorr", {createAggregateFunctionRankCorrelation, documentation_rankCorr});
 }
 
 }

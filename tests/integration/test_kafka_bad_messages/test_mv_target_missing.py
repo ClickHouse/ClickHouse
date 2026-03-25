@@ -13,6 +13,7 @@ instance = cluster.add_instance(
     main_configs=["configs/kafka.xml"],
     with_kafka=True,
     with_zookeeper=True,
+    stay_alive=True,
     macros={
         "kafka_broker": "kafka1",
         "kafka_format_json_each_row": "JSONEachRow",
@@ -182,6 +183,7 @@ missing_dependencies: [['test.mvother']]
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target2",
+                retry_count=100,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"
@@ -189,6 +191,7 @@ missing_dependencies: [['test.mvother']]
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target1",
+                retry_count=100,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"
@@ -285,7 +288,25 @@ missing_dependencies: []
 """
         )
 
-        # make sure the kafka table engine picked up the views, because it happens at the beginning of the streaming loop
+        # The old table engine will wait for assignment up to MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS after the consumer is
+        # created and that it won't be interrupted by flush interval (which make sense, we want to get assignment as
+        # soon as possible, because getting stuck in a rebalance loop is expensive for all consumers in the consumer
+        # group, not just for one). Therefore waiting the flush interval seconds will only ensure the new target is
+        # picked up the engine after the assignment is done.
+
+        # Here we have to make sure the kafka consumer got assignment, because it can wait more than the flush interval,
+        # so let's use `system.kafka_consumers` to ensure that.
+        assigned_partition_count = instance.query_with_retry(
+            "SELECT count() FROM system.kafka_consumers WHERE table='tkafkamiss' AND length(assignments.partition_id) > 0",
+            retry_count=100,
+            check_callback=lambda x: int(x) > 0,
+        )
+        assert (
+            int(assigned_partition_count) > 0
+        ), "Kafka consumer did not get assignment in time"
+
+        # After making sure we have an assignment, let's wait the flush interval to make sure the kafka table engine
+        # picked up the views, because it happens at the beginning of the streaming loop.
         time.sleep(flush_interval_seconds * 1.2)
 
         k.kafka_produce(kafka_cluster, topic, ["1|foo", "2|bar"])
@@ -293,6 +314,7 @@ missing_dependencies: []
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target2",
+                retry_count=100,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"
@@ -304,6 +326,101 @@ missing_dependencies: []
             DROP TABLE test.target1;
             DROP TABLE test.target2;
             DROP TABLE test.tkafkamiss;
+            DROP DATABASE test;
+            """
+        )
+
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [k.generate_old_create_table_query, k.generate_new_create_table_query],
+)
+def test_no_data_loss_on_restart(kafka_cluster, create_query_generator):
+    """Verify no data is lost in materialized views during server restart.
+
+    Regression test for a startup race condition where Kafka consumers could
+    process batches before all MV dependencies were registered, causing
+    permanent data loss for unloaded MVs.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic = "no_data_loss_restart" + k.get_topic_postfix(create_query_generator)
+
+    with k.kafka_topic(admin, topic):
+
+        settings = {
+            "kafka_flush_interval_ms": 1000,
+        }
+        if create_query_generator == k.generate_old_create_table_query:
+            settings["kafka_commit_on_select"] = 1
+
+        create_query = create_query_generator(
+            "kafka_restart",
+            "a UInt64, b String",
+            topic_list=topic,
+            consumer_group=topic,
+            format="JSONEachRow",
+            settings=settings,
+        )
+
+        instance.query(
+            f"""
+            DROP DATABASE IF EXISTS test;
+            CREATE DATABASE test;
+
+            {create_query};
+
+            CREATE TABLE test.target1 (a UInt64, b String)
+                ENGINE = MergeTree() ORDER BY a;
+            CREATE TABLE test.target2 (a UInt64, b String)
+                ENGINE = MergeTree() ORDER BY a;
+
+            CREATE MATERIALIZED VIEW test.mv1 TO test.target1
+                AS SELECT * FROM test.kafka_restart;
+            CREATE MATERIALIZED VIEW test.mv2 TO test.target2
+                AS SELECT * FROM test.kafka_restart;
+            """
+        )
+
+        # Pre-restart: produce and verify both targets receive data
+        messages_before = [
+            f'{{"a": {i}, "b": "before"}}' for i in range(10)
+        ]
+        k.kafka_produce(kafka_cluster, topic, messages_before)
+
+        for target in ["test.target1", "test.target2"]:
+            instance.query_with_retry(
+                f"SELECT count() FROM {target}",
+                retry_count=100,
+                check_callback=lambda x: int(x) == 10,
+            )
+
+        # Restart server
+        instance.restart_clickhouse()
+
+        # Post-restart: produce and verify ALL messages arrive in BOTH targets
+        messages_after = [
+            f'{{"a": {i}, "b": "after"}}' for i in range(100, 110)
+        ]
+        k.kafka_produce(kafka_cluster, topic, messages_after)
+
+        for target in ["test.target1", "test.target2"]:
+            result = instance.query_with_retry(
+                f"SELECT count() FROM {target} WHERE b = 'after'",
+                retry_count=100,
+                check_callback=lambda x: int(x) == 10,
+            )
+            assert int(result) == 10, (
+                f"Expected 10 post-restart rows in {target}, got {result}. "
+                "Possible data loss during restart due to partial MV dependency loading."
+            )
+
+        instance.query(
+            """
+            DROP TABLE test.mv1;
+            DROP TABLE test.mv2;
+            DROP TABLE test.target1;
+            DROP TABLE test.target2;
+            DROP TABLE test.kafka_restart;
             DROP DATABASE test;
             """
         )

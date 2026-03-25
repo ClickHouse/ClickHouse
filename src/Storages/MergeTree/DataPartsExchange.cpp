@@ -95,7 +95,7 @@ struct ReplicatedFetchReadCallback
         if (replicated_fetch_entry->total_size_bytes_compressed != 0)
         {
             replicated_fetch_entry->progress.store(
-                    static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
+                    static_cast<double>(bytes_count) / static_cast<double>(replicated_fetch_entry->total_size_bytes_compressed),
                     std::memory_order_relaxed);
         }
     }
@@ -282,6 +282,16 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             const auto & our_checksum = part->checksums.files.find(name + ".proj")->second;
             data_checksums.addFile(name + ".proj", our_checksum.file_size, our_checksum.file_hash);
         }
+    }
+
+    /// Handle unknown projections: .proj entries in part->checksums that are
+    /// not in getProjectionParts() (e.g. a projection was dropped while the
+    /// part was detached, then re-attached).  Copy their stored checksums to
+    /// data_checksums so that checkEqual below does not fail.
+    for (const auto & [name, checksum] : part->checksums.files)
+    {
+        if (name.ends_with(".proj") && !data_checksums.has(name))
+            data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
     }
 
     writeBinary(replicated_description.files.size(), out);
@@ -487,6 +497,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     auto in = BuilderRWBufferFromHTTP(uri)
                   .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+                  .withBypassProxy(true)
                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                   .withTimeouts(timeouts)
                   .withSettings(read_settings)
@@ -882,7 +893,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     else
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
+        {
+            /// Handle unknown projections on the fetch side: .proj entries in
+            /// checksums.txt that were not transferred (e.g. a projection was
+            /// dropped while the part was detached, then re-attached on the
+            /// sender).  Copy them to data_checksums so that checkEqual does
+            /// not fail.
+            for (const auto & [name, checksum] : new_data_part->checksums.files)
+            {
+                if (name.ends_with(".proj") && !data_checksums.has(name))
+                    data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
+            }
             new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
+        }
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
 

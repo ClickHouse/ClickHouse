@@ -16,6 +16,7 @@
 #endif
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
 #include <Common/formatReadable.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -36,6 +37,9 @@
 #include "config.h"
 
 /// Embedded configuration files used inside the install program
+///
+/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to
+/// make a scratch build.
 constexpr unsigned char resource_config_xml[] =
 {
 #embed "../server/config.xml"

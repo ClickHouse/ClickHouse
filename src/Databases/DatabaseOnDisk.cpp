@@ -29,6 +29,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ErrnoException.h>
 #include <Common/assert_cast.h>
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
@@ -91,7 +93,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     if (ast_create_query.as_table_function)
     {
         const auto & factory = TableFunctionFactory::instance();
-        auto table_function_ast = ast_create_query.getChild(*ast_create_query.as_table_function);
+        auto table_function_ast = ast_create_query.as_table_function->ptr();
         auto table_function = factory.get(table_function_ast, context);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
@@ -161,7 +163,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
-    assert(!create->temporary);
+    assert(!create->isTemporary());
     create->database.reset();
 
     if (create->uuid != UUIDHelpers::Nil)
@@ -209,6 +211,7 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
     auto db_disk = getDisk();
     createDirectories();
 
@@ -350,6 +353,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
 
 void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::dropTable");
     waitDatabaseStarted();
 
     String table_metadata_path = getObjectMetadataPath(table_name);
@@ -432,6 +436,7 @@ void DatabaseOnDisk::renameTable(
     if (exchange)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Tables can be exchanged only in Atomic databases");
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::renameTable");
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
     if (typeid(*this) != typeid(to_database))
@@ -453,19 +458,14 @@ void DatabaseOnDisk::renameTable(
     TableExclusiveLockHolder table_lock;
     String table_metadata_path;
     ASTPtr attach_query;
-    /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
-    StoragePtr table = tryGetTable(table_name, local_context);
-    if (dictionary && table && !table->isDictionary())
+    /// NOTE: the table can be concurrently dropped, and getTable will throw UNKNOWN_TABLE.
+    StoragePtr table = getTable(table_name, local_context);
+    if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
-    /// We have to lock the table before detaching, because otherwise lockExclusively will throw. But the table may not exist.
-    bool need_lock = table != nullptr;
-    if (need_lock)
-        table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     detachTable(local_context, table_name);
-    if (!need_lock)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table was detached without locking, it's a bug");
 
     UUID prev_uuid = UUIDHelpers::Nil;
     auto db_disk = getDisk();
@@ -755,6 +755,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     bool throw_on_error /*= true*/,
     bool remove_empty /*= false*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::parseQueryFromMetadata");
     if (!disk->existsFile(metadata_file_path))
     {
         if (!throw_on_error)
@@ -858,7 +859,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     /// setup create table query storage info.
     auto ast_engine = make_intrusive<ASTFunction>();
     ast_engine->name = storage->getName();
-    ast_engine->no_empty_args = true;
+    ast_engine->setNoEmptyArgs(true);
     auto ast_storage = make_intrusive<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 
@@ -879,6 +880,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
 
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::modifySettingsMetadata");
     auto create_query = getCreateDatabaseQuery()->clone();
     auto * create = create_query->as<ASTCreateQuery>();
     auto * settings = create->storage->settings;

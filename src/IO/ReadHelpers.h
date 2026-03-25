@@ -173,8 +173,8 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
-template <typename T>
-void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1842,8 +1842,8 @@ inline bool tryReadCSV(UInt256 & x, ReadBuffer & buf) { return readCSVSimple<UIn
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
 
-template <typename T>
-void readBinary(std::vector<T> & x, ReadBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -2103,6 +2103,10 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 
 /// Skip to next character after next \n. If no \n in stream, skip to end.
 void skipToNextLineOrEOF(ReadBuffer & buf);
+
+/// Skip whitespace and SQL-style comments (-- to end of line, /* */ blocks).
+/// Used so that trailing comments after the last row in VALUES format do not cause parse errors.
+void skipWhitespaceAndSQLComments(ReadBuffer & buf);
 
 /// Skip to next character after next \r. If no \r in stream, skip to end.
 void skipToCarriageReturnOrEOF(ReadBuffer & buf);

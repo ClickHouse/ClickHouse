@@ -727,7 +727,7 @@ void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromEmbeddedRocksDB::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix(format_settings.offset, format_settings.indent_char);
+    const std::string & prefix = format_settings.detail_prefix;
     if (!all_scan)
     {
         format_settings.out << prefix << "ReadType: GetKeys\n";
@@ -793,18 +793,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB requires at least one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->primary_key), metadata.columns, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     for (const auto & primary_key_name : primary_key_names)
     {
-        if (metadata.getColumns().hasSubcolumn(primary_key_name))
+        if (metadata.getColumns().hasSubcolumn(GetColumnsOptions::All, primary_key_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB doesn't support subcolumns in primary key");
     }
 
     auto settings = std::make_unique<RocksDBSettings>();
     settings->loadFromQuery(*args.storage_def);
     if (args.storage_def->settings)
-        metadata.settings_changes = args.storage_def->getChild(*args.storage_def->settings);
+        metadata.settings_changes = args.storage_def->settings->ptr();
     else
     {
         /// A workaround because embedded rocksdb doesn't have default immutable settings

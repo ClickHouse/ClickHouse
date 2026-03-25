@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -17,23 +18,24 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
 
-    template <bool is_utf8>
     class FunctionSubstringIndex : public IFunction
     {
     public:
-        static constexpr auto name = is_utf8 ? "substringIndexUTF8" : "substringIndex";
+        FunctionSubstringIndex(const char * name_, bool is_utf8_)
+            : function_name(name_), is_utf8(is_utf8_) {}
 
+        static FunctionPtr create(const char * name, bool is_utf8)
+        {
+            return std::make_shared<FunctionSubstringIndex>(name, is_utf8);
+        }
 
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSubstringIndex>(); }
-
-        String getName() const override { return name; }
+        String getName() const override { return function_name; }
 
         size_t getNumberOfArguments() const override { return 3; }
 
@@ -42,28 +44,15 @@ namespace
         bool useDefaultImplementationForConstants() const override { return true; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (!isString(arguments[0]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}, String expected",
-                    arguments[0]->getName(),
-                    getName());
+            FunctionArgumentDescriptors mandatory_args{
+                {"s", &isString, nullptr, "String"},
+                {"delim", &isString, nullptr, "String"},
+                {"count", &isNativeInteger, nullptr, "UInt or Int"}
+            };
 
-            if (!isString(arguments[1]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of second argument of function {}, String expected",
-                    arguments[1]->getName(),
-                    getName());
-
-            if (!isNativeInteger(arguments[2]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of third argument of function {}, Integer expected",
-                    arguments[2]->getName(),
-                    getName());
+            validateFunctionArguments(*this, arguments, mandatory_args);
 
             return std::make_shared<DataTypeString>();
         }
@@ -84,7 +73,7 @@ namespace
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument to {} must be a constant String", getName());
 
             String delim = column_delim_const->getValue<String>();
-            if constexpr (!is_utf8)
+            if (!is_utf8)
             {
                 if (delim.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument to {} must be a single character", getName());
@@ -124,13 +113,13 @@ namespace
         }
 
     protected:
-        static void vectorVector(
+        void vectorVector(
             const ColumnString * str_column,
             const String & delim,
             const IColumn * count_column,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets,
-            size_t input_rows_count)
+            size_t input_rows_count) const
         {
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(input_rows_count);
@@ -146,7 +135,7 @@ namespace
                 Int64 count = count_column->getInt(i);
 
                 std::string_view res_ref;
-                if constexpr (!is_utf8)
+                if (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
                     res_ref = substringIndex(str_ref, delim[0], count);
@@ -157,13 +146,13 @@ namespace
             }
         }
 
-        static void vectorConstant(
+        void vectorConstant(
             const ColumnString * str_column,
             const String & delim,
             Int64 count,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets,
-            size_t input_rows_count)
+            size_t input_rows_count) const
         {
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(input_rows_count);
@@ -178,7 +167,7 @@ namespace
                 std::string_view str_ref = str_column->getDataAt(i);
 
                 std::string_view res_ref;
-                if constexpr (!is_utf8)
+                if (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
                     res_ref = substringIndex(str_ref, delim[0], count);
@@ -189,12 +178,12 @@ namespace
             }
         }
 
-        static void constantVector(
+        void constantVector(
             const String & str,
             const String & delim,
             const IColumn * count_column,
             ColumnString::Chars & res_data,
-            ColumnString::Offsets & res_offsets)
+            ColumnString::Offsets & res_offsets) const
         {
             size_t rows = count_column->size();
             res_data.reserve(str.size() * rows / 2);
@@ -211,7 +200,7 @@ namespace
                 Int64 count = count_column->getInt(i);
 
                 std::string_view res_ref;
-                if constexpr (!is_utf8)
+                if (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
                     res_ref = substringIndex(str_ref, delim[0], count);
@@ -308,6 +297,10 @@ namespace
             return {
                 d > 0 ? str_ref.data() : pos + 1, static_cast<size_t>(d > 0 ? pos - str_ref.data() : str_ref.data() + str_ref.size() - pos - 1)};
         }
+
+    private:
+        const char * function_name;
+        bool is_utf8;
     };
 }
 
@@ -359,8 +352,8 @@ If this assumption is violated, no exception is thrown and the result is undefin
     };
     FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
 
-    factory.registerFunction<FunctionSubstringIndex<false>>(documentation); /// substringIndex
-    factory.registerFunction<FunctionSubstringIndex<true>>(documentation_utf8); /// substringIndexUTF8
+    factory.registerFunction("substringIndex", [](ContextPtr){ return FunctionSubstringIndex::create("substringIndex", false); }, documentation);
+    factory.registerFunction("substringIndexUTF8", [](ContextPtr){ return FunctionSubstringIndex::create("substringIndexUTF8", true); }, documentation_utf8);
 
     factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::Case::Insensitive);
 }
