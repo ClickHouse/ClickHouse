@@ -38,7 +38,12 @@ const char * __asan_default_suppressions()
 {
     /// libunwind is compiled without sanitizers (-fno-sanitize=all) and triggers false
     /// positives during C++ exception unwinding in fibers. See #100442.
-    return "interceptor_via_lib:libunwind\n";
+    return "interceptor_via_lib:libunwind\n"
+           /// When an exception is thrown inside a fiber, ASan calls __asan_handle_no_return
+           /// → PlatformUnpoisonStacks() → sigaltstack. The sigaltstack interceptor writes
+           /// a stack_t result onto the fiber's heap-allocated stack, which has bytes
+           /// already poisoned as stack redzones from previous fiber frames — a false positive.
+           "interceptor_via_fun:__asan_handle_no_return\n";
 }
 const char * __lsan_default_options()
 {
