@@ -362,11 +362,12 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         {
             if (row_subgroup.filter.rows_pass == 0)
             {
-                /// PREWHERE filtered every row in this subgroup.  Count the rows as having
-                /// been read from disk so that StorageObjectStorageSource can report the
-                /// correct read_rows (i.e., rows physically scanned, not rows returned
-                /// after filtering).
-                rows_read_from_disk.fetch_add(row_subgroup.filter.rows_total, std::memory_order_relaxed);
+                /// Only count rows that were actually scanned from disk.  When
+                /// need_to_process is false the row group was skipped entirely
+                /// (e.g. setBucketsToRead selected other row groups), so no column
+                /// data was decoded and these rows should not be counted.
+                if (row_group.need_to_process)
+                    rows_read_from_disk.fetch_add(row_subgroup.filter.rows_total, std::memory_order_relaxed);
                 break;
             }
             if (step_idx > 0 && step_idx <= reader.steps.size())
