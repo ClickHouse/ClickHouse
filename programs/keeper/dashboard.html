@@ -717,7 +717,7 @@
                         <a class="cli-link" href="https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#four-letter-word-commands">4LW Commands</a>
                     </div>
                     <div>
-                        <span class="cli-hint">Up/Down: history | Ctrl+L: clear</span>
+                        <span class="cli-hint">Tab: autocomplete | Up/Down: history | Ctrl+L: clear</span>
                         <button class="cli-button monospace" id="cli-clear-btn" onclick="clearCommandOutput()">Clear</button>
                     </div>
                 </div>
@@ -1416,6 +1416,161 @@
     let cli_history_index = -1;
     let cli_cwd = "/";
 
+    let completion_commands = [];
+
+    async function loadCompletionCommands() {
+        try {
+            const url = new URL(window.location);
+            url.pathname = "/api/v1/commands";
+            url.search = "?list";
+            const res = await fetch(url.toString());
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data.commands))
+                    completion_commands = data.commands.slice().sort();
+            }
+        } catch (e) { /* completion will be unavailable */ }
+    }
+
+    const COMPLETION_DISPLAY_LIMIT = 100;
+    let pending_completion_display = null;
+
+    function resolvePath(path) {
+        let abs = path.startsWith("/") ? path : (cli_cwd === "/" ? "/" + path : cli_cwd + "/" + path);
+        const parts = abs.split("/");
+        const resolved = [];
+        for (const part of parts) {
+            if (part === "" || part === ".") continue;
+            else if (part === "..") resolved.pop();
+            else resolved.push(part);
+        }
+        return "/" + resolved.join("/");
+    }
+
+    function longestCommonPrefix(strings) {
+        if (strings.length === 0) return "";
+        let common = strings[0];
+        for (let i = 1; i < strings.length; i++) {
+            while (!strings[i].startsWith(common)) {
+                common = common.slice(0, -1);
+            }
+        }
+        return common;
+    }
+
+    function formatColumns(items) {
+        if (items.length === 0) return "";
+        const maxLen = Math.max(...items.map(s => s.length));
+        const colWidth = maxLen + 2;
+        const termWidth = 80;
+        const cols = Math.max(1, Math.floor(termWidth / colWidth));
+        const rows = Math.ceil(items.length / cols);
+        let result = "";
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const idx = r + c * rows;
+                if (idx >= items.length) break;
+                result += items[idx].padEnd(c < cols - 1 ? colWidth : 0);
+            }
+            result += "\n";
+        }
+        return result;
+    }
+
+    function showCompletionMatches(inputValue, matches) {
+        const container = document.getElementById("command-scrolling-container");
+        appendToOutput(`➜ ${cli_cwd} ${inputValue}\n`);
+        if (matches.length > COMPLETION_DISPLAY_LIMIT) {
+            pending_completion_display = matches;
+            appendToOutput(`Display all ${matches.length} possibilities? (y/n) `);
+        } else {
+            appendToOutput(formatColumns(matches));
+        }
+        container.scrollTop = container.scrollHeight;
+    }
+
+    let tab_completion_in_progress = false;
+
+    async function handleTabCompletion(input) {
+        if (tab_completion_in_progress) return;
+        tab_completion_in_progress = true;
+        try { await handleTabCompletionImpl(input); } finally { tab_completion_in_progress = false; }
+    }
+
+    async function handleTabCompletionImpl(input) {
+        const value = input.value;
+
+        if (!value.includes(" ")) {
+            const prefix = value;
+            const matches = prefix === ""
+                ? completion_commands
+                : completion_commands.filter(cmd => cmd.startsWith(prefix));
+
+            if (matches.length === 0) return;
+            if (matches.length === 1) { input.value = matches[0]; return; }
+
+            input.value = longestCommonPrefix(matches);
+            showCompletionMatches(value, matches);
+            return;
+        }
+
+        const spaceIdx = value.indexOf(" ");
+        const cmdPart = value.substring(0, spaceIdx + 1);
+        let argPart = value.substring(spaceIdx + 1).trimStart();
+
+        const quoteChar = argPart[0];
+        if (quoteChar === "'" || quoteChar === '"') {
+            argPart = argPart.endsWith(quoteChar) && argPart.length > 1
+                ? argPart.slice(1, -1)
+                : argPart.slice(1);
+        }
+
+        let parentDir, namePrefix, pathPrefix;
+
+        if (argPart === "") {
+            parentDir = cli_cwd;
+            namePrefix = "";
+            pathPrefix = "";
+        } else if (argPart.endsWith("/")) {
+            parentDir = resolvePath(argPart);
+            namePrefix = "";
+            pathPrefix = argPart;
+        } else {
+            const lastSlash = argPart.lastIndexOf("/");
+            if (lastSlash === -1) {
+                parentDir = cli_cwd;
+                namePrefix = argPart;
+                pathPrefix = "";
+            } else {
+                pathPrefix = argPart.substring(0, lastSlash + 1);
+                namePrefix = argPart.substring(lastSlash + 1);
+                parentDir = resolvePath(pathPrefix);
+            }
+        }
+
+        try {
+            const url = new URL(window.location);
+            url.pathname = `/api/v1/storage${parentDir}`;
+            url.search = "?children=true";
+            const res = await fetch(url.toString());
+            if (!res.ok) return;
+            const data = await res.json();
+            const children = (data.child_node_names || []).sort();
+            const matches = namePrefix === ""
+                ? children
+                : children.filter(name => name.startsWith(namePrefix));
+
+            if (matches.length === 0) return;
+            if (matches.length === 1) {
+                input.value = cmdPart + pathPrefix + matches[0];
+                return;
+            }
+
+            input.value = cmdPart + pathPrefix + longestCommonPrefix(matches);
+            showCompletionMatches(value, matches);
+        } catch (e) { /* ignore fetch errors */ }
+    }
+
     function clearCommandOutput() {
         document.querySelector("#command-output").innerHTML = "";
     }
@@ -1431,11 +1586,11 @@
 
     function runQuickCommand(command) {
         let command_input = document.querySelector("#command");
-        command_input.value = command;
-        command_input.dispatchEvent(new KeyboardEvent("keydown", { code: "Enter" }));
+        command_input.value = "";
+        executeCommand(command);
     }
 
-    function handleCdCommand(command) {
+    async function handleCdCommand(command) {
         const trimmed = command.trim();
         if (!trimmed.startsWith("cd ") && trimmed !== "cd") return false;
 
@@ -1446,30 +1601,27 @@
             newPath = newPath.slice(1, -1);
         }
 
-        let absolutePath;
-        if (newPath.startsWith("/")) {
-            absolutePath = newPath;
-        } else {
-            absolutePath = cli_cwd === "/" ? "/" + newPath : cli_cwd + "/" + newPath;
+        const targetPath = resolvePath(newPath);
+
+        try {
+            const check_url = new URL(window.location);
+            check_url.pathname = `/api/v1/storage${targetPath}`;
+            const res = await fetch(check_url.toString(), { method: "HEAD" });
+            if (!res.ok) {
+                appendToOutput(`Path does not exist: ${targetPath}\n`);
+                return true;
+            }
+        } catch (e) {
+            appendToOutput(`Failed to verify path: ${targetPath}\n`);
+            return true;
         }
 
-        const parts = absolutePath.split("/");
-        const resolved = [];
-        for (const part of parts) {
-            if (part === "" || part === ".") {
-                continue;
-            } else if (part === "..") {
-                resolved.pop();
-            } else {
-                resolved.push(part);
-            }
-        }
-        cli_cwd = "/" + resolved.join("/");
+        cli_cwd = targetPath;
         updateCwdDisplay();
         return true;
     }
 
-    function executeCommand(command) {
+    async function executeCommand(command) {
         let command_input = document.querySelector("#command");
         let command_output = document.querySelector("#command-output");
         let command_container = document.getElementById("command-scrolling-container");
@@ -1484,7 +1636,7 @@
         appendToOutput(`➜ ${cli_cwd} ${command}\n`);
         command_container.scrollTop = command_container.scrollHeight;
 
-        if (handleCdCommand(command)) {
+        if (await handleCdCommand(command)) {
             command_input.focus();
             return;
         }
@@ -1537,7 +1689,29 @@
         });
 
         command_input.addEventListener("keydown", function (event) {
-            if (event.code === "Enter") {
+            if (pending_completion_display !== null) {
+                if (event.key === "y" || event.key === "Y") {
+                    event.preventDefault();
+                    appendToOutput("y\n" + formatColumns(pending_completion_display));
+                    pending_completion_display = null;
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                if (event.key === "n" || event.key === "N") {
+                    event.preventDefault();
+                    appendToOutput("n\n");
+                    pending_completion_display = null;
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                appendToOutput("\n");
+                pending_completion_display = null;
+                command_container.scrollTop = command_container.scrollHeight;
+            }
+            if (event.code === "Tab") {
+                event.preventDefault();
+                handleTabCompletion(command_input);
+            } else if (event.code === "Enter") {
                 event.preventDefault();
                 let command = command_input.value;
                 command_input.value = "";
@@ -1584,6 +1758,7 @@
         try {
             setupCommandLine();
             loadContent();
+            loadCompletionCommands();
             setInterval(loadContent, STATS_UPDATE_INTERVAL_MS);
         } catch (e) {
             renderError(`Failed to start: ${e}`)

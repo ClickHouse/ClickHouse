@@ -316,6 +316,7 @@ try
 
     String command;
     String cwd = "/";
+    bool list_commands = false;
 
     const auto params = uri.getQueryParameters();
     for (const auto & [key, value]: params)
@@ -324,6 +325,35 @@ try
             command = value;
         else if (key == "cwd")
             cwd = value;
+        else if (key == "list")
+            list_commands = true;
+    }
+
+    if (list_commands)
+    {
+        setResponseDefaultHeaders(response);
+        response.setContentType("application/json");
+
+        std::ostringstream null_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        KeeperClientBase ensure_loaded(null_stream, null_stream);
+
+        Poco::JSON::Object response_json;
+        Poco::JSON::Array commands_array;
+
+        for (const auto & [name, _] : KeeperClientBase::commands)
+            commands_array.add(name);
+
+        for (const auto & name : four_letter_word_commands)
+            commands_array.add(name);
+
+        response_json.set("commands", commands_array);
+
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        oss.exceptions(std::ios::failbit);
+        Poco::JSON::Stringifier::stringify(response_json, oss);
+
+        *response.send() << oss.str();
+        return;
     }
 
     if (command.empty())
