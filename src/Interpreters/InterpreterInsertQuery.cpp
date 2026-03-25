@@ -599,10 +599,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 }
 
 
-std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
-InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table)
+std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
+    ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context)
 {
-    ContextPtr select_context = getContext();
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
 
     auto [pipeline_builder, coordinator]
@@ -654,15 +653,20 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
 
 std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
-    auto context_ptr = getContext();
-    const Settings & settings = context_ptr->getSettingsRef();
+    const Settings & settings = getContext()->getSettingsRef();
     if (!settings[Setting::allow_experimental_analyzer])
         return {};
 
-    if (!context_ptr->canUseParallelReplicasOnInitiator())
+    if (settings[Setting::parallel_distributed_insert_select] != 2)
         return {};
 
-    if (settings[Setting::parallel_distributed_insert_select] != 2)
+    /// Create a context with automatic_parallel_replicas_mode disabled upfront.
+    /// INSERT SELECT should use parallel replicas regardless of automatic mode,
+    /// and followers need automatic_parallel_replicas_mode == 0 to participate in coordinated reading.
+    auto context = Context::createCopy(getContext());
+    context->setSetting("automatic_parallel_replicas_mode", Field{0});
+
+    if (!context->canUseParallelReplicasOnInitiator())
         return {};
 
     // NOTE: should we limit it more here?
@@ -673,18 +677,18 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
         return {};
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
-    if (!ClusterProxy::isSuitableForParallelReplicas(select, context_ptr))
+    if (!ClusterProxy::isSuitableForInsertSelectWithParallelReplicas(select, context))
         return {};
 
     LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
 
     if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline])
     {
-        auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table);
-        return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context_ptr, std::move(local_pipeline), coordinator);
+        auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
+        return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context, std::move(local_pipeline), coordinator);
     }
 
-    return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context_ptr);
+    return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context);
 }
 
 
@@ -939,7 +943,7 @@ BlockIO InterpreterInsertQuery::execute()
                 if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
                     res.pipeline = std::move(*pipeline);
             }
-            if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
+            if (!res.pipeline.initialized())
             {
                 auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
                 if (pipeline)

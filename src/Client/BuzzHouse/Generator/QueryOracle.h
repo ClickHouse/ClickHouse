@@ -98,6 +98,15 @@ public:
     void generateCountDistinctFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
     void generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
+    /// Row policy correctness oracle.
+    /// Picks an existing catalog row policy (with a stored USING predicate) on a suitable table.
+    /// Query 1 (sq1):  SELECT count() FROM db.t [FINAL] INTO OUTFILE ...
+    ///                  (FuzzLoop sends "EXECUTE AS buzzhouse_oracle_user" first → policy active)
+    /// Query 2 (sq2):  SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE ...
+    ///                  (run as admin after reconnect → explicit WHERE equivalent to policy filter)
+    /// Both counts must be equal.  No setup or teardown needed — the policy already exists.
+    void generateRowPolicyOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
+
     /// Dump and read table oracle
     void dumpTableContent(
         RandomGenerator & rg,
