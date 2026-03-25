@@ -43,7 +43,9 @@ const char * __asan_default_suppressions()
            /// → PlatformUnpoisonStacks() → sigaltstack. The sigaltstack interceptor writes
            /// a stack_t result onto the fiber's heap-allocated stack, which has bytes
            /// already poisoned as stack redzones from previous fiber frames — a false positive.
-           "interceptor_via_fun:__asan_handle_no_return\n";
+           /// Suppress via the internal ASan helper rather than __asan_handle_no_return to
+           /// avoid masking real bugs in ordinary (non-fiber) exception paths.
+           "interceptor_via_fun:PlatformUnpoisonStacks\n";
 }
 const char * __lsan_default_options()
 {
