@@ -17,6 +17,13 @@ using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
 
+enum class DataLakeTableFormat : uint8_t
+{
+    UNKNOWN,
+    DELTA,
+    ICEBERG,
+};
+
 struct DataLakeSpecificProperties
 {
     std::string iceberg_metadata_file_location;
@@ -55,6 +62,9 @@ public:
 
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
+
+    void setTableFormat(DataLakeTableFormat format) { table_format = format; }
+    DataLakeTableFormat getTableFormat() const { return table_format; }
 
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
@@ -106,6 +116,7 @@ private:
     std::string reason_why_table_is_not_readable;
 
     bool is_default_readable_table = true;
+    DataLakeTableFormat table_format = DataLakeTableFormat::UNKNOWN;
 
     bool with_location = false;
     bool with_schema = false;

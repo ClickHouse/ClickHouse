@@ -342,7 +342,8 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
-     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"unity_catalog", DatabaseDataLakeCatalogType::UNITY_CATALOG}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,

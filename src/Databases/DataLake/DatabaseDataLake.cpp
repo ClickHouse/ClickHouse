@@ -25,6 +25,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DataLake/UnityCatalog.h>
 #include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/UnifiedUnityCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
 #include <DataTypes/DataTypeString.h>
@@ -258,6 +259,18 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use 'hive' database engine: ClickHouse was compiled without USE_HIVE built option");
 #endif
         }
+        case DB::DatabaseDataLakeCatalogType::UNITY_CATALOG:
+        {
+            catalog_impl = std::make_shared<DataLake::UnifiedUnityCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::auth_scope].value,
+                settings[DatabaseDataLakeSetting::oauth_server_uri].value,
+                settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                Context::getGlobalContextInstance());
+            break;
+        }
         case DB::DatabaseDataLakeCatalogType::NONE:
         {
             catalog_impl = nullptr;
@@ -297,7 +310,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
     DatabaseDataLakeStorageType type,
-    DataLakeStorageSettingsPtr storage_settings) const
+    DataLakeStorageSettingsPtr storage_settings,
+    DataLake::DataLakeTableFormat table_format) const
 {
     /// TODO: add tests for azure, local storage types.
 
@@ -464,6 +478,37 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #endif
             }
         }
+        case DatabaseDataLakeCatalogType::UNITY_CATALOG:
+        {
+            bool use_iceberg = (table_format == DataLake::DataLakeTableFormat::ICEBERG);
+            switch (type)
+            {
+#if USE_AWS_S3
+                case DB::DatabaseDataLakeStorageType::S3:
+                {
+                    if (use_iceberg)
+                        return std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+                }
+#endif
+                case DB::DatabaseDataLakeStorageType::Local:
+                {
+                    if (use_iceberg)
+                        return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+                }
+                case DB::DatabaseDataLakeStorageType::Other:
+                {
+                    if (use_iceberg)
+                        return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+                }
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Server does not contain support for storage type {} for Unified Unity catalog",
+                                    type);
+            }
+        }
         case DatabaseDataLakeCatalogType::NONE:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unspecified catalog type");
     }
@@ -604,7 +649,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
     }
 
-    const auto configuration = getConfiguration(storage_type, storage_settings);
+    const auto configuration = getConfiguration(storage_type, storage_settings, table_metadata.getTableFormat());
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);
@@ -875,7 +920,14 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     auto * storage = table_storage_define->as<ASTStorage>();
     storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     if (!table_metadata.isDefaultReadableTable())
+    {
         storage->engine->name = DataLake::FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
+    }
+    else if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::UNITY_CATALOG)
+    {
+        storage->engine->name = (table_metadata.getTableFormat() == DataLake::DataLakeTableFormat::ICEBERG)
+            ? "Iceberg" : "DeltaLake";
+    }
 
     storage->settings = {};
 
@@ -1036,6 +1088,19 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 }
 
                 engine_func->name = "Paimon";
+                break;
+            }
+            case DatabaseDataLakeCatalogType::UNITY_CATALOG:
+            {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_catalog])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DataLake database with Unified Unity catalog is beta. "
+                                    "To allow its usage, enable setting allow_database_unity_catalog");
+                }
+
+                engine_func->name = "DeltaLake";
                 break;
             }
             case DatabaseDataLakeCatalogType::NONE:
