@@ -146,10 +146,11 @@ struct JoinKeyStats
 /**
  * Retrieves statistics (NDV and Total Rows) for a specific join key on the build side.
  *
- * This function performs a "best effort" estimation by combining three sources of truth:
+ * This function performs a "best effort" estimation by combining four sources of truth:
  * 1. Plan Structure: Checks for explicit `LimitStep` nodes (e.g., subqueries with LIMIT).
- * 2. Optimizer Estimates: Uses `ConditionSelectivityEstimator` which accounts for WHERE clauses.
- * 3. Storage Metadata: Falls back to `MergeTree` data parts if the optimizer is uninitialized.
+ * 2. Join Optimizer Estimates: Uses `JoinStepLogical` cardinality/NDV if the build subtree is an optimized join.
+ * 3. Storage Statistics: Uses `ConditionSelectivityEstimator` for `ReadFromMergeTree`.
+ * 4. Storage Metadata: Falls back to `MergeTree` data parts if the estimator is uninitialized.
  */
 static std::optional<JoinKeyStats> getJoinKeyStats(
     QueryPlan::Node * build_filter_node,
@@ -173,64 +174,128 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
         curr = curr->children.front();
     }
 
-    const auto * merge_tree_step = getMergeTreeStep(build_filter_node);
-    if (!merge_tree_step)
-        return std::nullopt;
-
-    /// Helper to strip table aliases (e.g., "__table1.id" -> "id") so we can look up
-    /// the physical column statistics in the storage engine.
-    auto stripAlias = [](const String & name)
+    /// Collect candidate names for statistics lookup:
+    /// - `table.key` -> `key`
+    /// - `table.nested.key` -> `nested.key`
+    /// - fallback to last component for compatibility.
+    Names lookup_names;
+    auto add_lookup_name = [&lookup_names](const String & name)
     {
-        size_t dot_pos = name.find_last_of('.');
-        return (dot_pos == String::npos) ? name : name.substr(dot_pos + 1);
+        if (name.empty())
+            return;
+
+        for (const auto & existing_name : lookup_names)
+        {
+            if (existing_name == name)
+                return;
+        }
+
+        lookup_names.push_back(name);
     };
 
-    String physical_name = stripAlias(key_column_name);
-    auto estimator = merge_tree_step->getConditionSelectivityEstimator(Names{physical_name});
-    if (!estimator)
-        return std::nullopt;
+    add_lookup_name(key_column_name);
 
-    auto profile = estimator->estimateRelationProfile();
+    size_t first_dot_pos = key_column_name.find('.');
+    if (first_dot_pos != String::npos)
+        add_lookup_name(key_column_name.substr(first_dot_pos + 1));
 
-    /// --- Determining 'n' (Estimated Number of Distinct Values) ---
+    size_t last_dot_pos = key_column_name.find_last_of('.');
+    if (last_dot_pos != String::npos)
+        add_lookup_name(key_column_name.substr(last_dot_pos + 1));
 
-    /// Priority 1: Trust the Optimizer's row estimate first.
-    /// This value is usually preferred because it accounts for filter selectivity (WHERE clauses).
-    UInt64 n = profile.rows;
-
-    /// Apply the hard LIMIT from the plan if it's smaller than the estimated rows.
-    if (limit_value && n > *limit_value)
+    auto apply_limit = [limit_value](UInt64 value)
     {
-        n = *limit_value;
-    }
+        if (limit_value && value > *limit_value)
+            return static_cast<UInt64>(*limit_value);
+        return value;
+    };
 
-    /// Priority 2: Refine using specific Column Statistics (NDV).
-    /// If the column has hyperloglog/uniq sketches, this is more accurate than raw row counts.
-    auto it = profile.column_stats.find(physical_name);
-    if (it != profile.column_stats.end() && it->second.num_distinct_values > 0)
+    auto find_ndv = [&lookup_names](const auto & column_stats)
     {
-        n = std::min(n, it->second.num_distinct_values);
-    }
-
-    /// Priority 3: Storage Fallback (The Safety Net).
-    /// If 'n' is 0, it means the estimator is uninitialized (common with new tables or missing stats).
-    /// Should fallback to the raw storage count, BUT re-apply the LIMIT check should also be done.
-    /// This prevents a "LIMIT 10" query on a 1M row table from being treated as 1M rows.
-    if (n == 0)
-    {
-        n = merge_tree_step->getParts().getRowsCountAllParts();
-        if (limit_value && n > *limit_value)
+        UInt64 ndv = 0;
+        for (const auto & lookup_name : lookup_names)
         {
-            n = *limit_value;
+            auto it = column_stats.find(lookup_name);
+            if (it == column_stats.end())
+                continue;
+
+            if (it->second.num_distinct_values > 0)
+            {
+                ndv = it->second.num_distinct_values;
+                break;
+            }
         }
+        return ndv;
+    };
+
+    QueryPlan::Node * stats_node = build_filter_node;
+    while (stats_node)
+    {
+        if (const auto * join_step = typeid_cast<const JoinStepLogical *>(stats_node->step.get()); join_step && join_step->isOptimized())
+        {
+            UInt64 n = 0;
+            if (join_step->getResultRowsEstimation())
+                n = apply_limit(*join_step->getResultRowsEstimation());
+
+            UInt64 ndv = find_ndv(join_step->getResultColumnStats());
+            if (ndv > 0)
+                n = n > 0 ? std::min(n, ndv) : ndv;
+
+            UInt64 final_total_rows = apply_limit(join_step->getResultRowsEstimation().value_or(n));
+
+            if (n == 0 && final_total_rows == 0)
+                return std::nullopt;
+            if (n == 0)
+                n = final_total_rows;
+
+            return JoinKeyStats{.distinct_values = n, .total_rows = final_total_rows};
+        }
+
+        if (const auto * merge_tree_step = typeid_cast<const ReadFromMergeTree *>(stats_node->step.get()))
+        {
+            auto estimator = merge_tree_step->getConditionSelectivityEstimator(lookup_names);
+            if (!estimator)
+                return std::nullopt;
+
+            auto profile = estimator->estimateRelationProfile();
+
+            /// --- Determining 'n' (Estimated Number of Distinct Values) ---
+
+            /// Priority 1: Trust the Optimizer's row estimate first.
+            /// This value is usually preferred because it accounts for filter selectivity (WHERE clauses).
+            UInt64 n = profile.rows;
+
+            /// Apply the hard LIMIT from the plan if it's smaller than the estimated rows.
+            n = apply_limit(n);
+
+            /// Priority 2: Refine using specific Column Statistics (NDV).
+            /// If the column has hyperloglog/uniq sketches, this is more accurate than raw row counts.
+            UInt64 ndv = find_ndv(profile.column_stats);
+            if (ndv > 0)
+                n = std::min(n, ndv);
+
+            /// Priority 3: Storage Fallback (The Safety Net).
+            /// If 'n' is 0, it means the estimator is uninitialized (common with new tables or missing stats).
+            /// Should fallback to the raw storage count, BUT re-apply the LIMIT check should also be done.
+            /// This prevents a "LIMIT 10" query on a 1M row table from being treated as 1M rows.
+            if (n == 0)
+            {
+                n = merge_tree_step->getParts().getRowsCountAllParts();
+                n = apply_limit(n);
+            }
+
+            /// Calculate the final total rows estimate to return in the struct.
+            UInt64 final_total_rows = apply_limit(profile.rows);
+
+            return JoinKeyStats{.distinct_values = n, .total_rows = final_total_rows};
+        }
+
+        if (stats_node->children.size() != 1)
+            break;
+        stats_node = stats_node->children.front();
     }
 
-    /// Calculate the final total rows estimate to return in the struct.
-    UInt64 final_total_rows = profile.rows;
-    if (limit_value && final_total_rows > *limit_value)
-        final_total_rows = *limit_value;
-
-    return JoinKeyStats{.distinct_values = n, .total_rows = final_total_rows};
+    return std::nullopt;
 }
 
 /**
@@ -552,6 +617,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             // Priority 1: NDV from column stats (if > 0)
             // Priority 2: Total rows from the plan step (fallback)
             size_t effective_n = build_side_row_count;
+            if (build_stats && build_stats->total_rows > 0)
+                effective_n = static_cast<size_t>(build_stats->total_rows);
             if (build_stats && build_stats->distinct_values > 0)
                 effective_n = static_cast<size_t>(build_stats->distinct_values);
 
