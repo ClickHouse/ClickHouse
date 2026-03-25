@@ -394,6 +394,13 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     }
 }
 
+Block StorageSystemUsers::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "name" },
+    };
+}
+
 void StorageSystemUsers::backupData(
     BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
