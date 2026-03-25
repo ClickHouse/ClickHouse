@@ -88,10 +88,10 @@ MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & sto
     /// +2 because of _sign and _version columns
     if (columns_attributes.size() + 2 != columns_num)
     {
-    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Columns number mismatch for table {}. Attributes: {}, buffer: {}",
-                    storage_info.storage->getStorageID().getNameForLogs(),
-                    columns_attributes.size(), columns_num);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Columns number mismatch for table {}. Attributes: {}, buffer: {}",
+                        storage_info.storage->getStorageID().getNameForLogs(),
+                        columns_attributes.size(), columns_num);
     }
 
     LOG_TRACE(log_, "Adding definition for table {}, structure: {}",
