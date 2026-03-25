@@ -278,10 +278,62 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
         return ndv;
     };
 
+    auto find_ndv_upper_bound = [](const std::optional<JoinKeyStats> & stats)
+    {
+        UInt64 ndv_upper_bound = 0;
+
+        if (!stats)
+            return ndv_upper_bound;
+
+        if (stats->distinct_values > 0)
+            ndv_upper_bound = stats->distinct_values;
+
+        if (stats->total_rows > 0)
+            ndv_upper_bound = ndv_upper_bound > 0 ? std::min(ndv_upper_bound, stats->total_rows) : stats->total_rows;
+
+        return ndv_upper_bound;
+    };
+
+    auto matches_key_name = [&lookup_names](const String & candidate_name)
+    {
+        if (candidate_name.empty())
+            return false;
+
+        for (const auto & lookup_name : lookup_names)
+        {
+            if (lookup_name == candidate_name)
+                return true;
+        }
+
+        size_t first_dot_pos = candidate_name.find('.');
+        if (first_dot_pos != String::npos)
+        {
+            String unqualified_name = candidate_name.substr(first_dot_pos + 1);
+            for (const auto & lookup_name : lookup_names)
+            {
+                if (lookup_name == unqualified_name)
+                    return true;
+            }
+        }
+
+        size_t last_dot_pos = candidate_name.find_last_of('.');
+        if (last_dot_pos != String::npos)
+        {
+            String last_component_name = candidate_name.substr(last_dot_pos + 1);
+            for (const auto & lookup_name : lookup_names)
+            {
+                if (lookup_name == last_component_name)
+                    return true;
+            }
+        }
+
+        return false;
+    };
+
     QueryPlan::Node * stats_node = build_filter_node;
     while (stats_node)
     {
-        if (const auto * join_step = typeid_cast<const JoinStepLogical *>(stats_node->step.get()); join_step && join_step->isOptimized())
+        if (const auto * join_step = typeid_cast<const JoinStepLogical *>(stats_node->step.get()))
         {
             UInt64 n = 0;
             if (join_step->getResultRowsEstimation())
@@ -290,6 +342,91 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
             UInt64 ndv = find_ndv(join_step->getResultColumnStats());
             if (ndv > 0)
                 n = n > 0 ? std::min(n, ndv) : ndv;
+
+            std::optional<UInt64> upstream_join_ndv_bound;
+            if (stats_node->children.size() == 2)
+            {
+                for (const auto & condition : join_step->getJoinOperator().expression)
+                {
+                    auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+                    if (predicate_op != JoinConditionOperator::Equals)
+                        continue;
+
+                    QueryPlan::Node * key_side_node = nullptr;
+                    QueryPlan::Node * partner_side_node = nullptr;
+                    String key_side_name;
+                    String partner_side_name;
+
+                    const bool lhs_matches_key = matches_key_name(lhs.getColumnName());
+                    const bool rhs_matches_key = matches_key_name(rhs.getColumnName());
+
+                    if (lhs_matches_key)
+                    {
+                        if (lhs.fromLeft() && rhs.fromRight())
+                        {
+                            key_side_node = stats_node->children[0];
+                            partner_side_node = stats_node->children[1];
+                            key_side_name = lhs.getColumnName();
+                            partner_side_name = rhs.getColumnName();
+                        }
+                        else if (lhs.fromRight() && rhs.fromLeft())
+                        {
+                            key_side_node = stats_node->children[1];
+                            partner_side_node = stats_node->children[0];
+                            key_side_name = lhs.getColumnName();
+                            partner_side_name = rhs.getColumnName();
+                        }
+                    }
+
+                    if (!key_side_node && rhs_matches_key)
+                    {
+                        if (rhs.fromLeft() && lhs.fromRight())
+                        {
+                            key_side_node = stats_node->children[0];
+                            partner_side_node = stats_node->children[1];
+                            key_side_name = rhs.getColumnName();
+                            partner_side_name = lhs.getColumnName();
+                        }
+                        else if (rhs.fromRight() && lhs.fromLeft())
+                        {
+                            key_side_node = stats_node->children[1];
+                            partner_side_node = stats_node->children[0];
+                            key_side_name = rhs.getColumnName();
+                            partner_side_name = lhs.getColumnName();
+                        }
+                    }
+
+                    if (!key_side_node || !partner_side_node)
+                        continue;
+
+                    UInt64 key_ndv_upper_bound = find_ndv_upper_bound(getJoinKeyStats(key_side_node, key_side_name));
+                    UInt64 partner_ndv_upper_bound = find_ndv_upper_bound(getJoinKeyStats(partner_side_node, partner_side_name));
+
+                    UInt64 candidate_ndv_bound = 0;
+                    if (key_ndv_upper_bound > 0)
+                        candidate_ndv_bound = key_ndv_upper_bound;
+
+                    if (partner_ndv_upper_bound > 0)
+                        candidate_ndv_bound = candidate_ndv_bound > 0 ? std::min(candidate_ndv_bound, partner_ndv_upper_bound) : partner_ndv_upper_bound;
+
+                    if (join_step->getResultRowsEstimation() && *join_step->getResultRowsEstimation() > 0)
+                    {
+                        UInt64 joined_rows_estimate = apply_limit(*join_step->getResultRowsEstimation());
+                        candidate_ndv_bound = candidate_ndv_bound > 0 ? std::min(candidate_ndv_bound, joined_rows_estimate) : joined_rows_estimate;
+                    }
+
+                    if (candidate_ndv_bound == 0)
+                        continue;
+
+                    candidate_ndv_bound = apply_limit(candidate_ndv_bound);
+                    upstream_join_ndv_bound = upstream_join_ndv_bound
+                        ? std::min(*upstream_join_ndv_bound, candidate_ndv_bound)
+                        : candidate_ndv_bound;
+                }
+            }
+
+            if (upstream_join_ndv_bound && *upstream_join_ndv_bound > 0)
+                n = n > 0 ? std::min(n, *upstream_join_ndv_bound) : *upstream_join_ndv_bound;
 
             UInt64 final_total_rows = apply_limit(join_step->getResultRowsEstimation().value_or(n));
 

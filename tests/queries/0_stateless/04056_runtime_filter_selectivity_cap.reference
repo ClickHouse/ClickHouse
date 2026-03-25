@@ -4,3 +4,7 @@
 1
 --- Upstream Join Build Side (Enabled) ---
 1
+--- Non-Reordered Baseline With LIMIT (Disabled) ---
+0
+--- Non-Reordered Upstream Equality Bound (Enabled) ---
+1

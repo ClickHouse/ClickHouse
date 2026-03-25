@@ -68,6 +68,41 @@ FROM
     ) x ON p.id = x.id
 );
 
+-- Case 4: Non-reordered baseline with a large build-side `LIMIT` should overestimate and disable `RuntimeFilter`.
+SELECT '--- Non-Reordered Baseline With LIMIT (Disabled) ---';
+SELECT max(explain LIKE '%RuntimeFilter%' OR explain LIKE '%DynamicFilter%')
+FROM
+(
+    EXPLAIN PLAN
+    SELECT count()
+    FROM t_probe p
+    INNER JOIN
+    (
+        SELECT id
+        FROM t_build
+        LIMIT 100000
+    ) x ON p.id = x.id
+    SETTINGS query_plan_optimize_join_order_limit = 0
+);
+
+-- Case 5: Non-reordered upstream equality-key bound should cap `NDV` and keep `RuntimeFilter` enabled.
+SELECT '--- Non-Reordered Upstream Equality Bound (Enabled) ---';
+SELECT max(explain LIKE '%RuntimeFilter%' OR explain LIKE '%DynamicFilter%')
+FROM
+(
+    EXPLAIN PLAN
+    SELECT count()
+    FROM t_probe p
+    INNER JOIN
+    (
+        SELECT b.id
+        FROM t_build b
+        INNER JOIN t_gate g ON b.id = g.id
+        LIMIT 100000
+    ) x ON p.id = x.id
+    SETTINGS query_plan_optimize_join_order_limit = 0
+);
+
 DROP TABLE t_probe;
 DROP TABLE t_build;
 DROP TABLE t_gate;
