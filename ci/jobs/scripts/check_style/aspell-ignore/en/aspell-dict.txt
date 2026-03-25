@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3591
+personal_ws-1.1 en 3599
 AArch
 ABIs
 ACLs
@@ -786,6 +786,7 @@ OKLab
 OLAP
 OLTP
 ORCCompression
+ORMs
 OSCPUVirtualTimeMicroseconds
 OSCPUWaitMicroseconds
 OSContextSwitches
@@ -1832,6 +1833,7 @@ defaultProfiles
 defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
+defragmentation
 delim
 deltaLake
 deltaLakeCluster
@@ -1854,6 +1856,7 @@ dereference
 deserialization
 deserialize
 deserialized
+deserializer
 deserializing
 dest
 destructor
@@ -1862,7 +1865,6 @@ detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
-detectProgrammingLanguage
 detectTonality
 determinator
 deterministically
@@ -2235,6 +2237,7 @@ initialQueryStartTime
 initializeAggregation
 injective
 inlined
+inlines
 innogames
 inodes
 insertio
@@ -2807,6 +2810,7 @@ protocol
 protos
 proxied
 prql
+pseudocode
 pseudorandom
 pseudorandomize
 pseudoterminal
@@ -3526,6 +3530,7 @@ varpop
 varpopstable
 varsamp
 varsampstable
+VarUInt
 vectorized
 vectorscan
 vendoring

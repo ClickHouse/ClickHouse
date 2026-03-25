@@ -346,6 +346,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          [&](const JSONObjectType & value) { max_columns = static_cast<uint32_t>(std::max(UINT64_C(1), value.getUInt64())); }},
         {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_policies", [&](const JSONObjectType & value) { max_policies = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
