@@ -50,7 +50,7 @@ function do_backups()
         $CLICKHOUSE_CLIENT --query "
             BACKUP DATABASE $DB TO Disk('backups', '${CLICKHOUSE_DATABASE}_recreate_$I')
             SETTINGS id = '${CLICKHOUSE_DATABASE}_recreate_$I' ASYNC
-        " 2>/dev/null
+        " > /dev/null 2>&1
     done
 }
 
@@ -69,7 +69,7 @@ $CLICKHOUSE_CLIENT --query "
     SELECT id FROM system.backups
     WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
 " | while read -r backup_id; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM UNFREEZE WITH ID = '$backup_id'" 2>/dev/null
+    $CLICKHOUSE_CLIENT --query "SYSTEM UNFREEZE WITH ID = '$backup_id'" > /dev/null 2>&1
 done
 
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" 2>/dev/null
