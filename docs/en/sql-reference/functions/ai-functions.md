@@ -17,15 +17,15 @@ AI functions can return unpredictable inputs. The result will highly depend on t
 All functions are sharing a common infrastructure that provides:
 
 - **Deduplication**: Identical inputs within the same query are sent to the provider only once.
-- **Result caching**: Responses are cached with configurable TTL ([`llm_cache_ttl_sec`](/operations/settings/settings#llm_cache_ttl_sec)) to avoid redundant API calls.
-- **Concurrency**: Multiple API requests are dispatched in parallel (configurable via [`llm_max_concurrent_requests`](/operations/settings/settings#llm_max_concurrent_requests)).
-- **Rate limiting**: Requests per second can be limited using [`llm_max_rps`](/operations/settings/settings#llm_max_rps).
-- **Quota enforcement**: Per-query limits on rows ([`llm_max_rows_per_query`](/operations/settings/settings#llm_max_rows_per_query)), tokens ([`llm_max_input_tokens_per_query`](/operations/settings/settings#llm_max_input_tokens_per_query), [`llm_max_output_tokens_per_query`](/operations/settings/settings#llm_max_output_tokens_per_query)), and API calls ([`llm_max_api_calls_per_query`](/operations/settings/settings#llm_max_api_calls_per_query)).
-- **Retry with backoff**: Transient failures are retried ([`llm_max_retries`](/operations/settings/settings#llm_max_retries)) with exponential backoff ([`llm_retry_initial_delay_ms`](/operations/settings/settings#llm_retry_initial_delay_ms)).
+- **Result caching**: Responses are cached with configurable TTL ([`ai_cache_ttl_sec`](/operations/settings/settings#ai_cache_ttl_sec)) to avoid redundant API calls.
+- **Concurrency**: Multiple API requests are dispatched in parallel (configurable via [`ai_max_concurrent_requests`](/operations/settings/settings#ai_max_concurrent_requests)).
+- **Rate limiting**: Requests per second can be limited using [`ai_max_rps`](/operations/settings/settings#ai_max_rps).
+- **Quota enforcement**: Per-query limits on rows ([`ai_max_rows_per_query`](/operations/settings/settings#ai_max_rows_per_query)), tokens ([`ai_max_input_tokens_per_query`](/operations/settings/settings#ai_max_input_tokens_per_query), [`ai_max_output_tokens_per_query`](/operations/settings/settings#ai_max_output_tokens_per_query)), and API calls ([`ai_max_api_calls_per_query`](/operations/settings/settings#ai_max_api_calls_per_query)).
+- **Retry with backoff**: Transient failures are retried ([`ai_max_retries`](/operations/settings/settings#ai_max_retries)) with exponential backoff ([`ai_retry_initial_delay_ms`](/operations/settings/settings#ai_retry_initial_delay_ms)).
 
 ## Configuration {#configuration}
 
-LLM functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection. If omitted, the [`default_llm_resource`](/operations/settings/settings#default_llm_resource) setting is used.
+LLM functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection. If omitted, the [`default_ai_provider`](/operations/settings/settings#default_ai_provider) setting is used.
 
 ```sql
 CREATE NAMED COLLECTION my_llm AS
@@ -52,20 +52,20 @@ Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `p
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| [`default_llm_resource`](/operations/settings/settings#default_llm_resource) | String | `''` | Default named collection used when no collection argument is passed. |
-| [`llm_request_timeout_sec`](/operations/settings/settings#llm_request_timeout_sec) | UInt64 | `60` | HTTP timeout per request in seconds. |
-| [`llm_max_concurrent_requests`](/operations/settings/settings#llm_max_concurrent_requests) | UInt64 | `16` | Maximum parallel API requests. |
-| [`llm_max_rps`](/operations/settings/settings#llm_max_rps) | UInt64 | `50` | Maximum requests per second. |
-| [`llm_max_retries`](/operations/settings/settings#llm_max_retries) | UInt64 | `3` | Number of retry attempts on transient failure. |
-| [`llm_retry_initial_delay_ms`](/operations/settings/settings#llm_retry_initial_delay_ms) | UInt64 | `1000` | Initial retry delay in milliseconds (doubles on each retry). |
-| [`llm_cache_ttl_sec`](/operations/settings/settings#llm_cache_ttl_sec) | UInt64 | `86400` | Cache time-to-live in seconds. Set to `0` to disable caching. |
-| [`llm_on_error`](/operations/settings/settings#llm_on_error) | String | `'throw'` | Behavior on API error: `'throw'` raises an exception, `'null'` returns NULL. |
-| [`llm_max_rows_per_query`](/operations/settings/settings#llm_max_rows_per_query) | UInt64 | `100000` | Maximum rows processed by AI functions per query. |
-| [`llm_max_input_tokens_per_query`](/operations/settings/settings#llm_max_input_tokens_per_query) | UInt64 | `1000000` | Maximum input tokens per query. |
-| [`llm_max_output_tokens_per_query`](/operations/settings/settings#llm_max_output_tokens_per_query) | UInt64 | `500000` | Maximum output tokens per query. |
-| [`llm_max_api_calls_per_query`](/operations/settings/settings#llm_max_api_calls_per_query) | UInt64 | `1000` | Maximum API calls per query. |
+| [`default_ai_provider`](/operations/settings/settings#default_ai_provider) | String | `''` | Default named collection used when no collection argument is passed. |
+| [`ai_request_timeout_sec`](/operations/settings/settings#ai_request_timeout_sec) | UInt64 | `60` | HTTP timeout per request in seconds. |
+| [`ai_max_concurrent_requests`](/operations/settings/settings#ai_max_concurrent_requests) | UInt64 | `16` | Maximum parallel API requests. |
+| [`ai_max_rps`](/operations/settings/settings#ai_max_rps) | UInt64 | `50` | Maximum requests per second. |
+| [`ai_max_retries`](/operations/settings/settings#ai_max_retries) | UInt64 | `3` | Number of retry attempts on transient failure. |
+| [`ai_retry_initial_delay_ms`](/operations/settings/settings#ai_retry_initial_delay_ms) | UInt64 | `1000` | Initial retry delay in milliseconds (doubles on each retry). |
+| [`ai_cache_ttl_sec`](/operations/settings/settings#ai_cache_ttl_sec) | UInt64 | `86400` | Cache time-to-live in seconds. Set to `0` to disable caching. |
+| [`ai_on_error`](/operations/settings/settings#ai_on_error) | String | `'throw'` | Behavior on API error: `'throw'` raises an exception, `'null'` returns NULL. |
+| [`ai_max_rows_per_query`](/operations/settings/settings#ai_max_rows_per_query) | UInt64 | `100000` | Maximum rows processed by AI functions per query. |
+| [`ai_max_input_tokens_per_query`](/operations/settings/settings#ai_max_input_tokens_per_query) | UInt64 | `1000000` | Maximum input tokens per query. |
+| [`ai_max_output_tokens_per_query`](/operations/settings/settings#ai_max_output_tokens_per_query) | UInt64 | `500000` | Maximum output tokens per query. |
+| [`ai_max_api_calls_per_query`](/operations/settings/settings#ai_max_api_calls_per_query) | UInt64 | `1000` | Maximum API calls per query. |
 | [`embedding_max_batch_size`](/operations/settings/settings#embedding_max_batch_size) | UInt64 | `100` | Maximum number of texts per HTTP request for embedding functions. Texts are grouped into batches of this size to reduce API call overhead. |
-| [`llm_on_quota_exceeded`](/operations/settings/settings#llm_on_quota_exceeded) | String | `'throw'` | Behavior when quota is exceeded: `'throw'` raises an exception, `'null'` returns NULL for remaining rows. |
+| [`ai_on_quota_exceeded`](/operations/settings/settings#ai_on_quota_exceeded) | String | `'throw'` | Behavior when quota is exceeded: `'throw'` raises an exception, `'null'` returns NULL for remaining rows. |
 
 ## LLMClassify {#llmclassify}
 
@@ -79,7 +79,7 @@ LLMClassify([collection,] text, categories[, temperature])
 
 **Arguments**
 
-- `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_llm_resource`](/operations/settings/settings#default_llm_resource) is set.
+- `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_ai_provider`](/operations/settings/settings#default_ai_provider) is set.
 - `text`: Text to classify. [String](../data-types/string.md).
 - `categories`: Array of category labels. [Array(String)](../data-types/array.md).
 - `temperature`: Sampling temperature. Default: `0.0`. [Float64](../data-types/float.md). Optional.
@@ -122,7 +122,7 @@ LLMExtract([collection,] text, what_to_extract[, temperature])
 
 **Arguments**
 
-- `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_llm_resource`](/operations/settings/settings#default_llm_resource) is set.
+- `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_ai_provider`](/operations/settings/settings#default_ai_provider) is set.
 - `text`: Input text to extract from. [String](../data-types/string.md).
 - `what_to_extract`: Description of what to extract, or a JSON template defining the output schema (e.g. `'{"company": "company name", "location": "city"}'`). [String](../data-types/string.md).
 - `temperature`: Sampling temperature. Default: `0.0`. [Float64](../data-types/float.md). Optional.
@@ -166,7 +166,7 @@ FROM
       AND length(text) > 100
     ORDER BY cityHash64(id) ASC
     LIMIT 30
-    SETTINGS llm_max_rows_per_query = 35, llm_max_rps = 10
+    SETTINGS ai_max_rows_per_query = 35, ai_max_rps = 10
 )
 ORDER BY company ASC;
 ```
@@ -195,7 +195,7 @@ LLMTranslate([collection,] text, target_language[, instructions][, temperature])
 
 **Arguments**
 
-- `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_llm_resource`](/operations/settings/settings#default_llm_resource) is set.
+- `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_ai_provider`](/operations/settings/settings#default_ai_provider) is set.
 - `text`: Text to translate. [String](../data-types/string.md).
 - `target_language`: Target language name (e.g. `'French'`, `'Japanese'`, `'Spanish'`). [String](../data-types/string.md).
 - `instructions`: Additional translation instructions (e.g. `'use formal tone'`). [String](../data-types/string.md). Optional.
@@ -239,7 +239,7 @@ LLMGenerateSQL([collection,] prompt[, temperature])
 
 **Arguments**
 
-- `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_llm_resource`](/operations/settings/settings#default_llm_resource) is set.
+- `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_ai_provider`](/operations/settings/settings#default_ai_provider) is set.
 - `prompt`: Natural language description of the desired query (e.g. `'Count users by country'`). [String](../data-types/string.md).
 - `temperature`: Sampling temperature. Default: `0.1`. [Float64](../data-types/float.md). Optional.
 
@@ -274,7 +274,7 @@ LLMGenerateContent([collection,] prompt[, system_prompt][, temperature])
 
 **Arguments**
 
-- `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_llm_resource`](/operations/settings/settings#default_llm_resource) is set.
+- `collection`: Name of the named collection. [String](../data-types/string.md). Optional if [`default_ai_provider`](/operations/settings/settings#default_ai_provider) is set.
 - `prompt`: The prompt or question for the LLM. [String](../data-types/string.md).
 - `system_prompt`: System-level instruction for the model. [String](../data-types/string.md). Optional.
 - `temperature`: Sampling temperature. Default: `0.7`. [Float64](../data-types/float.md). Optional.
@@ -321,7 +321,7 @@ generateEmbedding([collection,] text, dimensions)
 
 **Arguments**
 
-- `collection`: Name of the named collection). [String](../data-types/string.md). Optional if [`default_llm_resource`](/operations/settings/settings#default_llm_resource) is set.
+- `collection`: Name of the named collection). [String](../data-types/string.md). Optional if [`default_ai_provider`](/operations/settings/settings#default_ai_provider) is set.
 - `text`: Input text to embed. [String](../data-types/string.md) or [Nullable(String)](../data-types/nullable.md).
 - `dimensions`: Dimensionality of the output embedding vector. Must be a constant. [UInt64](../data-types/int-uint.md).
 
@@ -400,7 +400,7 @@ FROM (SELECT '' UNION ALL SELECT NULL);
 
 ## generateEmbeddingOrNull {#generateembeddingornull}
 
-Same as [generateEmbedding](#generateembedding), but **never throws an exception**. Returns an empty array `[]` on API errors and when quotas are exceeded, instead of raising an exception. The [`llm_on_error`](#query-level-settings) and [`llm_on_quota_exceeded`](#query-level-settings) settings are ignored, both are forced to `'null'` internally. This makes it safe for use in pipelines where a failed row should not abort the entire query.
+Same as [generateEmbedding](#generateembedding), but **never throws an exception**. Returns an empty array `[]` on API errors and when quotas are exceeded, instead of raising an exception. The [`ai_on_error`](#query-level-settings) and [`ai_on_quota_exceeded`](#query-level-settings) settings are ignored, both are forced to `'null'` internally. This makes it safe for use in pipelines where a failed row should not abort the entire query.
 
 **Syntax**
 
@@ -410,7 +410,7 @@ generateEmbeddingOrNull([collection_or_url,] text, dimensions)
 
 **Arguments**
 
-- `collection_or_url`: Name of the named collection, or an inline URL. [String](../data-types/string.md). Optional if [`default_llm_resource`](/operations/settings/settings#default_llm_resource) is set.
+- `collection_or_url`: Name of the named collection, or an inline URL. [String](../data-types/string.md). Optional if [`default_ai_provider`](/operations/settings/settings#default_ai_provider) is set.
 - `text`: Input text to embed. [String](../data-types/string.md) or [Nullable(String)](../data-types/nullable.md).
 - `dimensions`: Dimensionality of the output embedding vector. Must be a constant. [UInt64](../data-types/int-uint.md).
 

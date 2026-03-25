@@ -37,19 +37,19 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_ai_functions;
-    extern const SettingsString default_llm_resource;
-    extern const SettingsUInt64 llm_request_timeout_sec;
-    extern const SettingsUInt64 llm_max_concurrent_requests;
-    extern const SettingsUInt64 llm_max_rps;
-    extern const SettingsUInt64 llm_max_retries;
-    extern const SettingsUInt64 llm_retry_initial_delay_ms;
-    extern const SettingsUInt64 llm_cache_ttl_sec;
-    extern const SettingsString llm_on_error;
-    extern const SettingsUInt64 llm_max_rows_per_query;
-    extern const SettingsUInt64 llm_max_input_tokens_per_query;
-    extern const SettingsUInt64 llm_max_output_tokens_per_query;
-    extern const SettingsUInt64 llm_max_api_calls_per_query;
-    extern const SettingsString llm_on_quota_exceeded;
+    extern const SettingsString default_ai_provider;
+    extern const SettingsUInt64 ai_request_timeout_sec;
+    extern const SettingsUInt64 ai_max_concurrent_requests;
+    extern const SettingsUInt64 ai_max_rps;
+    extern const SettingsUInt64 ai_max_retries;
+    extern const SettingsUInt64 ai_retry_initial_delay_ms;
+    extern const SettingsUInt64 ai_cache_ttl_sec;
+    extern const SettingsString ai_on_error;
+    extern const SettingsUInt64 ai_max_rows_per_query;
+    extern const SettingsUInt64 ai_max_input_tokens_per_query;
+    extern const SettingsUInt64 ai_max_output_tokens_per_query;
+    extern const SettingsUInt64 ai_max_api_calls_per_query;
+    extern const SettingsString ai_on_quota_exceeded;
 }
 
 namespace ErrorCodes
@@ -103,12 +103,12 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
     }
     else
     {
-        collection_name = settings[Setting::default_llm_resource].value;
+        collection_name = settings[Setting::default_ai_provider].value;
     }
 
     if (collection_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "No LLM named collection specified and default_llm_resource is not set");
+            "No LLM named collection specified and default_ai_provider is not set");
 
     const auto & nc = NamedCollectionFactory::instance().get(collection_name);
 
@@ -156,25 +156,25 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     float temperature = resolveTemperature(arguments, config);
 
     const auto & settings = getContext()->getSettingsRef();
-    UInt64 timeout_sec = settings[Setting::llm_request_timeout_sec].value;
-    UInt64 max_concurrent = settings[Setting::llm_max_concurrent_requests].value;
-    UInt64 max_rps = settings[Setting::llm_max_rps].value;
-    UInt64 max_retries = settings[Setting::llm_max_retries].value;
-    UInt64 retry_delay_ms = settings[Setting::llm_retry_initial_delay_ms].value;
-    UInt64 cache_ttl = settings[Setting::llm_cache_ttl_sec].value;
+    UInt64 timeout_sec = settings[Setting::ai_request_timeout_sec].value;
+    UInt64 max_concurrent = settings[Setting::ai_max_concurrent_requests].value;
+    UInt64 max_rps = settings[Setting::ai_max_rps].value;
+    UInt64 max_retries = settings[Setting::ai_max_retries].value;
+    UInt64 retry_delay_ms = settings[Setting::ai_retry_initial_delay_ms].value;
+    UInt64 cache_ttl = settings[Setting::ai_cache_ttl_sec].value;
 
     auto quota = std::make_shared<LLMQuotaTracker>(
-        settings[Setting::llm_max_rows_per_query].value,
-        settings[Setting::llm_max_input_tokens_per_query].value,
-        settings[Setting::llm_max_output_tokens_per_query].value,
-        settings[Setting::llm_max_api_calls_per_query].value,
-        String(settings[Setting::llm_on_quota_exceeded].value),
-        String(settings[Setting::llm_on_error].value));
+        settings[Setting::ai_max_rows_per_query].value,
+        settings[Setting::ai_max_input_tokens_per_query].value,
+        settings[Setting::ai_max_output_tokens_per_query].value,
+        settings[Setting::ai_max_api_calls_per_query].value,
+        String(settings[Setting::ai_on_quota_exceeded].value),
+        String(settings[Setting::ai_on_error].value));
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec), 0);
 
-    auto throttler = std::make_shared<Throttler>("llm_rps", max_rps);
+    auto throttler = std::make_shared<Throttler>("ai_rps", max_rps);
 
     String system_prompt = buildSystemPrompt(arguments);
     String response_format = buildResponseFormatJSON(arguments);
