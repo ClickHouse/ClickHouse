@@ -34,6 +34,12 @@ const char * __asan_default_options()
 {
     return "halt_on_error=1 abort_on_error=1";
 }
+const char * __asan_default_suppressions()
+{
+    /// libunwind is compiled without sanitizers (-fno-sanitize=all) and triggers false
+    /// positives during C++ exception unwinding in fibers. See #100442.
+    return "interceptor_via_lib:libunwind\n";
+}
 const char * __lsan_default_options()
 {
     return "max_allocation_size_mb=32768";
