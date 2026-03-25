@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_PREWHERE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -115,8 +116,8 @@ public:
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
                 if (correlated_subtrees.notEmpty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Correlated subquery in alias column expression {}. Actual {}", column_node->dumpTree(), outputs.size());
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Correlated subqueries in ALIAS column expressions are not supported. Column: {}", column_node->getColumnName());
 
                 auto & alias_node = outputs[0];
                 const auto & column_name = column_node->getColumnName();
