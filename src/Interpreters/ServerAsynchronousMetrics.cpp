@@ -416,13 +416,9 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
             {
                 for (const auto & detached_part: table_merge_tree->getDetachedParts())
                 {
-                    if (!detached_part.valid_name)
-                        continue;
-
-                    if (detached_part.prefix.empty())
-                        ++current_values.detached_by_user;
-
                     ++current_values.count;
+                    if (detached_part.valid_name && detached_part.prefix.empty())
+                        ++current_values.detached_by_user;
                 }
 
                 // mutation status
