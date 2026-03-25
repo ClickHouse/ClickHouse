@@ -378,7 +378,8 @@ IMPLEMENT_SETTING_ENUM(
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
      {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
-     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
+     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING},
+     {"unity_catalog", DatabaseDataLakeCatalogType::UNITY_CATALOG}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,

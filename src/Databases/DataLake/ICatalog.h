@@ -43,6 +43,13 @@ private:
     std::unordered_map<DB::DatabaseDataLakeCatalogType, Validator> validators;
 };
 
+enum class DataLakeTableFormat : uint8_t
+{
+    UNKNOWN,
+    DELTA,
+    ICEBERG,
+};
+
 struct DataLakeSpecificProperties
 {
     std::string iceberg_metadata_file_location;
@@ -83,8 +90,13 @@ public:
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
 
+<<<<<<< HEAD
     void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
     std::optional<std::string> getTableUUID() const { return table_uuid; }
+=======
+    void setTableFormat(DataLakeTableFormat format) { table_format = format; }
+    DataLakeTableFormat getTableFormat() const { return table_format; }
+>>>>>>> 75adaaaef43 (Add unified Unity Catalog support for DataLakeCatalog)
 
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
@@ -138,6 +150,7 @@ private:
     std::optional<std::string> table_uuid;
 
     bool is_default_readable_table = true;
+    DataLakeTableFormat table_format = DataLakeTableFormat::UNKNOWN;
 
     bool with_location = false;
     bool with_schema = false;
