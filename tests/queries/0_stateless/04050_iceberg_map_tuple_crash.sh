@@ -15,6 +15,7 @@ rm -rf "${ICEBERG_TABLE_PATH}"
 
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_insert_into_iceberg = 1;
+    SET input_format_parquet_use_native_reader_v3 = 1; -- Arrow-based reader has a known limitation with Map(Tuple, Tuple) remapping in Iceberg
     CREATE TABLE t_map_tuple (c0 Map(Tuple(Int32), Tuple(Int32))) ENGINE = IcebergLocal('${ICEBERG_TABLE_PATH}');
     INSERT INTO t_map_tuple SELECT c0 FROM generateRandom('c0 Map(Tuple(Int32), Tuple(Int32))', 42, 1, 1) LIMIT 1;
     SELECT count() FROM t_map_tuple;
