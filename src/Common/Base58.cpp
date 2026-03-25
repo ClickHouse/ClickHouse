@@ -1,6 +1,5 @@
 #include <Common/Base58.h>
 
-
 namespace DB
 {
 
