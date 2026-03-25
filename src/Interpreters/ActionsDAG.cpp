@@ -3499,10 +3499,10 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     auto replacement_lookup = [&](const ActionsDAG::Node * node) -> const ColumnWithTypeAndName *
     {
         auto it = node_name_to_input_node_column.find(node->result_name);
-        if (it == node_name_to_input_node_column.end()
-            /// type inequality happens when filter pushdown through JOIN inserts
-            /// _CAST to convert between USING column types, which can cause type mismatch
-            && (!node->result_type || !it->second.type || node->result_type->equals(*it->second.type)))
+        if (it == node_name_to_input_node_column.end())
+            return nullptr;
+        /// don't replace a node whose type differs from the storage column type
+        if (node->result_type && it->second.type && !node->result_type->equals(*it->second.type))
             return nullptr;
         return &it->second;
     };
