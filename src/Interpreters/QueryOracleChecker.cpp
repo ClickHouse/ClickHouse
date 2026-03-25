@@ -10,6 +10,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Core/Joins.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
@@ -110,6 +111,40 @@ std::vector<String> splitIntoRows(const String & output)
     return rows;
 }
 
+/// ARRAY JOIN multiplies rows (one input → many output), breaking partition identity.
+bool hasArrayJoin(const ASTSelectQuery & select)
+{
+    ASTPtr tables = select.tables();
+    if (!tables)
+        return false;
+    for (const auto & child : tables->children)
+    {
+        const auto * elem = child->as<ASTTablesInSelectQueryElement>();
+        if (elem && elem->array_join)
+            return true;
+    }
+    return false;
+}
+
+/// PASTE JOIN pairs rows by position — WHERE filtering changes positions, breaking the invariant.
+bool hasPasteJoin(const ASTSelectQuery & select)
+{
+    ASTPtr tables = select.tables();
+    if (!tables)
+        return false;
+    for (const auto & child : tables->children)
+    {
+        const auto * elem = child->as<ASTTablesInSelectQueryElement>();
+        if (elem && elem->table_join)
+        {
+            const auto * join = elem->table_join->as<ASTTableJoin>();
+            if (join && isPaste(join->kind))
+                return true;
+        }
+    }
+    return false;
+}
+
 }
 
 
@@ -130,7 +165,10 @@ const ASTSelectQuery * QueryOracleChecker::extractSimpleSelect(const ASTPtr & as
 
 bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
 {
-    if (select.hasJoin())
+    /// Regular JOINs (INNER, LEFT, RIGHT, FULL, CROSS) are safe — the FROM clause
+    /// stays identical across all TLP partitions, only WHERE changes.
+    /// ARRAY JOIN and PASTE JOIN are NOT safe.
+    if (hasArrayJoin(select) || hasPasteJoin(select))
         return false;
     if (select.distinct)
         return false;
@@ -211,6 +249,8 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     oracle_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
     oracle_context->setSetting("ast_fuzzer_oracle", Field(false));
     oracle_context->setSetting("max_execution_time", Field(UInt64(10)));
+    /// Prevent the optimizer from pushing TLP predicates across subquery/JOIN boundaries.
+    oracle_context->setSetting("enable_optimize_predicate_expression", Field(false));
     oracle_context->setCurrentQueryId("");
     return oracle_context;
 }
@@ -275,8 +315,12 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
     if (!isSafeForOracle(select))
         return false;
 
-    /// TLP WHERE requires no aggregates, no GROUP BY, no HAVING.
-    if (hasAggregates(select) || select.groupBy() || select.having())
+    /// TLP WHERE requires no aggregates in SELECT list.
+    /// GROUP BY is allowed — the GROUP BY clause stays identical across all partitions.
+    /// HAVING is blocked because it may contain aggregates that evaluate differently per partition.
+    if (hasAggregates(select))
+        return false;
+    if (select.having())
         return false;
 
     if (hasNonDeterministicFunctions(select.clone()))
@@ -285,6 +329,7 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
     ASTPtr predicate = select.where()->clone();
 
     /// Build reference query: original query without WHERE (and without ORDER BY/LIMIT).
+    /// JOINs, GROUP BY, and other clauses are preserved.
     auto ref_ast = select.clone();
     auto & ref_select = ref_ast->as<ASTSelectQuery &>();
     ref_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
@@ -390,7 +435,8 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     if (!isSafeForOracle(select))
         return false;
 
-    /// NoREC requires no aggregates, no GROUP BY, no HAVING.
+    /// NoREC requires no aggregates, no GROUP BY, no HAVING
+    /// (its count comparison is per-query, not per-group).
     if (hasAggregates(select) || select.groupBy() || select.having())
         return false;
 
@@ -617,63 +663,64 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
 
 void QueryOracleChecker::tryPopulateTable(const ASTSelectQuery & select, const ContextMutablePtr & context)
 {
-    /// With 80% probability, try to insert random data into the table referenced by the query.
+    /// With 80% probability, try to insert random data into all tables referenced by the query.
     /// This ensures the oracle checks non-empty results even when the fuzzer creates empty tables.
     if (thread_local_rng() % 5 == 0)
         return;
 
-    /// Extract the first table expression from the SELECT.
     ASTPtr tables = select.tables();
     if (!tables || tables->children.empty())
         return;
 
-    const auto * tables_element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
-    if (!tables_element || !tables_element->table_expression)
-        return;
-
-    const auto * table_expr = tables_element->table_expression->as<ASTTableExpression>();
-    if (!table_expr || !table_expr->database_and_table_name)
-        return;
-
-    /// Get the qualified table name (database.table or just table).
-    auto table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
-    if (!table_id)
-        return;
-
-    String database = table_id->getDatabaseName();
-    String table = table_id->shortName();
-    if (table.empty())
-        return;
-
-    /// Skip system tables.
-    if (database == "system" || database == "INFORMATION_SCHEMA" || database == "information_schema")
-        return;
-
-    String qualified = database.empty() ? backQuoteIfNeed(table) : (backQuoteIfNeed(database) + "." + backQuoteIfNeed(table));
-
-    /// Build an INSERT ... SELECT * FROM generateRandom(...) LIMIT 100 query
-    /// to populate the table with random data.
-    String db_for_query = database.empty() ? "currentDatabase()" : ("'" + database + "'");
-    String insert_query = fmt::format(
-        "INSERT INTO {} SELECT * FROM generateRandom("
-        "(SELECT arrayStringConcat(groupArray(concat(name, ' ', type)), ', ') "
-        "FROM system.columns WHERE database = {} AND table = '{}'), 1, 10) LIMIT 100",
-        qualified, db_for_query, table);
-
-    try
+    /// Iterate over all table expressions (main table + joined tables).
+    for (const auto & table_child : tables->children)
     {
-        auto oracle_context = makeOracleContext(context);
-        oracle_context->setDefaultFormat("Null");
+        const auto * tables_element = table_child->as<ASTTablesInSelectQueryElement>();
+        if (!tables_element || !tables_element->table_expression)
+            continue;
 
-        ReadBufferFromString istr(insert_query);
-        WriteBufferFromOwnString ostr;
-        executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
+        const auto * table_expr = tables_element->table_expression->as<ASTTableExpression>();
+        if (!table_expr || !table_expr->database_and_table_name)
+            continue;
 
-        LOG_TRACE(logger, "Populated table {} with random data for oracle check", qualified);
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "Failed to populate table {} (skipping): {}", qualified, getCurrentExceptionMessage(false));
+        auto table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
+        if (!table_id)
+            continue;
+
+        String database = table_id->getDatabaseName();
+        String table = table_id->shortName();
+        if (table.empty())
+            continue;
+
+        /// Skip system tables.
+        if (database == "system" || database == "INFORMATION_SCHEMA" || database == "information_schema")
+            continue;
+
+        String qualified = database.empty() ? backQuoteIfNeed(table) : (backQuoteIfNeed(database) + "." + backQuoteIfNeed(table));
+
+        /// Build an INSERT ... SELECT * FROM generateRandom(...) LIMIT 100 query.
+        String db_for_query = database.empty() ? "currentDatabase()" : ("'" + database + "'");
+        String insert_query = fmt::format(
+            "INSERT INTO {} SELECT * FROM generateRandom("
+            "(SELECT arrayStringConcat(groupArray(concat(name, ' ', type)), ', ') "
+            "FROM system.columns WHERE database = {} AND table = '{}'), 1, 10) LIMIT 100",
+            qualified, db_for_query, table);
+
+        try
+        {
+            auto oracle_context = makeOracleContext(context);
+            oracle_context->setDefaultFormat("Null");
+
+            ReadBufferFromString istr(insert_query);
+            WriteBufferFromOwnString ostr;
+            executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
+
+            LOG_TRACE(logger, "Populated table {} with random data for oracle check", qualified);
+        }
+        catch (...)
+        {
+            LOG_TRACE(logger, "Failed to populate table {} (skipping): {}", qualified, getCurrentExceptionMessage(false));
+        }
     }
 }
 
