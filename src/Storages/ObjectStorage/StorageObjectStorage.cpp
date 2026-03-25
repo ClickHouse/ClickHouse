@@ -87,7 +87,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
 }
 
 StorageObjectStorage::StorageObjectStorage(
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     ContextPtr context,
     const StorageID & table_id_,

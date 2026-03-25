@@ -41,7 +41,7 @@ struct HDFSStorageParsedArguments : private StorageParsedArguments
     std::string url_str;
 };
 
-class StorageHDFSConfiguration : public StorageObjectStorageConfiguration
+class StorageHDFSConfiguration : public ObjectStorageConnectionConfiguration
 {
 public:
     static constexpr auto type = ObjectStorageType::HDFS;

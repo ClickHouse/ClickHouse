@@ -95,7 +95,7 @@ namespace ErrorCodes
 StorageObjectStorageSource::StorageObjectStorageSource(
     String name_,
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     const StorageObjectStorageTableOptions & table_options_,
     StorageSnapshotPtr storage_snapshot_,
     const ReadFromFormatInfo & info,
@@ -138,7 +138,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
-    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
+    const ObjectStorageConnectionConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
     auto path = object_info.getPath();
     if (path.starts_with("/"))
@@ -150,8 +150,8 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
-    StorageObjectStorageConfigurationPtr configuration,
-    const StorageObjectStorageConfiguration::Paths & object_paths,
+    ObjectStorageConnectionConfigurationPtr configuration,
+    const ObjectStorageConnectionConfiguration::Paths & object_paths,
     const StorageObjectStorageQuerySettings & query_settings,
     ObjectStoragePtr object_storage,
     StorageMetadataPtr /* storage_metadata */,
@@ -461,7 +461,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
     size_t processor,
     const std::shared_ptr<IObjectIterator> & file_iterator,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStorageConnectionConfigurationPtr & configuration,
     const StorageObjectStorageTableOptions & table_options,
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
@@ -881,7 +881,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
 StorageObjectStorageSource::GlobIterator::GlobIterator(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns_,
     const NamesAndTypesList & hive_columns_,
@@ -1269,7 +1269,7 @@ StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInAr
 
 StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     std::unique_ptr<IObjectIterator> archives_iterator_,
     ContextPtr context_,
     ObjectInfos * read_keys_,

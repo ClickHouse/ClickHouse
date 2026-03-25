@@ -13,7 +13,7 @@ class StorageObjectStorageCluster : public IStorageCluster
 public:
     StorageObjectStorageCluster(
         const String & cluster_name_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_in_table_or_function_definition,
@@ -45,7 +45,7 @@ private:
         const ContextPtr & context) override;
 
     const String engine_name;
-    const StorageObjectStorageConfigurationPtr configuration;
+    const ObjectStorageConnectionConfigurationPtr configuration;
     StorageObjectStorageTableOptions table_options;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;

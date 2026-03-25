@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 ReadBufferIterator::ReadBufferIterator(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     const String & format_name_,
     const String & compression_method_,
     const ObjectIterator & file_iterator_,

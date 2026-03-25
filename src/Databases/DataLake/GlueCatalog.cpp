@@ -515,7 +515,8 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
 
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
-    auto [configuration, table_options] = DB::StorageObjectStorageConfiguration::initialize(DB::ObjectStorageType::S3, args, getContext(), false);
+    auto [configuration, table_options]
+        = DB::ObjectStorageConnectionConfiguration::initialize(DB::ObjectStorageType::S3, args, getContext(), false);
 
     auto object_storage = configuration->createObjectStorage(getContext(), true, {});
 

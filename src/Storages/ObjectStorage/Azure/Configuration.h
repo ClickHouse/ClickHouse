@@ -25,7 +25,7 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
 struct AzureStorageParsedArguments : private StorageParsedArguments
 {
-    using Path = StorageObjectStorageConfiguration::Path;
+    using Path = ObjectStorageConnectionConfiguration::Path;
     friend class StorageAzureConfiguration;
 
     static constexpr auto max_number_of_arguments_with_structure = 10;
@@ -79,7 +79,7 @@ struct AzureStorageParsedArguments : private StorageParsedArguments
     AzureBlobStorage::ConnectionParams connection_params;
 };
 
-class StorageAzureConfiguration : public StorageObjectStorageConfiguration
+class StorageAzureConfiguration : public ObjectStorageConnectionConfiguration
 {
     friend class BackupReaderAzureBlobStorage;
     friend class BackupWriterAzureBlobStorage;

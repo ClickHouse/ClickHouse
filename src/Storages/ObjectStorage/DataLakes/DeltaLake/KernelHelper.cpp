@@ -165,7 +165,7 @@ namespace S3AuthSetting
 }
 
 DeltaLake::KernelHelperPtr getKernelHelper(
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStorageConnectionConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage)
 {
     switch (configuration->getType())

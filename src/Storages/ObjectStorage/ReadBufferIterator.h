@@ -12,7 +12,7 @@ class ReadBufferIterator : public IReadBufferIterator, WithContext
 public:
     ReadBufferIterator(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         const String & format_name_,
         const String & compression_method_,
         const ObjectIterator & file_iterator_,
@@ -42,7 +42,7 @@ private:
         const ObjectInfos::iterator & begin, const ObjectInfos::iterator & end);
 
     ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationPtr configuration;
+    const ObjectStorageConnectionConfigurationPtr configuration;
     const String compression_method;
     const ObjectIterator file_iterator;
     const std::optional<FormatSettings> & format_settings;

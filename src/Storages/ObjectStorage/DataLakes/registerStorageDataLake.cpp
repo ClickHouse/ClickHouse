@@ -102,7 +102,8 @@ createStorageDataLake(const StorageFactory::Arguments & args, ObjectStorageType 
     const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
         ? (*storage_settings)[DataLakeStorageSetting::disk].value
         : "";
-    auto [configuration, table_options] = StorageObjectStorageConfiguration::initialize(type, args.engine_args, context, false, &args.table_id, disk_name);
+    auto [configuration, table_options]
+        = ObjectStorageConnectionConfiguration::initialize(type, args.engine_args, context, false, &args.table_id, disk_name);
     if (table_options.format == "auto")
         table_options.format = "Parquet";
 

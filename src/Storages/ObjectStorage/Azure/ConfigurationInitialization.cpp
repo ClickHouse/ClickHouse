@@ -60,7 +60,7 @@ ConfigWithOptions fromAzureOneLake(
     auto config = std::make_shared<StorageAzureConfiguration>(
         parsed_arguments.blob_path,
         parsed_arguments.connection_params);
-    StorageObjectStorageConfiguration::postInitializeExisting(*config, table_options, context);
+    ObjectStorageConnectionConfiguration::postInitializeExisting(*config, table_options, context);
     return {config, std::move(table_options)};
 }
 

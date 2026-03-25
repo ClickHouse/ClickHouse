@@ -16,7 +16,7 @@ class SchemaCache;
 
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
+    const ObjectStorageConnectionConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const std::string & key,
     size_t sequence_number);
@@ -26,14 +26,12 @@ void resolveSchemaAndFormat(
     std::string & format,
     const std::string & compression_method,
     ObjectStoragePtr object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStorageConnectionConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
     std::string & sample_path,
     const ContextPtr & context);
 
-void validateSupportedColumns(
-    ColumnsDescription & columns,
-    const StorageObjectStorageConfiguration & configuration);
+void validateSupportedColumns(ColumnsDescription & columns, const ObjectStorageConnectionConfiguration & configuration);
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     RelativePathWithMetadata & object_info,
@@ -75,7 +73,7 @@ SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & sto
 
 ColumnsDescription resolveSchemaFromData(
     const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStorageConnectionConfigurationPtr & configuration,
     const std::string & format,
     const std::string & compression_method,
     const std::optional<FormatSettings> & format_settings,
@@ -84,7 +82,7 @@ ColumnsDescription resolveSchemaFromData(
 
 std::string resolveFormatFromData(
     const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStorageConnectionConfigurationPtr & configuration,
     const std::string & compression_method,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
@@ -92,7 +90,7 @@ std::string resolveFormatFromData(
 
 std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
     const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStorageConnectionConfigurationPtr & configuration,
     const std::string & compression_method,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
@@ -100,7 +98,7 @@ std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
 
 std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
     const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStorageConnectionConfigurationPtr & configuration,
     const String & format,
     const String & compression_method,
     const std::optional<FormatSettings> & format_settings,

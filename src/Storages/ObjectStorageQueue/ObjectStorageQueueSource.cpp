@@ -91,7 +91,7 @@ ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObject
 ObjectStorageQueueSource::FileIterator::FileIterator(
     std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     const StorageID & storage_id_,
     size_t list_objects_batch_size_,
     const ActionsDAG::Node * predicate_,
@@ -937,7 +937,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const String & format_name_,
     const String & compression_method_,
     std::shared_ptr<FileIterator> file_iterator_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     ProcessingProgressPtr progress_,
     const ReadFromFormatInfo & read_from_format_info_,

@@ -46,7 +46,7 @@ public:
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         const DataLakeStorageSettingsPtr & datalake_settings_,
         Iceberg::PersistentTableComponents && persistent_components_,
         ContextPtr context_);
@@ -62,7 +62,7 @@ public:
 
     static void createInitial(
         const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ObjectStorageConnectionConfigurationWeakPtr & configuration,
         const DataLakeStorageSettingsPtr & datalake_settings,
         const ContextPtr & local_context,
         const std::optional<ColumnsDescription> & columns,
@@ -74,7 +74,7 @@ public:
 
     static std::unique_ptr<IcebergMetadata> create(
         const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ObjectStorageConnectionConfigurationWeakPtr & configuration,
         const DataLakeStorageSettingsPtr & datalake_settings,
         const ContextPtr & local_context);
 
@@ -116,7 +116,7 @@ public:
         SharedHeader sample_block,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
+        ObjectStorageConnectionConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog);
@@ -127,7 +127,7 @@ public:
     bool supportsDelete() const { return true; }
     void mutate(
         const MutationCommands & commands,
-        StorageObjectStorageConfigurationPtr configuration,
+        ObjectStorageConnectionConfigurationPtr configuration,
         ContextPtr context,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,
@@ -145,7 +145,7 @@ public:
         const String & command_name,
         const ASTPtr & args,
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
+        ObjectStorageConnectionConfigurationPtr configuration,
         std::shared_ptr<DataLake::ICatalog> catalog,
         ContextPtr context,
         const StorageID & storage_id);
@@ -162,7 +162,7 @@ public:
 private:
     static Iceberg::PersistentTableComponents initializePersistentTableComponents(
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
+        ObjectStorageConnectionConfigurationPtr configuration,
         const DataLakeStorageSettings & datalake_settings,
         IcebergMetadataFilesCachePtr cache_ptr,
         ContextPtr context_,

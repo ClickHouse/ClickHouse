@@ -33,7 +33,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void StorageObjectStorageConfiguration::update( ///NOLINT
+void ObjectStorageConnectionConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context)
 {
@@ -41,14 +41,14 @@ void StorageObjectStorageConfiguration::update( ///NOLINT
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
-void StorageObjectStorageConfiguration::lazyInitializeIfNeeded(
+void ObjectStorageConnectionConfiguration::lazyInitializeIfNeeded(
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context)
 {
     update(object_storage_ptr, context);
 }
 
-ObjectStoragePtr StorageObjectStorageConfiguration::createObjectStorage(
+ObjectStoragePtr ObjectStorageConnectionConfiguration::createObjectStorage(
     ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback)
 {
     if (ready_object_storage)
@@ -56,7 +56,7 @@ ObjectStoragePtr StorageObjectStorageConfiguration::createObjectStorage(
     return createObjectStorageImpl(context, is_readonly, refresh_credentials_callback);
 }
 
-ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
+ReadFromFormatInfo ObjectStorageConnectionConfiguration::prepareReadingFromFormat(
     ObjectStoragePtr,
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
@@ -68,7 +68,7 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
-StorageObjectStorageConfigurationPtr StorageObjectStorageConfiguration::createByType(ObjectStorageType type)
+ObjectStorageConnectionConfigurationPtr ObjectStorageConnectionConfiguration::createByType(ObjectStorageType type)
 {
     switch (type)
     {
@@ -91,8 +91,8 @@ StorageObjectStorageConfigurationPtr StorageObjectStorageConfiguration::createBy
     }
 }
 
-StorageObjectStorageTableOptions StorageObjectStorageConfiguration::postInitializeExisting(
-    StorageObjectStorageConfiguration & configuration,
+StorageObjectStorageTableOptions ObjectStorageConnectionConfiguration::postInitializeExisting(
+    ObjectStorageConnectionConfiguration & configuration,
     StorageObjectStorageTableOptions & table_options,
     ContextPtr local_context,
     const String & disk_name)
@@ -135,8 +135,8 @@ StorageObjectStorageTableOptions StorageObjectStorageConfiguration::postInitiali
     return table_options;
 }
 
-std::pair<StorageObjectStorageConfigurationPtr, StorageObjectStorageTableOptions>
-StorageObjectStorageConfiguration::initialize(
+std::pair<ObjectStorageConnectionConfigurationPtr, StorageObjectStorageTableOptions>
+ObjectStorageConnectionConfiguration::initialize(
     ObjectStorageType type,
     ASTs & engine_args,
     ContextPtr local_context,
@@ -206,32 +206,32 @@ StorageObjectStorageConfiguration::initialize(
     return {configuration, std::move(table_options)};
 }
 
-bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const
+bool ObjectStorageConnectionConfiguration::Path::hasPartitionWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";
     return path.find(PARTITION_ID_WILDCARD) != String::npos;
 }
 
-bool StorageObjectStorageConfiguration::Path::hasSchemaHashWildcard() const
+bool ObjectStorageConnectionConfiguration::Path::hasSchemaHashWildcard() const
 {
-    return path.find(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD) != String::npos;
+    return path.find(ObjectStorageConnectionConfiguration::SCHEMA_HASH_WILDCARD) != String::npos;
 }
 
-bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders() const
+bool ObjectStorageConnectionConfiguration::Path::hasGlobsIgnorePlaceholders() const
 {
     if (!hasPartitionWildcard() && !hasSchemaHashWildcard())
         return hasGlobs();
     String cleaned = PartitionedSink::replaceWildcards(path, "");
-    boost::replace_all(cleaned, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, "");
+    boost::replace_all(cleaned, ObjectStorageConnectionConfiguration::SCHEMA_HASH_WILDCARD, "");
     return cleaned.find_first_of("*?{") != std::string::npos;
 }
 
-bool StorageObjectStorageConfiguration::Path::hasGlobs() const
+bool ObjectStorageConnectionConfiguration::Path::hasGlobs() const
 {
     return path.find_first_of("*?{") != std::string::npos;
 }
 
-std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_partial_prefix) const
+std::string ObjectStorageConnectionConfiguration::Path::cutGlobs(bool supports_partial_prefix) const
 {
     if (supports_partial_prefix)
     {
@@ -245,22 +245,22 @@ std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_part
     return path.substr(0, end_of_path_without_globs);
 }
 
-bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const
+bool ObjectStorageConnectionConfiguration::isNamespaceWithGlobs() const
 {
     return getNamespace().find_first_of("*?{") != std::string::npos;
 }
 
-bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs() const
+bool ObjectStorageConnectionConfiguration::isPathInArchiveWithGlobs() const
 {
     return getPathInArchive().find_first_of("*?{") != std::string::npos;
 }
 
-std::string StorageObjectStorageConfiguration::getPathInArchive() const
+std::string ObjectStorageConnectionConfiguration::getPathInArchive() const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getRawPath().path);
 }
 
-void StorageObjectStorageConfiguration::assertInitialized() const
+void ObjectStorageConnectionConfiguration::assertInitialized() const
 {
     if (!initialized)
     {

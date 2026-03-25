@@ -198,7 +198,7 @@ NamesAndTypesList extractPartitionColumnsFromPathAndEnrichStorageColumns(
 
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     ColumnsDescription & columns,
-    const StorageObjectStorageConfigurationPtr & /*configuration*/,
+    const ObjectStorageConnectionConfigurationPtr & /*configuration*/,
     const StorageObjectStorageTableOptions & table_options,
     const std::string & sample_path,
     bool inferred_schema,

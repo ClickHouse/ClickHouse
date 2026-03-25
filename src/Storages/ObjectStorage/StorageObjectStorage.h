@@ -32,7 +32,7 @@ class StorageObjectStorage : public IStorage
 {
 public:
     StorageObjectStorage(
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
@@ -111,9 +111,9 @@ protected:
     /// Storage configuration (S3, Azure, HDFS, Local, DataLake).
     /// Contains information about table engine configuration
     /// and underlying storage access.
-    StorageObjectStorageConfigurationPtr configuration;
+    ObjectStorageConnectionConfigurationPtr configuration;
     StorageObjectStorageTableOptions table_options;
-    StorageObjectStorageConfiguration::Paths object_paths;
+    ObjectStorageConnectionConfiguration::Paths object_paths;
     /// `object_storage` to allow direct access to data storage.
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;

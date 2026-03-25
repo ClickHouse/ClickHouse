@@ -36,7 +36,7 @@ public:
     static constexpr auto name = "DeltaLake";
     const char * getName() const override { return name; }
 
-    DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
+    DeltaLakeMetadata(ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationWeakPtr configuration_, ContextPtr context_);
 
     NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return schema; }
 
@@ -52,7 +52,7 @@ public:
 
     static void createInitial(
         const ObjectStoragePtr & /*object_storage*/,
-        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
+        const ObjectStorageConnectionConfigurationWeakPtr & /*configuration*/,
         const ContextPtr & /*local_context*/,
         const std::optional<ColumnsDescription> & /*columns*/,
         ASTPtr /*partition_by*/,
@@ -67,10 +67,8 @@ public:
 
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType);
 
-    static DataLakeMetadataPtr create(
-        ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr local_context);
+    static DataLakeMetadataPtr
+    create(ObjectStoragePtr object_storage, ObjectStorageConnectionConfigurationWeakPtr configuration, ContextPtr local_context);
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);

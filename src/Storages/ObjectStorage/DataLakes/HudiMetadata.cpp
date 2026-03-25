@@ -85,7 +85,7 @@ Strings HudiMetadata::getDataFilesImpl() const
     return result;
 }
 
-HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_)
+HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationPtr configuration_, ContextPtr context_)
     : WithContext(context_)
     , object_storage(object_storage_)
     , table_path(configuration_->getPathForRead().path)

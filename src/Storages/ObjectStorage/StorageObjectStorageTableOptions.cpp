@@ -32,7 +32,7 @@ StorageObjectStorageTableOptions::Path StorageObjectStorageTableOptions::getPath
     auto path = raw_path;
 
     if (!schema_hash.empty())
-        boost::replace_all(path.path, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
+        boost::replace_all(path.path, ObjectStorageConnectionConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
 
     if (!partition_strategy)
         return path;
@@ -51,11 +51,11 @@ String StorageObjectStorageTableOptions::computeSchemaHash(const ColumnsDescript
 void StorageObjectStorageTableOptions::setSchemaHash(const String & hash, Paths & paths)
 {
     schema_hash = hash;
-    boost::replace_all(read_path.path, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
+    boost::replace_all(read_path.path, ObjectStorageConnectionConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
 
     if (paths.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", paths.size());
-    boost::replace_all(paths[0].path, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
+    boost::replace_all(paths[0].path, ObjectStorageConnectionConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
 }
 
 void StorageObjectStorageTableOptions::initPartitionStrategy(

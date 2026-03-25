@@ -243,7 +243,7 @@ namespace
 
 StorageObjectStorageQueue::StorageObjectStorageQueue(
     std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-    const StorageObjectStorageConfigurationPtr configuration_,
+    const ObjectStorageConnectionConfigurationPtr configuration_,
     StorageObjectStorageTableOptions table_options_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,

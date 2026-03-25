@@ -77,7 +77,7 @@ class IcebergStorageSink : public SinkToStorage
 public:
     IcebergStorageSink(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         const DataLakeStorageSettingsPtr & datalake_settings_,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,

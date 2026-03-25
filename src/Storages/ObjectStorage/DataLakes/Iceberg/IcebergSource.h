@@ -24,7 +24,7 @@ public:
     IcebergSource(
         String name_,
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration,
+        ObjectStorageConnectionConfigurationPtr configuration,
         const StorageObjectStorageTableOptions & table_options_,
         StorageSnapshotPtr storage_snapshot_,
         const ReadFromFormatInfo & info,
@@ -46,14 +46,12 @@ public:
     void onFinish() override { parser_shared_resources->finishStream(); }
 
     static std::string getUniqueStoragePathIdentifier(
-        const StorageObjectStorageConfiguration & configuration,
-        const ObjectInfo & object_info,
-        bool include_connection_info = true);
+        const ObjectStorageConnectionConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
 protected:
     const String name;
     ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationPtr configuration;
+    const ObjectStorageConnectionConfigurationPtr configuration;
     StorageObjectStorageTableOptions table_options;
     StorageSnapshotPtr storage_snapshot;
     const ContextPtr read_context;
@@ -112,7 +110,7 @@ protected:
     static ReaderHolder createReader(
         size_t processor,
         const std::shared_ptr<IObjectIterator> & file_iterator,
-        const StorageObjectStorageConfigurationPtr & configuration,
+        const ObjectStorageConnectionConfigurationPtr & configuration,
         const StorageObjectStorageTableOptions & table_options,
         const ObjectStoragePtr & object_storage,
         ReadFromFormatInfo & read_from_format_info,

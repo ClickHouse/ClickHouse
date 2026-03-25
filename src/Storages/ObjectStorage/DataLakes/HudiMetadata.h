@@ -19,7 +19,7 @@ public:
 
     const char * getName() const override { return name; }
 
-    HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_);
+    HudiMetadata(ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationPtr configuration_, ContextPtr context_);
 
     NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return {}; }
 
@@ -33,7 +33,7 @@ public:
 
     static void createInitial(
         const ObjectStoragePtr & /*object_storage*/,
-        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
+        const ObjectStorageConnectionConfigurationWeakPtr & /*configuration*/,
         const ContextPtr & /*local_context*/,
         const std::optional<ColumnsDescription> & /*columns*/,
         ASTPtr /*partition_by*/,
@@ -44,10 +44,8 @@ public:
     {
     }
 
-    static DataLakeMetadataPtr create(
-        ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr local_context)
+    static DataLakeMetadataPtr
+    create(ObjectStoragePtr object_storage, ObjectStorageConnectionConfigurationWeakPtr configuration, ContextPtr local_context)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration.lock(), local_context);
     }

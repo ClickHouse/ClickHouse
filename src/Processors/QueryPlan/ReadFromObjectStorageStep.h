@@ -15,7 +15,7 @@ class ReadFromObjectStorageStep : public SourceStepWithFilter
 public:
     ReadFromObjectStorageStep(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         const StorageObjectStorageTableOptions & table_options_,
         const Names & columns_to_read,
         const NamesAndTypesList & virtual_columns_,
@@ -50,7 +50,7 @@ public:
 
 private:
     ObjectStoragePtr object_storage;
-    StorageObjectStorageConfigurationPtr configuration;
+    ObjectStorageConnectionConfigurationPtr configuration;
     const StorageObjectStorageTableOptions table_options;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
 

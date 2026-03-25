@@ -48,7 +48,7 @@ class PartitionedStorageObjectStorageSink : public PartitionedSink
 public:
     PartitionedStorageObjectStorageSink(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         const StorageObjectStorageTableOptions & table_options_,
         std::optional<FormatSettings> format_settings_,
         SharedHeader sample_block_,
@@ -63,7 +63,7 @@ public:
 
 private:
     ObjectStoragePtr object_storage;
-    StorageObjectStorageConfigurationPtr configuration;
+    ObjectStorageConnectionConfigurationPtr configuration;
     StorageObjectStorageTableOptions table_options;
 
     const StorageObjectStorageQuerySettings query_settings;

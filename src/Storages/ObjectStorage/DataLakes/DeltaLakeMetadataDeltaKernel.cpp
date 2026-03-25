@@ -111,8 +111,7 @@ std::optional<size_t> extractDeltaLakeSnapshotVersionFromMetadata(StorageMetadat
 }
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
-    ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationWeakPtr configuration_)
+    ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationWeakPtr configuration_)
     : log(getLogger("DeltaLakeMetadata"))
     , kernel_helper(DB::getKernelHelper(configuration_.lock(), object_storage_))
     , object_storage(object_storage_)
@@ -123,10 +122,10 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ///       At the moment leave it as a small value (10),
     ///       because in most cases users only use latest snapshot version.
     , snapshots(
-        CurrentMetrics::end(),
-        CurrentMetrics::DeltaLakeSnapshotCacheSizeElements,
-        /* max_size_in_bytes */10,
-        /* max_count */10)
+          CurrentMetrics::end(),
+          CurrentMetrics::DeltaLakeSnapshotCacheSizeElements,
+          /* max_size_in_bytes */ 10,
+          /* max_count */ 10)
 {
 }
 
@@ -615,7 +614,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
     const StorageID & /* table_id */,
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr /* configuration */,
+    ObjectStorageConnectionConfigurationPtr /* configuration */,
     const String & format,
     const String & compression_method,
     const std::optional<FormatSettings> & format_settings,

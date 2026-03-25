@@ -25,7 +25,7 @@ class StorageObjectStorageQueue : public IStorage, WithContext
 public:
     StorageObjectStorageQueue(
         std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         StorageObjectStorageTableOptions table_options_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
@@ -122,7 +122,7 @@ private:
 
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
-    StorageObjectStorageConfigurationPtr configuration;
+    ObjectStorageConnectionConfigurationPtr configuration;
     StorageObjectStorageTableOptions table_options;
     ObjectStoragePtr object_storage;
 

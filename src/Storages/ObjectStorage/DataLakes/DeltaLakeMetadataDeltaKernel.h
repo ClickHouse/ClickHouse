@@ -36,9 +36,7 @@ public:
 
     const char * getName() const override { return name; }
 
-    DeltaLakeMetadataDeltaKernel(
-        ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration_);
+    DeltaLakeMetadataDeltaKernel(ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationWeakPtr configuration_);
 
     bool supportsUpdate() const override { return true; }
 
@@ -63,9 +61,7 @@ public:
 
     void modifyFormatSettings(FormatSettings & format_settings, const Context &) const override;
 
-    static DataLakeMetadataPtr create(
-        ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration)
+    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationWeakPtr configuration)
     {
         auto configuration_ptr = configuration.lock();
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage_, configuration);
@@ -95,7 +91,7 @@ public:
         SharedHeader sample_block,
         const StorageID & table_id,
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration,
+        ObjectStorageConnectionConfigurationPtr configuration,
         const String & format,
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,

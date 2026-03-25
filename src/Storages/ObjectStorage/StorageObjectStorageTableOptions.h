@@ -11,7 +11,7 @@ namespace DB
 /// No derived classes — this is a plain value type.
 struct StorageObjectStorageTableOptions
 {
-    using Path = StorageObjectStorageConfiguration::Path;
+    using Path = ObjectStorageConnectionConfiguration::Path;
 
     String format = "auto";
     String compression_method = "auto";
@@ -31,7 +31,7 @@ struct StorageObjectStorageTableOptions
 
     static String computeSchemaHash(const ColumnsDescription & columns);
 
-    using Paths = StorageObjectStorageConfiguration::Paths;
+    using Paths = ObjectStorageConnectionConfiguration::Paths;
 
     void setSchemaHash(const String & hash, Paths & paths);
 

@@ -38,8 +38,8 @@ struct LocalStorageParsedArguments : private StorageParsedArguments
         return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
     }
 
-    using Paths = StorageObjectStorageConfiguration::Paths;
-    using Path = StorageObjectStorageConfiguration::Path;
+    using Paths = ObjectStorageConnectionConfiguration::Paths;
+    using Path = ObjectStorageConnectionConfiguration::Path;
     String path;
     String path_suffix;
     void fromNamedCollection(const NamedCollection & collection, ContextPtr);
@@ -48,7 +48,7 @@ struct LocalStorageParsedArguments : private StorageParsedArguments
     StorageParsedArguments extractBaseArguments();
 };
 
-class StorageLocalConfiguration : public StorageObjectStorageConfiguration
+class StorageLocalConfiguration : public ObjectStorageConnectionConfiguration
 {
 public:
     static constexpr auto type = ObjectStorageType::Local;

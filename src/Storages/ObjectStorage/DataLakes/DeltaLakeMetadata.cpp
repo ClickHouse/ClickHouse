@@ -124,7 +124,7 @@ struct DeltaLakeMetadataImpl
      * Useful links:
      *  - https://github.com/delta-io/delta/blob/master/PROTOCOL.md#data-files
      */
-    DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
+    DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationWeakPtr configuration_, ContextPtr context_)
         : object_storage(object_storage_)
         , table_path(configuration_.lock()->getPathForRead().path)
         , context(context_)
@@ -605,7 +605,8 @@ struct DeltaLakeMetadataImpl
     LoggerPtr log = getLogger("DeltaLakeMetadataParser");
 };
 
-DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
+DeltaLakeMetadata::DeltaLakeMetadata(
+    ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationWeakPtr configuration_, ContextPtr context_)
 {
     auto impl = DeltaLakeMetadataImpl(object_storage_, configuration_, context_);
     auto result = impl.processMetadataFiles();
@@ -635,9 +636,7 @@ bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType
 }
 
 DataLakeMetadataPtr DeltaLakeMetadata::create(
-    ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationWeakPtr configuration,
-    ContextPtr local_context)
+    ObjectStoragePtr object_storage, ObjectStorageConnectionConfigurationWeakPtr configuration, ContextPtr local_context)
 {
 #if USE_DELTA_KERNEL_RS
     if (isDeltaKernelEnabled(local_context, configuration.lock()->getType()))

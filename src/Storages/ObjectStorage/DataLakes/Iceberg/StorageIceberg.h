@@ -19,7 +19,7 @@ class StorageDataLake<IcebergMetadata> : public IStorage
 {
 public:
     StorageDataLake(
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
@@ -122,7 +122,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
 protected:
-    StorageObjectStorageConfigurationPtr configuration;
+    ObjectStorageConnectionConfigurationPtr configuration;
     StorageObjectStorageTableOptions table_options;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;

@@ -32,7 +32,7 @@ class StorageDataLake : public IStorage
 {
 public:
     StorageDataLake(
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
@@ -108,7 +108,7 @@ protected:
     /// Storage configuration (data lake specific).
     /// Contains information about table engine configuration
     /// and underlying storage access.
-    StorageObjectStorageConfigurationPtr configuration;
+    ObjectStorageConnectionConfigurationPtr configuration;
     StorageObjectStorageTableOptions table_options;
     /// `object_storage` to allow direct access to data storage.
     const ObjectStoragePtr object_storage;

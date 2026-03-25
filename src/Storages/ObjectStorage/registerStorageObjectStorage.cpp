@@ -31,7 +31,8 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, ObjectStorageType type)
 {
     const auto context = args.getLocalContext();
-    auto [configuration, table_options] = StorageObjectStorageConfiguration::initialize(type, args.engine_args, context, false, &args.table_id);
+    auto [configuration, table_options]
+        = ObjectStorageConnectionConfiguration::initialize(type, args.engine_args, context, false, &args.table_id);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

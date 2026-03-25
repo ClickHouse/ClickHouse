@@ -41,13 +41,13 @@ struct StorageObjectStorageQuerySettings
 };
 
 
-class StorageObjectStorageConfiguration
+class ObjectStorageConnectionConfiguration
 {
 public:
     using CredentialsConfigurationCallback = std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>>;
 
-    StorageObjectStorageConfiguration() = default;
-    virtual ~StorageObjectStorageConfiguration() = default;
+    ObjectStorageConnectionConfiguration() = default;
+    virtual ~ObjectStorageConnectionConfiguration() = default;
 
     static constexpr auto SCHEMA_HASH_WILDCARD = "{_schema_hash}";
 
@@ -72,7 +72,7 @@ public:
     /// Create a configuration of the given type, initialize it from AST / NamedCollection / disk,
     /// and return both the configuration and the extracted table options.
     /// Create a configuration of the given type, initialize it, and return both.
-    static std::pair<std::shared_ptr<StorageObjectStorageConfiguration>, StorageObjectStorageTableOptions> initialize(
+    static std::pair<std::shared_ptr<ObjectStorageConnectionConfiguration>, StorageObjectStorageTableOptions> initialize(
         ObjectStorageType type,
         ASTs & engine_args,
         ContextPtr local_context,
@@ -80,7 +80,7 @@ public:
         const StorageID * table_id = nullptr,
         const String & disk_name = "");
     /// Create a configuration shared_ptr of the given concrete type.
-    static std::shared_ptr<StorageObjectStorageConfiguration> createByType(ObjectStorageType type);
+    static std::shared_ptr<ObjectStorageConnectionConfiguration> createByType(ObjectStorageType type);
 
 
     /// Storage type: s3, hdfs, azure, local.
@@ -156,7 +156,7 @@ public:
     /// Apply post-initialization processing: namespace validation, format detection,
     /// partition promotion, read_path setup.
     static StorageObjectStorageTableOptions postInitializeExisting(
-        StorageObjectStorageConfiguration & configuration_to_initialize,
+        ObjectStorageConnectionConfiguration & configuration_to_initialize,
         StorageObjectStorageTableOptions & table_options,
         ContextPtr local_context,
         const String & disk_name = "");
@@ -171,8 +171,8 @@ protected:
     ObjectStoragePtr ready_object_storage;
 };
 
-using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
-using StorageObjectStorageConfigurationWeakPtr = std::weak_ptr<StorageObjectStorageConfiguration>;
-using ConfigWithOptions = std::pair<StorageObjectStorageConfigurationPtr, StorageObjectStorageTableOptions>;
+using ObjectStorageConnectionConfigurationPtr = std::shared_ptr<ObjectStorageConnectionConfiguration>;
+using ObjectStorageConnectionConfigurationWeakPtr = std::weak_ptr<ObjectStorageConnectionConfiguration>;
+using ConfigWithOptions = std::pair<ObjectStorageConnectionConfigurationPtr, StorageObjectStorageTableOptions>;
 
 }

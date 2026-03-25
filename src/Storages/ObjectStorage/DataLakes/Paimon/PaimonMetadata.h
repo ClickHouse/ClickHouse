@@ -31,19 +31,19 @@ public:
 
     PaimonMetadata(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         const DB::ContextPtr & context_,
         const Poco::JSON::Object::Ptr & schema_json_object_,
         PaimonTableClientPtr table_client_ptr_);
 
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ObjectStorageConnectionConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
 
     static void createInitial(
         const ObjectStoragePtr & /*object_storage*/,
-        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
+        const ObjectStorageConnectionConfigurationWeakPtr & /*configuration*/,
         const ContextPtr & /*local_context*/,
         const std::optional<ColumnsDescription> & /*columns*/,
         ASTPtr /*partition_by*/,

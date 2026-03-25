@@ -459,7 +459,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     settings_copy[Setting::use_hive_partitioning] = false;
     context_copy->setSettings(settings_copy);
 
-    StorageObjectStorageConfigurationPtr configuration;
+    ObjectStorageConnectionConfigurationPtr configuration;
 
     if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
     {
@@ -477,7 +477,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     else
     {
         auto object_storage_type = getObjectStorageType(storage_type);
-        auto [config, table_options] = StorageObjectStorageConfiguration::initialize(
+        auto [config, table_options] = ObjectStorageConnectionConfiguration::initialize(
             object_storage_type, args, context_copy, /* with_table_structure */ false);
         configuration = config;
 

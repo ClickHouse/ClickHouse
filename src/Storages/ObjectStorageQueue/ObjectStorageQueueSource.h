@@ -46,7 +46,7 @@ public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             ObjectStoragePtr object_storage_,
-            StorageObjectStorageConfigurationPtr configuration_,
+            ObjectStorageConnectionConfigurationPtr configuration_,
             const StorageID & storage_id_,
             size_t list_objects_batch_size_,
             const ActionsDAG::Node * predicate_,
@@ -82,7 +82,7 @@ public:
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
         const ObjectStoragePtr object_storage;
-        const StorageObjectStorageConfigurationPtr configuration;
+        const ObjectStorageConnectionConfigurationPtr configuration;
         const NamesAndTypesList virtual_columns;
         const NamesAndTypesList hive_partition_columns_to_read_from_file_path;
         const bool file_deletion_on_processed_enabled;
@@ -169,7 +169,7 @@ public:
         const String & format_name_,
         const String & compression_method_,
         std::shared_ptr<FileIterator> file_iterator_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStorageConnectionConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
@@ -244,7 +244,7 @@ private:
     const String format_name;
     const String compression_method;
     const std::shared_ptr<FileIterator> file_iterator;
-    const StorageObjectStorageConfigurationPtr configuration;
+    const ObjectStorageConnectionConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;

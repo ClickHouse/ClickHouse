@@ -23,7 +23,7 @@ namespace Setting
 
 ReadFromIcebergStep::ReadFromIcebergStep(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     const StorageObjectStorageTableOptions & table_options_,
     const Names & columns_to_read,
     const NamesAndTypesList & virtual_columns_,

@@ -59,7 +59,8 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        auto [config, opts] = StorageObjectStorageConfiguration::initialize(Configuration::type, args, context, true, nullptr, getDiskName());
+        auto [config, opts]
+            = ObjectStorageConnectionConfiguration::initialize(Configuration::type, args, context, true, nullptr, getDiskName());
         configuration = config;
         table_options = std::move(opts);
         if constexpr (is_data_lake)
@@ -100,11 +101,11 @@ protected:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     ObjectStoragePtr getObjectStorage(const ContextPtr & context, bool create_readonly) const;
-    StorageObjectStorageConfigurationPtr getConfiguration(ContextPtr context) const;
+    ObjectStorageConnectionConfigurationPtr getConfiguration(ContextPtr context) const;
 
     static std::shared_ptr<Settings> createEmptySettings();
 
-    mutable StorageObjectStorageConfigurationPtr configuration;
+    mutable ObjectStorageConnectionConfigurationPtr configuration;
     mutable StorageObjectStorageTableOptions table_options;
     mutable ObjectStoragePtr object_storage;
     ColumnsDescription structure_hint;

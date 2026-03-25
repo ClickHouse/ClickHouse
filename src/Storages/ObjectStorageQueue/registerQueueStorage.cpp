@@ -47,7 +47,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     if (engine_args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
-    auto [configuration, table_options] = StorageObjectStorageConfiguration::initialize(Configuration::type, args.engine_args, args.getContext(), false, &args.table_id);
+    auto [configuration, table_options]
+        = ObjectStorageConnectionConfiguration::initialize(Configuration::type, args.engine_args, args.getContext(), false, &args.table_id);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

@@ -156,7 +156,7 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
 
 Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableComponents(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    ObjectStorageConnectionConfigurationPtr configuration,
     const DataLakeStorageSettings & datalake_settings,
     IcebergMetadataFilesCachePtr cache_ptr,
     ContextPtr context_,
@@ -215,7 +215,7 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr /* configuration_ */,
+    ObjectStorageConnectionConfigurationPtr /* configuration_ */,
     const DataLakeStorageSettingsPtr & datalake_settings_,
     Iceberg::PersistentTableComponents && persistent_components_,
     ContextPtr context_)
@@ -571,7 +571,7 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
 
 void IcebergMetadata::mutate(
     const MutationCommands & commands,
-    StorageObjectStorageConfigurationPtr /*configuration*/,
+    ObjectStorageConnectionConfigurationPtr /*configuration*/,
     ContextPtr context,
     const StorageID & storage_id,
     StorageMetadataPtr metadata_snapshot,
@@ -671,7 +671,7 @@ Pipe IcebergMetadata::executeCommand(
     const String & command_name,
     const ASTPtr & args,
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr /*configuration*/,
+    ObjectStorageConnectionConfigurationPtr /*configuration*/,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     ContextPtr context,
     const StorageID & storage_id)
@@ -716,7 +716,7 @@ Pipe IcebergMetadata::executeCommand(
 
 void IcebergMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ObjectStorageConnectionConfigurationWeakPtr & configuration,
     const DataLakeStorageSettingsPtr & datalake_settings,
     const ContextPtr & local_context,
     const std::optional<ColumnsDescription> & columns,
@@ -817,7 +817,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
 
 std::unique_ptr<IcebergMetadata> IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ObjectStorageConnectionConfigurationWeakPtr & configuration,
     const DataLakeStorageSettingsPtr & datalake_settings,
     const ContextPtr & local_context)
 {
@@ -1228,7 +1228,7 @@ SinkToStoragePtr IcebergMetadata::write(
     SharedHeader sample_block,
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
-    StorageObjectStorageConfigurationPtr configuration,
+    ObjectStorageConnectionConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)

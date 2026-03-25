@@ -39,7 +39,7 @@ namespace
         PartitionedSink::validatePartitionKey(str, true);
     }
 
-    void validateNamespace(const String & str, StorageObjectStorageConfigurationPtr configuration)
+    void validateNamespace(const String & str, ObjectStorageConnectionConfigurationPtr configuration)
     {
         configuration->validateNamespace(str);
 
@@ -138,7 +138,7 @@ size_t StorageObjectStorageSink::getFileSize() const
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     const StorageObjectStorageTableOptions & table_options_,
     std::optional<FormatSettings> format_settings_,
     SharedHeader sample_block_,

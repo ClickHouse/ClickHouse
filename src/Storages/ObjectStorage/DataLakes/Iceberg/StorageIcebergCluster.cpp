@@ -51,7 +51,7 @@ void StorageDataLakeCluster<IcebergMetadata>::updateMetadata(ContextPtr context)
 
 StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
     const String & cluster_name_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_in_table_or_function_definition,
@@ -69,7 +69,7 @@ StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
     /// Ensure trailing slash on the raw path for data lake storages.
     auto path = configuration->getRawPath();
     if (!path.path.ends_with('/'))
-        configuration->setRawPath(StorageObjectStorageConfiguration::Path(path.path + "/"));
+        configuration->setRawPath(ObjectStorageConnectionConfiguration::Path(path.path + "/"));
 
     table_options.initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_, configuration->getRawPath());
     /// We allow exceptions to be thrown on update(),

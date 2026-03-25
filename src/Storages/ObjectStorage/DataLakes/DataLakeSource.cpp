@@ -64,7 +64,7 @@ namespace Setting
 DataLakeSource::DataLakeSource(
     String name_,
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     const StorageObjectStorageTableOptions & table_options_,
     StorageSnapshotPtr storage_snapshot_,
     const ReadFromFormatInfo & info,
@@ -109,7 +109,7 @@ DataLakeSource::~DataLakeSource()
 }
 
 std::string DataLakeSource::getUniqueStoragePathIdentifier(
-    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
+    const ObjectStorageConnectionConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
     return StorageObjectStorageSource::getUniqueStoragePathIdentifier(configuration, object_info, include_connection_info);
 }
@@ -286,7 +286,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader()
 DataLakeSource::ReaderHolder DataLakeSource::createReader(
     size_t processor,
     const std::shared_ptr<IObjectIterator> & file_iterator,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStorageConnectionConfigurationPtr & configuration,
     const StorageObjectStorageTableOptions & table_options,
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,

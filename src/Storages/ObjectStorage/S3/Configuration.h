@@ -89,7 +89,7 @@ public:
 };
 
 
-class StorageS3Configuration : public StorageObjectStorageConfiguration
+class StorageS3Configuration : public ObjectStorageConnectionConfiguration
 {
 public:
     static constexpr auto type = ObjectStorageType::S3;

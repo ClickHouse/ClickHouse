@@ -52,7 +52,7 @@ namespace ErrorCodes
 
 template <typename DataLakeMetadata>
 StorageDataLake<DataLakeMetadata>::StorageDataLake(
-    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStorageConnectionConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     ContextPtr context,
     const StorageID & table_id_,
@@ -82,7 +82,7 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     /// Ensure trailing slash on the raw path for data lake storages.
     auto path = configuration->getRawPath();
     if (!path.path.ends_with('/'))
-        configuration->setRawPath(StorageObjectStorageConfiguration::Path(path.path + "/"));
+        configuration->setRawPath(ObjectStorageConnectionConfiguration::Path(path.path + "/"));
     table_options.initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context, configuration->getRawPath());
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (table_options.format == "auto");
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
