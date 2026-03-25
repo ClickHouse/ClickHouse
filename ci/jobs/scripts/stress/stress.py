@@ -275,8 +275,7 @@ def run_func_test(
         try:
             execute_bash(check_command, timeout=180)
         except subprocess.CalledProcessError as e:
-            logging.info("Smoke check stdout:\n%s", e.stdout)
-            logging.info("Smoke check stderr:\n%s", e.stderr)
+            logging.info(e.stdout)
 
             # Ignore fault injects and transient errors, but most of the time tests should complete successfully
             ignored_errors = [
@@ -293,12 +292,7 @@ def run_func_test(
                     f"Detected known transient error, ignoring: {ignored_errors}"
                 )
                 continue
-            raise RuntimeError(
-                f"Smoke check failed (exit code {e.returncode}):\n"
-                f"Command: {e.cmd}\n"
-                f"stdout:\n{e.stdout}\n"
-                f"stderr:\n{e.stderr}"
-            ) from e
+            raise
 
     # Start the query killer after smoke check completes, before actual stress test
     if query_killer is not None:
