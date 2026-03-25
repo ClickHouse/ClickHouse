@@ -1384,6 +1384,11 @@ aggregatingmergetree
 aggregatio
 aggretate
 aggthrow
+aiClassify
+aiExtract
+aiGenerateContent
+aiGenerateSQL
+aiTranslate
 aiochclient
 alloc
 allocatio
