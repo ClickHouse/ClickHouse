@@ -598,11 +598,6 @@ LIMITs
 LINEITEM
 LLDB
 LLM
-LLMClassify
-LLMExtract
-LLMGenerateContent
-LLMGenerateSQL
-LLMTranslate
 LLMs
 LLVM's
 LOCALTIME
