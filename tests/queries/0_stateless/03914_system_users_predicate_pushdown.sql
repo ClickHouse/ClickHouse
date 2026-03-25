@@ -8,16 +8,16 @@ DROP USER IF EXISTS test_pushdown_bob;
 CREATE USER test_pushdown_alice;
 CREATE USER test_pushdown_bob;
 
--- Fast path: single name equality lookup
-SELECT name FROM system.users WHERE name = 'test_pushdown_alice';
+-- Fast path: single name equality lookup (must read exactly 1 row)
+SELECT name FROM system.users WHERE name = 'test_pushdown_alice' SETTINGS max_rows_to_read = 1;
 
--- Fast path: non-existent user returns empty result
-SELECT name FROM system.users WHERE name = 'test_pushdown_nonexistent';
+-- Fast path: non-existent user returns empty result (reads 0 rows)
+SELECT name FROM system.users WHERE name = 'test_pushdown_nonexistent' SETTINGS max_rows_to_read = 0;
 
--- Fast path: IN predicate
-SELECT name FROM system.users WHERE name IN ('test_pushdown_alice', 'test_pushdown_bob') ORDER BY name;
+-- Fast path: IN predicate (must read exactly 2 rows)
+SELECT name FROM system.users WHERE name IN ('test_pushdown_alice', 'test_pushdown_bob') ORDER BY name SETTINGS max_rows_to_read = 2;
 
--- Fallback path: LIKE predicate still works
+-- Fallback path: LIKE predicate still works (no row limit)
 SELECT name FROM system.users WHERE name LIKE 'test_pushdown_%' ORDER BY name;
 
 -- Fallback path: count all users still works (no predicate)
