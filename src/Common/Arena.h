@@ -109,6 +109,72 @@ private:
     size_t used_bytes = 0;
     size_t page_size;
 
+    /// Free-list for recycling memory from realloc() calls.
+    /// Arena::realloc wastes old memory regions because individual frees are not
+    /// supported. This free-list tracks wasted regions so they can be reused by
+    /// future alloc() calls, reducing peak RSS for workloads with many reallocations
+    /// (e.g., aggregate function state growth during GROUP BY).
+    struct FreeBlock
+    {
+        FreeBlock * next = nullptr;
+        size_t size = 0;
+    };
+
+    /// Power-of-two bucketed free lists for O(1) allocation from recycled blocks.
+    /// Index 0 = blocks of size 16-31, index 1 = 32-63, ... index 15 = 512K-1M.
+    /// Blocks smaller than 16 bytes can't hold the FreeBlock header.
+    /// Blocks larger than 1MB are rare from realloc and not worth tracking.
+    static constexpr size_t FREE_LIST_MIN_SIZE = 16;
+    static constexpr size_t FREE_LIST_MAX_SIZE = 1 << 20;  /// 1MB
+    static constexpr size_t FREE_LIST_BUCKETS = 16;
+    FreeBlock * free_lists[FREE_LIST_BUCKETS] = {};
+
+    static size_t freeListIndex(size_t size)
+    {
+        if (size < FREE_LIST_MIN_SIZE) return 0;
+        /// Index = log2(size) - log2(FREE_LIST_MIN_SIZE)
+        size_t idx = 63 - __builtin_clzll(size) - 4;  /// log2(16) = 4
+        return std::min(idx, FREE_LIST_BUCKETS - 1);
+    }
+
+    /// Try to allocate from the free-list. Returns nullptr if no suitable block.
+    char * allocFromFreeList(size_t size)
+    {
+        if (size < FREE_LIST_MIN_SIZE || size > FREE_LIST_MAX_SIZE)
+            return nullptr;
+
+        size_t idx = freeListIndex(size);
+        /// Search this bucket and larger buckets for a fit
+        for (size_t i = idx; i < FREE_LIST_BUCKETS; ++i)
+        {
+            if (free_lists[i])
+            {
+                FreeBlock * block = free_lists[i];
+                if (block->size >= size)
+                {
+                    free_lists[i] = block->next;
+                    ASAN_UNPOISON_MEMORY_REGION(block, block->size);
+                    return reinterpret_cast<char *>(block);
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    /// Add a region to the free-list for future reuse.
+    void addToFreeList(char * ptr, size_t size)
+    {
+        if (size < FREE_LIST_MIN_SIZE || size > FREE_LIST_MAX_SIZE)
+            return;
+
+        size_t idx = freeListIndex(size);
+        auto * block = reinterpret_cast<FreeBlock *>(ptr);
+        block->size = size;
+        block->next = free_lists[idx];
+        free_lists[idx] = block;
+        ASAN_POISON_MEMORY_REGION(ptr, size);
+    }
+
     static size_t roundUpToPageSize(size_t s, size_t page_size)
     {
         return (s + page_size - 1) / page_size * page_size;
@@ -179,6 +245,11 @@ public:
     char * alloc(size_t size)
     {
         used_bytes += size;
+
+        /// Try to reuse a recycled block from realloc waste before allocating new memory.
+        if (char * recycled = allocFromFreeList(size))
+            return recycled;
+
         if (unlikely(head.empty() || size > head.remaining()))
             addMemoryChunk(size);
 
@@ -303,13 +374,17 @@ public:
         return new_range + existing_bytes;
     }
 
-    /// NOTE Old memory region is wasted.
+    /// Realloc with free-list recycling: old region is added to the free-list
+    /// instead of being permanently wasted. Future alloc() calls of similar size
+    /// can reuse it, reducing peak RSS.
     char * realloc(const char * old_data, size_t old_size, size_t new_size)
     {
         char * res = alloc(new_size);
         if (old_data)
         {
             memcpy(res, old_data, old_size);
+            /// Recycle old region instead of wasting it.
+            addToFreeList(const_cast<char *>(old_data), old_size);
             ASAN_POISON_MEMORY_REGION(old_data, old_size);
         }
         return res;
