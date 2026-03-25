@@ -4150,7 +4150,7 @@ class ClickHouseCluster:
         try:
             subprocess_check_call(self.base_cmd + ["unpause", instance_name])
         except Exception as e:
-            if "unable to freeze" in str(e) or "OCI runtime" in str(e) or "is not paused" in str(e):
+            if "is not paused" in str(e) or "OCI runtime unpause failed" in str(e) or "unable to unfreeze" in str(e):
                 logging.warning(
                     "docker unpause failed (%s), falling back to SIGCONT for %s",
                     e,
