@@ -786,6 +786,7 @@ OKLab
 OLAP
 OLTP
 ORCCompression
+ORMs
 OSCPUVirtualTimeMicroseconds
 OSCPUWaitMicroseconds
 OSContextSwitches
@@ -1832,6 +1833,7 @@ defaultProfiles
 defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
+defragmentation
 delim
 deltaLake
 deltaLakeCluster

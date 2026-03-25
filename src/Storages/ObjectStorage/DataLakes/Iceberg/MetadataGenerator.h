@@ -1,7 +1,12 @@
 #pragma once
 
 #include <Poco/JSON/Object.h>
+#include <pcg_random.hpp>
+#include "config.h"
+
+#include <DataTypes/IDataType.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 namespace DB
 {
@@ -16,13 +21,15 @@ public:
     struct NextMetadataResult
     {
         Poco::JSON::Object::Ptr snapshot = nullptr;
-        String metadata_path;
-        String storage_metadata_path;
+        /// Metadata path for the manifest list file (e.g. "wasb://container@account/table/metadata/snap-xxx.avro").
+        /// Use IcebergPathResolver::resolve to get storage path for I/O.
+        /// Use .serialize() to get the path for writing into Iceberg metadata.
+        Iceberg::IcebergPathFromMetadata manifest_list_path;
     };
 
     NextMetadataResult generateNextMetadata(
         FileNamesGenerator & generator,
-        const String & metadata_filename,
+        const Iceberg::IcebergPathFromMetadata & metadata_file_path,
         Int64 parent_snapshot_id,
         Int64 added_files,
         Int64 added_records,

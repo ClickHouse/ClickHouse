@@ -383,33 +383,21 @@ void StorageDataLake<DataLakeMetadata>::read(
             delta_kernel_metadata != nullptr)
         {
             auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
-            auto version_range = DeltaLake::TableChanges::getVersionRange(
-                start_version,
-                settings[Setting::delta_lake_snapshot_end_version].value);
-            auto table_changes = delta_kernel_metadata->getTableChanges(
-                version_range,
-                source_header,
-                format_settings,
-                local_context);
+            auto version_range
+                = DeltaLake::TableChanges::getVersionRange(start_version, settings[Setting::delta_lake_snapshot_end_version].value);
+            auto table_changes = delta_kernel_metadata->getTableChanges(version_range, source_header, format_settings, local_context);
 
             auto read_step = std::make_unique<ReadFromDeltaLakeTableChangesStep>(
-                std::move(table_changes),
-                source_header,
-                column_names,
-                query_info,
-                storage_snapshot,
-                num_streams,
-                local_context);
+                std::move(table_changes), source_header, column_names, query_info, storage_snapshot, num_streams, local_context);
             query_plan.addStep(std::move(read_step));
             return;
         }
     }
-    else if (auto end_version = settings[Setting::delta_lake_snapshot_start_version].value;
+    else if (auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
              end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
     {
         throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
+            DB::ErrorCodes::BAD_ARGUMENTS, "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
     }
 #endif
     auto read_from_format_info = read_metadata->prepareReadingFromFormat(

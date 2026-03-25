@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
@@ -87,6 +88,8 @@ namespace ProfileEvents
     extern const Event MergeTextIndexStageExecuteMilliseconds;
     extern const Event MergeProjectionStageExecuteMilliseconds;
     extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
+    extern const Event MergedProjections;
+    extern const Event RebuiltProjections;
 }
 
 namespace CurrentMetrics
@@ -432,8 +435,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             if (projection->with_parent_part_offset && column == "_part_offset")
                 continue;
 
+            if (projection->with_block_number && column == BlockNumberColumn::name)
+                continue;
+
+            if (projection->with_block_offset && column == BlockOffsetColumn::name)
+                continue;
+
             key_columns.insert(getColumnNameInStorage(column, storage_columns));
         }
+
+        /// Track whether any projection needs _block_number/_block_offset in the horizontal phase.
+        global_ctx->need_block_number_in_merge |= projection->with_block_number;
+        global_ctx->need_block_offset_in_merge |= projection->with_block_offset;
     }
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
@@ -678,10 +691,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     if (enabledBlockNumberColumn(global_ctx))
-        addGatheringColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
+    {
+        if (global_ctx->need_block_number_in_merge)
+            addMergingColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
+        else
+            addGatheringColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
+    }
 
     if (enabledBlockOffsetColumn(global_ctx))
-        addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
+    {
+        if (global_ctx->need_block_offset_in_merge)
+            addMergingColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
+        else
+            addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
+    }
 
     MergeTreeData::IMutationsSnapshot::Params params
     {
@@ -945,6 +968,15 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
     global_ctx->gathering_columns.emplace_back(name, type);
 }
 
+void MergeTask::addMergingColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
+{
+    if (global_ctx->storage_columns.contains(name))
+        return;
+
+    global_ctx->storage_columns.emplace_back(name, type);
+    global_ctx->merging_columns.emplace_back(name, type);
+}
+
 bool MergeTask::hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part)
 {
     for (const auto & part : future_part->parts)
@@ -1092,7 +1124,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         /// The IGNORE mode is checked here purely for backward compatibility.
         /// However, if the projection contains `_parent_part_offset`, it must still be rebuilt,
         /// since offset correctness cannot be ignored even in IGNORE mode.
-        if (global_ctx->merge_may_reduce_rows && (mode != DeduplicateMergeProjectionMode::IGNORE || projection.with_parent_part_offset))
+        const bool is_special_projection = projection.with_parent_part_offset || projection.with_block_number || projection.with_block_offset;
+        if (global_ctx->merge_may_reduce_rows && (mode != DeduplicateMergeProjectionMode::IGNORE || is_special_projection))
         {
             global_ctx->projections_to_rebuild.push_back(&projection);
             continue;
@@ -1110,10 +1143,20 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             if (it != part->getProjectionParts().end() && !it->second->is_broken)
                 projection_parts.push_back(it->second);
         }
+
         if (projection_parts.size() == global_ctx->future_part->parts.size())
         {
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
+        }
+        else if (projection.with_block_number)
+        {
+            /// Commit-order projections are not written during insert (block number is not yet finalized).
+            /// When some source parts don't have the projection, rebuild it during the horizontal phase
+            /// where the correct `_block_number` values are available.
+            chassert(projection_parts.size() < global_ctx->future_part->parts.size());
+            LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts don't have it (commit-order projection)", projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
         }
         else
         {
@@ -1122,6 +1165,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             continue;
         }
     }
+
+    ProfileEvents::increment(ProfileEvents::MergedProjections, global_ctx->projections_to_merge.size());
+    ProfileEvents::increment(ProfileEvents::RebuiltProjections, global_ctx->projections_to_rebuild.size());
 
     const auto & settings = global_ctx->context->getSettingsRef();
 
