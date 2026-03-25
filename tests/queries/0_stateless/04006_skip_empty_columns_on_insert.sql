@@ -244,3 +244,89 @@ SELECT 'case7_data';
 SELECT key, a, b FROM t_skip_empty_default_expr ORDER BY key;
 
 DROP TABLE t_skip_empty_default_expr;
+
+-- ============================================================================
+-- CASE 8: Array columns — empty array [] is the type-default.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_array;
+
+CREATE TABLE t_skip_empty_array
+(
+    key UInt64,
+    arr1 Array(UInt64),
+    arr2 Array(String)
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- Both arrays are empty (default) → should be skipped
+INSERT INTO t_skip_empty_array (key, arr1, arr2) VALUES (1, [], []);
+
+SELECT 'case8_columns_in_part';
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_array' AND active
+ORDER BY column;
+
+SELECT 'case8_data';
+SELECT * FROM t_skip_empty_array ORDER BY key;
+
+-- Insert with non-default values, merge, verify
+INSERT INTO t_skip_empty_array (key, arr1, arr2) VALUES (2, [10, 20], ['a', 'b']);
+
+OPTIMIZE TABLE t_skip_empty_array FINAL;
+
+SELECT 'case8_post_merge';
+SELECT * FROM t_skip_empty_array ORDER BY key;
+
+DROP TABLE t_skip_empty_array;
+
+-- ============================================================================
+-- CASE 9: Tuple columns — (0, '') is the type-default for Tuple(UInt64, String).
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_tuple;
+
+CREATE TABLE t_skip_empty_tuple
+(
+    key UInt64,
+    t1 Tuple(UInt64, String),
+    t2 Tuple(a UInt64, b Float64)
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- Both tuples are type-defaults → should be skipped
+INSERT INTO t_skip_empty_tuple (key, t1, t2) VALUES (1, (0, ''), (0, 0));
+
+SELECT 'case9_columns_in_part';
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_tuple' AND active
+ORDER BY column;
+
+SELECT 'case9_data';
+SELECT * FROM t_skip_empty_tuple ORDER BY key;
+
+-- Insert with non-default values, merge, verify
+INSERT INTO t_skip_empty_tuple (key, t1, t2) VALUES (2, (42, 'hello'), (7, 3.14));
+
+OPTIMIZE TABLE t_skip_empty_tuple FINAL;
+
+SELECT 'case9_post_merge';
+SELECT * FROM t_skip_empty_tuple ORDER BY key;
+
+DROP TABLE t_skip_empty_tuple;
+
+-- NOTE: ColumnSparse is not tested here because it is never present in the
+-- INSERT block. The sparse serialization decision is recorded in
+-- SerializationInfo, but the block columns remain in their regular (dense)
+-- representation at the point where `skipEmptyColumnsOnInsert` calls
+-- `hasOnlyTypeDefaults`. ColumnSparse only appears on the read path.
+-- Therefore `ColumnSparse::hasOnlyTypeDefaults` cannot be exercised through
+-- this INSERT-time optimization.

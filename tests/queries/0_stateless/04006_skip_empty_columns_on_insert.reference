@@ -37,3 +37,17 @@ c
 key
 case7_data
 1	5	0
+case8_columns_in_part
+key
+case8_data
+1	[]	[]
+case8_post_merge
+1	[]	[]
+2	[10,20]	['a','b']
+case9_columns_in_part
+key
+case9_data
+1	(0,'')	(0,0)
+case9_post_merge
+1	(0,'')	(0,0)
+2	(42,'hello')	(7,3.14)
