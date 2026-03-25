@@ -81,6 +81,11 @@ bool ColumnSparse::isDefaultAt(size_t n) const
     return getValueIndex(n) == 0;
 }
 
+bool ColumnSparse::hasOnlyTypeDefaults() const
+{
+    return _size == 0 || getOffsetsData().empty();
+}
+
 bool ColumnSparse::isNullAt(size_t n) const
 {
     return values->isNullAt(getValueIndex(n));

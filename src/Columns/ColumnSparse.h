@@ -62,6 +62,10 @@ public:
     MutableColumnPtr cloneResized(size_t new_size) const override;
     size_t size() const override { return _size; }
     bool isDefaultAt(size_t n) const override;
+
+    /// All values are default iff the offsets array is empty (no non-default
+    /// values have been stored).
+    bool hasOnlyTypeDefaults() const override;
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
