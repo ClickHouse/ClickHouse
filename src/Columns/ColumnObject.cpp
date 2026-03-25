@@ -540,6 +540,7 @@ bool ColumnObject::tryInsert(const Field & x)
         for (const auto & path : new_dynamic_paths)
         {
             dynamic_paths_ptrs.erase(path);
+            sorted_dynamic_paths.erase(path);
             dynamic_paths.erase(path);
         }
 
