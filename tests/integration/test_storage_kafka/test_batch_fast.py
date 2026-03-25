@@ -1580,24 +1580,17 @@ def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
     )
 
     cancel.set()
-    # Join the producer thread before dropping the table so that all messages have been
-    # sent to Kafka and i[0] is final. Without this, messages produced after cancel.set()
-    # but before DROP TABLE SYNC land in Kafka with uncommitted offsets; the recreated
-    # table then replays them from the last committed offset, causing duplicates.
+
+    instance.query(f"DROP TABLE test.{kafka_table} SYNC")
+
+    instance.query(create_query)
     kafka_thread.join()
 
-    # Wait for all produced messages to be consumed and their offsets committed before
-    # dropping the table. This guarantees that the recreated table starts from the end
-    # of the topic and does not re-read any messages.
     instance.query_with_retry(
         f"SELECT uniqExact(key) FROM test.{kafka_table}_view",
         sleep_time=1,
         check_callback=lambda res: int(res) >= i[0],
     )
-
-    instance.query(f"DROP TABLE test.{kafka_table} SYNC")
-
-    instance.query(create_query)
 
     result = int(instance.query(f"SELECT count() == uniqExact(key) FROM test.{kafka_table}_view"))
 
