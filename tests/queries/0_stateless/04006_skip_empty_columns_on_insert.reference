@@ -51,3 +51,9 @@ case9_data
 case9_post_merge
 1	(0,'')	(0,0)
 2	(42,'hello')	(7,3.14)
+case10_src_serialization
+val	Sparse
+case10_columns_in_part
+key
+case10_data_sample
+1000	0

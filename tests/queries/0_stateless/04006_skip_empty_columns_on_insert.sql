@@ -323,10 +323,59 @@ SELECT * FROM t_skip_empty_tuple ORDER BY key;
 
 DROP TABLE t_skip_empty_tuple;
 
--- NOTE: ColumnSparse is not tested here because it is never present in the
--- INSERT block. The sparse serialization decision is recorded in
--- SerializationInfo, but the block columns remain in their regular (dense)
--- representation at the point where `skipEmptyColumnsOnInsert` calls
--- `hasOnlyTypeDefaults`. ColumnSparse only appears on the read path.
--- Therefore `ColumnSparse::hasOnlyTypeDefaults` cannot be exercised through
--- this INSERT-time optimization.
+-- ============================================================================
+-- CASE 10: ColumnSparse — when the source table uses sparse serialization,
+-- INSERT SELECT can pass ColumnSparse columns into the write path. The
+-- `hasOnlyTypeDefaults` call in `skipEmptyColumnsOnInsert` must handle them.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_sparse_src;
+DROP TABLE IF EXISTS t_skip_empty_sparse_dst;
+
+-- Source table with a very low ratio so that column `val` gets sparse
+-- serialization (most values are 0).
+CREATE TABLE t_skip_empty_sparse_src
+(
+    key UInt64,
+    val UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 0.1,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- Insert enough rows with val=0 (default) so the column gets sparse encoding.
+INSERT INTO t_skip_empty_sparse_src SELECT number, 0 FROM numbers(1000);
+
+-- Verify the source part uses sparse serialization for `val`.
+SELECT 'case10_src_serialization';
+SELECT column, serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_sparse_src' AND active AND column = 'val';
+
+-- Destination table with skip_empty_columns_on_insert enabled.
+CREATE TABLE t_skip_empty_sparse_dst
+(
+    key UInt64,
+    val UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- INSERT SELECT: the block coming from the source may contain ColumnSparse
+-- for `val`. All values are 0 (type-default), so `val` should be skipped.
+INSERT INTO t_skip_empty_sparse_dst SELECT * FROM t_skip_empty_sparse_src;
+
+SELECT 'case10_columns_in_part';
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_sparse_dst' AND active
+ORDER BY column;
+
+SELECT 'case10_data_sample';
+SELECT count(), sum(val) FROM t_skip_empty_sparse_dst;
+
+DROP TABLE t_skip_empty_sparse_src;
+DROP TABLE t_skip_empty_sparse_dst;
