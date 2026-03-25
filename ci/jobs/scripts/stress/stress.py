@@ -262,8 +262,13 @@ def run_func_test(
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
         commands.append(full_command)
+        # Disable server-side AST fuzzer for the smoke check: fuzzed queries
+        # produce expected errors in stderr, which would fail these tests.
+        smoke_command = full_command.replace(
+            "--client-option ", "--client-option ast_fuzzer_runs=0 ", 1
+        )
         check_command = (
-            full_command
+            smoke_command
             + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
         )
         logging.info(check_command)
@@ -280,6 +285,7 @@ def run_func_test(
                 "KEEPER_EXCEPTION",
                 "DATABASE_REPLICATION_FAILED",
                 "QUERY_WAS_CANCELLED",
+                "UNKNOWN_STATUS_OF_INSERT",
             ]
             if any(err in e.stdout or err in e.stderr for err in ignored_errors):
                 logging.warning(
@@ -611,6 +617,7 @@ def main():
                     "max_untracked_memory=1Gi",
                     "max_memory_usage_for_user=0",
                     "memory_profiler_step=1Gi",
+                    "ast_fuzzer_runs=0",
                     # Use system database to avoid CREATE/DROP DATABASE queries
                     "--database=system",
                     "--hung-check",

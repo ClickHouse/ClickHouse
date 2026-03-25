@@ -248,6 +248,10 @@ private:
         std::vector<ProjectionDescriptionRawPtr> projections_to_merge{};
         std::map<String, MergeTreeData::DataPartsVector> projections_to_merge_parts{};
 
+        /// Whether any projection to rebuild needs _block_number / _block_offset in the horizontal phase.
+        bool need_block_number_in_merge{false};
+        bool need_block_offset_in_merge{false};
+
         std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
 
@@ -570,6 +574,7 @@ private:
     static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
+    static void addMergingColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);

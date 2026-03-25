@@ -9,6 +9,8 @@ SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 SET enable_analyzer = 0; -- To produce consistent explain outputs
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 ----------------------------------------------------
 SELECT '- Test direct read optimization from text log';

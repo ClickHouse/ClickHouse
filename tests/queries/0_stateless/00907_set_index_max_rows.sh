@@ -21,7 +21,7 @@ INSERT INTO set_idx
 SELECT number, number FROM system.numbers LIMIT 100"
 
 # simple select
-$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE i32 > 0 FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --optimize_move_to_prewhere 1 --query="SELECT * FROM set_idx WHERE i32 > 0 FORMAT JSON" | grep "rows_read"
 
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE set_idx;"
