@@ -157,12 +157,12 @@ YTsarususDictionarySource::YTsarususDictionarySource(
             .encode_utf8 = configuration->settings[YTsaurusSetting::encode_utf8],
             .enable_heavy_proxy_redirection = configuration->settings[YTsaurusSetting::enable_heavy_proxy_redirection],
         }))
-    , name(name_)
+    , throttler_name(fmt::format("YTsaurusLookupThrottler({})", name_))
 {
 }
 
 YTsarususDictionarySource::YTsarususDictionarySource(const YTsarususDictionarySource & other)
-    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block, other.name}
+    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block, other.throttler_name}
 {
 }
 
@@ -275,7 +275,6 @@ void YTsarususDictionarySource::initializeLookupThrottlerIfNeeded()
     auto max_lookups_per_sec = configuration->settings[YTsaurusSetting::lookup_throttler_max_requests_per_second].value;
     if (!supportsSelectiveLoad() || !max_lookups_per_sec)
         return;
-    auto throttler_name = fmt::format("YTsaurusLookupThrottler({})", name);
     lookup_throttler = std::make_shared<Throttler>(
         throttler_name.c_str(),
         max_lookups_per_sec,
