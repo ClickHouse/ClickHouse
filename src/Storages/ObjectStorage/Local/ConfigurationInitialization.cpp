@@ -16,18 +16,13 @@ StorageParsedArguments LocalStorageParsedArguments::extractBaseArguments()
     return std::move(static_cast<StorageParsedArguments &>(*this));
 }
 
-StorageLocalConfiguration::StorageLocalConfiguration(const String & path_, const String & disk_name_)
-{
-    path = path_;
-    disk_name = disk_name_;
-}
-
 ConfigWithOptions fromLocalAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
     auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageLocalConfiguration>(parsed_arguments.path);
+    table_options.setPathForRead(config->getRawPath());
     return {config, std::move(table_options)};
 }
 
@@ -51,6 +46,7 @@ ConfigWithOptions fromLocalNamedCollection(const NamedCollection & collection, C
     parsed_arguments.fromNamedCollection(collection, context);
     auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageLocalConfiguration>(parsed_arguments.path);
+    table_options.setPathForRead(config->getRawPath());
     return {config, std::move(table_options)};
 }
 

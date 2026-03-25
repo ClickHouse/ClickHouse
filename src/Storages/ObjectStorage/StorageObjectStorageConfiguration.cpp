@@ -120,10 +120,6 @@ StorageObjectStorageTableOptions ObjectStorageConnectionConfiguration::postIniti
     else
         FormatFactory::instance().checkFormatName(table_options.format);
 
-    /// We shouldn't set path for disk setup because path prefix is already set in used object_storage.
-    if (disk_name.empty())
-        table_options.setPathForRead(configuration.getRawPath());
-
     configuration.initialized = true;
 
     if (!disk_name.empty())

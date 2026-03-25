@@ -17,16 +17,6 @@ StorageParsedArguments AzureStorageParsedArguments::extractBaseArguments()
     return std::move(static_cast<StorageParsedArguments &>(*this));
 }
 
-StorageAzureConfiguration::StorageAzureConfiguration(
-    Path blob_path_,
-    AzureBlobStorage::ConnectionParams connection_params_,
-    DiskPtr disk_)
-{
-    blob_path = std::move(blob_path_);
-    connection_params = std::move(connection_params_);
-    disk = std::move(disk_);
-}
-
 ConfigWithOptions fromAzureNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     AzureStorageParsedArguments parsed_arguments;
@@ -35,6 +25,7 @@ ConfigWithOptions fromAzureNamedCollection(const NamedCollection & collection, C
     auto config = std::make_shared<StorageAzureConfiguration>(
         parsed_arguments.blob_path,
         parsed_arguments.connection_params);
+    table_options.setPathForRead(config->getRawPath());
     return {config, std::move(table_options)};
 }
 
@@ -46,6 +37,7 @@ ConfigWithOptions fromAzureAST(ASTs & engine_args, ContextPtr context, bool with
     auto config = std::make_shared<StorageAzureConfiguration>(
         parsed_arguments.blob_path,
         parsed_arguments.connection_params);
+    table_options.setPathForRead(config->getRawPath());
     return {config, std::move(table_options)};
 }
 

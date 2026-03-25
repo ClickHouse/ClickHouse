@@ -32,20 +32,6 @@ StorageParsedArguments S3StorageParsedArguments::extractBaseArguments()
     return std::move(static_cast<StorageParsedArguments &>(*this));
 }
 
-StorageS3Configuration::StorageS3Configuration(
-    S3::URI url_,
-    std::unique_ptr<S3Settings> s3_settings_,
-    std::unique_ptr<S3Capabilities> s3_capabilities_,
-    HTTPHeaderEntries headers_from_ast_)
-{
-    url = std::move(url_);
-    s3_settings = std::move(s3_settings_);
-    s3_capabilities = std::move(s3_capabilities_);
-    headers_from_ast = std::move(headers_from_ast_);
-    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
-        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
-}
-
 ConfigWithOptions fromS3NamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     S3StorageParsedArguments parsed_arguments;
@@ -56,6 +42,7 @@ ConfigWithOptions fromS3NamedCollection(const NamedCollection & collection, Cont
         std::move(parsed_arguments.s3_settings),
         std::move(parsed_arguments.s3_capabilities),
         std::move(parsed_arguments.headers_from_ast));
+    table_options.setPathForRead(config->getRawPath());
     return {config, std::move(table_options)};
 }
 
@@ -99,6 +86,7 @@ ConfigWithOptions fromS3AST(ASTs & args, ContextPtr context, bool with_structure
         std::move(parsed_arguments.s3_settings),
         std::move(parsed_arguments.s3_capabilities),
         std::move(parsed_arguments.headers_from_ast));
+    table_options.setPathForRead(config->getRawPath());
     return {config, std::move(table_options)};
 }
 

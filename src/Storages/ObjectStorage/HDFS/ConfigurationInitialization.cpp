@@ -16,11 +16,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-StorageParsedArguments HDFSStorageParsedArguments::extractBaseArguments()
-{
-    return std::move(static_cast<StorageParsedArguments &>(*this));
-}
-
 StorageHDFSConfiguration::StorageHDFSConfiguration(const std::string & url_str)
 {
     setURL(url_str);
@@ -32,6 +27,7 @@ ConfigWithOptions fromHDFSAST(ASTs & args, ContextPtr context, bool with_structu
     parsed_arguments.fromAST(args, context, with_structure);
     auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageHDFSConfiguration>(parsed_arguments.url_str);
+    table_options.setPathForRead(config->getRawPath());
     return {config, std::move(table_options)};
 }
 
@@ -41,6 +37,7 @@ ConfigWithOptions fromHDFSNamedCollection(const NamedCollection & collection, Co
     parsed_arguments.fromNamedCollection(collection, context);
     auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageHDFSConfiguration>(parsed_arguments.url_str);
+    table_options.setPathForRead(config->getRawPath());
     return {config, std::move(table_options)};
 }
 
