@@ -64,7 +64,8 @@ private:
     YTsaurusClientPtr client;
     bool throttler_initialized = false;
     ThrottlerPtr lookup_throttler;
-    const String throttler_name;
+    const String name;
+    String lookup_throttler_name;
 };
 
 }
