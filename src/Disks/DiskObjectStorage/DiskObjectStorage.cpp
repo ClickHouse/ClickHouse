@@ -939,6 +939,11 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
     transaction->commit();
 }
 
+void DiskObjectStorage::waitBlobsCleanup()
+{
+    blob_killer->triggerAndWait();
+}
+
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)
 {
     IDisk::applyNewSettings(config, context, config_prefix, map);

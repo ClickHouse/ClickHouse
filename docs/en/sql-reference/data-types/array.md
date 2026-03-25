@@ -19,7 +19,7 @@ You can use a function to create an array:
 array(T)
 ```
 
-You can also use square brackets.
+You can also use `[]`.
 
 ```sql
 []
