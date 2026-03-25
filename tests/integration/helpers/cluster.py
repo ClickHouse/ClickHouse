@@ -4133,8 +4133,10 @@ class ClickHouseCluster:
             raise Exception("\n".join(failure_logs))
 
     def _pause_container(self, instance_name):
+        """Pause a container. Returns True if docker cgroup freezer was used, False if SIGSTOP was used."""
         try:
             subprocess_check_call(self.base_cmd + ["pause", instance_name])
+            return True
         except Exception as e:
             if "unable to freeze" in str(e) or "OCI runtime pause failed" in str(e):
                 logging.warning(
@@ -4143,20 +4145,32 @@ class ClickHouseCluster:
                     instance_name,
                 )
                 self._pause_container_using_signal(instance_name)
+                return False
             else:
                 raise
 
-    def _unpause_container(self, instance_name):
+    def _unpause_container(self, instance_name, used_docker_freezer=True):
+        """Unpause a container. used_docker_freezer must match the value returned by _pause_container."""
         try:
             subprocess_check_call(self.base_cmd + ["unpause", instance_name])
         except Exception as e:
-            if "is not paused" in str(e) or "OCI runtime unpause failed" in str(e) or "unable to unfreeze" in str(e):
-                logging.warning(
-                    "docker unpause failed (%s), falling back to SIGCONT for %s",
-                    e,
-                    instance_name,
-                )
-                self._unpause_container_using_signal(instance_name)
+            if (
+                "is not paused" in str(e)
+                or "OCI runtime unpause failed" in str(e)
+                or "unable to unfreeze" in str(e)
+            ):
+                if not used_docker_freezer:
+                    # Pause was done via SIGSTOP, so SIGCONT is the correct counterpart.
+                    logging.warning(
+                        "docker unpause failed (%s), falling back to SIGCONT for %s",
+                        e,
+                        instance_name,
+                    )
+                    self._unpause_container_using_signal(instance_name)
+                else:
+                    # Pause was done via docker cgroup freezer. SIGCONT cannot unfreeze a
+                    # cgroup-frozen container, so re-raise rather than leave the container paused.
+                    raise
             else:
                 raise
 
@@ -4172,11 +4186,11 @@ class ClickHouseCluster:
         with cluster.pause_container(name):
             useful_stuff()
         """
-        self._pause_container(instance_name)
+        used_docker_freezer = self._pause_container(instance_name)
         try:
             yield
         finally:
-            self._unpause_container(instance_name)
+            self._unpause_container(instance_name, used_docker_freezer)
 
     @contextmanager
     def pause_container_using_signal(self, instance_name):
