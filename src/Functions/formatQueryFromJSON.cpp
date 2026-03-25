@@ -1,14 +1,22 @@
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/Lexer.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
+}
 
 namespace ErrorCodes
 {
@@ -232,7 +240,17 @@ class FunctionFormatQueryFromJSON : public IFunction
 {
 public:
     static constexpr auto name = "formatQueryFromJSON";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatQueryFromJSON>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionFormatQueryFromJSON>(context);
+    }
+
+    explicit FunctionFormatQueryFromJSON(ContextPtr context)
+    {
+        const Settings & settings = context->getSettingsRef();
+        max_ast_depth = settings[Setting::max_ast_depth];
+        max_ast_elements = settings[Setting::max_ast_elements];
+    }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -272,6 +290,11 @@ public:
             auto json = String(json_col->getDataAt(i));
             auto ast = deserializeASTFromJSON(json);
 
+            if (max_ast_depth)
+                ast->checkDepth(max_ast_depth);
+            if (max_ast_elements)
+                ast->checkSize(max_ast_elements);
+
             WriteBufferFromOwnString buf;
             if (orig_col)
             {
@@ -294,6 +317,10 @@ public:
 
         return result;
     }
+
+private:
+    size_t max_ast_depth;
+    size_t max_ast_elements;
 };
 
 }

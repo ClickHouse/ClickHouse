@@ -1,14 +1,22 @@
 #include <Columns/ColumnString.h>
-#include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTToJSON.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+}
 
 namespace ErrorCodes
 {
@@ -23,7 +31,18 @@ class FunctionParseQueryToJSON : public IFunction
 {
 public:
     static constexpr auto name = "parseQueryToJSON";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseQueryToJSON>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionParseQueryToJSON>(context);
+    }
+
+    explicit FunctionParseQueryToJSON(ContextPtr context)
+    {
+        const Settings & settings = context->getSettingsRef();
+        max_query_size = settings[Setting::max_query_size];
+        max_parser_depth = settings[Setting::max_parser_depth];
+        max_parser_backtracks = settings[Setting::max_parser_backtracks];
+    }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -51,13 +70,18 @@ public:
 
             ParserQuery parser(sql.data() + sql.size());
             auto ast = parseQuery(parser, sql.data(), sql.data() + sql.size(), "",
-                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+                max_query_size, max_parser_depth, max_parser_backtracks);
 
             result->insert(serializeASTToJSON(*ast));
         }
 
         return result;
     }
+
+private:
+    size_t max_query_size;
+    size_t max_parser_depth;
+    size_t max_parser_backtracks;
 };
 
 }

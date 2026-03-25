@@ -409,17 +409,8 @@ void IAST::readJSON(const Poco::JSON::Object & json)
         }
     }
 
-    /// Read alias if the node supports it.
-    if (json.has("alias"))
-    {
-        try
-        {
-            setAlias(json.getValue<String>("alias"));
-        }
-        catch (...) // Ok: node doesn't support aliases - ignore.
-        {
-        }
-    }
+    /// Aliases are read by ASTWithAlias subclasses via JSONObjectReader::readAlias
+    /// in their own readJSON overrides, so we don't handle them here.
 }
 
 }

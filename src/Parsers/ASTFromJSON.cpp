@@ -64,6 +64,7 @@
 
 #include <Common/Exception.h>
 
+#include <Poco/Exception.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -199,7 +200,15 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
 ASTPtr IAST::createFromJSON(const String & json)
 {
     Poco::JSON::Parser parser;
-    auto result = parser.parse(json);
+    Poco::Dynamic::Var result;
+    try
+    {
+        result = parser.parse(json);
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse JSON for AST deserialization: {}", e.displayText());
+    }
     const auto & obj = result.extract<Poco::JSON::Object::Ptr>();
     if (!obj)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
