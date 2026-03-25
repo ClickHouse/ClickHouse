@@ -506,8 +506,8 @@ public:
     static_assert(sizeof(CompactChildrenSet) == 16);
     static_assert(sizeof(KeeperMemNode) == 136);
     static_assert(
-        sizeof(ListNode<Node>) <= 200,
-        "std::list node containing ListNode<Node> is > 200 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
+        sizeof(ListNode<Node>) <= 160,
+        "std::list node containing ListNode<Node> is > 160 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
         "memory consumption");
     static_assert(std::is_nothrow_move_assignable_v<CompactChildrenSet>);
     static_assert(std::is_nothrow_move_constructible_v<CompactChildrenSet>);
