@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-llvm-coverage, no-flaky-check
+-- Tags: no-debug, no-fasttest, no-llvm-coverage, no-flaky-check
 -- Tag no-fasttest: Not sure why fail even in sequential mode. Disabled for now to make some progress.
 
 SET allow_introspection_functions = 1;
@@ -13,6 +13,20 @@ SYSTEM FLUSH LOGS trace_log, query_log;
 
 WITH addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
 SELECT count() > 0 FROM system.trace_log t WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1) AND symbol LIKE '%FunctionSleep%';
+
+-- Also test the real time profiler with CPU-bound work (numbers_mt).
+-- Under TSan, sleep-based profiling may produce incomplete traces because TSan defers
+-- signals and the interrupted code's stack may be stale. CPU-bound work does not have
+-- this problem: even though TSan defers the signal, the thread hasn't returned from
+-- the interrupted functions, so the frame pointer chain from the saved ucontext_t is valid.
+SET max_rows_to_read = 0;
+SET log_queries = 1;
+SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(10000000000);
+SET log_queries = 0;
+SYSTEM FLUSH LOGS trace_log, query_log;
+
+WITH addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
+SELECT count() > 0 FROM system.trace_log t WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler numbers_mt%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1) AND symbol LIKE '%Source%';
 
 SET query_profiler_real_time_period_ns = 0;
 SET query_profiler_cpu_time_period_ns = 1000000;

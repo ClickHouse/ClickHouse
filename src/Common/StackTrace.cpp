@@ -26,6 +26,10 @@
 
 #include <boost/algorithm/string/split.hpp>
 
+#if defined(SANITIZER)
+#include <absl/debugging/stacktrace.h>
+#endif
+
 #if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
@@ -469,10 +473,21 @@ void StackTrace::forEachFrame(
 
 StackTrace::StackTrace(const ucontext_t & signal_context)
 {
-    tryCapture();
-
     /// This variable from signal handler is not instrumented by Memory Sanitizer.
     __msan_unpoison(&signal_context, sizeof(signal_context));
+
+    /// Always use libunwind here, not tryCapture() which uses abseil under sanitizers.
+    /// This constructor is called from the crash signal handler (SIGSEGV, SIGABRT) where
+    /// libunwind is needed to bridge through the kernel signal frame via DWARF unwinding.
+    /// Abseil's frame-pointer walker cannot do that.
+    /// Libunwind is safe in this context because crash signals are synchronous — there is
+    /// no concurrent sanitizer unwinding to interfere with.
+#if defined(OS_DARWIN)
+    size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
+#else
+    size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
+#endif
+    __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 
     void * caller_address = getCallerAddress(signal_context);
 
@@ -508,6 +523,11 @@ void StackTrace::tryCapture()
 {
 #if defined(OS_DARWIN)
     size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
+#elif defined(SANITIZER)
+    /// Under sanitizers, use abseil's frame-pointer-based unwinding instead of libunwind.
+    /// libunwind's async stack unwinding is not compatible with sanitizer internals.
+    int captured = absl::GetStackTrace(frame_pointers.data(), static_cast<int>(FRAMEPOINTER_CAPACITY), /* skip_count= */ 0);
+    size = captured > 0 ? static_cast<size_t>(captured) : 0;
 #else
     size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #endif
