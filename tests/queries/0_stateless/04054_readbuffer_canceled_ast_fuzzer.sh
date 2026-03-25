@@ -37,7 +37,7 @@ ${CLICKHOUSE_CLIENT} -q "
     for _ in $(seq 1 5); do
         # Sleep a random amount of time between 50ms and 300ms
         SLEEP_TIME="0.$((RANDOM % 251 + 50))"
-        (timeout --signal=KILL ${SLEEP_TIME} ${CLICKHOUSE_CLIENT} \
+        (timeout --signal=KILL --kill-after=5 ${SLEEP_TIME} ${CLICKHOUSE_CLIENT} \
             --ast_fuzzer_runs=500 \
             --interactive_delay=1 \
             -q "SELECT t1.id, t2.id FROM ${CLICKHOUSE_DATABASE}.t1 AS t1 JOIN ${CLICKHOUSE_DATABASE}.t2 AS t2 ON t1.id = t2.id ORDER BY t1.id FORMAT Null" \
