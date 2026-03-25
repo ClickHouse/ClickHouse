@@ -386,12 +386,10 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/clickstack");
     factory.addHandler(clickstack_handler);
 
-    {
-        auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
-        webterminal_handler->attachNonStrictPath("/webterminal");
-        factory.addPathToHints("/webterminal");
-        factory.addHandler(webterminal_handler);
-    }
+    auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
+    webterminal_handler->attachNonStrictPath("/webterminal");
+    factory.addPathToHints("/webterminal");
+    factory.addHandler(webterminal_handler);
 
 #if USE_SSL
     if (server.config().has("acme"))

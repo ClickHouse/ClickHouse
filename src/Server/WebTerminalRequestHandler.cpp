@@ -219,7 +219,7 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket)
 
 /// Extract a JSON string value for a given key from a simple flat JSON object.
 /// Returns empty string if not found.
-String extractJsonStringValue(const String & json, const char * key)
+String extractJSONStringValue(const String & json, const char * key)
 {
     auto pos = json.find(key);
     if (pos == String::npos)
@@ -262,7 +262,7 @@ String extractJsonStringValue(const String & json, const char * key)
 
 /// Extract a JSON integer value for a given key, clamped to [0, max_value].
 /// Returns -1 if not found.
-int extractJsonIntValue(const String & json, const char * key, int max_value)
+int extractJSONIntValue(const String & json, const char * key, int max_value)
 {
     auto pos = json.find(key);
     if (pos == String::npos)
@@ -294,8 +294,8 @@ bool parseResizeMessage(const String & json, int & cols, int & rows)
 
     static constexpr int MAX_TERMINAL_DIMENSION = 500;
 
-    cols = extractJsonIntValue(json, "\"cols\"", MAX_TERMINAL_DIMENSION);
-    rows = extractJsonIntValue(json, "\"rows\"", MAX_TERMINAL_DIMENSION);
+    cols = extractJSONIntValue(json, "\"cols\"", MAX_TERMINAL_DIMENSION);
+    rows = extractJSONIntValue(json, "\"rows\"", MAX_TERMINAL_DIMENSION);
     return cols > 0 && rows > 0;
 }
 
@@ -305,8 +305,8 @@ bool parseAuthMessage(const String & json, String & user, String & password)
     if (json.find("\"auth\"") == String::npos)
         return false;
 
-    user = extractJsonStringValue(json, "\"user\"");
-    password = extractJsonStringValue(json, "\"password\"");
+    user = extractJSONStringValue(json, "\"user\"");
+    password = extractJSONStringValue(json, "\"password\"");
     /// User is required, password can be empty
     return !user.empty();
 }
