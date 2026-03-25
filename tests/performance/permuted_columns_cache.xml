@@ -1,0 +1,60 @@
+<test>
+    <!-- Stress the permute path: 20 columns in ORDER BY, each with a minmax skip index.
+         Without the permuted columns cache, each column is permuted 3 times
+         (primary key + skip index + data column). With the cache, only once. -->
+
+    <create_query>
+        CREATE TABLE permute_cache_wide
+        (
+            c0 UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64,
+            c5 UInt64, c6 UInt64, c7 UInt64, c8 UInt64, c9 UInt64,
+            c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64,
+            c15 UInt64, c16 UInt64, c17 UInt64, c18 UInt64, c19 UInt64,
+            INDEX idx0 (c0) TYPE minmax, INDEX idx1 (c1) TYPE minmax,
+            INDEX idx2 (c2) TYPE minmax, INDEX idx3 (c3) TYPE minmax,
+            INDEX idx4 (c4) TYPE minmax, INDEX idx5 (c5) TYPE minmax,
+            INDEX idx6 (c6) TYPE minmax, INDEX idx7 (c7) TYPE minmax,
+            INDEX idx8 (c8) TYPE minmax, INDEX idx9 (c9) TYPE minmax,
+            INDEX idx10 (c10) TYPE minmax, INDEX idx11 (c11) TYPE minmax,
+            INDEX idx12 (c12) TYPE minmax, INDEX idx13 (c13) TYPE minmax,
+            INDEX idx14 (c14) TYPE minmax, INDEX idx15 (c15) TYPE minmax,
+            INDEX idx16 (c16) TYPE minmax, INDEX idx17 (c17) TYPE minmax,
+            INDEX idx18 (c18) TYPE minmax, INDEX idx19 (c19) TYPE minmax
+        )
+        ENGINE = MergeTree
+        ORDER BY (c0, c1, c2, c3, c4, c5, c6, c7, c8, c9,
+                  c10, c11, c12, c13, c14, c15, c16, c17, c18, c19)
+        SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0
+    </create_query>
+
+    <create_query>
+        CREATE TABLE permute_cache_src
+        (
+            c0 UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64,
+            c5 UInt64, c6 UInt64, c7 UInt64, c8 UInt64, c9 UInt64,
+            c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64,
+            c15 UInt64, c16 UInt64, c17 UInt64, c18 UInt64, c19 UInt64
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO permute_cache_src SELECT
+            rand64(number * 20 + 0), rand64(number * 20 + 1),
+            rand64(number * 20 + 2), rand64(number * 20 + 3),
+            rand64(number * 20 + 4), rand64(number * 20 + 5),
+            rand64(number * 20 + 6), rand64(number * 20 + 7),
+            rand64(number * 20 + 8), rand64(number * 20 + 9),
+            rand64(number * 20 + 10), rand64(number * 20 + 11),
+            rand64(number * 20 + 12), rand64(number * 20 + 13),
+            rand64(number * 20 + 14), rand64(number * 20 + 15),
+            rand64(number * 20 + 16), rand64(number * 20 + 17),
+            rand64(number * 20 + 18), rand64(number * 20 + 19)
+        FROM numbers(5000000)
+    </fill_query>
+
+    <query>INSERT INTO permute_cache_wide SELECT * FROM permute_cache_src</query>
+
+    <drop_query>DROP TABLE IF EXISTS permute_cache_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS permute_cache_src</drop_query>
+</test>
