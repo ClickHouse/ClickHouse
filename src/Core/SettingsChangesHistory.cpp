@@ -41,8 +41,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
+            {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
             {"enable_materialized_cte", false, false, "New setting"},
             {"force_primary_key_reverse_order", false, false, "New testing setting that forces all ORDER BY columns to DESC for stress-testing reverse key functionality"},
+            {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -1103,7 +1105,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
-
+            {"allow_commit_order_projection", false, false, "New setting"},
+            {"replicated_fetches_min_part_level", 0, 0, "New setting"},
+            {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {

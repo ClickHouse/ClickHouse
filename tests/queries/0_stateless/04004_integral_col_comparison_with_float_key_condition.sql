@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 -- Disable force_primary_key_reverse_order: reversed key changes data layout in granules breaking max_rows_to_read limits
 SET force_primary_key_reverse_order = 0;
 
@@ -5,6 +7,8 @@ SET force_primary_key_reverse_order = 0;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_trivial_approximate_count_query = 0;
+SET max_insert_threads = 1;
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS test_int64;
 CREATE TABLE test_int64 (uid Int64) ENGINE = MergeTree ORDER BY uid SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;

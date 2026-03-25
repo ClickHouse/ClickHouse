@@ -5091,7 +5091,7 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        bool is_standalone_app = getApplicationType() == ApplicationType::KEEPER;
+        bool is_standalone_app = config.getBool("keeper_server.standalone_keeper", getApplicationType() == ApplicationType::KEEPER);
         if (start_async)
         {
             assert(!is_standalone_app);

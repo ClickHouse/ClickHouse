@@ -232,7 +232,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
 
             }
 
-            shared_data_serialization = std::make_shared<SerializationObjectSharedData>(shared_data_serialization_version, dynamic_type, dynamic_serialization, num_buckets);
+            shared_data_serialization = SerializationObjectSharedData::create(shared_data_serialization_version, dynamic_type, dynamic_serialization, num_buckets);
         }
 
         auto shared_data_substream_data = SubstreamData(shared_data_serialization)
@@ -458,7 +458,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     }
 
     settings.path.push_back(Substream::ObjectSharedData);
-    object_state->shared_data_serialization = std::make_shared<SerializationObjectSharedData>(shared_data_serialization_version, dynamic_type, dynamic_serialization, shared_data_buckets);
+    object_state->shared_data_serialization = SerializationObjectSharedData::create(shared_data_serialization_version, dynamic_type, dynamic_serialization, shared_data_buckets);
     object_state->shared_data_serialization->serializeBinaryBulkStatePrefix(*shared_data, settings, object_state->shared_data_state);
     settings.path.pop_back();
     settings.path.pop_back();
@@ -655,7 +655,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
     }
 
     settings.path.push_back(Substream::ObjectSharedData);
-    object_state->shared_data_serialization = std::make_shared<SerializationObjectSharedData>(structure_state_concrete->shared_data_serialization_version, dynamic_type, dynamic_serialization, structure_state_concrete->shared_data_buckets);
+    object_state->shared_data_serialization = SerializationObjectSharedData::create(structure_state_concrete->shared_data_serialization_version, dynamic_type, dynamic_serialization, structure_state_concrete->shared_data_buckets);
     object_state->shared_data_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
     settings.path.pop_back();
@@ -1362,7 +1362,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
 
 SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const
 {
-    return std::make_shared<SerializationObjectTypedPath>(prev, path);
+    return SerializationObjectTypedPath::create(prev, path);
 }
 
 void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const
