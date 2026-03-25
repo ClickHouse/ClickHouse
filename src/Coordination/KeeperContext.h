@@ -54,6 +54,7 @@ public:
     bool digestEnabledOnCommit() const;
 
     bool removeOrphanedNodesOnStartup() const;
+    void setRemoveOrphanedNodesOnStartup(bool remove_orphaned_nodes_on_startup_);
 
     DiskPtr getLatestLogDisk() const;
     DiskPtr getLogDisk() const;

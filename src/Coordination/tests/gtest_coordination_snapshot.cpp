@@ -789,4 +789,149 @@ TYPED_TEST(CoordinationTest, TestReadSnapshotParallelMultiChunk)
     snap_disk->shutdown();
 }
 
+/// Test that orphaned nodes (and their descendants) are removed during snapshot deserialization
+/// when remove_orphaned_nodes_on_startup is enabled and digest is disabled.
+TYPED_TEST(CoordinationTest, TestSnapshotOrphanedNodesRemoval)
+{
+    using Storage = typename TestFixture::Storage;
+    if constexpr (Storage::use_rocksdb)
+        return; /// Orphan detection only applies to memory storage
+
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
+
+    Storage storage(500, "", this->keeper_context);
+
+    /// Add normal nodes
+    addNode(storage, "/hello1", "world");
+    addNode(storage, "/hello2", "data");
+
+    /// Insert orphaned nodes directly (parent /missing does not exist)
+    using Node = typename Storage::Node;
+    {
+        Node orphan_child;
+        orphan_child.setData("orphan_child_data");
+        storage.container.insertOrReplace("/missing/child", orphan_child);
+    }
+    {
+        Node orphan_grandchild;
+        orphan_grandchild.setData("orphan_grandchild_data");
+        storage.container.insertOrReplace("/missing/child/grandchild", orphan_grandchild);
+    }
+
+    /// Serialize: container has / + 3 system nodes + /hello1 + /hello2 + /missing/child + /missing/child/grandchild = 8
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Deserialize with orphan removal enabled
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
+    const auto & restored_storage = deser_result.storage;
+
+    /// Orphans should be removed: only / + 3 system nodes + /hello1 + /hello2 = 6
+    EXPECT_EQ(restored_storage->container.size(), 6);
+    EXPECT_NE(restored_storage->container.find("/hello1"), restored_storage->container.end());
+    EXPECT_NE(restored_storage->container.find("/hello2"), restored_storage->container.end());
+    EXPECT_EQ(restored_storage->container.find("/missing/child"), restored_storage->container.end());
+    EXPECT_EQ(restored_storage->container.find("/missing/child/grandchild"), restored_storage->container.end());
+
+    /// Normal parent-child relationships should be intact
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3); /// hello1, hello2, keeper system node
+}
+
+/// Test that deserialization throws when orphaned nodes are found but removal is disabled.
+TYPED_TEST(CoordinationTest, TestSnapshotOrphanedNodesThrowsWhenDisabled)
+{
+    using Storage = typename TestFixture::Storage;
+    if constexpr (Storage::use_rocksdb)
+        return; /// Orphan detection only applies to memory storage
+
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
+
+    Storage storage(500, "", this->keeper_context);
+    addNode(storage, "/hello1", "world");
+
+    /// Insert orphaned node
+    using Node = typename Storage::Node;
+    Node orphan;
+    orphan.setData("orphan_data");
+    storage.container.insertOrReplace("/missing/child", orphan);
+
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Deserialize with orphan removal disabled (default)
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(false);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    EXPECT_THROW(manager.deserializeSnapshotFromBuffer(debuf), DB::Exception);
+}
+
+/// Test that ephemeral tracking is cleaned up when orphaned ephemeral nodes are removed.
+TYPED_TEST(CoordinationTest, TestSnapshotOrphanedEphemeralCleanup)
+{
+    using Storage = typename TestFixture::Storage;
+    if constexpr (Storage::use_rocksdb)
+        return; /// Orphan detection only applies to memory storage
+
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
+
+    Storage storage(500, "", this->keeper_context);
+    addNode(storage, "/hello1", "world");
+
+    /// Insert orphaned ephemeral node
+    using Node = typename Storage::Node;
+    static constexpr int64_t session_id = 42;
+    Node orphan;
+    orphan.setData("ephemeral_orphan");
+    orphan.stats.setEphemeralOwner(session_id);
+    storage.container.insertOrReplace("/missing/ephemeral", orphan);
+
+    /// Register it in ephemeral tracking (as snapshot serialization would have captured)
+    storage.committed_ephemerals[session_id].insert("/missing/ephemeral");
+    ++storage.committed_ephemeral_nodes;
+
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Deserialize with orphan removal enabled
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
+    const auto & restored_storage = deser_result.storage;
+
+    /// Orphaned ephemeral node should be removed
+    EXPECT_EQ(restored_storage->container.find("/missing/ephemeral"), restored_storage->container.end());
+
+    /// Ephemeral tracking should be cleaned up
+    EXPECT_EQ(restored_storage->committed_ephemerals.count(session_id), 0);
+    EXPECT_EQ(restored_storage->committed_ephemeral_nodes, 0);
+}
+
 #endif

@@ -303,6 +303,11 @@ bool KeeperContext::removeOrphanedNodesOnStartup() const
     return remove_orphaned_nodes_on_startup;
 }
 
+void KeeperContext::setRemoveOrphanedNodesOnStartup(bool remove_orphaned_nodes_on_startup_)
+{
+    remove_orphaned_nodes_on_startup = remove_orphaned_nodes_on_startup_;
+}
+
 void KeeperContext::setDigestEnabled(bool digest_enabled_)
 {
     digest_enabled = digest_enabled_;
