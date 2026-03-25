@@ -195,7 +195,7 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
 #endif
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
-        return std::make_unique<SnappyWriteBuffer>(std::forward<WriteBufferT>(nested), buf_size, existing_memory, alignment);
+        return std::make_unique<SnappyWriteBuffer>(std::move(nested), buf_size, existing_memory, alignment); // NOLINT(bugprone-move-forwarding-reference)
 #endif
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
