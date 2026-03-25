@@ -2,6 +2,7 @@
 #include <Storages/IStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -52,6 +53,7 @@ private:
 
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;
+    StorageObjectStorageTableOptions table_options;
     const ObjectStoragePtr object_storage;
     const DataLakeStorageSettingsPtr datalake_settings;
     NamesAndTypesList virtual_columns;

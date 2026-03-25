@@ -2,6 +2,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
@@ -48,6 +49,7 @@ public:
     PartitionedStorageObjectStorageSink(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
+        const StorageObjectStorageTableOptions & table_options_,
         std::optional<FormatSettings> format_settings_,
         SharedHeader sample_block_,
         ContextPtr context_);
@@ -57,6 +59,7 @@ public:
 private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
+    StorageObjectStorageTableOptions table_options;
 
     const StorageObjectStorageQuerySettings query_settings;
     const std::optional<FormatSettings> format_settings;

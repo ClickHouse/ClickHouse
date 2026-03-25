@@ -81,7 +81,7 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
     if (!path.path.ends_with('/'))
         configuration->setRawPath(StorageObjectStorageConfiguration::Path(path.path + "/"));
 
-    configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
+    table_options.initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_, configuration->getRawPath());
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
@@ -91,8 +91,8 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
-    configuration->check(context_);
+    resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, {}, sample_path, context_);
+    FormatFactory::instance().checkFormatName(table_options.format);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
@@ -118,7 +118,7 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
         metadata.columns,
         context_,
         /* format_settings */std::nullopt,
-        configuration->partition_strategy_type,
+        table_options.partition_strategy_type,
         sample_path));
 
     setInMemoryMetadata(metadata);
@@ -185,12 +185,12 @@ void StorageDataLakeCluster<DataLakeMetadata>::updateQueryToSendIfNeeded(
     }
 
     if (!endsWith(table_function->name, "Cluster"))
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, table_options.format, context, /*with_structure=*/true);
     else
     {
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, table_options.format, context, /*with_structure=*/true);
         args.insert(args.begin(), cluster_name_arg);
     }
     if (settings_temporary_storage)
@@ -242,7 +242,7 @@ RemoteQueryExecutor::Extension StorageDataLakeCluster<DataLakeMetadata>::getTask
     {
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
-            configuration->format,
+            table_options.format,
             object_storage,
             local_context
         );

@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
+#include <Storages/ObjectStorage/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -8,6 +9,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 const StorageObjectStorageTableOptions::Path & StorageObjectStorageTableOptions::getPathForRead(const Path & raw_path) const
 {
@@ -42,6 +48,19 @@ String StorageObjectStorageTableOptions::computeSchemaHash(const ColumnsDescript
     return getSipHash128AsHexString(hash);
 }
 
+void StorageObjectStorageTableOptions::setSchemaHash(const String & hash, StorageObjectStorageConfiguration & configuration)
+{
+    schema_hash = hash;
+    boost::replace_all(read_path.path, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
+
+    if (configuration.getPaths().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", configuration.getPaths().size());
+    auto path = configuration.getRawPath();
+    boost::replace_all(path.path, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, schema_hash);
+    configuration.setRawPath(path);
+    configuration.setPaths({path});
+}
+
 void StorageObjectStorageTableOptions::initPartitionStrategy(
     ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context, const Path & raw_path)
 {
@@ -60,6 +79,18 @@ void StorageObjectStorageTableOptions::initPartitionStrategy(
         read_path = partition_strategy->getPathForRead(raw_path.path);
         LOG_DEBUG(getLogger("StorageObjectStorageTableOptions"), "Initialized partition strategy {}", magic_enum::enum_name(partition_strategy_type));
     }
+}
+
+StorageObjectStorageTableOptions tableOptionsFromParsedArguments(StorageParsedArguments && parsed_arguments)
+{
+    StorageObjectStorageTableOptions table_options;
+    table_options.format = std::move(parsed_arguments.format);
+    table_options.compression_method = std::move(parsed_arguments.compression_method);
+    table_options.structure = std::move(parsed_arguments.structure);
+    table_options.partition_strategy_type = parsed_arguments.partition_strategy_type;
+    table_options.partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
+    table_options.partition_strategy = std::move(parsed_arguments.partition_strategy);
+    return table_options;
 }
 
 }

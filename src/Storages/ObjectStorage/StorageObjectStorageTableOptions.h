@@ -31,6 +31,8 @@ struct StorageObjectStorageTableOptions
 
     static String computeSchemaHash(const ColumnsDescription & columns);
 
+    void setSchemaHash(const String & hash, StorageObjectStorageConfiguration & configuration);
+
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context, const Path & raw_path);
 
 private:
@@ -38,5 +40,10 @@ private:
     /// When using `partition_strategy=hive`, a recursive reading pattern will be appended.
     Path read_path;
 };
+
+struct StorageParsedArguments;
+
+/// Convert common parsed arguments into table options.
+StorageObjectStorageTableOptions tableOptionsFromParsedArguments(StorageParsedArguments && parsed_arguments);
 
 }

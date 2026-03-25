@@ -24,6 +24,7 @@ std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,
     std::string & format,
+    const std::string & compression_method,
     ObjectStoragePtr object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
@@ -75,6 +76,8 @@ SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & sto
 ColumnsDescription resolveSchemaFromData(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const std::string & format,
+    const std::string & compression_method,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
     const ContextPtr & context);
@@ -82,6 +85,7 @@ ColumnsDescription resolveSchemaFromData(
 std::string resolveFormatFromData(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const std::string & compression_method,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
     const ContextPtr & context);
@@ -89,6 +93,7 @@ std::string resolveFormatFromData(
 std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const std::string & compression_method,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
     const ContextPtr & context);
@@ -96,6 +101,8 @@ std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
 std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const String & format,
+    const String & compression_method,
     const std::optional<FormatSettings> & format_settings,
     ObjectInfos & read_keys,
     const ContextPtr & context);

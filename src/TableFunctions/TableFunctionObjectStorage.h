@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
@@ -40,15 +41,15 @@ public:
 
     String getName() const override { return name; }
 
-    bool hasStaticStructure() const override { return configuration->structure != "auto"; }
+    bool hasStaticStructure() const override { return table_options.structure != "auto"; }
 
-    bool needStructureHint() const override { return configuration->structure == "auto"; }
+    bool needStructureHint() const override { return table_options.structure == "auto"; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override
     {
-        return configuration->format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
+        return table_options.format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(table_options.format, context);
     }
 
     std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
@@ -58,11 +59,13 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true, nullptr, getDiskName());
+        auto [config, opts] = StorageObjectStorageConfiguration::initialize(Configuration::type, args, context, true, nullptr, getDiskName());
+        configuration = config;
+        table_options = std::move(opts);
         if constexpr (is_data_lake)
         {
-            if (configuration->format == "auto")
-                configuration->format = "Parquet";
+            if (table_options.format == "auto")
+                table_options.format = "Parquet";
         }
     }
 
@@ -74,16 +77,7 @@ public:
       const String & format,
       const ContextPtr & context)
     {
-        if constexpr (is_data_lake)
-        {
-            Configuration configuration;
-            if (configuration.format == "auto")
-                configuration.format = "Parquet"; /// Default format of data lakes.
-
-            configuration.addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
-        }
-        else
-            Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
+        Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
     }
 
     void setPartitionBy(const ASTPtr & partition_by_) override
@@ -111,6 +105,7 @@ protected:
     static std::shared_ptr<Settings> createEmptySettings();
 
     mutable StorageObjectStorageConfigurationPtr configuration;
+    mutable StorageObjectStorageTableOptions table_options;
     mutable ObjectStoragePtr object_storage;
     ColumnsDescription structure_hint;
     std::shared_ptr<Settings> settings;

@@ -243,6 +243,7 @@ namespace
 StorageObjectStorageQueue::StorageObjectStorageQueue(
     std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
     const StorageObjectStorageConfigurationPtr configuration_,
+    StorageObjectStorageTableOptions table_options_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -284,6 +285,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , configuration{configuration_}
+    , table_options(std::move(table_options_))
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
@@ -292,14 +294,14 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::StorageObjectStorageQueue");
-    const auto & read_path = configuration->getPathForRead();
+    const auto & read_path = table_options.getPathForRead(configuration->getRawPath());
     if (read_path.path.empty())
     {
-        configuration->setPathForRead({"/*"});
+        table_options.setPathForRead({"/*"});
     }
     else if (read_path.path.ends_with('/'))
     {
-        configuration->setPathForRead({read_path.path + '*'});
+        table_options.setPathForRead({read_path.path + '*'});
     }
     else if (!read_path.hasGlobs())
     {
@@ -310,13 +312,12 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     validateSettings(*queue_settings_, is_attach);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true, std::nullopt);
-    FormatFactory::instance().checkFormatName(configuration->format);
-    configuration->check(context_);
+    FormatFactory::instance().checkFormatName(table_options.format);
 
     ColumnsDescription columns{columns_};
     std::string sample_path;
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
-    configuration->check(context_);
+    resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, format_settings, sample_path, context_);
+    FormatFactory::instance().checkFormatName(table_options.format);
 
     bool is_path_with_hive_partitioning = false;
     if (use_hive_partitioning)
@@ -372,7 +373,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         zk_path,
         *queue_settings_,
         storage_metadata.getColumns(),
-        configuration_->format,
+        table_options.format,
         context_,
         is_attach,
         log);
@@ -523,7 +524,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context_, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(table_options.format, context_, format_settings);
 }
 
 class ReadFromObjectStorageQueue : public SourceStepWithFilter
@@ -688,6 +689,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
+        table_options.format,
+        table_options.compression_method,
         file_iterator,
         configuration,
         object_storage,

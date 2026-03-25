@@ -1,5 +1,6 @@
 #include <memory>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 
 #if USE_AWS_S3
 #include <Common/HTTPHeaderFilter.h>
@@ -133,7 +134,6 @@ void StorageS3Configuration::check(ContextPtr context)
     validateNamespace(url.bucket);
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
     context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
-    StorageObjectStorageConfiguration::check(context);
 }
 
 void StorageS3Configuration::validateNamespace(const String & name) const
@@ -967,58 +967,70 @@ static void addStructureAndFormatToArgsIfNeededS3(
     }
 }
 
-void StorageS3Configuration::initializeFromParsedArguments(S3StorageParsedArguments && parsed_arguments)
+std::pair<std::shared_ptr<StorageS3Configuration>, StorageObjectStorageTableOptions>
+StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
-    StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
-    url = std::move(parsed_arguments.url);
-    s3_settings = std::move(parsed_arguments.s3_settings);
-    s3_capabilities = std::move(parsed_arguments.s3_capabilities);
-    headers_from_ast = std::move(parsed_arguments.headers_from_ast);
-}
-
-
-void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
-{
+    auto config = std::make_shared<StorageS3Configuration>();
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
-    initializeFromParsedArguments(std::move(parsed_arguments));
-    keys = {url.key};
-    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
-        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->url = std::move(parsed_arguments.url);
+    config->s3_settings = std::move(parsed_arguments.s3_settings);
+    config->s3_capabilities = std::move(parsed_arguments.s3_capabilities);
+    config->headers_from_ast = std::move(parsed_arguments.headers_from_ast);
+    config->keys = {config->url.key};
+    config->static_configuration = !config->s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
+        || config->s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+    return {config, std::move(table_options)};
 }
 
-void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+std::pair<std::shared_ptr<StorageS3Configuration>, StorageObjectStorageTableOptions>
+StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
+    auto config = std::make_shared<StorageS3Configuration>();
     S3StorageParsedArguments parsed_arguments;
     auto disk = context->getDisk(disk_name);
     parsed_arguments.fromDisk(disk, args, context, with_structure);
     fs::path suffix = parsed_arguments.path_suffix;
-    initializeFromParsedArguments(std::move(parsed_arguments));
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->url = std::move(parsed_arguments.url);
+    config->s3_settings = std::move(parsed_arguments.s3_settings);
+    config->s3_capabilities = std::move(parsed_arguments.s3_capabilities);
+    config->headers_from_ast = std::move(parsed_arguments.headers_from_ast);
     if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
     {
         String path = object_storage_disk->getObjectStorage()->getCommonKeyPrefix();
         fs::path root = path;
-        setPathForRead(String(root / suffix));
-        keys = {String(root / suffix)};
+        table_options.setPathForRead(String(root / suffix));
+        config->keys = {String(root / suffix)};
     }
+    return {config, std::move(table_options)};
 }
 
-void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
+void StorageS3Configuration::setInitializationAsBigLake(const String & client_id_, const String & client_secret_, const String & refresh_token_)
 {
+    s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
+    s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = client_id_;
+    s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = client_secret_;
+    s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = refresh_token_;
+}
+
+std::pair<std::shared_ptr<StorageS3Configuration>, StorageObjectStorageTableOptions>
+StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
+{
+    auto config = std::make_shared<StorageS3Configuration>();
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
-    initializeFromParsedArguments(std::move(parsed_arguments));
-    keys = {url.key};
-    assert(s3_settings != nullptr);
-    if (!biglake_adc_client_id.empty())
-    {
-        s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
-        s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = biglake_adc_client_id;
-        s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = biglake_adc_client_secret;
-        s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = biglake_adc_refresh_token;
-    }
-    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
-        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->url = std::move(parsed_arguments.url);
+    config->s3_settings = std::move(parsed_arguments.s3_settings);
+    config->s3_capabilities = std::move(parsed_arguments.s3_capabilities);
+    config->headers_from_ast = std::move(parsed_arguments.headers_from_ast);
+    config->keys = {config->url.key};
+    assert(config->s3_settings != nullptr);
+    config->static_configuration = !config->s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
+        || config->s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+    return {config, std::move(table_options)};
 }
 
 void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(

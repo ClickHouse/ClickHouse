@@ -81,12 +81,12 @@ public:
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
 
-private:
-    void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments);
-    void setURL(const std::string & url_);
-    void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
+    static std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions> fromAST(ASTs & args, ContextPtr context, bool with_structure);
+    static std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions> fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    static std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions> fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
 
-    void fromNamedCollection(const NamedCollection &, ContextPtr context) override;
+private:
+    void setURL(const std::string & url_);
 
     String url;
     Path path;

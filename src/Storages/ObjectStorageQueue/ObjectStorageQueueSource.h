@@ -166,6 +166,8 @@ public:
     ObjectStorageQueueSource(
         String name_,
         size_t processor_id_,
+        const String & format_name_,
+        const String & compression_method_,
         std::shared_ptr<FileIterator> file_iterator_,
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
@@ -233,6 +235,8 @@ private:
 
     const String name;
     const size_t processor_id;
+    const String format_name;
+    const String compression_method;
     const std::shared_ptr<FileIterator> file_iterator;
     const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;

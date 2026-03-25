@@ -108,13 +108,6 @@ StorageObjectStorage::StorageObjectStorage(
     , is_table_function(is_table_function_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    /// Copy storage metadata fields from configuration to table_options.
-    table_options.format = configuration->format;
-    table_options.compression_method = configuration->compression_method;
-    table_options.structure = configuration->structure;
-    table_options.partition_strategy_type = configuration->partition_strategy_type;
-    table_options.partition_columns_in_data_file = configuration->partition_columns_in_data_file;
-
     table_options.initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context, configuration->getRawPath());
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (table_options.format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
@@ -162,15 +155,15 @@ StorageObjectStorage::StorageObjectStorage(
         if (columns.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use _schema_hash placeholder without explicitly specifying columns");
 
-        configuration->setSchemaHash(StorageObjectStorageTableOptions::computeSchemaHash(columns));
+        table_options.setSchemaHash(StorageObjectStorageTableOptions::computeSchemaHash(columns), *configuration);
     }
 
     if (need_resolve_columns_or_format)
-        resolveSchemaAndFormat(columns, table_options.format, object_storage, configuration, format_settings, sample_path, context);
+        resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
 
-    configuration->check(context);
+    FormatFactory::instance().checkFormatName(table_options.format);
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
@@ -193,6 +186,7 @@ StorageObjectStorage::StorageObjectStorage(
     std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
         columns,
         configuration,
+        table_options,
         sample_path,
         columns_in_table_or_function_definition.empty(),
         format_settings,
@@ -407,7 +401,7 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (table_options.partition_strategy)
     {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, table_options, format_settings, sample_block, local_context);
     }
 
     auto paths = configuration->getPaths();

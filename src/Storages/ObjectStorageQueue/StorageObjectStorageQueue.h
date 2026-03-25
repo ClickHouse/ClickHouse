@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageFactory.h>
@@ -25,6 +26,7 @@ public:
     StorageObjectStorageQueue(
         std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
         StorageObjectStorageConfigurationPtr configuration_,
+        StorageObjectStorageTableOptions table_options_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -58,7 +60,7 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
-    const auto & getFormatName() const { return configuration->format; }
+    const auto & getFormatName() const { return table_options.format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
 
@@ -121,6 +123,7 @@ private:
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     StorageObjectStorageConfigurationPtr configuration;
+    StorageObjectStorageTableOptions table_options;
     ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;

@@ -6,6 +6,7 @@
 
 #include <Common/assert_cast.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <azure/storage/common/storage_credential.hpp>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
@@ -71,7 +72,6 @@ void StorageAzureConfiguration::check(ContextPtr context)
 {
     auto url = Poco::URI(connection_params.getConnectionURL());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
-    StorageObjectStorageConfiguration::check(context);
 }
 
 StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(const ContextPtr & context) const
@@ -820,25 +820,18 @@ void addStructureAndFormatToArgsIfNeededAzure(
     }
 }
 
-void StorageAzureConfiguration::initializeFromParsedArguments(const AzureStorageParsedArguments & parsed_arguments)
-{
-    StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
-    blob_path = parsed_arguments.blob_path;
-    connection_params = parsed_arguments.connection_params;
-}
-
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
     if (disk)
     {
-        if (format == "auto")
+        /// When using disk-based initialization, format and structure are always auto-detected,
+        /// so we always need to add them to the AST args.
         {
             ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
             auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
-        if (structure == "auto")
         {
             ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
             auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
@@ -849,42 +842,61 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     addStructureAndFormatToArgsIfNeededAzure(args, structure_, format_, context, with_structure);
 }
 
-void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions>
+StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
+    auto config = std::make_shared<StorageAzureConfiguration>();
     AzureStorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
-    initializeFromParsedArguments(parsed_arguments);
-    setPaths({parsed_arguments.blob_path});
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->blob_path = parsed_arguments.blob_path;
+    config->connection_params = parsed_arguments.connection_params;
+    config->setPaths({parsed_arguments.blob_path});
+    return {config, std::move(table_options)};
 }
 
-void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
+std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions>
+StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
+    auto config = std::make_shared<StorageAzureConfiguration>();
     AzureStorageParsedArguments parsed_arguments;
-    if (!onelake_client_id.empty())
-    {
-        parsed_arguments.initializeForOneLake(engine_args, context);
-        parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
-            onelake_tenant_id,
-            onelake_client_id,
-            onelake_client_secret
-        );
-    }
-    else
-    {
-        parsed_arguments.fromAST(engine_args, context, with_structure);
-    }
-    initializeFromParsedArguments(parsed_arguments);
-    setPaths({parsed_arguments.blob_path});
+    parsed_arguments.fromAST(engine_args, context, with_structure);
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->blob_path = parsed_arguments.blob_path;
+    config->connection_params = parsed_arguments.connection_params;
+    config->setPaths({parsed_arguments.blob_path});
+    return {config, std::move(table_options)};
 }
 
-void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions>
+StorageAzureConfiguration::fromOneLake(
+    ASTs & args, ContextPtr context, const String & client_id, const String & client_secret, const String & tenant_id)
 {
+    auto config = std::make_shared<StorageAzureConfiguration>();
     AzureStorageParsedArguments parsed_arguments;
-    disk = context->getDisk(disk_name);
-    parsed_arguments.fromDisk(disk, args, context, with_structure);
-    initializeFromParsedArguments(parsed_arguments);
-    setPathForRead(parsed_arguments.blob_path.path + "/");
-    setPaths({parsed_arguments.blob_path.path + "/"});
+    parsed_arguments.initializeForOneLake(args, context);
+    parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
+        tenant_id, client_id, client_secret);
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->blob_path = parsed_arguments.blob_path;
+    config->connection_params = parsed_arguments.connection_params;
+    config->setPaths({parsed_arguments.blob_path});
+    return {config, std::move(table_options)};
+}
+
+std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions>
+StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+{
+    auto config = std::make_shared<StorageAzureConfiguration>();
+    AzureStorageParsedArguments parsed_arguments;
+    config->disk = context->getDisk(disk_name);
+    parsed_arguments.fromDisk(config->disk, args, context, with_structure);
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->blob_path = parsed_arguments.blob_path;
+    config->connection_params = parsed_arguments.connection_params;
+    table_options.setPathForRead(parsed_arguments.blob_path.path + "/");
+    config->setPaths({parsed_arguments.blob_path.path + "/"});
+    return {config, std::move(table_options)};
 }
 
 

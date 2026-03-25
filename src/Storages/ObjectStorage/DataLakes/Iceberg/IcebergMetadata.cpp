@@ -212,7 +212,7 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr /* configuration_ */,
     const DataLakeStorageSettingsPtr & datalake_settings_,
     Iceberg::PersistentTableComponents && persistent_components_,
     ContextPtr context_)
@@ -220,7 +220,7 @@ IcebergMetadata::IcebergMetadata(
     , object_storage(std::move(object_storage_))
     , persistent_components(std::move(persistent_components_))
     , data_lake_settings(datalake_settings_ ? *datalake_settings_ : DataLakeStorageSettings{})
-    , write_format(configuration_->format)
+    , write_format("Parquet")
 {
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
     if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)

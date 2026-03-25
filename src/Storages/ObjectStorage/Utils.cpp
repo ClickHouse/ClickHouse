@@ -65,6 +65,7 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,
     std::string & format,
+    const std::string & compression_method,
     ObjectStoragePtr object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
@@ -76,17 +77,17 @@ void resolveSchemaAndFormat(
         if (format == "auto")
         {
             std::tie(columns, format) = resolveSchemaAndFormatFromData(
-                object_storage, configuration, format_settings, sample_path, context);
+                object_storage, configuration, compression_method, format_settings, sample_path, context);
         }
         else
         {
             chassert(!format.empty());
-            columns = resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
+            columns = resolveSchemaFromData(object_storage, configuration, format, compression_method, format_settings, sample_path, context);
         }
     }
     else if (format == "auto")
     {
-        format = resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
+        format = resolveFormatFromData(object_storage, configuration, compression_method, format_settings, sample_path, context);
     }
 
     validateSupportedColumns(columns, *configuration);
@@ -243,6 +244,8 @@ extern const SettingsUInt64 filesystem_cache_boundary_alignment;
 std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const String & format,
+    const String & compression_method,
     const std::optional<FormatSettings> & format_settings,
     ObjectInfos & read_keys,
     const ContextPtr & context)
@@ -261,20 +264,22 @@ std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         &read_keys);
 
     return std::make_unique<ReadBufferIterator>(
-        object_storage, configuration, file_iterator,
+        object_storage, configuration, format, compression_method, file_iterator,
         format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
 }
 
 ColumnsDescription resolveSchemaFromData(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const std::string & format,
+    const std::string & compression_method,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
+    auto iterator = createReadBufferIterator(object_storage, configuration, format, compression_method, format_settings, read_keys, context);
+    auto schema = readSchemaFromFormat(format, format_settings, *iterator, context);
     sample_path = iterator->getLastFilePath();
     return schema;
 }
@@ -282,12 +287,13 @@ ColumnsDescription resolveSchemaFromData(
 std::string resolveFormatFromData(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const std::string & compression_method,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto iterator = createReadBufferIterator(object_storage, configuration, "auto", compression_method, format_settings, read_keys, context);
     auto format_and_schema = detectFormatAndReadSchema(format_settings, *iterator, context).second;
     sample_path = iterator->getLastFilePath();
     return format_and_schema;
@@ -296,15 +302,15 @@ std::string resolveFormatFromData(
 std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const std::string & compression_method,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto iterator = createReadBufferIterator(object_storage, configuration, "auto", compression_method, format_settings, read_keys, context);
     auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, context);
     sample_path = iterator->getLastFilePath();
-    configuration->format = format;
     return std::pair(columns, format);
 }
 

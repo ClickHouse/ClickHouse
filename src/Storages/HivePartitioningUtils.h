@@ -2,6 +2,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Core/NamesAndTypes.h>
 
 namespace DB
@@ -45,6 +46,7 @@ using HivePartitionColumnsWithFileColumnsPair = std::pair<NamesAndTypesList, Nam
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     ColumnsDescription & columns,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageObjectStorageTableOptions & table_options,
     const std::string & sample_path,
     bool inferred_schema,
     std::optional<FormatSettings> format_settings,

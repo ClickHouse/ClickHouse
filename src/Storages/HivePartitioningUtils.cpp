@@ -198,7 +198,8 @@ NamesAndTypesList extractPartitionColumnsFromPathAndEnrichStorageColumns(
 
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     ColumnsDescription & columns,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageObjectStorageConfigurationPtr & /*configuration*/,
+    const StorageObjectStorageTableOptions & table_options,
     const std::string & sample_path,
     bool inferred_schema,
     std::optional<FormatSettings> format_settings,
@@ -214,9 +215,9 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
      * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
      * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
      */
-    if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+    if (table_options.partition_strategy && table_options.partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
     {
-        hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+        hive_partition_columns_to_read_from_file_path = table_options.partition_strategy->getPartitionColumns();
         sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */true);
     }
     else if (context->getSettingsRef()[Setting::use_hive_partitioning])
@@ -230,7 +231,7 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
         sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */false);
     }
 
-    if (configuration->partition_columns_in_data_file)
+    if (table_options.partition_columns_in_data_file)
     {
         file_columns = columns.getAllPhysical();
     }

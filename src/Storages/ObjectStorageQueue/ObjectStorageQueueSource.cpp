@@ -933,6 +933,8 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 ObjectStorageQueueSource::ObjectStorageQueueSource(
     String name_,
     size_t processor_id_,
+    const String & format_name_,
+    const String & compression_method_,
     std::shared_ptr<FileIterator> file_iterator_,
     StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
@@ -956,6 +958,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , WithContext(context_)
     , name(std::move(name_))
     , processor_id(processor_id_)
+    , format_name(format_name_)
+    , compression_method(compression_method_)
     , file_iterator(file_iterator_)
     , configuration(configuration_)
     , object_storage(object_storage_)
@@ -1100,8 +1104,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             const auto context = getContext();
             StorageObjectStorageTableOptions queue_table_options;
-            queue_table_options.format = configuration->format;
-            queue_table_options.compression_method = configuration->compression_method;
+            queue_table_options.format = format_name;
+            queue_table_options.compression_method = compression_method;
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
                 file_iterator,

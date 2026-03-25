@@ -24,6 +24,8 @@ namespace ErrorCodes
 ReadBufferIterator::ReadBufferIterator(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
+    const String & format_name_,
+    const String & compression_method_,
     const ObjectIterator & file_iterator_,
     const std::optional<FormatSettings> & format_settings_,
     SchemaCache & schema_cache_,
@@ -32,6 +34,7 @@ ReadBufferIterator::ReadBufferIterator(
     : WithContext(context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
+    , compression_method(compression_method_)
     , file_iterator(file_iterator_)
     , format_settings(format_settings_)
     , query_settings(configuration->getQuerySettings(context_))
@@ -39,8 +42,8 @@ ReadBufferIterator::ReadBufferIterator(
     , read_keys(read_keys_)
     , prev_read_keys_size(read_keys_.size())
 {
-    if (configuration->format != "auto")
-        format = configuration->format;
+    if (format_name_ != "auto")
+        format = format_name_;
 }
 
 SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const
@@ -143,10 +146,10 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto impl
         = createReadBuffer(current_object_info->relative_path_with_metadata, object_storage, context, getLogger("ReadBufferIterator"));
 
-    const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
+    const auto chosen_compression = chooseCompressionMethod(current_object_info->getFileName(), compression_method);
     const auto zstd_window = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
 
-    return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, zstd_window);
+    return wrapReadBufferWithCompressionMethod(std::move(impl), chosen_compression, zstd_window);
 }
 
 ReadBufferIterator::Data ReadBufferIterator::next()
@@ -255,17 +258,17 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
 
         std::unique_ptr<ReadBuffer> read_buf;
-        CompressionMethod compression_method;
+        CompressionMethod chosen_compression;
         using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
         if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {
-            compression_method = chooseCompressionMethod(filename, configuration->compression_method);
+            chosen_compression = chooseCompressionMethod(filename, compression_method);
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
-            compression_method = chooseCompressionMethod(filename, configuration->compression_method);
+            chosen_compression = chooseCompressionMethod(filename, compression_method);
             read_buf = createReadBuffer(
                 current_object_info->relative_path_with_metadata, object_storage, getContext(), getLogger("ReadBufferIterator"));
         }
@@ -275,7 +278,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             first = false;
 
             read_buf = wrapReadBufferWithCompressionMethod(
-                std::move(read_buf), compression_method, static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]));
+                std::move(read_buf), chosen_compression, static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]));
 
             return {std::move(read_buf), std::nullopt, format};
         }

@@ -96,6 +96,8 @@ public:
         const StorageID & table_id,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration,
+        const String & format,
+        const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog);

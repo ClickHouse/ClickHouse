@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -92,38 +93,44 @@ StorageObjectStorageQuerySettings StorageLocalConfiguration::getQuerySettings(co
         .ignore_non_existent_file = false};
 }
 
-void StorageLocalConfiguration::initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments)
+std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions>
+StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
-    path = parsed_arguments.path;
-}
-
-void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
-{
+    auto config = std::make_shared<StorageLocalConfiguration>();
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
-    initializeFromParsedArguments(parsed_arguments);
-    paths = {path};
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->path = parsed_arguments.path;
+    config->paths = {config->path};
+    return {config, std::move(table_options)};
 }
-void StorageLocalConfiguration::fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure)
+
+std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions>
+StorageLocalConfiguration::fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure)
 {
-    disk_name = disk_name_;
+    auto config = std::make_shared<StorageLocalConfiguration>();
+    config->disk_name = disk_name_;
     LocalStorageParsedArguments parsed_arguments;
     auto disk = context->getDisk(disk_name_);
     parsed_arguments.fromDisk(disk, args, context, with_structure);
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
     fs::path root = disk->getPath();
     fs::path suffix = parsed_arguments.path_suffix;
-    initializeFromParsedArguments(parsed_arguments);
-    path = String(root / suffix);
-    setPathForRead(path);
-    setPaths({path});
+    config->path = String(root / suffix);
+    table_options.setPathForRead(config->path);
+    config->setPaths({config->path});
+    return {config, std::move(table_options)};
 }
 
-void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions>
+StorageLocalConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
+    auto config = std::make_shared<StorageLocalConfiguration>();
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
-    initializeFromParsedArguments(parsed_arguments);
-    paths = {path};
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->path = parsed_arguments.path;
+    config->paths = {config->path};
+    return {config, std::move(table_options)};
 }
 }

@@ -126,11 +126,13 @@ public:
         onelake_tenant_id = tenant_id_;
     }
 
-protected:
-    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
+    static std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions> fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
+    static std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions> fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    static std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions> fromAST(ASTs & args, ContextPtr context, bool with_structure);
+    static std::pair<std::shared_ptr<StorageAzureConfiguration>, StorageObjectStorageTableOptions> fromOneLake(
+        ASTs & args, ContextPtr context, const String & client_id, const String & client_secret, const String & tenant_id);
+
 private:
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     ASTPtr extractExtraCredentials(ASTs & args);
 
     Path blob_path;
@@ -142,7 +144,6 @@ private:
     String onelake_client_secret;
     String onelake_tenant_id;
 
-    void initializeFromParsedArguments(const AzureStorageParsedArguments & parsed_arguments);
 };
 }
 

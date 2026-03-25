@@ -116,7 +116,7 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     : log(getLogger("DeltaLakeMetadata"))
     , kernel_helper(DB::getKernelHelper(configuration_.lock(), object_storage_))
     , object_storage(object_storage_)
-    , format_name(configuration_.lock()->format)
+    , format_name("Parquet")
     /// TODO: Supports size limit, not just elements limit.
     /// TODO: Support weight function (by default weight = 1 for all elements).
     /// TODO: Add a setting for cache size.
@@ -615,7 +615,9 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
     const StorageID & /* table_id */,
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration,
+    StorageObjectStorageConfigurationPtr /* configuration */,
+    const String & format,
+    const String & compression_method,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> /* catalog */)
@@ -642,8 +644,8 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             context,
             sample_block,
             format_settings,
-            configuration->format,
-            configuration->compression_method);
+            format,
+            compression_method);
     }
 
     return std::make_shared<DeltaLakePartitionedSink>(
@@ -653,8 +655,8 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
         context,
         sample_block,
         format_settings,
-        configuration->format,
-        configuration->compression_method);
+        format,
+        compression_method);
 }
 
 void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const

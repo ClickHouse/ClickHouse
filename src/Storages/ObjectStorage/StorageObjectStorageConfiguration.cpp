@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 
 #include <Disks/IDisk.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -7,10 +8,14 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
+
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Local/Configuration.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -63,8 +68,96 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
-void StorageObjectStorageConfiguration::initialize(
-    StorageObjectStorageConfiguration & configuration_to_initialize,
+namespace
+{
+
+/// Dispatch a static factory call to the concrete configuration type via a generic lambda.
+/// The lambda receives a `std::type_identity<ConcreteConfig>` tag and must call
+/// the appropriate static `from*` method, returning a pair of (config, table_options).
+template <typename Func>
+std::pair<StorageObjectStorageConfigurationPtr, StorageObjectStorageTableOptions>
+dispatchByStorageType(ObjectStorageType type, Func && func)
+{
+    switch (type)
+    {
+#if USE_AWS_S3
+        case ObjectStorageType::S3:
+            return func(std::type_identity<StorageS3Configuration>{});
+#endif
+#if USE_AZURE_BLOB_STORAGE
+        case ObjectStorageType::Azure:
+            return func(std::type_identity<StorageAzureConfiguration>{});
+#endif
+#if USE_HDFS
+        case ObjectStorageType::HDFS:
+            return func(std::type_identity<StorageHDFSConfiguration>{});
+#endif
+        case ObjectStorageType::Local:
+            return func(std::type_identity<StorageLocalConfiguration>{});
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported object storage type: {}", static_cast<int>(type));
+    }
+}
+
+}
+
+StorageObjectStorageConfigurationPtr StorageObjectStorageConfiguration::createByType(ObjectStorageType type)
+{
+    auto [config, _] = dispatchByStorageType(type, [](auto tag)
+    {
+        using ConfigType = typename decltype(tag)::type;
+        return std::pair<StorageObjectStorageConfigurationPtr, StorageObjectStorageTableOptions>{std::make_shared<ConfigType>(), {}};
+    });
+    return config;
+}
+
+StorageObjectStorageTableOptions StorageObjectStorageConfiguration::postInitializeExisting(
+    StorageObjectStorageConfiguration & configuration,
+    StorageObjectStorageTableOptions & table_options,
+    ContextPtr local_context,
+    const String & disk_name)
+{
+    if (configuration.isNamespaceWithGlobs())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Expression can not have wildcards inside {} name", configuration.getNamespaceType());
+
+    if (table_options.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    {
+        if (configuration.getRawPath().hasPartitionWildcard())
+        {
+            // Promote to wildcard in case it is not data lake to make it backwards compatible
+            table_options.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+        }
+    }
+
+    if (table_options.format == "auto")
+    {
+        table_options.format
+            = FormatFactory::instance()
+                  .tryGetFormatFromFileName(configuration.isArchive() ? configuration.getPathInArchive() : configuration.getRawPath().path)
+                  .value_or("auto");
+    }
+    else
+        FormatFactory::instance().checkFormatName(table_options.format);
+
+    /// We shouldn't set path for disk setup because path prefix is already set in used object_storage.
+    if (disk_name.empty())
+        table_options.setPathForRead(configuration.getRawPath());
+
+    configuration.initialized = true;
+
+    if (!disk_name.empty())
+    {
+        auto disk = local_context->getDisk(disk_name);
+        configuration.ready_object_storage = disk->getObjectStorage();
+    }
+
+    return table_options;
+}
+
+std::pair<StorageObjectStorageConfigurationPtr, StorageObjectStorageTableOptions>
+StorageObjectStorageConfiguration::initialize(
+    ObjectStorageType type,
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
@@ -77,105 +170,38 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Disk {} is not allowed for usage in storage engines. "
                 "The list of allowed disks is defined by `allowed_disks_for_table_engines`", disk_name);
-
-        configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
-        auto disk = local_context->getDisk(disk_name);
-        configuration_to_initialize.ready_object_storage = disk->getObjectStorage();
     }
-    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
-        configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
-    else
-        configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
 
-    if (configuration_to_initialize.isNamespaceWithGlobs())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
-
-    if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    auto [configuration, table_options] = [&]
     {
-        if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
+        if (!disk_name.empty())
         {
-            // Promote to wildcard in case it is not data lake to make it backwards compatible
-            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+            return dispatchByStorageType(type, [&](auto tag)
+            {
+                using ConfigType = typename decltype(tag)::type;
+                return ConfigType::fromDisk(disk_name, engine_args, local_context, with_table_structure);
+            });
         }
-    }
+        else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
+        {
+            return dispatchByStorageType(type, [&](auto tag)
+            {
+                using ConfigType = typename decltype(tag)::type;
+                return ConfigType::fromNamedCollection(*named_collection, local_context);
+            });
+        }
+        else
+        {
+            return dispatchByStorageType(type, [&](auto tag)
+            {
+                using ConfigType = typename decltype(tag)::type;
+                return ConfigType::fromAST(engine_args, local_context, with_table_structure);
+            });
+        }
+    }();
 
-    if (configuration_to_initialize.format == "auto")
-    {
-        configuration_to_initialize.format
-            = FormatFactory::instance()
-                  .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : configuration_to_initialize.getRawPath().path)
-                  .value_or("auto");
-    }
-    else
-        FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
-
-    /// It might be changed on `StorageObjectStorageConfiguration::initPartitionStrategy`
-    /// We shouldn't set path for disk setup because path prefix is already set in used object_storage.
-    if (disk_name.empty())
-        configuration_to_initialize.read_path = configuration_to_initialize.getRawPath();
-
-    configuration_to_initialize.initialized = true;
-}
-
-String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescription & columns)
-{
-    SipHash hash;
-    auto columns_str = columns.getAllPhysical().toString();
-    hash.update(columns_str.data(), columns_str.size());
-    return getSipHash128AsHexString(hash);
-}
-
-void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
-{
-    schema_hash = hash;
-    boost::replace_all(read_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
-
-    if (getPaths().size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", getPaths().size());
-    auto path = getRawPath();
-    boost::replace_all(path.path, SCHEMA_HASH_WILDCARD, schema_hash);
-    setRawPath(path);
-    setPaths({path});
-}
-
-void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
-{
-    partition_strategy = PartitionStrategyFactory::get(
-        partition_strategy_type,
-        partition_by,
-        columns.getOrdinary(),
-        context,
-        format,
-        getRawPath().hasGlobsIgnorePlaceholders(),
-        getRawPath().hasPartitionWildcard(),
-        partition_columns_in_data_file);
-
-    if (partition_strategy)
-    {
-        read_path = partition_strategy->getPathForRead(getRawPath().path);
-        LOG_DEBUG(getLogger("StorageObjectStorageConfiguration"), "Initialized partition strategy {}", magic_enum::enum_name(partition_strategy_type));
-    }
-}
-
-const StorageObjectStorageConfiguration::Path & StorageObjectStorageConfiguration::getPathForRead() const
-{
-    return read_path;
-}
-
-StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPathForWrite(const std::string & partition_id) const
-{
-    auto raw_path = getRawPath();
-
-    if (!schema_hash.empty())
-        boost::replace_all(raw_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
-
-    if (!partition_strategy)
-    {
-        return raw_path;
-    }
-
-    return Path {partition_strategy->getPathForWrite(raw_path.path, partition_id)};
+    postInitializeExisting(*configuration, table_options, local_context, disk_name);
+    return {configuration, std::move(table_options)};
 }
 
 bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const
@@ -217,11 +243,6 @@ std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_part
     return path.substr(0, end_of_path_without_globs);
 }
 
-void StorageObjectStorageConfiguration::check(ContextPtr)
-{
-    FormatFactory::instance().checkFormatName(format);
-}
-
 bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const
 {
     return getNamespace().find_first_of("*?{") != std::string::npos;
@@ -245,13 +266,4 @@ void StorageObjectStorageConfiguration::assertInitialized() const
     }
 }
 
-void StorageObjectStorageConfiguration::initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments)
-{
-    format = parsed_arguments.format;
-    compression_method = parsed_arguments.compression_method;
-    structure = parsed_arguments.structure;
-    partition_strategy_type = parsed_arguments.partition_strategy_type;
-    partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
-    partition_strategy = parsed_arguments.partition_strategy;
-}
 }

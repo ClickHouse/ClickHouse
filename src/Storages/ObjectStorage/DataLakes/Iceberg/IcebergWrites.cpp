@@ -633,7 +633,7 @@ IcebergStorageSink::IcebergStorageSink(
     , table_id(table_id_)
     , persistent_table_components(persistent_table_components_)
     , data_lake_settings(datalake_settings_ ? *datalake_settings_ : DataLakeStorageSettings{})
-    , write_format(configuration_->format)
+    , write_format("Parquet")
     , blob_storage_type_name(configuration_->getTypeName())
     , blob_storage_namespace_name(configuration_->getNamespace())
 {

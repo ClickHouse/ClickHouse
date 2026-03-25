@@ -15,6 +15,7 @@ class NamedCollection;
 struct StorageID;
 
 struct StorageParsedArguments;
+struct StorageObjectStorageTableOptions;
 
 namespace ErrorCodes
 {
@@ -68,14 +69,28 @@ public:
 
     using Paths = std::vector<Path>;
 
-    /// Initialize configuration from either AST or NamedCollection.
-    static void initialize(
-        StorageObjectStorageConfiguration & configuration_to_initialize,
+    /// Create a configuration of the given type, initialize it from AST / NamedCollection / disk,
+    /// and return both the configuration and the extracted table options.
+    /// Create a configuration of the given type, initialize it, and return both.
+    static std::pair<std::shared_ptr<StorageObjectStorageConfiguration>, StorageObjectStorageTableOptions> initialize(
+        ObjectStorageType type,
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
         const StorageID * table_id = nullptr,
         const String & disk_name = "");
+
+    /// Initialize a pre-created configuration (for special cases like BigLake/OneLake
+    /// that need to set fields on the configuration before parsing).
+    static StorageObjectStorageTableOptions postInitializeExisting(
+        StorageObjectStorageConfiguration & configuration_to_initialize,
+        StorageObjectStorageTableOptions & table_options,
+        ContextPtr local_context,
+        const String & disk_name = "");
+
+    /// Create a configuration shared_ptr of the given concrete type.
+    static std::shared_ptr<StorageObjectStorageConfiguration> createByType(ObjectStorageType type);
+
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -91,17 +106,12 @@ public:
     virtual Path getRawPath() const = 0;
     virtual void setRawPath(const Path & path) = 0;
 
+    /// Returns the raw path as the default reading path.
+    /// The partition-strategy-aware read path is managed by `StorageObjectStorageTableOptions`.
+    Path getPathForRead() const { return getRawPath(); }
+
     /// Raw URI, specified by a user. Used in permission check.
     virtual const String & getRawURI() const = 0;
-
-    const Path & getPathForRead() const;
-    // Path used for writing, it should not be globbed and might contain a partition key
-    Path getPathForWrite(const std::string & partition_id = "") const;
-
-    void setPathForRead(const Path & path)
-    {
-        read_path = path;
-    }
 
     /*
      * When using `s3_create_new_file_on_insert`, each new file path generated will be appended to the path list.
@@ -126,14 +136,12 @@ public:
     bool isPathInArchiveWithGlobs() const;
     virtual std::string getPathInArchive() const;
 
-    virtual void check(ContextPtr context);
+    virtual void check(ContextPtr /* context */) {}
     virtual void validateNamespace(const String & /* name */) const {}
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback);
     virtual ObjectStoragePtr doCreateObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
     virtual bool isStaticConfiguration() const { return true; }
-
-
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
@@ -145,11 +153,6 @@ public:
         bool supports_tuple_elements,
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams & hive_parameters);
-
-    static String computeSchemaHash(const ColumnsDescription & columns);
-    void setSchemaHash(const String & hash);
-
-    void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
     virtual bool supportsWrites() const { return true; }
 
@@ -165,37 +168,14 @@ public:
 
     virtual void drop(ContextPtr) {}
 
-    String format = "auto";
-    String compression_method = "auto";
-    String structure = "auto";
-    PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
-    /// Whether partition column values are contained in the actual data.
-    /// And alternative is with hive partitioning, when they are contained in file path.
-    bool partition_columns_in_data_file = true;
-    std::shared_ptr<IPartitionStrategy> partition_strategy;
-
 protected:
-    void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
-    virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
-    virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
-    virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method fromDisk is not implemented");
-    }
-
     void assertInitialized() const;
 
     bool initialized = false;
-    String schema_hash;
 
     /// Object storage obtained from a named disk during `fromDisk` initialization.
     /// Used by `createObjectStorage` to return the pre-created storage instead of creating a new one.
     ObjectStoragePtr ready_object_storage;
-
-private:
-    // Path used for reading, by default it is the same as `getRawPath`
-    // When using `partition_strategy=hive`, a recursive reading pattern will be appended `'table_root/**.parquet'
-    Path read_path;
 };
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;

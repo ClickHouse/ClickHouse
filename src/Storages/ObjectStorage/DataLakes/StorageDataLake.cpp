@@ -83,12 +83,6 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     auto path = configuration->getRawPath();
     if (!path.path.ends_with('/'))
         configuration->setRawPath(StorageObjectStorageConfiguration::Path(path.path + "/"));
-    table_options.format = configuration->format;
-    table_options.compression_method = configuration->compression_method;
-    table_options.structure = configuration->structure;
-    table_options.partition_strategy_type = configuration->partition_strategy_type;
-    table_options.partition_columns_in_data_file = configuration->partition_columns_in_data_file;
-
     table_options.initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context, configuration->getRawPath());
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (table_options.format == "auto");
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
@@ -144,11 +138,11 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported for DataLake engines");
 
     if (need_resolve_columns_or_format)
-        resolveSchemaAndFormat(columns, table_options.format, object_storage, configuration, format_settings, sample_path, context);
+        resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
 
-    configuration->check(context);
+    FormatFactory::instance().checkFormatName(table_options.format);
 
     bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(table_options.format, context, format_settings);
 

@@ -89,7 +89,7 @@ HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorag
     : WithContext(context_)
     , object_storage(object_storage_)
     , table_path(configuration_->getPathForRead().path)
-    , format(configuration_->format)
+    , format("Parquet")
 {
 }
 

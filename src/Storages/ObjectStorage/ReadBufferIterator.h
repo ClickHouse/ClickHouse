@@ -13,6 +13,8 @@ public:
     ReadBufferIterator(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
+        const String & format_name_,
+        const String & compression_method_,
         const ObjectIterator & file_iterator_,
         const std::optional<FormatSettings> & format_settings_,
         SchemaCache & schema_cache_,
@@ -41,6 +43,7 @@ private:
 
     ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
+    const String compression_method;
     const ObjectIterator file_iterator;
     const std::optional<FormatSettings> & format_settings;
     const StorageObjectStorageQuerySettings query_settings;

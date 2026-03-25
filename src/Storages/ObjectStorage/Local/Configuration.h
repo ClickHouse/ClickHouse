@@ -82,16 +82,14 @@ public:
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
-protected:
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
-    void fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure) override;
+    static std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions> fromAST(ASTs & args, ContextPtr context, bool with_structure);
+    static std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions> fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure);
+    static std::pair<std::shared_ptr<StorageLocalConfiguration>, StorageObjectStorageTableOptions> fromNamedCollection(const NamedCollection & collection, ContextPtr context);
 
 private:
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     String disk_name;
     Path path;
     Paths paths;
-    void initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments);
 };
 
 }

@@ -56,23 +56,30 @@ public:
     }
 };
 
-class StorageAzureConfigurationFriend : private StorageAzureConfiguration
+/// Wrapper that holds a `StorageAzureConfiguration` returned by a static factory
+/// and exposes test-friendly accessors.
+class StorageAzureConfigurationFriend
 {
 public:
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context)
     {
-        StorageAzureConfiguration::fromNamedCollection(collection, context);
+        auto [c, _] = StorageAzureConfiguration::fromNamedCollection(collection, context);
+        config = c;
     }
 
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure)
     {
-        StorageAzureConfiguration::fromAST(args, context, with_structure);
+        auto [c, _] = StorageAzureConfiguration::fromAST(args, context, with_structure);
+        config = c;
     }
 
     const AzureBlobStorage::ConnectionParams & getConnectionParams()
     {
-        return connection_params;
+        return config->connection_params;
     }
+
+private:
+    std::shared_ptr<StorageAzureConfiguration> config;
 };
 
 void loadNamedCollectionConfig(const String & xml)

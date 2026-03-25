@@ -47,8 +47,8 @@ protected:
 
     const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
     const char * getNonClusteredStorageEngineName() const override { return Definition::non_clustered_storage_engine_name; }
-    bool hasStaticStructure() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure != "auto"; }
-    bool needStructureHint() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure == "auto"; }
+    bool hasStaticStructure() const override { return Base::table_options.structure != "auto"; }
+    bool needStructureHint() const override { return Base::table_options.structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
 };
 

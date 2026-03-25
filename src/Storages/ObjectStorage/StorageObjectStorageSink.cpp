@@ -139,12 +139,14 @@ size_t StorageObjectStorageSink::getFileSize() const
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
+    const StorageObjectStorageTableOptions & table_options_,
     std::optional<FormatSettings> format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_)
-    : PartitionedSink(configuration_->partition_strategy, context_, sample_block_)
+    : PartitionedSink(table_options_.partition_strategy, context_, sample_block_)
     , object_storage(object_storage_)
     , configuration(configuration_)
+    , table_options(table_options_)
     , query_settings(configuration_->getQuerySettings(context_))
     , format_settings(format_settings_)
     , sample_block(sample_block_)
@@ -160,7 +162,7 @@ StorageObjectStorageSink::~StorageObjectStorageSink()
 
 SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String & partition_id)
 {
-    auto file_path = configuration->getPathForWrite(partition_id).path;
+    auto file_path = table_options.getPathForWrite(configuration->getRawPath(), partition_id).path;
 
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);
@@ -177,8 +179,8 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         format_settings,
         std::make_shared<Block>(partition_strategy->getFormatHeader()),
         context,
-        configuration->format,
-        configuration->compression_method);
+        table_options.format,
+        table_options.compression_method);
 }
 
 }

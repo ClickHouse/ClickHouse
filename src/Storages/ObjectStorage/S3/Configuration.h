@@ -97,12 +97,8 @@ public:
 
     StorageS3Configuration() = default;
 
-    void setInitializationAsBigLake(const String & client_id_, const String & client_secret_, const String & refresh_token_)
-    {
-        biglake_adc_client_id = client_id_;
-        biglake_adc_client_secret = client_secret_;
-        biglake_adc_refresh_token = refresh_token_;
-    }
+    /// Apply BigLake GCP OAuth credentials. Must be called after `fromAST`.
+    void setInitializationAsBigLake(const String & client_id_, const String & client_secret_, const String & refresh_token_);
 
     ObjectStorageType getType() const override { return type; }
 
@@ -161,15 +157,11 @@ public:
     String biglake_adc_client_secret;
     String biglake_adc_refresh_token;
 
-protected:
-    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
+    static std::pair<std::shared_ptr<StorageS3Configuration>, StorageObjectStorageTableOptions> fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
+    static std::pair<std::shared_ptr<StorageS3Configuration>, StorageObjectStorageTableOptions> fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    static std::pair<std::shared_ptr<StorageS3Configuration>, StorageObjectStorageTableOptions> fromAST(ASTs & args, ContextPtr context, bool with_structure);
 
 private:
-    void initializeFromParsedArguments(S3StorageParsedArguments && parsed_arguments);
-
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
-
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 };
 }
 

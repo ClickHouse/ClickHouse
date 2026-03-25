@@ -55,6 +55,7 @@ private:
 
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;
+    StorageObjectStorageTableOptions table_options;
     const ObjectStoragePtr object_storage;
     const DataLakeStorageSettingsPtr datalake_settings;
     NamesAndTypesList virtual_columns;

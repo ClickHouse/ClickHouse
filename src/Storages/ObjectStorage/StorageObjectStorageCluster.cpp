@@ -73,7 +73,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
-    configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
+    table_options.initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_, configuration->getRawPath());
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
@@ -81,18 +81,19 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
-    configuration->check(context_);
+    resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, {}, sample_path, context_);
+    FormatFactory::instance().checkFormatName(table_options.format);
 
     if (sample_path.empty()
         && context_->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->partition_strategy)
+        && !table_options.partition_strategy)
         sample_path = getPathSample(context_);
 
     /// Not grabbing the file_columns because it is not necessary to do it here.
     std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
         columns,
         configuration,
+        table_options,
         sample_path,
         columns_in_table_or_function_definition.empty(),
         std::nullopt,
@@ -106,7 +107,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         metadata.columns,
         context_,
         /* format_settings */std::nullopt,
-        configuration->partition_strategy_type,
+        table_options.partition_strategy_type,
         sample_path));
 
     setInMemoryMetadata(metadata);
@@ -167,12 +168,12 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     if (!endsWith(table_function->name, "Cluster"))
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, table_options.format, context, /*with_structure=*/true);
     else
     {
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, table_options.format, context, /*with_structure=*/true);
         args.insert(args.begin(), cluster_name_arg);
     }
     if (settings_temporary_storage)
@@ -212,7 +213,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     {
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
-            configuration->format,
+            table_options.format,
             object_storage,
             local_context
         );

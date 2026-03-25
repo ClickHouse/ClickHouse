@@ -208,7 +208,7 @@ template <typename Definition, typename Configuration, bool is_data_lake>
 ColumnsDescription TableFunctionObjectStorage<
     Definition, Configuration, is_data_lake>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
-    if (configuration->structure == "auto")
+    if (table_options.structure == "auto")
     {
         auto storage = getObjectStorage(context, !is_insert_query);
         configuration->lazyInitializeIfNeeded(object_storage, context);
@@ -217,7 +217,8 @@ ColumnsDescription TableFunctionObjectStorage<
         ColumnsDescription columns;
         resolveSchemaAndFormat(
             columns,
-            configuration->format,
+            table_options.format,
+            table_options.compression_method,
             std::move(storage),
             configuration,
             /* format_settings */std::nullopt,
@@ -227,6 +228,7 @@ ColumnsDescription TableFunctionObjectStorage<
         HivePartitioningUtils::setupHivePartitioningForObjectStorage(
             columns,
             configuration,
+            table_options,
             sample_path,
             /* inferred_schema */ true,
             /* format_settings */ std::nullopt,
@@ -234,7 +236,7 @@ ColumnsDescription TableFunctionObjectStorage<
 
         return columns;
     }
-    return parseColumnsListFromString(configuration->structure, context);
+    return parseColumnsListFromString(table_options.structure, context);
 }
 
 template <typename Definition, typename Configuration, bool is_data_lake>
@@ -248,8 +250,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     chassert(configuration);
     ColumnsDescription columns;
 
-    if (configuration->structure != "auto")
-        columns = parseColumnsListFromString(configuration->structure, context);
+    if (table_options.structure != "auto")
+        columns = parseColumnsListFromString(table_options.structure, context);
     else if (!structure_hint.empty())
         columns = structure_hint;
     else if (!cached_columns.empty())

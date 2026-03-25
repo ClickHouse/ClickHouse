@@ -1,6 +1,7 @@
 #pragma once
 #include <Storages/IStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -45,6 +46,7 @@ private:
 
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;
+    StorageObjectStorageTableOptions table_options;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;

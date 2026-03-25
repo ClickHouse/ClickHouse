@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 
 #if USE_HDFS
 #include <Common/logger_useful.h>
@@ -37,6 +38,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
@@ -45,7 +47,6 @@ void StorageHDFSConfiguration::check(ContextPtr context)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
     checkHDFSURL(fs::path(url) / path.path.substr(1));
-    StorageObjectStorageConfiguration::check(context);
 }
 
 ObjectStoragePtr StorageHDFSConfiguration::doCreateObjectStorage( /// NOLINT
@@ -210,25 +211,32 @@ static void addStructureAndFormatToArgsIfNeededHDFS(
     }
 }
 
-void StorageHDFSConfiguration::initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments)
+std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions>
+StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
-}
-
-void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
-{
+    auto config = std::make_shared<StorageHDFSConfiguration>();
     HDFSStorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
-    initializeFromParsedArguments(parsed_arguments);
-    setURL(parsed_arguments.url_str);
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->setURL(parsed_arguments.url_str);
+    return {config, std::move(table_options)};
 }
 
-void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions>
+StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
+    auto config = std::make_shared<StorageHDFSConfiguration>();
     HDFSStorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
-    initializeFromParsedArguments(parsed_arguments);
-    setURL(parsed_arguments.url_str);
+    auto table_options = tableOptionsFromParsedArguments(std::move(static_cast<StorageParsedArguments &>(parsed_arguments)));
+    config->setURL(parsed_arguments.url_str);
+    return {config, std::move(table_options)};
+}
+
+std::pair<std::shared_ptr<StorageHDFSConfiguration>, StorageObjectStorageTableOptions>
+StorageHDFSConfiguration::fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method fromDisk is not implemented for HDFS");
 }
 
 void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
