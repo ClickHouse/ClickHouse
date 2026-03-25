@@ -354,7 +354,7 @@ ReadBuffer * MergeTreeReaderWide::getStream(
                 ErrorCodes::LOGICAL_ERROR,
                 "Stream {} for column {} with type {} is not found",
                 ISerialization::getFileNameForStream(
-                    name_and_type.type->getName(), substream_path, ISerialization::StreamFileNameSettings(*storage_settings)),
+                    name_and_type.name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)),
                     name_and_type.name,
                     column->type->getName());
         }

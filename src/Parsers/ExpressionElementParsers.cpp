@@ -1640,6 +1640,7 @@ const char * ParserAlias::restricted_keywords[] =
     "LEFT",
     "LIKE",
     "LIMIT",
+    "NATURAL",
     "NOT",
     "OFFSET",
     "ON",
