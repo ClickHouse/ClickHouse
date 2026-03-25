@@ -26,19 +26,13 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionLLMClassify final : public FunctionBaseAI
+class FunctionAiClassify final : public FunctionBaseAI
 {
 public:
     static constexpr auto name = "aiClassify";
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionLLMClassify>(context);
-    }
-
-    explicit FunctionLLMClassify(ContextPtr context)
-        : FunctionBaseAI(context)
-    {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiClassify>(context); }
+    explicit FunctionAiClassify(ContextPtr context) : FunctionBaseAI(context) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -59,11 +53,11 @@ protected:
     String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t idx = getFirstDataArgIndex(arguments);
-        const auto * cat_col = checkAndGetColumn<ColumnConst>(arguments[idx + 1].column.get());
-        if (!cat_col)
+        const auto * categories_col = checkAndGetColumn<ColumnConst>(arguments[idx + 1].column.get());
+        if (!categories_col)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Categories argument must be a constant array");
 
-        auto field = (*cat_col->getDataColumnPtr())[0];
+        auto field = (*categories_col->getDataColumnPtr())[0];
         const auto & arr = field.safeGet<Array>();
         String categories;
         bool first = true;
@@ -87,11 +81,11 @@ protected:
     String buildResponseFormatJSON(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t idx = getFirstDataArgIndex(arguments);
-        const auto * cat_col = checkAndGetColumn<ColumnConst>(arguments[idx + 1].column.get());
-        if (!cat_col)
+        const auto * categories_col = checkAndGetColumn<ColumnConst>(arguments[idx + 1].column.get());
+        if (!categories_col)
             return "";
 
-        auto field = (*cat_col->getDataColumnPtr())[0];
+        auto field = (*categories_col->getDataColumnPtr())[0];
         const auto & arr = field.safeGet<Array>();
 
         Poco::JSON::Array enum_array;
@@ -130,7 +124,7 @@ protected:
 
 REGISTER_FUNCTION(AiClassify)
 {
-    factory.registerFunction<FunctionLLMClassify>(FunctionDocumentation{
+    factory.registerFunction<FunctionAiClassify>(FunctionDocumentation{
         .description = "Classifies input text into one of the provided categories using an LLM.",
         .syntax = "aiClassify([collection,] text, categories[, temperature])",
         .arguments = {{"text", "Input text to classify"}, {"categories", "Array of category labels"}},

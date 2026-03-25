@@ -8,8 +8,6 @@
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
 
-#include <sstream>
-
 namespace DB
 {
 
@@ -54,24 +52,24 @@ AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & ap
 {
 }
 
-LLMResponse AnthropicProvider::call(const LLMRequest & request, const ConnectionTimeouts & timeouts)
+AIResponse AnthropicProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts)
 {
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
-    root->set("model", request.model);
-    root->set("max_tokens", static_cast<Int64>(request.max_tokens));
-    root->set("temperature", request.temperature);
+    root->set("model", ai_request.model);
+    root->set("max_tokens", static_cast<Int64>(ai_request.max_tokens));
+    root->set("temperature", ai_request.temperature);
 
-    if (!request.system_prompt.empty())
-        root->set("system", sanitizeTextForLLM(request.system_prompt));
+    if (!ai_request.system_prompt.empty())
+        root->set("system", sanitizeTextForAI(ai_request.system_prompt));
 
     Poco::JSON::Array::Ptr messages = new Poco::JSON::Array;
     Poco::JSON::Object::Ptr user_msg = new Poco::JSON::Object;
     user_msg->set("role", "user");
-    user_msg->set("content", sanitizeTextForLLM(request.user_message));
+    user_msg->set("content", sanitizeTextForAI(ai_request.user_message));
     messages->add(user_msg);
     root->set("messages", messages);
 
-    if (!request.response_format_json.empty())
+    if (!ai_request.response_format_json.empty())
     {
         Poco::JSON::Parser fmt_parser;
         Poco::JSON::Array::Ptr tools_array = new Poco::JSON::Array;
@@ -80,7 +78,7 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
         tool->set("name", "structured_output");
         tool->set("description", "Return the result in the specified format");
 
-        auto schema_result = fmt_parser.parse(request.response_format_json);
+        auto schema_result = fmt_parser.parse(ai_request.response_format_json);
         const auto & schema_obj = schema_result.extract<Poco::JSON::Object::Ptr>();
         if (schema_obj->has("json_schema"))
         {
@@ -135,15 +133,15 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    LLMResponse response;
+    AIResponse ai_response;
 
     String anthropic_stop_reason = json_obj->optValue<String>("stop_reason", "end_turn");
     if (anthropic_stop_reason == "max_tokens")
-        response.finish_reason = "length";
+        ai_response.finish_reason = "length";
     else if (anthropic_stop_reason == "end_turn")
-        response.finish_reason = "stop";
+        ai_response.finish_reason = "stop";
     else
-        response.finish_reason = anthropic_stop_reason;
+        ai_response.finish_reason = anthropic_stop_reason;
 
     auto content = json_obj->getArray("content");
     if (content)
@@ -156,7 +154,7 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
             String type = block->optValue<String>("type", "");
             if (type == "text")
             {
-                response.result = block->optValue<String>("text", "");
+                ai_response.result = block->optValue<String>("text", "");
                 break;
             }
             else if (type == "tool_use")
@@ -166,7 +164,7 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
                 {
                     std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
                     input->stringify(ss);
-                    response.result = ss.str();
+                    ai_response.result = ss.str();
                 }
                 break;
             }
@@ -178,12 +176,12 @@ LLMResponse AnthropicProvider::call(const LLMRequest & request, const Connection
         auto usage = json_obj->getObject("usage");
         if (usage)
         {
-            response.input_tokens = usage->optValue<UInt64>("input_tokens", 0);
-            response.output_tokens = usage->optValue<UInt64>("output_tokens", 0);
+            ai_response.input_tokens = usage->optValue<UInt64>("input_tokens", 0);
+            ai_response.output_tokens = usage->optValue<UInt64>("output_tokens", 0);
         }
     }
 
-    return response;
+    return ai_response;
 }
 
 }

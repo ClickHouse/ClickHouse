@@ -22,19 +22,13 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionLLMGenerateSQL final : public FunctionBaseAI
+class FunctionAiGenerateSQL final : public FunctionBaseAI
 {
 public:
     static constexpr auto name = "aiGenerateSQL";
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionLLMGenerateSQL>(context);
-    }
-
-    explicit FunctionLLMGenerateSQL(ContextPtr context)
-        : FunctionBaseAI(context)
-    {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiGenerateSQL>(context); }
+    explicit FunctionAiGenerateSQL(ContextPtr context) : FunctionBaseAI(context) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -173,7 +167,7 @@ protected:
 
 REGISTER_FUNCTION(AiGenerateSQL)
 {
-    factory.registerFunction<FunctionLLMGenerateSQL>(FunctionDocumentation{
+    factory.registerFunction<FunctionAiGenerateSQL>(FunctionDocumentation{
         .description = "Generates a ClickHouse SQL query from a natural language description using an LLM.",
         .syntax = "aiGenerateSQL([collection,] query[, temperature])",
         .arguments = {

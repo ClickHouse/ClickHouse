@@ -17,16 +17,13 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionLLMTranslate final : public FunctionBaseAI
+class FunctionAiTranslate final : public FunctionBaseAI
 {
 public:
     static constexpr auto name = "aiTranslate";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionLLMTranslate>(context); }
-
-    explicit FunctionLLMTranslate(ContextPtr context)
-        : FunctionBaseAI(context)
-    {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiTranslate>(context); }
+    explicit FunctionAiTranslate(ContextPtr context) : FunctionBaseAI(context) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -70,7 +67,7 @@ protected:
 
 REGISTER_FUNCTION(AiTranslate)
 {
-    factory.registerFunction<FunctionLLMTranslate>(FunctionDocumentation{
+    factory.registerFunction<FunctionAiTranslate>(FunctionDocumentation{
         .description = "Translates input text into the specified target language using an LLM.",
         .syntax = "aiTranslate([collection,] text, target_language[, instructions][, temperature])",
         .arguments = {{"text", "Input text"}, {"target_language", "Target language name or BCP-47 code"}},

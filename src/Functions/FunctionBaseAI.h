@@ -2,9 +2,9 @@
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/AI/ILLMProvider.h>
-#include <Functions/AI/LLMResultCache.h>
-#include <Functions/AI/LLMQuotaTracker.h>
+#include <Functions/AI/IAIProvider.h>
+#include <Functions/AI/AIResultCache.h>
+#include <Functions/AI/AIQuotaTracker.h>
 #include <Interpreters/Context.h>
 
 namespace DB

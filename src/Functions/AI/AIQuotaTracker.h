@@ -8,15 +8,18 @@ namespace DB
 {
 
 
-class LLMQuotaTracker
+class AIQuotaTracker
 {
 public:
-    LLMQuotaTracker(
+    AIQuotaTracker(
         UInt64 max_rows_, UInt64 max_input_tokens_, UInt64 max_output_tokens_,
         UInt64 max_api_calls_, const String & on_quota_exceeded_, const String & on_error_)
-        : max_rows(max_rows_), max_input_tokens(max_input_tokens_)
-        , max_output_tokens(max_output_tokens_), max_api_calls(max_api_calls_)
-        , on_quota_exceeded(on_quota_exceeded_), on_error(on_error_)
+        : max_rows(max_rows_)
+        , max_input_tokens(max_input_tokens_)
+        , max_output_tokens(max_output_tokens_)
+        , max_api_calls(max_api_calls_)
+        , on_quota_exceeded(on_quota_exceeded_)
+        , on_error(on_error_)
     {}
 
     bool checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 batch_rows);
@@ -41,6 +44,6 @@ private:
     std::atomic<bool> quota_exceeded{false};
 };
 
-using LLMQuotaTrackerPtr = std::shared_ptr<LLMQuotaTracker>;
+using AIQuotaTrackerPtr = std::shared_ptr<AIQuotaTracker>;
 
 }

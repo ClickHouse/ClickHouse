@@ -18,19 +18,13 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionLLMGenerateContent final : public FunctionBaseAI
+class FunctionAiGenerateContent final : public FunctionBaseAI
 {
 public:
     static constexpr auto name = "aiGenerateContent";
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionLLMGenerateContent>(context);
-    }
-
-    explicit FunctionLLMGenerateContent(ContextPtr context)
-        : FunctionBaseAI(context)
-    {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiGenerateContent>(context); }
+    explicit FunctionAiGenerateContent(ContextPtr context) : FunctionBaseAI(context) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -77,7 +71,7 @@ protected:
 
 REGISTER_FUNCTION(AiGenerateContent)
 {
-    factory.registerFunction<FunctionLLMGenerateContent>(FunctionDocumentation{
+    factory.registerFunction<FunctionAiGenerateContent>(FunctionDocumentation{
         .description = "Generates text content from a prompt using an LLM.",
         .syntax = "aiGenerateContent([collection,] prompt[, system_prompt][, temperature])",
         .arguments = {{"prompt", "The user prompt or question"}, {"system_prompt", "Optional system prompt to guide generation"}},

@@ -1,31 +1,31 @@
-#include <Functions/AI/LLMResultCache.h>
+#include <Functions/AI/AIResultCache.h>
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 
 namespace CurrentMetrics
 {
-    extern const Metric LLMCacheSizeInBytes;
-    extern const Metric LLMCacheEntries;
+    extern const Metric AICacheSizeInBytes;
+    extern const Metric AICacheEntries;
 }
 
 namespace DB
 {
 
-static constexpr size_t DEFAULT_LLM_CACHE_MAX_SIZE = 1ULL << 30; // 1 GiB
-static constexpr size_t DEFAULT_LLM_CACHE_MAX_ENTRIES = 1000000;
+static constexpr size_t DEFAULT_AI_CACHE_MAX_SIZE = 1ULL << 30; // 1 GiB
+static constexpr size_t DEFAULT_AI_CACHE_MAX_ENTRIES = 1000000;
 
-LLMResultCache & LLMResultCache::instance()
+AIResultCache & AIResultCache::instance()
 {
-    static LLMResultCache cache(DEFAULT_LLM_CACHE_MAX_SIZE, DEFAULT_LLM_CACHE_MAX_ENTRIES);
+    static AIResultCache cache(DEFAULT_AI_CACHE_MAX_SIZE, DEFAULT_AI_CACHE_MAX_ENTRIES);
     return cache;
 }
 
-LLMResultCache::LLMResultCache(size_t max_size_in_bytes, size_t max_count)
-    : Base("LRU", CurrentMetrics::LLMCacheSizeInBytes, CurrentMetrics::LLMCacheEntries, max_size_in_bytes, max_count, 0.5)
+AIResultCache::AIResultCache(size_t max_size_in_bytes, size_t max_count)
+    : Base("LRU", CurrentMetrics::AICacheSizeInBytes, CurrentMetrics::AICacheEntries, max_size_in_bytes, max_count, 0.5)
 {
 }
 
-UInt128 LLMResultCache::buildKey(
+UInt128 AIResultCache::buildKey(
     const String & function_name,
     const String & model,
     float temperature,
@@ -47,7 +47,7 @@ UInt128 LLMResultCache::buildKey(
     return hash.get128();
 }
 
-std::vector<LLMResultCache::CacheEntryInfo> LLMResultCache::getEntries() const
+std::vector<AIResultCache::CacheEntryInfo> AIResultCache::getEntries() const
 {
     std::vector<CacheEntryInfo> result;
     auto entries = Base::dump();
@@ -67,7 +67,7 @@ std::vector<LLMResultCache::CacheEntryInfo> LLMResultCache::getEntries() const
     return result;
 }
 
-void LLMResultCache::reset()
+void AIResultCache::reset()
 {
     Base::clear();
 }

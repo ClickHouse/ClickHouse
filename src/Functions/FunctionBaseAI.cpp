@@ -152,7 +152,7 @@ float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & argument
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
 {
     auto config = resolveConfig(arguments);
-    auto provider = createLLMProvider(config.provider, config.endpoint, config.api_key);
+    auto provider = createAIProvider(config.provider, config.endpoint, config.api_key);
     float temperature = resolveTemperature(arguments, config);
 
     const auto & settings = getContext()->getSettingsRef();
@@ -163,7 +163,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 retry_delay_ms = settings[Setting::ai_retry_initial_delay_ms].value;
     UInt64 cache_ttl = settings[Setting::ai_cache_ttl_sec].value;
 
-    auto quota = std::make_shared<LLMQuotaTracker>(
+    auto quota = std::make_shared<AIQuotaTracker>(
         settings[Setting::ai_max_rows_per_query].value,
         settings[Setting::ai_max_input_tokens_per_query].value,
         settings[Setting::ai_max_output_tokens_per_query].value,
@@ -197,7 +197,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         String user_message = buildUserMessage(arguments, i);
         std::vector<String> cache_args = {user_message, system_prompt};
-        UInt128 key = LLMResultCache::buildKey(functionName(), config.model, temperature, cache_args);
+        UInt128 key = AIResultCache::buildKey(functionName(), config.model, temperature, cache_args);
         dedup_map[key].push_back(i);
     }
 
@@ -210,17 +210,17 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 cache_hits = 0;
     UInt64 cache_misses = 0;
 
-    auto & cache = LLMResultCache::instance();
+    auto & ai_cache = AIResultCache::instance();
     std::vector<std::pair<UInt128, size_t>> to_dispatch;
 
     for (auto & [key, rows] : dedup_map)
     {
-        auto cached = cache.get(key);
-        if (cached && std::chrono::system_clock::now() <= cached->expires_at)
+        auto cached_entry = ai_cache.get(key);
+        if (cached_entry && std::chrono::system_clock::now() <= cached_entry->expires_at)
         {
-            cached->hit_count.fetch_add(1, std::memory_order_relaxed);
+            cached_entry->hit_count.fetch_add(1, std::memory_order_relaxed);
             std::lock_guard lock(results_mutex);
-            results[key] = cached->result;
+            results[key] = cached_entry->result;
             ++cache_hits;
             quota->rows_processed.fetch_add(rows.size(), std::memory_order_relaxed);
         }
@@ -256,33 +256,33 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                         if (max_rps > 0)
                             throttler->throttle(1, 0);
 
-                        LLMRequest req;
-                        req.system_prompt = system_prompt;
-                        req.user_message = user_message;
-                        req.response_format_json = response_format;
-                        req.model = config.model;
-                        req.temperature = temperature;
-                        req.max_tokens = config.max_tokens;
+                        AIRequest ai_request;
+                        ai_request.system_prompt = system_prompt;
+                        ai_request.user_message = user_message;
+                        ai_request.response_format_json = response_format;
+                        ai_request.model = config.model;
+                        ai_request.temperature = temperature;
+                        ai_request.max_tokens = config.max_tokens;
 
-                        auto resp = provider->call(req, timeouts);
+                        auto ai_response = provider->call(ai_request, timeouts);
 
-                        quota->recordResponse(resp.input_tokens, resp.output_tokens);
-                        total_input_tokens.fetch_add(resp.input_tokens, std::memory_order_relaxed);
-                        total_output_tokens.fetch_add(resp.output_tokens, std::memory_order_relaxed);
+                        quota->recordResponse(ai_response.input_tokens, ai_response.output_tokens);
+                        total_input_tokens.fetch_add(ai_response.input_tokens, std::memory_order_relaxed);
+                        total_output_tokens.fetch_add(ai_response.output_tokens, std::memory_order_relaxed);
                         total_api_calls.fetch_add(1, std::memory_order_relaxed);
 
-                        String processed = postProcessResponse(resp.result);
+                        String processed = postProcessResponse(ai_response.result);
 
-                        if (cache_ttl > 0 && resp.finish_reason != "length")
+                        if (cache_ttl > 0 && ai_response.finish_reason != "length")
                         {
-                            auto entry = std::make_shared<LLMCacheEntry>();
+                            auto entry = std::make_shared<AICacheEntry>();
                             entry->result = processed;
                             entry->function_name = functionName();
                             entry->model = config.model;
                             entry->result_size_bytes = processed.size();
                             entry->created_at = std::chrono::system_clock::now();
                             entry->expires_at = entry->created_at + std::chrono::seconds(cache_ttl);
-                            cache.set(dk, entry);
+                            ai_cache.set(dk, entry);
                         }
 
                         {

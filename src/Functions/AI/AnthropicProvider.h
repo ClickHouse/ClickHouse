@@ -1,18 +1,18 @@
 #pragma once
 
-#include <Functions/AI/ILLMProvider.h>
+#include <Functions/AI/IAIProvider.h>
 
 namespace DB
 {
 
-class AnthropicProvider : public ILLMProvider
+class AnthropicProvider : public IAIProvider
 {
 public:
     AnthropicProvider(const String & endpoint_, const String & api_key_);
 
     String providerName() const override { return "anthropic"; }
 
-    LLMResponse call(const LLMRequest & request, const ConnectionTimeouts & timeouts) override;
+    AIResponse call(const AIRequest & request, const ConnectionTimeouts & timeouts) override;
 
 private:
     const String endpoint;

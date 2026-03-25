@@ -1,4 +1,4 @@
-#include <Functions/AI/ILLMProvider.h>
+#include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/OpenAIProvider.h>
 #include <Functions/AI/AnthropicProvider.h>
 #include <Common/Exception.h>
@@ -13,9 +13,9 @@ namespace ErrorCodes
 }
 
 /// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
-/// Tabs and newlines are preserved as they're valid in most LLM contexts;
+/// Tabs and newlines are preserved as they're valid in most AI contexts;
 /// everything else is replaced with a space.
-String ILLMProvider::sanitizeTextForLLM(const String & input)
+String IAIProvider::sanitizeTextForAI(const String & input)
 {
     String output;
     output.reserve(input.size());
@@ -30,13 +30,13 @@ String ILLMProvider::sanitizeTextForLLM(const String & input)
 }
 
 
-LLMEmbeddingResponse ILLMProvider::embed(const LLMEmbeddingRequest & /*request*/, const ConnectionTimeouts & /*timeouts*/)
+AIEmbeddingResponse IAIProvider::embed(const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
         "Provider '{}' does not support embeddings", providerName());
 }
 
-LLMProviderPtr createLLMProvider(const String & provider_name, const String & endpoint, const String & api_key)
+AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key)
 {
     if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")
         return std::make_shared<OpenAIProvider>(endpoint, api_key);
@@ -44,7 +44,7 @@ LLMProviderPtr createLLMProvider(const String & provider_name, const String & en
         return std::make_shared<AnthropicProvider>(endpoint, api_key);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unknown LLM provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);
+            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);
 }
 
 }

@@ -11,7 +11,7 @@
 namespace DB
 {
 
-struct LLMCacheEntry
+struct AICacheEntry
 {
     String result;
     String function_name;
@@ -22,26 +22,26 @@ struct LLMCacheEntry
     std::atomic<UInt64> hit_count{0};
 };
 
-using LLMCacheEntryPtr = std::shared_ptr<LLMCacheEntry>;
+using AICacheEntryPtr = std::shared_ptr<AICacheEntry>;
 
-struct LLMCacheWeightFunction
+struct AICacheWeightFunction
 {
-    size_t operator()(const LLMCacheEntry & entry) const
+    size_t operator()(const AICacheEntry & entry) const
     {
-        return sizeof(LLMCacheEntry) + entry.result.size();
+        return sizeof(AICacheEntry) + entry.result.size();
     }
 };
 
-class LLMResultCache : public CacheBase<UInt128, LLMCacheEntry, UInt128Hash, LLMCacheWeightFunction>
+class AIResultCache : public CacheBase<UInt128, AICacheEntry, UInt128Hash, AICacheWeightFunction>
 {
-    using Base = CacheBase<UInt128, LLMCacheEntry, UInt128Hash, LLMCacheWeightFunction>;
+    using Base = CacheBase<UInt128, AICacheEntry, UInt128Hash, AICacheWeightFunction>;
 
 public:
     using MappedPtr = typename Base::MappedPtr;
 
-    static LLMResultCache & instance();
+    static AIResultCache & instance();
 
-    LLMResultCache(size_t max_size_in_bytes, size_t max_count);
+    AIResultCache(size_t max_size_in_bytes, size_t max_count);
 
     static UInt128 buildKey(
         const String & function_name,

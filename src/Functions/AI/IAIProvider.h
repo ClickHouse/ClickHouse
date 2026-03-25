@@ -9,7 +9,7 @@
 namespace DB
 {
 
-struct LLMRequest
+struct AIRequest
 {
     String system_prompt;
     String user_message;
@@ -19,7 +19,7 @@ struct LLMRequest
     UInt64 max_tokens = 1024;
 };
 
-struct LLMResponse
+struct AIResponse
 {
     String result;
     UInt64 input_tokens = 0;
@@ -27,32 +27,34 @@ struct LLMResponse
     String finish_reason;
 };
 
-struct LLMEmbeddingRequest
+struct AIEmbeddingRequest
 {
     std::vector<String> inputs;
     String model;
     UInt64 dimensions = 0;
 };
 
-struct LLMEmbeddingResponse
+struct AIEmbeddingResponse
 {
     std::vector<std::vector<Float32>> embeddings;
     UInt64 input_tokens = 0;
 };
 
-class ILLMProvider
+class IAIProvider
 {
 public:
-    virtual ~ILLMProvider() = default;
-    virtual LLMResponse call(const LLMRequest & request, const ConnectionTimeouts & timeouts) = 0;
-    virtual LLMEmbeddingResponse embed(const LLMEmbeddingRequest & request, const ConnectionTimeouts & timeouts);
+    virtual ~IAIProvider() = default;
+
     virtual String providerName() const = 0;
+
+    virtual AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) = 0;
+    virtual AIEmbeddingResponse embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts);
 protected:
-    String sanitizeTextForLLM(const String & input);
+    String sanitizeTextForAI(const String & input);
 };
 
-using LLMProviderPtr = std::shared_ptr<ILLMProvider>;
+using AIProviderPtr = std::shared_ptr<IAIProvider>;
 
-LLMProviderPtr createLLMProvider(const String & provider_name, const String & endpoint, const String & api_key);
+AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key);
 
 }

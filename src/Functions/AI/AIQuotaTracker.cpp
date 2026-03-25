@@ -1,4 +1,4 @@
-#include <Functions/AI/LLMQuotaTracker.h>
+#include <Functions/AI/AIQuotaTracker.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -14,7 +14,7 @@ static bool isGracefulQuotaMode(const String & mode)
     return mode == "null";
 }
 
-bool LLMQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 batch_rows)
+bool AIQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 batch_rows)
 {
     if (quota_exceeded.load(std::memory_order_relaxed))
         return false;
@@ -27,9 +27,9 @@ bool LLMQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 
             rows_processed.fetch_sub(batch_rows, std::memory_order_relaxed);
             if (!isGracefulQuotaMode(on_quota_exceeded))
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                    "Limit for LLM rows exceeded: {} rows processed, maximum: {}. "
-                    "This is controlled by the 'llm_max_rows_per_query' setting. "
-                    "Set 'llm_on_quota_exceeded' to 'null' to return NULL for remaining rows instead of failing",
+                    "Limit for AI rows exceeded: {} rows processed, maximum: {}. "
+                    "This is controlled by the 'ai_max_rows_per_query' setting. "
+                    "Set 'ai_on_quota_exceeded' to 'null' to return NULL for remaining rows instead of failing",
                     prev, max_rows);
             quota_exceeded.store(true, std::memory_order_relaxed);
             return false;
@@ -44,8 +44,8 @@ bool LLMQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 
             input_tokens.fetch_sub(estimated_input_tokens, std::memory_order_relaxed);
             if (!isGracefulQuotaMode(on_quota_exceeded))
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                    "Limit for LLM input tokens exceeded: {} tokens used, maximum: {}. "
-                    "This is controlled by the 'llm_max_input_tokens_per_query' setting",
+                    "Limit for AI input tokens exceeded: {} tokens used, maximum: {}. "
+                    "This is controlled by the 'ai_max_input_tokens_per_query' setting",
                     prev, max_input_tokens);
             quota_exceeded.store(true, std::memory_order_relaxed);
             return false;
@@ -60,8 +60,8 @@ bool LLMQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 
             api_calls.fetch_sub(1, std::memory_order_relaxed);
             if (!isGracefulQuotaMode(on_quota_exceeded))
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                    "Limit for LLM API calls exceeded: {} calls made, maximum: {}. "
-                    "This is controlled by the 'llm_max_api_calls_per_query' setting",
+                    "Limit for AI API calls exceeded: {} calls made, maximum: {}. "
+                    "This is controlled by the 'ai_max_api_calls_per_query' setting",
                     prev, max_api_calls);
             quota_exceeded.store(true, std::memory_order_relaxed);
             return false;
@@ -71,7 +71,7 @@ bool LLMQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 
     return true;
 }
 
-void LLMQuotaTracker::recordResponse(UInt64 in_tokens, UInt64 out_tokens)
+void AIQuotaTracker::recordResponse(UInt64 in_tokens, UInt64 out_tokens)
 {
     input_tokens.fetch_add(in_tokens, std::memory_order_relaxed);
     output_tokens.fetch_add(out_tokens, std::memory_order_relaxed);
@@ -80,14 +80,14 @@ void LLMQuotaTracker::recordResponse(UInt64 in_tokens, UInt64 out_tokens)
     {
         if (!isGracefulQuotaMode(on_quota_exceeded))
             throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                "Limit for LLM output tokens exceeded: {} tokens generated, maximum: {}. "
-                "This is controlled by the 'llm_max_output_tokens_per_query' setting",
+                "Limit for AI output tokens exceeded: {} tokens generated, maximum: {}. "
+                "This is controlled by the 'ai_max_output_tokens_per_query' setting",
                 output_tokens.load(std::memory_order_relaxed), max_output_tokens);
         quota_exceeded.store(true, std::memory_order_relaxed);
     }
 }
 
-bool LLMQuotaTracker::handleRowError()
+bool AIQuotaTracker::handleRowError()
 {
     if (on_error == "null")
     {

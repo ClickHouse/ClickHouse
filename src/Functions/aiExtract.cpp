@@ -20,19 +20,13 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionLLMExtract final : public FunctionBaseAI
+class FunctionAiExtract final : public FunctionBaseAI
 {
 public:
     static constexpr auto name = "aiExtract";
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionLLMExtract>(context);
-    }
-
-    explicit FunctionLLMExtract(ContextPtr context)
-        : FunctionBaseAI(context)
-    {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiExtract>(context); }
+    explicit FunctionAiExtract(ContextPtr context) : FunctionBaseAI(context) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -163,7 +157,7 @@ protected:
 
 REGISTER_FUNCTION(AiExtract)
 {
-    factory.registerFunction<FunctionLLMExtract>(FunctionDocumentation{
+    factory.registerFunction<FunctionAiExtract>(FunctionDocumentation{
         .description = "Extracts structured information from unstructured text using an LLM.",
         .syntax = "aiExtract([collection,] text, instruction_or_schema[, temperature])",
         .arguments = {{"text", "Input text"}, {"instruction_or_schema", "Extraction instruction or JSON schema"}},

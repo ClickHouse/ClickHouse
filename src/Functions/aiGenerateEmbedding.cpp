@@ -1,8 +1,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/AI/ILLMProvider.h>
-#include <Functions/AI/LLMResultCache.h>
-#include <Functions/AI/LLMQuotaTracker.h>
+#include <Functions/AI/IAIProvider.h>
+#include <Functions/AI/AIResultCache.h>
+#include <Functions/AI/AIQuotaTracker.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
@@ -96,11 +96,12 @@ bool looksLikeURL(const String & s)
     return s.starts_with("http://") || s.starts_with("https://");
 }
 
-/// or_null=false: generateEmbedding       -> throws on API errors
+/// or_null=false: generateEmbedding        -> throws on API errors
 /// or_null=true:  generateEmbeddingOrNull  -> returns empty array [] on errors instead of throwing
+///
 /// Both return Array(Float32). Nullable(Array) is not supported in ClickHouse.
 template <bool or_null>
-class FunctionGenerateEmbeddingImpl final : public IFunction
+class FunctionAiGenerateEmbedding final : public IFunction
 {
 public:
     static constexpr auto name = or_null ? "generateEmbeddingOrNull" : "generateEmbedding";
@@ -110,12 +111,10 @@ public:
         if (!context->getSettingsRef()[Setting::allow_experimental_ai_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "AI function '{}' is experimental. Set `allow_experimental_ai_functions` setting to enable it", name);
-        return std::make_shared<FunctionGenerateEmbeddingImpl>(context);
+        return std::make_shared<FunctionAiGenerateEmbedding>(context);
 
     }
-    explicit FunctionGenerateEmbeddingImpl(ContextPtr context_)
-        : context_weak(context_)
-    {}
+    explicit FunctionAiGenerateEmbedding(ContextPtr context_) : context_weak(context_) {}
 
     ContextWeakPtr context_weak;
     ContextPtr getContext() const { return context_weak.lock(); }
@@ -202,7 +201,7 @@ public:
         if (max_batch_size == 0)
             max_batch_size = DEFAULT_EMBED_BATCH_SIZE;
 
-        auto provider = createLLMProvider(provider_name, endpoint_val, api_key);
+        auto provider = createAIProvider(provider_name, endpoint_val, api_key);
 
         const auto * dim_const = checkAndGetColumn<ColumnConst>(arguments[dim_arg_idx].column.get());
         if (!dim_const)
@@ -218,7 +217,7 @@ public:
         String on_error = or_null ? "null" : String(settings[Setting::ai_on_error].value);
         String on_quota = or_null ? "null" : String(settings[Setting::ai_on_quota_exceeded].value);
 
-        auto quota = std::make_shared<LLMQuotaTracker>(
+        auto quota = std::make_shared<AIQuotaTracker>(
             settings[Setting::ai_max_rows_per_query].value,
             settings[Setting::ai_max_input_tokens_per_query].value,
             settings[Setting::ai_max_output_tokens_per_query].value,
@@ -250,7 +249,7 @@ public:
             }
 
             std::vector<String> cache_args = {text, std::to_string(dimensions)};
-            UInt128 key = LLMResultCache::buildKey(name, model, 0, cache_args);
+            UInt128 key = AIResultCache::buildKey(name, model, 0, cache_args);
             dedup_map[key].push_back(i);
         }
 
@@ -262,7 +261,7 @@ public:
         UInt64 cache_hits = 0;
         UInt64 cache_misses = 0;
 
-        auto & cache = LLMResultCache::instance();
+        auto & ai_cache = AIResultCache::instance();
 
         struct DispatchItem
         {
@@ -273,12 +272,12 @@ public:
 
         for (auto & [key, rows] : dedup_map)
         {
-            auto cached = cache.get(key);
-            if (cached && std::chrono::system_clock::now() <= cached->expires_at)
+            auto cached_entry = ai_cache.get(key);
+            if (cached_entry && std::chrono::system_clock::now() <= cached_entry->expires_at)
             {
-                cached->hit_count.fetch_add(1, std::memory_order_relaxed);
+                cached_entry->hit_count.fetch_add(1, std::memory_order_relaxed);
                 std::lock_guard lock(results_mutex);
-                results[key] = deserializeEmbedding(cached->result);
+                results[key] = deserializeEmbedding(cached_entry->result);
                 ++cache_hits;
                 quota->rows_processed.fetch_add(rows.size(), std::memory_order_relaxed);
             }
@@ -325,21 +324,21 @@ public:
                     {
                         try
                         {
-                            LLMEmbeddingRequest req;
-                            req.model = model;
-                            req.dimensions = dimensions;
-                            req.inputs.reserve(batch_items.size());
+                            AIEmbeddingRequest ai_embedding_request;
+                            ai_embedding_request.model = model;
+                            ai_embedding_request.dimensions = dimensions;
+                            ai_embedding_request.inputs.reserve(batch_items.size());
                             for (const auto * item : batch_items)
-                                req.inputs.push_back(item->text);
+                                ai_embedding_request.inputs.push_back(item->text);
 
-                            auto resp = provider->embed(req, timeouts);
+                            auto ai_embedding_response = provider->embed(ai_embedding_request, timeouts);
 
-                            total_input_tokens.fetch_add(resp.input_tokens, std::memory_order_relaxed);
+                            total_input_tokens.fetch_add(ai_embedding_response.input_tokens, std::memory_order_relaxed);
                             total_api_calls.fetch_add(1, std::memory_order_relaxed);
 
                             {
                                 std::lock_guard lock(results_mutex);
-                                if (resp.embeddings.empty())
+                                if (ai_embedding_response.embeddings.empty())
                                 {
                                     if constexpr (or_null)
                                     {
@@ -354,18 +353,18 @@ public:
 
                                 for (size_t i = 0; i < batch_items.size(); ++i)
                                 {
-                                    const auto & embedding = (i < resp.embeddings.size()) ? resp.embeddings[i] : resp.embeddings.back();
+                                    const auto & embedding = (i < ai_embedding_response.embeddings.size()) ? ai_embedding_response.embeddings[i] : ai_embedding_response.embeddings.back();
 
                                     if (cache_ttl > 0 && !embedding.empty())
                                     {
-                                        auto entry = std::make_shared<LLMCacheEntry>();
+                                        auto entry = std::make_shared<AICacheEntry>();
                                         entry->result = serializeEmbedding(embedding);
                                         entry->function_name = name;
                                         entry->model = model;
                                         entry->result_size_bytes = entry->result.size();
                                         entry->created_at = std::chrono::system_clock::now();
                                         entry->expires_at = entry->created_at + std::chrono::seconds(cache_ttl);
-                                        cache.set(batch_items[i]->key, entry);
+                                        ai_cache.set(batch_items[i]->key, entry);
                                     }
 
                                     results[batch_items[i]->key] = std::move(embedding);
@@ -473,9 +472,9 @@ private:
 
 }
 
-REGISTER_FUNCTION(GenerateEmbedding)
+REGISTER_FUNCTION(AiGenerateEmbedding)
 {
-    factory.registerFunction<FunctionGenerateEmbeddingImpl<false>>(FunctionDocumentation{
+    factory.registerFunction<FunctionAiGenerateEmbedding<false>>(FunctionDocumentation{
         .description = "Generates embedding vectors for the given text using an embedding model. "
                        "Supports batch API calls for efficient processing of multiple rows. "
                        "Throws on API errors. Returns an empty array for NULL or empty inputs.",
@@ -491,9 +490,9 @@ REGISTER_FUNCTION(GenerateEmbedding)
         .category = FunctionDocumentation::Category::Other});
 }
 
-REGISTER_FUNCTION(GenerateEmbeddingOrNull)
+REGISTER_FUNCTION(AiGenerateEmbeddingOrNull)
 {
-    factory.registerFunction<FunctionGenerateEmbeddingImpl<true>>(FunctionDocumentation{
+    factory.registerFunction<FunctionAiGenerateEmbedding<true>>(FunctionDocumentation{
         .description = "Generates embedding vectors for the given text using an embedding model. "
                        "Returns an empty array instead of throwing on API errors. "
                        "Supports batch API calls for efficient processing of multiple rows.",

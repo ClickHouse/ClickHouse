@@ -59,34 +59,34 @@ OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_
 {
 }
 
-LLMResponse OpenAIProvider::call(const LLMRequest & request, const ConnectionTimeouts & timeouts)
+AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts)
 {
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
-    root->set("model", request.model);
-    root->set("temperature", request.temperature);
-    root->set("max_tokens", static_cast<Int64>(request.max_tokens));
+    root->set("model", ai_request.model);
+    root->set("temperature", ai_request.temperature);
+    root->set("max_tokens", static_cast<Int64>(ai_request.max_tokens));
 
     Poco::JSON::Array::Ptr messages = new Poco::JSON::Array;
 
-    if (!request.system_prompt.empty())
+    if (!ai_request.system_prompt.empty())
     {
         Poco::JSON::Object::Ptr sys_msg = new Poco::JSON::Object;
         sys_msg->set("role", "system");
-        sys_msg->set("content", sanitizeTextForLLM(request.system_prompt));
+        sys_msg->set("content", sanitizeTextForAI(ai_request.system_prompt));
         messages->add(sys_msg);
     }
 
     Poco::JSON::Object::Ptr user_msg = new Poco::JSON::Object;
     user_msg->set("role", "user");
-    user_msg->set("content", sanitizeTextForLLM(request.user_message));
+    user_msg->set("content", sanitizeTextForAI(ai_request.user_message));
     messages->add(user_msg);
 
     root->set("messages", messages);
 
-    if (!request.response_format_json.empty())
+    if (!ai_request.response_format_json.empty())
     {
         Poco::JSON::Parser fmt_parser;
-        auto fmt_result = fmt_parser.parse(request.response_format_json);
+        auto fmt_result = fmt_parser.parse(ai_request.response_format_json);
         root->set("response_format", fmt_result.extract<Poco::JSON::Object::Ptr>());
     }
 
@@ -119,14 +119,14 @@ LLMResponse OpenAIProvider::call(const LLMRequest & request, const ConnectionTim
     {
         throw Exception(
             ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "LLM provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+            "AI provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
     }
 
     Poco::JSON::Parser parser;
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    LLMResponse response;
+    AIResponse ai_response;
 
     auto choices = json_obj->getArray("choices");
     if (choices && choices->size() > 0)
@@ -136,8 +136,8 @@ LLMResponse OpenAIProvider::call(const LLMRequest & request, const ConnectionTim
         {
             auto message = choice->getObject("message");
             if (message)
-                response.result = message->optValue<String>("content", "");
-            response.finish_reason = choice->optValue<String>("finish_reason", "stop");
+                ai_response.result = message->optValue<String>("content", "");
+            ai_response.finish_reason = choice->optValue<String>("finish_reason", "stop");
         }
     }
 
@@ -146,12 +146,12 @@ LLMResponse OpenAIProvider::call(const LLMRequest & request, const ConnectionTim
         auto usage = json_obj->getObject("usage");
         if (usage)
         {
-            response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
-            response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
+            ai_response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
+            ai_response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
         }
     }
 
-    return response;
+    return ai_response;
 }
 
 Poco::URI OpenAIProvider::deriveEmbeddingURI() const
@@ -173,27 +173,27 @@ Poco::URI OpenAIProvider::deriveEmbeddingURI() const
     return embedding_uri;
 }
 
-LLMEmbeddingResponse OpenAIProvider::embed(const LLMEmbeddingRequest & request, const ConnectionTimeouts & timeouts)
+AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts)
 {
     Poco::URI embedding_uri = deriveEmbeddingURI();
 
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
 
-    if (request.inputs.size() == 1)
+    if (ai_embedding_request.inputs.size() == 1)
     {
-        root->set("input", sanitizeTextForLLM(request.inputs[0]));
+        root->set("input", sanitizeTextForAI(ai_embedding_request.inputs[0]));
     }
     else
     {
         Poco::JSON::Array::Ptr input_array = new Poco::JSON::Array;
-        for (const auto & text : request.inputs)
-            input_array->add(sanitizeTextForLLM(text));
+        for (const auto & text : ai_embedding_request.inputs)
+            input_array->add(sanitizeTextForAI(text));
         root->set("input", input_array);
     }
 
-    root->set("model", request.model);
-    if (request.dimensions > 0)
-        root->set("dimensions", static_cast<Int64>(request.dimensions));
+    root->set("model", ai_embedding_request.model);
+    if (ai_embedding_request.dimensions > 0)
+        root->set("dimensions", static_cast<Int64>(ai_embedding_request.dimensions));
 
     std::ostringstream body_stream; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
     root->stringify(body_stream);
@@ -228,15 +228,15 @@ LLMEmbeddingResponse OpenAIProvider::embed(const LLMEmbeddingRequest & request, 
     {
         throw Exception(
             ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "LLM embedding provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+            "AI embedding provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
     }
 
     Poco::JSON::Parser parser;
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    LLMEmbeddingResponse response;
-    response.embeddings.resize(request.inputs.size());
+    AIEmbeddingResponse ai_embedding_response;
+    ai_embedding_response.embeddings.resize(ai_embedding_request.inputs.size());
 
     auto data_arr = json_obj->getArray("data");
     if (data_arr)
@@ -248,15 +248,15 @@ LLMEmbeddingResponse OpenAIProvider::embed(const LLMEmbeddingRequest & request, 
                 continue;
 
             unsigned idx = item->optValue<unsigned>("index", i);
-            if (idx >= response.embeddings.size())
+            if (idx >= ai_embedding_response.embeddings.size())
                 continue;
 
             auto embedding_arr = item->getArray("embedding");
             if (embedding_arr)
             {
-                response.embeddings[idx].reserve(embedding_arr->size());
+                ai_embedding_response.embeddings[idx].reserve(embedding_arr->size());
                 for (unsigned j = 0; j < embedding_arr->size(); ++j)
-                    response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
+                    ai_embedding_response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
             }
         }
     }
@@ -265,10 +265,10 @@ LLMEmbeddingResponse OpenAIProvider::embed(const LLMEmbeddingRequest & request, 
     {
         auto usage = json_obj->getObject("usage");
         if (usage)
-            response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
+            ai_embedding_response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
     }
 
-    return response;
+    return ai_embedding_response;
 }
 
 }
