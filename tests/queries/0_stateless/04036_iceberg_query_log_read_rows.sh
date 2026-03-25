@@ -57,7 +57,8 @@ ${CLICKHOUSE_CLIENT} --query "
     PREWHERE c0 < 50
     SETTINGS
         use_iceberg_partition_pruning = 0,
-        input_format_parquet_filter_push_down = 0
+        input_format_parquet_filter_push_down = 0,
+        input_format_parquet_use_native_reader_v3 = 1
 " > /dev/null
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
