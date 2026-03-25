@@ -697,6 +697,14 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
 
 void WebTerminalRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
+    if (!server.config().getBool("allow_experimental_webterminal", false))
+    {
+        response.setContentType("text/plain; charset=UTF-8");
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
+        *response.send() << "Web terminal is disabled. See the `allow_experimental_webterminal` server configuration.\n";
+        return;
+    }
+
     /// Check if this is a WebSocket upgrade request
     String connection = request.get("Connection", "");
     std::transform(connection.begin(), connection.end(), connection.begin(), ::tolower);

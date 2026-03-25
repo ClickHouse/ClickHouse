@@ -386,7 +386,6 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/clickstack");
     factory.addHandler(clickstack_handler);
 
-    if (config.getBool("allow_experimental_webterminal", false))
     {
         auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
         webterminal_handler->attachNonStrictPath("/webterminal");
