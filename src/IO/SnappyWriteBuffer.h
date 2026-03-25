@@ -8,7 +8,13 @@
 
 namespace DB
 {
-/// Performs compression using snappy library and write compressed data to the underlying buffer.
+
+/// Performs streaming compression using the snappy framing format
+/// (see https://github.com/google/snappy/blob/main/framing_format.txt)
+/// and writes compressed data to the underlying buffer.
+///
+/// Each nextImpl call compresses the accumulated input as one snappy frame,
+/// so memory usage is bounded by the buffer size (default DBMS_DEFAULT_BUFFER_SIZE).
 class SnappyWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
     using Base = BufferWithOwnMemory<WriteBuffer>;
@@ -35,17 +41,22 @@ public:
 
 private:
     void nextImpl() override;
-
-    void finishImpl();
-    void finish();
-
     void cancelImpl() noexcept override;
+
+    /// Write the 10-byte stream identifier chunk.
+    void writeStreamIdentifier();
+
+    /// Compress and write one snappy framed chunk.
+    void writeCompressedChunk(const char * data, size_t size);
+
+    /// Write raw bytes to the underlying buffer.
+    void writeRaw(const char * data, size_t size);
 
     WriteBuffer * out;
     std::unique_ptr<WriteBuffer> out_holder;
 
-    String uncompress_buffer;
     String compress_buffer;
+    bool header_written = false;
 };
 
 }

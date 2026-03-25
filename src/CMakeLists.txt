@@ -628,7 +628,7 @@ if (TARGET ch_contrib::brotli)
 endif()
 
 if (TARGET ch_contrib::snappy)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::snappy)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::snappy ch_contrib::crc32c)
 endif()
 
 if (TARGET ch_contrib::amqp_cpp)
