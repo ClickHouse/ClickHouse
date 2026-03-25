@@ -108,7 +108,7 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
 
     if (collection_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "No LLM named collection specified and default_ai_provider is not set");
+            "No AI named collection specified and default_ai_provider is not set");
 
     const auto & nc = NamedCollectionFactory::instance().get(collection_name);
 
@@ -120,11 +120,11 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
     config.temperature = defaultTemperature();
 
     if (config.endpoint.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM named collection '{}' must have 'endpoint'", collection_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", collection_name);
     if (config.model.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM named collection '{}' must have 'model'", collection_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", collection_name);
     if (config.api_key.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LLM named collection '{}' must have 'api_key'", collection_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'api_key'", collection_name);
 
     return config;
 }

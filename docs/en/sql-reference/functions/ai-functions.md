@@ -305,7 +305,7 @@ FROM articles
 LIMIT 5;
 ```
 
-## generateEmbedding {#generateembedding}
+## aiGenerateEmbedding {#generateembedding}
 
 Generates a vector embedding for input text using an embedding model.
 
@@ -316,7 +316,7 @@ Returns an empty array `[]` for NULL or empty inputs.
 **Syntax**
 
 ```sql
-generateEmbedding([collection,] text, dimensions)
+aiGenerateEmbedding([collection,] text, dimensions)
 ```
 
 **Arguments**
@@ -352,7 +352,7 @@ CREATE NAMED COLLECTION my_embeddings AS
 Generate an embedding:
 
 ```sql
-SELECT generateEmbedding('my_embeddings', 'ClickHouse is a fast analytics database', 256) AS embedding;
+SELECT aiGenerateEmbedding('my_embeddings', 'ClickHouse is a fast analytics database', 256) AS embedding;
 ```
 
 **Semantic similarity search**
@@ -363,8 +363,8 @@ Use with [cosineDistance](/sql-reference/functions/distance-functions) to find s
 SELECT
     text,
     cosineDistance(
-        generateEmbedding('my_embeddings', text, 256),
-        generateEmbedding('my_embeddings', 'analytics database', 256)
+        aiGenerateEmbedding('my_embeddings', text, 256),
+        aiGenerateEmbedding('my_embeddings', 'analytics database', 256)
     ) AS distance
 FROM documents
 ORDER BY distance ASC
@@ -378,7 +378,7 @@ When processing a table column, texts are automatically batched for efficiency. 
 ```sql
 SELECT
     text,
-    generateEmbedding('my_embeddings', text, 512) AS embedding
+    aiGenerateEmbedding('my_embeddings', text, 512) AS embedding
 FROM articles;
 ```
 
@@ -387,7 +387,7 @@ FROM articles;
 NULL and empty inputs return an empty array without making an API call:
 
 ```sql
-SELECT text, generateEmbedding('my_embeddings', text, 64) AS emb
+SELECT text, aiGenerateEmbedding('my_embeddings', text, 64) AS emb
 FROM (SELECT '' UNION ALL SELECT NULL);
 ```
 
@@ -398,14 +398,14 @@ FROM (SELECT '' UNION ALL SELECT NULL);
 └───────┴──────────────────────┘
 ```
 
-## generateEmbeddingOrNull {#generateembeddingornull}
+## aiGenerateEmbeddingOrNull {#aigenerateembeddingornull}
 
 Same as [generateEmbedding](#generateembedding), but **never throws an exception**. Returns an empty array `[]` on API errors and when quotas are exceeded, instead of raising an exception. The [`ai_on_error`](#query-level-settings) and [`ai_on_quota_exceeded`](#query-level-settings) settings are ignored, both are forced to `'null'` internally. This makes it safe for use in pipelines where a failed row should not abort the entire query.
 
 **Syntax**
 
 ```sql
-generateEmbeddingOrNull([collection_or_url,] text, dimensions)
+aiGenerateEmbeddingOrNull([collection_or_url,] text, dimensions)
 ```
 
 **Arguments**
@@ -421,16 +421,16 @@ generateEmbeddingOrNull([collection_or_url,] text, dimensions)
 **Example**
 
 ```sql
-SELECT generateEmbeddingOrNull('my_embeddings', text, 256) AS embedding
+SELECT aiGenerateEmbeddingOrNull('my_embeddings', text, 256) AS embedding
 FROM documents;
 ```
 
-If the provider returns an API error (timeout, authentication failure, rate limit, etc.) for a batch, `generateEmbeddingOrNull` returns an empty array for those rows instead of aborting the query:
+If the provider returns an API error (timeout, authentication failure, rate limit, etc.) for a batch, `aiGenerateEmbeddingOrNull` returns an empty array for those rows instead of aborting the query:
 
 ```sql
 SELECT
     text,
-    generateEmbeddingOrNull('my_embeddings', text, 256) AS embedding
+    aiGenerateEmbeddingOrNull('my_embeddings', text, 256) AS embedding
 FROM documents;
 ```
 

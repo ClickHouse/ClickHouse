@@ -104,7 +104,7 @@ template <bool or_null>
 class FunctionAiGenerateEmbedding final : public IFunction
 {
 public:
-    static constexpr auto name = or_null ? "generateEmbeddingOrNull" : "generateEmbedding";
+    static constexpr auto name = or_null ? "aiGenerateEmbeddingOrNull" : "aiGenerateEmbedding";
 
     static FunctionPtr create(ContextPtr context)
     {

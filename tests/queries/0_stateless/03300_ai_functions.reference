@@ -2,10 +2,10 @@
 aiClassify
 aiExtract
 aiGenerateContent
+aiGenerateEmbedding
+aiGenerateEmbeddingOrNull
 aiGenerateSQL
 aiTranslate
-generateEmbedding
-generateEmbeddingOrNull
 -- aiClassify: too few arguments
 -- aiClassify: too many arguments
 -- aiClassify: missing named collection
@@ -21,12 +21,12 @@ generateEmbeddingOrNull
 -- aiGenerateContent: too few arguments
 -- aiGenerateContent: too many arguments
 -- aiGenerateContent: missing named collection
--- generateEmbedding: too few arguments
--- generateEmbedding: too many arguments
--- generateEmbedding: missing named collection
--- generateEmbeddingOrNull: too few arguments
--- generateEmbeddingOrNull: too many arguments
--- generateEmbeddingOrNull: missing named collection
+-- aiGenerateEmbedding: too few arguments
+-- aiGenerateEmbedding: too many arguments
+-- aiGenerateEmbedding: missing named collection
+-- aiGenerateEmbeddingOrNull: too few arguments
+-- aiGenerateEmbeddingOrNull: too many arguments
+-- aiGenerateEmbeddingOrNull: missing named collection
 -- aiClassify return type
 result	Nullable(String)
 -- aiExtract return type
@@ -37,8 +37,8 @@ result	Nullable(String)
 result	Nullable(String)
 -- aiGenerateContent return type
 result	Nullable(String)
--- generateEmbedding return type
+-- aiGenerateEmbedding return type
 result	Array(Float32)
--- generateEmbeddingOrNull return type
+-- aiGenerateEmbeddingOrNull return type
 result	Array(Float32)
--- generateEmbedding: non-constant dimensions
+-- aiGenerateEmbedding: non-constant dimensions

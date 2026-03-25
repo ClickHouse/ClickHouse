@@ -8,7 +8,7 @@
 --
 -- Covered functions:
 --   aiClassify, aiExtract, aiTranslate, aiGenerateSQL,
---   aiGenerateContent, generateEmbedding, generateEmbeddingOrNull
+--   aiGenerateContent, aiGenerateEmbedding, aiGenerateEmbeddingOrNull
 -- =============================================================================
 
 SET allow_experimental_ai_functions = 1;
@@ -19,7 +19,7 @@ SET default_ai_provider = '';
 -- =============================================================================
 
 SELECT '-- Function registration';
-SELECT name FROM system.functions WHERE name IN ('aiClassify', 'aiExtract', 'aiGenerateContent', 'aiGenerateSQL', 'aiTranslate', 'generateEmbedding', 'generateEmbeddingOrNull') ORDER BY name;
+SELECT name FROM system.functions WHERE name IN ('aiClassify', 'aiExtract', 'aiGenerateContent', 'aiGenerateSQL', 'aiTranslate', 'aiGenerateEmbedding', 'aiGenerateEmbeddingOrNull') ORDER BY name;
 
 -- =============================================================================
 -- 2. aiClassify: argument validation (expects 2-4 args)
@@ -90,32 +90,32 @@ SELECT '-- aiGenerateContent: missing named collection';
 SELECT aiGenerateContent('hello world'); -- { serverError BAD_ARGUMENTS }
 
 -- =============================================================================
--- 7. generateEmbedding: argument validation (expects 2-3 args)
+-- 7. aiGenerateEmbedding: argument validation (expects 2-3 args)
 -- =============================================================================
 
-SELECT '-- generateEmbedding: too few arguments';
-SELECT generateEmbedding(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT generateEmbedding('text'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '-- aiGenerateEmbedding: too few arguments';
+SELECT aiGenerateEmbedding(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiGenerateEmbedding('text'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- generateEmbedding: too many arguments';
-SELECT generateEmbedding('a', 256, 'c', 'd'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '-- aiGenerateEmbedding: too many arguments';
+SELECT aiGenerateEmbedding('a', 256, 'c', 'd'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- generateEmbedding: missing named collection';
-SELECT generateEmbedding('text', 256); -- { serverError BAD_ARGUMENTS }
+SELECT '-- aiGenerateEmbedding: missing named collection';
+SELECT aiGenerateEmbedding('text', 256); -- { serverError BAD_ARGUMENTS }
 
 -- =============================================================================
--- 7b. generateEmbeddingOrNull: argument validation (expects 2-3 args)
+-- 7b. aiGenerateEmbeddingOrNull: argument validation (expects 2-3 args)
 -- =============================================================================
 
-SELECT '-- generateEmbeddingOrNull: too few arguments';
-SELECT generateEmbeddingOrNull(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT generateEmbeddingOrNull('text'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '-- aiGenerateEmbeddingOrNull: too few arguments';
+SELECT aiGenerateEmbeddingOrNull(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiGenerateEmbeddingOrNull('text'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- generateEmbeddingOrNull: too many arguments';
-SELECT generateEmbeddingOrNull('a', 256, 'c', 'd'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '-- aiGenerateEmbeddingOrNull: too many arguments';
+SELECT aiGenerateEmbeddingOrNull('a', 256, 'c', 'd'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- generateEmbeddingOrNull: missing named collection';
-SELECT generateEmbeddingOrNull('text', 256); -- { serverError BAD_ARGUMENTS }
+SELECT '-- aiGenerateEmbeddingOrNull: missing named collection';
+SELECT aiGenerateEmbeddingOrNull('text', 256); -- { serverError BAD_ARGUMENTS }
 
 -- =============================================================================
 -- 8. Return type verification
@@ -177,32 +177,32 @@ SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_content';
 DROP TABLE IF EXISTS _03300_ret_content;
 
--- generateEmbedding returns Array(Float32)
+-- aiGenerateEmbedding returns Array(Float32)
 DROP TABLE IF EXISTS _03300_ret_embedding;
 CREATE TABLE _03300_ret_embedding ENGINE = Memory AS
-    SELECT generateEmbedding(x, 256) AS result FROM (SELECT 'hello' AS x WHERE 0);
-SELECT '-- generateEmbedding return type';
+    SELECT aiGenerateEmbedding(x, 256) AS result FROM (SELECT 'hello' AS x WHERE 0);
+SELECT '-- aiGenerateEmbedding return type';
 SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_embedding';
 DROP TABLE IF EXISTS _03300_ret_embedding;
 
--- generateEmbeddingOrNull returns Nullable(Array(Float32))
+-- aiGenerateEmbeddingOrNull returns Nullable(Array(Float32))
 DROP TABLE IF EXISTS _03300_ret_embedding_or_null;
 CREATE TABLE _03300_ret_embedding_or_null ENGINE = Memory AS
-    SELECT generateEmbeddingOrNull(x, 256) AS result FROM (SELECT 'hello' AS x WHERE 0);
-SELECT '-- generateEmbeddingOrNull return type';
+    SELECT aiGenerateEmbeddingOrNull(x, 256) AS result FROM (SELECT 'hello' AS x WHERE 0);
+SELECT '-- aiGenerateEmbeddingOrNull return type';
 SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_embedding_or_null';
 DROP TABLE IF EXISTS _03300_ret_embedding_or_null;
 
 -- =============================================================================
--- 9. generateEmbedding: dimensions argument must be constant
+-- 9. aiGenerateEmbedding: dimensions argument must be constant
 -- The fake named collection lets us get past config resolution so the
 -- non-constant dimensions check is reached before any HTTP calls.
 -- =============================================================================
 
-SELECT '-- generateEmbedding: non-constant dimensions';
-SELECT generateEmbedding(x, number) FROM (SELECT 'text' AS x, number FROM numbers(2)); -- { serverError BAD_ARGUMENTS }
+SELECT '-- aiGenerateEmbedding: non-constant dimensions';
+SELECT aiGenerateEmbedding(x, number) FROM (SELECT 'text' AS x, number FROM numbers(2)); -- { serverError BAD_ARGUMENTS }
 
 -- =============================================================================
 -- Cleanup
