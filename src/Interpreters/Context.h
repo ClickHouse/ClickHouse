@@ -1768,6 +1768,7 @@ public:
     bool isEnabledAuditType(const AuditLogTypes & audit_type) const;
     void setAuditTypes(const std::unordered_set<AuditLogTypes> & audit_types_) const;
     void resetAuditTypes() const;
+    void loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & config);
 
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;

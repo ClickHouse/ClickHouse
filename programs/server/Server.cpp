@@ -433,7 +433,6 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int STARTUP_SCRIPTS_ERROR;
-    extern const int UNEXPECTED_AUDIT_TYPE;
 }
 
 namespace FileCacheSetting
@@ -1891,70 +1890,6 @@ try
         global_context->setUserScriptsPath(user_scripts_path);
     }
 
-    /// audit log types
-    {
-        if (config().has("logger.auditlog"))
-        {
-            std::string auditlog_types = config().getString("logger.auditlog_types", "");
-            std::unordered_set<Context::AuditLogTypes> types_set;
-
-            /// Default audit log type is DDL
-            if (auditlog_types.empty())
-                types_set.emplace(Context::AuditLogTypes::DDL);
-            else
-            {
-                std::string_view types_view = auditlog_types;
-                size_t pos = 0;
-
-                while (pos < types_view.size())
-                {
-                    /// skip leading whitespaces
-                    pos = types_view.find_first_not_of(" \t", pos);
-                    if (pos == std::string_view::npos)
-                        break;
-
-                    /// find end of token
-                    auto end = types_view.find(',', pos);
-                    size_t token_end = end == std::string_view::npos ? types_view.size() : end;
-
-                    /// trim trailing whitespaces
-                    size_t last = types_view.find_last_not_of(" \t", token_end - 1);
-                    std::string_view item = types_view.substr(pos, last - pos + 1);
-
-                    /// parse token
-                    if (!item.empty())
-                    {
-                        if (item == "USER")
-                            types_set.emplace(Context::AuditLogTypes::USER);
-                        else if (item == "DDL")
-                            types_set.emplace(Context::AuditLogTypes::DDL);
-                        else if (item == "DML")
-                            types_set.emplace(Context::AuditLogTypes::DML);
-                        else if (item == "DCL")
-                            types_set.emplace(Context::AuditLogTypes::DCL);
-                        else if (item == "MISC")
-                            types_set.emplace(Context::AuditLogTypes::MISC);
-                        else if (item == "ALL")
-                            types_set.emplace(Context::AuditLogTypes::ALL);
-                        else
-                        {
-                            throw Exception(ErrorCodes::UNEXPECTED_AUDIT_TYPE,
-                                "Unexpected audit type: {}, expected values are USER, DDL, DML, DCL, MISC, ALL", item);
-                        }
-                    }
-
-                    if (end == std::string_view::npos)
-                        break;
-
-                    pos = end + 1;
-                }
-            }
-
-            LOG_DEBUG(log, "auditlog_types={}, types_set's size={}", auditlog_types, types_set.size());
-            global_context->setAuditTypes(types_set);
-        }
-    }
-
     /// top_level_domains_lists
     {
         const auto & top_level_domains_path_setting = server_settings[ServerSetting::top_level_domains_path];
@@ -2321,6 +2256,8 @@ try
             global_context->setClustersConfig(loaded_config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
             global_context->setExternalAuthenticatorsConfig(config());
+
+            global_context->loadOrReloadAuditTypes(config());
 
             global_context->setDashboardsConfig(config());
 
