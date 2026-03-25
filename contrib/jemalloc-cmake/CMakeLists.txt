@@ -196,6 +196,17 @@ target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 
+# Enable debug mode for debug build
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    message(STATUS "Enable jemalloc debug capabilities in debug build")
+    target_compile_definitions(_jemalloc PRIVATE
+        -DJEMALLOC_DEBUG=1
+        # Usage examples:
+        # - MALLOC_CONF=log:.
+        # - MALLOC_CONF='log:core.malloc.exit|core.sallocx.entry|core.sdallocx.entry'
+        -DJEMALLOC_LOG=1)
+endif()
+
 # jemalloc provides support two unwind flavors:
 # - JEMALLOC_PROF_LIBUNWIND - unw_backtrace() - gnu libunwind (compatible with llvm libunwind)
 # - JEMALLOC_PROF_LIBGCC - _Unwind_Backtrace() - the original HP libunwind and the one coming with gcc / g++ / libstdc++.
