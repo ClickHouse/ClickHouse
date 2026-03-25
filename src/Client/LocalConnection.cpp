@@ -44,6 +44,8 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
     extern const SettingsBool allow_experimental_json_ast_dialect;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsString promql_database;
@@ -218,6 +220,10 @@ void LocalConnection::sendQuery(
                     "(turn on setting 'allow_experimental_json_ast_dialect')");
 
             parsed_query = IAST::createFromJSON(String(begin, end));
+            if (settings[Setting::max_ast_depth])
+                parsed_query->checkDepth(settings[Setting::max_ast_depth]);
+            if (settings[Setting::max_ast_elements])
+                parsed_query->checkSize(settings[Setting::max_ast_elements]);
         }
         else
         {

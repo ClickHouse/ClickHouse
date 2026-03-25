@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/quoteString.h>
 
 namespace Poco::JSON { class Object; }
@@ -29,30 +27,8 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
 
     QueryKind getQueryKind() const override { return QueryKind::Check; }
 
-    void writeJSON(WriteBuffer & out) const override
-    {
-        JSONObjectWriter w(out, "CheckTableQuery");
-        w.writeChild("database", database);
-        w.writeChild("table", table);
-        w.writeChild("partition", partition);
-        if (!part_name.empty())
-            w.writeString("part_name", part_name);
-    }
-
-    void readJSON(const Poco::JSON::Object & json) override
-    {
-        JSONObjectReader r(json);
-        database = r.readChild("database");
-        if (database)
-            children.push_back(database);
-        table = r.readChild("table");
-        if (table)
-            children.push_back(table);
-        partition = r.readChild("partition");
-        if (partition)
-            children.push_back(partition);
-        part_name = r.getString("part_name");
-    }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     std::variant<std::monostate, ASTPtr, String> getPartitionOrPartitionID() const
     {
@@ -110,15 +86,8 @@ struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
 
     QueryKind getQueryKind() const override { return QueryKind::Check; }
 
-    void writeJSON(WriteBuffer & out) const override
-    {
-        JSONObjectWriter w(out, "CheckAllTablesQuery");
-    }
-
-    void readJSON(const Poco::JSON::Object & /* json */) override
-    {
-        /// No fields to read.
-    }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & /* state */, FormatStateStacked frame) const override

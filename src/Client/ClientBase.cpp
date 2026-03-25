@@ -141,6 +141,8 @@ namespace Setting
     extern const SettingsBool apply_settings_from_server;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_json_ast_dialect;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
     extern const SettingsString polyglot_dialect;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
@@ -418,6 +420,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         try
         {
             res = IAST::createFromJSON(String(pos, end));
+            if (settings[Setting::max_ast_depth])
+                res->checkDepth(settings[Setting::max_ast_depth]);
+            if (settings[Setting::max_ast_elements])
+                res->checkSize(settings[Setting::max_ast_elements]);
             pos = end;
         }
         catch (const Exception & e)
