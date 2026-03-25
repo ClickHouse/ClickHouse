@@ -217,35 +217,22 @@ void ShufflingStep::updateOutputHeader()
 //     }
 // }
 
-void ShufflingStep::mergingShuffled(QueryPipelineBuilder & pipeline, const UInt64)
+void ShufflingStep::mergingShuffled(QueryPipelineBuilder & pipeline, const UInt64 limit_)
 {
     LOG_TRACE(getLogger("ShufflingStep"), "mergingShuffled");
 
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
-        // TODO
-        // if (use_buffering && sort_settings.read_in_order_use_buffering)
-        // {
-        //     pipeline.addSimpleTransform([&](const SharedHeader & header)
-        //     {
-        //         return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
-        //     });
-        // }
+        auto transform = std::make_shared<MergingShuffledTransform>(
+            pipeline.getSharedHeader(),
+            pipeline.getNumStreams(),
+            sort_settings.max_block_size,
+            /*max_block_size_bytes=*/0,
+            limit_,
+            always_read_till_end);
 
-        // TODO: finish MergingShuffledTransform
-    //     auto transform = std::make_shared<MergingShuffledTransform>(
-    //         pipeline.getSharedHeader(),
-    //         pipeline.getNumStreams(),
-    //         sort_settings.max_block_size,
-    //         /*max_block_size_bytes=*/0,
-    //         limit_,
-    //         always_read_till_end,
-    //         nullptr,
-    //         false,
-    //         apply_virtual_row_conversions);
-
-    //     pipeline.addTransform(std::move(transform));
+        pipeline.addTransform(std::move(transform));
     }
 }
 

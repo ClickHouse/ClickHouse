@@ -110,6 +110,8 @@ void PartialSortingTransform::transform(Chunk & chunk)
         assert(chunk.getNumColumns());
     }
 
+    LOG_TRACE(getLogger("PartialSortingTransform"), "transform, rows: {}", chunk.getNumRows());
+
     if (read_rows)
         read_rows->add(chunk.getNumRows());
 

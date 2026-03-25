@@ -28,7 +28,7 @@ void PartialShufflingTransform::transform(Chunk & chunk)
         assert(chunk.getNumColumns());
     }
 
-    // LOG_TRACE(getLogger("PartialShufflingTransform"), "transform, rows: {}", chunk.getNumRows());
+    LOG_TRACE(getLogger("PartialShufflingTransform"), "transform, rows: {}", chunk.getNumRows());
 
 
     // if (read_rows)
