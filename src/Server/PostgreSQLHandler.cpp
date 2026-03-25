@@ -873,7 +873,12 @@ void PostgreSQLHandler::processCloseQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::CloseQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::CloseQuery>();
 
-        prepared_statements_manager.deleteStatement(query->function_name);
+        /// 'S' means close a prepared statement, 'P' means close a portal.
+        /// Closing a portal should not deallocate the prepared statement,
+        /// otherwise a later Bind/Execute on the same statement would fail.
+        if (query->close_target == 'S')
+            prepared_statements_manager.deleteStatement(query->function_name);
+
         prepared_statements_manager.resetBindQuery();
     }
     catch (const Exception & e)
@@ -935,6 +940,7 @@ void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
     /// are visible in subsequent user queries.
     auto internal_context = Context::createCopy(server.context());
     internal_context->makeQueryContext();
+    internal_context->setCurrentQueryId(fmt::format("postgres-init:{:d}", connection_id));
     internal_context->setSessionContext(query_context->getSessionContext());
 
     String out_str;

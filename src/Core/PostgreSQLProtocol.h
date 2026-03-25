@@ -882,6 +882,8 @@ class CloseQuery : FrontMessage
 {
 public:
     String function_name;
+    /// 'S' for prepared statement, 'P' for portal
+    char close_target = 0;
 
     void deserialize(ReadBuffer & in) override
     {
@@ -889,6 +891,7 @@ public:
         readBinaryBigEndian(sz, in);
         Int8 byte;
         readBinaryBigEndian(byte, in);
+        close_target = static_cast<char>(byte);
         readNullTerminated(function_name, in);
     }
 
