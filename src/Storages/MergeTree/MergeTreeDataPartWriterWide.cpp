@@ -307,7 +307,7 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
     }
 }
 
-void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation)
+void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
     Block block_to_write = block;
 
@@ -357,9 +357,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
 
     Block primary_key_block;
     if (settings.rewrite_primary_key)
-        primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
+        primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation, permuted_columns_cache);
 
-    Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation);
+    Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation, permuted_columns_cache);
 
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
@@ -380,6 +380,11 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
             {
                 const auto & index_column = *skip_indexes_block.getByName(it->name).column;
                 writeColumn(*it, index_column, offset_substreams, granules_to_write);
+            }
+            else if (permuted_columns_cache && permuted_columns_cache->has(it->name))
+            {
+                const auto & cached_column = *permuted_columns_cache->getByName(it->name).column;
+                writeColumn(*it, cached_column, offset_substreams, granules_to_write);
             }
             else
             {

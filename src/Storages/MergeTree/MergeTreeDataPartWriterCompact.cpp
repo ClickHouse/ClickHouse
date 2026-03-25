@@ -223,7 +223,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     return serialize_settings;
 }
 
-void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPermutation * permutation)
+void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
     Block result_block = block;
 
@@ -246,7 +246,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
         fillIndexGranularity(index_granularity_for_block, result_block.rows());
     }
 
-    result_block = permuteBlockIfNeeded(result_block, permutation);
+    result_block = permuteBlockIfNeeded(result_block, permutation, permuted_columns_cache);
 
     if (header.empty())
         header = result_block.cloneEmpty();
