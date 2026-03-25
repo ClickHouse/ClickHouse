@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -17,6 +18,7 @@ public:
     ReadFromDataLakeStep(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
+        const StorageObjectStorageTableOptions & table_options_,
         const Names & columns_to_read,
         const NamesAndTypesList & virtual_columns_,
         const SelectQueryInfo & query_info_,
@@ -51,6 +53,7 @@ public:
 private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
+    const StorageObjectStorageTableOptions table_options;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
 
     ReadFromFormatInfo info;

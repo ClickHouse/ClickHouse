@@ -356,6 +356,7 @@ void StorageObjectStorage::read(
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
+        table_options,
         column_names,
         getVirtualsList(),
         query_info,

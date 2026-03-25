@@ -65,6 +65,7 @@ DataLakeSource::DataLakeSource(
     String name_,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
+    const StorageObjectStorageTableOptions & table_options_,
     StorageSnapshotPtr storage_snapshot_,
     const ReadFromFormatInfo & info,
     const std::optional<FormatSettings> & format_settings_,
@@ -79,6 +80,7 @@ DataLakeSource::DataLakeSource(
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
+    , table_options(table_options_)
     , storage_snapshot(std::move(storage_snapshot_))
     , read_context(context_)
     , format_settings(format_settings_)
@@ -155,7 +157,7 @@ Chunk DataLakeSource::generate()
             const auto & filename = object_info->getFileName();
             std::string full_path = object_info->getPath();
 
-            const auto reading_path = configuration->getPathForRead().path;
+            const auto reading_path = table_options.getPathForRead(configuration->getRawPath()).path;
 
             if (!full_path.starts_with(reading_path))
                 full_path = fs::path(reading_path) / object_info->getPath();
@@ -255,7 +257,7 @@ void DataLakeSource::addNumRowsToCache(const ObjectInfo & object_info, size_t nu
 {
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
-        configuration->format,
+        table_options.format,
         format_settings,
         read_context);
     schema_cache.addNumRows(cache_key, num_rows);
@@ -267,6 +269,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader()
         0,
         file_iterator,
         configuration,
+        table_options,
         object_storage,
         read_from_format_info,
         format_settings,
@@ -284,6 +287,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
     size_t processor,
     const std::shared_ptr<IObjectIterator> & file_iterator,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageObjectStorageTableOptions & table_options,
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
@@ -335,7 +339,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
 
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
-            configuration->format,
+            table_options.format,
             format_settings,
             context_);
 
@@ -363,7 +367,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
 
-        CompressionMethod compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
+        CompressionMethod compression_method = chooseCompressionMethod(object_info->getFileName(), table_options.compression_method);
         read_buf = createReadBuffer(object_info->relative_path_with_metadata, object_storage, context_, log);
 
         Block initial_header = read_from_format_info.format_header;
@@ -377,7 +381,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
             "Reading object '{}', size: {} bytes, with format: {}",
             object_info->getPath(),
             object_info->getObjectMetadata()->size_bytes,
-            configuration->format);
+            table_options.format);
 
         bool use_native_reader_v3 = format_settings.has_value()
             ? format_settings->parquet.use_native_reader_v3
@@ -385,12 +389,12 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
 
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] && use_native_reader_v3
-            && (configuration->format == "Parquet")
+            && (table_options.format == "Parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
             const std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             input_format = FormatFactory::instance().getInputWithMetadata(
-                configuration->format,
+                table_options.format,
                 *read_buf,
                 initial_header,
                 context_,
@@ -409,7 +413,7 @@ DataLakeSource::ReaderHolder DataLakeSource::createReader(
         else
         {
             input_format = FormatFactory::instance().getInput(
-                configuration->format,
+                table_options.format,
                 *read_buf,
                 initial_header,
                 context_,

@@ -2,6 +2,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -28,6 +29,7 @@ namespace Setting
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
+    const StorageObjectStorageTableOptions & table_options_,
     const Names & columns_to_read,
     const NamesAndTypesList & virtual_columns_,
     const SelectQueryInfo & query_info_,
@@ -42,6 +44,7 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), columns_to_read, query_info_, storage_snapshot_, context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
+    , table_options(table_options_)
     , info(std::move(info_))
     , virtual_columns(virtual_columns_)
     , format_settings(format_settings_)
@@ -111,6 +114,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             getName(),
             object_storage,
             configuration,
+            table_options,
             storage_snapshot,
             info,
             format_settings,
@@ -130,7 +134,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
     if (parallelize_output
-        && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context)
+        && FormatFactory::instance().checkParallelizeOutputAfterReading(table_options.format, context)
         && output_ports > 0 && output_ports < max_num_streams)
         pipe.resize(max_num_streams);
 

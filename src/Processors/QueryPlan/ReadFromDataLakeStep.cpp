@@ -24,6 +24,7 @@ namespace Setting
 ReadFromDataLakeStep::ReadFromDataLakeStep(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
+    const StorageObjectStorageTableOptions & table_options_,
     const Names & columns_to_read,
     const NamesAndTypesList & virtual_columns_,
     const SelectQueryInfo & query_info_,
@@ -39,6 +40,7 @@ ReadFromDataLakeStep::ReadFromDataLakeStep(
     : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), columns_to_read, query_info_, storage_snapshot_, context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
+    , table_options(table_options_)
     , info(std::move(info_))
     , virtual_columns(virtual_columns_)
     , format_settings(format_settings_)
@@ -103,6 +105,7 @@ void ReadFromDataLakeStep::initializePipeline(QueryPipelineBuilder & pipeline, c
             getName(),
             object_storage,
             configuration,
+            table_options,
             storage_snapshot,
             info,
             format_settings,
@@ -123,7 +126,7 @@ void ReadFromDataLakeStep::initializePipeline(QueryPipelineBuilder & pipeline, c
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
     if (parallelize_output
-        && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context)
+        && FormatFactory::instance().checkParallelizeOutputAfterReading(table_options.format, context)
         && output_ports > 0 && output_ports < max_num_streams)
         pipe.resize(max_num_streams);
 

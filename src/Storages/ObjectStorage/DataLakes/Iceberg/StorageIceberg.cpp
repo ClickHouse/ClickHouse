@@ -340,6 +340,7 @@ void StorageDataLake<IcebergMetadata>::read(
     auto read_step = std::make_unique<ReadFromIcebergStep>(
         object_storage,
         configuration,
+        table_options,
         column_names,
         getVirtualsList(),
         query_info,

@@ -58,6 +58,7 @@ IcebergSource::IcebergSource(
     String name_,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
+    const StorageObjectStorageTableOptions & table_options_,
     StorageSnapshotPtr storage_snapshot_,
     const ReadFromFormatInfo & info,
     const std::optional<FormatSettings> & format_settings_,
@@ -72,6 +73,7 @@ IcebergSource::IcebergSource(
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
+    , table_options(table_options_)
     , storage_snapshot(std::move(storage_snapshot_))
     , read_context(context_)
     , format_settings(format_settings_)
@@ -148,7 +150,7 @@ Chunk IcebergSource::generate()
             const auto & filename = object_info->getFileName();
             std::string full_path = object_info->getPath();
 
-            const auto reading_path = configuration->getPathForRead().path;
+            const auto reading_path = table_options.getPathForRead(configuration->getRawPath()).path;
 
             if (!full_path.starts_with(reading_path))
                 full_path = fs::path(reading_path) / object_info->getPath();
@@ -229,6 +231,7 @@ IcebergSource::ReaderHolder IcebergSource::createReader()
         0,
         file_iterator,
         configuration,
+        table_options,
         object_storage,
         read_from_format_info,
         format_settings,
@@ -246,6 +249,7 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
     size_t processor,
     const std::shared_ptr<IObjectIterator> & file_iterator,
     const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageObjectStorageTableOptions & table_options,
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
@@ -312,7 +316,7 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
 
-        CompressionMethod compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
+        CompressionMethod compression_method = chooseCompressionMethod(object_info->getFileName(), table_options.compression_method);
         read_buf = createReadBuffer(object_info->relative_path_with_metadata, object_storage, context_, log);
 
         Block initial_header = read_from_format_info.format_header;

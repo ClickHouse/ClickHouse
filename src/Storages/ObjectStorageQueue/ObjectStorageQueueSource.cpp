@@ -14,6 +14,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
@@ -1098,10 +1099,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
 
             const auto context = getContext();
+            StorageObjectStorageTableOptions queue_table_options;
+            queue_table_options.format = configuration->format;
+            queue_table_options.compression_method = configuration->compression_method;
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
                 file_iterator,
                 configuration,
+                queue_table_options,
                 object_storage,
                 read_from_format_info,
                 format_settings,

@@ -445,6 +445,7 @@ void StorageDataLake<DataLakeMetadata>::read(
     auto read_step = std::make_unique<ReadFromDataLakeStep>(
         object_storage,
         configuration,
+        table_options,
         column_names,
         getVirtualsList(),
         query_info,
