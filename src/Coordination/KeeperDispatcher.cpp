@@ -241,6 +241,9 @@ void KeeperDispatcher::requestThread()
                 if (req.request->getOpNum() != Coordination::OpNum::Close
                     && req.request->getOpNum() != Coordination::OpNum::SessionID)
                 {
+                    if (req.session_id < 0)
+                        return false;
+
                     /// Small optimization: if we check the same session id multiple times in a row,
                     /// do the lookup once and cache the result.
                     if (req.session_id != last_checked_session_id)

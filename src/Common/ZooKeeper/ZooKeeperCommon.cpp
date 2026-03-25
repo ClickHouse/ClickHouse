@@ -1603,9 +1603,8 @@ void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) 
 
 void ZooKeeperCreateTTLResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
-    ZooKeeperResponse::fillLogElements(elems, idx);
-    auto & elem =  elems[idx];
-    elem.path_created = path_created;
+    ZooKeeperCreate2Response::fillLogElements(elems, idx);
+    auto & elem = elems[idx];
     elem.stat = zstat;
 }
 
