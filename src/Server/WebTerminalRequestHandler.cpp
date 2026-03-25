@@ -1,14 +1,11 @@
 #include <Server/WebTerminalRequestHandler.h>
-#include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTPHandler.h>
 #include <Server/HTTPResponseHeaderWriter.h>
 #include <Server/IServer.h>
 #include <Server/ClientEmbedded/ClientEmbeddedRunner.h>
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Access/Credentials.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
@@ -220,44 +217,98 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket)
     return frame;
 }
 
+/// Extract a JSON string value for a given key from a simple flat JSON object.
+/// Returns empty string if not found.
+String extractJsonStringValue(const String & json, const char * key)
+{
+    auto pos = json.find(key);
+    if (pos == String::npos)
+        return {};
+    pos += strlen(key);
+    pos = json.find(':', pos);
+    if (pos == String::npos)
+        return {};
+    ++pos;
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t'))
+        ++pos;
+    if (pos >= json.size() || json[pos] != '"')
+        return {};
+    ++pos;
+    String result;
+    while (pos < json.size() && json[pos] != '"')
+    {
+        if (json[pos] == '\\' && pos + 1 < json.size())
+        {
+            ++pos;
+            switch (json[pos])
+            {
+                case '"': result += '"'; break;
+                case '\\': result += '\\'; break;
+                case '/': result += '/'; break;
+                case 'n': result += '\n'; break;
+                case 't': result += '\t'; break;
+                case 'r': result += '\r'; break;
+                default: result += json[pos]; break;
+            }
+        }
+        else
+        {
+            result += json[pos];
+        }
+        ++pos;
+    }
+    return result;
+}
+
+/// Extract a JSON integer value for a given key, clamped to [0, max_value].
+/// Returns -1 if not found.
+int extractJsonIntValue(const String & json, const char * key, int max_value)
+{
+    auto pos = json.find(key);
+    if (pos == String::npos)
+        return -1;
+    pos += strlen(key);
+    pos = json.find(':', pos);
+    if (pos == String::npos)
+        return -1;
+    ++pos;
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t'))
+        ++pos;
+    unsigned value = 0;
+    while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9')
+    {
+        value = value * 10 + static_cast<unsigned>(json[pos] - '0');
+        if (value > static_cast<unsigned>(max_value))
+            return max_value;
+        ++pos;
+    }
+    return static_cast<int>(value);
+}
+
 /// Parse a simple JSON message like {"type":"resize","cols":80,"rows":24}
 /// This is a minimal parser sufficient for our control messages.
 bool parseResizeMessage(const String & json, int & cols, int & rows)
 {
-    /// Look for "type":"resize"
     if (json.find("\"resize\"") == String::npos)
         return false;
 
     static constexpr int MAX_TERMINAL_DIMENSION = 500;
 
-    auto extract_int = [&](const char * key) -> int
-    {
-        auto pos = json.find(key);
-        if (pos == String::npos)
-            return -1;
-        pos += strlen(key);
-        /// Skip to the colon and whitespace
-        pos = json.find(':', pos);
-        if (pos == String::npos)
-            return -1;
-        ++pos;
-        while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t'))
-            ++pos;
-        /// Parse as unsigned to avoid signed overflow UB
-        unsigned value = 0;
-        while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9')
-        {
-            value = value * 10 + static_cast<unsigned>(json[pos] - '0');
-            if (value > static_cast<unsigned>(MAX_TERMINAL_DIMENSION))
-                return MAX_TERMINAL_DIMENSION;
-            ++pos;
-        }
-        return static_cast<int>(value);
-    };
-
-    cols = extract_int("\"cols\"");
-    rows = extract_int("\"rows\"");
+    cols = extractJsonIntValue(json, "\"cols\"", MAX_TERMINAL_DIMENSION);
+    rows = extractJsonIntValue(json, "\"rows\"", MAX_TERMINAL_DIMENSION);
     return cols > 0 && rows > 0;
+}
+
+/// Parse an auth message like {"type":"auth","user":"default","password":"..."}
+bool parseAuthMessage(const String & json, String & user, String & password)
+{
+    if (json.find("\"auth\"") == String::npos)
+        return false;
+
+    user = extractJsonStringValue(json, "\"user\"");
+    password = extractJsonStringValue(json, "\"password\"");
+    /// User is required, password can be empty
+    return !user.empty();
 }
 
 }
@@ -307,32 +358,31 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         return;
     }
 
-    /// Authenticate the user using the same mechanism as HTTP
-    auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
-    std::unique_ptr<Credentials> request_credentials;
-    const auto & default_settings = server.context()->getSettingsRef();
-    HTMLForm params(default_settings, request);
-    HTTPHandlerConnectionConfig connection_config;
-
-    try
+    /// Validate Origin header to prevent cross-site WebSocket hijacking.
+    /// Browsers always send the Origin header on WebSocket upgrades.
+    /// We enforce same-origin: the Origin must match the Host header.
+    String origin = request.get("Origin", "");
+    if (!origin.empty())
     {
-        if (!authenticateUserByHTTP(request, params, response, *session, request_credentials, connection_config, server.context(), log))
+        String host = request.getHost();
+        /// Extract host from Origin URL (e.g. "https://example.com:8443" -> "example.com:8443")
+        size_t origin_host_start = origin.find("://");
+        String origin_host = (origin_host_start != String::npos) ? origin.substr(origin_host_start + 3) : origin;
+        /// Remove trailing slash if present
+        if (!origin_host.empty() && origin_host.back() == '/')
+            origin_host.pop_back();
+
+        if (origin_host != host)
         {
-            /// Multi-step auth (401 already sent)
+            LOG_WARNING(log, "WebSocket Origin mismatch: origin={}, host={}", origin, host);
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
+            *response.send() << "Origin not allowed.\n";
             return;
         }
     }
-    catch (...)
-    {
-        LOG_WARNING(log, "WebSocket authentication failed: {}", getCurrentExceptionMessage(false));
-        /// Send WebSocket-compatible error: complete the handshake first then close with error code
-        /// Actually, since handshake hasn't completed, just return an HTTP error
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED);
-        *response.send() << "Authentication failed.\n";
-        return;
-    }
 
-    /// Complete the WebSocket handshake
+    /// Complete the WebSocket handshake first (authentication happens in-band
+    /// via the first WebSocket message, to avoid leaking credentials in the URL).
     Poco::Net::StreamSocket & socket = response.getSocket();
     String accept_key = computeWebSocketAccept(ws_key);
 
@@ -343,7 +393,43 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                            "\r\n";
     sendAllBytes(socket, handshake_str.data(), handshake_str.size());
 
-    LOG_INFO(log, "WebSocket connection established for user {}", session->getClientInfo().current_user);
+    /// Wait for the first WebSocket text message containing auth credentials:
+    /// {"type":"auth","user":"...","password":"..."}
+    WebSocketFrame auth_frame = readWebSocketFrame(socket);
+    if (auth_frame.protocol_error)
+    {
+        sendWebSocketClose(socket, 1002, "Protocol error");
+        return;
+    }
+    if (!auth_frame.valid || auth_frame.opcode != 0x01)
+    {
+        sendWebSocketClose(socket, 1008, "Expected auth message");
+        return;
+    }
+
+    String auth_user;
+    String auth_password;
+    if (!parseAuthMessage(auth_frame.payload, auth_user, auth_password))
+    {
+        sendWebSocketClose(socket, 1008, "Invalid auth message");
+        return;
+    }
+
+    /// Authenticate the user
+    auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
+    try
+    {
+        session->authenticate(BasicCredentials(auth_user, auth_password), request.clientAddress());
+        session->makeSessionContext();
+    }
+    catch (...)
+    {
+        LOG_WARNING(log, "WebSocket authentication failed for user {}: {}", auth_user, getCurrentExceptionMessage(false));
+        sendWebSocketClose(socket, 1008, "Authentication failed");
+        return;
+    }
+
+    LOG_INFO(log, "WebSocket connection established for user {}", auth_user);
 
     /// Create PTY for the embedded client
     static constexpr int DEFAULT_COLS = 80;

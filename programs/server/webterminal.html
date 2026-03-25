@@ -81,15 +81,10 @@
     var inIframe = (window.parent !== window);
     var waitingForCredentials = false;
 
-    function getWebSocketURL(user, password) {
+    function getWebSocketURL() {
         var loc = window.location;
         var protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-        var url = protocol + '//' + loc.host + '/webterminal';
-        var p = [];
-        if (user) p.push('user=' + encodeURIComponent(user));
-        if (password) p.push('password=' + encodeURIComponent(password));
-        if (p.length > 0) url += '?' + p.join('&');
-        return url;
+        return protocol + '//' + loc.host + '/webterminal';
     }
 
     function initTerminal() {
@@ -263,7 +258,7 @@
             ws = null;
         }
 
-        var url = getWebSocketURL(currentUser, currentPassword);
+        var url = getWebSocketURL();
         var opened = false;
 
         try {
@@ -277,11 +272,16 @@
 
         ws.onopen = function() {
             opened = true;
+            // Send credentials as the first message (avoids leaking password in URL)
+            ws.send(JSON.stringify({
+                type: 'auth',
+                user: currentUser,
+                password: currentPassword
+            }));
             state = 'active';
             // Erase the "Connecting..." message so PTY output starts on a clean line
             term.write('\r\x1b[2K');
             sendResize();
-
         };
 
         ws.onmessage = function(event) {
