@@ -269,7 +269,7 @@ void PostingListCursor::seek(uint32_t target)
 
     if (is_embedded)
     {
-        auto it = std::lower_bound(decoded_values, decoded_values + decoded_count, target);
+        auto * it = std::lower_bound(decoded_values, decoded_values + decoded_count, target);
         if (it != decoded_values + decoded_count)
         {
             index = static_cast<size_t>(it - decoded_values);
