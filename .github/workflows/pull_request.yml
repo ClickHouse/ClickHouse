@@ -663,6 +663,44 @@ jobs:
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
+  build_llvm_coverage_build:
+    runs-on: [self-hosted, amd-large]
+    needs: [build_arm_tidy, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGxsdm1fY292ZXJhZ2VfYnVpbGQp') }}
+    name: "Build (llvm_coverage_build)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (llvm_coverage_build)' --workflow "PR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+
   build_arm_tsan:
     runs-on: [self-hosted, arm-large]
     needs: [build_arm_tidy, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
@@ -1192,44 +1230,6 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_fuzzers)' --workflow "PR" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
-
-  build_llvm_coverage_build:
-    runs-on: [self-hosted, amd-large]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGxsdm1fY292ZXJhZ2VfYnVpbGQp') }}
-    name: "Build (llvm_coverage_build)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (llvm_coverage_build)' --workflow "PR" --ci 2>&1 | python3 -u -c 'import sys,datetime
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
@@ -2983,7 +2983,7 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_1_3:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_arm_tidy, build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMS8zKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, 1/3)"
     outputs:
@@ -3021,7 +3021,7 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_2_3:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_arm_tidy, build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMi8zKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, 2/3)"
     outputs:
@@ -3059,7 +3059,7 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_3_3:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_arm_tidy, build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMy8zKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, 3/3)"
     outputs:
@@ -4123,7 +4123,7 @@ jobs:
 
   integration_tests_amd_llvm_coverage_1_5:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_arm_tidy, build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAxLzUp') }}
     name: "Integration tests (amd_llvm_coverage, 1/5)"
     outputs:
@@ -4161,7 +4161,7 @@ jobs:
 
   integration_tests_amd_llvm_coverage_2_5:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_arm_tidy, build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAyLzUp') }}
     name: "Integration tests (amd_llvm_coverage, 2/5)"
     outputs:
@@ -4199,7 +4199,7 @@ jobs:
 
   integration_tests_amd_llvm_coverage_3_5:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_arm_tidy, build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAzLzUp') }}
     name: "Integration tests (amd_llvm_coverage, 3/5)"
     outputs:
@@ -4237,7 +4237,7 @@ jobs:
 
   integration_tests_amd_llvm_coverage_4_5:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_arm_tidy, build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA0LzUp') }}
     name: "Integration tests (amd_llvm_coverage, 4/5)"
     outputs:
@@ -4275,7 +4275,7 @@ jobs:
 
   integration_tests_amd_llvm_coverage_5_5:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_arm_tidy, build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA1LzUp') }}
     name: "Integration tests (amd_llvm_coverage, 5/5)"
     outputs:
@@ -4465,7 +4465,7 @@ jobs:
 
   unit_tests_amd_llvm_coverage:
     runs-on: [self-hosted, amd-large]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_arm_tidy, build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX2xsdm1fY292ZXJhZ2Up') }}
     name: "Unit tests (amd_llvm_coverage)"
     outputs:

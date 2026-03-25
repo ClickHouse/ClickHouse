@@ -50,6 +50,7 @@ workflow = Workflow.Config(
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
+        *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
         *[
             job.set_dependency(STYLE_AND_FAST_TESTS)
             for job in JobConfigs.extra_validation_build_jobs
@@ -62,7 +63,6 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
-        *JobConfigs.build_llvm_coverage_job,
         JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
         JobConfigs.lightweight_functional_tests_job,
