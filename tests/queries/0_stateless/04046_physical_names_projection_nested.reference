@@ -40,3 +40,12 @@ Test 5: non-flattened Nested with physical names
 2	world	[30]	['c']
 1	hello	[10,20]	['a','b']
 2	world	[30]	['c']
+Test 6: identity-mapped Nested parent rename is metadata-only
+n.x	n.x
+n.x	n.x
+n.y	n.y
+n.y	n.y
+1	[10,20]	['a','b']
+2	[30]	['c']
+1	[10,20]	['a','b']
+2	[30]	['c']

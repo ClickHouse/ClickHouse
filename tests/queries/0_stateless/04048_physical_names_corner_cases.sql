@@ -353,10 +353,27 @@ OPTIMIZE TABLE t_phys_drop_readd FINAL;
 SELECT a, b FROM t_phys_drop_readd ORDER BY a;
 DROP TABLE t_phys_drop_readd;
 
--- Test 13: compact Variant column with escape_variant_subcolumn_filenames change across rename
+-- Test 13: DROP + re-ADD Nested column in single ALTER forces mutation
+-- Regression: previously, DROP COLUMN n (parent) was not detected in
+-- new_col_names which contained expanded n.x, n.y — bypassing force_mutation.
+SELECT 'Test 13: drop and re-add Nested in single ALTER';
+DROP TABLE IF EXISTS t_phys_drop_readd_nested;
+CREATE TABLE t_phys_drop_readd_nested (a UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+INSERT INTO t_phys_drop_readd_nested VALUES (1, [10, 20], ['a', 'b']);
+ALTER TABLE t_phys_drop_readd_nested DROP COLUMN n, ADD COLUMN n Nested(x UInt64, y String);
+INSERT INTO t_phys_drop_readd_nested VALUES (2, [30, 40], ['c', 'd']);
+SELECT a, `n.x`, `n.y` FROM t_phys_drop_readd_nested ORDER BY a;
+OPTIMIZE TABLE t_phys_drop_readd_nested FINAL;
+SELECT a, `n.x`, `n.y` FROM t_phys_drop_readd_nested ORDER BY a;
+DROP TABLE t_phys_drop_readd_nested;
+
+-- Test 14: compact Variant column with escape_variant_subcolumn_filenames change across rename
 -- Regression: ColumnsSubstreams.cpp missed the physical-name retry after toggling
 -- escape_variant_substreams, making valid compact parts unreadable.
-SELECT 'Test 13: compact Variant with escape setting change across rename';
+SELECT 'Test 14: compact Variant with escape setting change across rename';
 DROP TABLE IF EXISTS t_phys_variant_compact;
 CREATE TABLE t_phys_variant_compact
 (
@@ -384,9 +401,9 @@ SELECT a, w, variantType(w) FROM t_phys_variant_compact ORDER BY a;
 
 DROP TABLE t_phys_variant_compact;
 
--- Test 14: Full DETACH TABLE / ATTACH TABLE — verifies physical_names.json
+-- Test 15: Full DETACH TABLE / ATTACH TABLE — verifies physical_names.json
 -- survives a full table detach-attach cycle (mapping loaded from disk).
-SELECT 'Test 14: full table detach/attach recovery';
+SELECT 'Test 15: full table detach/attach recovery';
 DROP TABLE IF EXISTS t_phys_full_detach;
 CREATE TABLE t_phys_full_detach (a UInt64, b String) ENGINE = MergeTree ORDER BY a
     SETTINGS min_bytes_for_wide_part = 0,
@@ -403,10 +420,10 @@ OPTIMIZE TABLE t_phys_full_detach FINAL;
 SELECT a, d FROM t_phys_full_detach ORDER BY a;
 DROP TABLE t_phys_full_detach;
 
--- Test 15: TTL column rename — verify TTL still works after renaming a
+-- Test 16: TTL column rename — verify TTL still works after renaming a
 -- non-TTL column (the TTL expression references a different column).
 -- Use INTERVAL 50 YEAR to stay within DateTime 32-bit range (max ~2106).
-SELECT 'Test 15: TTL with column rename';
+SELECT 'Test 16: TTL with column rename';
 DROP TABLE IF EXISTS t_phys_ttl;
 CREATE TABLE t_phys_ttl
 (

@@ -81,7 +81,12 @@ Test 12: drop and re-add in single ALTER
 b	b
 1	new_default
 2	inserted
-Test 13: compact Variant with escape setting change across rename
+Test 13: drop and re-add Nested in single ALTER
+1	[]	[]
+2	[30,40]	['c','d']
+1	[]	[]
+2	[30,40]	['c','d']
+Test 14: compact Variant with escape setting change across rename
 1	hello	String
 2	42	UInt64
 1	hello	String
@@ -92,14 +97,14 @@ Test 13: compact Variant with escape setting change across rename
 2	42	UInt64
 3	world	String
 4	99	UInt64
-Test 14: full table detach/attach recovery
+Test 15: full table detach/attach recovery
 1	before
 2	after
 1	before
 2	after
 1	before
 2	after
-Test 15: TTL with column rename
+Test 16: TTL with column rename
 1	hello
 2	world
 1	hello

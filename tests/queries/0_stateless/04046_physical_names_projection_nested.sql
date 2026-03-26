@@ -158,3 +158,35 @@ SELECT a, d, n.x, n.y FROM t_phys_nested_nf ORDER BY a;
 
 DROP TABLE t_phys_nested_nf;
 SET flatten_nested = 1;
+
+-- Test 6: Identity-mapped Nested parent rename is metadata-only
+-- Regression: identity-mapped Nested columns (physical == logical, e.g.
+-- "n.x" -> "n.x") can be renamed across Nested parents as metadata-only
+-- because getFileNameForStreamPhysical derives the offset stream name from
+-- the physical prefix ("n"), not the logical prefix, so the shared offset
+-- stream "n.size0" remains correct after the rename.
+SELECT 'Test 6: identity-mapped Nested parent rename is metadata-only';
+DROP TABLE IF EXISTS t_phys_identity_nested_rename;
+CREATE TABLE t_phys_identity_nested_rename (a UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_phys_identity_nested_rename VALUES (1, [10, 20], ['a', 'b']);
+INSERT INTO t_phys_identity_nested_rename VALUES (2, [30], ['c']);
+
+ALTER TABLE t_phys_identity_nested_rename MODIFY SETTING
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+ALTER TABLE t_phys_identity_nested_rename ADD COLUMN c UInt64 DEFAULT 0;
+
+SELECT column, physical_name FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_phys_identity_nested_rename' AND active
+    AND column IN ('n.x', 'n.y')
+    ORDER BY column, physical_name;
+
+ALTER TABLE t_phys_identity_nested_rename RENAME COLUMN `n.x` TO `m.x`, RENAME COLUMN `n.y` TO `m.y`;
+
+SELECT a, `m.x`, `m.y` FROM t_phys_identity_nested_rename ORDER BY a;
+OPTIMIZE TABLE t_phys_identity_nested_rename FINAL;
+SELECT a, `m.x`, `m.y` FROM t_phys_identity_nested_rename ORDER BY a;
+
+DROP TABLE t_phys_identity_nested_rename;

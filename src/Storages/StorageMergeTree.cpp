@@ -470,12 +470,19 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
             {
                 /// For flattened Nested siblings, the shared offset stream
                 /// name is derived from the Nested prefix of the physical
-                /// name.  If the physical name has a dot (identity like
-                /// "n.x" or compound like "5.x"), the prefix is stable and
-                /// metadata-only rename is safe.  If the physical name is a
-                /// plain counter ("5") and the logical Nested prefix changes,
-                /// the offset stream name would change and old parts would
-                /// become unreadable — force a mutation in that case.
+                /// name.  Metadata-only rename is safe only when the physical
+                /// prefix is a counter-allocated name (e.g. "5.x") that is
+                /// independent of the logical Nested parent.
+                ///
+                /// Force mutation when:
+                ///  - the physical name has no dot (plain counter "5") — the
+                ///    offset stream name would change;
+                ///  - the physical name is an identity mapping ("n.x" where
+                ///    physical == logical) — renaming the Nested parent
+                ///    changes the logical prefix but the physical prefix
+                ///    "n" is baked into existing parts, and code paths that
+                ///    derive the offset stream from the logical name would
+                ///    look for the wrong file.
                 auto physical = local_mapping.getPhysicalName(command.column_name);
                 auto [phys_parent, phys_child] = Nested::splitName(physical);
                 auto [old_parent, old_child] = Nested::splitName(command.column_name);
@@ -508,6 +515,13 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
     /// Detect DROP + re-ADD of the same column in a single ALTER.
     /// Cannot be made crash-safe as metadata-only (atomically swapping
     /// the physical name is impossible), so force a mutation for these.
+    ///
+    /// For Nested columns the detection must be parent-aware:
+    /// `DROP COLUMN n` removes the parent, but after `commands.apply`
+    /// the re-added `ADD COLUMN n Nested(x UInt64, y String)` is
+    /// expanded into `n.x`, `n.y` in `new_col_names`.  The dropped
+    /// name "n" itself won't appear in `new_col_names` — we must also
+    /// check for children with the "n." prefix.
     std::set<String> explicitly_dropped;
     for (const auto & command : commands)
     {
@@ -519,7 +533,18 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
     for (const auto & dropped_name : explicitly_dropped)
     {
         if (new_col_names.contains(dropped_name))
+        {
             plan.force_mutation_columns.insert(dropped_name);
+        }
+        else
+        {
+            String prefix = dropped_name + ".";
+            for (const auto & new_name : new_col_names)
+            {
+                if (new_name.starts_with(prefix))
+                    plan.force_mutation_columns.insert(new_name);
+            }
+        }
     }
 
     /// Group newly added columns by Nested parent so flattened siblings

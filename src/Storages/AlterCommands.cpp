@@ -60,6 +60,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
+    extern const SettingsBool allow_experimental_physical_column_names;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
@@ -1769,7 +1770,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (from_nested && to_nested)
             {
-                if (from_nested_table_name != to_nested_table_name)
+                if (from_nested_table_name != to_nested_table_name
+                    && !context->getSettingsRef()[Setting::allow_experimental_physical_column_names])
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
             }
