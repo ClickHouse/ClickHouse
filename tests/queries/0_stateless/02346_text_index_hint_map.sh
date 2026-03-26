@@ -31,7 +31,7 @@ function run()
     $MY_CLICKHOUSE_CLIENT --query "
         SELECT trim(explain) AS str FROM
         (
-            EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1
+            EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1, optimize_functions_to_subcolumns = 0
         )
         WHERE explain LIKE '%INPUT%\_\_text_index%' OR explain ILIKE '%name: idx%'
         ORDER BY str;

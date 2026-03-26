@@ -62,7 +62,7 @@ void StatisticsUniq::serialize(WriteBuffer & buf)
     collector->serialize(data, buf);
 }
 
-void StatisticsUniq::deserialize(ReadBuffer & buf)
+void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
     bool is_null;
     readBinary(is_null, buf);
