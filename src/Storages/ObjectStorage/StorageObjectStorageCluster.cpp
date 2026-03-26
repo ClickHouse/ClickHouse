@@ -62,6 +62,7 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
 StorageObjectStorageCluster::StorageObjectStorageCluster(
     const String & cluster_name_,
     ObjectStorageConnectionConfigurationPtr configuration_,
+    StorageObjectStorageTableOptions table_options_,
     ObjectStoragePtr object_storage_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_in_table_or_function_definition,
@@ -70,6 +71,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     ContextPtr context_)
     : IStorageCluster(cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
+    , table_options(std::move(table_options_))
     , object_storage(object_storage_)
 {
     table_options.initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_, configuration->getRawPath());

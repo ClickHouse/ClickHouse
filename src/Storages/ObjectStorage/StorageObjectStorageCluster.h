@@ -14,6 +14,7 @@ public:
     StorageObjectStorageCluster(
         const String & cluster_name_,
         ObjectStorageConnectionConfigurationPtr configuration_,
+        StorageObjectStorageTableOptions table_options_,
         ObjectStoragePtr object_storage_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_in_table_or_function_definition,

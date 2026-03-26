@@ -33,6 +33,7 @@ class StorageDataLake : public IStorage
 public:
     StorageDataLake(
         ObjectStorageConnectionConfigurationPtr configuration_,
+        StorageObjectStorageTableOptions table_options_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
@@ -73,7 +74,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
