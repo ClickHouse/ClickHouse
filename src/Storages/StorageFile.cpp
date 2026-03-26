@@ -1852,7 +1852,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->paths,
         storage->archive_info,
         predicate,
-        storage->getVirtualsList(),
+        storage->getVirtualsPtr()->getNamesAndTypesList(/*kind=*/VirtualsKind::All, /*exclude_common=*/true),
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing);

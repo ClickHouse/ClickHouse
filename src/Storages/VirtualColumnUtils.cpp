@@ -731,8 +731,6 @@ QueryPlan extendWithCommonVirtualColumns(
         return query_plan;
 
     const auto virtual_columns = storage->getVirtualsPtr();
-    const auto & table_name = storage->getStorageID().getTableName();
-
     for (const auto & column_name : requested_columns)
     {
         const auto & plan_header = query_plan.getCurrentHeader();
@@ -760,8 +758,6 @@ Pipe extendWithCommonVirtualColumns(
         return pipe;
 
     const auto virtual_columns = storage->getVirtualsPtr();
-    const auto & table_name = storage->getStorageID().getTableName();
-
     for (const auto & column_name : requested_columns)
     {
         const auto & pipe_header = pipe.getHeader();
@@ -788,14 +784,15 @@ Names filterCommonVirtualColumns(
     const StoragePtr & storage)
 {
     const auto virtual_columns = storage->getVirtualsPtr();
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     Names result;
     result.reserve(column_names.size());
     for (const auto & name : column_names)
     {
-        const auto * desc = virtual_columns->tryGetDescription(name);
-        if (desc && desc->isCommon())
-            continue;
+        if (storage->isVirtualColumn(name, metadata_snapshot))
+            if (const auto * desc = virtual_columns->tryGetDescription(name); desc && desc->isCommon())
+                continue;
 
         result.push_back(name);
     }
