@@ -105,7 +105,7 @@ public:
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
 
-    bool isUserPredefinedDatabase(std::string_view database_name) const;
+    bool ignoreLimitsForDatabase(std::string_view database_name) const;
 
     static fs::path getMetadataDirPath() { return fs::path("metadata"); }
     static fs::path getMetadataDirPath(const String & database_name) { return getMetadataDirPath() / escapeForFileName(database_name); }

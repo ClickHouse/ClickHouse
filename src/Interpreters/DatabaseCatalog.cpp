@@ -61,7 +61,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 database_catalog_unused_dir_cleanup_period_sec;
     extern const ServerSettingsUInt64 database_catalog_unused_dir_hide_timeout_sec;
     extern const ServerSettingsUInt64 database_catalog_unused_dir_rm_timeout_sec;
-    extern const ServerSettingsString user_predefined_database;
+    extern const ServerSettingsString ignore_entity_limits_on_database;
 }
 
 namespace ErrorCodes
@@ -351,9 +351,9 @@ bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
         || database_name == INFORMATION_SCHEMA_UPPERCASE;
 }
 
-bool DatabaseCatalog::isUserPredefinedDatabase(std::string_view database_name) const
+bool DatabaseCatalog::ignoreLimitsForDatabase(std::string_view database_name) const
 {
-    return database_name == getContext()->getServerSettings()[ServerSetting::user_predefined_database].toString();
+    return database_name == getContext()->getServerSettings()[ServerSetting::ignore_entity_limits_on_database].toString();
 }
 
 
