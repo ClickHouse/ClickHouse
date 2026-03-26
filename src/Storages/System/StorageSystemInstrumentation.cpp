@@ -35,7 +35,7 @@ ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
     return ColumnsDescription
     {
         {"id", std::make_shared<DataTypeUInt32>(), "ID of the instrumentation point"},
-        {"function_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeInt32>()), "ID assigned to the function in xray_instr_map section of elf-binary."},
+        {"function_id", std::make_shared<DataTypeInt32>(), "ID assigned to the function in xray_instr_map section of elf-binary."},
         {"function_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name used to instrument the function."},
         {"handler", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Handler that was patched into instrumentation points of the function."},
         {"entry_type", entry_type_enum, "Entry type for the patch."},
@@ -51,7 +51,7 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
 
     size_t column_index = 0;
     auto & column_id = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]).getData();
-    auto & column_function_id = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
+    auto & column_function_id = assert_cast<ColumnInt32 &>(*res_columns[column_index++]).getData();
     auto & column_function_name = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_handler_name = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_entry_type = *res_columns[column_index++];
@@ -61,7 +61,7 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
     for (const auto & ip : instrumented_points)
     {
         column_id.push_back(static_cast<UInt32>(ip.id));
-        column_function_id.insert(ip.function_id);
+        column_function_id.push_back(ip.function_id);
         column_function_name.insert(ip.function_name);
         column_handler_name.insert(ip.handler_name);
         column_entry_type.insert(ip.entry_type);

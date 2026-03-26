@@ -3,7 +3,7 @@
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
-#include <arrow/util/rle_encoding.h>
+#include <arrow/util/rle_encoding_internal.h>
 #include <arrow/util/crc32.h>
 #include <lz4.h>
 #include <Poco/JSON/JSON.h>
@@ -456,6 +456,45 @@ struct ConverterEnumAsString
     }
 };
 
+struct ConverterUUID
+{
+    using Statistics = StatisticsFixedStringRef;
+
+    const ColumnVector<UUID> & column;
+    PODArray<parquet::FixedLenByteArray> buf;
+    PODArray<UUID> swapped_buf;
+
+    explicit ConverterUUID(const ColumnPtr & c) : column(assert_cast<const ColumnVector<UUID> &>(*c)) {}
+
+    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+        swapped_buf.resize(count);
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            UUID res = column.getData()[offset + i];
+            auto * bytes = reinterpret_cast<uint8_t *>(&res);
+
+            if constexpr (std::endian::native == std::endian::little)
+            {
+                std::reverse(bytes, bytes + 8);
+                std::reverse(bytes + 8, bytes + 16);
+            }
+            else
+            {
+                std::swap_ranges(bytes, bytes + 8, bytes + 8);
+            }
+
+            swapped_buf[i] = res;
+            buf[i].ptr = reinterpret_cast<const uint8_t *>(&swapped_buf[i]);
+        }
+        return buf.data();
+    }
+
+    size_t fixedStringSize() { return 16; }
+};
+
 struct ConverterFixedString
 {
     using Statistics = StatisticsFixedStringRef;
@@ -658,19 +697,19 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
 void encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, PODArray<char> & out)
 {
-    using arrow::util::RleEncoder;
+    using arrow::util::RleBitPackedEncoder;
 
     chassert(max_level > 0);
     size_t offset = out.size();
     size_t prefix_size = sizeof(Int32);
 
     int bit_width = bitScanReverse(max_level) + 1;
-    int max_rle_size = RleEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
-                       RleEncoder::MinBufferSize(bit_width);
+    auto max_rle_size = RleBitPackedEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
+                        RleBitPackedEncoder::MinBufferSize(bit_width);
 
     out.resize(offset + prefix_size + max_rle_size);
 
-    RleEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), max_rle_size, bit_width);
+    RleBitPackedEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), static_cast<int>(max_rle_size), bit_width);
     for (size_t i = 0; i < size; ++i)
         encoder.Put(data[i]);
     encoder.Flush();
@@ -1241,8 +1280,14 @@ void writeColumnChunkBody(
         case TypeIndex::Int128:  F(Int128); break;
         case TypeIndex::Int256:  F(Int256); break;
         case TypeIndex::IPv6:    F(IPv6); break;
-        case TypeIndex::UUID:    F(UUID); break;
         #undef F
+
+        case TypeIndex::UUID:
+            writeColumnImpl<parquet::FLBAType>(s,
+                options,
+                out,
+                ConverterUUID(s.primitive_column));
+        break;
 
         #define D(source_type) \
             writeColumnImpl<parquet::FLBAType>( \

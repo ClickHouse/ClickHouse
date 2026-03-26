@@ -1,3 +1,4 @@
+#include <Columns/ColumnSparse.h>
 #include <Core/SortCursor.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
@@ -161,14 +162,16 @@ void PartialSortingTransform::transform(Chunk & chunk)
             {
                 MutableColumnPtr sort_description_threshold_column_updated = raw_block_columns[i]->cloneEmpty();
                 sort_description_threshold_column_updated->insertFrom(*raw_block_columns[i], min_row_to_compare);
-                sort_description_threshold_columns_updated[i] = sort_description_threshold_column_updated->convertToFullColumnIfSparse();
+                /// Without this, `assertTypeEquality` may fail when comparing a ColumnNullable against a ColumnReplicated (received from JOIN).
+                sort_description_threshold_columns_updated[i]
+                    = removeSpecialRepresentations(sort_description_threshold_column_updated->getPtr());
             }
 
             sort_description_threshold_columns = std::move(sort_description_threshold_columns_updated);
             if (threshold_tracker)
             {
                 Field value;
-                sort_description_threshold_columns[0]->get(0, value); /// only single number equivalent column
+                sort_description_threshold_columns[0]->get(0, value);
                 threshold_tracker->testAndSet(value);
             }
         }

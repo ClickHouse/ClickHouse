@@ -117,6 +117,12 @@ protected:
 private:
     NameAndTypePair getColumnOnDisk(const NameAndTypePair & column) const;
 
+    /// Returns the cache key for the SubstreamsCache and DeserializeStatesCache.
+    /// All columns from the same Nested group must share the same cache
+    /// so that shared substreams (like Nested array offsets) are read only once
+    /// from the underlying file stream.
+    String getCacheKey(const NameAndTypePair & name_and_type_on_disk) const;
+
     const size_t block_size;
     const NamesAndTypesList columns;
     const std::shared_ptr<const StorageLog> storage;
@@ -180,6 +186,20 @@ NameAndTypePair LogSource::getColumnOnDisk(const NameAndTypePair & column) const
     return column;
 }
 
+String LogSource::getCacheKey(const NameAndTypePair & name_and_type_on_disk) const
+{
+    auto name_in_storage = name_and_type_on_disk.getNameInStorage();
+
+    /// If this column is part of a Nested group, use the Nested name as the cache key.
+    /// This ensures that all subcolumns of the same Nested (e.g. "c1.c2.64" and "c1.size0")
+    /// share the same SubstreamsCache, so that shared substreams like Nested array offsets
+    /// are read only once from the underlying file stream.
+    if (Nested::isSubcolumnOfNested(name_in_storage, storage->columns_with_collected_nested))
+        return Nested::splitName(name_in_storage).first;
+
+    return name_in_storage;
+}
+
 Chunk LogSource::generate()
 {
     if (isFinished())
@@ -201,7 +221,8 @@ Chunk LogSource::generate()
     for (const auto & name_and_type : columns)
     {
         auto name_and_type_on_disk = getColumnOnDisk(name_and_type);
-        readPrefix(name_and_type_on_disk, caches[name_and_type_on_disk.getNameInStorage()], deserialize_states_caches[name_and_type_on_disk.getNameInStorage()]);
+        auto cache_key = getCacheKey(name_and_type_on_disk);
+        readPrefix(name_and_type_on_disk, caches[cache_key], deserialize_states_caches[cache_key]);
     }
 
     /// Second, read the data of all columns/subcolumns.
@@ -213,7 +234,7 @@ Chunk LogSource::generate()
         try
         {
             column = name_type_on_disk.type->createColumn();
-            readData(name_type_on_disk, column, max_rows_to_read, caches[name_type_on_disk.getNameInStorage()]);
+            readData(name_type_on_disk, column, max_rows_to_read, caches[getCacheKey(name_type_on_disk)]);
         }
         catch (Exception & e)
         {
@@ -970,7 +991,7 @@ Pipe StorageLog::createReadingPipe(
 
     /// Converting to subcolumns of Nested is needed for
     /// correct reading of parts of Nested with shared offsets.
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
     auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
     all_columns = Nested::convertToSubcolumns(all_columns);
 
@@ -1282,7 +1303,7 @@ SharedHeader getHeader(
     const StorageSnapshotPtr & storage_snapshot
 )
 {
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
     auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
     all_columns = Nested::convertToSubcolumns(all_columns);
 

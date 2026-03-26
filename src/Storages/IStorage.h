@@ -96,6 +96,8 @@ public:
     /// The name of the table.
     StorageID getStorageID() const;
 
+    virtual std::vector<StorageID> getInnerStorageIDs() const { return {}; }
+
     virtual bool isMergeTree() const { return false; }
 
     virtual bool isDataLake() const { return false; }
@@ -133,7 +135,7 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts &, ContextPtr) const;
+    virtual ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts &, const Names &, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -171,8 +173,8 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
-    /// Returns true if the storage supports storing of dynamic subcolumns.
-    virtual bool supportsDynamicSubcolumns() const { return false; }
+    /// Returns true if the storage supports columns with dynamic structure (like JSON or Dynamic types).
+    virtual bool supportsColumnsWithDynamicStructure() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
@@ -571,6 +573,8 @@ public:
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);
+
+    virtual Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context);
 
     /// Cancel a mutation.
     virtual CancellationCode killMutation(const String & /*mutation_id*/);

@@ -1,0 +1,127 @@
+-- { echo }
+
+DROP TABLE IF EXISTS t_modulo_legacy_partition_key;
+CREATE TABLE t_modulo_legacy_partition_key
+(
+    x UInt64
+)
+ENGINE = MergeTree
+PARTITION BY moduloLegacy(x, 16)
+ORDER BY x
+SETTINGS index_granularity = 1;
+INSERT INTO t_modulo_legacy_partition_key
+SELECT number
+FROM numbers(20);
+SELECT arraySort(groupArray(x))
+FROM t_modulo_legacy_partition_key
+WHERE x % 16 = 3;
+[3,19]
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(x))
+FROM t_modulo_legacy_partition_key
+WHERE x % 16 = 3;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_modulo_legacy_partition_key)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 16/16
+            Granules: 20/20
+          Partition
+            Keys:
+              moduloLegacy(x, 16)
+            Condition: (moduloLegacy(x, 16) in [3, 3])
+            Parts: 1/16
+            Granules: 2/20
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 2/2
+          Ranges: 1
+SELECT arraySort(groupArray(x))
+FROM t_modulo_legacy_partition_key
+WHERE x % 16 IN [3, 2];
+[2,3,18,19]
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(x))
+FROM t_modulo_legacy_partition_key
+WHERE x % 16 IN [3, 2];
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_modulo_legacy_partition_key)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 16/16
+            Granules: 20/20
+          Partition
+            Keys:
+              moduloLegacy(x, 16)
+            Condition: (moduloLegacy(x, 16) in 2-element set)
+            Parts: 2/16
+            Granules: 4/20
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 4/4
+          Ranges: 2
+DROP TABLE IF EXISTS t_modulo_legacy_primary_key;
+CREATE TABLE t_modulo_legacy_primary_key
+(
+    x UInt64
+)
+ENGINE = MergeTree
+ORDER BY moduloLegacy(x, 16)
+SETTINGS index_granularity = 1;
+INSERT INTO t_modulo_legacy_primary_key
+SELECT number
+FROM numbers(20);
+SELECT arraySort(groupArray(x))
+FROM t_modulo_legacy_primary_key
+WHERE x % 16 = 3;
+[3,19]
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(x))
+FROM t_modulo_legacy_primary_key
+WHERE x % 16 = 3;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_modulo_legacy_primary_key)
+        Indexes:
+          PrimaryKey
+            Keys:
+              moduloLegacy(x, 16)
+            Condition: (moduloLegacy(x, 16) in [3, 3])
+            Parts: 1/1
+            Granules: 3/20
+            Search Algorithm: binary search
+          Ranges: 1
+SELECT arraySort(groupArray(x))
+FROM t_modulo_legacy_primary_key
+WHERE x % 16 IN [3, 2];
+[2,3,18,19]
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(x))
+FROM t_modulo_legacy_primary_key
+WHERE x % 16 IN [3, 2];
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_modulo_legacy_primary_key)
+        Indexes:
+          PrimaryKey
+            Keys:
+              moduloLegacy(x, 16)
+            Condition: (moduloLegacy(x, 16) in 2-element set)
+            Parts: 1/1
+            Granules: 5/20
+            Search Algorithm: generic exclusion search
+          Ranges: 1

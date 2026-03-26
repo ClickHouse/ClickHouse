@@ -3,7 +3,6 @@
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/Field.h>
@@ -17,12 +16,6 @@ class SipHash;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
-}
 
 /** A template for columns that use a simple array to store.
  */
@@ -58,7 +51,7 @@ private:
 public:
     bool isNumeric() const override { return is_arithmetic_v<T>; }
 
-    size_t size() const override
+    size_t size() const final
     {
         return data.size();
     }
@@ -105,7 +98,7 @@ public:
     void popBack(size_t n) override
     {
         if (n > size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, this->getName(), size());
+            throwCannotPopBack(n, this->getName(), size());
 
         data.resize_assume_reserved(data.size() - n);
     }
@@ -153,12 +146,43 @@ public:
 
     /// This method implemented in header because it could be possibly devirtualized.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif
     {
         return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
+    }
+
+    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const final
+    {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    #define compareAt doCompareAt
+#endif
+        Int64 res = compareAt(n, m, rhs, nan_direction_hint);
+
+        if (res < 0)
+        {
+            ++n;
+            while (n < size() && (compareAt(n, m, rhs, nan_direction_hint) < 0))
+            {
+                --res;
+                ++n;
+            }
+        }
+        else if (res > 0)
+        {
+            ++m;
+            while (m < assert_cast<const Self &>(rhs).size() && (compareAt(n, m, rhs, nan_direction_hint) > 0))
+            {
+                ++res;
+                ++m;
+            }
+        }
+        return res;
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    #undef compareAt
+#endif
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -213,7 +237,7 @@ public:
         res = (*this)[n];
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
 
     UInt64 get64(size_t n) const override;
 
@@ -226,7 +250,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return UInt64(data[n]);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
+            throwColumnConvertNotSupported(TypeName<T>, "UInt");
     }
 
     /// Out of range conversion is permitted.
@@ -235,7 +259,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return Int64(data[n]);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
+            throwColumnConvertNotSupported(TypeName<T>, "Int");
     }
 
     bool getBool(size_t n) const override
@@ -243,7 +267,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return bool(data[n]);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
+            throwColumnConvertNotSupported(TypeName<T>, "bool");
     }
 
     void insert(const Field & x) override
@@ -274,7 +298,7 @@ public:
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
