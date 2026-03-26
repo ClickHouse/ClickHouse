@@ -182,17 +182,20 @@ void KeeperDispatcher::requestThread()
     {
         const auto handle_opentelemetry_spans = [this](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
         {
-            request->spans.maybeFinalize(
-                KeeperSpan::DispatcherRequestsQueue,
-                [&]
-                {
-                    return std::vector<OpenTelemetry::SpanAttribute>{
-                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                        {"keeper.session_id", session_id},
-                        {"keeper.xid", request->xid},
-                        {"keeper.dispatcher.requests_queue.size", requests_queue->size()},
-                    };
-                });
+            if (session_id != keeper_internal_ttl_garbage_collector_session_id)
+            {
+                request->spans.maybeFinalize(
+                    KeeperSpan::DispatcherRequestsQueue,
+                    [&]
+                    {
+                        return std::vector<OpenTelemetry::SpanAttribute>{
+                            {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                            {"keeper.session_id", session_id},
+                            {"keeper.xid", request->xid},
+                            {"keeper.dispatcher.requests_queue.size", requests_queue->size()},
+                        };
+                    });
+            }
         };
 
         KeeperRequestForSession request;
@@ -723,7 +726,8 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (keeper_context->isShutdownCalled())
         return false;
 
-    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
+    if (session_id != keeper_internal_ttl_garbage_collector_session_id)
+        request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
@@ -1074,7 +1078,8 @@ void KeeperDispatcher::sessionCleanerTask()
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
 
-                    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
+                    if (dead_session != keeper_internal_ttl_garbage_collector_session_id)
+                        request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
                     using namespace std::chrono;
                     KeeperRequestForSession request_info
