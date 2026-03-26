@@ -144,7 +144,7 @@ bool ZooKeeperReplicator::insertEntity(const UUID & id, const AccessEntityPtr & 
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
+    retryOnZooKeeperUserError(1000, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
 
     if (!ok)
         return false;
@@ -299,7 +299,7 @@ bool ZooKeeperReplicator::removeEntity(const UUID & id, bool throw_if_not_exists
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
+    retryOnZooKeeperUserError(1000, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
 
     if (!ok)
         return false;
@@ -350,7 +350,7 @@ bool ZooKeeperReplicator::updateEntity(const UUID & id, const IAccessStorage::Up
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&] { ok = updateZooKeeper(zookeeper, id, update_func, throw_if_not_exists); });
+    retryOnZooKeeperUserError(1000, [&] { ok = updateZooKeeper(zookeeper, id, update_func, throw_if_not_exists); });
 
     if (!ok)
         return false;

@@ -77,6 +77,7 @@ struct PatchJoinCache
 
         UInt64 min_block = std::numeric_limits<UInt64>::max();
         UInt64 max_block = 0;
+        std::exception_ptr error;
         mutable SharedMutex mutex;
 
         void addBlock(Block read_block);

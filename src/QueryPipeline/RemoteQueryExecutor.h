@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -14,6 +15,9 @@ namespace DB
 {
 
 class Context;
+
+struct UnavailableShardTracker;
+using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
 
 class IThrottler;
 using ThrottlerPtr = std::shared_ptr<IThrottler>;
@@ -210,12 +214,16 @@ public:
 
     void setLogger(LoggerPtr logger) { log = logger; }
 
+    void setUnavailableShardTracker(UnavailableShardTrackerPtr tracker) { unavailable_shard_tracker = std::move(tracker); }
+
+    void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
+
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard() const;
+    bool needToSkipUnavailableShard();
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
@@ -276,9 +284,11 @@ private:
     /** All data from all replicas are received, before EndOfStream packet.
       * To prevent desynchronization, if not all data is read before object
       * destruction, it's required to send cancel query request to replicas and
-      * read all packets before EndOfStream
+      * read all packets before EndOfStream.
+      * Atomic because onCancel() -> finish() can set it concurrently with
+      * prepare() -> isFinished() reading it from a different thread.
       */
-    bool finished = false;
+    std::atomic<bool> finished = false;
 
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
@@ -313,6 +323,12 @@ private:
     StorageID main_table = StorageID::createEmpty();
 
     LoggerPtr log = nullptr;
+
+    UnavailableShardTrackerPtr unavailable_shard_tracker;
+    bool shard_skip_reported = false;
+
+    /// Total number of remote connections across all shards, used to scale interactive_delay.
+    size_t distributed_fanout = 0;
 
     GetPriorityForLoadBalancing::Func priority_func;
 

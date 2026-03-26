@@ -125,15 +125,13 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
 void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeTextIndex>(
-    {
-        .documentation =
         {
-            .description = "Reading the dictionary of a text index from a MergeTree table. Returns tokens with their posting list metadata.",
+            .description = "Reads the dictionary of a text index from a MergeTree table. Returns tokens with their posting list metadata.",
             .examples = {{"mergeTreeTextIndex", "SELECT * FROM mergeTreeTextIndex(currentDatabase(), my_table, my_text_index)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = true,
-    });
+        {.allow_readonly = true}
+    );
 }
 
 }

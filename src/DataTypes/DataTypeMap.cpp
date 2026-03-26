@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Parsers/IAST.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -108,16 +109,27 @@ Field DataTypeMap::getDefault() const
     return Map();
 }
 
-SerializationPtr DataTypeMap::doGetDefaultSerialization() const
+SerializationPtr DataTypeMap::doGetSerialization(const SerializationInfoSettings & settings) const
 {
-    auto key_serialization = key_type->getDefaultSerialization();
-    auto value_serialization = value_type->getDefaultSerialization();
-    /// Don't use nested->getDefaultSerialization() to avoid creating exponentially growing number of serializations for deep nested maps.
+    SerializationPtr key_serialization;
+    SerializationPtr value_serialization;
+    if (settings.propagate_types_serialization_versions_to_nested_types)
+    {
+        key_serialization = key_type->getSerialization(settings);
+        value_serialization = value_type->getSerialization(settings);
+    }
+    else
+    {
+        key_serialization = key_type->getDefaultSerialization();
+        value_serialization = value_type->getDefaultSerialization();
+    }
+
+    /// Don't use nested->getSerialization() to avoid creating exponentially growing number of serializations for deep nested maps.
     /// Instead, reuse already created serializations for keys and values.
-    auto key_serialization_named = std::make_shared<SerializationNamed>(key_serialization, "keys", SubstreamType::TupleElement);
-    auto value_serialization_named = std::make_shared<SerializationNamed>(value_serialization, "values", SubstreamType::TupleElement);
-    auto nested_serialization = std::make_shared<SerializationArray>(std::make_shared<SerializationTuple>(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, true));
-    return std::make_shared<SerializationMap>(key_serialization, value_serialization, nested_serialization);
+    auto key_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(key_serialization, "keys", SubstreamType::TupleElement));
+    auto value_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(value_serialization, "values", SubstreamType::TupleElement));
+    auto nested_serialization = SerializationArray::create(SerializationTuple::create(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, true));
+    return SerializationMap::create(key_serialization, value_serialization, nested_serialization);
 }
 
 bool DataTypeMap::equals(const IDataType & rhs) const

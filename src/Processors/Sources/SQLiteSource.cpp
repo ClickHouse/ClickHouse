@@ -57,7 +57,7 @@ SQLiteSource::SQLiteSource(
 
 Chunk SQLiteSource::generate()
 {
-    LOG_TEST(getLogger("SQLiteSource"), "Generate a chuck");
+    LOG_TEST(getLogger("SQLiteSource"), "Generate a chunk");
 
     if (!compiled_statement)
         return {};

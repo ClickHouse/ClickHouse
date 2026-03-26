@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-azure-blob-storage
+# Tags: no-fasttest, long, no-azure-blob-storage, no-debug, no-asan, no-tsan, no-msan, no-ubsan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,7 +15,7 @@ done
 
 # Redirect server logs to /dev/null to suppress sporadic `ConnectionGroup: Too many active sessions` warnings
 # that appear in stderr when many S3 connections are opened across parallel tests.
-MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parsing_to_custom_serialization 1 --parallel_replicas_for_cluster_engines 0 --server_logs_file=/dev/null"
+MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parsing_to_custom_serialization 1 --parallel_replicas_for_cluster_engines 0 --optimize_trivial_insert_select 0 --server_logs_file=/dev/null"
 
 $MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_insert_mem;
@@ -72,14 +72,14 @@ $MY_CLICKHOUSE_CLIENT --query "
 # There is a race between HTTP response being sent and the query_log entry being written.
 for _ in $(seq 1 60); do
     $MY_CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-    count=$($MY_CLICKHOUSE_CLIENT --query "SELECT count() FROM system.query_log WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'")
+    count=$($MY_CLICKHOUSE_CLIENT --query "SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'")
     [ "$count" -ge 4 ] && break
     sleep 0.5
 done
 
 $MY_CLICKHOUSE_CLIENT --query "
     SELECT written_bytes <= 10000000 FROM system.query_log
-    WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'
     ORDER BY event_time_microseconds;
 
     DROP TABLE IF EXISTS t_insert_mem;

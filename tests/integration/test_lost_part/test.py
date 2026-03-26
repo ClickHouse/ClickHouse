@@ -48,9 +48,7 @@ def test_lost_part_same_replica(start_cluster):
                 "merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000"
             )
 
-        # Stop queue execution on node1 to prevent merges from running,
-        # while still allowing merge selection to create queue entries.
-        node1.query("SYSTEM STOP REPLICATION QUEUES mt0")
+        node1.query("SYSTEM STOP MERGES mt0")
         node2.query("SYSTEM STOP REPLICATION QUEUES")
 
         for i in range(5):
@@ -76,6 +74,8 @@ def test_lost_part_same_replica(start_cluster):
         node1.query("DETACH TABLE mt0")
 
         node1.query("ATTACH TABLE mt0")
+
+        node1.query("SYSTEM START MERGES mt0")
         res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt0")
         print("result: ", res)
         print("error: ", res)
@@ -117,9 +117,7 @@ def test_lost_part_other_replica(start_cluster):
                 "merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000"
             )
 
-        # Stop queue execution on node1 to prevent merges from running,
-        # while still allowing merge selection to create queue entries.
-        node1.query("SYSTEM STOP REPLICATION QUEUES mt1")
+        node1.query("SYSTEM STOP MERGES mt1")
         node2.query("SYSTEM STOP REPLICATION QUEUES")
 
         for i in range(5):
@@ -146,10 +144,6 @@ def test_lost_part_other_replica(start_cluster):
         node1.query("CHECK TABLE mt1")
 
         node2.query("SYSTEM START REPLICATION QUEUES")
-        # Switch node1 from STOP REPLICATION QUEUES to STOP MERGES:
-        # this allows queue processing (fetches from node2) but not merge execution.
-        node1.query("SYSTEM START REPLICATION QUEUES mt1")
-        node1.query("SYSTEM STOP MERGES mt1")
         # Reduce timeout in sync replica since it might never finish with merge stopped and we don't want to wait 300s
         res, err = node1.query_and_get_answer_with_error(
             "SYSTEM SYNC REPLICA mt1", settings={"receive_timeout": 30}

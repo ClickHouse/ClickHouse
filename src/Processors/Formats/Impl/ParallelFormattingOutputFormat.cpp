@@ -105,6 +105,12 @@ namespace DB
         {
             std::lock_guard lock(statistics_mutex);
             unit.statistics = std::move(statistics);
+            /// Note: after the move, statistics.progress still retains its values
+            /// because Progress::operator=(&&) copies atomics without clearing the source.
+            /// This is intentional: writeDeferredStatisticsAndFinalize() (called later
+            /// from IOutputFormat::finalize or completeDeferredStatistics) needs the
+            /// accumulated progress. Additional progress from connection draining
+            /// (parallel replicas) will be added via onProgress() before that call.
         }
 
         size_t first_row_num = rows_consumed;

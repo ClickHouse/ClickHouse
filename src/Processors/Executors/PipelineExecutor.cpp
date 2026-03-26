@@ -102,15 +102,14 @@ void PipelineExecutor::cancel(ExecutionStatus reason)
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
 
-    /// Hold cancel_mutex while calling graph->cancel() so that finalizeExecution()
-    /// (which may be running concurrently in the executor thread) waits for all
-    /// onCancel() calls to complete before collecting progress.
-    /// This is important because RemoteSource::onCancel() drains remaining packets
-    /// and accumulates progress that finalizeExecution() needs to pick up.
-    {
-        std::lock_guard lock(cancel_mutex);
-        graph->cancel();
-    }
+    graph->cancel();
+
+    /// After graph->cancel(), onCancel() has been called on all processors synchronously.
+    /// Some processors (e.g. RemoteSource) drain remaining packets during onCancel(),
+    /// which may produce additional progress (e.g. Progress packets from parallel replicas).
+    /// This progress is accumulated in ISource::read_progress and will be collected by
+    /// finalizeExecution() which runs after all worker threads have been joined,
+    /// ensuring no concurrent access to processor state.
 }
 
 void PipelineExecutor::cancelReading()
@@ -494,7 +493,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
     //    the ConcurrencyControl class is used instead of resource scheduler
     if (concurrency_control)
     {
-        auto query_context = CurrentThread::getQueryContext();
+        auto query_context = CurrentThread::tryGetQueryContext();
         ResourceLink master_thread_link;
         ResourceLink worker_thread_link;
         bool workload_cpu_scheduling_is_enabled = false;

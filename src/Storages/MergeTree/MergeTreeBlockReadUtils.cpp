@@ -9,6 +9,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -29,6 +30,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+}
+
+namespace FailPoints
+{
+    extern const char patch_parts_reverse_column_order[];
 }
 
 namespace
@@ -390,6 +396,17 @@ void addPatchPartsColumns(
         required_virtuals.insert(patch_system_columns.begin(), patch_system_columns.end());
 
         Names patch_columns_to_read_names(patch_columns_to_read_set.begin(), patch_columns_to_read_set.end());
+
+        fiu_do_on(FailPoints::patch_parts_reverse_column_order,
+        {
+            /// Simulate non-deterministic NameSet iteration producing different column
+            /// orderings for different patches. This reproduces the bug fixed in
+            /// getUpdatedHeader (applyPatches.cpp) where sortColumns() normalizes order
+            /// before the positional assertCompatibleHeader comparison.
+            if (i % 2 == 1)
+                std::reverse(patch_columns_to_read_names.begin(), patch_columns_to_read_names.end());
+        });
+
         result.patch_columns[i] = storage_snapshot->getColumnsByNames(options, patch_columns_to_read_names);
     }
 

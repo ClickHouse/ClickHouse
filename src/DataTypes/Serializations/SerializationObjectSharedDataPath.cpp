@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObjectSharedDataPath.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
@@ -21,6 +22,7 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     const String & path_,
     const String & path_subcolumn_,
     const DataTypePtr & dynamic_type_,
+    const SerializationPtr & dynamic_serialization_,
     const DataTypePtr & subcolumn_type_,
     size_t bucket_)
     : SerializationWrapper(nested_)
@@ -30,9 +32,37 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     , path_subcolumn(path_subcolumn_)
     , dynamic_type(dynamic_type_)
     , subcolumn_type(subcolumn_type_)
-    , dynamic_serialization(dynamic_type_->getDefaultSerialization())
+    , dynamic_serialization(dynamic_serialization_)
     , bucket(bucket_)
 {
+}
+
+UInt128 SerializationObjectSharedDataPath::getHash(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, size_t bucket_)
+{
+    SipHash hash;
+    hash.update("ObjectSharedDataPath");
+    hash.update(nested_->getHash());
+    hash.update(static_cast<int>(serialization_version_.value));
+    hash.update(path_.size());
+    hash.update(path_);
+    hash.update(path_subcolumn_.size());
+    hash.update(path_subcolumn_);
+    auto dynamic_type_name = dynamic_type_->getName();
+    hash.update(dynamic_type_name.size());
+    hash.update(dynamic_type_name);
+    hash.update(dynamic_serialization_->getHash());
+    auto subcolumn_type_name = subcolumn_type_->getName();
+    hash.update(subcolumn_type_name.size());
+    hash.update(subcolumn_type_name);
+    hash.update(bucket_);
+    return hash.get128();
+}
+
+SerializationPtr SerializationObjectSharedDataPath::create(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, size_t bucket)
+{
+    if (!nested_->supportsPooling() || !dynamic_serialization_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket));
+    return ISerialization::pooled(getHash(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket), [&] { return new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket); });
 }
 
 struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::DeserializeBinaryBulkState
@@ -50,6 +80,7 @@ struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::D
         return new_state;
     }
 };
+
 
 void SerializationObjectSharedDataPath::enumerateStreams(
     ISerialization::EnumerateStreamsSettings & settings,
@@ -331,6 +362,11 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "enumerateStreams is not implemented for shared data serialization version {}", serialization_version.value);
     }
+}
+
+size_t SerializationObjectSharedDataPath::allocatedBytes() const
+{
+    return sizeof(*this) + path.capacity() + path_subcolumn.capacity();
 }
 
 }

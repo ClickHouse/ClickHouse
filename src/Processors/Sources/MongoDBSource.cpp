@@ -203,7 +203,7 @@ MongoDBSource::~MongoDBSource() = default;
 
 Chunk MongoDBSource::generate()
 {
-    LOG_TEST(getLogger("MongoDBSource"), "Generate a chuck");
+    LOG_TEST(getLogger("MongoDBSource"), "Generate a chunk");
 
     if (all_read)
         return {};

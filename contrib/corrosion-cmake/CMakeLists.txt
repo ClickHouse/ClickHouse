@@ -146,6 +146,12 @@ else()
     list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()
 
+# Use v0 symbol mangling for shorter symbol names.
+# The legacy mangling produces extremely long symbols (up to 165 KB) from deeply nested
+# generic types in parser combinator libraries like chumsky (used by prqlc).
+# v0 mangling uses backreference compression for repeated type paths.
+list(APPEND RUSTFLAGS "-C" "symbol-mangling-version=v0")
+
 # Suppress warnings
 list(APPEND RUSTFLAGS
     # delta-kernel-rs
