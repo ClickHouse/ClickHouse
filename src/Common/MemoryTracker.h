@@ -106,13 +106,13 @@ private:
         std::atomic<double> fault_probability = 0;
 
         /// To randomly sample allocations and deallocations in trace_log.
-        double sample_probability = -1;
+        std::atomic<double> sample_probability = -1;
 
         /// Randomly sample allocations only larger or equal to this size
-        UInt64 min_allocation_size_bytes = 0;
+        std::atomic<UInt64> min_allocation_size_bytes = 0;
 
         /// Randomly sample allocations only smaller or equal to this size
-        UInt64 max_allocation_size_bytes = 0;
+        std::atomic<UInt64> max_allocation_size_bytes = 0;
 
         UInt64 jemalloc_flush_profile_interval_bytes = 0;
         bool jemalloc_flush_profile_on_memory_exceeded = false;

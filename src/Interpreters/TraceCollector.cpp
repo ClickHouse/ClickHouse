@@ -91,12 +91,12 @@ TraceCollector::~TraceCollector()
         }
     }
 
-    tryClosePipe();
-
     if (thread.joinable())
         thread.join();
     else
         LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
+
+    tryClosePipe();
 }
 
 
