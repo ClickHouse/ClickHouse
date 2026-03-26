@@ -59,7 +59,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
 
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
-        table_options.getPathForRead(),
+        object_paths.front(),
         object_paths,
         query_settings,
         object_storage,
@@ -104,7 +104,6 @@ StorageObjectStorage::StorageObjectStorage(
     bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
-    , object_paths({configuration_->getRawPath()})
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , distributed_processing(distributed_processing_)
@@ -145,6 +144,8 @@ StorageObjectStorage::StorageObjectStorage(
         }
         tryLogCurrentException(log, /*start of message = */ "", LogsLevel::warning);
     }
+
+    object_paths = {table_options.getPathForRead()};
 
     std::string sample_path;
 

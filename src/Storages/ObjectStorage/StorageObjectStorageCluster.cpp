@@ -41,7 +41,7 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         table_options.getPathForRead(),
-        {configuration->getRawPath()},
+        {table_options.getPathForRead()},
         query_settings,
         object_storage,
         nullptr, // storage_metadata
@@ -198,7 +198,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         table_options.getPathForRead(),
-        {configuration->getRawPath()},
+        {table_options.getPathForRead()},
         configuration->getQuerySettings(local_context),
         object_storage,
         storage_metadata_snapshot,
