@@ -592,7 +592,7 @@ Block MergeTreeDataWriter::mergeBlock(
 /// Patch parts are excluded — they require all columns for lightweight UPDATE.
 /// If every removable column is empty, the smallest one is kept so that the
 /// part still has at least one physical column.
-static bool skipEmptyColumnsOnInsert(
+static void skipEmptyColumnsOnInsert(
     NamesAndTypesList & columns,
     const Block & block,
     SerializationInfoByName & infos,
@@ -601,7 +601,7 @@ static bool skipEmptyColumnsOnInsert(
     bool is_patch)
 {
     if (!(*data_settings)[MergeTreeSetting::skip_empty_columns_on_insert] || is_patch)
-        return false;
+        return;
 
     const auto & columns_description = metadata_snapshot->getColumns();
     NameSet empty_columns;
@@ -615,7 +615,7 @@ static bool skipEmptyColumnsOnInsert(
             empty_columns.insert(col_name);
     }
     if (empty_columns.empty())
-        return false;
+        return;
 
     /// If removing empty columns would leave no columns at all, keep the
     /// smallest one so the part remains valid.
@@ -640,7 +640,6 @@ static bool skipEmptyColumnsOnInsert(
     columns = std::move(filtered);
     for (const auto & name : empty_columns)
         infos.erase(name);
-    return true;
 }
 
 
@@ -881,7 +880,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    bool has_empty_columns = skipEmptyColumnsOnInsert(columns, block, infos, metadata_snapshot, data_settings, new_data_part->info.isPatch());
+    skipEmptyColumnsOnInsert(columns, block, infos, metadata_snapshot, data_settings, new_data_part->info.isPatch());
 
     for (const auto & [column_name, _] : columns)
     {
@@ -963,7 +962,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         std::move(index_granularity_ptr),
         (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         block.bytes(),
-        /*reset_columns=*/ has_empty_columns,
+        /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
