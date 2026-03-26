@@ -14,7 +14,7 @@ static pcg64 rng(randomSeed());
 static constexpr int error_code = 12345;
 static constexpr size_t TEST_RUNS = 500;
 static constexpr size_t MAX_ROWS = 10000;
-static const std::vector<size_t> filter_ratios = {1, 2, 5, 11, 32, 64, 100, 1000};
+static const VectorWithMemoryTracking<size_t> filter_ratios = {1, 2, 5, 11, 32, 64, 100, 1000};
 static const size_t K = filter_ratios.size();
 
 template <typename, typename = void >
@@ -122,7 +122,7 @@ static MutableColumnPtr createIndexColumn(size_t limit, size_t rows)
 template <typename T, typename IndexType>
 static void testIndex()
 {
-    static const std::vector<size_t> column_sizes = {64, 128, 196, 256, 512};
+    static const VectorWithMemoryTracking<size_t> column_sizes = {64, 128, 196, 256, 512};
 
     auto test_case = [&](size_t rows, size_t index_rows, size_t limit)
     {

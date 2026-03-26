@@ -299,6 +299,7 @@ enum class Dialect : uint8_t
     kusto,
     prql,
     promql,
+    polyglot,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -468,6 +469,9 @@ DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
+
 
 enum class SearchOrphanedPartsDisks : uint8_t
 {
