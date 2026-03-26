@@ -1,8 +1,10 @@
 -- Test SEMI/ANTI JOIN column access restrictions with SQL standard semantics.
 -- When semi_join_compatibility or anti_join_compatibility settings are enabled,
--- only columns from the preserved side are accessible in:
+-- only columns from the preserved side are accessible in expressions resolved
+-- from the joined result, including:
 -- 1. SELECT clause (SELECT *, qualified matchers like t2.*)
--- 2. WHERE clause
+-- 2. PREWHERE and WHERE clauses
+-- 3. HAVING and ORDER BY clauses
 --
 -- Preserved side:
 -- - LEFT SEMI/ANTI JOIN: left side preserved, right side not accessible
@@ -118,3 +120,25 @@ SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true LE
 SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true; -- { serverError UNKNOWN_IDENTIFIER }
 -- t3 is on the preserved right of the outer RIGHT SEMI JOIN -- must be allowed.
 SELECT t3.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true;
+
+-- Additional clause coverage: PREWHERE, HAVING, and ORDER BY
+
+-- 'PREWHERE';
+DROP TABLE IF EXISTS semi_anti_prewhere_left;
+DROP TABLE IF EXISTS semi_anti_prewhere_right;
+CREATE TABLE semi_anti_prewhere_left (number UInt64) ENGINE = MergeTree ORDER BY number;
+CREATE TABLE semi_anti_prewhere_right (number UInt64) ENGINE = MergeTree ORDER BY number;
+INSERT INTO semi_anti_prewhere_left VALUES (1);
+INSERT INTO semi_anti_prewhere_right VALUES (1);
+SELECT * FROM semi_anti_prewhere_left AS t1 LEFT SEMI JOIN semi_anti_prewhere_right AS t2 ON true PREWHERE t2.number = 1; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM semi_anti_prewhere_left AS t1 LEFT SEMI JOIN semi_anti_prewhere_right AS t2 ON true PREWHERE t1.number = 1;
+DROP TABLE semi_anti_prewhere_left;
+DROP TABLE semi_anti_prewhere_right;
+
+-- 'HAVING';
+SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t1.a HAVING t2.b = 2; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t1.a HAVING t1.a = 1;
+
+-- 'ORDER BY';
+SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false ORDER BY t2.b; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false ORDER BY t1.a;
