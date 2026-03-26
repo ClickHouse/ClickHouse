@@ -761,7 +761,43 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
         }
 
-        return ColumnTuple::create(converted_columns);
+        /// For accurateCastOrNull, element wrappers may return ColumnNullable columns
+        /// (when using AccurateOrNullConvertStrategyAdditions). When the target element
+        /// type is non-nullable, this extra Nullable was added by the conversion machinery
+        /// and must be stripped — the Nullable should only be at the outer tuple level.
+        /// However, if the target element type IS Nullable (e.g. Tuple(Nullable(UInt8))),
+        /// the inner Nullable is intentional and must be preserved.
+        ColumnPtr merged_null_map;
+        bool has_nullable_elements = false;
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            if (const auto * nullable_elem = typeid_cast<const ColumnNullable *>(converted_columns[i].get());
+                nullable_elem && !to_element_types[i]->isNullable())
+            {
+                if (!has_nullable_elements)
+                {
+                    merged_null_map = nullable_elem->getNullMapColumnPtr();
+                    has_nullable_elements = true;
+                }
+                else
+                {
+                    /// Merge null maps: a row is NULL if ANY element is NULL.
+                    auto mutable_null_map = IColumn::mutate(std::move(merged_null_map));
+                    auto & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map).getData();
+                    const auto & src_null_map = nullable_elem->getNullMapData();
+                    for (size_t j = 0, size = result_null_map.size(); j < size; ++j)
+                        result_null_map[j] |= src_null_map[j];
+                    merged_null_map = std::move(mutable_null_map);
+                }
+                converted_columns[i] = nullable_elem->getNestedColumnPtr();
+            }
+        }
+
+        auto result_tuple = ColumnTuple::create(converted_columns);
+        if (has_nullable_elements)
+            return ColumnNullable::create(std::move(result_tuple), IColumn::mutate(std::move(merged_null_map)));
+
+        return result_tuple;
     };
 }
 

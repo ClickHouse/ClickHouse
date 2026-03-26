@@ -1,0 +1,8 @@
+(1,2)
+\N
+\N
+Nullable(Point)
+3	4
+(1,2)
+Nullable(Tuple(Nullable(Float64), Nullable(Float64)))
+\N
