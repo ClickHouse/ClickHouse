@@ -227,6 +227,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is disabled. Turn on allow_statistics");
     }
 
+    if (!execute_commands.empty())
+    {
+        if (execute_commands.size() > 1)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multiple EXECUTE commands in a single ALTER query are not supported");
+        if (!mutation_commands.empty() || !partition_commands.empty() || !alter_commands.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command cannot be combined with other ALTER commands in a single query");
+    }
+
     if (typeid_cast<DatabaseReplicated *>(database.get()))
     {
         int command_types_count = !mutation_commands.empty() + !partition_commands.empty() + !alter_commands.empty();
@@ -357,8 +365,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
     }
 
-    for (const auto * execute_command : execute_commands)
+    if (!execute_commands.empty())
     {
+        const auto * execute_command = execute_commands.front();
         ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
         auto execute_pipe = table->executeCommand(execute_command->execute_command_name, args_ast, getContext());
         if (!execute_pipe.empty())

@@ -10,7 +10,7 @@ SET enable_analyzer = 1,
 
 
 SELECT '-------------- Limit < table size -------------';
-SELECT explain FROM
+SELECT trimLeft(explain) FROM
 (
     EXPLAIN keep_logical_steps=1, actions=1
     SELECT count() FROM
@@ -22,7 +22,7 @@ WHERE (explain LIKE '%Join%') OR (explain LIKE '%Sorting%') OR (explain LIKE '%L
 
 
 SELECT '-------------- Limit > table size -------------';
-SELECT explain FROM
+SELECT trimLeft(explain) FROM
 (
     EXPLAIN keep_logical_steps=1, actions=1
     SELECT count() FROM
