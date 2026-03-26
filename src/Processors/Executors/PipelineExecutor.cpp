@@ -245,14 +245,6 @@ void PipelineExecutor::finalizeExecution()
     auto status = execution_status.load();
     bool is_cancelled = (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser);
 
-    /// Wait for any in-progress graph->cancel() to complete before collecting progress.
-    /// cancel() may be running concurrently (e.g. from CompletedPipelineExecutor's main thread)
-    /// and graph->cancel() triggers RemoteSource::onCancel() which drains remaining packets
-    /// and accumulates progress. We must wait for that to finish before reading the progress.
-    {
-        std::lock_guard lock(cancel_mutex);
-    }
-
     bool all_processors_finished = true;
     for (auto & node : graph->nodes)
     {
@@ -267,8 +259,7 @@ void PipelineExecutor::finalizeExecution()
 
             /// When cancelled, fall through to also collect remaining progress from
             /// non-finished processors. This is safe because all execution threads
-            /// have stopped by this point and graph->cancel() has completed
-            /// (ensured by cancel_mutex above), so no concurrent access to processor state.
+            /// have stopped by this point, so no concurrent access to processor state.
         }
 
         if (node->processor && read_progress_callback)

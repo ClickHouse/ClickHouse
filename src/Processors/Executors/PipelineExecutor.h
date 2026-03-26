@@ -116,11 +116,6 @@ private:
 
     std::function<void()> finalize_callback;
 
-    /// Serializes graph->cancel() in cancel() with progress collection in finalizeExecution().
-    /// This ensures finalizeExecution() does not collect progress while graph->cancel() is still
-    /// draining connections (e.g. RemoteSource::onCancel() accumulating progress from parallel replicas).
-    std::mutex cancel_mutex;
-
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
     using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
