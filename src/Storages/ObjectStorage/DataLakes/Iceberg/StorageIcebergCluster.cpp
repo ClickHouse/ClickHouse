@@ -39,29 +39,20 @@ void StorageDataLakeCluster<IcebergMetadata>::ensureMetadataInitialized(ContextP
     current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context);
 }
 
-void StorageDataLakeCluster<IcebergMetadata>::updateMetadata(ContextPtr context) const
-{
-    if (current_metadata)
-    {
-        current_metadata->update(context);
-        return;
-    }
-    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context);
-}
-
 StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
     const String & cluster_name_,
     ObjectStorageConnectionConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     const StorageID & table_id_,
-    const ColumnsDescription & columns_in_table_or_function_definition,
+    const ColumnsDescription & /*columns_in_table_or_function_definition*/,
     const ConstraintsDescription & constraints_,
-    const ASTPtr & partition_by,
+    const ASTPtr & /*partition_by*/,
     ContextPtr context_,
-    DataLakeStorageSettingsPtr datalake_settings_,
-    bool is_table_function)
+    DataLakeStorageSettingsPtr datalake_settings_)
     : IStorageCluster(
-        cluster_name_, table_id_, getLogger(fmt::format("{}({})", String(IcebergMetadata::name) + configuration_->getEngineName(), table_id_.table_name)))
+          cluster_name_,
+          table_id_,
+          getLogger(fmt::format("{}({})", String(IcebergMetadata::name) + configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
     , datalake_settings(std::move(datalake_settings_))
@@ -71,7 +62,6 @@ StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
     if (!path.path.ends_with('/'))
         configuration->setRawPath(ObjectStorageConnectionConfiguration::Path(path.path + "/"));
 
-    table_options.initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_, configuration->getRawPath());
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
@@ -79,39 +69,16 @@ StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
 
     current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context_);
 
-    ColumnsDescription columns{columns_in_table_or_function_definition};
-    std::string sample_path;
-    resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, {}, sample_path, context_);
-    FormatFactory::instance().checkFormatName(table_options.format);
-
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(columns);
-    if (is_table_function)
-    {
-        /// For datalake table functions, always pin the current snapshot version so that
-        /// query execution uses the same snapshot as query analysis (logical-race fix).
-        /// Additionally reload columns from the snapshot when the per-format setting is enabled.
-        if (auto state = current_metadata->getTableStateSnapshot(context_))
-        {
-            metadata.setDataLakeTableState(*state);
-            if (current_metadata->shouldReloadSchemaForConsistency(context_))
-            {
-                if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, context_))
-                    metadata = *metadata_snapshot;
-            }
-        }
-    }
-
+    StorageInMemoryMetadata metadata = current_metadata->buildStorageMetadataFromState(context_);
     metadata.setConstraints(constraints_);
-
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        metadata.columns,
-        context_,
-        /* format_settings */std::nullopt,
-        table_options.partition_strategy_type,
-        sample_path));
-
     setInMemoryMetadata(metadata);
+    setVirtuals(
+        VirtualColumnUtils::getVirtualsForFileLikeStorage(
+            metadata.columns,
+            context_,
+            /* format_settings */ std::nullopt,
+            table_options.partition_strategy_type,
+            ""));
 }
 
 std::string StorageDataLakeCluster<IcebergMetadata>::getName() const
@@ -187,23 +154,8 @@ void StorageDataLakeCluster<IcebergMetadata>::updateQueryToSendIfNeeded(
 
 void StorageDataLakeCluster<IcebergMetadata>::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    /// Always force an update to pick up the latest snapshot version.
-    updateMetadata(query_context);
-
-    auto state = current_metadata->getTableStateSnapshot(query_context);
-    if (!state)
-        return;
-
-    auto new_metadata = *getInMemoryMetadataPtr();
-    new_metadata.setDataLakeTableState(*state);
-
-    if (current_metadata->shouldReloadSchemaForConsistency(query_context))
-    {
-        if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, query_context))
-            new_metadata = *metadata_snapshot;
-    }
-
-    setInMemoryMetadata(new_metadata);
+    ensureMetadataInitialized(query_context);
+    setInMemoryMetadata(current_metadata->buildStorageMetadataFromState(query_context));
 }
 
 RemoteQueryExecutor::Extension StorageDataLakeCluster<IcebergMetadata>::getTaskIteratorExtension(

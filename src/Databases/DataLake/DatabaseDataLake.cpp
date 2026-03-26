@@ -460,6 +460,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     context_copy->setSettings(settings_copy);
 
     ObjectStorageConnectionConfigurationPtr configuration;
+    StorageObjectStorageTableOptions table_options;
 
     if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
     {
@@ -467,9 +468,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto rest_catalog = std::static_pointer_cast<DataLake::OneLakeCatalog>(catalog);
         if (!rest_catalog)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
-        auto [config, table_options] = fromAzureOneLake(
+        auto [config, opts] = fromAzureOneLake(
             args, context_copy, rest_catalog->getClientId(), rest_catalog->getClientSecret(), rest_catalog->getTenantId());
         configuration = config;
+        table_options = std::move(opts);
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Azure for Iceberg OneLake catalog");
 #endif
@@ -477,9 +479,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     else
     {
         auto object_storage_type = getObjectStorageType(storage_type);
-        auto [config, table_options] = ObjectStorageConnectionConfiguration::initialize(
+        auto [config, opts] = ObjectStorageConnectionConfiguration::initialize(
             object_storage_type, args, context_copy, /* with_table_structure */ false);
         configuration = config;
+        table_options = std::move(opts);
 
         if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
         {
@@ -560,8 +563,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                     ConstraintsDescription{},
                     nullptr,
                     context_,
-                    /* datalake_settings */ nullptr,
-                    /* is_table_function */ false);
+                    /* datalake_settings */ nullptr);
                 break;
             case DataLakeType::Paimon:
                 storage_cluster = std::make_shared<StorageDataLakeCluster<PaimonMetadata>>(
@@ -573,8 +575,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                     ConstraintsDescription{},
                     nullptr,
                     context_,
-                    /* datalake_settings */ nullptr,
-                    /* is_table_function */ false);
+                    /* datalake_settings */ nullptr);
                 break;
 #endif
 #if USE_PARQUET
@@ -588,8 +589,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                     ConstraintsDescription{},
                     nullptr,
                     context_,
-                    /* datalake_settings */ nullptr,
-                    /* is_table_function */ false);
+                    /* datalake_settings */ nullptr);
                 break;
 #endif
         }
@@ -611,6 +611,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         case DataLakeType::Iceberg:
             return std::make_shared<StorageDataLake<IcebergMetadata>>(
                 configuration,
+                table_options,
                 object_storage,
                 context_copy,
                 table_id,

@@ -106,8 +106,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
                 ConstraintsDescription{},
                 Base::partition_by,
                 context,
-                std::dynamic_pointer_cast<DataLakeStorageSettings>(Base::settings),
-                /* is_table_function */true);
+                std::dynamic_pointer_cast<DataLakeStorageSettings>(Base::settings));
         }
         else
         {

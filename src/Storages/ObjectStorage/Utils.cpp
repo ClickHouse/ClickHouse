@@ -90,17 +90,18 @@ void resolveSchemaAndFormat(
         format = resolveFormatFromData(object_storage, configuration, compression_method, format_settings, sample_path, context);
     }
 
-    validateSupportedColumns(columns, *configuration);
+    validateSupportedColumns(columns, configuration->getTypeName());
 }
 
-void validateSupportedColumns(ColumnsDescription & columns, const ObjectStorageConnectionConfiguration & configuration)
+void validateSupportedColumns(ColumnsDescription & columns, const String & type_name)
 {
     if (!columns.hasOnlyOrdinary())
     {
         /// We don't allow special columns.
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
             "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
-            configuration.getTypeName());
+            type_name);
     }
 }
 

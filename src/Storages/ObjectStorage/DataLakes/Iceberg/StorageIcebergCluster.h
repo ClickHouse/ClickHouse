@@ -24,8 +24,7 @@ public:
         const ConstraintsDescription & constraints_,
         const ASTPtr & partition_by,
         ContextPtr context_,
-        DataLakeStorageSettingsPtr datalake_settings_,
-        bool is_table_function_ = false);
+        DataLakeStorageSettingsPtr datalake_settings_);
 
     std::string getName() const override;
 
@@ -51,7 +50,6 @@ private:
         const ContextPtr & context) override;
 
     void ensureMetadataInitialized(ContextPtr context) const;
-    void updateMetadata(ContextPtr context) const;
 
     const String engine_name;
     const ObjectStorageConnectionConfigurationPtr configuration;

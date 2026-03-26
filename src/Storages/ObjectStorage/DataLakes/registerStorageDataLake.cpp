@@ -138,6 +138,7 @@ createStorageDataLake(const StorageFactory::Arguments & args, ObjectStorageType 
     context_copy->setSettings(settings_copy);
     return std::make_shared<StorageDataLake<DataLakeMetadata>>(
         configuration,
+        std::move(table_options),
         configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
         context_copy,
         args.table_id,

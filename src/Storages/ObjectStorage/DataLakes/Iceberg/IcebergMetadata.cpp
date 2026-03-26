@@ -722,7 +722,7 @@ Pipe IcebergMetadata::executeCommand(
     }
 }
 
-void IcebergMetadata::createInitial(
+std::unique_ptr<IcebergMetadata> IcebergMetadata::createInitialTable(
     const ObjectStoragePtr & object_storage,
     const ObjectStorageConnectionConfigurationWeakPtr & configuration,
     const DataLakeStorageSettingsPtr & datalake_settings,
@@ -734,6 +734,7 @@ void IcebergMetadata::createInitial(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const StorageID & table_id_)
 {
+    chassert(!if_not_exists);
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
@@ -749,13 +750,8 @@ void IcebergMetadata::createInitial(
     }
     if (!metadata_files.empty())
     {
-        if (if_not_exists)
-            return;
-        else
-            throw Exception(
-                ErrorCodes::TABLE_ALREADY_EXISTS,
-                "Iceberg table with path {} already exists",
-                configuration_ptr->getRawPath().path);
+        throw Exception(
+            ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getRawPath().path);
     }
 
     String location_path = configuration_ptr->getRawPath().path;
@@ -786,7 +782,7 @@ void IcebergMetadata::createInitial(
         /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
         if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
             && e.message().find("PreconditionFailed") != String::npos)
-            return;
+            return nullptr;
         throw;
     }
 
@@ -803,6 +799,7 @@ void IcebergMetadata::createInitial(
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
+    return IcebergMetadata::create(object_storage, configuration, datalake_settings, local_context);
 }
 
 Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTableStateSnapshot(
@@ -1084,23 +1081,16 @@ NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) cons
     return *persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
-std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
+StorageInMemoryMetadata IcebergMetadata::buildStorageMetadataFromState(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-    return DataLakeTableStateSnapshot{actual_table_state_snapshot};
-}
-
-std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFromState(
-    const DataLakeTableStateSnapshot & state, ContextPtr local_context) const
-{
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataUpdateMicroseconds);
-    chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
-    const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
-    auto result = std::make_unique<StorageInMemoryMetadata>();
-    result->setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_state.schema_id)});
-    result->setDataLakeTableState(state);
-    result->sorting_key = getSortingKey(local_context, iceberg_state);
+    chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(DataLakeTableStateSnapshot{actual_table_state_snapshot}));
+    StorageInMemoryMetadata result;
+    result.setColumns(
+        ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id)});
+    result.setDataLakeTableState(DataLakeTableStateSnapshot{actual_table_state_snapshot});
+    result.sorting_key = getSortingKey(local_context, actual_table_state_snapshot);
     return result;
 }
 

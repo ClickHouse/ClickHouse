@@ -67,10 +67,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     const ColumnsDescription & columns_in_table_or_function_definition,
     const ConstraintsDescription & constraints_,
     const ASTPtr & partition_by,
-    ContextPtr context_,
-    bool /* is_table_function */)
-    : IStorageCluster(
-        cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
+    ContextPtr context_)
+    : IStorageCluster(cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
 {

@@ -20,6 +20,7 @@ class StorageDataLake<IcebergMetadata> : public IStorage
 public:
     StorageDataLake(
         ObjectStorageConnectionConfigurationPtr configuration_,
+        StorageObjectStorageTableOptions table_options_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
@@ -34,7 +35,7 @@ public:
         ASTPtr partition_by_ = nullptr,
         ASTPtr order_by_ = nullptr,
         bool is_table_function_ = false,
-        bool lazy_init = false);
+        bool request_skipping_initialization = false);
 
     String getName() const override;
 
@@ -137,7 +138,6 @@ protected:
     mutable std::shared_ptr<IcebergMetadata> current_metadata;
 
     void ensureMetadataInitialized(ContextPtr context) const;
-    void updateMetadata(ContextPtr context) const;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;

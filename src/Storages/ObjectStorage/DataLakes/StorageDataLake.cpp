@@ -138,9 +138,22 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported for DataLake engines");
 
     if (need_resolve_columns_or_format)
-        resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, format_settings, sample_path, context);
+    {
+        /// For data lake storages, try to resolve schema from metadata first (e.g. Iceberg stores
+        /// schema in its metadata files). Only fall through to reading actual data files if
+        /// metadata doesn't provide a schema.
+        if (columns.empty() && current_metadata)
+        {
+            auto schema = current_metadata->getTableSchema(context);
+            if (!schema.empty())
+                columns = ColumnsDescription(std::move(schema));
+        }
+
+        if (columns.empty() || table_options.format == "auto")
+            resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, format_settings, sample_path, context);
+    }
     else
-        validateSupportedColumns(columns, *configuration);
+        validateSupportedColumns(columns, configuration->getTypeName());
 
     FormatFactory::instance().checkFormatName(table_options.format);
 

@@ -56,11 +56,11 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema(ContextPtr local_context) const;
 
-    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const;
-    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot &, ContextPtr local_context) const;
+    DataLakeTableStateSnapshot getTableStateSnapshot(ContextPtr local_context) const;
+    StorageInMemoryMetadata buildStorageMetadataFromState(ContextPtr local_context) const;
     bool shouldReloadSchemaForConsistency(ContextPtr local_context) const;
 
-    static void createInitial(
+    static std::unique_ptr<IcebergMetadata> createInitialTable(
         const ObjectStoragePtr & object_storage,
         const ObjectStorageConnectionConfigurationWeakPtr & configuration,
         const DataLakeStorageSettingsPtr & datalake_settings,
@@ -87,7 +87,6 @@ public:
         LoggerPtr metadata_logger);
 
     bool supportsUpdate() const { return true; }
-    void update(const ContextPtr &) { }
 
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,

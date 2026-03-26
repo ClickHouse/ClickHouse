@@ -164,7 +164,7 @@ StorageObjectStorage::StorageObjectStorage(
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, format_settings, sample_path, context);
     else
-        validateSupportedColumns(columns, *configuration);
+        validateSupportedColumns(columns, configuration->getTypeName());
 
     FormatFactory::instance().checkFormatName(table_options.format);
 

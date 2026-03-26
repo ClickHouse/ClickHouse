@@ -22,8 +22,7 @@ public:
         const ConstraintsDescription & constraints_,
         const ASTPtr & partition_by,
         ContextPtr context_,
-        DataLakeStorageSettingsPtr datalake_settings_,
-        bool is_table_function_ = false);
+        DataLakeStorageSettingsPtr datalake_settings_);
 
     std::string getName() const override;
 

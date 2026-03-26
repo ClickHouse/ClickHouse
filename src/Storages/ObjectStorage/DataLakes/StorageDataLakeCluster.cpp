@@ -68,10 +68,11 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
     const ConstraintsDescription & constraints_,
     const ASTPtr & partition_by,
     ContextPtr context_,
-    DataLakeStorageSettingsPtr datalake_settings_,
-    bool is_table_function)
+    DataLakeStorageSettingsPtr datalake_settings_)
     : IStorageCluster(
-        cluster_name_, table_id_, getLogger(fmt::format("{}({})", String(DataLakeMetadata::name) + configuration_->getEngineName(), table_id_.table_name)))
+          cluster_name_,
+          table_id_,
+          getLogger(fmt::format("{}({})", String(DataLakeMetadata::name) + configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
     , datalake_settings(std::move(datalake_settings_))
@@ -96,19 +97,13 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
-    if (is_table_function)
+    if (auto state = current_metadata->getTableStateSnapshot(context_))
     {
-        /// For datalake table functions, always pin the current snapshot version so that
-        /// query execution uses the same snapshot as query analysis (logical-race fix).
-        /// Additionally reload columns from the snapshot when the per-format setting is enabled.
-        if (auto state = current_metadata->getTableStateSnapshot(context_))
+        metadata.setDataLakeTableState(*state);
+        if (current_metadata->shouldReloadSchemaForConsistency(context_))
         {
-            metadata.setDataLakeTableState(*state);
-            if (current_metadata->shouldReloadSchemaForConsistency(context_))
-            {
-                if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, context_))
-                    metadata = *metadata_snapshot;
-            }
+            if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, context_))
+                metadata = *metadata_snapshot;
         }
     }
 

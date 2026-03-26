@@ -31,7 +31,7 @@ void resolveSchemaAndFormat(
     std::string & sample_path,
     const ContextPtr & context);
 
-void validateSupportedColumns(ColumnsDescription & columns, const ObjectStorageConnectionConfiguration & configuration);
+void validateSupportedColumns(ColumnsDescription & columns, const String & type_name);
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     RelativePathWithMetadata & object_info,

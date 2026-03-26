@@ -42,6 +42,7 @@ namespace ErrorCodes
 
 StorageDataLake<IcebergMetadata>::StorageDataLake(
     ObjectStorageConnectionConfigurationPtr configuration_,
+    StorageObjectStorageTableOptions table_options_,
     ObjectStoragePtr object_storage_,
     ContextPtr context,
     const StorageID & table_id_,
@@ -53,124 +54,70 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
     DataLakeStorageSettingsPtr datalake_settings_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     bool distributed_processing_,
-    ASTPtr partition_by_,
-    ASTPtr order_by_,
+    ASTPtr /*partition_by_*/,
+    ASTPtr /*order_by_*/,
     bool is_table_function_,
-    bool lazy_init)
+    bool request_skipping_initialization)
     : IStorage(table_id_)
     , configuration(configuration_)
+    , table_options(table_options_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , distributed_processing(distributed_processing_)
     , is_table_function(is_table_function_)
-    , log(getLogger(fmt::format("Storage{}({})", String(IcebergMetadata::name) + configuration->getEngineName(), table_id_.getFullTableName())))
+    , log(getLogger(
+          fmt::format("Storage{}({})", String(IcebergMetadata::name) + configuration->getEngineName(), table_id_.getFullTableName())))
     , datalake_settings(std::move(datalake_settings_))
     , catalog(catalog_)
     , storage_id(table_id_)
 {
-    /// Ensure trailing slash on the raw path for data lake storages.
-    auto path = configuration->getRawPath();
-    if (!path.path.ends_with('/'))
-        configuration->setRawPath(ObjectStorageConnectionConfiguration::Path(path.path + "/"));
-    table_options.initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context, configuration->getRawPath());
-    const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (table_options.format == "auto");
-    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
-
-    LOG_DEBUG(
-        log, "StorageDataLake: lazy_init={}, need_resolve_columns_or_format={}, "
-        "is_table_function={}, columns_in_table_or_function_definition={}",
-        lazy_init, need_resolve_columns_or_format, is_table_function,
-        columns_in_table_or_function_definition.toString(true));
-
-    if (!is_table_function && !columns_in_table_or_function_definition.empty() && mode == LoadingStrictnessLevel::CREATE)
-    {
-        LOG_DEBUG(log, "Creating new storage with specified columns");
-        configuration->update(object_storage, context);
-        IcebergMetadata::createInitial(
-            object_storage, configuration, datalake_settings, context, columns_in_table_or_function_definition, partition_by_, order_by_, /*if_not_exists=*/ false, catalog, storage_id);
-    }
-
-    try
-    {
-        if (!do_lazy_init)
-        {
-            if (is_table_function)
-                ensureMetadataInitialized(context);
-            else
-                updateMetadata(context);
-        }
-    }
-    catch (...)
-    {
-        // If we don't have format or schema yet, we can't ignore failed configuration update,
-        // because relevant configuration is crucial for format and schema inference
-        if (mode <= LoadingStrictnessLevel::CREATE || need_resolve_columns_or_format)
-        {
-            throw;
-        }
-        tryLogCurrentException(log, /*start of message = */ "", LogsLevel::warning);
-    }
-
-    std::string sample_path;
-
-    ColumnsDescription columns{columns_in_table_or_function_definition};
-
-    if (configuration->getRawPath().hasSchemaHashWildcard())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported for DataLake engines");
-
-    if (need_resolve_columns_or_format)
-        resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, format_settings, sample_path, context);
-    else
-        validateSupportedColumns(columns, *configuration);
-
+    // Legacy code based on an incorrect assumption that all files in iceberg have the same format
     FormatFactory::instance().checkFormatName(table_options.format);
-
     bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(table_options.format, context, format_settings);
-
     supports_prewhere = format_supports_prewhere;
     supports_tuple_elements = format_supports_prewhere;
 
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(columns);
-    if (!do_lazy_init && is_table_function)
-    {
-        /// For datalake table functions, always pin the current snapshot version so that
-        /// query execution uses the same snapshot as query analysis (logical-race fix).
-        /// Additionally reload columns from the snapshot when the per-format setting is enabled.
-        /// This is done eagerly because select queries for table functions may bypass
-        /// updateExternalDynamicMetadataIfExists.
-        ensureMetadataInitialized(context);
-        if (auto state = current_metadata->getTableStateSnapshot(context))
-        {
-            metadata.setDataLakeTableState(*state);
 
-            /// Reload schema state if needed.
-            /// Schema reload for consistency can be disabled, because
-            /// 1. user can want to define a table with only
-            ///    a subset of columns from remote delta table
-            /// 2. user want to override some data types
-            ///    (for example, LawCardinality<String> instead of just String)
-            if (current_metadata->shouldReloadSchemaForConsistency(context))
-            {
-                if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, context))
-                    metadata = *metadata_snapshot;
-            }
+    /// Ensure trailing slash on the raw path for data lake storages.
+    auto raw_path = configuration->getRawPath();
+    if (!raw_path.path.ends_with('/'))
+        configuration->setRawPath(ObjectStorageConnectionConfiguration::Path(raw_path.path + "/"));
+
+    const bool need_resolve_columns = columns_in_table_or_function_definition.empty();
+    const bool skip_initialization = request_skipping_initialization && !need_resolve_columns && !is_table_function;
+
+    /// Initialize Iceberg metadata (reads manifest lists, resolves schema, etc.).
+    /// Skip when lazy init is requested and columns are already known.
+    if (!skip_initialization)
+    {
+        try
+        {
+            configuration->update(object_storage, context);
+            ensureMetadataInitialized(context);
+        }
+        catch (...)
+        {
+            /// During CREATE or when we must infer the schema, initialization failure is fatal.
+            if ((mode <= LoadingStrictnessLevel::CREATE) || need_resolve_columns)
+                throw;
+
+            /// Otherwise (e.g. ATTACH with known columns), log and continue —
+            /// metadata will be re-initialized on the first query.
+            tryLogCurrentException(log, /*start of message=*/"", LogsLevel::warning);
+            return;
         }
     }
 
-    metadata.setConstraints(constraints_);
-    metadata.setComment(comment);
-    if (table_options.partition_strategy)
-        metadata.partition_key = table_options.partition_strategy->getPartitionKeyDescription();
+    ensureMetadataInitialized(context);
+    StorageInMemoryMetadata storage_metadata = current_metadata->buildStorageMetadataFromState(context);
+    storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
+    validateSupportedColumns(storage_metadata.columns, configuration->getTypeName());
+    setVirtuals(
+        VirtualColumnUtils::getVirtualsForFileLikeStorage(
+            storage_metadata.columns, context, format_settings, table_options.partition_strategy_type, ""));
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        metadata.columns,
-        context,
-        format_settings,
-        table_options.partition_strategy_type,
-        sample_path));
-
-    setInMemoryMetadata(metadata);
+    setInMemoryMetadata(storage_metadata);
 }
 
 void StorageDataLake<IcebergMetadata>::ensureMetadataInitialized(ContextPtr context) const
@@ -178,17 +125,6 @@ void StorageDataLake<IcebergMetadata>::ensureMetadataInitialized(ContextPtr cont
     if (current_metadata)
         return;
     configuration->update(object_storage, context);
-    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context);
-}
-
-void StorageDataLake<IcebergMetadata>::updateMetadata(ContextPtr context) const
-{
-    configuration->update(object_storage, context);
-    if (current_metadata)
-    {
-        current_metadata->update(context);
-        return;
-    }
     current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context);
 }
 
@@ -234,35 +170,14 @@ IStorage::ColumnSizeByName StorageDataLake<IcebergMetadata>::getColumnSizes() co
 
 IcebergMetadata * StorageDataLake<IcebergMetadata>::getIcebergMetadata(ContextPtr context)
 {
-    updateMetadata(context);
+    ensureMetadataInitialized(context);
     return current_metadata.get();
 }
 
 void StorageDataLake<IcebergMetadata>::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    /// Always force an update to pick up the latest snapshot version.
-    /// Using if_not_updated_before=true would leave latest_snapshot_version
-    /// stale from the first query and silently omit new files.
-    updateMetadata(query_context);
-
-    auto state = current_metadata->getTableStateSnapshot(query_context);
-    if (!state)
-        return;
-
-    auto new_metadata = *getInMemoryMetadataPtr();
-    /// Always pin the current snapshot version to prevent logical races between query
-    /// analysis (which picks the schema) and query execution (which iterates files).
-    new_metadata.setDataLakeTableState(*state);
-
-    /// Optionally also refresh the columns (and other schema-derived fields such as the
-    /// Iceberg sort key) when the per-format reload setting is enabled.
-    if (current_metadata->shouldReloadSchemaForConsistency(query_context))
-    {
-        if (auto metadata_snapshot = current_metadata->buildStorageMetadataFromState(*state, query_context))
-            new_metadata = *metadata_snapshot;
-    }
-
-    setInMemoryMetadata(new_metadata);
+    ensureMetadataInitialized(query_context);
+    setInMemoryMetadata(current_metadata->buildStorageMetadataFromState(query_context));
 }
 
 
@@ -271,7 +186,7 @@ std::optional<UInt64> StorageDataLake<IcebergMetadata>::totalRows(ContextPtr que
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? ensureMetadataInitialized(query_context) : updateMetadata(query_context);
+    ensureMetadataInitialized(query_context);
     return current_metadata->totalRows(query_context);
 }
 
@@ -280,7 +195,7 @@ std::optional<UInt64> StorageDataLake<IcebergMetadata>::totalBytes(ContextPtr qu
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? ensureMetadataInitialized(query_context) : updateMetadata(query_context);
+    ensureMetadataInitialized(query_context);
     return current_metadata->totalBytes(query_context);
 }
 
