@@ -25,10 +25,6 @@ on:
         description: Dry run — show what would be done without making changes
         type: boolean
         default: false
-      assignee:
-        description: GitHub login to assign the changelog PR to (defaults to the workflow triggerer)
-        required: false
-        default: ''
 
 env:
   PYTHONUNBUFFERED: 1

@@ -514,6 +514,9 @@ class ReleaseInfo:
             # elif not _skip_tag_check:
             #     assert False, f"BUG: Unexpected latest tag [{git.latest_tag}] expected [{expected_tag_prefix}*{expected_tag_suffix}]. Already Released?"
 
+            assert previous_release_tag, (
+                f"BUG: previous_release_tag is empty, latest_tag=[{git.latest_tag}]"
+            )
             # Fetch only the specific tag needed, not all tags from the repo
             Shell.check(
                 f"{GIT_PREFIX} fetch --no-tags origin tag {previous_release_tag}",
@@ -974,7 +977,7 @@ def checkout(ref: str) -> Iterator[None]:
     )
     if ref != orig_ref:
         Shell.check(
-            f"{GIT_PREFIX} fetch --no-tags --no-recurse-submodules"
+            f"{GIT_PREFIX} fetch --no-recurse-submodules"
             f" --filter=tree:0 origin {ref}",
             strict=True,
             verbose=True,
