@@ -377,6 +377,13 @@ endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 
+# Ensure ccache hash includes the embedded Keeper dashboard file.
+set(DASHBOARD_HTML "${ClickHouse_SOURCE_DIR}/programs/keeper/dashboard.html")
+if (CMAKE_CXX_COMPILER_LAUNCHER)
+    set_property(TARGET dbms PROPERTY CXX_COMPILER_LAUNCHER
+        "${CMAKE_COMMAND};-E;env;CCACHE_EXTRAFILES=${DASHBOARD_HTML};${CMAKE_CXX_COMPILER_LAUNCHER}")
+endif()
+
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
 if (TARGET ch_contrib::jemalloc)
