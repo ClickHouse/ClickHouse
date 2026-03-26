@@ -9,7 +9,6 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
-#include <Storages/StorageFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
@@ -40,6 +39,27 @@ namespace ErrorCodes
 
 namespace
 {
+    const std::vector<String> source_table_engines = {
+        "File",
+        "URL",
+        "Distributed",
+        "MongoDB",
+        "Redis",
+        "MySQL",
+        "PostgreSQL",
+        "SQLite",
+        "ODBC",
+        "JDBC",
+        "HDFS",
+        "S3",
+        "Hive",
+        "AzureBlobStorage",
+        "Kafka",
+        "NATS",
+        "RabbitMQ",
+    };
+
+
     AccessRights mixAccessRightsFromUserAndRoles(const User & user, const EnabledRolesInfo & roles_info)
     {
         AccessRights res = user.access;
@@ -263,24 +283,22 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     }
 
     /// Sync SOURCE_READ/WRITE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
-    /// Source engine list is derived from StorageFactory — each engine declares its source_access_type
-    /// during registration, so this is always in sync without manual maintenance.
-    ///
-    /// We use grant() only (never revoke()) to avoid corrupting root_with_grant_option.
-    /// AccessRights::revoke() removes from BOTH root and root_with_grant_option, which would
-    /// break explicit GRANT TABLE ENGINE ... WITH GRANT OPTION for source engines. See #71544.
-    for (const auto & [engine_name, creator] : StorageFactory::instance().getAllStorages())
+    if (access_control.doesTableEnginesRequireGrant())
     {
-        if (!creator.features.source_access_type)
+        for (const auto & table_engine : source_table_engines)
         {
-            if (!access_control.doesTableEnginesRequireGrant())
-                res.grant(AccessType::TABLE_ENGINE, engine_name);
+            if (res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
+                res.grant(AccessType::TABLE_ENGINE, table_engine);
         }
-        else
+    }
+    else
+    {
+        /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
+        res.grant(AccessType::TABLE_ENGINE);
+        for (const auto & table_engine : source_table_engines)
         {
-            auto source_name = AccessTypeObjects::toStringSource(*creator.features.source_access_type);
-            if (res.isGranted(AccessType::READ | AccessType::WRITE, source_name))
-                res.grant(AccessType::TABLE_ENGINE, engine_name);
+            if (!res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
+                res.revoke(AccessType::TABLE_ENGINE, table_engine);
         }
     }
 

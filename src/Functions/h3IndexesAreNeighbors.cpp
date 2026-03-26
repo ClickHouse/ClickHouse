@@ -100,7 +100,11 @@ public:
             UInt8 res = 0;
 
             if (validator.validateCell(hindex_origin) && validator.validateCell(hindex_dest))
-                res = static_cast<UInt8>(areNeighborCells(hindex_origin, hindex_dest));
+            {
+                int are_neighbors = 0;
+                if (!areNeighborCells(hindex_origin, hindex_dest, &are_neighbors))
+                    res = static_cast<UInt8>(are_neighbors);
+            }
 
             dst_data[row] = res;
         }
