@@ -2379,7 +2379,16 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         /// Do not keep data parts in snapshot.
         /// They are stored separately, and some could be released after PK analysis.
-        storage_snapshot->data = std::make_unique<MergeTreeData::SnapshotData>();
+        /// Keep the underlying storage alive because part teardown still reaches
+        /// `data_part->storage.getContext()`.
+        auto stripped_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
+        if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        {
+            stripped_snapshot_data->storage = snapshot_data->storage;
+            stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
+        }
+
+        storage_snapshot->data = std::move(stripped_snapshot_data);
     }
 
     result.checkLimits(context->getSettingsRef(), query_info);

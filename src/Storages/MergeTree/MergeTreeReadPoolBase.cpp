@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
