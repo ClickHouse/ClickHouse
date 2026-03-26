@@ -190,7 +190,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_expire_default_max_ref_age_ms", 9223372036854775807, 9223372036854775807, "New setting."},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
-            {"use_declared_schema_for_parameterized_views", "off", "off", "New setting"},
+            {"use_declared_schema_for_parameterized_views", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
