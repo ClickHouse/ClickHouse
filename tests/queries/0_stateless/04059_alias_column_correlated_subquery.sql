@@ -1,7 +1,10 @@
+-- Tags: no-old-analyzer
 -- Regression test for correlated subqueries in ALIAS column expressions.
 -- Previously, the server would crash with LOGICAL_ERROR when reading from a table
 -- whose ALIAS column expression contained a correlated subquery.
 -- The fix converts this to a user-facing NOT_IMPLEMENTED error.
+-- The old analyzer resolves ALIAS column references at DDL time, producing
+-- UNKNOWN_IDENTIFIER instead of the new analyzer's NOT_IMPLEMENTED path.
 
 DROP TABLE IF EXISTS t_alias_correlated;
 CREATE TABLE t_alias_correlated (x Int64) ENGINE = MergeTree ORDER BY tuple();
