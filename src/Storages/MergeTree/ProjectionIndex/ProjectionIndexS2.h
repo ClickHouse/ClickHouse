@@ -10,24 +10,26 @@ namespace DB
 
 class ASTProjectionDeclaration;
 
-/// Projection index that accelerates spatial queries on Polygon / MultiPolygon columns
-/// using S2 geometry cells.
+/// Projection index that accelerates spatial queries on geometry columns
+/// (Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon) using S2 cells.
 ///
 /// SQL syntax:
-///   PROJECTION <name> INDEX <polygon_column> TYPE s2(max_cells=8, min_level=8, max_level=16)
+///   PROJECTION <name> INDEX <geometry_column> TYPE s2(max_cells=8, min_level=16, max_level=20)
 ///
 /// How it works:
-///   1. calculate() — During INSERT, each geometry is converted to an S2 bounding-box
-///      covering (a set of S2 cell IDs). The projection stores (cell_id, _parent_part_offset)
-///      pairs sorted by cell_id. This is a 1:N expansion: one source row produces
-///      multiple projection rows (one per covering cell).
+///   1. calculate() — During INSERT, each geometry is converted to S2 cell IDs:
+///      - For Point: one cell ID per row (using S2CellId::FromPoint at max_level)
+///      - For Ring/LineString/MultiLineString/Polygon/MultiPolygon: an S2 bounding-box
+///        covering (multiple cells per row)
+///      The projection stores (cell_id, _parent_part_offset) pairs sorted by cell_id.
+///      This is a 1:N expansion: one source row produces one or more projection rows.
 ///
-///   2. tryRewriteFilterForQuery() — At query time, rewrites a predicate like
-///        polygonsIntersectSpherical(column, const_polygon)
+///   2. tryRewriteFilterForQuery() — At query time, rewrites spatial predicates like
+///        ST_Intersects(column, const_polygon)  or  ST_DWithin(column, const_geom, dist)
 ///      into
 ///        s2CellsIntersect(cell_id, ancestor_cell)
 ///      where ancestor_cell is the smallest S2 cell that contains the entire query
-///      polygon's covering. This rewritten predicate can be evaluated against the
+///      geometry's covering. This rewritten predicate can be evaluated against the
 ///      projection's primary key (cell_id) for mark-level pruning.
 ///
 ///   3. The generic projection index framework in projectionsCommon.cpp then uses
@@ -40,7 +42,7 @@ public:
 
     struct Params
     {
-        String source_column;       /// The Polygon/MultiPolygon column to index.
+        String source_column;       /// The geometry column to index (Point/Ring/LineString/MultiLineString/Polygon/MultiPolygon).
 
         UInt64 max_cells = 8;       /// Maximum number of S2 cells in the covering.
         UInt64 min_level = 16;      /// Minimum S2 cell level (0 = coarsest, 30 = finest).

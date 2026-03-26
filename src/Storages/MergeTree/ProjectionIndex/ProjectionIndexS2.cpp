@@ -253,35 +253,50 @@ void sortProjectionIndexS2Block(Block & out)
 }
 
 /// ── Geometry decode helpers ──────────────────────────────────────────────────
-/// These helpers decode Polygon/MultiPolygon values from ClickHouse columns into
+/// These helpers decode geometry values from ClickHouse columns into
 /// boost::geometry types suitable for S2 bounding-box computation.
 
 struct DecodedGeometry
 {
     enum class Kind
     {
+        Point,
+        Ring,
+        LineString,
+        MultiLineString,
         Polygon,
         MultiPolygon
     };
 
     Kind kind;
-    std::variant<SphericalPolygon, SphericalMultiPolygon> value;
+    std::variant<SphericalPoint, SphericalRing, SphericalLineString, SphericalMultiLineString, SphericalPolygon, SphericalMultiPolygon> value;
 };
 
 struct GeometryDecodeCache
 {
     enum class Kind
     {
+        Point,
+        Ring,
+        LineString,
+        MultiLineString,
         Polygon,
         MultiPolygon
     };
 
     Kind kind;
     size_t rows = 0;
-    std::variant<std::vector<SphericalPolygon>, std::vector<SphericalMultiPolygon>> decoded;
+    std::variant<
+        std::vector<SphericalPoint>,
+        std::vector<SphericalRing>,
+        std::vector<SphericalLineString>,
+        std::vector<SphericalMultiLineString>,
+        std::vector<SphericalPolygon>,
+        std::vector<SphericalMultiPolygon>> decoded;
 };
 
-/// Bulk-decode an entire column of Polygon or MultiPolygon values into a cache.
+/// Bulk-decode an entire column of geometry values into a cache.
+/// Supports Point, LineString, MultiLineString, Polygon, MultiPolygon.
 /// Returns nullopt if the column type is not a supported geometry type.
 std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & column, const DataTypePtr & type, bool strict_mode)
 {
@@ -290,6 +305,46 @@ std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & 
 
     try
     {
+        if (factory.get("Point")->equals(*type))
+        {
+            auto decoded = ColumnToPointsConverter<SphericalPoint>::convert(full_column);
+            GeometryDecodeCache cache;
+            cache.kind = GeometryDecodeCache::Kind::Point;
+            cache.rows = decoded.size();
+            cache.decoded = std::move(decoded);
+            return cache;
+        }
+
+        if (factory.get("Ring")->equals(*type))
+        {
+            auto decoded = ColumnToRingsConverter<SphericalPoint>::convert(full_column);
+            GeometryDecodeCache cache;
+            cache.kind = GeometryDecodeCache::Kind::Ring;
+            cache.rows = decoded.size();
+            cache.decoded = std::move(decoded);
+            return cache;
+        }
+
+        if (factory.get("LineString")->equals(*type))
+        {
+            auto decoded = ColumnToLineStringsConverter<SphericalPoint>::convert(full_column);
+            GeometryDecodeCache cache;
+            cache.kind = GeometryDecodeCache::Kind::LineString;
+            cache.rows = decoded.size();
+            cache.decoded = std::move(decoded);
+            return cache;
+        }
+
+        if (factory.get("MultiLineString")->equals(*type))
+        {
+            auto decoded = ColumnToMultiLineStringsConverter<SphericalPoint>::convert(full_column);
+            GeometryDecodeCache cache;
+            cache.kind = GeometryDecodeCache::Kind::MultiLineString;
+            cache.rows = decoded.size();
+            cache.decoded = std::move(decoded);
+            return cache;
+        }
+
         if (factory.get("Polygon")->equals(*type))
         {
             auto decoded = ColumnToPolygonsConverter<SphericalPoint>::convert(full_column);
@@ -318,7 +373,8 @@ std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & 
     }
 
     if (strict_mode)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "ProjectionIndexS2 supports only Polygon/MultiPolygon, got {}", type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "ProjectionIndexS2 supports only Point/Ring/LineString/MultiLineString/Polygon/MultiPolygon, got {}", type->getName());
 
     return std::nullopt;
 }
@@ -334,6 +390,34 @@ std::optional<DecodedGeometry> tryDecodeGeometry(const GeometryDecodeCache & cac
     }
 
     DecodedGeometry out;
+
+    if (cache.kind == GeometryDecodeCache::Kind::Point)
+    {
+        out.kind = DecodedGeometry::Kind::Point;
+        out.value = std::get<std::vector<SphericalPoint>>(cache.decoded)[row];
+        return out;
+    }
+
+    if (cache.kind == GeometryDecodeCache::Kind::Ring)
+    {
+        out.kind = DecodedGeometry::Kind::Ring;
+        out.value = std::get<std::vector<SphericalRing>>(cache.decoded)[row];
+        return out;
+    }
+
+    if (cache.kind == GeometryDecodeCache::Kind::LineString)
+    {
+        out.kind = DecodedGeometry::Kind::LineString;
+        out.value = std::get<std::vector<SphericalLineString>>(cache.decoded)[row];
+        return out;
+    }
+
+    if (cache.kind == GeometryDecodeCache::Kind::MultiLineString)
+    {
+        out.kind = DecodedGeometry::Kind::MultiLineString;
+        out.value = std::get<std::vector<SphericalMultiLineString>>(cache.decoded)[row];
+        return out;
+    }
 
     if (cache.kind == GeometryDecodeCache::Kind::Polygon)
     {
@@ -390,6 +474,28 @@ bool addPointToRect(const SphericalPoint & point, S2LatLngRect & rect, bool & in
     return true;
 }
 
+/// Expand the bounding box to include all vertices of a ring (closed loop of points).
+bool addRingToRect(const SphericalRing & ring, S2LatLngRect & rect, bool & initialized)
+{
+    for (const auto & point : ring)
+    {
+        if (!addPointToRect(point, rect, initialized))
+            return false;
+    }
+    return true;
+}
+
+/// Expand the bounding box to include all vertices of a linestring.
+bool addLineStringToRect(const SphericalLineString & linestring, S2LatLngRect & rect, bool & initialized)
+{
+    for (const auto & point : linestring)
+    {
+        if (!addPointToRect(point, rect, initialized))
+            return false;
+    }
+    return true;
+}
+
 /// Expand the bounding box to include all vertices (outer ring + inner rings) of a polygon.
 bool addPolygonToRect(const SphericalPolygon & polygon, S2LatLngRect & rect, bool & initialized)
 {
@@ -419,16 +525,64 @@ bool addPolygonToRect(const SphericalPolygon & polygon, S2LatLngRect & rect, boo
     return true;
 }
 
-/// Build an S2CellUnion covering for the bounding box of a geometry.
-/// Uses S2RegionCoverer to generate a set of S2 cells that cover the bounding rectangle.
+/// Build an S2CellUnion covering for a geometry.
+/// - For Point: returns a single S2 cell at max_level containing the point.
+/// - For LineString/MultiLineString/Polygon/MultiPolygon: computes an S2LatLngRect
+///   bounding box from all vertices and covers that rectangle with S2RegionCoverer.
 std::optional<S2CellUnion> buildS2CoveringForGeometry(
     const DecodedGeometry & geometry,
     const S2CoveringBuildOptions & options)
 {
+    /// Point: map directly to a single S2CellId at max_level.
+    if (geometry.kind == DecodedGeometry::Kind::Point)
+    {
+        const auto & point = std::get<SphericalPoint>(geometry.value);
+        const double lon = boost::geometry::get<0>(point);
+        const double lat = boost::geometry::get<1>(point);
+
+        if (!std::isfinite(lon) || !std::isfinite(lat))
+            return std::nullopt;
+
+        S2LatLng lat_lng = S2LatLng::FromDegrees(lat, lon);
+        if (!lat_lng.is_valid())
+            return std::nullopt;
+
+        S2CellId cell_id(lat_lng.ToPoint());
+        if (!cell_id.is_valid())
+            return std::nullopt;
+
+        /// Use max_level for the finest granularity of point cells.
+        cell_id = cell_id.parent(static_cast<int>(options.max_level));
+
+        S2CellUnion result;
+        result.Init({cell_id});
+        return result;
+    }
+
+    /// All other types: compute bounding-box covering from vertices.
     S2LatLngRect rect;
     bool initialized = false;
 
-    if (geometry.kind == DecodedGeometry::Kind::Polygon)
+    if (geometry.kind == DecodedGeometry::Kind::Ring)
+    {
+        if (!addRingToRect(std::get<SphericalRing>(geometry.value), rect, initialized))
+            return std::nullopt;
+    }
+    else if (geometry.kind == DecodedGeometry::Kind::LineString)
+    {
+        if (!addLineStringToRect(std::get<SphericalLineString>(geometry.value), rect, initialized))
+            return std::nullopt;
+    }
+    else if (geometry.kind == DecodedGeometry::Kind::MultiLineString)
+    {
+        const auto & multi = std::get<SphericalMultiLineString>(geometry.value);
+        for (const auto & linestring : multi)
+        {
+            if (!addLineStringToRect(linestring, rect, initialized))
+                return std::nullopt;
+        }
+    }
+    else if (geometry.kind == DecodedGeometry::Kind::Polygon)
     {
         if (!addPolygonToRect(std::get<SphericalPolygon>(geometry.value), rect, initialized))
             return std::nullopt;
@@ -546,11 +700,59 @@ std::optional<DecodedGeometry> buildBoxGeometry(Float64 xmin, Float64 ymin, Floa
     return geometry;
 }
 
-/// Decode a geometry constant from a Field (used for the query's constant polygon argument).
+/// Decode a geometry constant from a Field (used for the query's constant geometry argument).
 std::optional<DecodedGeometry> decodeGeometryFromField(const Field & field, const DataTypePtr & type)
 {
     const auto & factory = DataTypeFactory::instance();
     auto one_row = type->createColumnConst(1, field)->convertToFullColumnIfConst();
+
+    if (factory.get("Point")->equals(*type))
+    {
+        auto points = ColumnToPointsConverter<SphericalPoint>::convert(one_row);
+        if (points.empty())
+            return std::nullopt;
+
+        DecodedGeometry geometry;
+        geometry.kind = DecodedGeometry::Kind::Point;
+        geometry.value = points.front();
+        return geometry;
+    }
+
+    if (factory.get("Ring")->equals(*type))
+    {
+        auto rings = ColumnToRingsConverter<SphericalPoint>::convert(one_row);
+        if (rings.empty())
+            return std::nullopt;
+
+        DecodedGeometry geometry;
+        geometry.kind = DecodedGeometry::Kind::Ring;
+        geometry.value = rings.front();
+        return geometry;
+    }
+
+    if (factory.get("LineString")->equals(*type))
+    {
+        auto linestrings = ColumnToLineStringsConverter<SphericalPoint>::convert(one_row);
+        if (linestrings.empty())
+            return std::nullopt;
+
+        DecodedGeometry geometry;
+        geometry.kind = DecodedGeometry::Kind::LineString;
+        geometry.value = linestrings.front();
+        return geometry;
+    }
+
+    if (factory.get("MultiLineString")->equals(*type))
+    {
+        auto multilinestrings = ColumnToMultiLineStringsConverter<SphericalPoint>::convert(one_row);
+        if (multilinestrings.empty())
+            return std::nullopt;
+
+        DecodedGeometry geometry;
+        geometry.kind = DecodedGeometry::Kind::MultiLineString;
+        geometry.value = multilinestrings.front();
+        return geometry;
+    }
 
     if (factory.get("Polygon")->equals(*type))
     {
@@ -893,12 +1095,13 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
 }
 
 /// Compute the projection block from source data. This is a 1:N expansion:
-/// each source row (containing a Polygon/MultiPolygon) is converted to multiple
-/// (cell_id, _parent_part_offset) rows — one for each S2 cell in the covering.
+/// each source row (containing a geometry) is converted to one or more
+/// (cell_id, _parent_part_offset) rows — one per S2 cell in the covering.
+/// For Point columns, each row produces exactly one cell.
 ///
 /// Steps:
 ///   1. Decode geometries from the source column
-///   2. For each geometry, build an S2 bounding-box covering
+///   2. For each geometry, build an S2 covering (or single cell for Point)
 ///   3. Emit (cell_id, parent_offset) for each cell in the covering
 ///   4. Sort the output by (cell_id, _parent_part_offset)
 Block ProjectionIndexS2::calculate(
