@@ -97,6 +97,7 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
             configuration,
             datalake_settings,
             context,
+            table_options.format,
             columns_in_table_or_function_definition,
             partition_by_,
             order_by_,
@@ -144,7 +145,7 @@ void StorageDataLake<IcebergMetadata>::ensureMetadataInitialized(ContextPtr cont
     if (current_metadata)
         return;
     configuration->update(object_storage, context);
-    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context, table_options.format);
 }
 
 String StorageDataLake<IcebergMetadata>::getName() const

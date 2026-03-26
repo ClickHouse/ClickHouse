@@ -36,7 +36,7 @@ void StorageDataLakeCluster<IcebergMetadata>::ensureMetadataInitialized(ContextP
 {
     if (current_metadata)
         return;
-    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context, table_options.format);
 }
 
 StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
@@ -69,7 +69,7 @@ StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
     /// so no lazy initialization is allowed.
     configuration->update(object_storage, context_);
 
-    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context_);
+    current_metadata = IcebergMetadata::create(object_storage, configuration, datalake_settings, context_, table_options.format);
 
     StorageInMemoryMetadata metadata = current_metadata->buildStorageMetadataFromState(context_);
     metadata.setConstraints(constraints_);

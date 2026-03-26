@@ -159,6 +159,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     ObjectStorageConnectionConfigurationPtr configuration,
     const DataLakeStorageSettings & datalake_settings,
     IcebergMetadataFilesCachePtr cache_ptr,
+    String write_format,
     ContextPtr context_,
     LoggerPtr log)
 {
@@ -203,6 +204,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .table_path = table_path,
         .table_uuid = table_uuid,
         .path_resolver = IcebergPathResolver(table_location, table_path, configuration->getTypeName(), configuration->getNamespace()),
+        .write_format = write_format,
     };
 }
 
@@ -231,7 +233,7 @@ IcebergMetadata::IcebergMetadata(
     , object_storage(std::move(object_storage_))
     , persistent_components(std::move(persistent_components_))
     , data_lake_settings(datalake_settings_ ? *datalake_settings_ : DataLakeStorageSettings{})
-    , write_format("Parquet")
+    , write_format(persistent_components.write_format)
 {
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
     if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
@@ -727,6 +729,7 @@ std::unique_ptr<IcebergMetadata> IcebergMetadata::createInitialTable(
     const ObjectStorageConnectionConfigurationWeakPtr & configuration,
     const DataLakeStorageSettingsPtr & datalake_settings,
     const ContextPtr & local_context,
+    String write_format,
     const std::optional<ColumnsDescription> & columns,
     ASTPtr partition_by,
     ASTPtr order_by,
@@ -799,7 +802,7 @@ std::unique_ptr<IcebergMetadata> IcebergMetadata::createInitialTable(
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
-    return IcebergMetadata::create(object_storage, configuration, datalake_settings, local_context);
+    return IcebergMetadata::create(object_storage, configuration, datalake_settings, local_context, write_format);
 }
 
 Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTableStateSnapshot(
@@ -826,7 +829,8 @@ std::unique_ptr<IcebergMetadata> IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const ObjectStorageConnectionConfigurationWeakPtr & configuration,
     const DataLakeStorageSettingsPtr & datalake_settings,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    String write_format)
 {
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
@@ -842,7 +846,7 @@ std::unique_ptr<IcebergMetadata> IcebergMetadata::create(
         LOG_TRACE(
             log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
     const auto & settings = datalake_settings ? *datalake_settings : DataLakeStorageSettings{};
-    auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, settings, cache_ptr, local_context, log);
+    auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, settings, cache_ptr, write_format, local_context, log);
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, datalake_settings, std::move(persistent_components), local_context);
 }
 

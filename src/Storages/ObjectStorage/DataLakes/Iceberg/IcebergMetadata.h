@@ -65,6 +65,7 @@ public:
         const ObjectStorageConnectionConfigurationWeakPtr & configuration,
         const DataLakeStorageSettingsPtr & datalake_settings,
         const ContextPtr & local_context,
+        String write_format,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
         ASTPtr order_by,
@@ -76,7 +77,8 @@ public:
         const ObjectStoragePtr & object_storage,
         const ObjectStorageConnectionConfigurationWeakPtr & configuration,
         const DataLakeStorageSettingsPtr & datalake_settings,
-        const ContextPtr & local_context);
+        const ContextPtr & local_context,
+        String write_format);
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const;
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const;
@@ -162,6 +164,7 @@ private:
         ObjectStorageConnectionConfigurationPtr configuration,
         const DataLakeStorageSettings & datalake_settings,
         IcebergMetadataFilesCachePtr cache_ptr,
+        String write_format,
         ContextPtr context_,
         LoggerPtr log);
 

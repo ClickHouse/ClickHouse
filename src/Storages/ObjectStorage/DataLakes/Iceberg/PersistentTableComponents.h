@@ -22,6 +22,7 @@ struct PersistentTableComponents
     const String table_path;
     const std::optional<String> table_uuid;
     const IcebergPathResolver path_resolver;
+    const String write_format;
 };
 
 }
