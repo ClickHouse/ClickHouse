@@ -1379,6 +1379,8 @@ aggregatio
 aggretate
 aggthrow
 aiGenerateContent
+aiGenerateEmbedding
+aiGenerateEmbeddingOrNull
 aiochclient
 alloc
 allocatio

@@ -266,6 +266,8 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "synonyms",
     "catboostEvaluate",
     "aiGenerateContent",
+    "aiGenerateEmbedding",
+    "aiGenerateEmbeddingOrNull",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",

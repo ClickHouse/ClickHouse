@@ -64,6 +64,7 @@ Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `p
 | [`ai_max_input_tokens_per_query`](/operations/settings/settings#ai_max_input_tokens_per_query) | UInt64 | `1000000` | Maximum input tokens per query. |
 | [`ai_max_output_tokens_per_query`](/operations/settings/settings#ai_max_output_tokens_per_query) | UInt64 | `500000` | Maximum output tokens per query. |
 | [`ai_max_api_calls_per_query`](/operations/settings/settings#ai_max_api_calls_per_query) | UInt64 | `1000` | Maximum API calls per query. |
+| [`embedding_max_batch_size`](/operations/settings/settings#embedding_max_batch_size) | UInt64 | `100` | Maximum number of texts per HTTP request for embedding functions. Texts are grouped into batches of this size to reduce API call overhead. |
 | [`ai_on_quota_exceeded`](/operations/settings/settings#ai_on_quota_exceeded) | String | `'throw'` | Behavior when quota is exceeded: `'throw'` raises an exception, `'null'` returns NULL for remaining rows. |
 
 ## aiGenerateContent {#aigeneratecontent}
@@ -109,13 +110,142 @@ FROM articles
 LIMIT 5;
 ```
 
+## aiGenerateEmbedding {#generateembedding}
+
+Generates a vector embedding for input text using an embedding model.
+
+This function supports **batch API calls**, when processing multiple rows, texts are grouped into batches (configurable via [`embedding_max_batch_size`](/operations/settings/settings#embedding_max_batch_size)) and sent in a single HTTP request, significantly reducing overhead.
+
+Returns an empty array `[]` for NULL or empty inputs.
+
+**Syntax**
+
+```sql
+aiGenerateEmbedding([collection,] text, dimensions)
+```
+
+**Arguments**
+
+- `collection`: Name of the named collection). [String](../data-types/string.md). Optional if [`default_ai_provider`](/operations/settings/settings#default_ai_provider) is set.
+- `text`: Input text to embed. [String](../data-types/string.md) or [Nullable(String)](../data-types/nullable.md).
+- `dimensions`: Dimensionality of the output embedding vector. Must be a constant. [UInt64](../data-types/int-uint.md).
+
+**Returned value**
+
+- The embedding vector. Type: [Array(Float32)](../data-types/array.md). Empty array for NULL or empty inputs.
+
+:::note
+The `dimensions` argument must be a constant value. Embedding models typically support specific dimension sizes (e.g. 256, 512, 1536). Check your model's documentation for supported values.
+:::
+
+:::note
+For embedding functions, the named collection should use an embedding-specific endpoint (e.g. `https://api.openai.com/v1/embeddings`) and an embedding model (e.g. `text-embedding-3-small`).
+:::
+
+**Example**
+
+Create an embedding named collection:
+
+```sql
+CREATE NAMED COLLECTION my_embeddings AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/embeddings',
+    model = 'text-embedding-3-small',
+    api_key = 'sk-...';
+```
+
+Generate an embedding:
+
+```sql
+SELECT aiGenerateEmbedding('my_embeddings', 'ClickHouse is a fast analytics database', 256) AS embedding;
+```
+
+**Semantic similarity search**
+
+Use with [cosineDistance](/sql-reference/functions/distance-functions) to find semantically similar texts:
+
+```sql
+SELECT
+    text,
+    cosineDistance(
+        aiGenerateEmbedding('my_embeddings', text, 256),
+        aiGenerateEmbedding('my_embeddings', 'analytics database', 256)
+    ) AS distance
+FROM documents
+ORDER BY distance ASC
+LIMIT 5;
+```
+
+**Batch processing**
+
+When processing a table column, texts are automatically batched for efficiency. For example, 1000 rows with 500 unique texts using the default [`embedding_max_batch_size`](/operations/settings/settings#embedding_max_batch_size)`=100` results in only 5 HTTP requests instead of 500:
+
+```sql
+SELECT
+    text,
+    aiGenerateEmbedding('my_embeddings', text, 512) AS embedding
+FROM articles;
+```
+
+**Null and empty string handling**
+
+NULL and empty inputs return an empty array without making an API call:
+
+```sql
+SELECT text, aiGenerateEmbedding('my_embeddings', text, 64) AS emb
+FROM (SELECT '' UNION ALL SELECT NULL);
+```
+
+```response
+┌─text──┬─emb──────────────────┐
+│       │ []                   │
+│ ᴺᵁᴸᴸ │ []                   │
+└───────┴──────────────────────┘
+```
+
+## aiGenerateEmbeddingOrNull {#aigenerateembeddingornull}
+
+Same as [generateEmbedding](#generateembedding), but **never throws an exception**. Returns an empty array `[]` on API errors and when quotas are exceeded, instead of raising an exception. The [`ai_on_error`](#query-level-settings) and [`ai_on_quota_exceeded`](#query-level-settings) settings are ignored, both are forced to `'null'` internally. This makes it safe for use in pipelines where a failed row should not abort the entire query.
+
+**Syntax**
+
+```sql
+aiGenerateEmbeddingOrNull([collection_or_url,] text, dimensions)
+```
+
+**Arguments**
+
+- `collection_or_url`: Name of the named collection, or an inline URL. [String](../data-types/string.md). Optional if [`default_ai_provider`](/operations/settings/settings#default_ai_provider) is set.
+- `text`: Input text to embed. [String](../data-types/string.md) or [Nullable(String)](../data-types/nullable.md).
+- `dimensions`: Dimensionality of the output embedding vector. Must be a constant. [UInt64](../data-types/int-uint.md).
+
+**Returned value**
+
+- The embedding vector. Type: [Array(Float32)](../data-types/array.md). Empty array for NULL/empty inputs or on API errors.
+
+**Example**
+
+```sql
+SELECT aiGenerateEmbeddingOrNull('my_embeddings', text, 256) AS embedding
+FROM documents;
+```
+
+If the provider returns an API error (timeout, authentication failure, rate limit, etc.) for a batch, `aiGenerateEmbeddingOrNull` returns an empty array for those rows instead of aborting the query:
+
+```sql
+SELECT
+    text,
+    aiGenerateEmbeddingOrNull('my_embeddings', text, 256) AS embedding
+FROM documents;
+```
+
 ## Supported providers {#supported-providers}
 
-| Provider | `provider` value | Chat functions | Notes |
-|----------|-----------------|----------------|-------|
-| OpenAI | `'openai'` | Yes | Default provider. |
-| Anthropic | `'anthropic'` | Yes | Uses `/v1/messages` endpoint. |
-| HuggingFace TEI | `'huggingface'` or `'tei'` | Yes | Uses OpenAI-compatible API format. Useful for self-hosted models. |
+| Provider | `provider` value | Chat functions | Embedding functions | Notes |
+|----------|-----------------|----------------|---------------------|-------|
+| OpenAI | `'openai'` | Yes | Yes | Default provider. |
+| Anthropic | `'anthropic'` | Yes | No | Uses `/v1/messages` endpoint. |
+| HuggingFace TEI | `'huggingface'` or `'tei'` | Yes | Yes | Uses OpenAI-compatible API format. Useful for self-hosted models. |
 
 
 ## Observability {#observability}

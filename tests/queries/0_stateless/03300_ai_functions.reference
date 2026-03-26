@@ -1,7 +1,20 @@
 -- Function registration
 aiGenerateContent
+aiGenerateEmbedding
+aiGenerateEmbeddingOrNull
 -- aiGenerateContent: too few arguments
 -- aiGenerateContent: too many arguments
 -- aiGenerateContent: missing named collection
+-- aiGenerateEmbedding: too few arguments
+-- aiGenerateEmbedding: too many arguments
+-- aiGenerateEmbedding: missing named collection
+-- aiGenerateEmbeddingOrNull: too few arguments
+-- aiGenerateEmbeddingOrNull: too many arguments
+-- aiGenerateEmbeddingOrNull: missing named collection
 -- aiGenerateContent return type
 result	Nullable(String)
+-- aiGenerateEmbedding return type
+result	Array(Float32)
+-- aiGenerateEmbeddingOrNull return type
+result	Array(Float32)
+-- aiGenerateEmbedding: non-constant dimensions

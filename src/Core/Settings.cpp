@@ -7812,8 +7812,11 @@ Maximum total output (completion) tokens across all AI function API calls in a s
     DECLARE(UInt64, ai_max_api_calls_per_query, 1000, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query, counted after deduplication and cache lookups. Set to 0 to disable.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, embedding_max_batch_size, 100, R"(
+Maximum number of texts to include in a single HTTP request for embedding functions (generateEmbedding, generateEmbeddingOrNull). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with batch size 100 results in 5 HTTP requests.
+)", EXPERIMENTAL) \
     DECLARE(String, ai_on_quota_exceeded, "throw", R"(
-Behavior when an AI function quota limit (`ai_max_rows_per_query`, `ai_max_input_tokens_per_query`, `ai_max_output_tokens_per_query`, or `ai_max_api_calls_per_query`) is exceeded. Possible values: 'throw' (default) aborts the query with an exception; 'null' stops making API calls and returns NULL for remaining rows.
+Behavior when an AI function quota limit (ai_max_rows_per_query, ai_max_input_tokens_per_query, ai_max_output_tokens_per_query, or ai_max_api_calls_per_query) is exceeded. Possible values: 'throw' (default) aborts the query with an exception; 'null' stops making API calls and returns NULL (for AI functions) or an empty array (for embedding functions) for remaining rows. Ignored by generateEmbeddingOrNull which always uses 'null'.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
