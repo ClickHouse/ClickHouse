@@ -462,6 +462,16 @@ class ReleaseInfo:
                 )
             with checkout(commit_ref):
                 commit_sha = Shell.get_output_or_raise(f"git rev-list -n1 {commit_ref}")
+                # Read version from CMake first to know which tags to fetch
+                version_for_tags = get_version_from_repo()
+                tag_prefix = f"v{version_for_tags.major}.{version_for_tags.minor}."
+                # Fetch tags matching this release branch so Git() can resolve latest_tag
+                Shell.check(
+                    f"{GIT_PREFIX} fetch --no-recurse-submodules origin"
+                    f" '+refs/tags/{tag_prefix}*:refs/tags/{tag_prefix}*'",
+                    strict=True,
+                    verbose=True,
+                )
                 git = Git()
                 version = get_version_from_repo(git=git)
                 release_branch = f"{version.major}.{version.minor}"
@@ -480,6 +490,16 @@ class ReleaseInfo:
         if release_type == "patch":
             with checkout(commit_ref):
                 commit_sha = Shell.get_output_or_raise(f"git rev-list -n1 {commit_ref}")
+                # Read version from CMake first to know which tags to fetch
+                version_for_tags = get_version_from_repo()
+                tag_prefix = f"v{version_for_tags.major}.{version_for_tags.minor}."
+                # Fetch tags matching this release branch so Git() can resolve latest_tag
+                Shell.check(
+                    f"{GIT_PREFIX} fetch --no-recurse-submodules origin"
+                    f" '+refs/tags/{tag_prefix}*:refs/tags/{tag_prefix}*'",
+                    strict=True,
+                    verbose=True,
+                )
                 git = Git()
                 version = get_version_from_repo(git=git)
                 codename = version.get_stable_release_type()

@@ -56,12 +56,6 @@ workflow = Workflow.Config(
             default_value="false",
             is_boolean=True,
         ),
-        Workflow.Config.InputConfig(
-            name="assignee",
-            description="GitHub login to assign the changelog PR to (defaults to the workflow triggerer)",
-            is_required=False,
-            default_value="",
-        ),
     ],
 )
 
