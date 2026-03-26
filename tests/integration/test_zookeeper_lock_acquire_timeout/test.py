@@ -10,6 +10,7 @@ import pytest
 import time
 import concurrent.futures
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
 
@@ -80,8 +81,8 @@ def test_zookeeper_lock_acquire_timeout(started_cluster, zk_name):
             # Start the long-timeout query first
             long_future = executor.submit(run_query, "long", long_timeout_ms)
             
-            # Give it a moment to acquire the mutex
-            time.sleep(1)
+            # Long-timeout query should be running and acquire the mutex
+            assert_eq_with_retry(node, "SELECT count() FROM system.processes WHERE query_id = 'long'", "1")
             
             # Now fire short-timeout queries
             short_futures = [executor.submit(run_query, f"short_{i}", short_timeout_ms) for i in range(num_short_queries)]
