@@ -16,7 +16,10 @@ namespace
 {
 /// Position-based overload: compare kept_output_positions (what the child actually kept)
 /// against required_positions (what the parent asked for) to determine extras to discard.
-/// Correct even with duplicate column names.
+/// Builds a DAG with all child output columns as inputs and only the required columns as
+/// outputs, so that the resulting ExpressionStep projects down to exactly the required set.
+/// Correct even with duplicate column names because all columns are consumed as inputs
+/// (no name-based pass-through matching).
 bool addDiscardingExpressionStepIfNeeded(
     QueryPlan::Nodes & nodes,
     QueryPlan::Node & parent,
@@ -28,14 +31,18 @@ bool addDiscardingExpressionStepIfNeeded(
 
     std::set<size_t> required_set(required_positions.begin(), required_positions.end());
 
-    std::vector<const ColumnWithTypeAndName *> columns_to_discard;
+    /// Check whether there are any columns to discard.
+    bool has_columns_to_discard = false;
     for (size_t new_pos = 0; new_pos < kept_output_positions.size(); ++new_pos)
     {
         if (!required_set.contains(kept_output_positions[new_pos]))
-            columns_to_discard.push_back(&output_header->getByPosition(new_pos));
+        {
+            has_columns_to_discard = true;
+            break;
+        }
     }
 
-    if (columns_to_discard.empty())
+    if (!has_columns_to_discard)
     {
         /// Even when all column names match, the column representations might differ
         /// (e.g., Const vs materialized after JoinStepLogical materializes its dummy column).
@@ -45,9 +52,25 @@ bool addDiscardingExpressionStepIfNeeded(
         return false;
     }
 
+    /// Add all child output columns as DAG inputs, in header order.
+    /// This ensures every header column is consumed by name matching in `updateHeader`,
+    /// avoiding ambiguity when there are duplicate column names.
     ActionsDAG discarding_dag;
-    for (const auto * column : columns_to_discard)
-        discarding_dag.addInput(*column);
+    std::vector<const ActionsDAG::Node *> input_nodes;
+    input_nodes.reserve(output_header->columns());
+    for (size_t pos = 0; pos < output_header->columns(); ++pos)
+    {
+        const auto & col = output_header->getByPosition(pos);
+        input_nodes.push_back(&discarding_dag.addInput(col.name, col.type));
+    }
+
+    /// Only add the required columns as DAG outputs.
+    auto & dag_outputs = discarding_dag.getOutputs();
+    for (size_t new_pos = 0; new_pos < kept_output_positions.size(); ++new_pos)
+    {
+        if (required_set.contains(kept_output_positions[new_pos]))
+            dag_outputs.push_back(input_nodes[new_pos]);
+    }
 
     auto discarding_step = std::make_unique<ExpressionStep>(output_header, std::move(discarding_dag));
     discarding_step->setStepDescription("Discarding unused columns");
