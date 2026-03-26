@@ -15,4 +15,5 @@ INSERT INTO FUNCTION file('04050_dynamic_' || currentDatabase() || '.parquet') S
 SELECT count() FROM file('04050_dynamic_' || currentDatabase() || '.parquet', Parquet, 'c0 Dynamic') WHERE c0 = '{"c1":1}'::JSON; -- { serverError NO_COMMON_TYPE }
 SELECT count() FROM file('04050_dynamic_' || currentDatabase() || '.parquet', Parquet, 'c0 Dynamic') WHERE c0 = '1';
 SELECT count() FROM file('04050_dynamic_' || currentDatabase() || '.parquet', Parquet, 'c0 Variant(String, UInt64)') WHERE c0 = '1';
-SELECT count() FROM file('04050_dynamic_' || currentDatabase() || '.parquet', Parquet, 'c0 JSON') WHERE c0 IS NOT NULL;
+INSERT INTO FUNCTION file('04050_json_' || currentDatabase() || '.parquet') SELECT '{"value":' || toString(number) || '}' AS c0 FROM numbers(100) SETTINGS engine_file_truncate_on_insert = 1;
+SELECT count() FROM file('04050_json_' || currentDatabase() || '.parquet', Parquet, 'c0 JSON') WHERE c0 IS NOT NULL;
