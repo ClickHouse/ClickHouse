@@ -3709,6 +3709,96 @@ def test_kafka_consumer_reschedule_validation(kafka_cluster, create_query_genera
     instance.query(create_query)
 
 
+def test_kafka2_commit_on_select_semantics(kafka_cluster):
+    """Test that kafka_commit_on_select controls whether offsets are committed after direct SELECT."""
+
+    suffix = k.random_string(6)
+
+    # --- Test 1: kafka_commit_on_select = 1 (offsets committed, no re-read) ---
+    topic_commit = f"test_commit_on_select_{suffix}"
+    kafka_table_commit = f"kafka_commit_{suffix}"
+
+    messages = [json.dumps({"key": i, "value": i}) for i in range(5)]
+    k.kafka_produce(kafka_cluster, topic_commit, messages)
+
+    instance.query(
+        k.generate_new_create_table_query(
+            kafka_table_commit,
+            "key UInt64, value UInt64",
+            topic_list=topic_commit,
+            consumer_group=f"cg_commit_{suffix}",
+            settings={"kafka_commit_on_select": 1},
+        )
+    )
+
+    # First SELECT should consume all 5 messages
+    result = ""
+    retries = 50
+    while retries > 0:
+        result += instance.query(
+            f"SELECT key, value FROM test.{kafka_table_commit}", ignore_error=True
+        )
+        if len(TSV(result).lines) >= 5:
+            break
+        retries -= 1
+        time.sleep(0.5)
+    assert len(TSV(result).lines) == 5
+
+    # Second SELECT should return nothing (offsets were committed)
+    time.sleep(1)
+    result2 = instance.query(
+        f"SELECT count() FROM test.{kafka_table_commit}", ignore_error=True
+    )
+    assert int(result2.strip()) == 0
+
+    instance.query(f"DROP TABLE test.{kafka_table_commit} SYNC")
+
+    # --- Test 2: kafka_commit_on_select = 0 (offsets rolled back, re-read) ---
+    topic_rollback = f"test_rollback_on_select_{suffix}"
+    kafka_table_rollback = f"kafka_rollback_{suffix}"
+
+    messages = [json.dumps({"key": i, "value": i}) for i in range(5)]
+    k.kafka_produce(kafka_cluster, topic_rollback, messages)
+
+    instance.query(
+        k.generate_new_create_table_query(
+            kafka_table_rollback,
+            "key UInt64, value UInt64",
+            topic_list=topic_rollback,
+            consumer_group=f"cg_rollback_{suffix}",
+            settings={"kafka_commit_on_select": 0},
+        )
+    )
+
+    # First SELECT should consume messages
+    result = ""
+    retries = 50
+    while retries > 0:
+        result += instance.query(
+            f"SELECT key, value FROM test.{kafka_table_rollback}", ignore_error=True
+        )
+        if len(TSV(result).lines) >= 5:
+            break
+        retries -= 1
+        time.sleep(0.5)
+    assert len(TSV(result).lines) == 5
+
+    # Second SELECT should re-read the same messages (offsets were rolled back)
+    result2 = ""
+    retries = 50
+    while retries > 0:
+        result2 += instance.query(
+            f"SELECT key, value FROM test.{kafka_table_rollback}", ignore_error=True
+        )
+        if len(TSV(result2).lines) >= 5:
+            break
+        retries -= 1
+        time.sleep(0.5)
+    assert len(TSV(result2).lines) == 5
+
+    instance.query(f"DROP TABLE test.{kafka_table_rollback} SYNC")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
