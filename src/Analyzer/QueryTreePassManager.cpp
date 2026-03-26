@@ -16,7 +16,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
-#include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
+#include <Analyzer/Passes/AggregateFunctionsArithmeticOperationsPass.h>
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
@@ -283,10 +283,10 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<DistanceTransposedPartialReadsPass>());
 
-    /// should before AggregateFunctionsArithmericOperationsPass
+    /// should before AggregateFunctionsArithmeticOperationsPass
     manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
 
-    manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
+    manager.addPass(std::make_unique<AggregateFunctionsArithmeticOperationsPass>());
     manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
 
     // Should run before optimization of GROUP BY keys to allow the removal of

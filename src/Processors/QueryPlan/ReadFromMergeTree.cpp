@@ -218,6 +218,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
+    extern const SettingsBool distributed_index_analysis_only_on_coordinator;
 }
 
 namespace MergeTreeSetting
@@ -2495,12 +2496,14 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
-        auto get_indexes_size = [&](const MergeTreeData & data_) -> size_t
+        auto get_indexes_size = [&]() -> size_t
         {
             size_t res = 0;
-            for (const auto & [_, size] : data_.getSecondaryIndexSizes())
-                res += size.data_uncompressed;
-            res += data_.getPrimaryIndexSize().data_uncompressed;
+            for (const auto & part : res_parts)
+            {
+                res += part.data_part->getTotalSecondaryIndicesSize().data_uncompressed;
+                res += part.data_part->getIndexSizeFromFile().data_uncompressed;
+            }
             return res;
         };
 
@@ -2508,11 +2511,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         bool final_second_pass = indexes->use_skip_indexes_if_final_exact_mode;
         UInt64 distributed_index_analysis_min_parts_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_parts_to_activate];
         UInt64 distributed_index_analysis_min_indexes_bytes_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_indexes_bytes_to_activate];
+        bool is_initial_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+
         bool distributed_index_analysis_enabled = !final_second_pass
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)
-            && (!distributed_index_analysis_min_indexes_bytes_to_activate || get_indexes_size(data) >= distributed_index_analysis_min_indexes_bytes_to_activate);
+            && (!distributed_index_analysis_min_indexes_bytes_to_activate || get_indexes_size() >= distributed_index_analysis_min_indexes_bytes_to_activate)
+            /// When `distributed_index_analysis_only_on_coordinator` is set, restrict distributed index analysis to the coordinator (initial query).
+            /// Otherwise, subqueries in the predicate (e.g. `IN (SELECT ...)`) on follower replicas would each independently trigger distributed index analysis, causing O(N^2) queries.
+            && (is_initial_query || !settings[Setting::distributed_index_analysis_only_on_coordinator]);
 
         if (!distributed_index_analysis_enabled)
         {
@@ -2544,6 +2552,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 vector_search_parameters,
                 local_index_analysis_callback,
                 context_);
+
             IndexAnalysisPartsRanges analyzed_parts_ranges;
 
             /// Index stats
@@ -2808,8 +2817,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     updateSortDescription();
 
     /// Set correct read_type
-    /// For some reason for projection it breaks aggregation in order, so skip it
-    if (analyzed_result_ptr && !analyzed_result_ptr->readFromProjection())
+    if (analyzed_result_ptr)
     {
         analyzed_result_ptr->read_type = (query_info.input_order_info->direction > 0)
             ? ReadType::InOrder

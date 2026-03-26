@@ -395,6 +395,19 @@ IMPLEMENT_SETTING_ENUM(
      {"v3", MergeTreeObjectSerializationVersion::V3}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreeMapSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeMapSerializationVersion::BASIC},
+     {"with_buckets", MergeTreeMapSerializationVersion::WITH_BUCKETS}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeMapBucketsStrategy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"constant", MergeTreeMapBucketsStrategy::CONSTANT},
+     {"sqrt", MergeTreeMapBucketsStrategy::SQRT},
+     {"linear", MergeTreeMapBucketsStrategy::LINEAR}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSharedDataSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
