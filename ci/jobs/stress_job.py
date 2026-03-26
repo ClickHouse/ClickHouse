@@ -212,6 +212,13 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         )
         is_oom = is_oom or server_log_oom
 
+    # Generate fatal.log from all server logs
+    fatal_log = result_path / "fatal.log"
+    if server_log_path.exists():
+        Shell.check(
+            f"rg --text '\\s<Fatal>\\s' {server_log_path}/clickhouse-server*.log > {fatal_log}"
+        )
+
     test_results, additional_logs = process_results(result_path, server_log_path)
 
     server_died = False

@@ -204,6 +204,7 @@ def generate_buzz_config(workspace_path: Path, log_path: str | None = None):
         "allow_health_check": False,  # I have to test this first
         "enable_compatibility_settings": random.randint(1, 4) == 1,
         "enable_memory_settings": random.randint(1, 4) == 1,
+        "enable_sync_settings": random.randint(1, 4) == 1,
         "enable_backups": random.randint(1, 4) == 1,
         "enable_renames": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,

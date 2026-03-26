@@ -21,6 +21,7 @@ namespace DB
 {
 
 class KeeperDispatcher;
+enum SnapshotVersion : uint8_t;
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
@@ -67,6 +68,7 @@ public:
 
     const std::unordered_map<std::string, std::string> & getSystemNodesWithData() const;
     const KeeperFeatureFlags & getFeatureFlags() const;
+    SnapshotVersion getWriteSnapshotVersion() const;
 
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;
 

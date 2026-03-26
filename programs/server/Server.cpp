@@ -130,6 +130,7 @@
 #include <unordered_set>
 
 #include <Common/Jemalloc.h>
+#include <Common/JemallocCacheArena.h>
 
 #include "config.h"
 #include <Common/config_version.h>
@@ -168,6 +169,9 @@
 
 
 /// A minimal file used when the server is run without installation
+///
+/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to
+/// make a scratch build.
 constexpr unsigned char resource_embedded_xml[] =
 {
 #embed "embedded.xml"
@@ -353,6 +357,7 @@ namespace ServerSetting
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
+    extern const ServerSettingsBool use_separate_cache_arena;
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
@@ -1938,6 +1943,8 @@ try
     global_context->updateInterserverCredentials(config());
 
     /// Set up caches.
+
+    JemallocCacheArena::setEnabled(server_settings[ServerSetting::use_separate_cache_arena]);
 
     const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 

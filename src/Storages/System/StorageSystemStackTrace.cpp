@@ -73,12 +73,6 @@ namespace
 // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
 std::atomic<pid_t> server_pid;
 
-#ifdef OS_LINUX
-const int STACK_TRACE_SERVICE_SIGNAL = SIGRTMIN;
-#else
-const int STACK_TRACE_SERVICE_SIGNAL = SIGUSR1;
-#endif
-
 std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
 std::atomic<int> data_ready_num = 0;
 std::atomic<bool> signal_latch = false;   /// Only need for thread sanitizer.
@@ -309,7 +303,7 @@ bool isSignalBlocked(UInt64 tid, int signal)
 
         UInt64 sig_blk;
         if (parseHexNumber(line, sig_blk))
-            return sig_blk & signal;
+            return sig_blk & (1ULL << (signal - 1));
     }
     catch (const Exception & e)
     {
