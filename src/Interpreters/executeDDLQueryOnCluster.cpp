@@ -129,6 +129,12 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
             hosts.emplace_back(*address);
     }
 
+    if (hosts.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "No hosts to execute distributed DDL query: all replicas in cluster '{}' have skip_distributed_ddl set",
+            cluster->getName());
+
     /// The current database in a distributed query need to be replaced with either
     /// the local current database or a shard's default database.
     AccessRightsElements access_to_check = params.access_to_check;

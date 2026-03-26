@@ -1573,9 +1573,10 @@ NameSet DDLWorker::getAllHostIDsFromClusters() const
     for (const auto & it : context->getClusters())
     {
         auto cluster = it.second;
-        for (const auto & host_ids : cluster->getHostIDs())
-            for (const auto & host_id : host_ids)
-                host_id_set.emplace(host_id);
+        for (const auto & shard_addresses : cluster->getShardsAddresses())
+            for (const auto & address : shard_addresses)
+                if (!address.skip_distributed_ddl)
+                    host_id_set.emplace(address.toString());
     }
     return host_id_set;
 }

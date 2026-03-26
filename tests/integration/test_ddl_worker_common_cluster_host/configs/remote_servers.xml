@@ -1,0 +1,30 @@
+<clickhouse>
+    <remote_servers>
+        <cluster1>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster1>
+        <!-- cluster2 uses the hostname "node_common", which each node resolves to
+             its own IP address (set up in the test fixture via append_hosts).
+             Without skip_distributed_ddl both nodes would claim and execute the
+             same DDL task. With skip_distributed_ddl=1 the replica is excluded
+             from ON CLUSTER DDL dispatch entirely. -->
+        <cluster2>
+            <shard>
+                <replica>
+                    <host>node_common</host>
+                    <port>9000</port>
+                    <skip_distributed_ddl>1</skip_distributed_ddl>
+                </replica>
+            </shard>
+        </cluster2>
+    </remote_servers>
+</clickhouse>
