@@ -129,8 +129,26 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         && skip_index_type_eligible
         && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
 
+    /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
+    /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
+    /// logical error when the prewhere filter is executed. Skip the optimization for them.
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
-        && !read_from_mergetree_step->getPrewhereInfo();
+        && !read_from_mergetree_step->getPrewhereInfo()
+        && !isDynamic(sort_column.type)
+        && !isVariant(sort_column.type);
+
+    /// When read-in-order optimization is enabled and the sort column is a prefix
+    /// of the storage's sorting key, the engine will read data in sorted order.
+    /// TopK dynamic filtering is counterproductive in this case: once the threshold
+    /// is established, the prewhere rejects all subsequent rows (they are beyond
+    /// the threshold in sorted order), preventing the LIMIT from triggering early
+    /// pipeline cancellation, and causing a full table scan instead.
+    if (use_dynamic_filtering && settings.read_in_order)
+    {
+        const auto & sorting_key = read_from_mergetree_step->getStorageMetadata()->getSortingKey();
+        if (!sorting_key.column_names.empty() && sorting_key.column_names[0] == sort_column_name)
+            use_dynamic_filtering = false;
+    }
 
     /// The threshold tracker is needed for dynamic mark skipping during reads
     /// (use_skip_indexes_on_data_read) or for the prewhere dynamic filter.

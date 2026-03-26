@@ -57,6 +57,7 @@ SYSTEM STOP MERGES row_limits_fail_fast;
 
 SET max_rows_to_read = 1000;
 SET read_overflow_mode = 'throw';
+SET use_primary_key = 1; -- range pruning is essential to the row-limit logic below
 
 -- Should fail fast during PK filtering - query selects more rows than limit
 SELECT count() FROM row_limits_fail_fast WHERE key < 500000; -- { serverError TOO_MANY_ROWS }

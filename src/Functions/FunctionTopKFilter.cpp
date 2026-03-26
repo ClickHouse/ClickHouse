@@ -81,7 +81,7 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
-            if (collator || data_type->isNullable())
+            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);

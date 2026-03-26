@@ -77,13 +77,29 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         ostr << s.nl_or_ws;
     }
 
-    ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
+    /// When the table has a SAMPLE clause and the query has a standalone OFFSET
+    /// (without LIMIT), use FROM-first syntax so that SELECT separates SAMPLE
+    /// from OFFSET.  Otherwise, the formatted "... SAMPLE r OFFSET n ..." is
+    /// ambiguous: the parser would consume OFFSET as the SAMPLE offset instead
+    /// of a query-level OFFSET.
+    bool format_from_first = sampleSize() && limitOffset() && !limitLength();
+
+    if (format_from_first && tables())
+    {
+        ostr << indent_str << "FROM";
+        tables()->format(ostr, s, state, frame);
+        ostr << s.nl_or_ws << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
+    }
+    else
+    {
+        ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
+    }
 
     s.one_line
         ? select()->format(ostr, s, state, frame)
         : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
-    if (tables())
+    if (!format_from_first && tables())
     {
         ostr << s.nl_or_ws << indent_str << "FROM";
         tables()->format(ostr, s, state, frame);
