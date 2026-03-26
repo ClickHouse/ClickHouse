@@ -24,7 +24,8 @@ FROM (
     LEFT SEMI JOIN rhs
     ON lhs.a = rhs.a
 )
-WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%');
+WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%')
+SETTINGS enable_join_runtime_filters = 1; -- affects hash join plan depth
 
 -- no swapping for PARTIAL_MERGE join
 SELECT *
@@ -84,7 +85,8 @@ FROM (
     RIGHT SEMI JOIN rhs
     ON lhs.a = rhs.a
 )
-WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%');
+WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%')
+SETTINGS enable_join_runtime_filters = 1; -- affects hash join plan depth
 
 SELECT *
 FROM lhs

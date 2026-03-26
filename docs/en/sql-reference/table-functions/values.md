@@ -191,6 +191,44 @@ FROM VALUES(
     └──────────┘
 ```
 
+## SQL Standard VALUES Clause {#sql-standard-values-clause}
+
+From version 26.3, ClickHouse also supports the SQL standard `VALUES` clause as a table expression
+in `FROM`, as used in PostgreSQL, MySQL, DuckDB, and SQL Server. This syntax is
+rewritten internally to use the `values` table function described above.
+
+```sql title="Query"
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+```response title="Response"
+┌─id─┬─val─┐
+│  1 │ a   │
+│  2 │ b   │
+│  3 │ c   │
+└────┴─────┘
+```
+
+It can be used in CTEs:
+
+```sql title="Query"
+WITH cte AS (SELECT * FROM (VALUES (1, 'one'), (2, 'two')) AS t(id, name))
+SELECT * FROM cte;
+```
+
+And in JOINs:
+
+```sql title="Query"
+SELECT t1.id, t1.val, t2.val2
+FROM (VALUES (1, 'a'), (2, 'b')) AS t1(id, val)
+JOIN (VALUES (1, 'x'), (2, 'y')) AS t2(id, val2) ON t1.id = t2.id;
+```
+
+:::note
+Column aliases after `AS t(col1, col2, ...)` follow the standard SQL syntax for
+naming columns of derived tables. If omitted, columns are named `c1`, `c2`, etc.
+:::
+
 ## See also {#see-also}
 
 - [Values format](/interfaces/formats/Values)

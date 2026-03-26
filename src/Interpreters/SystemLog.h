@@ -187,6 +187,7 @@ class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, 
 public:
     using Self = SystemLog;
     using Base = SystemLogBase<LogElement>;
+    using Element = LogElement;
 
     /** Parameter: table name where to write log.
       * If table is not exists, then it get created with specified engine.
@@ -213,6 +214,8 @@ public:
     void prepareTable() override;
 
     const StorageID & getTableID() const { return table_id; }
+
+    ISystemLogFlushPolicy & getFlushPolicy() { return *flush_policy; }
 
     void setManualFlushTargetIndex(ISystemLog::Index target_index) override
     {
