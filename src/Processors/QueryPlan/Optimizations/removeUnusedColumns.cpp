@@ -33,9 +33,9 @@ bool addDiscardingExpressionStepIfNeeded(
 
     /// Check whether there are any columns to discard.
     bool has_columns_to_discard = false;
-    for (size_t new_pos = 0; new_pos < kept_output_positions.size(); ++new_pos)
+    for (size_t kept_output_position : kept_output_positions)
     {
-        if (!required_set.contains(kept_output_positions[new_pos]))
+        if (!required_set.contains(kept_output_position))
         {
             has_columns_to_discard = true;
             break;
