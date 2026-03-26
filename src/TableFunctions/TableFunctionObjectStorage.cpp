@@ -276,27 +276,27 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             storage = std::make_shared<StorageDataLakeCluster<typename Definition::MetadataType>>(
                 parallel_replicas_cluster_name,
                 configuration,
+                table_options,
                 getObjectStorage(context, !is_insert_query),
                 StorageID(getDatabaseName(), table_name),
                 columns,
                 ConstraintsDescription{},
                 partition_by,
                 context,
-                std::dynamic_pointer_cast<DataLakeStorageSettings>(settings),
-                /* is_table_function */true);
+                std::dynamic_pointer_cast<DataLakeStorageSettings>(settings));
         }
         else
         {
             storage = std::make_shared<StorageObjectStorageCluster>(
                 parallel_replicas_cluster_name,
                 configuration,
+                table_options,
                 getObjectStorage(context, !is_insert_query),
                 StorageID(getDatabaseName(), table_name),
                 columns,
                 ConstraintsDescription{},
                 partition_by,
-                context,
-                /* is_table_function */true);
+                context);
         }
 
         storage->startup();
@@ -325,6 +325,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     {
         storage = std::make_shared<StorageDataLake<typename Definition::MetadataType>>(
             configuration,
+            table_options,
             current_object_storage,
             context,
             StorageID(getDatabaseName(), table_name),
@@ -337,8 +338,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             /* catalog*/ nullptr,
             /* distributed_processing */ can_use_distributed_iterator,
             /* partition_by */ partition_by,
-            /* order_by */ nullptr,
-            /* is_table_function */true);
+            /* order_by */ nullptr);
     }
     else
     {

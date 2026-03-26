@@ -42,6 +42,7 @@ void StorageDataLakeCluster<IcebergMetadata>::ensureMetadataInitialized(ContextP
 StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
     const String & cluster_name_,
     ObjectStorageConnectionConfigurationPtr configuration_,
+    StorageObjectStorageTableOptions table_options_,
     ObjectStoragePtr object_storage_,
     const StorageID & table_id_,
     const ColumnsDescription & /*columns_in_table_or_function_definition*/,
@@ -54,6 +55,7 @@ StorageDataLakeCluster<IcebergMetadata>::StorageDataLakeCluster(
           table_id_,
           getLogger(fmt::format("{}({})", String(IcebergMetadata::name) + configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
+    , table_options(std::move(table_options_))
     , object_storage(object_storage_)
     , datalake_settings(std::move(datalake_settings_))
 {

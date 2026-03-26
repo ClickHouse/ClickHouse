@@ -58,6 +58,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
         {
             storage = std::make_shared<StorageDataLake<typename Definition::MetadataType>>(
                 configuration,
+                Base::table_options,
                 object_storage,
                 context,
                 StorageID(Base::getDatabaseName(), table_name),
@@ -67,12 +68,12 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
                 /* format_settings */ std::nullopt, /// No format_settings
                 /* mode */ LoadingStrictnessLevel::CREATE,
                 /* datalake_settings */ std::dynamic_pointer_cast<DataLakeStorageSettings>(Base::settings),
-                /* catalog*/nullptr,
+                /* catalog */ nullptr,
                 /* distributed_processing */ can_use_distributed_iterator,
-                /* partition_by_ */Base::partition_by,
-                /* order_by_ */nullptr,
-                /* is_table_function */true,
-                /* lazy_init */ true);
+                /* partition_by_ */ Base::partition_by,
+                /* order_by_ */ nullptr,
+                /* is_table_function */ true,
+                /* request_skipping_initialization */ true);
         }
         else
         {
@@ -87,9 +88,9 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
                 /* format_settings */ std::nullopt, /// No format_settings
                 /* mode */ LoadingStrictnessLevel::CREATE,
                 /* distributed_processing */ can_use_distributed_iterator,
-                /* partition_by_ */Base::partition_by,
-                /* order_by_ */nullptr,
-                /* is_table_function */true,
+                /* partition_by_ */ Base::partition_by,
+                /* order_by_ */ nullptr,
+                /* is_table_function */ true,
                 /* lazy_init */ true);
         }
     }
@@ -100,6 +101,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             storage = std::make_shared<StorageDataLakeCluster<typename Definition::MetadataType>>(
                 ITableFunctionCluster<Base>::cluster_name,
                 configuration,
+                Base::table_options,
                 object_storage,
                 StorageID(Base::getDatabaseName(), table_name),
                 columns,
@@ -113,13 +115,13 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             storage = std::make_shared<StorageObjectStorageCluster>(
                 ITableFunctionCluster<Base>::cluster_name,
                 configuration,
+                Base::table_options,
                 object_storage,
                 StorageID(Base::getDatabaseName(), table_name),
                 columns,
                 ConstraintsDescription{},
                 Base::partition_by,
-                context,
-                /* is_table_function */true);
+                context);
         }
     }
 

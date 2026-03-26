@@ -557,6 +557,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 storage_cluster = std::make_shared<StorageDataLakeCluster<IcebergMetadata>>(
                     parallel_replicas_cluster_name,
                     configuration,
+                    table_options,
                     object_storage,
                     storage_id,
                     columns,
@@ -569,6 +570,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 storage_cluster = std::make_shared<StorageDataLakeCluster<PaimonMetadata>>(
                     parallel_replicas_cluster_name,
                     configuration,
+                    table_options,
                     object_storage,
                     storage_id,
                     columns,
@@ -583,6 +585,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 storage_cluster = std::make_shared<StorageDataLakeCluster<DeltaLakeMetadata>>(
                     parallel_replicas_cluster_name,
                     configuration,
+                    table_options,
                     object_storage,
                     storage_id,
                     columns,
@@ -630,6 +633,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         case DataLakeType::Paimon:
             return std::make_shared<StorageDataLake<PaimonMetadata>>(
                 configuration,
+                table_options,
                 object_storage,
                 context_copy,
                 table_id,
@@ -650,6 +654,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         case DataLakeType::DeltaLake:
             return std::make_shared<StorageDataLake<DeltaLakeMetadata>>(
                 configuration,
+                table_options,
                 object_storage,
                 context_copy,
                 table_id,
