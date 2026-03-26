@@ -122,6 +122,16 @@ def main():
         if results[-1].status != Result.Status.SUCCESS:
             ok = False
 
+    step(
+        name="Fetch Full Repository",
+        command=[
+            "git fetch --unshallow --no-recurse-submodules origin ||:",
+            "git fetch --no-recurse-submodules origin",
+            "git fetch --tags --no-recurse-submodules origin",
+        ],
+        workdir=REPO_PATH,
+    )
+
     if args.release_type == "patch" and not args.only_docker:
         arch = "amd64" if Shell.get_output("uname -m") == "x86_64" else "arm64"
         geesefs_bin_dir = os.path.expanduser("~/.local/bin")
@@ -251,7 +261,6 @@ def main():
                 "./utils/list-versions/update-docker-version.sh",
                 "echo 'Generate ChangeLog'",
                 "docker pull clickhouse/style-test:latest",
-                f"git remote set-url origin https://x-access-token:{_GH_TOKEN_SECRET.get_value()}@github.com/ClickHouse/ClickHouse.git",
                 f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
                 f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
                 f" clickhouse/style-test:latest"
@@ -259,7 +268,6 @@ def main():
                 f" --gh-user-or-token {_GH_TOKEN_SECRET.get_value()}"
                 f" --jobs=5"
                 f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
-                "git remote set-url origin git@github.com:ClickHouse/ClickHouse.git",
                 f"git add ./docs/changelogs/{release_tag}.md",
                 "echo 'Generate Security'",
                 "python3 ./utils/security-generator/generate_security.py"

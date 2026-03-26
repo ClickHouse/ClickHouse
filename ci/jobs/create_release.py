@@ -462,16 +462,6 @@ class ReleaseInfo:
                 )
             with checkout(commit_ref):
                 commit_sha = Shell.get_output_or_raise(f"git rev-list -n1 {commit_ref}")
-                # Read version from CMake first to know which tags to fetch
-                version_for_tags = get_version_from_repo()
-                tag_prefix = f"v{version_for_tags.major}.{version_for_tags.minor}."
-                # Fetch tags matching this release branch so Git() can resolve latest_tag
-                Shell.check(
-                    f"{GIT_PREFIX} fetch --no-recurse-submodules origin"
-                    f" '+refs/tags/{tag_prefix}*:refs/tags/{tag_prefix}*'",
-                    strict=True,
-                    verbose=True,
-                )
                 git = Git()
                 version = get_version_from_repo(git=git)
                 release_branch = f"{version.major}.{version.minor}"
@@ -490,27 +480,12 @@ class ReleaseInfo:
         if release_type == "patch":
             with checkout(commit_ref):
                 commit_sha = Shell.get_output_or_raise(f"git rev-list -n1 {commit_ref}")
-                # Read version from CMake first to know which tags to fetch
-                version_for_tags = get_version_from_repo()
-                tag_prefix = f"v{version_for_tags.major}.{version_for_tags.minor}."
-                # Fetch tags matching this release branch so Git() can resolve latest_tag
-                Shell.check(
-                    f"{GIT_PREFIX} fetch --no-recurse-submodules origin"
-                    f" '+refs/tags/{tag_prefix}*:refs/tags/{tag_prefix}*'",
-                    strict=True,
-                    verbose=True,
-                )
                 git = Git()
                 version = get_version_from_repo(git=git)
                 codename = version.get_stable_release_type()
                 version.with_description(codename)
                 release_branch = f"{version.major}.{version.minor}"
                 release_tag = version.describe
-            Shell.check(
-                f"{GIT_PREFIX} fetch --no-tags origin {release_branch}",
-                strict=True,
-                verbose=True,
-            )
             Shell.check(
                 f"git merge-base --is-ancestor {commit_ref} origin/{release_branch}",
                 strict=True,
@@ -536,12 +511,6 @@ class ReleaseInfo:
 
             assert previous_release_tag, (
                 f"BUG: previous_release_tag is empty, latest_tag=[{git.latest_tag}]"
-            )
-            # Fetch only the specific tag needed, not all tags from the repo
-            Shell.check(
-                f"{GIT_PREFIX} fetch --no-tags origin tag {previous_release_tag}",
-                strict=True,
-                verbose=True,
             )
             previous_release_sha = Shell.get_output_or_raise(
                 f"git rev-list -n1 {previous_release_tag}"
@@ -989,19 +958,7 @@ def checkout(ref: str) -> Iterator[None]:
     orig_ref = Shell.get_output_or_raise(f"{GIT_PREFIX} symbolic-ref --short HEAD")
     rollback_cmd = f"{GIT_PREFIX} checkout {orig_ref}"
     assert orig_ref
-    Shell.check(
-        f"git rev-parse --is-shallow-repository | grep -q true"
-        f" && {GIT_PREFIX} fetch --unshallow --prune --no-tags --no-recurse-submodules"
-        f" --filter=tree:0 origin {orig_ref} ||:",
-        verbose=True,
-    )
     if ref != orig_ref:
-        Shell.check(
-            f"{GIT_PREFIX} fetch --no-recurse-submodules"
-            f" --filter=tree:0 origin {ref}",
-            strict=True,
-            verbose=True,
-        )
         Shell.check(f"{GIT_PREFIX} checkout {ref}", strict=True, verbose=True)
     try:
         yield
