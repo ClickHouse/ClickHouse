@@ -5,6 +5,7 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionIndexBasic.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionIndexCommitOrder.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexS2.h>
 
 namespace DB
 {
@@ -44,6 +45,7 @@ ProjectionIndexFactory::ProjectionIndexFactory()
 {
     registerProjectionIndex<ProjectionIndexBasic>();
     registerProjectionIndex<ProjectionIndexCommitOrder>();
+    registerProjectionIndex<ProjectionIndexS2>();
 }
 
 ProjectionIndexFactory & ProjectionIndexFactory::instance()

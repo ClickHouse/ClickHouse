@@ -11,8 +11,10 @@
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexS2.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
+#include "config.h"
 
 namespace DB
 {
@@ -31,6 +33,7 @@ namespace Setting
     extern const SettingsBool force_aggregation_in_order;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
     extern const SettingsUInt64 min_table_rows_to_use_projection_index;
+    extern const SettingsBool enable_s2_index_pruning;
 }
 
 namespace ErrorCodes
@@ -395,6 +398,26 @@ void filterPartsAndCollectProjectionCandidates(
 
     auto projection_marks_to_read = projection_parts.getMarksCountAllParts();
 
+    SelectQueryInfo projection_index_query_info = projection_query_info;
+    const ActionsDAG::Node * projection_index_filter_node = filter_node;
+
+    /// S2 projection index: rewrite polygonsIntersectSpherical(column, const_geom)
+    /// into s2CellsIntersect(cell_id, ancestor_cell) so that the rewritten filter
+    /// can be evaluated against the projection's cell_id primary key for mark pruning.
+#if USE_S2_GEOMETRY
+    if (context->getSettingsRef()[Setting::enable_s2_index_pruning])
+    {
+        if (const auto * s2_index = typeid_cast<const ProjectionIndexS2 *>(projection.index.get()))
+        {
+            if (auto rewritten_filter = s2_index->tryRewriteFilterForQuery(filter_node, context))
+            {
+                projection_index_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(std::move(*rewritten_filter));
+                projection_index_filter_node = projection_index_query_info.filter_actions_dag->getOutputs().front();
+            }
+        }
+    }
+#endif
+
     /// Always request `_parent_part_offset` for projection analysis, even if the column does not exist. This does not
     /// affect the analysis itself. Later code will not use it as an index if the column is missing.
     static Names required_column_names = {"_parent_part_offset"};
@@ -403,7 +426,7 @@ void filterPartsAndCollectProjectionCandidates(
         empty_mutations_snapshot,
         required_column_names,
         projection.metadata,
-        projection_query_info,
+        projection_index_query_info,
         context,
         context->getSettingsRef()[Setting::max_threads],
         nullptr);
@@ -430,35 +453,51 @@ void filterPartsAndCollectProjectionCandidates(
     /// Remove ranges whose data parts are fully filtered by projection.
     size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
 
+    /// Build a PREWHERE filter for row-level projection index filtering.
+    /// The filter DAG is restricted to only use columns available in the projection,
+    /// and _parent_part_offset is ensured in the output so that the MergeTree reader
+    /// can map filtered projection rows back to their corresponding source rows.
     if (in_use)
     {
-        NameSet available_inputs;
-        available_inputs.reserve(projection.sample_block.columns());
-        for (const auto & column : projection.sample_block)
-            available_inputs.emplace(column.name);
-
-        auto prewhere_info = std::make_shared<PrewhereInfo>();
-        prewhere_info->prewhere_actions
-            = projection_query_info.filter_actions_dag->restrictFilterDAGToInputs(filter_node, available_inputs);
-        prewhere_info->need_filter = true;
-        prewhere_info->prewhere_column_name = prewhere_info->prewhere_actions.getOutputs().front()->result_name;
-        prewhere_info->remove_prewhere_column = true;
-
-        const ActionsDAG::Node * parent_part_offset_node = nullptr;
-        for (const auto * input : prewhere_info->prewhere_actions.getInputs())
+        if (!projection_index_query_info.filter_actions_dag || !projection_index_filter_node)
         {
-            if (input->result_name == "_parent_part_offset")
-            {
-                parent_part_offset_node = input;
-                break;
-            }
+            /// No valid filter DAG — fall back to part-level filtering only.
+            in_use = false;
         }
+        else
+        {
+            /// Collect columns available in the projection (e.g., {cell_id, _parent_part_offset} for S2).
+            NameSet available_inputs;
+            available_inputs.reserve(projection.sample_block.columns());
+            for (const auto & column : projection.sample_block)
+                available_inputs.emplace(column.name);
 
-        if (parent_part_offset_node == nullptr)
-            parent_part_offset_node = &prewhere_info->prewhere_actions.addInput("_parent_part_offset", std::make_shared<DataTypeUInt64>());
+            /// Restrict the filter DAG to only reference projection columns.
+            auto prewhere_info = std::make_shared<PrewhereInfo>();
+            prewhere_info->prewhere_actions
+                = projection_index_query_info.filter_actions_dag->restrictFilterDAGToInputs(projection_index_filter_node, available_inputs);
+            prewhere_info->need_filter = true;
+            prewhere_info->prewhere_column_name = prewhere_info->prewhere_actions.getOutputs().front()->result_name;
+            prewhere_info->remove_prewhere_column = true;
 
-        prewhere_info->prewhere_actions.getOutputs().emplace_back(parent_part_offset_node);
-        desc.read_infos.emplace_back(&projection, std::move(prewhere_info));
+            /// Ensure _parent_part_offset is in the PREWHERE output — it maps projection rows
+            /// back to source rows in the original part.
+            const ActionsDAG::Node * parent_part_offset_node = nullptr;
+            for (const auto * input : prewhere_info->prewhere_actions.getInputs())
+            {
+                if (input->result_name == "_parent_part_offset")
+                {
+                    parent_part_offset_node = input;
+                    break;
+                }
+            }
+
+            if (parent_part_offset_node == nullptr)
+                parent_part_offset_node = &prewhere_info->prewhere_actions.addInput("_parent_part_offset", std::make_shared<DataTypeUInt64>());
+
+            prewhere_info->prewhere_actions.getOutputs().emplace_back(parent_part_offset_node);
+            desc.read_infos.emplace_back(&projection, std::move(prewhere_info));
+        }
     }
 
     if (in_use || filtered_parts > 0)
