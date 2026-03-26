@@ -481,7 +481,7 @@ struct ContextSharedPart : boost::noncopyable
     std::shared_ptr<IDisk> default_db_disk TSA_GUARDED_BY(mutex);
 
     /// Types enabled to audit
-    mutable std::unordered_set<Context::AuditLogTypes> audit_types TSA_GUARDED_BY(mutex);
+    mutable std::atomic<uint8_t> audit_types_bitmask{0};
 
     /// All temporary files that occur when processing the requests accounted here.
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
@@ -7741,26 +7741,13 @@ const ServerSettings & Context::getServerSettings() const
 
 bool Context::isEnabledAuditType(const Context::AuditLogTypes & audit_type) const
 {
-    std::unordered_set<Context::AuditLogTypes> enabled_audit_types;
-    {
-        std::lock_guard lock(shared->mutex);
-        enabled_audit_types = shared->audit_types;
-    }
-
-    return enabled_audit_types.contains(audit_type) || enabled_audit_types.contains(AuditLogTypes::ALL);
-}
-
-void Context::setAuditTypes(const std::unordered_set<Context::AuditLogTypes> & audit_types) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->audit_types.clear();
-    shared->audit_types = audit_types;
+    uint8_t current_mask = shared->audit_types_bitmask.load();
+    return (current_mask & static_cast<uint8_t>(audit_type)) != 0;
 }
 
 void Context::resetAuditTypes() const
 {
-    std::lock_guard lock(shared->mutex);
-    shared->audit_types.clear();
+    shared->audit_types_bitmask.store(0, std::memory_order_relaxed);
 }
 
 void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & config)
@@ -7774,11 +7761,11 @@ void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & c
 
     /// audit log types
     std::string auditlog_types = config.getString("logger.auditlog_types", "");
-    std::unordered_set<Context::AuditLogTypes> types_set;
+    uint8_t new_mask = 0;
 
     /// Default audit log type is DDL
     if (auditlog_types.empty())
-        types_set.emplace(Context::AuditLogTypes::DDL);
+        new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::DDL);
     else
     {
         std::string_view types_view = auditlog_types;
@@ -7803,17 +7790,17 @@ void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & c
             if (!item.empty())
             {
                 if (item == "USER")
-                    types_set.emplace(Context::AuditLogTypes::USER);
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::USER);
                 else if (item == "DDL")
-                    types_set.emplace(Context::AuditLogTypes::DDL);
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::DDL);
                 else if (item == "DML")
-                    types_set.emplace(Context::AuditLogTypes::DML);
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::DML);
                 else if (item == "DCL")
-                    types_set.emplace(Context::AuditLogTypes::DCL);
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::DCL);
                 else if (item == "MISC")
-                    types_set.emplace(Context::AuditLogTypes::MISC);
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::MISC);
                 else if (item == "ALL")
-                    types_set.emplace(Context::AuditLogTypes::ALL);
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::ALL);
                 else
                 {
                     throw Exception(ErrorCodes::UNEXPECTED_AUDIT_TYPE,
@@ -7828,8 +7815,8 @@ void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & c
         }
     }
 
-    LOG_DEBUG(shared->log, "auditlog_types={}, types_set's size={}", auditlog_types, types_set.size());
-    setAuditTypes(types_set);
+    shared->audit_types_bitmask.store(new_mask, std::memory_order_relaxed);
+    LOG_DEBUG(shared->log, "auditlog_types={}", auditlog_types);
 }
 
 uint64_t HTTPContext::getMaxHstsAge() const
