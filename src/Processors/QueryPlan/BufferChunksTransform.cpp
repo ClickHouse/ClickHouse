@@ -73,6 +73,8 @@ IProcessor::Status BufferChunksTransform::prepare()
             /// and it will be pushed first on the next prepare() call.
             if (!output.canPush())
             {
+                num_buffered_rows += chunk.getNumRows();
+                num_buffered_bytes += chunk.bytes();
                 chunks.push(std::move(chunk));
                 return Status::PortFull;
             }
