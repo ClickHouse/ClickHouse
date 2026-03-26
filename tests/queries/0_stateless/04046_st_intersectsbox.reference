@@ -1,0 +1,14 @@
+point inside box
+1
+point outside box
+0
+point on boundary
+1
+polygon overlapping box
+1
+polygon inside box
+1
+polygon outside box
+0
+multipolygon intersecting box
+1

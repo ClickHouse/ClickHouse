@@ -29,13 +29,16 @@
 #include <numeric>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <variant>
 
 #if USE_S2_GEOMETRY
 #include <s2/s2cell_id.h>
 #include <s2/s2cell_union.h>
+#include <s2/s2earth.h>
 #include <s2/s2latlng.h>
 #include <s2/s2latlng_rect.h>
+#include <s2/s2metrics.h>
 #include <s2/s2region_coverer.h>
 #endif
 
@@ -508,6 +511,41 @@ bool tryGetConstantField(const ActionsDAG::Node * node, Field & field, DataTypeP
     return true;
 }
 
+/// Try to extract a constant Float64 value from a DAG node.
+bool tryGetConstantFloat64(const ActionsDAG::Node * node, Float64 & result)
+{
+    Field field;
+    DataTypePtr type;
+    if (!tryGetConstantField(node, field, type))
+        return false;
+    try
+    {
+        result = applyVisitor(FieldVisitorConvertToNumber<Float64>(), field);
+        return std::isfinite(result);
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+/// Build a rectangular polygon from bounding box coordinates for S2 covering.
+std::optional<DecodedGeometry> buildBoxGeometry(Float64 xmin, Float64 ymin, Float64 xmax, Float64 ymax)
+{
+    SphericalPolygon polygon;
+    polygon.outer().emplace_back(xmin, ymin);
+    polygon.outer().emplace_back(xmax, ymin);
+    polygon.outer().emplace_back(xmax, ymax);
+    polygon.outer().emplace_back(xmin, ymax);
+    polygon.outer().emplace_back(xmin, ymin);
+    boost::geometry::correct(polygon);
+
+    DecodedGeometry geometry;
+    geometry.kind = DecodedGeometry::Kind::Polygon;
+    geometry.value = std::move(polygon);
+    return geometry;
+}
+
 /// Decode a geometry constant from a Field (used for the query's constant polygon argument).
 std::optional<DecodedGeometry> decodeGeometryFromField(const Field & field, const DataTypePtr & type)
 {
@@ -571,6 +609,39 @@ std::optional<UInt64> buildSingleAncestorCellId(const S2CellUnion & covering)
     }
 
     return std::nullopt;
+}
+
+/// Expand an ancestor cell to account for a distance buffer (in meters).
+/// The idea: find the S2 level whose cells are large enough to cover the
+/// buffer distance, then walk the ancestor cell up to that level.
+/// This ensures that any geometry within `distance_meters` of the query
+/// geometry will intersect with the expanded ancestor cell.
+std::optional<UInt64> expandAncestorByDistance(UInt64 ancestor_id, double distance_meters)
+{
+    if (distance_meters <= 0)
+        return ancestor_id;
+
+    double distance_radians = S2Earth::MetersToRadians(distance_meters);
+
+    /// Find the level where the maximum cell diagonal >= distance_radians.
+    /// kMaxDiag.GetLevelForMaxValue returns the minimum level such that
+    /// all cells at that level have diagonal <= value. We want the level
+    /// where diagonal >= distance, so we go one level coarser.
+    int buffer_level = S2::kMaxDiag.GetLevelForMaxValue(distance_radians);
+    if (buffer_level > 0)
+        --buffer_level;
+
+    S2CellId cell(ancestor_id);
+    if (!cell.is_valid())
+        return std::nullopt;
+
+    /// Walk up to ensure the cell covers the buffer distance.
+    /// The ancestor cell's level should be at most buffer_level.
+    int target_level = std::min(cell.level(), buffer_level);
+    if (target_level < 0)
+        target_level = 0;
+
+    return cell.parent(target_level).id();
 }
 
 #endif
@@ -661,10 +732,13 @@ void ProjectionIndexS2::fillProjectionDescription(
 
 /// Attempt to rewrite a query filter for projection-based index pruning.
 ///
-/// Scans the filter's conjunction atoms for:
-///   polygonsIntersectSpherical(source_column, const_polygon)
-/// If found, builds an S2 covering for const_polygon, compresses it into a
-/// single ancestor cell, and produces a new ActionsDAG:
+/// Scans the filter's conjunction atoms for supported spatial predicates:
+///   1. Two-argument form: f(source_column, const_polygon) where f is one of
+///      polygonsIntersectSpherical, polygonsWithinSpherical, ST_Intersects, etc.
+///   2. Box form: ST_IntersectsBox(source_column, xmin, ymin, xmax, ymax)
+///
+/// If found, builds an S2 covering for the constant geometry (or box), compresses
+/// it into a single ancestor cell, and produces a rewritten ActionsDAG:
 ///   s2CellsIntersect(cell_id, <ancestor_cell_id>)
 ///
 /// This rewritten DAG is then used by the generic projection index framework
@@ -681,6 +755,21 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
     if (!filter_node)
         return std::nullopt;
 
+    /// All spherical spatial predicates can be pruned with S2 covering:
+    /// if the predicate is true, the geometries must have spatial overlap,
+    /// so S2 cell intersection is a necessary condition (no false negatives).
+    static const std::unordered_set<std::string> supported_two_arg_functions = {
+        "polygonsIntersectSpherical",
+        "polygonsWithinSpherical",
+        "ST_Contains",
+        "ST_CoveredBy",
+        "ST_Covers",
+        "ST_Equals",
+        "ST_Intersects",
+        "ST_Touches",
+        "ST_Within",
+    };
+
     const auto atoms = ActionsDAG::extractConjunctionAtoms(filter_node);
     for (const auto * atom : atoms)
     {
@@ -688,33 +777,78 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
         if (!fn || fn->type != ActionsDAG::ActionType::FUNCTION)
             continue;
 
-        /// Both polygonsIntersectSpherical and polygonsWithinSpherical can be pruned:
-        /// if A is within B then A necessarily intersects B, so the same S2 covering
-        /// strategy is sound for both (no false negatives).
         const auto & func_name = fn->function_base->getName();
-        if (func_name != "polygonsIntersectSpherical" && func_name != "polygonsWithinSpherical")
-            continue;
+        std::optional<DecodedGeometry> geometry;
+        double distance_buffer_meters = 0;
 
-        if (fn->children.size() != 2)
-            continue;
+        /// Path 1: Two-argument spatial predicates — f(source_column, const_geometry)
+        if (supported_two_arg_functions.contains(func_name) && fn->children.size() == 2)
+        {
+            const ActionsDAG::Node * geometry_const = nullptr;
+            if (isSourceColumnNode(fn->children[0], params.source_column))
+                geometry_const = fn->children[1];
+            else if (isSourceColumnNode(fn->children[1], params.source_column))
+                geometry_const = fn->children[0];
+            else
+                continue;
 
-        const ActionsDAG::Node * geometry_const = nullptr;
-        if (isSourceColumnNode(fn->children[0], params.source_column))
-            geometry_const = fn->children[1];
-        else if (isSourceColumnNode(fn->children[1], params.source_column))
-            geometry_const = fn->children[0];
+            Field geometry_field;
+            DataTypePtr geometry_type;
+            if (!tryGetConstantField(geometry_const, geometry_field, geometry_type))
+                continue;
+
+            geometry = decodeGeometryFromField(geometry_field, geometry_type);
+        }
+        /// Path 2: ST_IntersectsBox(source_column, xmin, ymin, xmax, ymax)
+        else if (func_name == "ST_IntersectsBox" && fn->children.size() == 5)
+        {
+            if (!isSourceColumnNode(fn->children[0], params.source_column))
+                continue;
+
+            Float64 xmin, ymin, xmax, ymax;
+            if (!tryGetConstantFloat64(fn->children[1], xmin)
+                || !tryGetConstantFloat64(fn->children[2], ymin)
+                || !tryGetConstantFloat64(fn->children[3], xmax)
+                || !tryGetConstantFloat64(fn->children[4], ymax))
+                continue;
+
+            geometry = buildBoxGeometry(xmin, ymin, xmax, ymax);
+        }
+        /// Path 3: ST_DWithin(source_column, const_geometry, distance_meters)
+        ///          or ST_DWithin(const_geometry, source_column, distance_meters)
+        /// Build an S2 covering for const_geometry, then expand the ancestor cell
+        /// to cover the distance buffer.
+        else if (func_name == "ST_DWithin" && fn->children.size() == 3)
+        {
+            const ActionsDAG::Node * geometry_const = nullptr;
+            if (isSourceColumnNode(fn->children[0], params.source_column))
+                geometry_const = fn->children[1];
+            else if (isSourceColumnNode(fn->children[1], params.source_column))
+                geometry_const = fn->children[0];
+            else
+                continue;
+
+            Float64 dist;
+            if (!tryGetConstantFloat64(fn->children[2], dist) || dist < 0)
+                continue;
+
+            Field geometry_field;
+            DataTypePtr geometry_type;
+            if (!tryGetConstantField(geometry_const, geometry_field, geometry_type))
+                continue;
+
+            geometry = decodeGeometryFromField(geometry_field, geometry_type);
+            distance_buffer_meters = dist;
+        }
         else
+        {
             continue;
+        }
 
-        Field geometry_field;
-        DataTypePtr geometry_type;
-        if (!tryGetConstantField(geometry_const, geometry_field, geometry_type))
-            continue;
-
-        auto geometry = decodeGeometryFromField(geometry_field, geometry_type);
         if (!geometry)
             continue;
 
+        /// Build S2 covering and rewrite to s2CellsIntersect(cell_id, ancestor).
         S2CoveringBuildOptions covering_options;
         covering_options.max_cells = params.max_cells;
         covering_options.min_level = params.min_level;
@@ -727,6 +861,14 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
         auto ancestor = buildSingleAncestorCellId(*covering);
         if (!ancestor)
             continue;
+
+        /// For ST_DWithin, expand the ancestor cell to cover the distance buffer.
+        if (distance_buffer_meters > 0)
+        {
+            ancestor = expandAncestorByDistance(*ancestor, distance_buffer_meters);
+            if (!ancestor)
+                continue;
+        }
 
         ActionsDAG rewritten;
         auto uint64_type = std::make_shared<DataTypeUInt64>();

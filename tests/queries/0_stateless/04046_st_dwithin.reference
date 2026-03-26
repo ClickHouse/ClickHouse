@@ -1,0 +1,12 @@
+close points ~111m threshold 200m
+1
+far points ~111km threshold 1000m
+0
+same point threshold 0
+1
+point inside polygon threshold 0
+1
+point far from polygon threshold 1km
+0
+point far from polygon huge threshold
+1

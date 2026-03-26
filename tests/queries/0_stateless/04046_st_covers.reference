@@ -1,0 +1,16 @@
+interior point
+1
+boundary point - ST_Covers
+1
+boundary point - ST_Contains (shows difference)
+0
+exterior point
+0
+point covers same point
+1
+point cannot cover polygon
+0
+point in hole
+0
+big polygon covers small
+1

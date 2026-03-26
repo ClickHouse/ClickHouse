@@ -1,0 +1,18 @@
+point inside polygon
+1
+point outside polygon
+0
+point-point same
+1
+point-point different
+0
+point in multipolygon
+1
+polygon-polygon overlapping
+1
+polygon-polygon non-overlapping
+0
+point in ring
+1
+polygon with hole - point in hole
+0

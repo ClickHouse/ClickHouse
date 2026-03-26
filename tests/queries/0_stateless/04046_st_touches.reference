@@ -1,0 +1,16 @@
+point on polygon boundary vertex
+1
+point on polygon edge
+1
+point inside polygon
+0
+point outside polygon
+0
+two polygons sharing edge
+1
+two overlapping polygons
+0
+point-point same
+0
+disjoint polygons
+0
