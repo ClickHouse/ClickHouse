@@ -73,9 +73,8 @@ Example:
 
 ```sql
 SELECT count()
-FROM url('https://dumps.wikimedia.org/other/pageviews/2025/2025-01/pageviews*.gz', 'TSV')
-SETTINGS max_threads = 1; 
--- set max_threads to limit concurrent HTTP requests and avoid server rejecting them with 503 responses
+FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
+SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
 ```
 
 ## Virtual Columns {#virtual-columns}
