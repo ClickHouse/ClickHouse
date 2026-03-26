@@ -474,7 +474,7 @@ JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(
     }
 
     const auto number_of_left_inputs = input_headers.at(0)->columns();
-    if (!has_required_input_from_right && actions_dag.getInputs().size() >= number_of_left_inputs && !getInputHeaders().at(1)->empty())
+    if (!has_required_input_from_right && actions_dag.getInputs().size() > number_of_left_inputs && !getInputHeaders().at(1)->empty())
     {
         const auto * maybe_right_input = actions_dag.getInputs().at(number_of_left_inputs);
         if (JoinActionRef(maybe_right_input, expression_actions).fromRight())
