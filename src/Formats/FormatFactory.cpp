@@ -198,6 +198,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
+    format_settings.trim_fixed_string = settings[Setting::output_format_trim_fixed_string];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
     format_settings.parquet.row_group_bytes = settings[Setting::output_format_parquet_row_group_size_bytes];
     format_settings.parquet.output_version = settings[Setting::output_format_parquet_version];
@@ -645,8 +646,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             parallel_read = false;
             LOG_TRACE(
                 getLogger("FormatFactory"),
-                "Failed to setup ParallelReadBuffer because of an exception:\n{}.\n"
-                "Falling back to the single-threaded buffer",
+                "Failed to setup ParallelReadBuffer because of an exception: {}. Falling back to the single-threaded buffer",
                 e.displayText());
         }
     }
