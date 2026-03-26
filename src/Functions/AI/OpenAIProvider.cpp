@@ -12,6 +12,7 @@
 #include <Poco/URI.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/JSON/Array.h>
 
 #include <sstream>
 
@@ -151,6 +152,117 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     }
 
     return ai_response;
+}
+
+Poco::URI OpenAIProvider::deriveEmbeddingURI() const
+{
+    const String & path = uri.getPath();
+    if (path.find("/embeddings") != String::npos)
+        return uri;
+
+    Poco::URI embedding_uri(uri);
+    size_t pos = path.find("/chat/completions");
+    if (pos != String::npos)
+        embedding_uri.setPath(path.substr(0, pos) + "/embeddings");
+    else
+        embedding_uri.setPath("/v1/embeddings");
+    return embedding_uri;
+}
+
+AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts)
+{
+    Poco::URI embedding_uri = deriveEmbeddingURI();
+
+    Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
+    root->set("model", ai_embedding_request.model);
+
+    if (ai_embedding_request.inputs.size() == 1)
+    {
+        root->set("input", ai_embedding_request.inputs[0]);
+    }
+    else
+    {
+        Poco::JSON::Array::Ptr input_array = new Poco::JSON::Array;
+        for (const auto & text : ai_embedding_request.inputs)
+            input_array->add(text);
+        root->set("input", input_array);
+    }
+
+    if (ai_embedding_request.dimensions > 0)
+        root->set("dimensions", static_cast<Int64>(ai_embedding_request.dimensions));
+
+    std::ostringstream body_stream; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    root->stringify(body_stream);
+    String body = std::move(body_stream).str();
+
+    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, embedding_uri, timeouts, ProxyConfiguration{});
+
+    Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, embedding_uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
+    http_request.setContentType("application/json");
+    if (!api_key.empty())
+        http_request.set("Authorization", "Bearer " + api_key);
+    http_request.setContentLength(body.size());
+
+    auto & out_stream = session->sendRequest(http_request);
+    out_stream << body;
+
+    Poco::Net::HTTPResponse http_response;
+    auto & in_stream = session->receiveResponse(http_response);
+
+    String response_body;
+    {
+        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        ss << in_stream.rdbuf();
+        response_body = std::move(ss).str();
+    }
+
+    auto status = http_response.getStatus();
+    if (status != Poco::Net::HTTPResponse::HTTP_OK)
+    {
+        throw Exception(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "AI provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+    }
+
+    Poco::JSON::Parser parser;
+    auto json_result = parser.parse(response_body);
+    const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
+
+    AIEmbeddingResponse ai_embedding_response;
+    ai_embedding_response.embeddings.resize(ai_embedding_request.inputs.size());
+
+    auto data_arr = json_obj->getArray("data");
+    if (data_arr)
+    {
+        for (unsigned i = 0; i < data_arr->size(); ++i)
+        {
+            auto item = data_arr->getObject(i);
+            if (!item)
+                continue;
+
+            /// `index` tells us which input this embedding corresponds to. Defaults to `i` when missing (TEI).
+            UInt64 idx = item->optValue<UInt64>("index", i);
+            if (idx >= ai_embedding_response.embeddings.size())
+                continue;
+
+            auto embedding_arr = item->getArray("embedding");
+            if (embedding_arr)
+            {
+                ai_embedding_response.embeddings[idx].reserve(embedding_arr->size());
+                for (unsigned j = 0; j < embedding_arr->size(); ++j)
+                    ai_embedding_response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
+            }
+        }
+    }
+
+    if (json_obj->has("usage"))
+    {
+        auto usage = json_obj->getObject("usage");
+        if (usage)
+            ai_embedding_response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
+    }
+
+    return ai_embedding_response;
 }
 
 }
