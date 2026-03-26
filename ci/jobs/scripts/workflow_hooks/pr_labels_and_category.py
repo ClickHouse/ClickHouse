@@ -167,27 +167,41 @@ def get_category(pr_body: str) -> Tuple[str, str]:
     error = ""
     i = 0
     while i < len(lines):
-        if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
-            i += 1
-            if i >= len(lines):
-                break
-            # Can have one empty line between header and the category
-            # itself. Filter it out.
-            if not lines[i]:
+        m = re.match(
+            r"(?i)^[#>*_ ]*change\s*log\s*category(?:[^:]*:\s*(.*))?$", lines[i]
+        )
+        if m:
+            # Check if the category is on the same line (e.g. "Changelog category: Bug Fix")
+            inline = (m.group(1) or "").strip()
+            inline = re.sub(r"^[-*_\s]*", "", inline)
+            inline = re.sub(r"[-*_\s]*$", "", inline)
+            if inline:
+                new_category = inline
+                i += 1
+            else:
                 i += 1
                 if i >= len(lines):
                     break
-            category = re.sub(r"^[-*\s]*", "", lines[i])
-            i += 1
+                # Can have one empty line between header and the category
+                # itself. Filter it out.
+                if not lines[i]:
+                    i += 1
+                    if i >= len(lines):
+                        break
+                new_category = re.sub(r"^[-*\s]*", "", lines[i])
+                i += 1
 
-            # Should not have more than one category. Require empty line
-            # after the first found category.
-            if i >= len(lines):
+                # Should not have more than one category. Require empty line
+                # after the first found category.
+                if i < len(lines) and lines[i]:
+                    second_category = re.sub(r"^[-*\s]*", "", lines[i])
+                    error = f"More than one changelog category specified: '{new_category}', '{second_category}'"
+                    break
+
+            if category:
+                error = f"More than one changelog category specified: '{category}', '{new_category}'"
                 break
-            if lines[i]:
-                second_category = re.sub(r"^[-*\s]*", "", lines[i])
-                error = f"More than one changelog category specified: '{category}', '{second_category}'"
-                break
+            category = new_category
         else:
             i += 1
 
@@ -209,8 +223,9 @@ def check_labels(category, info):
     pr_labels_to_add = []
     pr_labels_to_remove = []
     labels = info.pr_labels
-    if category in CATEGORY_TO_LABEL and CATEGORY_TO_LABEL[category] not in labels:
-        pr_labels_to_add.append(CATEGORY_TO_LABEL[category])
+    _matched, label_for_category = find_category(category)
+    if label_for_category and label_for_category not in labels:
+        pr_labels_to_add.append(label_for_category)
 
     # Labels that should not be auto-removed even if they don't match the current
     # category, because they serve additional purposes (e.g., enabling performance
@@ -220,8 +235,8 @@ def check_labels(category, info):
     for label in labels:
         if (
             label in CATEGORY_TO_LABEL.values()
-            and category in CATEGORY_TO_LABEL
-            and label != CATEGORY_TO_LABEL[category]
+            and label_for_category
+            and label != label_for_category
             and label not in protected_labels
         ):
             pr_labels_to_remove.append(label)
@@ -241,20 +256,22 @@ def check_labels(category, info):
         print(f"Add labels [{pr_labels_to_add}]")
         for label in pr_labels_to_add:
             cmd += f" --add-label '{label}'"
-            if label in info.pr_labels:
-                info.pr_labels.append(label)
-            info.dump()
 
     if pr_labels_to_remove:
         print(f"Remove labels [{pr_labels_to_remove}]")
         for label in pr_labels_to_remove:
             cmd += f" --remove-label '{label}'"
-            if label in info.pr_labels:
-                info.pr_labels.remove(label)
-            info.dump()
 
     if pr_labels_to_remove or pr_labels_to_add:
         Shell.check(cmd, verbose=True, strict=True, retries=5)
+
+    for label in pr_labels_to_add:
+        info.add_pr_label(label)
+    for label in pr_labels_to_remove:
+        info.remove_pr_label(label)
+
+
+BOT_AUTHORS = {"dependabot[bot]"}
 
 
 if __name__ == "__main__":
@@ -262,8 +279,14 @@ if __name__ == "__main__":
     if Labels.RELEASE in info.pr_labels or Labels.RELEASE_LTS in info.pr_labels:
         print("NOTE: Release PR detected, skipping changelog category check")
         sys.exit(0)
-    error, category = get_category(info.pr_body)
-    if not category or error:
-        print(f"ERROR: {error}")
-        sys.exit(1)
+    if info.user_name in BOT_AUTHORS:
+        print(
+            f"NOTE: PR by bot author '{info.user_name}', treating as 'Not for changelog'"
+        )
+        category = LABEL_CATEGORIES["pr-not-for-changelog"][0]
+    else:
+        error, category = get_category(info.pr_body)
+        if not category or error:
+            print(f"ERROR: {error}")
+            sys.exit(1)
     check_labels(category, info)

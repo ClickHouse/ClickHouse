@@ -72,6 +72,7 @@ namespace FailPoints
 {
     extern const char object_storage_queue_fail_commit[];
     extern const char object_storage_queue_fail_commit_once[];
+    extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
 }
@@ -711,29 +712,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
 
 size_t StorageObjectStorageQueue::getDependencies() const
 {
-    auto table_id = getStorageID();
-
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
-
-    if (view_ids.empty())
-        return 0;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return 0;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return 0;
-    }
-
-    return view_ids.size();
+    return DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext()).size();
 }
 
 void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
@@ -1088,6 +1067,13 @@ void StorageObjectStorageQueue::commit(
 
         auto zk_client = getZooKeeper();
         code = zk_client->tryMulti(requests, responses);
+
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+            if (code == Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS,
+                    "Simulated connection loss after successful commit");
+        });
     });
 
     if (!code.has_value())
@@ -1103,6 +1089,15 @@ void StorageObjectStorageQueue::commit(
     if (code.value() != Coordination::Error::ZOK)
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+        if (try_num > 1)
+        {
+            /// We had at least one hardware error retry, so the first attempt may have succeeded
+            /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
+            /// before we received the response. Mark all metadata objects so their destructors
+            /// check ownership before removing the processing node instead of asserting.
+            for (auto & source : sources)
+                source->setUncertainCommit();
+        }
         throw zkutil::KeeperMultiException(code.value(), requests, responses);
     }
 

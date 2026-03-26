@@ -188,6 +188,7 @@ private:
     uint32_t current_level = 0;
     uint32_t backup_counter = 0;
     uint32_t cache_counter = 0;
+    uint32_t policy_counter = 0;
     uint32_t aliases_counter = 0;
     uint32_t id_counter = 0;
     uint32_t freeze_counter = 0;
@@ -203,6 +204,8 @@ private:
     std::unordered_map<uint32_t, SQLFunction> staged_functions;
     std::unordered_map<uint32_t, SQLFunction> functions;
     std::unordered_map<uint32_t, CatalogBackup> backups;
+    std::unordered_map<uint32_t, SQLPolicy> staged_policies;
+    std::unordered_map<uint32_t, SQLPolicy> policies;
 
     DB::Strings enum_values
         = {"'-1'",    "'0'",       "'1'",    "'10'",   "'1000'", "'is'",     "'was'",      "'are'",  "'be'",       "'have'", "'had'",
@@ -232,6 +235,7 @@ private:
     std::vector<std::reference_wrapper<SQLDictionary>> filtered_dictionaries;
     std::vector<std::reference_wrapper<std::shared_ptr<SQLDatabase>>> filtered_databases;
     std::vector<std::reference_wrapper<SQLFunction>> filtered_functions;
+    std::vector<std::reference_wrapper<SQLPolicy>> filtered_policies;
     std::vector<std::reference_wrapper<const SQLRelation>> filtered_relations;
 
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes;
@@ -268,7 +272,8 @@ private:
         LightUpdate,
         SelectQuery,
         Kill,
-        ShowStatement
+        ShowStatement,
+        CreatePolicy
     };
 
     enum class LitOp
@@ -391,6 +396,10 @@ private:
         {
             return functions;
         }
+        else if constexpr (std::is_same_v<T, SQLPolicy>)
+        {
+            return policies;
+        }
         else
         {
             return databases;
@@ -445,6 +454,10 @@ private:
         else if constexpr (std::is_same_v<T, SQLFunction>)
         {
             return filtered_functions;
+        }
+        else if constexpr (std::is_same_v<T, SQLPolicy>)
+        {
+            return filtered_policies;
         }
         else
         {
@@ -534,6 +547,9 @@ private:
     void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * rv);
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
+    void generateNextCreatePolicy(RandomGenerator & rg, bool row, CreatePolicy * crp);
+    bool hasTable(uint32_t table_id) const { return tables.contains(table_id); }
+    const SQLTable & lookupTable(uint32_t table_id) const { return tables.at(table_id); }
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
     void generateInsertToTable(RandomGenerator & rg, const SQLTable & t, bool in_parallel, std::optional<uint64_t> rows, Insert * ins);
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
@@ -553,6 +569,7 @@ private:
     void generateNextExchange(RandomGenerator & rg, Exchange * exc);
     void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
+    void generateUpdateSets(RandomGenerator & rg, const SQLTable & t, UpdateSet * first, std::function<UpdateSet *()> add_next);
     std::optional<String>
     alterSingleTable(RandomGenerator & rg, SQLTable & t, uint32_t nalters, bool no_oracle, bool can_update, bool in_parallel, Alter * at);
     void generateAlter(RandomGenerator & rg, bool in_parallel, Alter * at);
@@ -610,7 +627,12 @@ private:
     String getNextTestingAddress(RandomGenerator & rg, bool secure) const;
     String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
     String getNextHTTPURL(RandomGenerator & rg, bool secure);
-    bool joinedTableOrFunction(
+    struct FromSourceInfo
+    {
+        bool supports_final = false;
+        bool supports_sample = false;
+    };
+    FromSourceInfo joinedTableOrFunction(
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     void generateJoinConstraint(RandomGenerator & rg, JoinConstraint * jc);
@@ -639,13 +661,14 @@ private:
     void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);
     void generateNextQuery(RandomGenerator & rg, bool in_parallel, SQLQueryInner * sq);
 
-    std::tuple<SQLType *, Integers> randomIntType(RandomGenerator & rg, uint64_t allowed_types);
-    std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg, uint64_t allowed_types);
-    std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint64_t allowed_types) const;
-    SQLType * randomTimeType(RandomGenerator & rg, uint64_t allowed_types, TimeTp * dt) const;
-    SQLType * randomDateTimeType(RandomGenerator & rg, uint64_t allowed_types, DateTimeTp * dt) const;
-    SQLType * randomDecimalType(RandomGenerator & rg, uint64_t allowed_types, BottomTypeName * tp) const;
-    SQLType * bottomType(RandomGenerator & rg, uint64_t allowed_types, bool low_card, BottomTypeName * tp);
+    std::tuple<std::unique_ptr<SQLType>, Integers> randomIntType(RandomGenerator & rg, uint64_t allowed_types);
+    std::tuple<std::unique_ptr<SQLType>, FloatingPoints> randomFloatType(RandomGenerator & rg, uint64_t allowed_types);
+    std::tuple<std::unique_ptr<SQLType>, Dates> randomDateType(RandomGenerator & rg, uint64_t allowed_types) const;
+    std::unique_ptr<SQLType> randomTimeType(RandomGenerator & rg, uint64_t allowed_types, TimeTp * dt) const;
+    std::unique_ptr<SQLType> randomDateTimeType(RandomGenerator & rg, uint64_t allowed_types, DateTimeTp * dt) const;
+    std::unique_ptr<SQLType> randomDecimalType(RandomGenerator & rg, uint64_t allowed_types, BottomTypeName * tp) const;
+    std::unique_ptr<SQLType> randomAggregateType(RandomGenerator & rg, bool simple, BottomTypeName * tp);
+    std::unique_ptr<SQLType> bottomType(RandomGenerator & rg, uint64_t allowed_types, bool low_card, BottomTypeName * tp);
 
     void dropTable(bool staged, bool drop_peer, uint32_t tname);
     void dropDatabase(uint32_t dname, bool all);
@@ -812,7 +835,7 @@ private:
     }
 
 public:
-    SQLType * randomNextType(RandomGenerator & rg, uint64_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
+    std::unique_ptr<SQLType> randomNextType(RandomGenerator & rg, uint64_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> attached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->isAttached(); };
@@ -835,6 +858,8 @@ public:
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_external_call
         = [](const SQLTable & t) { return t.isAttached() && t.integration == IntegrationCall::Dolor; };
+    const std::function<bool(const SQLPolicy &)> row_policies_for_oracle
+        = [](const SQLPolicy & p) -> bool { return p.is_row && p.where_expr.has_value() && p.targets_oracle_role; };
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->isDettached(); };
