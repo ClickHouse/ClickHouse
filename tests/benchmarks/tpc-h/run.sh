@@ -357,6 +357,15 @@ for QN in "${QUERY_NUMS[@]}"; do
         run_query_explain "${EXPLAIN_PREFIX} ${QUERY_SQL}" > "$PLAN_FILE" 2> "$PLAN_LOG_FILE" || true
     fi
 
+    # Report EXPLAIN errors — an empty plan file means the EXPLAIN failed.
+    if [[ ! -s "$PLAN_FILE" ]]; then
+        PLAN_ERROR="$(grep -oP 'Code: \d+\. DB::Exception: \K[^(]+' "$PLAN_LOG_FILE" 2>/dev/null | head -1 || true)"
+        if [[ -z "$PLAN_ERROR" ]]; then
+            PLAN_ERROR="$(grep -oP 'DB::Exception:.*?(?=\. \(|, Stack)' "$PLAN_LOG_FILE" 2>/dev/null | head -1 || true)"
+        fi
+        echo "  EXPLAIN FAILED: ${PLAN_ERROR:-empty plan, check ${PLAN_LOG_FILE}}"
+    fi
+
     # ---- Drop filesystem caches before cold runs ----
     run_util "SYSTEM DROP FILESYSTEM CACHE" 2>/dev/null || true
     run_util "SYSTEM DROP MARK CACHE" 2>/dev/null || true
@@ -458,6 +467,15 @@ echo "=== Summary ==="
 echo ""
 column -t -s $'\t' "$SUMMARY_FILE"
 
+# Report queries that had errors during execution.
+ERRORS="$(awk -F'\t' 'NR > 1 && $8 != "" { printf "  %-6s %s (%s #%s): %s\n", $1, $2, $3, $8 }' "$SUMMARY_FILE")"
+if [[ -n "$ERRORS" ]]; then
+    echo ""
+    echo "=== Errors ==="
+    echo ""
+    echo "$ERRORS"
+fi
+
 # Compute per-query best hot time.
 echo ""
 echo "=== Best hot times ==="
@@ -467,16 +485,30 @@ NR == 1 { next }
 $2 == "hot" {
     q = $1
     t = $4 + 0
-    if (!(q in best) || t < best[q]) best[q] = t
+    e = $8
+    if (e != "") {
+        errors[q] = e
+    } else {
+        if (!(q in best) || t < best[q]) best[q] = t
+    }
 }
 END {
     PROCINFO["sorted_in"] = "@ind_str_asc"
     total = 0
+    failed = 0
     for (q in best) {
         printf "  %-6s %8.3fs\n", q, best[q]
         total += best[q]
     }
-    printf "  %-6s %8.3fs\n", "TOTAL", total
+    for (q in errors) {
+        if (!(q in best)) {
+            printf "  %-6s    ERROR: %s\n", q, errors[q]
+            failed++
+        }
+    }
+    printf "  %-6s %8.3fs", "TOTAL", total
+    if (failed > 0) printf "  (%d failed)", failed
+    printf "\n"
 }' "$SUMMARY_FILE"
 
 echo ""
