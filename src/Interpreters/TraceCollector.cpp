@@ -13,6 +13,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
 #include <Common/setThreadName.h>
+#include <base/errnoToString.h>
 #include <Common/logger_useful.h>
 #include <Common/SymbolIndex.h>
 
@@ -91,11 +92,22 @@ TraceCollector::~TraceCollector()
         }
     }
 
+    /// Close the write end of the pipe. This guarantees the collector thread
+    /// unblocks from read() with EOF even if the stop message failed to deliver,
+    /// without racing on the read-end fd that the thread is using.
+    if (TraceSender::pipe.fds_rw[1] >= 0)
+    {
+        if (0 != ::close(TraceSender::pipe.fds_rw[1]))
+            LOG_ERROR(getLogger("TraceCollector"), "Cannot close write end of pipe: {}", errnoToString());
+        TraceSender::pipe.fds_rw[1] = -1;
+    }
+
     if (thread.joinable())
         thread.join();
     else
         LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
 
+    /// Now that the thread has exited, close the read end.
     tryClosePipe();
 }
 
