@@ -2776,16 +2776,25 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
-            auto query = table->getInMemoryMetadataPtr(getQueryContext(), false)->getSelectQuery().inner_query->clone();
+            auto original_view_metadata = table->getInMemoryMetadataPtr(getQueryContext(), false);
+            auto query = original_view_metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
             StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
             create.set(create.select, query);
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
+
+            auto sql_security = make_intrusive<ASTSQLSecurity>();
+            sql_security->type = original_view_metadata->sql_security_type;
+            if (original_view_metadata->definer)
+                sql_security->definer = make_intrusive<ASTUserNameWithHost>(*original_view_metadata->definer);
+            create.set(create.sql_security, sql_security);
+
+            auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
 
             if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
-                validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), table->getInMemoryMetadataPtr()->getColumns());
+                validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), original_view_metadata->getColumns());
 
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
