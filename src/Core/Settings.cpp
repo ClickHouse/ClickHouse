@@ -7399,10 +7399,10 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
     DECLARE(UInt64, min_rows_per_stream_for_gradual_resize, 1000, R"(
-Minimum number of rows per output stream before the `GradualResize` processor activates an additional output port. When set to 0, the `GradualResize` processor is not used and the regular `StrictResize` is used instead. When non-zero (default: 1000), the pipeline uses `GradualResize` before aggregation, which starts by routing data to only 1 output and gradually activates more outputs as data volume grows. This reduces merge overhead for small GROUP BY result sets.
+Minimum number of rows per aggregation stream before an additional parallel aggregation stream is activated. When non-zero (default: 1000), the query pipeline starts GROUP BY aggregation with a single stream and gradually increases parallelism as data volume grows. This reduces the overhead of merging partial aggregation states when the result set is small. When set to 0, all aggregation streams are used from the start.
 )", 0) \
     DECLARE(UInt64, min_bytes_per_stream_for_gradual_resize, 0, R"(
-Minimum number of bytes per output stream before the `GradualResize` processor activates an additional output port. When set to 0 (default), this threshold is not used. Works together with `min_rows_per_stream_for_gradual_resize` — either threshold being met will activate the next output port.
+Minimum number of bytes per aggregation stream before an additional parallel aggregation stream is activated. When set to 0 (default), this threshold is not used. Works together with `min_rows_per_stream_for_gradual_resize` — either threshold being met will activate the next aggregation stream.
 )", 0) \
     DECLARE(Bool, enable_add_distinct_to_in_subqueries, false, R"(
 Enable `DISTINCT` in `IN` subqueries. This is a trade-off setting: enabling it can greatly reduce the size of temporary tables transferred for distributed IN subqueries and significantly speed up data transfer between shards, by ensuring only unique values are sent.
