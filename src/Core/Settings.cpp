@@ -5958,6 +5958,9 @@ Possible values:
     DECLARE(Bool, correlated_subqueries_use_in_memory_buffer, true, R"(
 Use in-memory buffer for correlated subquery input to avoid its repeated evaluation.
 )", 0) \
+    DECLARE(Bool, query_plan_filter_push_down_over_window, false, R"(
+Use in-memory buffer for correlated subquery input to avoid its repeated evaluation.
+)", 0) \
     DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
 Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
 )", 0) \

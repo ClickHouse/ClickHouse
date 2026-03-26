@@ -193,6 +193,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"compile_sort_description", trueOrFalseSetting},
        {"correlated_subqueries_substitute_equivalent_expressions", trueOrFalseSetting},
        {"correlated_subqueries_use_in_memory_buffer", trueOrFalseSetting},
+       {"query_plan_filter_push_down_over_window", trueOrFalseSetting},
        {"count_distinct_implementation",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)

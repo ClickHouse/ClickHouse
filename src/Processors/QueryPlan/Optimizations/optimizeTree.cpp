@@ -84,6 +84,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
         optimization_settings.parallel_replicas_filter_pushdown,
+        optimization_settings.filter_push_down_over_window,
     };
 
     while (!stack.empty())
@@ -192,8 +193,12 @@ void optimizeTreeSecondPass(
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
+<<<<<<< HEAD
         optimization_settings.read_in_order,
         optimization_settings.parallel_replicas_filter_pushdown,
+=======
+        optimization_settings.filter_push_down_over_window,
+>>>>>>> 46afd2edcea (Allow filter push down over window)
     };
 
     Stack stack;
