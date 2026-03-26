@@ -1328,3 +1328,9 @@ After a metadata-only `RENAME COLUMN`, old parts still show the pre-rename colum
 New parts (from subsequent inserts or merges) show the new name.
 The `physical_name` field is a stable identifier that does not change across renames.
 :::
+
+### Limitations {#physical-names-limitations}
+
+- **`ReplicatedMergeTree`** is not yet supported. Only non-replicated `MergeTree` tables can use physical column names.
+
+- **Single-child flattened `Nested` cross-parent rename**: when a flattened `Nested` column is added via `ALTER TABLE ADD COLUMN` as the only child of its parent (e.g. `ADD COLUMN n.x Array(UInt64)` with no sibling `n.y`), it receives a plain-counter physical name (e.g. `5`) rather than a compound one (e.g. `5.x`). Renaming such a column to a different `Nested` parent (e.g. `n.x` → `m.x`) is rejected because the shared array offset stream name is derived from the logical parent, and changing it would break reads of existing parts. Multi-child flattened `Nested` columns with compound physical names can be renamed across parents without restriction.
