@@ -8,20 +8,6 @@
 
 namespace DB
 {
-String extractLiteralArgumentWithoutQuotes(const std::string & function_name, IParser::Pos & pos)
-{
-    ++pos;
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
-    {
-        auto result = extractTokenWithoutQuotes(pos);
-        ++pos;
-        return result;
-    }
-
-    --pos;
-    return IParserKQLFunction::getArgument(function_name, pos, IParserKQLFunction::ArgumentState::Raw);
-}
-
 String extractTokenWithoutQuotes(IParser::Pos & pos)
 {
     const auto offset = static_cast<int>(pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral);

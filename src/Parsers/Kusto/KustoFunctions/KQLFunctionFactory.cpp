@@ -228,7 +228,7 @@ std::unordered_map<String, KQLFunctionValue> KQLFunctionFactory::kql_functions
        };
 
 
-std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_function)
+std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_function, size_t max_query_size)
 {
     if (!kql_functions.contains(kql_function))
         return nullptr;
@@ -240,577 +240,577 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_functio
             return nullptr;
 
         case KQLFunctionValue::timespan:
-            return std::make_unique<TimeSpan>();
+            return getParserKQLFunction<TimeSpan>(max_query_size);
 
         case KQLFunctionValue::ago:
-            return std::make_unique<Ago>();
+            return getParserKQLFunction<Ago>(max_query_size);
 
         case KQLFunctionValue::datetime_add:
-            return std::make_unique<DatetimeAdd>();
+            return getParserKQLFunction<DatetimeAdd>(max_query_size);
 
         case KQLFunctionValue::datetime_part:
-            return std::make_unique<DatetimePart>();
+            return getParserKQLFunction<DatetimePart>(max_query_size);
 
         case KQLFunctionValue::datetime_diff:
-            return std::make_unique<DatetimeDiff>();
+            return getParserKQLFunction<DatetimeDiff>(max_query_size);
 
         case KQLFunctionValue::dayofmonth:
-            return std::make_unique<DayOfMonth>();
+            return getParserKQLFunction<DayOfMonth>(max_query_size);
 
         case KQLFunctionValue::dayofweek:
-            return std::make_unique<DayOfWeek>();
+            return getParserKQLFunction<DayOfWeek>(max_query_size);
 
         case KQLFunctionValue::dayofyear:
-            return std::make_unique<DayOfYear>();
+            return getParserKQLFunction<DayOfYear>(max_query_size);
 
         case KQLFunctionValue::endofday:
-            return std::make_unique<EndOfDay>();
+            return getParserKQLFunction<EndOfDay>(max_query_size);
 
         case KQLFunctionValue::endofweek:
-            return std::make_unique<EndOfWeek>();
+            return getParserKQLFunction<EndOfWeek>(max_query_size);
 
         case KQLFunctionValue::endofyear:
-            return std::make_unique<EndOfYear>();
+            return getParserKQLFunction<EndOfYear>(max_query_size);
 
         case KQLFunctionValue::endofmonth:
-            return std::make_unique<EndOfMonth>();
+            return getParserKQLFunction<EndOfMonth>(max_query_size);
 
         case KQLFunctionValue::monthofyear:
-            return std::make_unique<MonthOfYear>();
+            return getParserKQLFunction<MonthOfYear>(max_query_size);
 
         case KQLFunctionValue::format_datetime:
-            return std::make_unique<FormatDateTime>();
+            return getParserKQLFunction<FormatDateTime>(max_query_size);
 
         case KQLFunctionValue::format_timespan:
-            return std::make_unique<FormatTimeSpan>();
+            return getParserKQLFunction<FormatTimeSpan>(max_query_size);
 
         case KQLFunctionValue::getmonth:
-            return std::make_unique<GetMonth>();
+            return getParserKQLFunction<GetMonth>(max_query_size);
 
         case KQLFunctionValue::getyear:
-            return std::make_unique<GetYear>();
+            return getParserKQLFunction<GetYear>(max_query_size);
 
         case KQLFunctionValue::hourofday:
-            return std::make_unique<HoursOfDay>();
+            return getParserKQLFunction<HoursOfDay>(max_query_size);
 
         case KQLFunctionValue::make_timespan:
-            return std::make_unique<MakeTimeSpan>();
+            return getParserKQLFunction<MakeTimeSpan>(max_query_size);
 
         case KQLFunctionValue::make_datetime:
-            return std::make_unique<MakeDateTime>();
+            return getParserKQLFunction<MakeDateTime>(max_query_size);
 
         case KQLFunctionValue::now:
-            return std::make_unique<Now>();
+            return getParserKQLFunction<Now>(max_query_size);
 
         case KQLFunctionValue::startofday:
-            return std::make_unique<StartOfDay>();
+            return getParserKQLFunction<StartOfDay>(max_query_size);
 
         case KQLFunctionValue::startofmonth:
-            return std::make_unique<StartOfMonth>();
+            return getParserKQLFunction<StartOfMonth>(max_query_size);
 
         case KQLFunctionValue::startofweek:
-            return std::make_unique<StartOfWeek>();
+            return getParserKQLFunction<StartOfWeek>(max_query_size);
 
         case KQLFunctionValue::startofyear:
-            return std::make_unique<StartOfYear>();
+            return getParserKQLFunction<StartOfYear>(max_query_size);
 
         case KQLFunctionValue::unixtime_microseconds_todatetime:
-            return std::make_unique<UnixTimeMicrosecondsToDateTime>();
+            return getParserKQLFunction<UnixTimeMicrosecondsToDateTime>(max_query_size);
 
         case KQLFunctionValue::unixtime_milliseconds_todatetime:
-            return std::make_unique<UnixTimeMillisecondsToDateTime>();
+            return getParserKQLFunction<UnixTimeMillisecondsToDateTime>(max_query_size);
 
         case KQLFunctionValue::unixtime_nanoseconds_todatetime:
-            return std::make_unique<UnixTimeNanosecondsToDateTime>();
+            return getParserKQLFunction<UnixTimeNanosecondsToDateTime>(max_query_size);
 
         case KQLFunctionValue::unixtime_seconds_todatetime:
-            return std::make_unique<UnixTimeSecondsToDateTime>();
+            return getParserKQLFunction<UnixTimeSecondsToDateTime>(max_query_size);
 
         case KQLFunctionValue::week_of_year:
-            return std::make_unique<WeekOfYear>();
+            return getParserKQLFunction<WeekOfYear>(max_query_size);
 
         case KQLFunctionValue::base64_encode_tostring:
-            return std::make_unique<Base64EncodeToString>();
+            return getParserKQLFunction<Base64EncodeToString>(max_query_size);
 
         case KQLFunctionValue::base64_encode_fromguid:
-            return std::make_unique<Base64EncodeFromGuid>();
+            return getParserKQLFunction<Base64EncodeFromGuid>(max_query_size);
 
         case KQLFunctionValue::base64_decode_tostring:
-            return std::make_unique<Base64DecodeToString>();
+            return getParserKQLFunction<Base64DecodeToString>(max_query_size);
 
         case KQLFunctionValue::base64_decode_toarray:
-            return std::make_unique<Base64DecodeToArray>();
+            return getParserKQLFunction<Base64DecodeToArray>(max_query_size);
 
         case KQLFunctionValue::base64_decode_toguid:
-            return std::make_unique<Base64DecodeToGuid>();
+            return getParserKQLFunction<Base64DecodeToGuid>(max_query_size);
 
         case KQLFunctionValue::countof:
-            return std::make_unique<CountOf>();
+            return getParserKQLFunction<CountOf>(max_query_size);
 
         case KQLFunctionValue::extract:
-            return std::make_unique<Extract>();
+            return getParserKQLFunction<Extract>(max_query_size);
 
         case KQLFunctionValue::extract_all:
-            return std::make_unique<ExtractAll>();
+            return getParserKQLFunction<ExtractAll>(max_query_size);
 
         case KQLFunctionValue::extract_json:
-            return std::make_unique<ExtractJSON>();
+            return getParserKQLFunction<ExtractJSON>(max_query_size);
 
         case KQLFunctionValue::has_any_index:
-            return std::make_unique<HasAnyIndex>();
+            return getParserKQLFunction<HasAnyIndex>(max_query_size);
 
         case KQLFunctionValue::indexof:
-            return std::make_unique<IndexOf>();
+            return getParserKQLFunction<IndexOf>(max_query_size);
 
         case KQLFunctionValue::isempty:
-            return std::make_unique<IsEmpty>();
+            return getParserKQLFunction<IsEmpty>(max_query_size);
 
         case KQLFunctionValue::isnan:
-            return std::make_unique<IsNan>();
+            return getParserKQLFunction<IsNan>(max_query_size);
 
         case KQLFunctionValue::isnotempty:
-            return std::make_unique<IsNotEmpty>();
+            return getParserKQLFunction<IsNotEmpty>(max_query_size);
 
         case KQLFunctionValue::isnotnull:
-            return std::make_unique<IsNotNull>();
+            return getParserKQLFunction<IsNotNull>(max_query_size);
 
         case KQLFunctionValue::isnull:
-            return std::make_unique<IsNull>();
+            return getParserKQLFunction<IsNull>(max_query_size);
 
         case KQLFunctionValue::parse_command_line:
-            return std::make_unique<ParseCommandLine>();
+            return getParserKQLFunction<ParseCommandLine>(max_query_size);
 
         case KQLFunctionValue::parse_csv:
-            return std::make_unique<ParseCSV>();
+            return getParserKQLFunction<ParseCSV>(max_query_size);
 
         case KQLFunctionValue::parse_json:
-            return std::make_unique<ParseJSON>();
+            return getParserKQLFunction<ParseJSON>(max_query_size);
 
         case KQLFunctionValue::parse_url:
-            return std::make_unique<ParseURL>();
+            return getParserKQLFunction<ParseURL>(max_query_size);
 
         case KQLFunctionValue::parse_urlquery:
-            return std::make_unique<ParseURLQuery>();
+            return getParserKQLFunction<ParseURLQuery>(max_query_size);
 
         case KQLFunctionValue::parse_version:
-            return std::make_unique<ParseVersion>();
+            return getParserKQLFunction<ParseVersion>(max_query_size);
 
         case KQLFunctionValue::replace_regex:
-            return std::make_unique<ReplaceRegex>();
+            return getParserKQLFunction<ReplaceRegex>(max_query_size);
 
         case KQLFunctionValue::reverse:
-            return std::make_unique<Reverse>();
+            return getParserKQLFunction<Reverse>(max_query_size);
 
         case KQLFunctionValue::split:
-            return std::make_unique<Split>();
+            return getParserKQLFunction<Split>(max_query_size);
 
         case KQLFunctionValue::strcat:
-            return std::make_unique<StrCat>();
+            return getParserKQLFunction<StrCat>(max_query_size);
 
         case KQLFunctionValue::strcat_delim:
-            return std::make_unique<StrCatDelim>();
+            return getParserKQLFunction<StrCatDelim>(max_query_size);
 
         case KQLFunctionValue::strcmp:
-            return std::make_unique<StrCmp>();
+            return getParserKQLFunction<StrCmp>(max_query_size);
 
         case KQLFunctionValue::strlen:
-            return std::make_unique<StrLen>();
+            return getParserKQLFunction<StrLen>(max_query_size);
 
         case KQLFunctionValue::strrep:
-            return std::make_unique<StrRep>();
+            return getParserKQLFunction<StrRep>(max_query_size);
 
         case KQLFunctionValue::substring:
-            return std::make_unique<SubString>();
+            return getParserKQLFunction<SubString>(max_query_size);
 
         case KQLFunctionValue::tolower:
-            return std::make_unique<ToLower>();
+            return getParserKQLFunction<ToLower>(max_query_size);
 
         case KQLFunctionValue::toupper:
-            return std::make_unique<ToUpper>();
+            return getParserKQLFunction<ToUpper>(max_query_size);
 
         case KQLFunctionValue::translate:
-            return std::make_unique<Translate>();
+            return getParserKQLFunction<Translate>(max_query_size);
 
         case KQLFunctionValue::trim:
-            return std::make_unique<Trim>();
+            return getParserKQLFunction<Trim>(max_query_size);
 
         case KQLFunctionValue::trim_end:
-            return std::make_unique<TrimEnd>();
+            return getParserKQLFunction<TrimEnd>(max_query_size);
 
         case KQLFunctionValue::trim_start:
-            return std::make_unique<TrimStart>();
+            return getParserKQLFunction<TrimStart>(max_query_size);
 
         case KQLFunctionValue::url_decode:
-            return std::make_unique<URLDecode>();
+            return getParserKQLFunction<URLDecode>(max_query_size);
 
         case KQLFunctionValue::url_encode:
-            return std::make_unique<URLEncode>();
+            return getParserKQLFunction<URLEncode>(max_query_size);
 
         case KQLFunctionValue::array_concat:
-            return std::make_unique<ArrayConcat>();
+            return getParserKQLFunction<ArrayConcat>(max_query_size);
 
         case KQLFunctionValue::array_iif:
-            return std::make_unique<ArrayIif>();
+            return getParserKQLFunction<ArrayIif>(max_query_size);
 
         case KQLFunctionValue::array_index_of:
-            return std::make_unique<ArrayIndexOf>();
+            return getParserKQLFunction<ArrayIndexOf>(max_query_size);
 
         case KQLFunctionValue::array_length:
-            return std::make_unique<ArrayLength>();
+            return getParserKQLFunction<ArrayLength>(max_query_size);
 
         case KQLFunctionValue::array_reverse:
-            return std::make_unique<ArrayReverse>();
+            return getParserKQLFunction<ArrayReverse>(max_query_size);
 
         case KQLFunctionValue::array_rotate_left:
-            return std::make_unique<ArrayRotateLeft>();
+            return getParserKQLFunction<ArrayRotateLeft>(max_query_size);
 
         case KQLFunctionValue::array_rotate_right:
-            return std::make_unique<ArrayRotateRight>();
+            return getParserKQLFunction<ArrayRotateRight>(max_query_size);
 
         case KQLFunctionValue::array_shift_left:
-            return std::make_unique<ArrayShiftLeft>();
+            return getParserKQLFunction<ArrayShiftLeft>(max_query_size);
 
         case KQLFunctionValue::array_shift_right:
-            return std::make_unique<ArrayShiftRight>();
+            return getParserKQLFunction<ArrayShiftRight>(max_query_size);
 
         case KQLFunctionValue::array_slice:
-            return std::make_unique<ArraySlice>();
+            return getParserKQLFunction<ArraySlice>(max_query_size);
 
         case KQLFunctionValue::array_sort_asc:
-            return std::make_unique<ArraySortAsc>();
+            return getParserKQLFunction<ArraySortAsc>(max_query_size);
 
         case KQLFunctionValue::array_sort_desc:
-            return std::make_unique<ArraySortDesc>();
+            return getParserKQLFunction<ArraySortDesc>(max_query_size);
 
         case KQLFunctionValue::array_split:
-            return std::make_unique<ArraySplit>();
+            return getParserKQLFunction<ArraySplit>(max_query_size);
 
         case KQLFunctionValue::array_sum:
-            return std::make_unique<ArraySum>();
+            return getParserKQLFunction<ArraySum>(max_query_size);
 
         case KQLFunctionValue::bag_keys:
-            return std::make_unique<BagKeys>();
+            return getParserKQLFunction<BagKeys>(max_query_size);
 
         case KQLFunctionValue::bag_merge:
-            return std::make_unique<BagMerge>();
+            return getParserKQLFunction<BagMerge>(max_query_size);
 
         case KQLFunctionValue::bag_remove_keys:
-            return std::make_unique<BagRemoveKeys>();
+            return getParserKQLFunction<BagRemoveKeys>(max_query_size);
 
         case KQLFunctionValue::jaccard_index:
-            return std::make_unique<JaccardIndex>();
+            return getParserKQLFunction<JaccardIndex>(max_query_size);
 
         case KQLFunctionValue::pack:
-            return std::make_unique<Pack>();
+            return getParserKQLFunction<Pack>(max_query_size);
 
         case KQLFunctionValue::pack_all:
-            return std::make_unique<PackAll>();
+            return getParserKQLFunction<PackAll>(max_query_size);
 
         case KQLFunctionValue::pack_array:
-            return std::make_unique<PackArray>();
+            return getParserKQLFunction<PackArray>(max_query_size);
 
         case KQLFunctionValue::repeat:
-            return std::make_unique<Repeat>();
+            return getParserKQLFunction<Repeat>(max_query_size);
 
         case KQLFunctionValue::set_difference:
-            return std::make_unique<SetDifference>();
+            return getParserKQLFunction<SetDifference>(max_query_size);
 
         case KQLFunctionValue::set_has_element:
-            return std::make_unique<SetHasElement>();
+            return getParserKQLFunction<SetHasElement>(max_query_size);
 
         case KQLFunctionValue::set_intersect:
-            return std::make_unique<SetIntersect>();
+            return getParserKQLFunction<SetIntersect>(max_query_size);
 
         case KQLFunctionValue::set_union:
-            return std::make_unique<SetUnion>();
+            return getParserKQLFunction<SetUnion>(max_query_size);
 
         case KQLFunctionValue::treepath:
-            return std::make_unique<TreePath>();
+            return getParserKQLFunction<TreePath>(max_query_size);
 
         case KQLFunctionValue::zip:
-            return std::make_unique<Zip>();
+            return getParserKQLFunction<Zip>(max_query_size);
 
         case KQLFunctionValue::tobool:
-            return std::make_unique<ToBool>();
+            return getParserKQLFunction<ToBool>(max_query_size);
 
         case KQLFunctionValue::todatetime:
-            return std::make_unique<ToDateTime>();
+            return getParserKQLFunction<ToDateTime>(max_query_size);
 
         case KQLFunctionValue::todouble:
-            return std::make_unique<ToDouble>();
+            return getParserKQLFunction<ToDouble>(max_query_size);
 
         case KQLFunctionValue::toint:
-            return std::make_unique<ToInt>();
+            return getParserKQLFunction<ToInt>(max_query_size);
 
         case KQLFunctionValue::tolong:
-            return std::make_unique<ToLong>();
+            return getParserKQLFunction<ToLong>(max_query_size);
 
         case KQLFunctionValue::tostring:
-            return std::make_unique<ToString>();
+            return getParserKQLFunction<ToString>(max_query_size);
 
         case KQLFunctionValue::totimespan:
-            return std::make_unique<ToTimeSpan>();
+            return getParserKQLFunction<ToTimeSpan>(max_query_size);
 
         case KQLFunctionValue::todecimal:
-            return std::make_unique<ToDecimal>();
+            return getParserKQLFunction<ToDecimal>(max_query_size);
 
         case KQLFunctionValue::arg_max:
-            return std::make_unique<ArgMax>();
+            return getParserKQLFunction<ArgMax>(max_query_size);
 
         case KQLFunctionValue::arg_min:
-            return std::make_unique<ArgMin>();
+            return getParserKQLFunction<ArgMin>(max_query_size);
 
         case KQLFunctionValue::avg:
-            return std::make_unique<Avg>();
+            return getParserKQLFunction<Avg>(max_query_size);
 
         case KQLFunctionValue::avgif:
-            return std::make_unique<AvgIf>();
+            return getParserKQLFunction<AvgIf>(max_query_size);
 
         case KQLFunctionValue::binary_all_and:
-            return std::make_unique<BinaryAllAnd>();
+            return getParserKQLFunction<BinaryAllAnd>(max_query_size);
 
         case KQLFunctionValue::binary_all_or:
-            return std::make_unique<BinaryAllOr>();
+            return getParserKQLFunction<BinaryAllOr>(max_query_size);
 
         case KQLFunctionValue::binary_all_xor:
-            return std::make_unique<BinaryAllXor>();
+            return getParserKQLFunction<BinaryAllXor>(max_query_size);
 
         case KQLFunctionValue::buildschema:
-            return std::make_unique<BuildSchema>();
+            return getParserKQLFunction<BuildSchema>(max_query_size);
 
         case KQLFunctionValue::count:
-            return std::make_unique<Count>();
+            return getParserKQLFunction<Count>(max_query_size);
 
         case KQLFunctionValue::countif:
-            return std::make_unique<CountIf>();
+            return getParserKQLFunction<CountIf>(max_query_size);
 
         case KQLFunctionValue::dcount:
-            return std::make_unique<DCount>();
+            return getParserKQLFunction<DCount>(max_query_size);
 
         case KQLFunctionValue::dcountif:
-            return std::make_unique<DCountIf>();
+            return getParserKQLFunction<DCountIf>(max_query_size);
 
         case KQLFunctionValue::make_bag:
-            return std::make_unique<MakeBag>();
+            return getParserKQLFunction<MakeBag>(max_query_size);
 
         case KQLFunctionValue::make_bag_if:
-            return std::make_unique<MakeBagIf>();
+            return getParserKQLFunction<MakeBagIf>(max_query_size);
 
         case KQLFunctionValue::make_list:
-            return std::make_unique<MakeList>();
+            return getParserKQLFunction<MakeList>(max_query_size);
 
         case KQLFunctionValue::make_list_if:
-            return std::make_unique<MakeListIf>();
+            return getParserKQLFunction<MakeListIf>(max_query_size);
 
         case KQLFunctionValue::make_list_with_nulls:
-            return std::make_unique<MakeListWithNulls>();
+            return getParserKQLFunction<MakeListWithNulls>(max_query_size);
 
         case KQLFunctionValue::make_set:
-            return std::make_unique<MakeSet>();
+            return getParserKQLFunction<MakeSet>(max_query_size);
 
         case KQLFunctionValue::make_set_if:
-            return std::make_unique<MakeSetIf>();
+            return getParserKQLFunction<MakeSetIf>(max_query_size);
 
         case KQLFunctionValue::max:
-            return std::make_unique<Max>();
+            return getParserKQLFunction<Max>(max_query_size);
 
         case KQLFunctionValue::maxif:
-            return std::make_unique<MaxIf>();
+            return getParserKQLFunction<MaxIf>(max_query_size);
 
         case KQLFunctionValue::min:
-            return std::make_unique<Min>();
+            return getParserKQLFunction<Min>(max_query_size);
 
         case KQLFunctionValue::minif:
-            return std::make_unique<MinIf>();
+            return getParserKQLFunction<MinIf>(max_query_size);
 
         case KQLFunctionValue::percentile:
-            return std::make_unique<Percentile>();
+            return getParserKQLFunction<Percentile>(max_query_size);
 
         case KQLFunctionValue::percentilew:
-            return std::make_unique<Percentilew>();
+            return getParserKQLFunction<Percentilew>(max_query_size);
 
         case KQLFunctionValue::percentiles:
-            return std::make_unique<Percentiles>();
+            return getParserKQLFunction<Percentiles>(max_query_size);
 
         case KQLFunctionValue::percentiles_array:
-            return std::make_unique<PercentilesArray>();
+            return getParserKQLFunction<PercentilesArray>(max_query_size);
 
         case KQLFunctionValue::percentilesw:
-            return std::make_unique<Percentilesw>();
+            return getParserKQLFunction<Percentilesw>(max_query_size);
 
         case KQLFunctionValue::percentilesw_array:
-            return std::make_unique<PercentileswArray>();
+            return getParserKQLFunction<PercentileswArray>(max_query_size);
 
         case KQLFunctionValue::stdev:
-            return std::make_unique<Stdev>();
+            return getParserKQLFunction<Stdev>(max_query_size);
 
         case KQLFunctionValue::stdevif:
-            return std::make_unique<StdevIf>();
+            return getParserKQLFunction<StdevIf>(max_query_size);
 
         case KQLFunctionValue::sum:
-            return std::make_unique<Sum>();
+            return getParserKQLFunction<Sum>(max_query_size);
 
         case KQLFunctionValue::sumif:
-            return std::make_unique<SumIf>();
+            return getParserKQLFunction<SumIf>(max_query_size);
 
         case KQLFunctionValue::take_any:
-            return std::make_unique<TakeAny>();
+            return getParserKQLFunction<TakeAny>(max_query_size);
 
         case KQLFunctionValue::take_anyif:
-            return std::make_unique<TakeAnyIf>();
+            return getParserKQLFunction<TakeAnyIf>(max_query_size);
 
         case KQLFunctionValue::variance:
-            return std::make_unique<Variance>();
+            return getParserKQLFunction<Variance>(max_query_size);
 
         case KQLFunctionValue::varianceif:
-            return std::make_unique<VarianceIf>();
+            return getParserKQLFunction<VarianceIf>(max_query_size);
 
         case KQLFunctionValue::series_fir:
-            return std::make_unique<SeriesFir>();
+            return getParserKQLFunction<SeriesFir>(max_query_size);
 
         case KQLFunctionValue::series_iir:
-            return std::make_unique<SeriesIir>();
+            return getParserKQLFunction<SeriesIir>(max_query_size);
 
         case KQLFunctionValue::series_fit_line:
-            return std::make_unique<SeriesFitLine>();
+            return getParserKQLFunction<SeriesFitLine>(max_query_size);
 
         case KQLFunctionValue::series_fit_line_dynamic:
-            return std::make_unique<SeriesFitLineDynamic>();
+            return getParserKQLFunction<SeriesFitLineDynamic>(max_query_size);
 
         case KQLFunctionValue::series_fit_2lines:
-            return std::make_unique<SeriesFit2lines>();
+            return getParserKQLFunction<SeriesFit2lines>(max_query_size);
 
         case KQLFunctionValue::series_fit_2lines_dynamic:
-            return std::make_unique<SeriesFit2linesDynamic>();
+            return getParserKQLFunction<SeriesFit2linesDynamic>(max_query_size);
 
         case KQLFunctionValue::series_outliers:
-            return std::make_unique<SeriesOutliers>();
+            return getParserKQLFunction<SeriesOutliers>(max_query_size);
 
         case KQLFunctionValue::series_periods_detect:
-            return std::make_unique<SeriesPeriodsDetect>();
+            return getParserKQLFunction<SeriesPeriodsDetect>(max_query_size);
 
         case KQLFunctionValue::series_periods_validate:
-            return std::make_unique<SeriesPeriodsValidate>();
+            return getParserKQLFunction<SeriesPeriodsValidate>(max_query_size);
 
         case KQLFunctionValue::series_stats_dynamic:
-            return std::make_unique<SeriesStatsDynamic>();
+            return getParserKQLFunction<SeriesStatsDynamic>(max_query_size);
 
         case KQLFunctionValue::series_stats:
-            return std::make_unique<SeriesStats>();
+            return getParserKQLFunction<SeriesStats>(max_query_size);
 
         case KQLFunctionValue::series_fill_backward:
-            return std::make_unique<SeriesFillBackward>();
+            return getParserKQLFunction<SeriesFillBackward>(max_query_size);
 
         case KQLFunctionValue::series_fill_const:
-            return std::make_unique<SeriesFillConst>();
+            return getParserKQLFunction<SeriesFillConst>(max_query_size);
 
         case KQLFunctionValue::series_fill_forward:
-            return std::make_unique<SeriesFillForward>();
+            return getParserKQLFunction<SeriesFillForward>(max_query_size);
 
         case KQLFunctionValue::series_fill_linear:
-            return std::make_unique<SeriesFillLinear>();
+            return getParserKQLFunction<SeriesFillLinear>(max_query_size);
 
         case KQLFunctionValue::ipv4_compare:
-            return std::make_unique<Ipv4Compare>();
+            return getParserKQLFunction<Ipv4Compare>(max_query_size);
 
         case KQLFunctionValue::ipv4_is_in_range:
-            return std::make_unique<Ipv4IsInRange>();
+            return getParserKQLFunction<Ipv4IsInRange>(max_query_size);
 
         case KQLFunctionValue::ipv4_is_match:
-            return std::make_unique<Ipv4IsMatch>();
+            return getParserKQLFunction<Ipv4IsMatch>(max_query_size);
 
         case KQLFunctionValue::ipv4_is_private:
-            return std::make_unique<Ipv4IsPrivate>();
+            return getParserKQLFunction<Ipv4IsPrivate>(max_query_size);
 
         case KQLFunctionValue::ipv4_netmask_suffix:
-            return std::make_unique<Ipv4NetmaskSuffix>();
+            return getParserKQLFunction<Ipv4NetmaskSuffix>(max_query_size);
 
         case KQLFunctionValue::parse_ipv4:
-            return std::make_unique<ParseIpv4>();
+            return getParserKQLFunction<ParseIpv4>(max_query_size);
 
         case KQLFunctionValue::parse_ipv4_mask:
-            return std::make_unique<ParseIpv4Mask>();
+            return getParserKQLFunction<ParseIpv4Mask>(max_query_size);
 
         case KQLFunctionValue::ipv6_compare:
-            return std::make_unique<Ipv6Compare>();
+            return getParserKQLFunction<Ipv6Compare>(max_query_size);
 
         case KQLFunctionValue::ipv6_is_match:
-            return std::make_unique<Ipv6IsMatch>();
+            return getParserKQLFunction<Ipv6IsMatch>(max_query_size);
 
         case KQLFunctionValue::parse_ipv6:
-            return std::make_unique<ParseIpv6>();
+            return getParserKQLFunction<ParseIpv6>(max_query_size);
 
         case KQLFunctionValue::parse_ipv6_mask:
-            return std::make_unique<ParseIpv6Mask>();
+            return getParserKQLFunction<ParseIpv6Mask>(max_query_size);
 
         case KQLFunctionValue::format_ipv4:
-            return std::make_unique<FormatIpv4>();
+            return getParserKQLFunction<FormatIpv4>(max_query_size);
 
         case KQLFunctionValue::format_ipv4_mask:
-            return std::make_unique<FormatIpv4Mask>();
+            return getParserKQLFunction<FormatIpv4Mask>(max_query_size);
 
         case KQLFunctionValue::binary_and:
-            return std::make_unique<BinaryAnd>();
+            return getParserKQLFunction<BinaryAnd>(max_query_size);
 
         case KQLFunctionValue::binary_not:
-            return std::make_unique<BinaryNot>();
+            return getParserKQLFunction<BinaryNot>(max_query_size);
 
         case KQLFunctionValue::binary_or:
-            return std::make_unique<BinaryOr>();
+            return getParserKQLFunction<BinaryOr>(max_query_size);
 
         case KQLFunctionValue::binary_shift_left:
-            return std::make_unique<BinaryShiftLeft>();
+            return getParserKQLFunction<BinaryShiftLeft>(max_query_size);
 
         case KQLFunctionValue::binary_shift_right:
-            return std::make_unique<BinaryShiftRight>();
+            return getParserKQLFunction<BinaryShiftRight>(max_query_size);
 
         case KQLFunctionValue::binary_xor:
-            return std::make_unique<BinaryXor>();
+            return getParserKQLFunction<BinaryXor>(max_query_size);
 
         case KQLFunctionValue::bitset_count_ones:
-            return std::make_unique<BitsetCountOnes>();
+            return getParserKQLFunction<BitsetCountOnes>(max_query_size);
 
         case KQLFunctionValue::bin:
-            return std::make_unique<Bin>();
+            return getParserKQLFunction<Bin>(max_query_size);
 
         case KQLFunctionValue::bin_at:
-            return std::make_unique<BinAt>();
+            return getParserKQLFunction<BinAt>(max_query_size);
 
         case KQLFunctionValue::iif:
-            return std::make_unique<Iif>();
+            return getParserKQLFunction<Iif>(max_query_size);
 
         case KQLFunctionValue::datatype_bool:
-            return std::make_unique<DatatypeBool>();
+            return getParserKQLFunction<DatatypeBool>(max_query_size);
 
         case KQLFunctionValue::datatype_datetime:
-            return std::make_unique<DatatypeDatetime>();
+            return getParserKQLFunction<DatatypeDatetime>(max_query_size);
 
         case KQLFunctionValue::datatype_dynamic:
-            return std::make_unique<DatatypeDynamic>();
+            return getParserKQLFunction<DatatypeDynamic>(max_query_size);
 
         case KQLFunctionValue::datatype_guid:
-            return std::make_unique<DatatypeGuid>();
+            return getParserKQLFunction<DatatypeGuid>(max_query_size);
 
         case KQLFunctionValue::datatype_int:
-            return std::make_unique<DatatypeInt>();
+            return getParserKQLFunction<DatatypeInt>(max_query_size);
 
         case KQLFunctionValue::datatype_long:
-            return std::make_unique<DatatypeLong>();
+            return getParserKQLFunction<DatatypeLong>(max_query_size);
 
         case KQLFunctionValue::datatype_real:
-            return std::make_unique<DatatypeReal>();
+            return getParserKQLFunction<DatatypeReal>(max_query_size);
 
         case KQLFunctionValue::datatype_string:
-            return std::make_unique<DatatypeString>();
+            return getParserKQLFunction<DatatypeString>(max_query_size);
 
         case KQLFunctionValue::datatype_timespan:
-            return std::make_unique<DatatypeTimespan>();
+            return getParserKQLFunction<DatatypeTimespan>(max_query_size);
 
         case KQLFunctionValue::datatype_decimal:
-            return std::make_unique<DatatypeDecimal>();
+            return getParserKQLFunction<DatatypeDecimal>(max_query_size);
 
         case KQLFunctionValue::round:
-            return std::make_unique<Round>();
+            return getParserKQLFunction<Round>(max_query_size);
     }
 }
 

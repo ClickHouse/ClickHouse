@@ -212,7 +212,7 @@ enum class KQLFunctionValue : uint16_t
 class KQLFunctionFactory
 {
 public:
-    static std::unique_ptr<IParserKQLFunction> get(String & kql_function);
+    static std::unique_ptr<IParserKQLFunction> get(String & kql_function, size_t max_query_size);
 
 protected:
     static std::unordered_map<String, KQLFunctionValue> kql_functions;

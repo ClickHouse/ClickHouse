@@ -280,7 +280,7 @@ bool SetDifference::convertImpl(String & out, IParser::Pos & pos)
 
     const auto lhs = getArgument(function_name, pos);
     const auto rhs = std::invoke(
-        [&function_name, &pos]
+        [this, &function_name, &pos]
         {
             std::vector<String> arrays{getArgument(function_name, pos, ArgumentState::Raw)};
             while (auto next_array = getOptionalArgument(function_name, pos, ArgumentState::Raw))
@@ -328,7 +328,7 @@ bool Zip::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto arguments = std::invoke(
-        [&function_name, &pos]
+        [this, &function_name, &pos]
         {
             std::vector<String> result;
             while (auto argument = getOptionalArgument(function_name, pos))

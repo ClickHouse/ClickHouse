@@ -407,7 +407,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     const Dialect dialect = settings[Setting::dialect];
 
     if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::max_query_size], settings[Setting::allow_settings_after_format_in_insert]);
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     else if (dialect == Dialect::promql)

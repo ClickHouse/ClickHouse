@@ -150,7 +150,7 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::P
 
     while (isValidKQLPos(token_pos) && token_pos->type != TokenType::PipeMark && token_pos->type != TokenType::Semicolon)
     {
-        auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
+        auto tmp_arg = IParserKQLFunction::getExpressionStatic(token_pos);
         if (token_pos->type == TokenType::Comma)
             new_expr = new_expr + logic_op;
         else
@@ -180,7 +180,7 @@ String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, co
     if (token_pos->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
         new_expr += "lower('" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
     else
-        new_expr += "lower(" + IParserKQLFunction::getExpression(token_pos) + ")";
+        new_expr += "lower(" + IParserKQLFunction::getExpressionStatic(token_pos) + ")";
 
     tokens.pop_back();
     return new_expr;
@@ -319,7 +319,7 @@ String KQLOperators::genHaystackOpExpr(
             + right_space + right_wildcards + "')";
     else if (!tokens.empty() && ((token_pos)->type == TokenType::BareWord))
     {
-        auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
+        auto tmp_arg = IParserKQLFunction::getExpressionStatic(token_pos);
         new_expr = ch_op + "(" + tokens.back() + ", concat('" + left_wildcards + left_space + "', " + tmp_arg + ", '" + right_space
             + right_wildcards + "'))";
     }
