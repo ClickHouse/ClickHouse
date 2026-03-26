@@ -487,7 +487,7 @@ class ReleaseInfo:
                 release_branch = f"{version.major}.{version.minor}"
                 release_tag = version.describe
             Shell.check(
-                f"{GIT_PREFIX} fetch origin {release_branch} --tags",
+                f"{GIT_PREFIX} fetch --no-tags origin {release_branch}",
                 strict=True,
                 verbose=True,
             )
@@ -514,6 +514,12 @@ class ReleaseInfo:
             # elif not _skip_tag_check:
             #     assert False, f"BUG: Unexpected latest tag [{git.latest_tag}] expected [{expected_tag_prefix}*{expected_tag_suffix}]. Already Released?"
 
+            # Fetch only the specific tag needed, not all tags from the repo
+            Shell.check(
+                f"{GIT_PREFIX} fetch --no-tags origin tag {previous_release_tag}",
+                strict=True,
+                verbose=True,
+            )
             previous_release_sha = Shell.get_output_or_raise(
                 f"git rev-list -n1 {previous_release_tag}"
             )
