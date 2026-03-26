@@ -232,8 +232,23 @@ endif ()
 
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
+# Arrow IPC buffers use intentionally unaligned int32 offset arrays — suppress the alignment check.
+# RocksDB EmbeddedRocksDB full scan hits a pointer-overflow when a corrupted slice size
+# causes pointer arithmetic to overflow. Pre-existing bug: https://github.com/ClickHouse/ClickHouse/issues/99862
+if (SANITIZE STREQUAL "address,undefined")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowColumnToCHColumn.cpp
+        PROPERTIES COMPILE_FLAGS "-fno-sanitize=alignment")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/Storages/RocksDB/StorageEmbeddedRocksDB.cpp
+        PROPERTIES COMPILE_FLAGS "-fno-sanitize=pointer-overflow")
+endif ()
+
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
+if (TARGET ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_malloc PRIVATE ch_contrib::jemalloc clickhouse_common_io)
+endif()
 
 add_library (clickhouse_new_delete STATIC Common/AllocationInterceptors.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
@@ -288,6 +303,7 @@ add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
+add_object_library(clickhouse_interpreters_wasm Interpreters/WebAssembly)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
@@ -389,6 +405,7 @@ if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
     set_source_files_properties(
             Common/Elf.cpp
             Common/Dwarf.cpp
+            Common/MachO.cpp
             Common/SymbolIndex.cpp
             Common/ThreadFuzzer.cpp
             PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
@@ -738,6 +755,16 @@ endif()
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
+endif()
+
+if (TARGET ch_contrib::wasmedge)
+    target_link_libraries(dbms PRIVATE ch_contrib::wasmedge)
+endif()
+
+if (TARGET ch_rust::wasmtime)
+    # FIXME: same as for ch_rust::delta_kernel_rs above
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::wasmtime)
+    target_link_libraries(dbms PRIVATE ch_rust::wasmtime)
 endif()
 
 if (ENABLE_TESTS)

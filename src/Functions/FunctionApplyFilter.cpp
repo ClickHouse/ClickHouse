@@ -86,8 +86,9 @@ public:
                     "First argument of function '{}' must be a String filter name",
                     getName());
 
-        /// Query context contains filter lookup where per-query filters are stored
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::tryGetQueryContext();
+        if (!query_context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for {}", getName());
         auto filter_lookup = query_context->getRuntimeFilterLookup();
         if (!filter_lookup)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter lookup was not initialized");

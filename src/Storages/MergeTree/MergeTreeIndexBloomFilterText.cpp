@@ -8,6 +8,7 @@
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
@@ -125,7 +126,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    tokenizer->stringPaddedToBloomFilter(ref.data(), ref.size(), granule->bloom_filters[col]);
+                    forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), granule->bloom_filters[col]);
                 }
 
                 current_position += 1;
@@ -136,7 +137,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                tokenizer->stringPaddedToBloomFilter(ref.data(), ref.size(), granule->bloom_filters[col]);
+                forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), granule->bloom_filters[col]);
             }
         }
     }
@@ -476,6 +477,34 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         }
     }
 
+    /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
+    if (!key_index)
+    {
+        if (auto parsed = tryParseMapSubcolumnName(column_name))
+        {
+            auto & [map_column_name, serialized_key] = *parsed;
+
+            /// Same as arrayElement: skip when comparing with default value because
+            /// the subcolumn returns default for keys that don't exist in the map.
+            if (value_field == value_type->getDefault())
+                return false;
+
+            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
+            {
+                key_index = map_keys_index;
+                const_value = serialized_key;
+            }
+            else if (const auto map_values_idx = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
+            {
+                key_index = map_values_idx;
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+
     const auto lowercase_key_index = getKeyIndex(fmt::format("lower({})", column_name));
     const auto is_has_token_case_insensitive = function_name.starts_with("hasTokenCaseInsensitive");
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
@@ -500,7 +529,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     {
         if (function_name == "has" || function_name == "mapContainsKey" || function_name == "mapContains")
         {
-            out.key_column = *key_index;
+            out.key_column = *map_key_index;
             out.function = RPNElement::FUNCTION_HAS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
             auto & value = const_value.safeGet<String>();
@@ -509,7 +538,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         }
         if (function_name == "mapContainsKeyLike")
         {
-            out.key_column = *key_index;
+            out.key_column = *map_key_index;
             out.function = RPNElement::FUNCTION_HAS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
             auto & value = const_value.safeGet<String>();
@@ -748,7 +777,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         {
             bloom_filters.back().emplace_back(params);
             auto ref = column->getDataAt(row);
-            tokenizer->stringPaddedToBloomFilter(ref.data(), ref.size(), bloom_filters.back().back());
+            forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());
         }
     }
 

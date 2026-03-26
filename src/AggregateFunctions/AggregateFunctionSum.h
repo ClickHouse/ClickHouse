@@ -185,7 +185,7 @@ struct AggregateFunctionSumData
         }
         else if constexpr (is_over_big_int<T>)
         {
-            alignas(64) const uint64_t masks[2] = {0, ~0ULL};
+            const uint64_t masks[2] = {0, ~0ULL};
             AccumulateResult local_sum{};
             for (size_t i = 0; i < count; ++i)
             {

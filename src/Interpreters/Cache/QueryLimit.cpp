@@ -14,7 +14,7 @@ namespace ErrorCodes
 static bool isQueryInitialized()
 {
     return CurrentThread::isInitialized()
-        && CurrentThread::get().getQueryContext()
+        && CurrentThread::get().tryGetQueryContext()
         && !CurrentThread::getQueryId().empty();
 }
 

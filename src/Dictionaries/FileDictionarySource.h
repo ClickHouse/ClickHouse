@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Poco/Timestamp.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Dictionaries/IDictionarySource.h>

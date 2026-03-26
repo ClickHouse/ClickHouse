@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
+#include <Common/GetPriorityForLoadBalancing.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -12,6 +13,9 @@ namespace DB
 {
 class IThrottler;
 using ThrottlerPtr = std::shared_ptr<IThrottler>;
+
+struct UnavailableShardTracker;
+using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
@@ -35,7 +39,8 @@ public:
         LoggerPtr log_,
         UInt32 shard_count_,
         std::shared_ptr<const StorageLimitsList> storage_limits_,
-        const String & cluster_name_);
+        const String & cluster_name_,
+        UnavailableShardTrackerPtr unavailable_shard_tracker_ = nullptr);
 
     String getName() const override { return "ReadFromRemote"; }
 
@@ -61,6 +66,7 @@ private:
     LoggerPtr log;
     UInt32 shard_count;
     const String cluster_name;
+    UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
     Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header);

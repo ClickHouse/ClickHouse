@@ -165,6 +165,8 @@ protected:
         bool ignore_result = false) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
+
+    AccessToken retrieveAccessToken() const;
 };
 
 class OneLakeCatalog : public RestCatalog
@@ -186,15 +188,11 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE;
     }
 
-    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
-
     String getTenantId() const { return tenant_id; }
 
 protected:
     /// Parameters for OneLake OAuth.
     const std::string tenant_id;
-
-    AccessToken retrieveAccessToken() const;
 };
 
 class BigLakeCatalog : public RestCatalog
@@ -218,6 +216,10 @@ public:
     }
 
     DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+
+    const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
+    const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
+    const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
 
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).
