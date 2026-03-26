@@ -506,7 +506,7 @@ void DistributedSink::writeSync(const Block & block)
         if (!throttler && (settings[Setting::max_network_bandwidth] || settings[Setting::max_network_bytes]))
         {
             throttler = std::make_shared<Throttler>(
-                settings[Setting::max_network_bandwidth], settings[Setting::max_network_bytes], "Network bandwidth limit for a query exceeded.");
+                "network_distributed_query", settings[Setting::max_network_bandwidth], settings[Setting::max_network_bytes], "Network bandwidth limit for a query exceeded.");
         }
 
         watch.restart();

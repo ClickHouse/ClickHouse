@@ -335,6 +335,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                 }
             }
+
+            /// The atom handlers for IN / NOT IN expect a Tuple but we may have parsed a single scalar in the case of IN (single_value).
+            if (is_in_operator && const_value.getType() != Field::Types::Tuple)
+                const_value = Tuple{const_value};
+
             const auto atom_it = atom_map.find(func_name);
             atom_it->second(out, column_name, const_value);
             return true;
@@ -380,17 +385,20 @@ ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstima
 
 Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
 {
+    if (stats->getNumRows() == 0)
+        return 0;
     Float64 result = 0;
     for (const Range & range : ranges.ranges)
     {
-        result += stats->estimateRange(range);
+        if (auto estimate = stats->estimateRange(range))
+            result += *estimate;
+        else if (range.left == range.right)
+            result += static_cast<Float64>(stats->getNumRows()) * default_cond_equal_factor;
+        else
+            result += static_cast<Float64>(stats->getNumRows()) * default_cond_range_factor;
     }
-    /// In case that there is an empty statistics.
-    if (stats->getNumRows() == 0)
-        return 0;
     Float64 selectivity = result / static_cast<Float64>(stats->getNumRows());
-    selectivity = std::max<Float64>(selectivity, 0);
-    return selectivity;
+    return std::max<Float64>(selectivity, 0);
 }
 
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
