@@ -43,6 +43,7 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 extern const int QUERY_IS_PROHIBITED;
 extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 
