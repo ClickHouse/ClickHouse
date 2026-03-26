@@ -1,0 +1,8 @@
+<clickhouse>
+    <logger>
+        <level>warning</level>
+        <auditlog>/var/log/clickhouse-server/clickhouse-server.audit.log</auditlog>
+        <auditlog_types>DDL</auditlog_types>
+    </logger>
+</clickhouse>
+
