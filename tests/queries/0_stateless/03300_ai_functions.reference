@@ -1,7 +1,44 @@
--- Function registration
+-- Disabled by default
+-- Enabled after setting
 aiGenerateContent
 -- aiGenerateContent: too few arguments
 -- aiGenerateContent: too many arguments
--- aiGenerateContent: missing named collection
+-- No provider: bare call
+-- Named collection missing endpoint
+-- Named collection missing model
+-- Named collection missing api_key
+-- Nonexistent named collection
+-- default_ai_provider resolves collection
+0
+-- Explicit collection overrides default
+0
 -- aiGenerateContent return type
 result	Nullable(String)
+-- NULL input returns NULL
+1
+-- Empty string input accepted
+0
+-- Unknown provider name
+-- Anthropic provider resolves
+0
+-- Custom system prompt accepted
+0
+-- Temperature argument accepted
+0
+-- Named collection with no prompt
+-- Setting defaults
+ai_cache_ttl_sec	86400
+ai_max_api_calls_per_query	1000
+ai_max_concurrent_requests	16
+ai_max_input_tokens_per_query	1000000
+ai_max_output_tokens_per_query	500000
+ai_max_retries	3
+ai_max_rows_per_query	100000
+ai_max_rps	50
+ai_on_error	throw
+ai_on_quota_exceeded	throw
+ai_request_timeout_sec	60
+ai_retry_initial_delay_ms	1000
+allow_experimental_ai_functions	0
+default_ai_provider	
+-- Re-disabled blocks function
