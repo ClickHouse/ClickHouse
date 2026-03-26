@@ -3,6 +3,8 @@
 -- Tests that text indexes built on mapValues(m) work correctly when the analyzer
 -- rewrites arrayElement(m, 'key') into the map.key_* subcolumn form.
 
+-- Skip index granule counts depend on physical data sort order
+SET force_primary_key_reverse_order = 0;
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;
