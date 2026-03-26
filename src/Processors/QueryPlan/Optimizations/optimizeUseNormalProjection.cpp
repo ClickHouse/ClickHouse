@@ -241,6 +241,7 @@ std::optional<String> optimizeUseNormalProjections(
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
+    projection_query_info.row_level_filter = nullptr;
     if (query.dag)
         projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
