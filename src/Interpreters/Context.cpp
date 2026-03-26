@@ -1201,6 +1201,7 @@ ContextData::ContextData(const ContextData &o) :
     has_process_list_elem(o.has_process_list_elem),
     insertion_table_info(o.insertion_table_info),
     is_distributed(o.is_distributed),
+    is_mutation(o.is_mutation),
     default_format(o.default_format),
     insert_format(o.insert_format),
     external_tables_mapping(o.external_tables_mapping),
