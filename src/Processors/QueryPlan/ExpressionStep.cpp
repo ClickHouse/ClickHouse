@@ -162,8 +162,9 @@ ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(co
     std::set<size_t> required_passthrough_header_positions;
     for (size_t pt_idx : required_passthrough_indices)
     {
-        if (pt_idx < passthrough_input_header_positions.size())
-            required_passthrough_header_positions.insert(passthrough_input_header_positions[pt_idx]);
+        if (pt_idx >= passthrough_input_header_positions.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required output position {} is out of range for pass-through inputs", pt_idx);
+        required_passthrough_header_positions.insert(passthrough_input_header_positions[pt_idx]);
     }
 
     const auto num_passthrough = passthrough_input_header_positions.size();
