@@ -47,6 +47,15 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
     {
         /// connection://bucket
         auto prefix = table_location.substr(0, table_location.size() - table_root.size());
+        if (raw_path.size() < prefix.size())
+        {
+            throw ::DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "IcebergPathResolver::resolve failed in the second branch. raw_path='{}', table_location='{}', table_root='{}'",
+                raw_path,
+                table_location,
+                table_root);
+        }
         return std::string{raw_path.substr(prefix.size())};
     }
 

@@ -355,6 +355,10 @@ namespace
     - [merges_mutations_memory_usage_soft_limit](/operations/server-configuration-parameters/settings#merges_mutations_memory_usage_soft_limit)
     )", 0) \
     DECLARE(Bool, allow_use_jemalloc_memory, true, R"(Allows to use jemalloc memory.)", 0) \
+    DECLARE(Bool, use_separate_cache_arena, true, R"(
+    Enable a dedicated jemalloc arena for cache allocations (mark cache, uncompressed cache, page cache).
+    Isolates cache data from query-processing allocations, reducing memory fragmentation.
+    )", 0) \
     DECLARE(UInt64, cgroups_memory_usage_observer_wait_time, 15, R"(
     Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups.
 
@@ -988,6 +992,10 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <validate_tcp_client_information>false</validate_tcp_client_information>
     ```)", 0) \
     DECLARE(Bool, storage_metadata_write_full_object_key, true, R"(Write disk metadata files with VERSION_FULL_OBJECT_KEY format. This is enabled by default. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
+    DECLARE(Bool, disk_transaction_wait_for_blob_removal, true, R"(
+    Default value for the per-disk `wait_for_blob_removal` setting.
+    When enabled, the server waits for background blob removal to complete before acknowledging the operation.
+    )", 0) \
     DECLARE(UInt64, max_materialized_views_count_for_table, 0, R"(
     A limit on the number of materialized views attached to a table.
 

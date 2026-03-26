@@ -285,6 +285,7 @@ static ThrottlerPtr getThrottler(const ContextPtr & context)
     if (settings[Setting::max_network_bandwidth] || settings[Setting::max_network_bytes])
     {
         throttler = std::make_shared<Throttler>(
+            "network_cluster_query",
             settings[Setting::max_network_bandwidth],
             settings[Setting::max_network_bytes],
             "Limit for bytes to send or receive over network exceeded.",
@@ -700,7 +701,7 @@ void executeQueryWithParallelReplicas(
         auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
 
         auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
-            query_ast,
+            query_tree,
             *header,
             new_context,
             processed_stage,
