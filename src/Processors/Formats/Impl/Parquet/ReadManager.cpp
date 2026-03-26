@@ -363,7 +363,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             if (row_subgroup.filter.rows_pass == 0)
             {
                 /// Track rows from fully-filtered subgroups for read_rows accounting.
-                pending_filtered_rows += row_subgroup.filter.rows_total;
+                pending_filtered_rows.fetch_add(row_subgroup.filter.rows_total, std::memory_order_relaxed);
                 break;
             }
             if (step_idx > 0 && step_idx <= reader.steps.size())
@@ -457,7 +457,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         {
             /// Track rows from subgroups skipped due to column index filtering
             /// for correct read_rows accounting.
-            pending_filtered_rows += next_subgroup.filter.rows_total;
+            pending_filtered_rows.fetch_add(next_subgroup.filter.rows_total, std::memory_order_relaxed);
             row_group.read_ptr.store(main_ptr + 1);
             main_ptr += 1;
             advanced_ptr = main_ptr;
@@ -1057,7 +1057,7 @@ ReadManager::ReadResult ReadManager::read()
                 }
                 /// Return any remaining filtered rows so the caller can report
                 /// them as read_rows even though no data chunk is produced.
-                return {{}, {}, 0, pending_filtered_rows};
+                return {{}, {}, 0, pending_filtered_rows.exchange(0, std::memory_order_relaxed)};
             }
 
             if (parser_shared_resources->parsing_runner.isManual())
@@ -1138,8 +1138,7 @@ ReadManager::ReadResult ReadManager::read()
     /// plus any rows from previously skipped subgroups (rows_pass == 0).
     /// This ensures read_rows in system.query_log is consistent with MergeTree:
     /// rows read during prewhere evaluation count as "read" even if filtered out.
-    size_t virtual_rows_read = row_subgroup.filter.rows_total + pending_filtered_rows;
-    pending_filtered_rows = 0;
+    size_t virtual_rows_read = row_subgroup.filter.rows_total + pending_filtered_rows.exchange(0, std::memory_order_relaxed);
 
     /// This updates `memory_usage` of previous stages, which may allow more tasks to be scheduled.
     MemoryUsageDiff diff(ReadStage::Deliver);

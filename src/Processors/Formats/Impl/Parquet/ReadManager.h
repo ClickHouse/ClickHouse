@@ -118,7 +118,9 @@ private:
     /// Rows from subgroups that were fully filtered by prewhere (rows_pass == 0)
     /// and never delivered as chunks. Accumulated here so they can be reported
     /// with the next delivered chunk for correct read_rows accounting.
-    size_t pending_filtered_rows = 0;
+    /// Atomic because finishRowSubgroupStage writes from thread pool workers
+    /// while read() reads from the main thread.
+    std::atomic<size_t> pending_filtered_rows{0};
     /// Nullopt means that ReadManager reads all row groups
     std::optional<std::unordered_set<UInt64>> row_groups_to_read;
 
