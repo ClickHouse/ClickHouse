@@ -109,7 +109,7 @@ common_unit_test_job_config = Job.Config(
     name=JobNames.UNITTEST,
     runs_on=[],  # from parametrize()
     command=f"python3 ./ci/jobs/unit_tests_job.py",
-    run_in_docker="clickhouse/fasttest+--privileged",
+    run_in_docker="clickhouse/test-base+--privileged",
     digest_config=Job.CacheDigestConfig(
         include_paths=["./ci/jobs/unit_tests_job.py"],
     ),
