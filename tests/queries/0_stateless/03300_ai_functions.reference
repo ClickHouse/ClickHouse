@@ -1,0 +1,7 @@
+-- Function registration
+aiGenerateContent
+-- aiGenerateContent: too few arguments
+-- aiGenerateContent: too many arguments
+-- aiGenerateContent: missing named collection
+-- aiGenerateContent return type
+result	Nullable(String)
