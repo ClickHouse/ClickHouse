@@ -121,7 +121,7 @@ Chunk ValuesBlockInputFormat::read()
     {
         try
         {
-            skipWhitespaceIfAny(*buf);
+            skipWhitespaceAndSQLComments(*buf);
             if (buf->eof() || *buf->position() == ';')
                 break;
             if (need_only_count)
@@ -576,7 +576,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Insert value into the column.
     /// For Dynamic type we cannot just insert Field as we lose information about the data type.
     /// Instead try to create a column with single element and cast it to the destination type.
-    if (type.hasDynamicSubcolumns())
+    if (type.hasDynamicStructure())
     {
         auto const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
@@ -723,7 +723,7 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
         first_row = false;
     }
 
-    skipWhitespaceIfAny(buf);
+    skipWhitespaceAndSQLComments(buf);
     if (buf.eof() || end_of_data)
         return {};
 

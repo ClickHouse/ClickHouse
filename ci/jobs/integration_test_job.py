@@ -380,8 +380,6 @@ def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
         return None
 
 
-FLAKY_CHECK_TEST_REPEAT_COUNT = 3
-FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def get_parallel_sequential_tests_to_run(
@@ -614,12 +612,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
         else:
             assert False, f"Unknown job option [{to}]"
 
-    if args.count or is_flaky_check:
-        repeat_option = (
-            f"--count {args.count or FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order"
-        )
-    elif is_targeted_check:
-        repeat_option = f"--count 10 --random-order"
+    if args.count:
+        repeat_option = f"--count {args.count} --random-order"
+    # For flaky/targeted checks, --count is not used. Instead, --dist=each runs N workers
+    # each executing all modules independently with their own isolated Docker cluster
+    # (ClickHouseCluster appends PYTEST_XDIST_WORKER to project_name for isolation).
 
     if args.workers:
         workers = args.workers
@@ -699,7 +696,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     if is_bugfix_validation or is_flaky_check:
         assert (
-            changed_test_modules
+            changed_test_modules or (info.is_local_run and args.test)
         ), "No changed test modules found, either job must be skipped or bug in changed test search logic"
 
     Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
@@ -752,6 +749,17 @@ tar -czf ./ci/tmp/logs.tar.gz \
     elif is_parallel:
         sequential_test_modules = []
         assert not is_sequential
+
+    if is_flaky_check or is_targeted_check:
+        # Sort by module file so all tests from the same file are consecutive.
+        # With --dist=each, pytest preserves CLI argument order and uses it as the
+        # collection order. If tests from different modules interleave (e.g. CIDB
+        # returns them sorted by failure time), pytest finalizes and re-enters
+        # module-scoped fixtures between them, breaking tests that call
+        # cluster.add_instance() inside the fixture.
+        # For regular jobs, preserve the duration-aware ordering from get_optimal_test_batch.
+        parallel_test_modules = sorted(parallel_test_modules, key=lambda t: t.split("::")[0])
+        sequential_test_modules = sorted(sequential_test_modules, key=lambda t: t.split("::")[0])
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
@@ -823,10 +831,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     error_info = []
 
-    module_repeat_cnt = 1
-    if is_flaky_check:
-        module_repeat_cnt = FLAKY_CHECK_MODULE_REPEAT_COUNT
-
     failed_test_cases = []
 
     # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host.
@@ -837,20 +841,28 @@ tar -czf ./ci/tmp/logs.tar.gz \
         except Exception as ex:
             print(f"Failed to clear dmesg before integration tests: {ex}")
 
+    if is_flaky_check or is_targeted_check:
+        # Each xdist worker runs all modules independently with its own isolated Docker cluster.
+        # ClickHouseCluster appends PYTEST_XDIST_WORKER to the project name, so clusters
+        # from different workers never interfere. --dist=each sends all tests to every worker.
+        parallel_dist = "--dist=each"
+        parallel_workers = workers
+        # Sequential tests cannot run in parallel, so we loop over them instead.
+        # Run at least 3 times to have meaningful flakiness signal, at most workers times.
+        sequential_repeat_cnt = max(3, workers)
+    else:
+        parallel_dist = "--dist=loadfile"
+        parallel_workers = workers
+        sequential_repeat_cnt = 1
+
     if parallel_test_modules:
-        for attempt in range(module_repeat_cnt):
-            log_file = f"{temp_path}/pytest_parallel.log"
-            test_result_parallel = run_pytest_and_collect_results(
-                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
-                env=test_env,
-                report_name="parallel",
-                timeout=session_timeout_parallel + 600,
-            )
-            if is_flaky_check and not test_result_parallel.is_ok():
-                print(
-                    f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
-                )
-                break
+        log_file = f"{temp_path}/pytest_parallel.log"
+        test_result_parallel = run_pytest_and_collect_results(
+            command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+            env=test_env,
+            report_name="parallel",
+            timeout=session_timeout_parallel + 600,
+        )
         test_results.extend(test_result_parallel.results)
         _mark_infrastructure_errors(test_result_parallel.results)
         failed_test_cases.extend(
@@ -860,43 +872,41 @@ tar -czf ./ci/tmp/logs.tar.gz \
             failed_tests_files.extend(test_result_parallel.files)
         if test_result_parallel.is_error():
             if not is_targeted_check:
-                # In targeted checks we may overload the run with many or heavy tests
-                # (--count N is used). In this mode, a session-timeout is an expected risk
-                # rather than an infrastructure problem, so we do not treat such errors as job-level
-                # failures and avoid setting the error flag for targeted runs.
+                # In targeted checks we may overload the run with many heavy tests running
+                # in parallel. A session-timeout is an expected risk rather than an
+                # infrastructure problem, so we do not treat such errors as job-level failures.
                 has_error = True
                 error_info.append(test_result_parallel.info)
 
     fail_num = len([r for r in test_results if not r.is_ok()])
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
-        for attempt in range(module_repeat_cnt):
+        for attempt in range(sequential_repeat_cnt):
             test_result_sequential = run_pytest_and_collect_results(
                 command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=session_timeout_sequential + 600,
             )
-
-            if is_flaky_check and not test_result_sequential.is_ok():
+            test_results.extend(test_result_sequential.results)
+            _mark_infrastructure_errors(test_result_sequential.results)
+            failed_test_cases.extend(
+                [t.name for t in test_result_sequential.results if t.is_failure()]
+            )
+            if test_result_sequential.files:
+                failed_tests_files.extend(test_result_sequential.files)
+            if test_result_sequential.is_error():
+                if not is_targeted_check:
+                    # In targeted checks we may overload the run with many heavy tests running
+                    # sequentially. A session-timeout is an expected risk rather than an
+                    # infrastructure problem, so we do not treat such errors as job-level failures.
+                    has_error = True
+                    error_info.append(test_result_sequential.info)
+                break
+            if (is_flaky_check or is_targeted_check) and not test_result_sequential.is_ok():
                 print(
-                    f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
+                    f"Flaky/targeted check: sequential test run fails after attempt [{attempt+1}/{sequential_repeat_cnt}] - break"
                 )
                 break
-        test_results.extend(test_result_sequential.results)
-        _mark_infrastructure_errors(test_result_sequential.results)
-        failed_test_cases.extend(
-            [t.name for t in test_result_sequential.results if t.is_failure()]
-        )
-        if test_result_sequential.files:
-            failed_tests_files.extend(test_result_sequential.files)
-        if test_result_sequential.is_error():
-            if not is_targeted_check:
-                # In targeted checks we may overload the run with many or heavy tests
-                # (--count N is used). In this mode, a session-timeout is an expected risk
-                # rather than an infrastructure problem, so we do not treat such errors as job-level
-                # failures and avoid setting the error flag for targeted runs.
-                has_error = True
-                error_info.append(test_result_sequential.info)
 
     # Collect logs before re-run
     attached_files = []
