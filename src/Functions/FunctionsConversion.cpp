@@ -58,7 +58,8 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
     size_t input_rows_count,
-    const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert)
+    const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+    bool throw_on_null)
 {
     /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
     /// and construct the result based on discriminators.
@@ -156,6 +157,9 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
         auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
         if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
         {
+            if (throw_on_null)
+                throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                    "Cannot convert NULL value to non-Nullable type");
             res->insertDefault();
         }
         else if (global_discr == shared_variant_discr)
@@ -1474,10 +1478,13 @@ FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataT
         return wrapper(args, result_type, nullptr, args[0].column->size());
     };
 
-    return [nested_convert]
+    bool keep_nullable = settings.cast_keep_nullable;
+    return [nested_convert, keep_nullable]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
     {
-        return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
+        return ConvertImplFromDynamicToColumn::execute(
+            arguments, result_type, input_rows_count, nested_convert,
+            keep_nullable && !result_type->isNullable() && !result_type->isLowCardinalityNullable() && !result_type->canBeInsideNullable());
     };
 }
 
