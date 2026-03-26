@@ -27,6 +27,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Poco/URI.h>
 
 #include <algorithm>
 #include <memory>
@@ -234,7 +235,8 @@ IStorageCluster::RemoteCallVariables IStorageCluster::convertToRemote(
     /// After getClusterImpl each shard must have exactly 1 replica
     if (shard_addresses.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of shard {} in cluster {} is not equal 1", shard_num, cluster_name_from_settings);
-    auto host_name = shard_addresses[0].toString();
+    std::string host_name;
+    Poco::URI::decode(shard_addresses[0].toString(), host_name);
 
     LOG_INFO(log, "Choose remote initiator '{}'", host_name);
 

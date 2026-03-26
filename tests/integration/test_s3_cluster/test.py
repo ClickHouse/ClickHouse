@@ -93,6 +93,22 @@ def started_cluster():
             macros={"replica": "replica1", "shard": "shard2"},
             with_zookeeper=True,
         )
+        cluster.add_instance(
+            "c2.s0_0_0",
+            main_configs=["configs/cluster.xml", "configs/named_collections.xml"],
+            user_configs=["configs/users.xml"],
+            macros={"replica": "replica1", "shard": "shard1"},
+            with_zookeeper=True,
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "c2.s0_0_1",
+            main_configs=["configs/cluster.xml", "configs/named_collections.xml"],
+            user_configs=["configs/users.xml"],
+            macros={"replica": "replica2", "shard": "shard1"},
+            with_zookeeper=True,
+            stay_alive=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -766,3 +782,61 @@ def test_cluster_hosts_limit(started_cluster):
         """
     )
     assert int(hosts_2) == 2
+
+
+def test_object_storage_remote_initiator(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    query_id = uuid.uuid4().hex
+    result = node.query(
+        f"""
+        SELECT * from s3Cluster(
+            'cluster_remote',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)
+        SETTINGS object_storage_remote_initiator=1
+        """,
+        query_id = query_id,
+    )
+
+    assert result is not None
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_all'")
+    queries = node.query(
+        f"""
+        SELECT count()
+            FROM clusterAllReplicas('cluster_all', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id}'
+            FORMAT TSV
+        """
+    ).splitlines()
+
+    # initial node + describe table + remote initiator + 2 subqueries on replicas
+    assert queries == ["5"]
+
+    query_id = uuid.uuid4().hex
+    result = node.query(
+        f"""
+        SELECT * from s3Cluster(
+            'cluster_with_dots',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)
+        SETTINGS object_storage_remote_initiator=1
+        """,
+        query_id = query_id,
+    )
+
+    assert result is not None
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_all'")
+    queries = node.query(
+        f"""
+        SELECT count()
+            FROM clusterAllReplicas('cluster_all', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id}'
+            FORMAT TSV
+        """
+    ).splitlines()
+
+    # initial node + describe table + remote initiator + 2 subqueries on replicas
+    assert queries == ["5"]
