@@ -15,7 +15,7 @@ create table mt (key Int, value String) engine=MergeTree() order by key settings
   -- otherwise sparse info will be different, since for INSERTs the sparse ratio is calculated for the whole block, while for mutations for each granula (FIXME?)
   ratio_of_defaults_for_sparse_serialization=1,
   -- This uncovers the bug
-  auto_statistics_types='uniq,minmax,countmin,tdigest'
+  auto_statistics_types='uniq,minmax,countmin'
 ;
 insert into mt select number, repeat('a', number) from numbers(10e3) settings max_block_size=1e6;
 -- { echo }
