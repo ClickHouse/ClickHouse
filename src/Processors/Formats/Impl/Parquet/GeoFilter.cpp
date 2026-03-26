@@ -1,6 +1,8 @@
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
+#include <Common/logger_useful.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -18,30 +20,20 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <cmath>
-#include <cstring>
-
 namespace DB::Parquet
 {
 
 namespace
 {
 
-
-/// Recursively walk a constant column (ColumnConst / ColumnTuple / ColumnArray) at the
-/// given row index and accumulate min/max x/y. Handles:
-///   • ColumnConst   — unwrap and recurse at row 0
-///   • ColumnTuple(ColumnFloat64, ColumnFloat64)  — a 2D point
-///   • ColumnArray(…) — iterate elements
-void accumulateBboxFromColumn(
-    const DB::IColumn & col, size_t row,
-    double & xmin, double & ymin,
-    double & xmax, double & ymax,
-    bool & found)
+/// Recursively walk a CH column at the given row, adding all 2D points to acc.
+/// Handles: ColumnConst (unwrap), ColumnTuple(Float64,Float64) (point),
+/// ColumnArray (recurse into elements).
+void addFromColumn(DB::BboxAccumulator & acc, const DB::IColumn & col, size_t row)
 {
     if (const auto * const_col = typeid_cast<const DB::ColumnConst *>(&col))
     {
-        accumulateBboxFromColumn(const_col->getDataColumn(), 0, xmin, ymin, xmax, ymax, found);
+        addFromColumn(acc, const_col->getDataColumn(), 0);
         return;
     }
     if (const auto * tuple_col = typeid_cast<const DB::ColumnTuple *>(&col))
@@ -52,15 +44,7 @@ void accumulateBboxFromColumn(
         const auto * y_col = typeid_cast<const DB::ColumnFloat64 *>(&tuple_col->getColumn(1));
         if (!x_col || !y_col)
             return;
-        double x = x_col->getData()[row];
-        double y = y_col->getData()[row];
-        if (!std::isfinite(x) || !std::isfinite(y))
-            return;
-        xmin = std::min(xmin, x);
-        ymin = std::min(ymin, y);
-        xmax = std::max(xmax, x);
-        ymax = std::max(ymax, y);
-        found = true;
+        acc.add(x_col->getData()[row], y_col->getData()[row]);
         return;
     }
     if (const auto * array_col = typeid_cast<const DB::ColumnArray *>(&col))
@@ -71,70 +55,40 @@ void accumulateBboxFromColumn(
         const size_t start = row > 0 ? offsets[row - 1] : 0;
         const size_t end = offsets[row];
         for (size_t i = start; i < end; ++i)
-            accumulateBboxFromColumn(array_col->getData(), i, xmin, ymin, xmax, ymax, found);
+            addFromColumn(acc, array_col->getData(), i);
     }
 }
-
-/// Accumulate bounding box from a CH-native GeometricObject (CartesianPoint / LineString / Polygon / …).
-struct BboxAccumulator
-{
-    double xmin = std::numeric_limits<double>::infinity();
-    double ymin = std::numeric_limits<double>::infinity();
-    double xmax = -std::numeric_limits<double>::infinity();
-    double ymax = -std::numeric_limits<double>::infinity();
-    bool found = false;
-
-    void add(double x, double y)
-    {
-        if (!std::isfinite(x) || !std::isfinite(y)) return;
-        xmin = std::min(xmin, x);
-        ymin = std::min(ymin, y);
-        xmax = std::max(xmax, x);
-        ymax = std::max(ymax, y);
-        found = true;
-    }
-
-    void add(const DB::CartesianPoint & p) { add(p.x(), p.y()); }
-
-    template <typename Container>
-    void addAll(const Container & pts) { for (const auto & p : pts) add(p); }
-};
 
 bool tryExtractWkbBbox(std::string_view wkb,
                        double & xmin, double & ymin,
                        double & xmax, double & ymax)
 {
     DB::ReadBufferFromMemory buf(wkb);
-    BboxAccumulator acc;
+    DB::BboxAccumulator acc;
     try
     {
         auto geo = DB::parseWKBFormat(buf);
-        std::visit([&](const auto & g)
+        std::visit([&]<typename T>(const T & g)
         {
-            using T = std::decay_t<decltype(g)>;
             if constexpr (std::is_same_v<T, DB::CartesianPoint>)
-            {
-                acc.add(g);
-            }
+                acc.add(g.x(), g.y());
             else if constexpr (std::is_same_v<T, DB::LineString<DB::CartesianPoint>>)
-            {
                 acc.addAll(g);
-            }
             else if constexpr (std::is_same_v<T, DB::Polygon<DB::CartesianPoint>>)
-            {
                 acc.addAll(g.outer());
-            }
             else if constexpr (std::is_same_v<T, DB::MultiLineString<DB::CartesianPoint>>)
-            {
                 for (const auto & ls : g) acc.addAll(ls);
-            }
             else if constexpr (std::is_same_v<T, DB::MultiPolygon<DB::CartesianPoint>>)
-            {
                 for (const auto & poly : g) acc.addAll(poly.outer());
-            }
+            else
+                static_assert(!sizeof(T), "Unhandled geometry type — add a case here");
         }, geo);
     }
-    catch (...) { return false; }
+    catch (...)
+    {
+        LOG_TRACE(getLogger("GeoFilter"), "Failed to parse WKB geometry for bbox extraction: {}", getCurrentExceptionMessage(false));
+        return false;
+    }
 
     if (!acc.found) return false;
     xmin = acc.xmin; ymin = acc.ymin;
@@ -165,13 +119,12 @@ bool tryExtractConstBbox(
     }
 
     /// CH native geometry (Tuple of floats, Array of Tuples, etc.).
-    xmin = std::numeric_limits<double>::infinity();
-    ymin = std::numeric_limits<double>::infinity();
-    xmax = -std::numeric_limits<double>::infinity();
-    ymax = -std::numeric_limits<double>::infinity();
-    bool found = false;
-    accumulateBboxFromColumn(*raw, 0, xmin, ymin, xmax, ymax, found);
-    return found;
+    DB::BboxAccumulator acc;
+    addFromColumn(acc, *raw, 0);
+    if (!acc.found) return false;
+    xmin = acc.xmin; ymin = acc.ymin;
+    xmax = acc.xmax; ymax = acc.ymax;
+    return true;
 }
 
 
@@ -259,7 +212,9 @@ bool rowGroupFailsSpatialFilters(
 
         /// Only check geospatial_statistics.bbox baked into the geometry column's ColumnMetaData.
         /// covering.bbox is handled via the standard KeyCondition hyperrectangle path.
-        const auto & col_meta = rg_meta.columns.at(geo_col->column_idx).meta_data;
+        if (geo_col->column_idx >= rg_meta.columns.size())
+            continue;
+        const auto & col_meta = rg_meta.columns[geo_col->column_idx].meta_data;
         if (!col_meta.__isset.geospatial_statistics || !col_meta.geospatial_statistics.__isset.bbox)
             continue;
 
@@ -277,8 +232,8 @@ bool rowGroupFailsSpatialFilters(
 
 std::shared_ptr<DB::KeyCondition> buildBboxKeyCondition(
     const SpatialFilter & filter,
-    const std::string & xmin_col, const std::string & ymin_col,
-    const std::string & xmax_col, const std::string & ymax_col,
+    const String & xmin_col, const String & ymin_col,
+    const String & xmax_col, const String & ymax_col,
     const DB::ContextPtr & context,
     const DB::Block & extended_sample_block)
 {
@@ -294,7 +249,7 @@ std::shared_ptr<DB::KeyCondition> buildBboxKeyCondition(
     const auto & ymin_in = dag.addInput(ymin_col, float64);
     const auto & ymax_in = dag.addInput(ymax_col, float64);
 
-    auto make_const = [&](double v, const std::string & name) -> const DB::ActionsDAG::Node &
+    auto make_const = [&](double v, const String & name) -> const DB::ActionsDAG::Node &
     {
         return dag.addColumn(DB::ColumnWithTypeAndName{
             float64->createColumnConst(1, DB::Field(v)), float64, name});
@@ -320,14 +275,9 @@ std::shared_ptr<DB::KeyCondition> buildBboxKeyCondition(
     const auto & and3 = dag.addFunction(and_fn, {&and2, &cmp4}, "");
     dag.getOutputs() = {&and3};
 
-    DB::Names names;
-    names.reserve(extended_sample_block.columns());
-    for (size_t i = 0; i < extended_sample_block.columns(); ++i)
-        names.push_back(extended_sample_block.getByPosition(i).name);
-
     DB::ActionsDAGWithInversionPushDown inverted(dag.getOutputs().front(), context);
     return std::make_shared<DB::KeyCondition>(
-        inverted, context, names,
+        inverted, context, extended_sample_block.getNames(),
         std::make_shared<DB::ExpressionActions>(
             DB::ActionsDAG(extended_sample_block.getColumnsWithTypeAndName())));
 }

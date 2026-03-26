@@ -45,7 +45,7 @@ private:
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
     /// NOTE: tricky part to support RENAME column.
     /// Takes ActionDAG representation of user's WHERE expression and
-    /// rename columns to the their origina numeric ID's in iceberg
+    /// rename columns to their original numeric IDs in Iceberg
     std::unique_ptr<DB::ActionsDAG> transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const;
 
 public:

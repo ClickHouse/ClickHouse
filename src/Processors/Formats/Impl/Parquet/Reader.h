@@ -480,8 +480,15 @@ struct Reader
     /// are referenced by PrimitiveColumnInfo::column_index_condition.
     std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 
-    /// Spatial KeyConditions built from covering.bbox columns, checked during row-group pruning.
+    /// KeyConditions built from GeoParquet covering.bbox spatial filters.
+    /// One per spatial predicate; checked against the hyperrectangle of bbox column stats.
     std::vector<std::shared_ptr<KeyCondition>> spatial_key_conditions;
+
+    /// Per-column KeyConditions extracted from spatial_key_conditions for page-level
+    /// spatial bbox pruning. Stored here (not as a local variable) to keep the shared_ptrs
+    /// alive, since raw pointers from them are referenced by
+    /// PrimitiveColumnInfo::column_index_condition.
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
 
@@ -502,7 +509,6 @@ struct Reader
     bool applyBloomAndDictionaryFilters(RowGroup & row_group);
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
-    void applySpatialColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
 
     void decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group);

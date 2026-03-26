@@ -1,3 +1,4 @@
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -311,46 +312,65 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     for (const auto & col : format_filter_info->additional_columns)
         extended_sample_block.insert(col);
 
-    /// Phase A: pre-parse GeoParquet metadata and inject covering.bbox sub-columns into
-    /// extended_sample_block BEFORE SchemaConverter runs, so the bbox primitives get proper
-    /// idx_in_output_block and stats support.
+    /// Parse GeoParquet metadata once. Used by both Phase A (covering.bbox column injection)
+    /// and SchemaConverter (geo type resolution). Parsing here avoids a redundant second parse
+    /// in the SchemaConverter constructor when both allow_geoparquet_parser and
+    /// spatial_filter_push_down are on.
+    std::unordered_map<String, DB::GeoColumnMetadata> geo_meta;
+    if (options.format.parquet.allow_geoparquet_parser
+        || options.format.parquet.spatial_filter_push_down)
+    {
+        for (const auto & kv : file_metadata.key_value_metadata)
+        {
+            if (kv.key != "geo")
+                continue;
+            try
+            {
+                geo_meta = DB::parseGeoMetadataEncoding(&kv.value);
+            }
+            catch (...)
+            {
+                LOG_WARNING(getLogger("ParquetReader"), "Failed to parse GeoParquet metadata, spatial pruning and geo type resolution disabled: {}", getCurrentExceptionMessage(false));
+            }
+            break;
+        }
+    }
+
+    /// Phase A: inject covering.bbox sub-columns into extended_sample_block BEFORE
+    /// SchemaConverter runs, so the bbox primitives get proper idx_in_output_block and stats support.
     std::vector<SpatialFilter> all_spatial_filters;
     std::vector<SpatialFilter> geostats_spatial_filters;
     if (options.format.parquet.spatial_filter_push_down && format_filter_info->filter_actions_dag)
     {
         all_spatial_filters = extractSpatialFilters(*format_filter_info->filter_actions_dag, extended_sample_block);
+
         auto float64 = std::make_shared<DataTypeFloat64>();
         for (const auto & sf : all_spatial_filters)
         {
-            std::optional<DB::GeoColumnMetadata::BboxCovering> bbox_cov;
-            for (const auto & kv : file_metadata.key_value_metadata)
-            {
-                if (kv.key != "geo") continue;
-                auto geo_cols = DB::parseGeoMetadataEncoding(&kv.value);
-                auto it = geo_cols.find(sf.geometry_column_name);
-                if (it != geo_cols.end() && it->second.covering_bbox.has_value())
-                    bbox_cov = it->second.covering_bbox;
-                break;
-            }
-            if (!bbox_cov.has_value())
+            auto geo_it = geo_meta.find(sf.geometry_column_name);
+            if (geo_it == geo_meta.end() || !geo_it->second.covering_bbox.has_value())
             { geostats_spatial_filters.push_back(sf); continue; }
+
+            const auto & bbox_cov = *geo_it->second.covering_bbox;
+
+            const std::array<const String *, 4> bbox_col_ptrs = {
+                &bbox_cov.xmin_column, &bbox_cov.ymin_column,
+                &bbox_cov.xmax_column, &bbox_cov.ymax_column};
 
             /// Skip injection if parent struct column (e.g. "location_bbox") is already in block.
             bool conflict = false;
-            for (const auto & col_name : {bbox_cov->xmin_column, bbox_cov->ymin_column,
-                                           bbox_cov->xmax_column, bbox_cov->ymax_column})
+            for (const String * col : bbox_col_ptrs)
             {
-                auto dot = col_name.find('.');
-                if (dot != String::npos && extended_sample_block.has(col_name.substr(0, dot)))
+                auto dot = col->find('.');
+                if (dot != String::npos && extended_sample_block.has(col->substr(0, dot)))
                 { conflict = true; break; }
             }
             if (conflict)
             { geostats_spatial_filters.push_back(sf); continue; }
 
-            for (const auto & col_name : {bbox_cov->xmin_column, bbox_cov->ymin_column,
-                                           bbox_cov->xmax_column, bbox_cov->ymax_column})
-                if (!extended_sample_block.has(col_name))
-                    extended_sample_block.insert({float64->createColumn(), float64, col_name});
+            for (const String * col : bbox_col_ptrs)
+                if (!extended_sample_block.has(*col))
+                    extended_sample_block.insert({float64->createColumn(), float64, *col});
         }
     }
 
@@ -358,8 +378,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     const auto & row_level_filter = format_filter_info->row_level_filter;
     const auto & prewhere_info = format_filter_info->prewhere_info;
 
-    /// Process schema.
-    SchemaConverter schemer(file_metadata, options, &extended_sample_block);
+    /// Process schema. Pass pre-parsed geo_meta so SchemaConverter skips a redundant JSON parse.
+    SchemaConverter schemer(file_metadata, options, &extended_sample_block, std::move(geo_meta));
     auto add_prewhere_outputs = [&](const ActionsDAG & actions)
     {
         for (const auto * node : actions.getOutputs())
@@ -412,33 +432,26 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         {
             for (const auto & sf : all_spatial_filters)
             {
-                /// Re-parse to get bbox column names (same as Phase A).
-                std::optional<DB::GeoColumnMetadata::BboxCovering> bbox_cov;
-                for (const auto & kv : file_metadata.key_value_metadata)
-                {
-                    if (kv.key != "geo") continue;
-                    auto geo_cols = DB::parseGeoMetadataEncoding(&kv.value);
-                    auto it = geo_cols.find(sf.geometry_column_name);
-                    if (it != geo_cols.end() && it->second.covering_bbox.has_value())
-                        bbox_cov = it->second.covering_bbox;
-                    break;
-                }
-                if (!bbox_cov.has_value())
+                auto geo_it = schemer.geo_columns.find(sf.geometry_column_name);
+                if (geo_it == schemer.geo_columns.end() || !geo_it->second.covering_bbox.has_value())
                     continue; // already in geostats_spatial_filters
 
+                const auto & bbox_cov = *geo_it->second.covering_bbox;
                 auto sc = buildBboxKeyCondition(sf,
-                    bbox_cov->xmin_column, bbox_cov->ymin_column,
-                    bbox_cov->xmax_column, bbox_cov->ymax_column,
+                    bbox_cov.xmin_column, bbox_cov.ymin_column,
+                    bbox_cov.xmax_column, bbox_cov.ymax_column,
                     ctx, extended_sample_block);
                 if (!sc)
                     continue;
                 spatial_key_conditions.push_back(sc);
 
                 /// Mark bbox primitives so getHyperrectangleForRowGroup reads their stats.
-                for (const auto & col_name : {bbox_cov->xmin_column, bbox_cov->ymin_column,
-                                               bbox_cov->xmax_column, bbox_cov->ymax_column})
+                const std::array<const String *, 4> bbox_col_ptrs = {
+                    &bbox_cov.xmin_column, &bbox_cov.ymin_column,
+                    &bbox_cov.xmax_column, &bbox_cov.ymax_column};
+                for (const String * col : bbox_col_ptrs)
                     for (auto & pc : primitive_columns)
-                        if (pc.name == col_name)
+                        if (pc.name == *col)
                             pc.used_by_key_condition = true;
             }
         }
@@ -536,6 +549,32 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
                 continue;
             primitive_columns[output_info.primitive_start].column_index_condition = key_condition.get();
+        }
+    }
+
+    /// Page-level pruning for spatial bbox columns: extract per-column conditions from each
+    /// spatial KeyCondition (covering.bbox) and wire them to the bbox primitive columns.
+    /// Bbox columns are hidden auxiliaries — they have no output_columns entry, so we match
+    /// primitive_columns directly by idx_in_output_block.
+    if (options.format.parquet.page_filter_push_down && !spatial_key_conditions.empty())
+    {
+        for (const auto & sc : spatial_key_conditions)
+        {
+            const size_t prev_size = spatial_column_conditions.size();
+            sc->extractSingleColumnConditions(spatial_column_conditions, nullptr);
+            for (size_t i = prev_size; i < spatial_column_conditions.size(); ++i)
+            {
+                const auto & [idx_in_output_block, key_condition] = spatial_column_conditions[i];
+                for (auto & pc : primitive_columns)
+                {
+                    if (pc.idx_in_output_block != idx_in_output_block)
+                        continue;
+                    if (!pc.decoder.allow_stats)
+                        break;
+                    pc.column_index_condition = key_condition.get();
+                    break;
+                }
+            }
         }
     }
 

@@ -37,11 +37,13 @@ namespace DB::Parquet
 
 SchemaConverter::SchemaConverter(
     const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
-    const Block * sample_block_)
+    const Block * sample_block_, std::unordered_map<String, GeoColumnMetadata> precomputed_geo_columns)
     : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
-    if (options.format.parquet.allow_geoparquet_parser)
+    if (!precomputed_geo_columns.empty())
+        geo_columns = std::move(precomputed_geo_columns);
+    else if (options.format.parquet.allow_geoparquet_parser)
     {
         for (const auto & kv : file_metadata.key_value_metadata)
         {
