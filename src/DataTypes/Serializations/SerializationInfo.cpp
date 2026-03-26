@@ -36,6 +36,7 @@ constexpr auto KEY_NAME = "name";
 constexpr auto KEY_TYPES_SERIALIZATION_VERSIONS = "types_serialization_versions";
 constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
+constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
 
 }
@@ -399,6 +400,8 @@ static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & o
         type_versions_obj.set(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(infos.getSettings().string_serialization_version));
         if (infos.getSettings().nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
             type_versions_obj.set(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(infos.getSettings().nullable_serialization_version));
+        if (infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC)
+            type_versions_obj.set(KEY_MAP_SERIALIZATION_VERSION, static_cast<size_t>(infos.getSettings().map_serialization_version));
         object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
 
         /// Write flag propagate_types_serialization_versions_to_nested_types only if it's set,
@@ -490,6 +493,7 @@ ParsedJSON parseJSONEnvelope(const std::string & json_str)
 
     MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
     MergeTreeNullableSerializationVersion nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
+    MergeTreeMapSerializationVersion map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
         if (!type_versions_obj)
@@ -516,6 +520,13 @@ ParsedJSON parseJSONEnvelope(const std::string & json_str)
                     throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
                 nullable_serialization_version = *maybe_enum;
             }
+            else if (type_name == KEY_MAP_SERIALIZATION_VERSION)
+            {
+                auto maybe_enum = magic_enum::enum_cast<MergeTreeMapSerializationVersion>(version_value);
+                if (!maybe_enum.has_value())
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
+                map_serialization_version = *maybe_enum;
+            }
             else
             {
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown field '{}' in types_serialization_versions", type_name);
@@ -529,6 +540,7 @@ ParsedJSON parseJSONEnvelope(const std::string & json_str)
         version,
         string_serialization_version,
         nullable_serialization_version,
+        map_serialization_version,
         propagate_types_serialization_versions_to_nested_types);
 
     return {columns_array, settings};
