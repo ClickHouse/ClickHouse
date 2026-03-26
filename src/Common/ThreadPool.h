@@ -91,6 +91,10 @@ public:
         /// The thread is woken via the shared new_job_or_shutdown CV.
         bool idle_wakeup_flag = false;
 
+        /// Index of this thread in the idle_thread_stack, or -1 if not in the stack.
+        /// Used for O(1) swap-and-pop removal from the idle stack.
+        ssize_t idle_stack_index = -1;
+
         // Remove itself from the parent pool
         void removeSelfFromPoolNoPoolLock();
 

@@ -427,6 +427,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             auto * thread_to_wake = idle_thread_stack.back();
             idle_thread_stack.pop_back();
             thread_to_wake->idle_wakeup_flag = true;
+            thread_to_wake->idle_stack_index = -1;
         }
     }
 
@@ -600,7 +601,10 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::wakeUpAllIdleThreadsNoLock()
 {
     for (auto * thread : idle_thread_stack)
+    {
         thread->idle_wakeup_flag = true;
+        thread->idle_stack_index = -1;
+    }
     idle_thread_stack.clear();
     new_job_or_shutdown.notify_all();
 }
@@ -763,6 +767,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             {
                 {
                     ALLOW_ALLOCATIONS_IN_SCOPE;
+                    idle_stack_index = static_cast<ssize_t>(parent_pool.idle_thread_stack.size());
                     parent_pool.idle_thread_stack.push_back(this);
                 }
                 idle_wakeup_flag = false;
@@ -776,8 +781,22 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 });
 
                 /// If we were not the LIFO-selected thread, remove ourselves from the idle stack.
-                if (!idle_wakeup_flag)
-                    std::erase(parent_pool.idle_thread_stack, this);
+                /// Use O(1) swap-and-pop removal via the tracked index.
+                if (!idle_wakeup_flag && idle_stack_index >= 0)
+                {
+                    auto & stack = parent_pool.idle_thread_stack;
+                    size_t idx = static_cast<size_t>(idle_stack_index);
+                    if (idx < stack.size())
+                    {
+                        if (idx != stack.size() - 1)
+                        {
+                            stack[idx] = stack.back();
+                            stack[idx]->idle_stack_index = static_cast<ssize_t>(idx);
+                        }
+                        stack.pop_back();
+                    }
+                    idle_stack_index = -1;
+                }
                 idle_wakeup_flag = false;
             }
 
