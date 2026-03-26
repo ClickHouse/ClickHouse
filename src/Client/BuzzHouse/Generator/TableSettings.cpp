@@ -15,8 +15,14 @@ namespace BuzzHouse
 static const auto bytesRangeSetting
     = CHSetting(bytesRange, {"0", "1", "2", "4", "8", "32", "1024", "2048", "4096", "16384", "'10M'"}, false);
 
+static const auto bytesRangeNonZeroSetting
+    = CHSetting(bytesRangeNonZero, {"1", "2", "4", "8", "32", "1024", "2048", "4096", "16384", "'10M'"}, false);
+
 static const auto highRangeSetting
     = CHSetting(highRange, {"0", "1", "2", "4", "8", "32", "64", "1024", "2048", "4096", "16384", "'10M'"}, false);
+
+static const auto highRangeNonZeroSetting
+    = CHSetting(highRangeNonZero, {"1", "2", "4", "8", "32", "64", "1024", "2048", "4096", "16384"}, false);
 
 static const auto rowsRangeSetting
     = CHSetting(rowsRange, {"0", "1", "2", "4", "8", "32", "64", "1024", "2048", "4096", "16384", "'10M'"}, false);
@@ -26,8 +32,13 @@ static const auto bucketsRangeSetting = CHSetting(
     {"0", "1", "2", "4", "8", "16"},
     false);
 
+static const auto bucketsRangeNonZeroSetting = CHSetting(
+    [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 16)); },
+    {"1", "2", "4", "8", "16"},
+    false);
+
 static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
-    {"adaptive_write_buffer_initial_size", bytesRangeSetting},
+    {"adaptive_write_buffer_initial_size", bytesRangeNonZeroSetting},
     {"add_implicit_sign_column_constraint_for_collapsing_engine", trueOrFalseSetting},
     {"add_minmax_index_for_numeric_columns", trueOrFalseSetting},
     {"add_minmax_index_for_string_columns", trueOrFalseSetting},
@@ -90,10 +101,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"check_sample_column_is_correct", trueOrFalseSetting},
     {"cleanup_thread_preferred_points_per_iteration", rowsRangeSetting},
     {"cleanup_threads", threadSetting},
-    {"clone_replica_zookeeper_create_get_part_batch_size", highRangeSetting},
+    {"clone_replica_zookeeper_create_get_part_batch_size", highRangeNonZeroSetting},
     {"columns_and_secondary_indices_sizes_lazy_calculation", trueOrFalseSetting},
     {"compact_parts_max_bytes_to_buffer", bytesRangeSetting},
-    {"compact_parts_max_granules_to_buffer", highRangeSetting},
+    {"compact_parts_max_granules_to_buffer", highRangeNonZeroSetting},
     {"compact_parts_merge_max_bytes_to_prefetch_part", bytesRangeSetting},
     {"compatibility_allow_sampling_expression_not_in_primary_key", trueOrFalseSetting},
     {"compress_marks", trueOrFalseSetting},
@@ -185,7 +196,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          {"'throw'", "'drop'", "'rebuild'"},
          false)},
     {"load_existing_rows_count_for_old_parts", trueOrFalseSetting},
-    {"marks_compress_block_size", highRangeSetting},
+    {"marks_compress_block_size", highRangeNonZeroSetting},
     {"materialize_skip_indexes_on_merge", trueOrFalseSetting},
     {"materialize_statistics_on_merge", trueOrFalseSetting},
     {"materialize_ttl_recalculate_only", trueOrFalseSetting},
@@ -233,7 +244,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"max_suspicious_broken_parts", highRangeSetting},
     {"max_suspicious_broken_parts_bytes", bytesRangeSetting},
     {"max_uncompressed_bytes_in_patches", bytesRangeSetting},
-    {"merge_max_block_size", highRangeSetting},
+    {"merge_max_block_size", highRangeNonZeroSetting},
     {"merge_max_block_size_bytes", bytesRangeSetting},
     {"merge_max_bytes_to_prewarm_cache", bytesRangeSetting},
     {"merge_max_dynamic_subcolumns_in_compact_part",
@@ -357,8 +368,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'v1'", "'v2'", "'v3'"},
          false)},
-    {"object_shared_data_buckets_for_compact_part", bucketsRangeSetting},
-    {"object_shared_data_buckets_for_wide_part", bucketsRangeSetting},
+    {"object_shared_data_buckets_for_compact_part", bucketsRangeNonZeroSetting},
+    {"object_shared_data_buckets_for_wide_part", bucketsRangeNonZeroSetting},
     {"object_shared_data_serialization_version",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -386,7 +397,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"prefer_fetch_merged_part_size_threshold", bytesRangeSetting},
     {"prewarm_mark_cache", trueOrFalseSetting},
     {"prewarm_primary_key_cache", trueOrFalseSetting},
-    {"primary_key_compress_block_size", highRangeSetting},
+    {"primary_key_compress_block_size", highRangeNonZeroSetting},
     {"primary_key_lazy_load", trueOrFalseSetting},
     {"primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns", probRangeSetting},
     {"propagate_types_serialization_versions_to_nested_types", trueOrFalseSetting},
@@ -820,8 +831,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                     String key;
                     for (size_t i = 0; i < alg.hex_len / 16; i++)
                         key += fmt::format("{:016x}", rg.randomInt<uint64_t>(0, std::numeric_limits<uint64_t>::max()));
-                    return "disk(type = encrypted, disk = '" + enc_it->name + "', path = 'encrypted_" + enc_it->name
-                        + "/', algorithm = " + alg.algo + ", key_hex = " + key + ")";
+                    return "disk(type = encrypted, disk = '" + enc_it->name + "', path = '/var/lib/clickhouse/disks/encrypted_"
+                        + enc_it->name + "/', algorithm = " + alg.algo + ", key_hex = " + key + ")";
                 }
                 /// Inline cache disk wrapping a non-cached local disk
                 const auto cache_it = std::find_if(
@@ -830,7 +841,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                     [&](const DiskInfo & d) { return !d.is_cached && d.type == "Local" && d.name != di.name; });
                 if (!di.is_cached && cache_it != fc.disks.end() && rg.nextSmallNumber() < 3)
                 {
-                    String res = "disk(type = cache, disk = '" + cache_it->name + "', path = 'inline_cache_" + cache_it->name + "/'";
+                    String res = "disk(type = cache, disk = '" + cache_it->name + "', path = '/var/lib/clickhouse/disks/inline_cache_"
+                        + cache_it->name + "/'";
                     res += ", max_size = '"
                         + std::to_string(rg.thresholdGenerator<uint64_t>(
                             0.2, 0.2, UINT64_C(1024) * UINT64_C(1024), UINT64_C(1024) * UINT64_C(1024) * UINT64_C(1024)))

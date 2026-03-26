@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
@@ -28,7 +29,6 @@
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
@@ -88,6 +88,8 @@ namespace ProfileEvents
     extern const Event MergeTextIndexStageExecuteMilliseconds;
     extern const Event MergeProjectionStageExecuteMilliseconds;
     extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
+    extern const Event MergedProjections;
+    extern const Event RebuiltProjections;
 }
 
 namespace CurrentMetrics
@@ -144,6 +146,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool materialize_statistics_on_merge;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace ErrorCodes
@@ -308,8 +311,22 @@ static void addMissedColumnsToSerializationInfos(
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
-    return (future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId()) : merges_blocker->isCancelled())
-        || merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed);
+    /// Once cancellation is detected, persist it so that subsequent checks still see it
+    /// even if the merge blocker is released in between (e.g. rapid SYSTEM STOP/START MERGES toggling).
+    if (merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
+        return true;
+
+    bool cancelled = future_part
+        ? merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId())
+        : merges_blocker->isCancelled();
+
+    if (cancelled)
+    {
+        merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
+        return true;
+    }
+
+    return false;
 }
 
 void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
@@ -419,8 +436,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             if (projection->with_parent_part_offset && column == "_part_offset")
                 continue;
 
+            if (projection->with_block_number && column == BlockNumberColumn::name)
+                continue;
+
+            if (projection->with_block_offset && column == BlockOffsetColumn::name)
+                continue;
+
             key_columns.insert(getColumnNameInStorage(column, storage_columns));
         }
+
+        /// Track whether any projection needs _block_number/_block_offset in the horizontal phase.
+        global_ctx->need_block_number_in_merge |= projection->with_block_number;
+        global_ctx->need_block_offset_in_merge |= projection->with_block_offset;
     }
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
@@ -665,10 +692,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     if (enabledBlockNumberColumn(global_ctx))
-        addGatheringColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
+    {
+        if (global_ctx->need_block_number_in_merge)
+            addMergingColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
+        else
+            addGatheringColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
+    }
 
     if (enabledBlockOffsetColumn(global_ctx))
-        addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
+    {
+        if (global_ctx->need_block_offset_in_merge)
+            addMergingColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
+        else
+            addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
+    }
 
     MergeTreeData::IMutationsSnapshot::Params params
     {
@@ -743,6 +780,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],
+        (*merge_tree_settings)[MergeTreeSetting::map_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
@@ -890,9 +928,21 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         merge_list_element = global_ctx->merge_list_element_ptr,
         partition_id = global_ctx->future_part->part_info.getPartitionId()]() -> bool
     {
-        return merges_blocker->isCancelledForPartition(partition_id)
-            || (need_remove && ttl_merges_blocker->isCancelled())
-            || merge_list_element->is_cancelled.load(std::memory_order_relaxed);
+        /// Once cancellation is detected, persist it so that subsequent checks still see it
+        /// even if the merge blocker is released in between (e.g. rapid SYSTEM STOP/START MERGES toggling).
+        if (merge_list_element->is_cancelled.load(std::memory_order_relaxed))
+            return true;
+
+        bool cancelled = merges_blocker->isCancelledForPartition(partition_id)
+            || (need_remove && ttl_merges_blocker->isCancelled());
+
+        if (cancelled)
+        {
+            merge_list_element->is_cancelled.store(true, std::memory_order_relaxed);
+            return true;
+        }
+
+        return false;
     };
 
     /// This is the end of preparation. Execution will be per block.
@@ -918,6 +968,15 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
 
     global_ctx->storage_columns.emplace_back(name, type);
     global_ctx->gathering_columns.emplace_back(name, type);
+}
+
+void MergeTask::addMergingColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
+{
+    if (global_ctx->storage_columns.contains(name))
+        return;
+
+    global_ctx->storage_columns.emplace_back(name, type);
+    global_ctx->merging_columns.emplace_back(name, type);
 }
 
 bool MergeTask::hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part)
@@ -1067,7 +1126,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         /// The IGNORE mode is checked here purely for backward compatibility.
         /// However, if the projection contains `_parent_part_offset`, it must still be rebuilt,
         /// since offset correctness cannot be ignored even in IGNORE mode.
-        if (global_ctx->merge_may_reduce_rows && (mode != DeduplicateMergeProjectionMode::IGNORE || projection.with_parent_part_offset))
+        const bool is_special_projection = projection.with_parent_part_offset || projection.with_block_number || projection.with_block_offset;
+        if (global_ctx->merge_may_reduce_rows && (mode != DeduplicateMergeProjectionMode::IGNORE || is_special_projection))
         {
             global_ctx->projections_to_rebuild.push_back(&projection);
             continue;
@@ -1085,10 +1145,20 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             if (it != part->getProjectionParts().end() && !it->second->is_broken)
                 projection_parts.push_back(it->second);
         }
+
         if (projection_parts.size() == global_ctx->future_part->parts.size())
         {
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
+        }
+        else if (projection.with_block_number)
+        {
+            /// Commit-order projections are not written during insert (block number is not yet finalized).
+            /// When some source parts don't have the projection, rebuild it during the horizontal phase
+            /// where the correct `_block_number` values are available.
+            chassert(projection_parts.size() < global_ctx->future_part->parts.size());
+            LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts don't have it (commit-order projection)", projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
         }
         else
         {
@@ -1097,6 +1167,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             continue;
         }
     }
+
+    ProfileEvents::increment(ProfileEvents::MergedProjections, global_ctx->projections_to_merge.size());
+    ProfileEvents::increment(ProfileEvents::RebuiltProjections, global_ctx->projections_to_rebuild.size());
 
     const auto & settings = global_ctx->context->getSettingsRef();
 
@@ -1215,8 +1288,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
     {
         Block block;
 
-        if (ctx->is_cancelled() || !global_ctx->merging_executor->pull(block))
+        /// Latch the cancellation: capture the blocker state once and, if it is
+        /// set, persist it into merge_list_element so that `checkOperationIsNotCanceled`
+        /// in `finalize` reliably throws ABORTED even if SYSTEM START MERGES
+        /// clears the blocker between these two reads.
+        bool cancelled = ctx->is_cancelled();
+        if (cancelled || !global_ctx->merging_executor->pull(block))
         {
+            if (cancelled)
+                global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             finalize();
             return false;
         }
@@ -1295,9 +1375,6 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return false;
 
-    /// `rows_read` is updated from pipeline progress and may include auxiliary
-    /// reads such as `CreatingSetStep` subqueries. Here we need the exact number
-    /// of rows coming from source parts only.
     size_t sum_input_rows_exact = global_ctx->merge_list_element_ptr->total_rows_count;
     size_t input_rows_filtered = *global_ctx->input_rows_filtered;
     global_ctx->merge_list_element_ptr->columns_written = global_ctx->merging_columns.size();
@@ -1305,6 +1382,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
     /// Ensure data has written to disk.
     size_t rows_sources_count = ctx->rows_sources_temporary_file->finalizeWriting();
+
     /// In special case, when there is only one source part, and no rows were skipped, we may have
     /// skipped writing rows_sources file. Otherwise rows_sources_count must be equal to the total
     /// number of input rows.
@@ -1578,9 +1656,16 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
     {
         Block block;
 
-        if (global_ctx->isCancelled()
-            || !ctx->executor->pull(block))
+        /// Latch the cancellation so that `finalizeVerticalMergeForOneColumn`
+        /// sees it via `checkOperationIsNotCanceled` even if the blocker is
+        /// released between these two reads.
+        bool cancelled = global_ctx->isCancelled();
+        if (cancelled || !ctx->executor->pull(block))
+        {
+            if (cancelled)
+                global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             return false;
+        }
 
         ctx->column_elems_written += block.rows();
         ctx->column_to->write(block);
@@ -2268,8 +2353,16 @@ public:
         /// transform instances created by `addSimpleTransform`. This ensures the
         /// `FutureSet` objects filled by `CreatingSetStep` are the same ones used
         /// during execution.
+        PreparedSets::Subqueries subqueries_for_sets;
         std::tie(shared_state, subqueries_for_sets)
             = TTLDeleteFilterTransform::build(context_, metadata_snapshot_, old_ttl_infos_, current_time_, force_);
+
+        /// Build sets eagerly here rather than via addCreatingSetsStep.
+        /// If they were built inside the merge pipeline, the subquery progress (rows read)
+        /// would be counted in merge_list_element->rows_read, causing a mismatch with
+        /// the rows_sources file size assertion in vertical merge.
+        for (auto & subquery : subqueries_for_sets)
+            subquery->buildSetInplace(context_);
     }
 
     String getName() const override { return "TTLDeleteFilter"; }
@@ -2286,8 +2379,6 @@ public:
     {
         output_header = TTLDeleteFilterTransform::transformHeader(input_headers.front());
     }
-
-    PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
 
 private:
     static Traits getTraits()
@@ -2306,7 +2397,6 @@ private:
     }
 
     std::shared_ptr<const TTLDeleteFilterTransform::SharedState> shared_state;
-    PreparedSets::Subqueries subqueries_for_sets;
 };
 
 class TTLStep : public ITransformingStep
@@ -2325,12 +2415,16 @@ public:
     {
         transform = std::make_shared<TTLTransform>(
             context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_);
-        subqueries_for_sets = transform->getSubqueries();
+
+        /// Build sets eagerly here rather than via addCreatingSetsStep.
+        /// If they were built inside the merge pipeline, the subquery progress (rows read)
+        /// would be counted in merge_list_element->rows_read, causing a mismatch with
+        /// the rows_sources file size assertion in vertical merge.
+        for (auto & subquery : transform->getSubqueries())
+            subquery->buildSetInplace(context_);
     }
 
     String getName() const override { return "TTL"; }
-
-    PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -2359,7 +2453,6 @@ private:
     }
 
     std::shared_ptr<TTLTransform> transform;
-    PreparedSets::Subqueries subqueries_for_sets;
 };
 
 class BuildTextIndexStep : public ITransformingStep, private WithContext
@@ -2693,8 +2786,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         merge_parts_query_plan.addStep(std::move(calculate_sorting_key_expression_step));
     }
 
-    PreparedSets::Subqueries ttl_filter_subqueries;
-
     /// For vertical merge with TTL delete, add a step that evaluates TTL expressions
     /// and produces a filter column. This must be before the merge step so each input
     /// stream has the filter column available for the merging algorithm.
@@ -2708,7 +2799,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->time_of_merge,
             ctx->force_ttl);
 
-        ttl_filter_subqueries = ttl_filter_step->getSubqueries();
         ttl_filter_step->setStepDescription("TTL delete filter");
         merge_parts_query_plan.addStep(std::move(ttl_filter_step));
     }
@@ -2799,8 +2889,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         merge_parts_query_plan.addStep(std::move(deduplication_step));
     }
 
-    PreparedSets::Subqueries subqueries;
-
     /// TTL step: still runs after the merge even in vertical TTL mode.
     /// In vertical TTL mode, rows are already filtered by the merging algorithm,
     /// so the TTL step only updates TTL info without removing any rows.
@@ -2816,19 +2904,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->time_of_merge,
             ctx->force_ttl);
 
-        subqueries = ttl_step->getSubqueries();
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
     }
 
-    subqueries.insert(subqueries.end(), ttl_filter_subqueries.begin(), ttl_filter_subqueries.end());
-
     /// Secondary indices expressions
     if (!global_ctx->merging_skip_indexes.empty())
         addSkipIndexesExpressionSteps(merge_parts_query_plan, global_ctx->merging_skip_indexes, global_ctx);
-
-    if (!subqueries.empty())
-        addCreatingSetsStep(merge_parts_query_plan, std::move(subqueries), global_ctx->context);
 
     /// If merge may reduce rows, rebuild text index and statistics for the resulting part.
     if (global_ctx->merge_may_reduce_rows)

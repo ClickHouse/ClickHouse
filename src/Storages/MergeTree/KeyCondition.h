@@ -21,7 +21,6 @@ namespace DB
 
 class ASTFunction;
 class Context;
-class IFunction;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;

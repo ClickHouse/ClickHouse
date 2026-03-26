@@ -803,8 +803,12 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        [[maybe_unused]] bool inserted = tables.emplace(table_name, futures[future_index].get()).second;
-        chassert(inserted);
+        auto table_ptr = futures[future_index].get();
+        if (table_ptr)
+        {
+            [[maybe_unused]] bool inserted = tables.emplace(table_name, table_ptr).second;
+            chassert(inserted);
+        }
         future_index++;
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());

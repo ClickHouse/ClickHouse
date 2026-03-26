@@ -39,24 +39,39 @@ PRELIMINARY_JOBS = [
 ]
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
-    "Build (amd_asan)",
-    "Integration tests (amd_asan, flaky)",
+    "Build (amd_asan_ubsan)",
+    "Integration tests (amd_asan_ubsan, flaky)",
 ]
 
 FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
-    "Build (amd_asan)",
+    "Build (amd_asan_ubsan)",
     "Build (amd_tsan)",
     "Build (amd_msan)",
-    "Build (amd_ubsan)",
     "Build (amd_debug)",
     "Build (amd_binary)",
-    "Stateless tests (amd_asan, flaky check)",
+    "Stateless tests (amd_asan_ubsan, flaky check)",
     "Stateless tests (amd_tsan, flaky check)",
     "Stateless tests (amd_msan, flaky check)",
-    "Stateless tests (amd_ubsan, flaky check)",
     "Stateless tests (amd_debug, flaky check)",
     "Stateless tests (amd_binary, flaky check)",
 ]
+
+# Must match ci.workflows.pull_request.KEEPER_STRESS_PR_NAME
+KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
+
+
+def _has_keeper_stress_changes(changed_files):
+    """True if any changed file is under src/Coordination, tests/stress/keeper, programs/keeper-bench, or ci/jobs/keeper_stress_job.py."""
+    for f in changed_files:
+        p = f.removeprefix(".").removeprefix("/")
+        if (
+            p.startswith("src/Coordination")
+            or p.startswith("tests/stress/keeper")
+            or p.startswith("programs/keeper-bench")
+            or p == "ci/jobs/keeper_stress_job.py"
+        ):
+            return True
+    return False
 
 
 _info_cache = None
@@ -80,6 +95,16 @@ def should_skip_job(job_name):
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
+        return False, ""
+
+    # Run Keeper Stress jobs only when there are changes in src/Coordination,
+    # tests/stress/keeper, or ci/jobs/keeper_stress_job.py
+    if job_name == KEEPER_STRESS_PR_NAME:
+        if not _has_keeper_stress_changes(changed_files):
+            return (
+                True,
+                "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
+            )
         return False, ""
 
     if job_name == JobNames.PR_BODY:
