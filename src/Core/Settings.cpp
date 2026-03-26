@@ -4704,7 +4704,7 @@ Possible values:
 - 0 — No locking timeout.
 )", 0) \
     DECLARE(Milliseconds, get_zookeeper_lock_acquire_timeout_ms, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC * 1000, R"(
-Defines how many milliseconds a locking request in Context::getZooKeeper should wait before failing.
+Defines how many milliseconds a locking request in Context::getZooKeeper and Context::getAuxiliaryZooKeeper should wait before failing.
 
 Possible values:
 

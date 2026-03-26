@@ -4900,7 +4900,9 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     if (hasQueryContext())
         lock_acquire_timeout = getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
     std::unique_lock lock(shared->zookeeper_mutex, std::defer_lock);
-    if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+    if (lock_acquire_timeout.totalMilliseconds() == 0)
+        lock.lock();
+    else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while acquiring ZooKeeper lock ({} ms)", lock_acquire_timeout.totalMilliseconds());
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
 
@@ -5177,7 +5179,9 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     if (hasQueryContext())
         lock_acquire_timeout = getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
     std::unique_lock lock(shared->auxiliary_zookeepers_mutex, std::defer_lock);
-    if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+    if (lock_acquire_timeout.totalMilliseconds() == 0)
+        lock.lock();
+    else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while acquiring auxiliary ZooKeeper lock ({} ms)", lock_acquire_timeout.totalMilliseconds());
     const auto config_name = "auxiliary_zookeepers." + name;
 
