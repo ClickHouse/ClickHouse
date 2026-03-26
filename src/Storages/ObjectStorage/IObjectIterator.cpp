@@ -132,9 +132,9 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             auto file_bucket_info = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
             for (const auto & file_bucket : file_bucket_info)
             {
-                auto copy_object_info = *last_object_info;
-                copy_object_info.file_bucket_info = file_bucket;
-                pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
+                auto cloned = last_object_info->clone();
+                cloned->file_bucket_info = file_bucket;
+                pending_objects_info.push(std::move(cloned));
             }
         }
     }
