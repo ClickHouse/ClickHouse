@@ -1,3 +1,5 @@
+-- Tags: no-fasttest, use-rocksdb
+-- Tag no-fasttest: EmbeddedRocksDB is not compiled in fast-test builds
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/83894
 -- Wrong count from materialized view with `query_plan_enable_optimizations = 0`
 --
