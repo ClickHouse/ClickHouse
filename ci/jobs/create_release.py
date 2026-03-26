@@ -973,6 +973,12 @@ def checkout(ref: str) -> Iterator[None]:
         verbose=True,
     )
     if ref != orig_ref:
+        Shell.check(
+            f"{GIT_PREFIX} fetch --no-tags --no-recurse-submodules"
+            f" --filter=tree:0 origin {ref}",
+            strict=True,
+            verbose=True,
+        )
         Shell.check(f"{GIT_PREFIX} checkout {ref}", strict=True, verbose=True)
     try:
         yield
