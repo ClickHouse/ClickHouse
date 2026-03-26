@@ -12,6 +12,7 @@ INSERT INTO customer SELECT number, 6, 6 FROM numbers(1000);
 INSERT INTO customer SELECT number, 7, 7 FROM numbers(1000);
 INSERT INTO customer SELECT number, 100, 100 FROM numbers(10);
 
+set use_statistics=1;
 SET enable_analyzer=1;
 SET enable_join_runtime_filters=1;
 SET enable_parallel_replicas=0;
