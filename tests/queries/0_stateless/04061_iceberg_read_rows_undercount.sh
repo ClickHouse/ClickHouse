@@ -33,7 +33,7 @@ ${CLICKHOUSE_CLIENT} -q "
         input_format_parquet_page_filter_push_down = 0;
 "
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS;"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log;"
 
 # read_rows should be 10, not 0
 ${CLICKHOUSE_CLIENT} -q "
