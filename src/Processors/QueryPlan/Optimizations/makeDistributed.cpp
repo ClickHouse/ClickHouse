@@ -677,21 +677,22 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             }
             else
             {
-                /// No children, this means that this is a leaf step
-                auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get());
+                /// No children, this means that this is a leaf step.
+                ReadFromMergeTree * read_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
+                    auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get());
 
-                current_plan = std::make_unique<QueryPlan>();
-                current_plan->addStep(std::move(frame.node->step));
+                    current_plan = std::make_unique<QueryPlan>();
+                    current_plan->addStep(std::move(frame.node->step));
 
-                for (size_t bucket = 0; bucket < shards_for_read.size(); ++bucket)
-                {
-                    String shard_id = toString(bucket);
-                    DistributedQueryTask task;
-                    task.parameters.parameters["bucket_id"] = Field(shard_id);
-                    task.parameters.parameters["bucket_description"] = Field(shards_for_read[bucket]);
-                    task.parameters.parameters["total_buckets"] = Field(shards_for_read.size());
-                    frame.list_of_shards[shard_id] = std::move(task);
-                }
+                    for (size_t bucket = 0; bucket < shards_for_read.size(); ++bucket)
+                    {
+                        String shard_id = toString(bucket);
+                        DistributedQueryTask task;
+                        task.parameters.parameters["bucket_id"] = Field(shard_id);
+                        task.parameters.parameters["bucket_description"] = Field(shards_for_read[bucket]);
+                        task.parameters.parameters["total_buckets"] = Field(shards_for_read.size());
+                        frame.list_of_shards[shard_id] = std::move(task);
+                    }
             }
 
             current_stage_depends_on = std::move(frame.depends_on_stages);
