@@ -1634,9 +1634,17 @@ Chunk StorageFileSource::generate()
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
             size_t chunk_size = 0;
+            size_t rows_read_before_filter = 0;
             if (input_format && storage->format_name != "Distributed")
+            {
                 chunk_size = input_format->getApproxBytesReadForChunk();
-            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
+                rows_read_before_filter = input_format->getApproxRowsReadForChunk();
+            }
+            /// Use the total rows read before prewhere filtering when available,
+            /// so that read_rows in system.query_log accounts for all rows physically
+            /// read, including those filtered out by prewhere.
+            UInt64 progress_rows = rows_read_before_filter ? rows_read_before_filter : num_rows;
+            progress(progress_rows, chunk_size ? chunk_size : chunk.bytes());
 
             /// The order is important, hive partition columns must be added before virtual columns
             /// because they are part of the schema
@@ -1659,6 +1667,15 @@ Chunk StorageFileSource::generate()
                 }, getContext());
 
             return chunk;
+        }
+
+        /// Report any rows that were physically read but filtered out by prewhere
+        /// and never included in a delivered chunk.
+        if (input_format && storage->format_name != "Distributed")
+        {
+            size_t remaining_filtered_rows = input_format->getApproxRowsReadForChunk();
+            if (remaining_filtered_rows > 0)
+                progress(remaining_filtered_rows, input_format->getApproxBytesReadForChunk());
         }
 
         /// Read only once for file descriptor.

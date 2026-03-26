@@ -361,7 +361,11 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         case ReadStage::ColumnData:
         {
             if (row_subgroup.filter.rows_pass == 0)
+            {
+                /// Track rows from fully-filtered subgroups for read_rows accounting.
+                pending_filtered_rows += row_subgroup.filter.rows_total;
                 break;
+            }
             if (step_idx > 0 && step_idx <= reader.steps.size())
             {
                 reader.applyPrewhere(row_subgroup, row_group, step_idx);
@@ -451,6 +455,9 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         }
         else
         {
+            /// Track rows from subgroups skipped due to column index filtering
+            /// for correct read_rows accounting.
+            pending_filtered_rows += next_subgroup.filter.rows_total;
             row_group.read_ptr.store(main_ptr + 1);
             main_ptr += 1;
             advanced_ptr = main_ptr;
@@ -1048,7 +1055,9 @@ ReadManager::ReadResult ReadManager::read()
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in memory or task accounting in parquet reader: got {} bytes, {} batches, {} tasks in stage {}", mem, batches, unsched, i);
                     }
                 }
-                return {};
+                /// Return any remaining filtered rows so the caller can report
+                /// them as read_rows even though no data chunk is produced.
+                return {{}, {}, 0, pending_filtered_rows};
             }
 
             if (parser_shared_resources->parsing_runner.isManual())
@@ -1125,12 +1134,19 @@ ReadManager::ReadResult ReadManager::read()
     ///       ProfileEvents instead of Progress.
     size_t virtual_bytes_read = size_t(row_group.meta->total_compressed_size) * row_subgroup.filter.rows_total / std::max(size_t(1), size_t(row_group.meta->num_rows));
 
+    /// Report the total rows physically read for this chunk (before prewhere),
+    /// plus any rows from previously skipped subgroups (rows_pass == 0).
+    /// This ensures read_rows in system.query_log is consistent with MergeTree:
+    /// rows read during prewhere evaluation count as "read" even if filtered out.
+    size_t virtual_rows_read = row_subgroup.filter.rows_total + pending_filtered_rows;
+    pending_filtered_rows = 0;
+
     /// This updates `memory_usage` of previous stages, which may allow more tasks to be scheduled.
     MemoryUsageDiff diff(ReadStage::Deliver);
     finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, ReadStage::Deliver, /*step_idx=*/ 0, diff);
     flushMemoryUsageDiff(std::move(diff));
 
-    return {std::move(chunk), std::move(block_missing_values), virtual_bytes_read};
+    return {std::move(chunk), std::move(block_missing_values), virtual_bytes_read, virtual_rows_read};
 }
 
 }

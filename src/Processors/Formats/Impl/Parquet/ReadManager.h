@@ -49,6 +49,9 @@ public:
         Chunk chunk;
         BlockMissingValues block_missing_values;
         size_t virtual_bytes_read = 0;
+        /// Total rows physically read for this chunk, before prewhere filtering.
+        /// Used for correct read_rows accounting in system.query_log.
+        size_t virtual_rows_read = 0;
     };
 
     /// Not thread safe.
@@ -111,6 +114,11 @@ private:
     std::priority_queue<Task, std::vector<Task>, Task::Comparator> delivery_queue;
     std::condition_variable delivery_cv;
     std::exception_ptr exception;
+
+    /// Rows from subgroups that were fully filtered by prewhere (rows_pass == 0)
+    /// and never delivered as chunks. Accumulated here so they can be reported
+    /// with the next delivered chunk for correct read_rows accounting.
+    size_t pending_filtered_rows = 0;
     /// Nullopt means that ReadManager reads all row groups
     std::optional<std::unordered_set<UInt64>> row_groups_to_read;
 

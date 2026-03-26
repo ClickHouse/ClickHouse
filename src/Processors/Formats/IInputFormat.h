@@ -126,6 +126,13 @@ public:
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
+    /// Returns the number of rows physically read from the file for the last chunk,
+    /// BEFORE any prewhere/filter was applied. This is used for correct progress
+    /// reporting: read_rows in system.query_log should reflect all rows read,
+    /// including those filtered out by prewhere (consistent with MergeTree behavior).
+    /// Returns 0 by default (meaning: use chunk.getNumRows() as before).
+    virtual size_t getApproxRowsReadForChunk() const { return 0; }
+
     void needOnlyCount() { need_only_count = true; }
 
 protected:

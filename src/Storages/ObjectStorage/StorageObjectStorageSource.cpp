@@ -356,10 +356,19 @@ Chunk StorageObjectStorageSource::generate()
             total_rows_in_file += num_rows;
 
             size_t chunk_size = 0;
+            size_t rows_read_before_filter = 0;
             if (const auto * input_format = reader.getInputFormat())
+            {
                 chunk_size = input_format->getApproxBytesReadForChunk();
+                rows_read_before_filter = input_format->getApproxRowsReadForChunk();
+            }
 
-            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
+            /// Use the total rows read before prewhere filtering when available,
+            /// so that read_rows in system.query_log accounts for all rows physically
+            /// read, including those filtered out by prewhere. This is consistent with
+            /// MergeTree behavior (see https://github.com/ClickHouse/ClickHouse/issues/97172).
+            UInt64 progress_rows = rows_read_before_filter ? rows_read_before_filter : num_rows;
+            progress(progress_rows, chunk_size ? chunk_size : chunk.bytes());
 
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
@@ -482,6 +491,17 @@ Chunk StorageObjectStorageSource::generate()
             }
 
             return chunk;
+        }
+
+        /// When the file is fully read, report any rows that were physically read
+        /// but filtered out by prewhere and never included in a delivered chunk.
+        /// This handles the case where ALL rows in the file were filtered
+        /// (read_rows would otherwise be 0).
+        if (const auto * input_format = reader.getInputFormat())
+        {
+            size_t remaining_filtered_rows = input_format->getApproxRowsReadForChunk();
+            if (remaining_filtered_rows > 0)
+                progress(remaining_filtered_rows, input_format->getApproxBytesReadForChunk());
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]

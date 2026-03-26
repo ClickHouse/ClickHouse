@@ -138,6 +138,7 @@ Chunk ParquetV3BlockInputFormat::read()
     auto res = reader->read();
     previous_block_missing_values = res.block_missing_values;
     previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
+    previous_approx_rows_read_for_chunk = res.virtual_rows_read;
     return std::move(res.chunk);
 }
 

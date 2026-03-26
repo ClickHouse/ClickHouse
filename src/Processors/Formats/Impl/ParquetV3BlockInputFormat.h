@@ -36,6 +36,11 @@ public:
         return previous_approx_bytes_read_for_chunk;
     }
 
+    size_t getApproxRowsReadForChunk() const override
+    {
+        return previous_approx_rows_read_for_chunk;
+    }
+
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
 private:
@@ -60,6 +65,7 @@ private:
 
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;
+    size_t previous_approx_rows_read_for_chunk = 0;
 
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
