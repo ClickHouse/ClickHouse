@@ -1,3 +1,4 @@
+-- Tags: no-replicated-database
 -- accurateCastOrNull to Tuple types (e.g. Point) crashed the server with
 -- "Bad cast from type DB::ColumnNullable to DB::ColumnVector<double>"
 -- because element wrappers produced ColumnNullable columns inside the tuple,
