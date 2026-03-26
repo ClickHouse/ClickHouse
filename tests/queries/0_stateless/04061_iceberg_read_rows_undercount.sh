@@ -41,7 +41,7 @@ ${CLICKHOUSE_CLIENT} -q "
     FROM system.query_log
     WHERE log_comment = '${LOG_COMMENT}'
       AND type = 'QueryFinish'
-      AND current_database = '${CLICKHOUSE_DATABASE}'
+      AND current_database = currentDatabase()
     ORDER BY event_time_microseconds DESC
     LIMIT 1;
 "
