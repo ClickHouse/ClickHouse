@@ -109,3 +109,10 @@ Test 16: TTL with column rename
 2	world
 1	hello
 2	world
+Test 17: single-child Nested rename rejection
+1	[10,20,30]
+Test 18: multi-child Nested rename across parents
+1	[10,20]	['aa','bb']
+2	[30]	['cc']
+1	[10,20]	['aa','bb']
+2	[30]	['cc']

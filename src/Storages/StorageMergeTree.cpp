@@ -493,8 +493,17 @@ StorageMergeTree::PhysicalNameAlterPlan StorageMergeTree::preparePhysicalNameMap
 
                 if (is_nested && changes_prefix && !physical_has_dot)
                 {
-                    plan.force_mutation_columns.insert(command.column_name);
-                    continue;
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Renaming flattened Nested column '{}' across parent "
+                        "boundaries ('{}' -> '{}') is not supported when the "
+                        "column has a plain-counter physical name '{}'. "
+                        "As a workaround, add a new column with the desired "
+                        "name and copy data via ALTER TABLE ... UPDATE",
+                        command.column_name,
+                        old_parent,
+                        new_parent,
+                        physical);
                 }
 
                 local_mapping.beginRename(command.column_name, command.rename_to);

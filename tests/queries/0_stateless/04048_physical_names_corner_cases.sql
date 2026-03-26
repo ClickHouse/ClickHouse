@@ -443,3 +443,47 @@ SELECT a, d FROM t_phys_ttl ORDER BY a;
 OPTIMIZE TABLE t_phys_ttl FINAL;
 SELECT a, d FROM t_phys_ttl ORDER BY a;
 DROP TABLE t_phys_ttl;
+
+-- Test 17: Single-child flattened Nested rename across parents is rejected.
+-- When a single-child Nested column is ADDed after physical names activation,
+-- it gets a plain counter physical name (no dot). Renaming it across parent
+-- boundaries would break offset stream lookup, so the system rejects it.
+SELECT 'Test 17: single-child Nested rename rejection';
+DROP TABLE IF EXISTS t_phys_nested_single;
+CREATE TABLE t_phys_nested_single
+(
+    a UInt64
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+ALTER TABLE t_phys_nested_single ADD COLUMN `n.x` Array(UInt64);
+INSERT INTO t_phys_nested_single VALUES (1, [10, 20, 30]);
+ALTER TABLE t_phys_nested_single RENAME COLUMN `n.x` TO `m.x`; -- { serverError NOT_IMPLEMENTED }
+SELECT a, `n.x` FROM t_phys_nested_single;
+DROP TABLE t_phys_nested_single;
+
+-- Test 18: Multi-child flattened Nested rename across parents works fine
+-- because compound physical names (e.g. "5.x", "5.y") keep the offset
+-- stream stable.
+SELECT 'Test 18: multi-child Nested rename across parents';
+DROP TABLE IF EXISTS t_phys_nested_multi;
+CREATE TABLE t_phys_nested_multi
+(
+    a UInt64,
+    `n.x` Array(UInt64),
+    `n.y` Array(String)
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+INSERT INTO t_phys_nested_multi VALUES (1, [10, 20], ['aa', 'bb']);
+ALTER TABLE t_phys_nested_multi RENAME COLUMN `n.x` TO `m.x`;
+ALTER TABLE t_phys_nested_multi RENAME COLUMN `n.y` TO `m.y`;
+INSERT INTO t_phys_nested_multi VALUES (2, [30], ['cc']);
+SELECT a, `m.x`, `m.y` FROM t_phys_nested_multi ORDER BY a;
+OPTIMIZE TABLE t_phys_nested_multi FINAL;
+SELECT a, `m.x`, `m.y` FROM t_phys_nested_multi ORDER BY a;
+DROP TABLE t_phys_nested_multi;

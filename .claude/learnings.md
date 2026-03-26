@@ -24,6 +24,10 @@ The second parameter is `encode_sparse_stream`, not `prefix_len`. The `prefix_le
 
 With physical names, flattened Nested subcolumns (e.g. `n.x`, `n.y`) use separate `SubstreamsCache` instances (`caches["n.x"]` vs `caches["n.y"]`) but share a single on-disk offset stream (`1.size0.bin`). Without physical names they are subcolumns of `"n"` and share `caches["n"]`, so offsets cached by the first sibling are reused. On S3, prefetching marks the shared stream as consumed → second sibling skips `seekToMark` → reads garbage. Fix: after reading each sibling, pre-populate upcoming siblings' caches with the offset data via `addColumnWithNumReadRowsToSubstreamsCache`.
 
+## Single-child flattened `Nested` can get plain counter physical names
+
+When physical names are allocated for flattened `Nested`, only parents with multiple newly added children go through the compound `{counter}.child` path. A single-child `Nested(x T)` falls through the plain-column allocator and can legitimately get a physical name like `5` (no dot). Do not assume flattened `Nested` always has dotted physical names when reasoning about rename or offset-stream crash safety.
+
 ## `clickhouse-test` script may hang on "Connecting to ClickHouse server"
 
 When running the test harness against a custom port, the script can hang during connection if the server is slow or there's a mismatch. Running tests directly with `clickhouse client --multiquery < test.sql` is a reliable alternative for local verification.
