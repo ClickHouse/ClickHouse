@@ -211,6 +211,18 @@ IsStorageTouched isStorageTouchedByMutations(
                 if (partition_id == source_part->info.getPartitionId())
                     all_commands_can_be_skipped = false;
             }
+            else if (command.partitions)
+            {
+                for (const auto & partition_ast : command.partitions->children)
+                {
+                    const String partition_id = storage_from_part->getPartitionIDFromQuery(partition_ast, context);
+                    if (partition_id == source_part->info.getPartitionId())
+                    {
+                        all_commands_can_be_skipped = false;
+                        break;
+                    }
+                }
+            }
             else
             {
                 all_commands_can_be_skipped = false;

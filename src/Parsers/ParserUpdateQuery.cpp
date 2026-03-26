@@ -51,25 +51,17 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (s_in_partition.ignore(pos, expected))
     {
-        if (!parser_partition.parse(pos, query->partition, expected))
+        ParserList partition_list_parser(
+            std::make_unique<ParserPartition>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+        ASTPtr partition_list_ast;
+        if (!partition_list_parser.parse(pos, partition_list_ast, expected))
             return false;
 
-        /// Check for multi-partition: IN PARTITION p1, p2, ...
-        if (pos->type == TokenType::Comma)
-        {
-            auto list = make_intrusive<ASTExpressionList>();
-            list->children.push_back(std::move(query->partition));
-            query->partition = nullptr;
-            while (pos->type == TokenType::Comma)
-            {
-                ++pos;
-                ASTPtr next_partition;
-                if (!parser_partition.parse(pos, next_partition, expected))
-                    return false;
-                list->children.push_back(std::move(next_partition));
-            }
-            query->partitions = std::move(list);
-        }
+        auto & partition_list = partition_list_ast->as<ASTExpressionList &>();
+        if (partition_list.children.size() == 1)
+            query->partition = std::move(partition_list.children[0]);
+        else
+            query->partitions = std::move(partition_list_ast);
     }
 
     if (!s_where.ignore(pos, expected))

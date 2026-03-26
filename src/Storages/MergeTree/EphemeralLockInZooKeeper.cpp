@@ -167,7 +167,7 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
 }
 
 
-EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
+EphemeralLocksInPartitions::EphemeralLocksInPartitions(
     const String & block_numbers_path,
     const String & path_prefix,
     const String & temp_path,
@@ -196,7 +196,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
         Coordination::Error rc = zookeeper->tryMulti(lock_ops, lock_responses);
         if (rc == Coordination::Error::ZBADVERSION)
         {
-            LOG_TRACE(getLogger("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
+            LOG_TRACE(getLogger("EphemeralLocksInPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
             continue;
         }
         if (rc != Coordination::Error::ZOK)
@@ -217,7 +217,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
     }
 }
 
-EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
+EphemeralLocksInPartitions::EphemeralLocksInPartitions(
     const String & block_numbers_path,
     const String & path_prefix,
     const String & temp_path,
@@ -293,7 +293,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
     }
 }
 
-void EphemeralLocksInAllPartitions::unlock()
+void EphemeralLocksInPartitions::unlock()
 {
     if (!zookeeper)
         return;
@@ -312,12 +312,12 @@ void EphemeralLocksInAllPartitions::unlock()
     zookeeper = nullptr;
 }
 
-void EphemeralLocksInAllPartitions::assumeUnlocked()
+void EphemeralLocksInPartitions::assumeUnlocked()
 {
     zookeeper = nullptr;
 }
 
-void EphemeralLocksInAllPartitions::getUnlockOps(Coordination::Requests & ops) const
+void EphemeralLocksInPartitions::getUnlockOps(Coordination::Requests & ops) const
 {
     if (!zookeeper)
         return;
@@ -326,7 +326,7 @@ void EphemeralLocksInAllPartitions::getUnlockOps(Coordination::Requests & ops) c
         ops.emplace_back(zkutil::makeRemoveRequest(lock.path, -1));
 }
 
-EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
+EphemeralLocksInPartitions::~EphemeralLocksInPartitions()
 {
     try
     {
@@ -334,7 +334,7 @@ EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
     }
     catch (...)
     {
-        tryLogCurrentException("~EphemeralLocksInAllPartitions");
+        tryLogCurrentException("~EphemeralLocksInPartitions");
     }
 }
 

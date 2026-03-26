@@ -7462,16 +7462,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// `getActionsDAG` may include input columns in the outputs list, so we need
     /// to find the correct node by name.
     String predicate_column_name = predicate_clone->getColumnName();
-    const ActionsDAG::Node * predicate_node = nullptr;
-    for (const auto * output : actions_dag.getOutputs())
-    {
-        if (output->result_name == predicate_column_name)
-        {
-            predicate_node = output;
-            break;
-        }
-    }
-
+    const auto * predicate_node = actions_dag.tryFindInOutputs(predicate_column_name);
     if (!predicate_node)
         return std::nullopt;
 
@@ -7486,17 +7477,20 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     if (partition_pruner.isUseless())
         return std::nullopt;
 
-    std::set<String> affected_partition_ids;
+    DataPartsVector active_parts;
     {
         auto lock = readLockParts();
-        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
-        {
-            if (part->info.getPartitionId().starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
-                continue;
+        active_parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, lock);
+    }
 
-            if (!partition_pruner.canBePruned(*part))
-                affected_partition_ids.insert(part->info.getPartitionId());
-        }
+    std::set<String> affected_partition_ids;
+    for (const auto & part : active_parts)
+    {
+        if (part->info.getPartitionId().starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+            continue;
+
+        if (!partition_pruner.canBePruned(*part))
+            affected_partition_ids.insert(part->info.getPartitionId());
     }
 
     LOG_DEBUG(log, "Mutation partition pruning: {} partition(s) affected for predicate '{}'",

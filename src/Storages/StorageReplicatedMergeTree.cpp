@@ -6611,7 +6611,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
             {
                 /// Lock only the specific affected partitions instead of all partitions.
                 /// Pass the block_numbers version to detect new partitions appearing concurrently.
-                EphemeralLocksInAllPartitions lock_holder(
+                EphemeralLocksInPartitions lock_holder(
                     fs::path(zookeeper_path) / "block_numbers",
                     "block-",
                     fs::path(zookeeper_path) / "temp",
@@ -6642,7 +6642,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
     }
 
     /// All partitions affected - lock everything.
-    EphemeralLocksInAllPartitions lock_holder(
+    EphemeralLocksInPartitions lock_holder(
         fs::path(zookeeper_path) / "block_numbers",
         "block-",
         fs::path(zookeeper_path) / "temp",
