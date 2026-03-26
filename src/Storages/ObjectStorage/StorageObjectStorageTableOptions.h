@@ -25,8 +25,9 @@ struct StorageObjectStorageTableOptions
 
     String schema_hash;
 
-    const Path & getPathForRead(const Path & raw_path) const;
-    void setPathForRead(const Path & path);
+    /// Returns the path used for reading. Always initialized at construction time.
+    const Path & getPathForRead() const;
+
     Path getPathForWrite(const Path & raw_path, const std::string & partition_id = "") const;
 
     static String computeSchemaHash(const ColumnsDescription & columns);
@@ -37,15 +38,38 @@ struct StorageObjectStorageTableOptions
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context, const Path & raw_path);
 
+    /// Adjust `read_path` for Queue storage: ensure it ends with a glob pattern for polling.
+    void adjustReadPathForQueue();
+
+    StorageObjectStorageTableOptions(
+        Path read_path_,
+        String format_,
+        String compression_method_,
+        String structure_,
+        PartitionStrategyFactory::StrategyType partition_strategy_type_,
+        bool partition_columns_in_data_file_,
+        std::shared_ptr<IPartitionStrategy> partition_strategy_)
+        : format(std::move(format_))
+        , compression_method(std::move(compression_method_))
+        , structure(std::move(structure_))
+        , partition_strategy_type(partition_strategy_type_)
+        , partition_columns_in_data_file(partition_columns_in_data_file_)
+        , partition_strategy(std::move(partition_strategy_))
+        , read_path(std::move(read_path_))
+    {
+    }
+
+    StorageObjectStorageTableOptions() = default;
+
 private:
-    /// Path used for reading, by default it is the same as raw_path.
-    /// When using `partition_strategy=hive`, a recursive reading pattern will be appended.
+    /// Path used for reading. Initialized at construction time to `getRawPath()`,
+    /// then may be overwritten by `initPartitionStrategy` with a Hive glob pattern.
     Path read_path;
 };
 
 struct StorageParsedArguments;
 
-/// Convert common parsed arguments into table options.
-StorageObjectStorageTableOptions tableOptionsFromParsedArguments(StorageParsedArguments && parsed_arguments);
+/// Create table options from parsed arguments and the initial read path.
+StorageObjectStorageTableOptions tableOptionsFromParsedArguments(StorageParsedArguments && parsed_arguments, const ObjectStorageConnectionConfiguration::Path & read_path);
 
 }

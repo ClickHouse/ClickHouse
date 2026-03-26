@@ -51,6 +51,7 @@ public:
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         ObjectStorageConnectionConfigurationPtr configuration,
+        const ObjectStorageConnectionConfiguration::Path & reading_path,
         const ObjectStorageConnectionConfiguration::Paths & object_paths,
         const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
@@ -185,6 +186,7 @@ public:
     GlobIterator(
         ObjectStoragePtr object_storage_,
         ObjectStorageConnectionConfigurationPtr configuration_,
+        const ObjectStorageConnectionConfiguration::Path & reading_path_,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
         const NamesAndTypesList & hive_columns_,
@@ -208,6 +210,7 @@ private:
 
     const ObjectStoragePtr object_storage;
     const ObjectStorageConnectionConfigurationPtr configuration;
+    const ObjectStorageConnectionConfiguration::Path reading_path;
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_columns;
     const bool throw_on_zero_files_match;

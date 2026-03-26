@@ -151,6 +151,7 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     ObjectStorageConnectionConfigurationPtr configuration,
+    const ObjectStorageConnectionConfiguration::Path & reading_path,
     const ObjectStorageConnectionConfiguration::Paths & object_paths,
     const StorageObjectStorageQuerySettings & query_settings,
     ObjectStoragePtr object_storage,
@@ -194,7 +195,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
 
     std::unique_ptr<IObjectIterator> iterator;
-    const auto & reading_path = configuration->getRawPath();
+    /// `reading_path` is passed as a parameter from `table_options.getPathForRead()`.
     if (reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
         auto paths = expandSelectionGlob(reading_path.path);
@@ -218,6 +219,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             iterator = std::make_unique<GlobIterator>(
                 object_storage,
                 configuration,
+                reading_path,
                 predicate,
                 virtual_columns,
                 hive_columns,
@@ -876,6 +878,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 StorageObjectStorageSource::GlobIterator::GlobIterator(
     ObjectStoragePtr object_storage_,
     ObjectStorageConnectionConfigurationPtr configuration_,
+    const ObjectStorageConnectionConfiguration::Path & reading_path_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns_,
     const NamesAndTypesList & hive_columns_,
@@ -888,6 +891,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     : WithContext(context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
+    , reading_path(reading_path_)
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
@@ -896,7 +900,6 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , local_context(context_)
     , file_progress_callback(file_progress_callback_)
 {
-    const auto & reading_path = configuration->getRawPath();
     if (reading_path.hasGlobs())
     {
         const auto & key_with_globs = reading_path;

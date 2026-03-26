@@ -36,13 +36,12 @@ ConfigWithOptions fromS3NamedCollection(const NamedCollection & collection, Cont
 {
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
-    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageS3Configuration>(
         std::move(parsed_arguments.url),
         std::move(parsed_arguments.s3_settings),
         std::move(parsed_arguments.s3_capabilities),
         std::move(parsed_arguments.headers_from_ast));
-    table_options.setPathForRead(config->getRawPath());
+    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments(), config->getRawPath());
     return {config, std::move(table_options)};
 }
 
@@ -52,7 +51,6 @@ ConfigWithOptions fromS3Disk(const String & disk_name, ASTs & args, ContextPtr c
     auto disk = context->getDisk(disk_name);
     parsed_arguments.fromDisk(disk, args, context, with_structure);
     fs::path suffix = parsed_arguments.path_suffix;
-    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageS3Configuration>(
         std::move(parsed_arguments.url),
         std::move(parsed_arguments.s3_settings),
@@ -63,8 +61,8 @@ ConfigWithOptions fromS3Disk(const String & disk_name, ASTs & args, ContextPtr c
         String path = object_storage_disk->getObjectStorage()->getCommonKeyPrefix();
         fs::path root = path;
         config->setRawPath(String(root / suffix));
-        table_options.setPathForRead(String(root / suffix));
     }
+    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments(), config->getRawPath());
     return {config, std::move(table_options)};
 }
 
@@ -80,13 +78,12 @@ ConfigWithOptions fromS3AST(ASTs & args, ContextPtr context, bool with_structure
 {
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
-    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageS3Configuration>(
         std::move(parsed_arguments.url),
         std::move(parsed_arguments.s3_settings),
         std::move(parsed_arguments.s3_capabilities),
         std::move(parsed_arguments.headers_from_ast));
-    table_options.setPathForRead(config->getRawPath());
+    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments(), config->getRawPath());
     return {config, std::move(table_options)};
 }
 

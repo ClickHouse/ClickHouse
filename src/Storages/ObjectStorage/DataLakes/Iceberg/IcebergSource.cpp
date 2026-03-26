@@ -150,7 +150,7 @@ Chunk IcebergSource::generate()
             const auto & filename = object_info->getFileName();
             std::string full_path = object_info->getPath();
 
-            const auto reading_path = table_options.getPathForRead(configuration->getRawPath()).path;
+            const auto reading_path = table_options.getPathForRead().path;
 
             if (!full_path.starts_with(reading_path))
                 full_path = fs::path(reading_path) / object_info->getPath();

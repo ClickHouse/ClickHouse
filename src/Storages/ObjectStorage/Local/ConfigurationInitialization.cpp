@@ -20,9 +20,8 @@ ConfigWithOptions fromLocalAST(ASTs & args, ContextPtr context, bool with_struct
 {
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
-    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageLocalConfiguration>(parsed_arguments.path);
-    table_options.setPathForRead(config->getRawPath());
+    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments(), config->getRawPath());
     return {config, std::move(table_options)};
 }
 
@@ -31,12 +30,11 @@ ConfigWithOptions fromLocalDisk(const String & disk_name_, ASTs & args, ContextP
     LocalStorageParsedArguments parsed_arguments;
     auto disk = context->getDisk(disk_name_);
     parsed_arguments.fromDisk(disk, args, context, with_structure);
-    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     fs::path root = disk->getPath();
     fs::path suffix = parsed_arguments.path_suffix;
     String full_path = String(root / suffix);
     auto config = std::make_shared<StorageLocalConfiguration>(full_path, disk_name_);
-    table_options.setPathForRead(full_path);
+    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments(), config->getRawPath());
     return {config, std::move(table_options)};
 }
 
@@ -44,9 +42,8 @@ ConfigWithOptions fromLocalNamedCollection(const NamedCollection & collection, C
 {
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
-    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageLocalConfiguration>(parsed_arguments.path);
-    table_options.setPathForRead(config->getRawPath());
+    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments(), config->getRawPath());
     return {config, std::move(table_options)};
 }
 

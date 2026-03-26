@@ -59,6 +59,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
 
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
+        table_options.getPathForRead(),
         object_paths,
         query_settings,
         object_storage,

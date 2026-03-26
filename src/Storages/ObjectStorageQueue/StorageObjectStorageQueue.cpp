@@ -295,19 +295,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::StorageObjectStorageQueue");
-    const auto & read_path = table_options.getPathForRead(configuration->getRawPath());
-    if (read_path.path.empty())
-    {
-        table_options.setPathForRead({"/*"});
-    }
-    else if (read_path.path.ends_with('/'))
-    {
-        table_options.setPathForRead({read_path.path + '*'});
-    }
-    else if (!read_path.hasGlobs())
-    {
-        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
-    }
+    table_options.adjustReadPathForQueue();
 
     const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
     validateSettings(*queue_settings_, is_attach);

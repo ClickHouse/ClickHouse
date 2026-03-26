@@ -25,9 +25,8 @@ ConfigWithOptions fromHDFSAST(ASTs & args, ContextPtr context, bool with_structu
 {
     HDFSStorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
-    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageHDFSConfiguration>(parsed_arguments.url_str);
-    table_options.setPathForRead(config->getRawPath());
+    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments(), config->getRawPath());
     return {config, std::move(table_options)};
 }
 
@@ -35,9 +34,8 @@ ConfigWithOptions fromHDFSNamedCollection(const NamedCollection & collection, Co
 {
     HDFSStorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
-    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments());
     auto config = std::make_shared<StorageHDFSConfiguration>(parsed_arguments.url_str);
-    table_options.setPathForRead(config->getRawPath());
+    auto table_options = tableOptionsFromParsedArguments(parsed_arguments.extractBaseArguments(), config->getRawPath());
     return {config, std::move(table_options)};
 }
 

@@ -12,19 +12,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_QUERY_PARAMETER;
     extern const int LOGICAL_ERROR;
 }
 
-const StorageObjectStorageTableOptions::Path & StorageObjectStorageTableOptions::getPathForRead(const Path & raw_path) const
+const StorageObjectStorageTableOptions::Path & StorageObjectStorageTableOptions::getPathForRead() const
 {
-    if (read_path.path.empty())
-        return raw_path;
     return read_path;
-}
-
-void StorageObjectStorageTableOptions::setPathForRead(const Path & path)
-{
-    read_path = path;
 }
 
 StorageObjectStorageTableOptions::Path StorageObjectStorageTableOptions::getPathForWrite(const Path & raw_path, const std::string & partition_id) const
@@ -78,16 +72,28 @@ void StorageObjectStorageTableOptions::initPartitionStrategy(
     }
 }
 
-StorageObjectStorageTableOptions tableOptionsFromParsedArguments(StorageParsedArguments && parsed_arguments)
+void StorageObjectStorageTableOptions::adjustReadPathForQueue()
 {
-    StorageObjectStorageTableOptions table_options;
-    table_options.format = std::move(parsed_arguments.format);
-    table_options.compression_method = std::move(parsed_arguments.compression_method);
-    table_options.structure = std::move(parsed_arguments.structure);
-    table_options.partition_strategy_type = parsed_arguments.partition_strategy_type;
-    table_options.partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
-    table_options.partition_strategy = std::move(parsed_arguments.partition_strategy);
-    return table_options;
+    if (read_path.path.empty())
+        read_path = {"/*"};
+    else if (read_path.path.ends_with('/'))
+        read_path = {read_path.path + '*'};
+    else if (!read_path.hasGlobs())
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
+}
+
+StorageObjectStorageTableOptions tableOptionsFromParsedArguments(
+    StorageParsedArguments && parsed_arguments,
+    const ObjectStorageConnectionConfiguration::Path & read_path)
+{
+    return StorageObjectStorageTableOptions(
+        read_path,
+        std::move(parsed_arguments.format),
+        std::move(parsed_arguments.compression_method),
+        std::move(parsed_arguments.structure),
+        parsed_arguments.partition_strategy_type,
+        parsed_arguments.partition_columns_in_data_file,
+        std::move(parsed_arguments.partition_strategy));
 }
 
 }
