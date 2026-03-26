@@ -149,7 +149,7 @@
 #    include <Server/ACME/Client.h>
 #endif
 
-#if USE_SSH
+#if USE_SSH && defined(OS_LINUX)
 #    include <Server/SSH/SSHPtyHandlerFactory.h>
 #    include <Common/LibSSHInitializer.h>
 #    include <Common/LibSSHLogger.h>
@@ -3540,7 +3540,7 @@ void Server::createServers(
                 servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
-#if USE_SSH
+#if USE_SSH && defined(OS_LINUX)
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ false);
                     return ProtocolServerAdapter(
