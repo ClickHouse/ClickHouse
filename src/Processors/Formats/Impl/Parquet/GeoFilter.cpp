@@ -8,9 +8,15 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/WKB.h>
 #include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 #include <cmath>
 #include <cstring>
@@ -168,14 +174,6 @@ bool tryExtractConstBbox(
     return found;
 }
 
-/// Decode a little-endian IEEE 754 double from Parquet statistics binary encoding.
-bool readParquetDouble(const std::string & s, double & out)
-{
-    if (s.size() != sizeof(double))
-        return false;
-    std::memcpy(&out, s.data(), sizeof(double));
-    return true;
-}
 
 } // namespace
 
@@ -259,80 +257,79 @@ bool rowGroupFailsSpatialFilters(
         if (!geo_col)
             continue;
 
-        double rg_xmin = 0;
-        double rg_ymin = 0;
-        double rg_xmax = 0;
-        double rg_ymax = 0;
-        bool have_bbox = false;
-
-        /// Prefer geospatial_statistics.bbox from the geometry column itself.
+        /// Only check geospatial_statistics.bbox baked into the geometry column's ColumnMetaData.
+        /// covering.bbox is handled via the standard KeyCondition hyperrectangle path.
         const auto & col_meta = rg_meta.columns.at(geo_col->column_idx).meta_data;
-        if (col_meta.__isset.geospatial_statistics
-            && col_meta.geospatial_statistics.__isset.bbox)
-        {
-            const auto & bbox = col_meta.geospatial_statistics.bbox;
-            rg_xmin = bbox.xmin;
-            rg_ymin = bbox.ymin;
-            rg_xmax = bbox.xmax;
-            rg_ymax = bbox.ymax;
-            have_bbox = true;
-        }
-
-        /// Fall back to covering.bbox column statistics.
-        /// BboxColumnIndices stores Parquet column indices directly (into rg_meta.columns).
-        if (!have_bbox && geo_col->covering_bbox_indices.has_value())
-        {
-            const auto & idx = *geo_col->covering_bbox_indices;
-            double v_xmin = 0;
-            double v_ymin = 0;
-            double v_xmax = 0;
-            double v_ymax = 0;
-
-            auto read_min = [&](size_t col_idx, double & out) -> bool
-            {
-                if (col_idx >= rg_meta.columns.size()) return false;
-                const auto & cmeta = rg_meta.columns.at(col_idx).meta_data;
-                return cmeta.__isset.statistics
-                    && cmeta.statistics.__isset.min_value
-                    && readParquetDouble(cmeta.statistics.min_value, out);
-            };
-            auto read_max = [&](size_t col_idx, double & out) -> bool
-            {
-                if (col_idx >= rg_meta.columns.size()) return false;
-                const auto & cmeta = rg_meta.columns.at(col_idx).meta_data;
-                return cmeta.__isset.statistics
-                    && cmeta.statistics.__isset.max_value
-                    && readParquetDouble(cmeta.statistics.max_value, out);
-            };
-
-            if (read_min(idx.xmin_col, v_xmin)
-                && read_min(idx.ymin_col, v_ymin)
-                && read_max(idx.xmax_col, v_xmax)
-                && read_max(idx.ymax_col, v_ymax))
-            {
-                rg_xmin = v_xmin;
-                rg_ymin = v_ymin;
-                rg_xmax = v_xmax;
-                rg_ymax = v_ymax;
-                have_bbox = true;
-            }
-        }
-
-        if (!have_bbox)
+        if (!col_meta.__isset.geospatial_statistics || !col_meta.geospatial_statistics.__isset.bbox)
             continue;
 
-        /// If the row group bbox is disjoint from the query bbox, no row in this
-        /// group can satisfy the predicate → the whole row group can be skipped.
-        bool disjoint = rg_xmax < filter.query_xmin
-                     || rg_xmin > filter.query_xmax
-                     || rg_ymax < filter.query_ymin
-                     || rg_ymin > filter.query_ymax;
-
+        const auto & bbox = col_meta.geospatial_statistics.bbox;
+        bool disjoint = bbox.xmax < filter.query_xmin
+                     || bbox.xmin > filter.query_xmax
+                     || bbox.ymax < filter.query_ymin
+                     || bbox.ymin > filter.query_ymax;
         if (disjoint)
             return true;
     }
 
     return false;
+}
+
+std::shared_ptr<DB::KeyCondition> buildBboxKeyCondition(
+    const SpatialFilter & filter,
+    const std::string & xmin_col, const std::string & ymin_col,
+    const std::string & xmax_col, const std::string & ymax_col,
+    const DB::ContextPtr & context,
+    const DB::Block & extended_sample_block)
+{
+    for (const auto & name : {xmin_col, ymin_col, xmax_col, ymax_col})
+        if (!extended_sample_block.has(name))
+            return nullptr;
+
+    auto float64 = std::make_shared<DB::DataTypeFloat64>();
+    DB::ActionsDAG dag;
+
+    const auto & xmin_in = dag.addInput(xmin_col, float64);
+    const auto & xmax_in = dag.addInput(xmax_col, float64);
+    const auto & ymin_in = dag.addInput(ymin_col, float64);
+    const auto & ymax_in = dag.addInput(ymax_col, float64);
+
+    auto make_const = [&](double v, const std::string & name) -> const DB::ActionsDAG::Node &
+    {
+        return dag.addColumn(DB::ColumnWithTypeAndName{
+            float64->createColumnConst(1, DB::Field(v)), float64, name});
+    };
+    const auto & c_qxmin = make_const(filter.query_xmin, "__bbox_q_xmin");
+    const auto & c_qxmax = make_const(filter.query_xmax, "__bbox_q_xmax");
+    const auto & c_qymin = make_const(filter.query_ymin, "__bbox_q_ymin");
+    const auto & c_qymax = make_const(filter.query_ymax, "__bbox_q_ymax");
+
+    auto & fn = DB::FunctionFactory::instance();
+    auto le = fn.get("lessOrEquals", context);
+    auto ge = fn.get("greaterOrEquals", context);
+    auto and_fn = fn.get("and", context);
+
+    /// bbox_xmin <= query_xmax  AND  bbox_xmax >= query_xmin
+    /// bbox_ymin <= query_ymax  AND  bbox_ymax >= query_ymin
+    const auto & cmp1 = dag.addFunction(le, {&xmin_in, &c_qxmax}, "");
+    const auto & cmp2 = dag.addFunction(ge, {&xmax_in, &c_qxmin}, "");
+    const auto & cmp3 = dag.addFunction(le, {&ymin_in, &c_qymax}, "");
+    const auto & cmp4 = dag.addFunction(ge, {&ymax_in, &c_qymin}, "");
+    const auto & and1 = dag.addFunction(and_fn, {&cmp1, &cmp2}, "");
+    const auto & and2 = dag.addFunction(and_fn, {&and1, &cmp3}, "");
+    const auto & and3 = dag.addFunction(and_fn, {&and2, &cmp4}, "");
+    dag.getOutputs() = {&and3};
+
+    DB::Names names;
+    names.reserve(extended_sample_block.columns());
+    for (size_t i = 0; i < extended_sample_block.columns(); ++i)
+        names.push_back(extended_sample_block.getByPosition(i).name);
+
+    DB::ActionsDAGWithInversionPushDown inverted(dag.getOutputs().front(), context);
+    return std::make_shared<DB::KeyCondition>(
+        inverted, context, names,
+        std::make_shared<DB::ExpressionActions>(
+            DB::ActionsDAG(extended_sample_block.getColumnsWithTypeAndName())));
 }
 
 } // namespace DB::Parquet

@@ -179,20 +179,6 @@ struct Reader
 
         bool used_by_key_condition = false;
 
-        /// Set for WKB geometry columns that have GeoParquet covering.bbox metadata.
-        /// Stores Parquet column indices (into RowGroup.columns) for the four Float64 bbox columns.
-        struct BboxColumnIndices
-        {
-            size_t xmin_col, ymin_col, xmax_col, ymax_col;
-        };
-        std::optional<BboxColumnIndices> covering_bbox_indices;
-
-        /// Populated during prefilterAndInitRowGroups when a spatial filter references this column
-        /// and covering_bbox_indices is set. Enables page-level spatial pruning via column index.
-        bool has_page_spatial_filter = false;
-        double spatial_query_xmin = 0, spatial_query_ymin = 0;
-        double spatial_query_xmax = 0, spatial_query_ymax = 0;
-
         /// If use_bloom_filter, these are the values that we need to find in bloom filter.
         std::vector<UInt64> bloom_filter_hashes;
 
@@ -309,12 +295,7 @@ struct Reader
         bool use_bloom_filter = false;
         bool use_dictionary_filter = false;
         bool use_column_index = false;
-        bool use_spatial_column_index = false;
         bool need_null_map = false;
-
-        /// Prefetches for the 4 covering.bbox column indexes used for page-level spatial pruning.
-        /// Valid only when use_spatial_column_index = true.
-        std::array<PrefetchHandle, 4> spatial_bbox_prefetches;
 
         /// Prefetches.
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
@@ -498,6 +479,9 @@ struct Reader
     /// Stored here to keep the shared_ptrs alive, since raw pointers from them
     /// are referenced by PrimitiveColumnInfo::column_index_condition.
     std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
+
+    /// Spatial KeyConditions built from covering.bbox columns, checked during row-group pruning.
+    std::vector<std::shared_ptr<KeyCondition>> spatial_key_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
 
