@@ -193,7 +193,7 @@ public:
         throwInapplicable();
     }
     ColumnPtr replicate(const Offsets &) const override { throwInapplicable(); }
-    MutableColumns scatter(size_t, const Selector &) const override { throwInapplicable(); }
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t, const Selector &) const override { throwInapplicable(); }
     void gather(ColumnGathererStream &) override { throwInapplicable(); }
     void getExtremes(Field &, Field &, size_t, size_t) const override { throwInapplicable(); }
     size_t byteSizeAt(size_t) const override { throwInapplicable(); }
@@ -202,8 +202,8 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwInapplicable(); }
 
     bool hasDynamicStructure() const override { throwInapplicable(); }
-    void takeDynamicStructureFromSourceColumns(const Columns &, std::optional<size_t>) override { throwInapplicable(); }
-    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwInapplicable(); }
+    void takeExactDynamicStructureFrom(const IColumn &) override { throwInapplicable(); }
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwInapplicable(); }
     void fixDynamicStructure() override { throwInapplicable(); }
 
 private:

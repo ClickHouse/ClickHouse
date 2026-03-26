@@ -3,6 +3,10 @@ SET optimize_read_in_order=1;
 SET optimize_trivial_insert_select = 1;
 SET read_in_order_two_level_merge_threshold=100;
 SET read_in_order_use_virtual_row = 1;
+SET query_plan_optimize_lazy_materialization = 0;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
+SET optimize_sorting_by_input_stream_properties = 1;
 SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
 

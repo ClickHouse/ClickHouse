@@ -164,13 +164,13 @@ class ClickHouseProc:
 
     def start_azurite(self):
         command = (
-            f"cd {temp_dir} && azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory",
+            f"cd {temp_dir} && azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
-        print(f"Started azurite-rs asynchronously with PID {self.azurite_proc.pid}")
+        print(f"Started azurite asynchronously with PID {self.azurite_proc.pid}")
         return True
 
     def start_kafka(self):
@@ -998,6 +998,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         sanitizer_hits = Shell.get_output(
             f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
             f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
+            f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
+            f'grep -a -v "False positive error reports may follow" | '
+            f'grep -a -v "For details see https://github.com/google/sanitizers" | '
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(
