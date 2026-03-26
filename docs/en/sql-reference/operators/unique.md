@@ -9,10 +9,6 @@ doc_type: 'reference'
 
 The `UNIQUE` predicate tests whether a subquery result contains no duplicate rows. It returns `1` if all rows are distinct, and `0` if any duplicates exist. An empty subquery is considered vacuously unique and returns `1`.
 
-:::note
-This is an experimental feature. To use it, enable the setting `allow_experimental_unique_predicate`.
-:::
-
 **Syntax**
 
 ```sql
@@ -45,8 +41,6 @@ Correlated subqueries are not currently supported with `UNIQUE`.
 All distinct rows:
 
 ```sql
-SET allow_experimental_unique_predicate = 1;
-
 SELECT UNIQUE(SELECT number FROM numbers(5));
 ```
 

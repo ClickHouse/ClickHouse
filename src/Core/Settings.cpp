@@ -5679,9 +5679,6 @@ Read/write timeout in seconds. Now supported only for MySQL
     DECLARE(Bool, allow_experimental_correlated_subqueries, true, R"(
 Allow to execute correlated subqueries.
 )", BETA) \
-    DECLARE(Bool, allow_experimental_unique_predicate, false, R"(
-Allow the use of the `UNIQUE` predicate, which tests whether a subquery contains no duplicate rows.
-)", EXPERIMENTAL) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.

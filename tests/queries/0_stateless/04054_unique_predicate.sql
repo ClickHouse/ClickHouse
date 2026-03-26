@@ -1,5 +1,5 @@
--- Tags: no-fasttest, no-ordinary
-SET allow_experimental_unique_predicate = 1;
+-- Tags: no-fasttest
+SET enable_analyzer = 1;
 
 -- All distinct rows: returns 1
 SELECT UNIQUE(SELECT number FROM numbers(5));
@@ -38,7 +38,3 @@ SELECT UNIQUE(SELECT if(number < 3, number % 2, NULL) FROM numbers(5));
 
 -- Correlated subquery: not supported (fails during identifier resolution)
 SELECT UNIQUE(SELECT number FROM numbers(n)) FROM (SELECT 1 AS n); -- { serverError UNKNOWN_IDENTIFIER }
-
--- Disabled by default
-SET allow_experimental_unique_predicate = 0;
-SELECT UNIQUE(SELECT 1); -- { serverError SUPPORT_IS_DISABLED }

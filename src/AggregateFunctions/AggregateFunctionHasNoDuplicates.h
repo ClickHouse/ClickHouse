@@ -121,7 +121,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnUInt8 &>(to).getData().push_back(data(place).has_duplicate ? 0 : 1);
+        assert_cast<ColumnUInt8 &>(to).getData().push_back(static_cast<UInt8>(data(place).has_duplicate ? 0 : 1));
     }
 
 private:
