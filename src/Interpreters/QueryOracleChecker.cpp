@@ -59,6 +59,7 @@ const std::unordered_set<String> non_deterministic_functions = {
     "numbers", "zeros", "generateRandom",
     "randomPrintableASCII", "randomString", "randomFixedString",
     "fuzzQuery",
+    "materialize",
 };
 
 /// Maximum formatted query length for oracle sub-queries.
@@ -315,12 +316,10 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
     if (!isSafeForOracle(select))
         return false;
 
-    /// TLP WHERE requires no aggregates in SELECT list.
-    /// GROUP BY is allowed — the GROUP BY clause stays identical across all partitions.
-    /// HAVING is blocked because it may contain aggregates that evaluate differently per partition.
-    if (hasAggregates(select))
-        return false;
-    if (select.having())
+    /// TLP WHERE requires no aggregates, no GROUP BY, no HAVING.
+    /// GROUP BY produces independent groups per partition — UNION ALL duplicates them.
+    /// (GROUP BY with aggregates is handled by TLP Aggregate via State/Merge.)
+    if (hasAggregates(select) || select.groupBy() || select.having())
         return false;
 
     if (hasNonDeterministicFunctions(select.clone()))
