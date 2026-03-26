@@ -494,11 +494,15 @@ Chunk StorageObjectStorageSource::generate()
         /// the number of rows actually scanned.  Report the gap so that
         /// system.query_log.read_rows reflects the rows physically scanned, consistent with
         /// how MergeTree counts read_rows when PREWHERE is used.
+        ///
+        /// NOTE: We must pass a non-zero byte count here.  ISource::getReadProgress
+        /// discards progress when the source is finished and read_bytes == 0, which would
+        /// silently drop these rows.
         if (const auto * input_format = reader.getInputFormat())
         {
             const size_t rows_from_disk = input_format->getRowsReadFromDisk();
             if (rows_from_disk > total_rows_in_file)
-                progress(rows_from_disk - total_rows_in_file, 0);
+                progress(rows_from_disk - total_rows_in_file, 1);
         }
 
         total_rows_in_file = 0;
