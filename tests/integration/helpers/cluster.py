@@ -756,6 +756,7 @@ class ClickHouseCluster:
         self.ldap_host = "openldap"
         self.ldap_container = None
         self.ldap_port = 1389
+        self._ldap_external_port = 0
         self.ldap_id = self.get_instance_docker_id(self.ldap_host)
 
         # available when with_rabbitmq == True
@@ -1017,6 +1018,13 @@ class ClickHouseCluster:
             return self._redis_port
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    @property
+    def ldap_external_port(self):
+        if self._ldap_external_port:
+            return self._ldap_external_port
+        self._ldap_external_port = self.port_pool.get_port()
+        return self._ldap_external_port
 
     @property
     def nats_port(self):
@@ -1811,7 +1819,7 @@ class ClickHouseCluster:
 
     def setup_ldap_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_ldap = True
-        env_variables["LDAP_EXTERNAL_PORT"] = str(self.ldap_port)
+        env_variables["LDAP_EXTERNAL_PORT"] = str(self.ldap_external_port)
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_ldap.yml")]
         )
