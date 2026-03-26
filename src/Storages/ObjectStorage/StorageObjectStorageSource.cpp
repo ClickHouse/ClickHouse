@@ -1188,8 +1188,8 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
         {
             for (const auto & object_info : object_infos)
             {
-                chassert(object_info->getObjectMetadata());
-                file_progress_callback(FileProgress(0, object_info->getObjectMetadata()->size_bytes));
+                if (const auto metadata = object_info->getObjectMetadata())
+                    file_progress_callback(FileProgress(0, metadata->size_bytes));
             }
         }
     }
