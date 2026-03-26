@@ -1,3 +1,4 @@
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
 #if USE_MYSQL
@@ -74,7 +75,7 @@ namespace ErrorCodes
 
 constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
-static const std::chrono::seconds lock_acquire_timeout{10};
+static const Poco::Timespan lock_acquire_timeout{10ull, 0ull};
 
 DatabaseMySQL::DatabaseMySQL(
     ContextPtr context_,
@@ -538,6 +539,7 @@ void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_nam
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseMySQL::dropTable");
     detachTablePermanently(local_context, table_name);
 }
 

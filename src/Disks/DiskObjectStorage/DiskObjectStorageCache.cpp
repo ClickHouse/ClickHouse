@@ -12,33 +12,38 @@ namespace DB
 {
 
 /// TODO: This is crap, we need to reimplement cache disk, it is too bad :(
-DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
+DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name) const
 {
     auto registry = object_storages->getRegistry();
     auto local_location = cluster->getLocalLocation();
     registry[local_location] = std::make_shared<CachedObjectStorage>(registry[local_location], cache, cache_settings, layer_name);
 
-    return std::make_shared<DiskObjectStorage>(
-        getName(),
+    auto cache_disk = std::make_shared<DiskObjectStorage>(
+        layer_name,
         std::make_shared<ClusterConfiguration>(cluster->getConfiguration()),
         std::make_shared<MetadataStorageFromCacheObjectStorage>(metadata_storage),
         std::make_shared<ObjectStorageRouter>(std::move(registry)),
         Context::getGlobalContextInstance()->getConfigRef(),
-        "storage_configuration.disks." + name,
+        "storage_configuration.disks." + layer_name,
         use_fake_transaction);
+
+    /// Link with target disk.
+    cache_disk->wrapped_disk = std::dynamic_pointer_cast<const DiskObjectStorage>(shared_from_this());
+
+    return cache_disk;
 }
 
 NameSet DiskObjectStorage::getCacheLayersNames() const
 {
-    NameSet cache_layers;
-    auto current_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
-    while (current_object_storage->supportsCache())
+    NameSet disk_names;
+    DiskObjectStorageConstPtr layer = std::dynamic_pointer_cast<const DiskObjectStorage>(shared_from_this());
+    while (layer)
     {
-        auto * cached_object_storage = assert_cast<CachedObjectStorage *>(current_object_storage.get());
-        cache_layers.insert(cached_object_storage->getCacheConfigName());
-        current_object_storage = cached_object_storage->getWrappedObjectStorage();
+        disk_names.insert(layer->getName());
+        layer = layer->wrapped_disk;
     }
-    return cache_layers;
+
+    return disk_names;
 }
 
 }

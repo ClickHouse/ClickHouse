@@ -1,0 +1,23 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap2>
+            <host>openldap2</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=referral,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <follow_referrals>false</follow_referrals>
+        </openldap2>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>openldap2</server>
+            <role_mapping>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                <attribute>cn</attribute>
+                <prefix>clickhouse-</prefix>
+            </role_mapping>
+        </ldap>
+    </user_directories>
+</clickhouse>

@@ -110,7 +110,10 @@ struct ZkNodeCache
           */
         if (!exists)
         {
-            auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent);
+            /// For intermediate nodes that are created as parents (not explicitly changed by the user),
+            /// use ignore_if_exists to handle concurrent creation by other sessions.
+            bool ignore_if_exists = !changed;
+            auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent, ignore_if_exists);
             requests.push_back(request);
         }
         else if (changed)
@@ -150,6 +153,7 @@ public:
 
     void consume(Chunk & chunk) override
     {
+        auto component_guard = Coordination::setCurrentComponent("ZooKeeperSink::consume");
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
         ColumnPtr name_column = block.getByName("name").column;
@@ -200,6 +204,7 @@ public:
 
     void onFinish() override
     {
+        auto component_guard = Coordination::setCurrentComponent("ZooKeeperSink::onFinish");
         for (auto & [zookeeper_name, cache] : caches)
         {
             Coordination::Requests requests;
@@ -600,6 +605,7 @@ void ReadFromSystemZooKeeper::applyFilters(ActionDAGNodes added_filter_nodes)
 
 Chunk SystemZooKeeperSource::generate()
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemZooKeeperSource::generate");
     if (name.empty())
     {
         chassert(0); // In fact, it must always have a default value.

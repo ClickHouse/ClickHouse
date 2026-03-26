@@ -14,6 +14,10 @@ namespace DB
 /// Tasks may be cancelled slightly later than their exact timeout, but never before.
 static constexpr UInt64 CANCELLATION_GRID_MS = 100;
 
+/// Maximum allowed timeout is 1 year in milliseconds.
+/// This prevents overflow in chrono calculations and ensures reasonable behavior.
+static constexpr Int64 MAX_TIMEOUT_MS = 365LL * 24 * 60 * 60 * 1000;
+
 struct CancellationChecker::QueryToTrack
 {
     QueryToTrack(QueryStatusPtr query_, UInt64 timeout_, UInt64 endtime_, OverflowMode overflow_mode_)
@@ -76,23 +80,30 @@ void CancellationChecker::terminateThread()
     cond_var.notify_all();
 }
 
-void CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 timeout, OverflowMode overflow_mode)
+bool CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 timeout, OverflowMode overflow_mode)
 {
     if (timeout <= 0) // Avoid cases when the timeout is less or equal zero
     {
         LOG_TEST(log, "Did not add the task because the timeout is 0, query_id: {}", query->getClientInfo().current_query_id);
-        return;
+        return false;
     }
+
+    /// Cap timeout to 1 year to prevent overflow in chrono calculations.
+    /// std::condition_variable::wait_for converts milliseconds to nanoseconds internally
+    /// (multiplying by 1,000,000), which overflows for values close to INT64_MAX.
+    const Int64 capped_timeout = std::min(timeout, MAX_TIMEOUT_MS);
+
     std::unique_lock<std::mutex> lock(m);
-    LOG_TEST(log, "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, timeout);
+    LOG_TEST(log, "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, capped_timeout);
     const auto now = std::chrono::steady_clock::now();
     const UInt64 now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
     /// Round up to the next grid boundary to enable batching of timeout checks.
     /// This ensures tasks are never cancelled before their timeout, only slightly after.
-    const UInt64 end_time = ((now_ms + timeout + CANCELLATION_GRID_MS - 1) / CANCELLATION_GRID_MS) * CANCELLATION_GRID_MS;
-    auto iter = query_set.emplace(query, timeout, end_time, overflow_mode);
+    const UInt64 end_time = ((now_ms + capped_timeout + CANCELLATION_GRID_MS - 1) / CANCELLATION_GRID_MS) * CANCELLATION_GRID_MS;
+    auto iter = query_set.emplace(query, capped_timeout, end_time, overflow_mode);
     if (iter == query_set.begin()) // Only notify if the new task is the earliest one
         cond_var.notify_all();
+    return true;
 }
 
 void CancellationChecker::appendDoneTasks(const QueryStatusPtr & query)
@@ -167,7 +178,11 @@ void CancellationChecker::workerFunction()
             cond_var.wait_for(
                 lock,
                 std::chrono::milliseconds(query_set.begin()->endtime - now_ms),
-                [&, now_ms] { return stop_thread || (!query_set.empty() && query_set.begin()->endtime < now_ms); });
+                [&] {
+                    /// Use fresh time to avoid spinning when the predicate is re-evaluated after spurious wakeups.
+                    UInt64 fresh_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                    return stop_thread || (!query_set.empty() && query_set.begin()->endtime <= fresh_now_ms);
+                });
         }
     }
 }

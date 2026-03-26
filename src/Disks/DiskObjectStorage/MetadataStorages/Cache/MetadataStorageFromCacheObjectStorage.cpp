@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
 
+#include <limits>
 #include <ranges>
 
 namespace DB
@@ -193,6 +194,9 @@ bool MetadataStorageFromCacheObjectStorage::supportWritingWithAppend() const
 IMetadataStorage::BlobsToRemove MetadataStorageFromCacheObjectStorage::getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count)
 {
     std::lock_guard guard(removed_objects_mutex);
+
+    if (max_count == 0)
+        max_count = std::numeric_limits<int64_t>::max();
 
     BlobsToRemove blobs_to_remove;
     for (const auto & blob : objects_to_remove | std::views::take(max_count))

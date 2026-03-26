@@ -77,7 +77,7 @@ public:
 
     /// do not print empty parentheses if there are no args - compatibility with engine names.
     bool noEmptyArgs() const { return flags<ASTFunctionFlags>().no_empty_args; }
-    void setNoEmptyArgs(bool value) { flags<ASTFunctionFlags>().no_empty_args = value; }
+    void setNoEmptyArgs(bool value);
 
     /// Specifies where this function-like expression is used.
     enum class Kind : UInt8
@@ -141,6 +141,21 @@ boost::intrusive_ptr<ASTFunction> makeASTOperator(const String & name, Args &&..
     auto function = makeASTFunction(name, std::forward<Args>(args)...);
     function->setIsOperator(true);
     return function;
+}
+
+/// Adds a parameters to aggregate function.
+inline boost::intrusive_ptr<ASTFunction> addParametersToAggregateFunction(boost::intrusive_ptr<ASTFunction> && function) { return std::move(function); }
+
+template <typename... OtherParameters>
+boost::intrusive_ptr<ASTFunction> addParametersToAggregateFunction(boost::intrusive_ptr<ASTFunction> && function, ASTPtr parameter, OtherParameters &&... other_parameters)
+{
+    if (!function->parameters)
+    {
+        function->parameters = make_intrusive<ASTExpressionList>();
+        function->children.push_back(function->parameters);
+    }
+    function->parameters->children.push_back(std::move(parameter));
+    return addParametersToAggregateFunction(std::move(function), std::forward<OtherParameters>(other_parameters)...);
 }
 
 /// ASTFunction Helpers: hide casts and semantic.

@@ -1,19 +1,16 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
-
+#include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/IDisk.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-#include <Storages/PartitionCommands.h>
+
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-
 #include <Common/filesystemHelpers.h>
+
 #include <IO/Expect404ResponseScope.h>
 
 #include <filesystem>
-
 
 namespace DB
 {
@@ -114,7 +111,7 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
 
     RelativePathsWithMetadata files;
     std::string absolute_key = key_prefix;
-    if (!absolute_key.ends_with('/'))
+    if (!absolute_key.empty() && !absolute_key.ends_with('/'))
         absolute_key += '/';
 
     object_storage->listObjects(absolute_key, files, 0);

@@ -1,8 +1,12 @@
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedMergeTree.h>
+#endif
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 
@@ -43,6 +47,7 @@ template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::update()
 try
 {
+    auto component_guard = Coordination::setCurrentComponent("AsyncBlockIDsCache");
     auto zookeeper = storage.getZooKeeper();
     std::vector<String> paths = zookeeper->getChildren(path);
     std::unordered_set<String> set;
@@ -66,7 +71,7 @@ catch (...)
 template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name)
     : storage(storage_)
-    , update_wait((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms])
+    , update_wait(std::chrono::milliseconds((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms].totalMilliseconds()))
     , path(fs::path(storage.getZooKeeperPath()) / dir_name)
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
@@ -145,5 +150,8 @@ std::vector<DeduplicationHash> AsyncBlockIDsCache<TStorage>::detectConflicts(con
 }
 
 template class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
+#if CLICKHOUSE_CLOUD
+template class AsyncBlockIDsCache<StorageSharedMergeTree>;
+#endif
 
 }

@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 
 #if USE_PARQUET
@@ -365,9 +366,9 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
             builder.compression_level(static_cast<int>(format_settings.parquet.output_compression_level));
         }
 
-        // Writing page index is disabled by default.
-        if (format_settings.parquet.write_page_index)
-            builder.enable_write_page_index();
+        // Writing page index is enabled by default.
+        if (!format_settings.parquet.write_page_index)
+            builder.disable_write_page_index();
 
         parquet::ArrowWriterProperties::Builder writer_props_builder;
         if (format_settings.parquet.output_compliant_nested_types)

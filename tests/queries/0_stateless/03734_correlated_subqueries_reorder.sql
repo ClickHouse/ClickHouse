@@ -79,3 +79,66 @@ WHERE
     )
 )
 WHERE explain ilike '%ReadFrom%' or explain ilike '%JoinLogical%' or explain ilike '% Type: %' or explain ilike '%Save%';
+
+
+-- Test output now
+
+CREATE VIEW v_query1 AS 
+SELECT
+    sum(l_extendedprice) / 7.0 AS avg_yearly
+FROM
+    lineitem,
+    part
+WHERE
+    p_partkey = l_partkey
+    AND l_quantity < (
+        SELECT
+            0.2 * avg(l_quantity)
+        FROM
+            lineitem
+        WHERE
+            l_partkey = p_partkey
+    );
+
+CREATE VIEW v_query2 AS 
+SELECT
+    sum(l_extendedprice) / 7.0 AS avg_yearly
+FROM
+    (SELECT l_quantity, p_partkey, l_extendedprice FROM lineitem, part WHERE p_partkey = l_partkey) AS lp
+WHERE
+    l_quantity < (
+        SELECT
+            0.2 * avg(l_quantity)
+        FROM
+            lineitem
+        WHERE
+            l_partkey = p_partkey
+    );
+    
+-------------------------------------------
+SET correlated_subqueries_use_in_memory_buffer = 1;
+
+SELECT * FROM v_query1;
+SELECT * FROM v_query2;
+
+SET query_plan_optimize_join_order_limit = 0;
+
+SELECT * FROM v_query1;
+SELECT * FROM v_query2;
+
+-------------------------------------------
+SET query_plan_optimize_join_order_limit = 10;
+SET correlated_subqueries_use_in_memory_buffer = 0;
+
+SELECT * FROM v_query1;
+SELECT * FROM v_query2;
+
+SET query_plan_optimize_join_order_limit = 0;
+
+SELECT * FROM v_query1;
+SELECT * FROM v_query2;
+
+DROP VIEW IF EXISTS v_query1;
+DROP VIEW IF EXISTS v_query2;
+DROP TABLE IF EXISTS lineitem;
+DROP TABLE IF EXISTS part;

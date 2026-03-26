@@ -14,9 +14,9 @@
 #include <Poco/Condition.h>
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
 #include <Common/UniqueLock.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
@@ -241,24 +241,8 @@ public:
         return bool(thread_group);
     }
 
-    bool updateProgressIn(const Progress & value)
-    {
-        CurrentThread::updateProgressIn(value);
-        progress_in.incrementPiecewiseAtomically(value);
-
-        if (priority_handle)
-            priority_handle->waitIfNeed();
-
-        return !is_killed.load(std::memory_order_relaxed);
-    }
-
-    bool updateProgressOut(const Progress & value)
-    {
-        CurrentThread::updateProgressOut(value);
-        progress_out.incrementPiecewiseAtomically(value);
-
-        return !is_killed.load(std::memory_order_relaxed);
-    }
+    bool updateProgressIn(const Progress & value);
+    bool updateProgressOut(const Progress & value);
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
@@ -269,6 +253,9 @@ public:
     CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
+
+    /// Throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
+    void throwIfKilled();
 
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
@@ -361,10 +348,11 @@ private:
 
     ProcessList & parent;
     Container::iterator it;
+    bool registered_in_cancellation_checker = false;
 
 public:
-    ProcessListEntry(ProcessList & parent_, Container::iterator it_)
-        : parent(parent_), it(it_) {}
+    ProcessListEntry(ProcessList & parent_, Container::iterator it_, bool registered_in_cancellation_checker_)
+        : parent(parent_), it(it_), registered_in_cancellation_checker(registered_in_cancellation_checker_) {}
 
     ~ProcessListEntry();
 
