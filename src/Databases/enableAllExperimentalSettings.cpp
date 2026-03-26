@@ -66,6 +66,8 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_object_storage_queue_hive_partitioning", 1);
     context->setSetting("allow_experimental_json_lazy_type_hints", 1);
 
+    context->setSetting("allow_experimental_ai_functions", 1);
+
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);
 }

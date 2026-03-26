@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3599
+personal_ws-1.1 en 3605
 AArch
 ABIs
 ACLs
@@ -280,6 +280,7 @@ DestroyAggregatesThreadsActive
 DictCacheRequests
 DictionaryMaxUpdateDelay
 DictionaryTotalFailedUpdates
+Dimensionality
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -431,6 +432,7 @@ Hostname
 HouseOps
 Hudi
 HudiCluster
+HuggingFace
 HyperLogLog
 Hypot
 IANA
@@ -617,6 +619,7 @@ LinfNorm
 LinfNormalize
 LinksDeployment
 Linq
+LiteLLM
 ListObject
 ListObjects
 LoadAverage
@@ -843,6 +846,7 @@ Oblakov
 Observability
 Octonica
 Ok
+Ollama
 OnTime
 OneLake
 OpenAI
@@ -1374,6 +1378,7 @@ aggregatingmergetree
 aggregatio
 aggretate
 aggthrow
+aiGenerateContent
 aiochclient
 alloc
 allocatio
@@ -3531,6 +3536,7 @@ varpopstable
 varsamp
 varsampstable
 VarUInt
+vLLM
 vectorized
 vectorscan
 vendoring
