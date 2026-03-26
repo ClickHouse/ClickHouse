@@ -7172,7 +7172,7 @@ Allow to add compound identifiers to nested. This is a compatibility setting bec
     DECLARE(Bool, semi_join_compatibility, false, R"(
 When enabled with the new analyzer, `SEMI` JOIN restricts column access to the preserved side per SQL standard.
 For `LEFT SEMI JOIN` only left table columns are accessible, for `RIGHT SEMI JOIN` only right table columns.
-This applies to expressions resolved from the joined result, such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY` clauses, including qualified matchers like `t1.*`.
+This applies to expressions resolved from the joined result, such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY` clauses, including qualified wildcards like `t1.*`.
 Non-preserved side columns cause `UNKNOWN_IDENTIFIER` exception.
 The `JOIN ON` expression of the same `JOIN` can access both sides regardless of this setting.
 When disabled, legacy behavior keeps columns from both sides accessible, and `SELECT *` returns columns from both sides.
@@ -7180,7 +7180,7 @@ When disabled, legacy behavior keeps columns from both sides accessible, and `SE
     DECLARE(Bool, anti_join_compatibility, false, R"(
 When enabled with the new analyzer, `ANTI` JOIN restricts column access to the preserved side per SQL standard.
 For `LEFT ANTI JOIN` only left table columns are accessible, for `RIGHT ANTI JOIN` only right table columns.
-This applies to expressions resolved from the joined result, such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY` clauses, including qualified matchers like `t1.*`.
+This applies to expressions resolved from the joined result, such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY` clauses, including qualified wildcards like `t1.*`.
 Non-preserved side columns cause `UNKNOWN_IDENTIFIER` exception.
 The `JOIN ON` expression of the same `JOIN` can access both sides regardless of this setting.
 When disabled, legacy behavior keeps columns from both sides accessible, and `SELECT *` returns columns from both sides.

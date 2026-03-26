@@ -55,7 +55,7 @@ With the new analyzer, [`semi_join_compatibility`](../../../operations/settings/
 
 - `LEFT SEMI JOIN` and `LEFT ANTI JOIN` expose only left-side columns.
 - `RIGHT SEMI JOIN` and `RIGHT ANTI JOIN` expose only right-side columns.
-- This affects clauses such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY`, including qualified matchers like `t1.*`.
+- This affects clauses such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY`, including qualified wildcards like `t1.*`.
 - The `ON` expression of the same `JOIN` can still reference both sides.
 
 When these settings are disabled, ClickHouse keeps the legacy behavior, where both sides remain accessible and `SELECT *` expands columns from both tables.
