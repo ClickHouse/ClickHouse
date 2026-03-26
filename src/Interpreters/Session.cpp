@@ -358,7 +358,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     {
         if (auto audit_log = getAuditLogger(); audit_log && global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
         {
-            auto & client_info = getClientInfo();
+            const auto & client_info = getClientInfo();
             std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
             LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure", user_name, host);
         }
