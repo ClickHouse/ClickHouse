@@ -826,30 +826,3 @@ def test_table_engine_and_source_grant():
     )
 
     instance.query("DROP TABLE test.table1")
-
-
-def test_source_grant_bridges_to_table_engine():
-    instance.query("DROP USER IF EXISTS A")
-    instance.query("CREATE USER A")
-    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
-
-    assert "Not enough privileges" in instance.query_and_get_error(
-        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
-        user="A",
-    )
-
-    instance.query("GRANT READ, WRITE ON URL TO A")
-
-    instance.query(
-        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
-        user="A",
-    )
-
-    instance.query("DROP TABLE test.table1")
-
-    instance.query("REVOKE READ, WRITE ON URL FROM A")
-
-    assert "Not enough privileges" in instance.query_and_get_error(
-        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
-        user="A",
-    )

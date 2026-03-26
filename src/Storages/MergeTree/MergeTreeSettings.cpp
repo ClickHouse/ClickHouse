@@ -21,6 +21,7 @@
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
+#include <cmath>
 #include <boost/program_options.hpp>
 #include <fmt/ranges.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -323,7 +324,7 @@ namespace ErrorCodes
     - `advanced` - special serialization of shared data designed to significantly improve reading of individual paths from shared data.
     Note that this serialization increases the shared data storage size on disk because we store a lot of additional information.
 
-    Number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
+    The number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
     [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
     )", 0) \
     DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map_with_buckets", R"(
@@ -333,10 +334,12 @@ namespace ErrorCodes
     the insertion time significantly.
     )", 0) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 8, R"(
-    Number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    The number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    The maximum allowed value is 256.
     )", 0) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
-    Number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    The number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    The maximum allowed value is 256.
     )", 0) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
     Serialization version for Dynamic data type. Required for compatibility.
@@ -347,8 +350,50 @@ namespace ErrorCodes
     - `v3`
     )", 0) \
     DECLARE(Bool, propagate_types_serialization_versions_to_nested_types, true, R"(
-    If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple elements.
+    If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple el
     )", 0)\
+    DECLARE(MergeTreeMapSerializationVersion, map_serialization_version, "basic", R"(
+    Controls the serialization method used for `Map` columns.
+
+    Possible values:
+
+    - basic — Use the standard serialization for `Map`.
+    - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
+
+    The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
+    )", 0) \
+    DECLARE(MergeTreeMapSerializationVersion, map_serialization_version_for_zero_level_parts, "basic", R"(
+    This setting allows to specify a different serialization version of
+    `Map` columns for zero level parts that are created during inserts.
+    It can be useful to keep `basic` serialization for zero level parts to avoid
+    performance degradation during inserts, while using `with_buckets` for merged parts.
+    )", 0) \
+    DECLARE(NonZeroUInt64, max_buckets_in_map, 32, R"(
+    The maximum number of buckets for `Map` serialization. Works with `with_buckets` `Map` serialization.
+    The actual number of buckets is determined by [map_buckets_strategy](#map_buckets_strategy).
+    The maximum allowed value is 256.
+    )", 0) \
+    DECLARE(MergeTreeMapBucketsStrategy, map_buckets_strategy, "sqrt", R"(
+    Controls the strategy for choosing the number of buckets in `with_buckets` `Map` serialization based on the average map size.
+
+    Possible values:
+
+    - constant — Always use [max_buckets_in_map](#max_buckets_in_map) as the number of buckets, regardless of the average map size.
+    - sqrt — Use `round(map_buckets_coefficient * sqrt(avg_map_size))` as the number of buckets, clamped to `[1, max_buckets_in_map]`.
+    - linear — Use `round(map_buckets_coefficient * avg_map_size)` as the number of buckets, clamped to `[1, max_buckets_in_map]`.
+    )", 0) \
+    DECLARE(Float, map_buckets_coefficient, 1.0, R"(
+    The coefficient used in `sqrt` and `linear` [map_buckets_strategy](#map_buckets_strategy) to calculate the number of buckets from the average map size.
+    For `sqrt` strategy: `round(map_buckets_coefficient * sqrt(avg_map_size))`.
+    For `linear` strategy: `round(map_buckets_coefficient * avg_map_size)`.
+    Ignored when `map_buckets_strategy` is `constant`.
+    )", 0) \
+    DECLARE(UInt64, map_buckets_min_avg_size, 32, R"(
+    The minimum average map size (number of keys per row) required to apply `with_buckets` serialization.
+    If the average map size is less than this value, a single bucket is used regardless of other bucket settings.
+    A value of `0` disables the threshold and always applies the bucketing strategy.
+    This setting is useful to avoid the overhead of bucketed serialization for small maps where the benefit is negligible.
+    )", 0) \
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
@@ -1953,6 +1998,10 @@ namespace ErrorCodes
 
     **Default Value:** false
     )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_commit_order_projection, false, R"(
+    Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
+    Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     )", EXPERIMENTAL) \
@@ -2383,6 +2432,43 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             ErrorCodes::BAD_ARGUMENTS,
             "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
             merge_selecting_sleep_slowdown_factor.value);
+    }
+
+    static constexpr UInt64 max_allowed_buckets = 256;
+
+    if (max_buckets_in_map > max_allowed_buckets)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of max_buckets_in_map setting ({}) exceeds the maximum allowed value of {}",
+            max_buckets_in_map.value,
+            max_allowed_buckets);
+    }
+
+    if (!std::isfinite(map_buckets_coefficient) || map_buckets_coefficient <= 0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of map_buckets_coefficient setting ({}) must be positive and finite",
+            map_buckets_coefficient.value);
+    }
+
+    if (object_shared_data_buckets_for_compact_part > max_allowed_buckets)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of object_shared_data_buckets_for_compact_part setting ({}) exceeds the maximum allowed value of {}",
+            object_shared_data_buckets_for_compact_part.value,
+            max_allowed_buckets);
+    }
+
+    if (object_shared_data_buckets_for_wide_part > max_allowed_buckets)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of object_shared_data_buckets_for_wide_part setting ({}) exceeds the maximum allowed value of {}",
+            object_shared_data_buckets_for_wide_part.value,
+            max_allowed_buckets);
     }
 
     if (zero_copy_merge_mutation_min_parts_size_sleep_before_lock != 0

@@ -677,15 +677,45 @@ void MutationsInterpreter::prepare(bool dry_run)
     std::unordered_map<String, Names> column_to_affected_materialized;
     if (!updated_columns.empty())
     {
+        /// Collect ephemeral columns and include them in the analysis set so
+        /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
+        NamesAndTypesList all_columns_with_ephemeral = all_columns;
+        std::unordered_set<String> ephemeral_columns;
+        for (const auto & col : columns_desc.getEphemeral())
+        {
+            ephemeral_columns.insert(col.name);
+            all_columns_with_ephemeral.push_back(col);
+        }
+
         for (const auto & column : columns_desc)
         {
             if (column.default_desc.kind == ColumnDefaultKind::Materialized && available_columns_set.contains(column.name))
             {
                 auto query = column.default_desc.expression->clone();
-                /// Replace all subcolumns to the getSubcolumn() to get only top level columns as required source columns.
-                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-                for (const auto & dependency : syntax_result->requiredSourceColumns())
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
+                auto required_columns = syntax_result->requiredSourceColumns();
+
+                /// If the MATERIALIZED expression depends on any EPHEMERAL column,
+                /// skip it — EPHEMERAL columns are only available during INSERT
+                /// and cannot be read from disk during mutations.
+                if (std::ranges::any_of(required_columns,
+                    [&](const auto & dep) { return ephemeral_columns.contains(dep); }))
+                {
+                    /// Warn if the mutation also updates a non-ephemeral dependency
+                    /// of this MATERIALIZED column — the on-disk value will become stale.
+                    if (std::ranges::any_of(required_columns, [&](const auto & dep)
+                        { return !ephemeral_columns.contains(dep) && updated_columns.contains(dep); }))
+                        LOG_WARNING(logger,
+                            "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
+                            "columns that are being updated. Its value will NOT be recalculated "
+                            "during this mutation — the on-disk value may become inconsistent. "
+                            "To fix this, re-INSERT the affected rows.",
+                            column.name);
+                    continue;
+                }
+
+                for (const auto & dependency : required_columns)
                     if (updated_columns.contains(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
             }
@@ -869,7 +899,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages.emplace_back(context);
                 for (const auto & column : columns_desc)
                 {
-                    if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+                    if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                        && affected_materialized.contains(column.name))
                     {
                         auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
@@ -1787,12 +1818,21 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
+    ///
+    /// Only check sort order when mutating MergeTree parts. In MergeTree, mutations
+    /// process one part at a time and each part is physically sorted by the sorting key,
+    /// so the check is a valid invariant assertion. Other storages (e.g. Iceberg) may declare
+    /// a sorting key but process the entire table at once, reading multiple independently
+    /// sorted data files whose combined stream is not globally sorted.
+    if (source.getMergeTreeData())
     {
-        builder.addSimpleTransform([&](const SharedHeader & header)
+        if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
         {
-            return std::make_shared<CheckSortedTransform>(header, *sort_desc);
-        });
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<CheckSortedTransform>(header, *sort_desc);
+            });
+        }
     }
 
     if (!updated_header)
