@@ -6,6 +6,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/InMemoryRemovalQueue.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/IDisk.h>
 
@@ -29,8 +30,8 @@ private:
     const std::string compatible_key_prefix;
     const ObjectStorageKeyGeneratorPtr key_generator;
 
-    std::mutex removed_objects_mutex;
-    StoredObjectSet objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
+    mutable std::mutex removed_objects_mutex;
+    InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
 
 public:
     MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_);
@@ -88,6 +89,7 @@ public:
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
+    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
