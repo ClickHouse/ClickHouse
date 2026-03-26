@@ -47,7 +47,6 @@ private:
     const ObjectStorageConnectionConfigurationPtr configuration;
     StorageObjectStorageTableOptions table_options;
     const ObjectStoragePtr object_storage;
-    NamesAndTypesList virtual_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 

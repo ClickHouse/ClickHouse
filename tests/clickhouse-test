@@ -1518,6 +1518,11 @@ class MergeTreeSettingsRandomizer:
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
         "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
+        "map_serialization_version": lambda: random.choice(["basic", "with_buckets"]),
+        "map_serialization_version_for_zero_level_parts": lambda: random.choice(["basic", "with_buckets"]),
+        "max_buckets_in_map": lambda: random.randint(1, 100),
+        "map_buckets_strategy": lambda: random.choice(["constant", "sqrt", "linear"]),
+        "map_buckets_min_avg_size": lambda: random.randint(1, 1000),
     }
 
     @staticmethod
