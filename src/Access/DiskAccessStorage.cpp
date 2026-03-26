@@ -176,6 +176,8 @@ DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String 
                         directory_path, create_dir_error_code.message());
 
     bool should_rebuild_lists = std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path));
+    LOG_DEBUG(getLogger(), "File need_rebuild_lists.mark {} in {}", should_rebuild_lists ? "found" : "not found", directory_path);
+
     if (!should_rebuild_lists)
     {
         if (!readLists())
@@ -264,6 +266,7 @@ bool DiskAccessStorage::readLists()
     /// This entities are not fully loaded yet, do not send notifications to AccessChangesNotifier
     memory_storage.setAll(ids_entities, /* notify= */ false);
 
+    LOG_DEBUG(getLogger(), "Loaded {} entities from .list files in {}", ids_entities.size(), directory_path);
     return true;
 }
 
@@ -300,12 +303,15 @@ void DiskAccessStorage::writeLists()
 
     /// The list files was successfully written, we don't need the 'need_rebuild_lists.mark' file any longer.
     (void)std::filesystem::remove(getNeedRebuildListsMarkFilePath(directory_path));
+    LOG_TRACE(getLogger(), "Successfully wrote .list files, removed need_rebuild_lists.mark");
     types_of_lists_to_write.clear();
 }
 
 
 void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 {
+    LOG_TRACE(getLogger(), "Scheduling writing .list file for type {}, failed_to_write_lists={}, lists_writing_thread_is_waiting={}",
+        AccessEntityTypeInfo::get(type).plural_raw_name, failed_to_write_lists, lists_writing_thread_is_waiting);
     if (failed_to_write_lists)
         return; /// We don't try to write list files after the first fail.
                 /// The next restart of the server will invoke rebuilding of the list files.
@@ -323,6 +329,8 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
     /// This file will be used later to find out if writing lists is successful or not.
     std::ofstream out{getNeedRebuildListsMarkFilePath(directory_path)};
     out.close();
+
+    LOG_TRACE(getLogger(), "Created need_rebuild_lists.mark, starting background lists-writing thread");
 
     lists_writing_thread = std::make_unique<ThreadFromGlobalPool>(&DiskAccessStorage::listsWritingThreadFunc, this);
     lists_writing_thread_is_waiting = true;
@@ -571,7 +579,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     {
         if (old_entity->getName() != new_entity->getName())
             scheduleWriteLists(new_entity->getType());
-         writeAccessEntityToDisk(id, *new_entity);
+        writeAccessEntityToDisk(id, *new_entity);
     }
 
     return true;
@@ -586,6 +594,7 @@ AccessEntityPtr DiskAccessStorage::readAccessEntityFromDisk(const UUID & id) con
 
 void DiskAccessStorage::writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const
 {
+    LOG_TRACE(getLogger(), "Writing file for entity with id {} and name {}", id, entity.getName());
     writeEntityFile(getEntityFilePath(directory_path, id), entity);
 }
 
@@ -593,6 +602,7 @@ void DiskAccessStorage::writeAccessEntityToDisk(const UUID & id, const IAccessEn
 void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 {
     auto file_path = getEntityFilePath(directory_path, id);
+    LOG_TRACE(getLogger(), "Deleting file {} for entity with id {}", file_path, id);
     if (!std::filesystem::remove(file_path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Couldn't delete {}", file_path);
 }
