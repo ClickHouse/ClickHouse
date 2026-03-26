@@ -226,12 +226,19 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
             if (res < 0)
             {
                 if constexpr (is_unsigned_v<B>)
-                    res += static_cast<OriginResultType>(b);
+                {
+                    /// Perform addition in unsigned arithmetic to avoid signed overflow UB.
+                    using UnsignedResult = std::make_unsigned_t<OriginResultType>;
+                    res = static_cast<OriginResultType>(static_cast<UnsignedResult>(res) + static_cast<UnsignedResult>(b));
+                }
                 else
                 {
                     if (b == std::numeric_limits<B>::lowest())
                         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
-                    res += b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b);
+                    /// Perform addition in unsigned arithmetic to avoid signed overflow UB.
+                    using UnsignedResult = std::make_unsigned_t<OriginResultType>;
+                    auto abs_b = static_cast<UnsignedResult>(b >= 0 ? b : -b);
+                    res = static_cast<OriginResultType>(static_cast<UnsignedResult>(res) + abs_b);
                 }
             }
         }
