@@ -31,11 +31,12 @@ public:
         LoadingStrictnessLevel mode,
         DataLakeStorageSettingsPtr datalake_settings_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
-        bool distributed_processing_ = false,
-        ASTPtr partition_by_ = nullptr,
-        ASTPtr order_by_ = nullptr,
-        bool is_table_function_ = false,
-        bool request_skipping_initialization = false);
+        bool distributed_processing_,
+        bool if_no_exists,
+        ASTPtr partition_by_,
+        ASTPtr order_by_,
+        bool is_table_function_,
+        bool request_skipping_initialization);
 
     String getName() const override;
 

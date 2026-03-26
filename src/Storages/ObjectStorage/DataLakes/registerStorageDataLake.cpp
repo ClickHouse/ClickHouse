@@ -136,22 +136,47 @@ createStorageDataLake(const StorageFactory::Arguments & args, ObjectStorageType 
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
-    return std::make_shared<StorageDataLake<DataLakeMetadata>>(
-        configuration,
-        std::move(table_options),
-        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
-        context_copy,
-        args.table_id,
-        args.columns,
-        args.constraints,
-        args.comment,
-        format_settings,
-        args.mode,
-        storage_settings,
-        storage_settings ? getCatalogFromSettings(*storage_settings, context, args.query.attach) : nullptr,
-        /* distributed_processing */ false,
-        partition_by,
-        order_by);
+    auto object_storage = configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt);
+    auto catalog = storage_settings ? getCatalogFromSettings(*storage_settings, context, args.query.attach) : nullptr;
+
+    if constexpr (std::is_same_v<DataLakeMetadata, IcebergMetadata>)
+    {
+        return std::make_shared<StorageDataLake<IcebergMetadata>>(
+            configuration,
+            std::move(table_options),
+            object_storage,
+            context_copy,
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            format_settings,
+            args.mode,
+            storage_settings,
+            catalog,
+            /* distributed_processing */ false,
+            args.query.if_not_exists,
+            partition_by,
+            order_by,
+            /* is_table_function */ false,
+            /* request_skipping_initialization */ false);
+    }
+    else
+    {
+        return std::make_shared<StorageDataLake<DataLakeMetadata>>(
+            configuration,
+            std::move(table_options),
+            object_storage,
+            context_copy,
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            format_settings,
+            args.mode,
+            storage_settings,
+            catalog);
+    }
 }
 
 #endif

@@ -65,8 +65,6 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     DataLakeStorageSettingsPtr datalake_settings_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     bool distributed_processing_,
-    ASTPtr partition_by_,
-    ASTPtr order_by_,
     bool is_table_function_,
     bool lazy_init)
     : IStorage(table_id_)
@@ -85,7 +83,6 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     auto path = configuration->getRawPath();
     if (!path.path.ends_with('/'))
         configuration->setRawPath(ObjectStorageConnectionConfiguration::Path(path.path + "/"));
-    table_options.initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context, configuration->getRawPath());
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (table_options.format == "auto");
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
 
@@ -101,14 +98,6 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     if (!is_table_function && is_delta_lake_cdf && !std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
-    }
-
-    if (!is_table_function && !columns_in_table_or_function_definition.empty() && mode == LoadingStrictnessLevel::CREATE)
-    {
-        LOG_DEBUG(log, "Creating new storage with specified columns");
-        configuration->update(object_storage, context);
-        DataLakeMetadata::createInitial(
-            object_storage, configuration, context, columns_in_table_or_function_definition, partition_by_, order_by_, /*if_not_exists=*/ false, catalog, storage_id);
     }
 
     try

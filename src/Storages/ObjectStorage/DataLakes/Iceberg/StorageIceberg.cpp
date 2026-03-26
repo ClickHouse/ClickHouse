@@ -54,8 +54,9 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
     DataLakeStorageSettingsPtr datalake_settings_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     bool distributed_processing_,
-    ASTPtr /*partition_by_*/,
-    ASTPtr /*order_by_*/,
+    bool if_not_exists,
+    ASTPtr partition_by_,
+    ASTPtr order_by_,
     bool is_table_function_,
     bool request_skipping_initialization)
     : IStorage(table_id_)
@@ -77,7 +78,6 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
     supports_prewhere = format_supports_prewhere;
     supports_tuple_elements = format_supports_prewhere;
 
-
     /// Ensure trailing slash on the raw path for data lake storages.
     auto raw_path = configuration->getRawPath();
     if (!raw_path.path.ends_with('/'))
@@ -85,6 +85,25 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
 
     const bool need_resolve_columns = columns_in_table_or_function_definition.empty();
     const bool skip_initialization = request_skipping_initialization && !need_resolve_columns && !is_table_function;
+
+    /// For CREATE with explicit columns, write the initial Iceberg metadata files.
+    /// This must happen before `ensureMetadataInitialized` which tries to read them.
+    if (!is_table_function && !need_resolve_columns && mode == LoadingStrictnessLevel::CREATE)
+    {
+        LOG_DEBUG(log, "Creating new storage with specified columns");
+        configuration->update(object_storage, context);
+        IcebergMetadata::createInitialTable(
+            object_storage,
+            configuration,
+            datalake_settings,
+            context,
+            columns_in_table_or_function_definition,
+            partition_by_,
+            order_by_,
+            if_not_exists,
+            catalog,
+            storage_id);
+    }
 
     /// Initialize Iceberg metadata (reads manifest lists, resolves schema, etc.).
     /// Skip when lazy init is requested and columns are already known.

@@ -31,19 +31,6 @@ public:
             && data_files == hudi_metadata->data_files;
     }
 
-    static void createInitial(
-        const ObjectStoragePtr & /*object_storage*/,
-        const ObjectStorageConnectionConfigurationWeakPtr & /*configuration*/,
-        const ContextPtr & /*local_context*/,
-        const std::optional<ColumnsDescription> & /*columns*/,
-        ASTPtr /*partition_by*/,
-        ASTPtr /*order_by*/,
-        bool /*if_not_exists*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const StorageID & /*table_id_*/)
-    {
-    }
-
     static DataLakeMetadataPtr
     create(ObjectStoragePtr object_storage, ObjectStorageConnectionConfigurationWeakPtr configuration, ContextPtr local_context)
     {

@@ -323,22 +323,45 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     if constexpr (is_data_lake)
     {
-        storage = std::make_shared<StorageDataLake<typename Definition::MetadataType>>(
-            configuration,
-            table_options,
-            current_object_storage,
-            context,
-            StorageID(getDatabaseName(), table_name),
-            columns,
-            ConstraintsDescription{},
-            /* comment */ String{},
-            /* format_settings */ std::nullopt,
-            /* mode */ LoadingStrictnessLevel::CREATE,
-            /* datalake_settings */ std::dynamic_pointer_cast<DataLakeStorageSettings>(settings),
-            /* catalog*/ nullptr,
-            /* distributed_processing */ can_use_distributed_iterator,
-            /* partition_by */ partition_by,
-            /* order_by */ nullptr);
+        if constexpr (std::is_same_v<typename Definition::MetadataType, IcebergMetadata>)
+        {
+            storage = std::make_shared<StorageDataLake<IcebergMetadata>>(
+                configuration,
+                table_options,
+                current_object_storage,
+                context,
+                StorageID(getDatabaseName(), table_name),
+                columns,
+                ConstraintsDescription{},
+                /* comment */ String{},
+                /* format_settings */ std::nullopt,
+                /* mode */ LoadingStrictnessLevel::CREATE,
+                /* datalake_settings */ std::dynamic_pointer_cast<DataLakeStorageSettings>(settings),
+                /* catalog */ nullptr,
+                /* distributed_processing */ can_use_distributed_iterator,
+                /* if_not_exists */ false,
+                /* partition_by */ partition_by,
+                /* order_by */ nullptr,
+                /* is_table_function */ true,
+                /* request_skipping_initialization */ false);
+        }
+        else
+        {
+            storage = std::make_shared<StorageDataLake<typename Definition::MetadataType>>(
+                configuration,
+                table_options,
+                current_object_storage,
+                context,
+                StorageID(getDatabaseName(), table_name),
+                columns,
+                ConstraintsDescription{},
+                /* comment */ String{},
+                /* format_settings */ std::nullopt,
+                /* mode */ LoadingStrictnessLevel::CREATE,
+                /* datalake_settings */ std::dynamic_pointer_cast<DataLakeStorageSettings>(settings),
+                /* catalog */ nullptr,
+                /* distributed_processing */ can_use_distributed_iterator);
+        }
     }
     else
     {

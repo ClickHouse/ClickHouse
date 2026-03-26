@@ -56,24 +56,47 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
         /// On worker node this filename won't contains globs
         if constexpr (is_data_lake)
         {
-            storage = std::make_shared<StorageDataLake<typename Definition::MetadataType>>(
-                configuration,
-                Base::table_options,
-                object_storage,
-                context,
-                StorageID(Base::getDatabaseName(), table_name),
-                columns,
-                ConstraintsDescription{},
-                /* comment */ String{},
-                /* format_settings */ std::nullopt, /// No format_settings
-                /* mode */ LoadingStrictnessLevel::CREATE,
-                /* datalake_settings */ std::dynamic_pointer_cast<DataLakeStorageSettings>(Base::settings),
-                /* catalog */ nullptr,
-                /* distributed_processing */ can_use_distributed_iterator,
-                /* partition_by_ */ Base::partition_by,
-                /* order_by_ */ nullptr,
-                /* is_table_function */ true,
-                /* request_skipping_initialization */ true);
+            if constexpr (std::is_same_v<typename Definition::MetadataType, IcebergMetadata>)
+            {
+                storage = std::make_shared<StorageDataLake<IcebergMetadata>>(
+                    configuration,
+                    Base::table_options,
+                    object_storage,
+                    context,
+                    StorageID(Base::getDatabaseName(), table_name),
+                    columns,
+                    ConstraintsDescription{},
+                    /* comment */ String{},
+                    /* format_settings */ std::nullopt,
+                    /* mode */ LoadingStrictnessLevel::CREATE,
+                    /* datalake_settings */ std::dynamic_pointer_cast<DataLakeStorageSettings>(Base::settings),
+                    /* catalog */ nullptr,
+                    /* distributed_processing */ can_use_distributed_iterator,
+                    /* if_not_exists */ false,
+                    /* partition_by */ Base::partition_by,
+                    /* order_by */ nullptr,
+                    /* is_table_function */ true,
+                    /* request_skipping_initialization */ true);
+            }
+            else
+            {
+                storage = std::make_shared<StorageDataLake<typename Definition::MetadataType>>(
+                    configuration,
+                    Base::table_options,
+                    object_storage,
+                    context,
+                    StorageID(Base::getDatabaseName(), table_name),
+                    columns,
+                    ConstraintsDescription{},
+                    /* comment */ String{},
+                    /* format_settings */ std::nullopt,
+                    /* mode */ LoadingStrictnessLevel::CREATE,
+                    /* datalake_settings */ std::dynamic_pointer_cast<DataLakeStorageSettings>(Base::settings),
+                    /* catalog */ nullptr,
+                    /* distributed_processing */ can_use_distributed_iterator,
+                    /* is_table_function */ true,
+                    /* lazy_init */ true);
+            }
         }
         else
         {

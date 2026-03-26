@@ -41,19 +41,6 @@ public:
         const ObjectStorageConnectionConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
 
-    static void createInitial(
-        const ObjectStoragePtr & /*object_storage*/,
-        const ObjectStorageConnectionConfigurationWeakPtr & /*configuration*/,
-        const ContextPtr & /*local_context*/,
-        const std::optional<ColumnsDescription> & /*columns*/,
-        ASTPtr /*partition_by*/,
-        ASTPtr /*order_by*/,
-        bool /*if_not_exists*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const StorageID & /*table_id_*/)
-    {
-    }
-
     NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override;
 
     bool operator==(const IDataLakeMetadata & other) const override

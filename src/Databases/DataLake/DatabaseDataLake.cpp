@@ -626,10 +626,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 storage_settings,
                 getCatalog(),
                 can_use_distributed_iterator,
-                nullptr,
-                nullptr,
-                true,
-                true);
+                /* if_not_exists */ false,
+                /* partition_by */ nullptr,
+                /* order_by */ nullptr,
+                /* is_table_function */ true,
+                /* request_skipping_initialization */ true);
         case DataLakeType::Paimon:
             return std::make_shared<StorageDataLake<PaimonMetadata>>(
                 configuration,
@@ -645,10 +646,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 storage_settings,
                 getCatalog(),
                 can_use_distributed_iterator,
-                nullptr,
-                nullptr,
-                true,
-                true);
+                /* is_table_function */ true,
+                /* lazy_init */ true);
 #endif
 #if USE_PARQUET
         case DataLakeType::DeltaLake:
@@ -666,10 +665,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 storage_settings,
                 getCatalog(),
                 can_use_distributed_iterator,
-                nullptr,
-                nullptr,
-                true,
-                true);
+                /* is_table_function */ true,
+                /* lazy_init */ true);
 #endif
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported datalake type for creating storage");
