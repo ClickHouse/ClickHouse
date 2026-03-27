@@ -476,11 +476,11 @@ def rewrite_any_comparison(sql):
 
         array_expr = sql[paren_start + 1:paren_end]
 
-        # Extract the LHS from what we've accumulated so far
-        # The LHS is the last expression token before the operator
+        # Extract the LHS from what we've accumulated so far.
+        # Only match simple identifiers (possibly qualified with table/db prefix),
+        # not arbitrary expressions like "a + b" — rewriting those would change semantics.
         accumulated = ''.join(result)
-        # Find the LHS by looking for the last word/expression token
-        lhs_match = re.search(r'(\S+)\s*$', accumulated)
+        lhs_match = re.search(r'((?:\w+\.)*\w+)\s*$', accumulated)
         if lhs_match:
             lhs = lhs_match.group(1)
             # Remove the LHS from accumulated result
