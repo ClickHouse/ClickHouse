@@ -251,9 +251,10 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             ColumnInfo info;
             info.name = column_name;
+            info.is_subcolumn = column_from_part && column_from_part->isSubcolumn();
             /// If column isn't fixed and doesn't have checksum, than take first
             ColumnSize column_size;
-            if (column_from_part && column_from_part->isSubcolumn() && allow_subcolumns_sizes_calculation)
+            if (info.is_subcolumn && allow_subcolumns_sizes_calculation)
                 column_size = data_part->getSubcolumnSize(column_name);
             else
                 column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
@@ -324,6 +325,13 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
         double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
         info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
+
+        /// For subcolumns, the output column size can be much smaller than what was
+        /// actually read from disk (e.g. a Map subcolumn reads the entire Map but
+        /// only extracts one key's values). Prevent the estimate from dropping below
+        /// the global average so that chunk sizes stay appropriate for the real I/O cost.
+        if (info.is_subcolumn)
+            info.bytes_per_row = std::max(info.bytes_per_row, info.bytes_per_row_global);
 
         info.size_bytes = new_size;
         block_size_bytes += new_size;

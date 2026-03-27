@@ -536,7 +536,7 @@ public:
 
     bool supportsTTL() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
 
     bool supportsLightweightDelete() const override;
