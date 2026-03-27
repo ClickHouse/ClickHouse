@@ -11,12 +11,14 @@
 #include <IO/WriteIntText.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
@@ -787,7 +789,7 @@ bool StorageFileLog::streamToViews()
             *this,
             storage_snapshot,
             new_context,
-            block_io.pipeline.getHeader().getNames(),
+            VirtualColumnUtils::filterCommonVirtualColumns(block_io.pipeline.getHeader().getNames(), table),
             getPollMaxBatchSize(),
             getPollTimeoutMillisecond(),
             stream_number,
@@ -795,9 +797,28 @@ bool StorageFileLog::streamToViews()
             (*filelog_settings)[FileLogSetting::handle_error_mode]));
     }
 
-    auto input= Pipe::unitePipes(std::move(pipes));
+    auto input = Pipe::unitePipes(std::move(pipes));
 
-    assertBlocksHaveEqualStructure(input.getHeader(), block_io.pipeline.getHeader(), "StorageFileLog streamToViews");
+    const auto & pipeline_header = block_io.pipeline.getHeader();
+    const auto & input_header = input.getHeader();
+
+    auto adding_virtuals_dag = VirtualColumnUtils::constructMaterializingCommonVirtualColumnsDAG(
+        input_header, pipeline_header.getNames(), table);
+
+    auto converting_dag = ActionsDAG::makeConvertingActions(
+        adding_virtuals_dag.getResultColumns(),
+        pipeline_header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        new_context);
+
+    auto merged_dag = ActionsDAG::merge(std::move(adding_virtuals_dag), std::move(converting_dag));
+    auto expression = std::make_shared<ExpressionActions>(std::move(merged_dag));
+    input.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<ExpressionTransform>(header, expression);
+    });
+
+    assertBlocksHaveEqualStructure(input.getHeader(), pipeline_header, "StorageFileLog streamToViews");
 
     std::atomic<size_t> rows = 0;
     {
