@@ -18,6 +18,7 @@
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Common/ProfiledLocks.h>
 #include <base/getMemoryAmount.h>
 
 #include <boost/algorithm/string.hpp>
@@ -180,6 +181,9 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
+    const bool enable_profiled_locks = config.getBool("keeper_server.enable_profiled_locks", false);
+    setProfiledLocksEnabled(enable_profiled_locks);
+    LOG_INFO(getLogger("KeeperContext"), "keeper_server.enable_profiled_locks is set to {}", enable_profiled_locks);
 
     initializeFeatureFlags(config);
     initializeDisks(config);

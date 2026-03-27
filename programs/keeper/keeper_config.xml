@@ -35,6 +35,7 @@
 
             <log_storage_path>/var/lib/clickhouse/coordination/logs</log_storage_path>
             <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+            <enable_profiled_locks>false</enable_profiled_locks>
 
             <coordination_settings>
                 <operation_timeout_ms>10000</operation_timeout_ms>
