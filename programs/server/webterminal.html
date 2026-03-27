@@ -292,9 +292,9 @@
             }
         };
 
-        ws.onclose = function() {
-            if (!opened) {
-                // Handshake failed - likely authentication error
+        ws.onclose = function(event) {
+            if (!opened || event.code === 1008) {
+                // Handshake failed or server rejected authentication (close code 1008)
                 ws = null;
                 term.write('\r\x1b[2K');
                 promptCredentials();

@@ -395,7 +395,10 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
 
     /// Wait for the first WebSocket text message containing auth credentials:
     /// {"type":"auth","user":"...","password":"..."}
+    /// Set a receive timeout to prevent indefinite blocking before authentication.
+    socket.setReceiveTimeout(Poco::Timespan(5, 0)); /// 5 seconds for auth
     WebSocketFrame auth_frame = readWebSocketFrame(socket);
+    socket.setReceiveTimeout(Poco::Timespan(0)); /// Clear timeout for the main loop
     if (auth_frame.protocol_error)
     {
         sendWebSocketClose(socket, 1002, "Protocol error");
@@ -614,7 +617,14 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                                 if (errno == EINTR)
                                     continue;
                                 if (errno == EAGAIN || errno == EWOULDBLOCK)
+                                {
+                                    /// Wait for the PTY to become writable before retrying
+                                    struct pollfd pfd = {};
+                                    pfd.fd = server_descriptors.in;
+                                    pfd.events = POLLOUT;
+                                    poll(&pfd, 1, 100); /// Wait up to 100ms
                                     continue;
+                                }
                                 running = false;
                                 break;
                             }
