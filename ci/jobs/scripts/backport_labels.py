@@ -19,10 +19,9 @@ from datetime import date, timedelta
 from typing import Any, Dict, List
 
 sys.path.append(".")
-from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
-from ci.praktika.utils import Shell
-
-READY_DELAY_DAYS = 7
+sys.path.append("ci")
+from jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from praktika.utils import Shell
 
 
 def gh_search(query: str, per_page: int = 100, max_results: int = 1000) -> List[Dict[str, Any]]:
