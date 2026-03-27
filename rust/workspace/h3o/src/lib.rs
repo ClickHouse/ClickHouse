@@ -667,11 +667,21 @@ pub unsafe extern "C" fn polygonToCells(
         return;
     };
     let geo_poly = c_polygon_to_geo(&*geo_polygon);
-    let Ok(polygon) = h3o::geom::Polygon::from_radians(geo_poly) else {
+    let Ok(polygon) = h3o::geom::Polygon::from_radians(geo_poly.clone()) else {
         return;
     };
+    // Compute the maximum buffer size using the same method as maxPolygonToCellsSize
+    // to defensively bound writes and prevent out-of-bounds memory access.
+    let max_config = h3o::geom::PolyfillConfig::new(resolution);
+    let Ok(max_polygon) = h3o::geom::Polygon::from_radians(geo_poly) else {
+        return;
+    };
+    let max_size = max_polygon.max_cells_count(max_config);
     let config = h3o::geom::PolyfillConfig::new(resolution);
     for (i, cell) in polygon.to_cells(config).enumerate() {
+        if i >= max_size {
+            break;
+        }
         *out.add(i) = u64::from(cell);
     }
 }
