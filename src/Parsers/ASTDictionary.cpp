@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTDictionaryRange::clone() const
 {
     auto res = make_intrusive<ASTDictionaryRange>();
@@ -166,6 +171,8 @@ void ASTDictionarySettings::readJSON(const Poco::JSON::Object & json)
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto obj = arr->getObject(i);
+            if (!obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'changes' array during AST JSON deserialization", i);
             String setting_name = obj->getValue<String>("name");
             String setting_value = obj->getValue<String>("value");
             changes.emplace_back(setting_name, Field(setting_value));

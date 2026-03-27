@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
@@ -30,6 +35,8 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto elem_obj = arr->getObject(i);
+            if (!elem_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);
             Element elem;
 
             String from_db = elem_obj->getValue<String>("from_database");

@@ -23,6 +23,11 @@ static constexpr std::string_view format_avro_schema_registry_url = "format_avro
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
 std::optional<Poco::URI> tryParseURI(const String & uri)
@@ -294,9 +299,13 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto change_obj = arr->getObject(i);
+            if (!change_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'changes' array during AST JSON deserialization", i);
             SettingChange change;
             change.name = change_obj->getValue<String>("name");
             auto value_obj = change_obj->getObject("value");
+            if (!value_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
             change.value = JSONObjectReader::readFieldFromObject(*value_obj);
             changes.push_back(std::move(change));
         }
@@ -313,6 +322,8 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto param_obj = arr->getObject(i);
+            if (!param_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'query_parameters' array during AST JSON deserialization", i);
             query_parameters.emplace_back(
                 param_obj->getValue<String>("name"),
                 param_obj->getValue<String>("value"));
