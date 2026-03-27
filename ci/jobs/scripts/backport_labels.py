@@ -70,21 +70,23 @@ def get_release_branches(repo: str) -> List[str]:
 def find_revert_pr(repo: str, pr_number: int) -> Dict[str, Any]:
     """Return the revert PR item if one exists, otherwise an empty dict.
 
+    GitHub-generated revert PRs have the title `Revert "<original title>"`
+    (no PR number in the title) and a body containing `Reverts {repo}#<N>`.
+
     Three layers of protection against false positives:
-    - `in:title` — search only PR titles, not bodies (avoids matching the
-      original PR that mentions its own number in the body).
+    - Body search for the exact `Reverts {repo}#{pr_number}` string — this is
+      the canonical GitHub revert body format and uniquely identifies the target.
     - Self-match exclusion — skip any result whose number equals pr_number.
-    - Title validation — the matched title must start with "Revert " and
-      contain the exact "#<N>" token (avoids e.g. "Revert #1234" matching
-      a search for #123).
+    - Title validation — require the title to start with `Revert "` to confirm
+      it is a GitHub-generated revert PR, not a PR that merely mentions the
+      revert reference in passing.
     """
-    query = f'type:pr repo:{repo} is:merged "Revert #{pr_number}" in:title'
+    query = f'type:pr repo:{repo} is:merged "Reverts {repo}#{pr_number}"'
     items = gh_search(query, per_page=10, max_results=10)
     for item in items:
         if item["number"] == pr_number:
             continue  # self-match
-        title = item.get("title", "")
-        if title.startswith("Revert ") and f"#{pr_number}" in title:
+        if item.get("title", "").startswith('Revert "'):
             return item
     return {}
 
