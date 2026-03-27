@@ -13,6 +13,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -1801,6 +1802,17 @@ bool Aggregator::executeOnBlock(Columns columns,
                 materialized_columns.emplace_back(std::move(column_no_lc));
                 key_columns[i] = materialized_columns.back().get();
             }
+        }
+        else if (!key_columns[i]->lowCardinality())
+        {
+            /// The aggregation method expects LowCardinality but the column is not.
+            /// This can happen after ALTER TABLE MODIFY COLUMN when old data parts
+            /// still have the pre-ALTER type.
+            auto lc_col = key_types[i]->createColumn();
+            assert_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(
+                *key_columns[i], 0, key_columns[i]->size());
+            materialized_columns.emplace_back(std::move(lc_col));
+            key_columns[i] = materialized_columns.back().get();
         }
     }
 
@@ -3663,6 +3675,32 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         AggregateDataPtr place = result.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
         createAggregateStates(place);
         result.without_key = place;
+    }
+
+    /// Ensure key columns match the aggregation method's LowCardinality expectations.
+    /// After ALTER TABLE MODIFY COLUMN, data parts may still have the old column type
+    /// (e.g. plain Int8 instead of LowCardinality(Int8)), causing a type mismatch
+    /// between the chosen aggregation method and the actual column data.
+    if (result.isLowCardinality())
+    {
+        for (size_t i = 0; i < params.keys_size; ++i)
+        {
+            if (!columns[i]->lowCardinality())
+            {
+                auto lc_col = key_types[i]->createColumn();
+                assert_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*columns[i], 0, rows);
+                columns[i] = std::move(lc_col);
+            }
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < params.keys_size; ++i)
+        {
+            auto column_no_lc = recursiveRemoveLowCardinality(columns[i]);
+            if (column_no_lc.get() != columns[i].get())
+                columns[i] = std::move(column_no_lc);
+        }
     }
 
     if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
