@@ -41,6 +41,16 @@ public:
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt);
 
+    /// Create a manifest-only rewrite snapshot (`replace` operation).
+    /// No data files are added or removed; all `total-*` counters are carried forward from the
+    /// parent snapshot unchanged so repeated `OPTIMIZE ... MANIFEST` calls are idempotent.
+    NextMetadataResult generateManifestOnlySnapshot(
+        FileNamesGenerator & generator,
+        const Iceberg::IcebergPathFromMetadata & metadata_file_path,
+        Int64 parent_snapshot_id,
+        std::optional<Int64> user_defined_snapshot_id = std::nullopt,
+        std::optional<Int64> user_defined_timestamp = std::nullopt);
+
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);
     void generateModifyColumnMetadata(const String & column_name, DataTypePtr type);

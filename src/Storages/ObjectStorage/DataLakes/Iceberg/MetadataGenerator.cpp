@@ -219,6 +219,97 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     return {new_snapshot, manifest_list_path};
 }
 
+MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySnapshot(
+    FileNamesGenerator & generator,
+    const Iceberg::IcebergPathFromMetadata & metadata_file_path,
+    Int64 parent_snapshot_id,
+    std::optional<Int64> user_defined_snapshot_id,
+    std::optional<Int64> user_defined_timestamp)
+{
+    int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
+    Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
+    if (format_version > 1)
+    {
+        auto sequence_number = getMaxSequenceNumber() + 1;
+        new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
+        metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
+    }
+    Int64 snapshot_id = user_defined_snapshot_id.value_or(static_cast<Int64>(dis(gen)));
+
+    auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
+    new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
+    new_snapshot->set(Iceberg::f_parent_snapshot_id, parent_snapshot_id);
+
+    auto now = std::chrono::system_clock::now();
+    auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    Int64 timestamp = user_defined_timestamp.value_or(ms.count());
+    new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
+    metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
+
+    auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
+
+    /// Manifest-only rewrite: no data files are added, removed, or changed.
+    /// All added-* deltas are zero so total-* counters are inherited unchanged from the parent.
+    Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
+    summary->set(Iceberg::f_operation, Iceberg::f_replace);
+    summary->set(Iceberg::f_added_data_files, "0");
+    summary->set(Iceberg::f_added_records, "0");
+    summary->set(Iceberg::f_added_files_size, "0");
+    summary->set(Iceberg::f_changed_partition_count, "0");
+
+    auto carry_total_from_parent = [&](const char * field_name)
+    {
+        Int64 prev_value = parent_snapshot
+            ? parse<Int64>(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name))
+            : 0;
+        summary->set(field_name, std::to_string(prev_value));
+    };
+
+    carry_total_from_parent(Iceberg::f_total_records);
+    carry_total_from_parent(Iceberg::f_total_files_size);
+    carry_total_from_parent(Iceberg::f_total_data_files);
+    carry_total_from_parent(Iceberg::f_total_delete_files);
+    carry_total_from_parent(Iceberg::f_total_position_deletes);
+    carry_total_from_parent(Iceberg::f_total_equality_deletes);
+    new_snapshot->set(Iceberg::f_summary, summary);
+
+    new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));
+    new_snapshot->set(Iceberg::f_manifest_list, manifest_list_path.serialize());
+
+    metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
+    metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
+
+    if (!metadata_object->has(Iceberg::f_refs))
+        metadata_object->set(Iceberg::f_refs, new Poco::JSON::Object);
+
+    if (!metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
+    {
+        Poco::JSON::Object::Ptr branch = new Poco::JSON::Object;
+        branch->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
+        branch->set(Iceberg::f_type, Iceberg::f_branch);
+        metadata_object->getObject(Iceberg::f_refs)->set(Iceberg::f_main, branch);
+    }
+    else
+    {
+        metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
+    }
+
+    {
+        Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
+        new_metadata_item->set(Iceberg::f_metadata_file, metadata_file_path.serialize());
+        new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
+        metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
+    }
+    {
+        Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;
+        new_snapshot_item->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
+        new_snapshot_item->set(Iceberg::f_timestamp_ms, timestamp);
+        metadata_object->getArray(Iceberg::f_snapshot_log)->add(new_snapshot_item);
+    }
+
+    return {new_snapshot, manifest_list_path};
+}
+
 void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
 {
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);

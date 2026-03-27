@@ -430,8 +430,6 @@ bool writeConsolidatedManifestFile(
 
     Int64 current_snapshot_id = current_snapshot_id_val;
     String current_manifest_list_path;
-    Int32 current_added_records = 0;
-    Int32 current_added_files_size = 0;
 
     {
         auto snapshots = initial_metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
@@ -441,11 +439,6 @@ bool writeConsolidatedManifestFile(
             if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == current_snapshot_id)
             {
                 current_manifest_list_path = snapshot->getValue<String>(Iceberg::f_manifest_list);
-                const auto summary = snapshot->getObject(Iceberg::f_summary);
-                if (summary->has(Iceberg::f_added_records))
-                    current_added_records = summary->getValue<Int32>(Iceberg::f_added_records);
-                if (summary->has(Iceberg::f_added_files_size))
-                    current_added_files_size = summary->getValue<Int32>(Iceberg::f_added_files_size);
                 break;
             }
         }
@@ -569,22 +562,18 @@ bool writeConsolidatedManifestFile(
         write_format);
     generator.setVersion(metadata_version + 1);
 
-    // Use the current snapshot's own summary figures for the new snapshot record.
     MetadataGenerator metadata_generator(metadata_object);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
 
-    auto new_snapshot = metadata_generator.generateNextMetadata(
+    // Manifest-only rewrite: no data files are added or removed, so use a dedicated snapshot
+    // type that carries all total-* counters forward from the parent unchanged.
+    // Passing per-snapshot deltas (added_files, added_records, added_files_size) from the
+    // parent summary here would be wrong because generateNextMetadata computes
+    // total_* = parent_total_* + added_*, inflating the totals on every OPTIMIZE run.
+    auto new_snapshot = metadata_generator.generateManifestOnlySnapshot(
         generator,
         generated_metadata_info.path,
-        current_snapshot_id, // parent = current snapshot being compacted
-        static_cast<Int64>(total_data_files),  // added_files  = total live files in new snapshot
-        current_added_records,
-        current_added_files_size,
-        static_cast<Int64>(partitions_map.size()), // one partition per unique partition value
-        0, // added_delete_files
-        0, // num_deleted_rows
-        std::nullopt,
-        std::nullopt);
+        current_snapshot_id);
 
     // Write one manifest file per partition
     auto partition_types = ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes();
