@@ -3,6 +3,8 @@
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 -- add_minmax_index_for_numeric_columns=0: Changes the plan
 
+SET query_plan_merge_expressions = 1;
+
 DROP TABLE IF EXISTS test_negate_nan_ne_float;
 
 CREATE TABLE test_negate_nan_ne_float

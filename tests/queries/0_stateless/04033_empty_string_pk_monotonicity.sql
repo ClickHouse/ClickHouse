@@ -2,6 +2,8 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
+SET query_plan_merge_expressions = 1;
+
 -- Test that empty() and notEmpty() use the primary key for string columns.
 -- With optimize_empty_string_comparisons=1 (default), `s = ''` is rewritten
 -- to `empty(s)`. This test verifies that empty() and notEmpty() report

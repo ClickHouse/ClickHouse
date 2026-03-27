@@ -6,6 +6,7 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
+SET query_plan_merge_expressions = 1;
 
 -- R1: Small dimension table (Demo size: 10)
 CREATE TABLE R1 (

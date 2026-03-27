@@ -8,9 +8,9 @@ $CLICKHOUSE_CLIENT -q "select x + 1 from (select y + 2 as x from (select dummy +
      grep -o "Too many optimizations applied to query plan"
 
 echo "> sipHash should be calculated after filtration"
-$CLICKHOUSE_CLIENT -q "explain actions = 1 select sum(x), sum(y) from (select sipHash64(number) as x, bitAnd(number, 1024) as y from numbers_mt(1000000000) limit 1000000000) where y = 0" | grep -o "FUNCTION sipHash64\|Filter column: equals"
+$CLICKHOUSE_CLIENT -q "explain actions = 1 select sum(x), sum(y) from (select sipHash64(number) as x, bitAnd(number, 1024) as y from numbers_mt(1000000000) limit 1000000000) where y = 0 settings query_plan_execute_functions_after_sorting=1" | grep -o "FUNCTION sipHash64\|Filter column: equals"
 echo "> sorting steps should know about limit"
-$CLICKHOUSE_CLIENT -q "explain actions = 1 select number from (select number from numbers(500000000) order by -number) limit 10" | grep -o "Sorting\|Limit 10"
+$CLICKHOUSE_CLIENT -q "explain actions = 1 select number from (select number from numbers(500000000) order by -number) limit 10 settings query_plan_push_down_limit=1" | grep -o "Sorting\|Limit 10"
 
 echo "-- filter push down --"
 echo "> filter should be pushed down after aggregating"
@@ -276,12 +276,12 @@ $CLICKHOUSE_CLIENT -q "
 echo "> function calculation should be done after sorting and limit (if possible)"
 echo "> Expression should be divided into two subexpressions and only one of them should be moved after Sorting"
 $CLICKHOUSE_CLIENT --enable_analyzer=0 -q "
-    explain actions = 1 select number as n, sipHash64(n) from numbers(100) order by number + 1 limit 5" |
+    explain actions = 1 select number as n, sipHash64(n) from numbers(100) order by number + 1 limit 5 settings query_plan_execute_functions_after_sorting=1" |
     sed 's/^ *//g' | grep -o "^ *\(Expression (.*Before ORDER BY.*)\|Sorting\|FUNCTION \w\+\)"
 echo "> (analyzer) function calculation should be done after sorting and limit (if possible)"
 echo "> Expression should be divided into two subexpressions and only one of them should be moved after Sorting"
 $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
-    explain actions = 1 select number as n, sipHash64(n) from numbers(100) order by number + 1 limit 5" |
+    explain actions = 1 select number as n, sipHash64(n) from numbers(100) order by number + 1 limit 5 settings query_plan_execute_functions_after_sorting=1" |
     sed 's/^ *//g' | grep -o "^ *\(Expression (.*Before ORDER BY.*)\|Sorting\|FUNCTION \w\+\)"
 echo "> this query should be executed without throwing an exception"
 $CLICKHOUSE_CLIENT -q "
