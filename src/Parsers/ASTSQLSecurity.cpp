@@ -2,10 +2,16 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Common/Exception.h>
 #include <IO/Operators.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 void ASTSQLSecurity::writeJSON(WriteBuffer & out) const
 {
@@ -29,7 +35,11 @@ void ASTSQLSecurity::readJSON(const Poco::JSON::Object & json)
     is_definer_current_user = r.getBool("is_definer_current_user");
     auto definer_child = r.readChild("definer");
     if (definer_child)
-        definer = boost::static_pointer_cast<ASTUserNameWithHost>(definer_child);
+    {
+        definer = boost::dynamic_pointer_cast<ASTUserNameWithHost>(definer_child);
+        if (!definer)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTUserNameWithHost for 'definer', got {}", definer_child->getID());
+    }
 }
 
 }
