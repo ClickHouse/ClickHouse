@@ -2176,7 +2176,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                 catch (const Exception & e)
                 {
                     if (e.code() == ErrorCodes::LOGICAL_ERROR)
-                        throw; /// Oracle mismatch — crash the server to make it visible in CI
+                        throw; /// Oracle mismatch — re-throw the exception to make it visible in CI
                     LOG_TRACE(logger, "AST Fuzzer oracle check error (skipping): {}", e.message());
                 }
                 catch (...)

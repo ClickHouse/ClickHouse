@@ -60,6 +60,15 @@ const std::unordered_set<String> non_deterministic_functions = {
     "randomPrintableASCII", "randomString", "randomFixedString",
     "fuzzQuery",
     "materialize",
+    /// Non-deterministic or approximate aggregate functions.
+    "any", "anyLast", "anyHeavy",
+    "first_value", "last_value",
+    "topK", "topKWeighted",
+    "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
+    "quantileTDigest", "quantileTDigestWeighted",
+    "quantileGK", "quantileBFloat16", "quantileDD",
+    "stochasticLinearRegression", "stochasticLogisticRegression",
+    "initializeAggregation",
 };
 
 /// Maximum formatted query length for oracle sub-queries.
@@ -551,6 +560,15 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     if (hasAggregates(select) || select.groupBy() || select.having())
         return false;
 
+    /// Window functions are never safe for oracle testing.
+    if (select.select())
+    {
+        GetAggregatesVisitor::Data data;
+        GetAggregatesVisitor(data).visit(select.select());
+        if (!data.window_functions.empty())
+            return false;
+    }
+
     if (hasNonDeterministicFunctions(select.clone()))
         return false;
 
@@ -877,12 +895,11 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     ASTPtr predicate = select.where()->clone();
 
     /// Build the reference query: remove WHERE, keep everything else.
-    /// Add.
     auto ref_ast = select.clone();
     auto & ref_select = ref_ast->as<ASTSelectQuery &>();
     ref_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
     stripOrderAndLimit(ref_select);
-    String ref_sql = formatAST(ref_ast) + "";
+    String ref_sql = formatAST(ref_ast);
     if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
 
@@ -1103,7 +1120,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::LOGICAL_ERROR)
-            throw; /// Oracle mismatch — propagate to crash the server
+            throw; /// Oracle mismatch — re-throw the exception
         LOG_TRACE(logger, "TLP WHERE oracle execution error (skipping): {}", e.message());
     }
     catch (...)
