@@ -223,13 +223,20 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr query_context)
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForBackgroundOps(ContextPtr task_context)
+ThreadGroupPtr ThreadGroup::createForBackgroundOps(ContextMutablePtr task_context)
 {
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
         LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for background operations, inheriting from current thread group with master_thread_id {}", current_group->master_thread_id);
-        res_group = std::make_shared<ThreadGroup>(current_group);
+        /// Combine two contexts: inherit client_info and query_id from the current query,
+        /// but keep workload/resource classification from task_context.
+        if (auto current_context = current_group->query_context.lock())
+        {
+            task_context->setClientInfo(current_context->getClientInfo());
+            task_context->setCurrentQueryId(current_context->getCurrentQueryId());
+        }
+        res_group = std::make_shared<ThreadGroup>(task_context, current_group);
     }
     else
     {

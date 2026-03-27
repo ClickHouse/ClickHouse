@@ -118,7 +118,7 @@ public:
     /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
     /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
     /// That method either creates new main thread group for the task, or creates a new thread group linked to current thread group if it exists.
-    static ThreadGroupPtr createForBackgroundOps(ContextPtr task_context);
+    static ThreadGroupPtr createForBackgroundOps(ContextMutablePtr task_context);
 
     /// That method either creates a new thread group linked to current thread group which has to exist
     static ThreadGroupPtr createForScope();
