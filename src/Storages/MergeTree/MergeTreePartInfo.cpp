@@ -349,7 +349,7 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     /// First let's check if it ends with the "_tryN" suffix
     if (const auto try_n_pos = dir_name.rfind(TRY_N_SUFFIX); try_n_pos != String::npos)
     {
-        assert(dir_name.size() >= 2);
+        chassert(dir_name.size() >= 2);
         const auto first_char_pos_after_try_n = try_n_pos + TRY_N_SUFFIX.size();
         // We expect at most two digits at the end
         if (first_char_pos_after_try_n >= dir_name.size() - 2
