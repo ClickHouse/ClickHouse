@@ -35,7 +35,7 @@ def gh_search(query: str, per_page: int = 100, max_results: int = 1000) -> List[
     all_items = []  # type: List[Dict[str, Any]]
     page = 1
     while True:
-        output = Shell.get_output(
+        output = Shell.get_output_or_raise(
             f"gh api -X GET search/issues "
             f"-f q={shlex.quote(query)} "
             f"-F per_page={per_page} "
@@ -43,7 +43,7 @@ def gh_search(query: str, per_page: int = 100, max_results: int = 1000) -> List[
             verbose=True,
         )
         if not output:
-            break
+            raise RuntimeError(f"gh api returned empty output for query: {query}")
         data = json.loads(output)
         items = data.get("items", [])
         if not items:
