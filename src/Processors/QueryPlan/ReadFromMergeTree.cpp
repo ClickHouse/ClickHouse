@@ -959,14 +959,19 @@ Pipe ReadFromMergeTree::readByLayers(
                 sort_description.emplace_back(sorting_columns[i], input_order_info->direction);
         }
 
+        /// Use the correct read type based on the direction from the input order info.
+        /// For reverse-key tables (ORDER BY col DESC) with ascending query ORDER BY,
+        /// the direction is -1 and we need InReverseOrder to read data in ascending order.
+        ReadType layers_read_type = (input_order_info->direction > 0) ? ReadType::InOrder : ReadType::InReverseOrder;
+
         reading_step_getter
-            = [this, &index_build_context, &in_order_column_names_to_read, &info, sorting_expr, &sort_description](auto parts)
+            = [this, &index_build_context, &in_order_column_names_to_read, &info, sorting_expr, &sort_description, layers_read_type](auto parts)
         {
             auto pipe = this->read(
                 std::move(parts),
                 index_build_context,
                 in_order_column_names_to_read,
-                ReadType::InOrder,
+                layers_read_type,
                 1 /* num_streams */,
                 0 /* min_marks_for_concurrent_read */,
                 info.use_uncompressed_cache);
