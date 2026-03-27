@@ -1,11 +1,14 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
+#include <Common/PODArray.h>
 #include <absl/container/flat_hash_map.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/IPartitionStrategy.h>
 
 
 namespace DB
@@ -16,7 +19,12 @@ class PartitionedSink : public SinkToStorage
 public:
     static constexpr auto PARTITION_ID_WILDCARD = "{_partition_id}";
 
-    PartitionedSink(const ASTPtr & partition_by, ContextPtr context_, const Block & sample_block_);
+    PartitionedSink(
+        std::shared_ptr<IPartitionStrategy> partition_strategy_,
+        ContextPtr context_,
+        SharedHeader source_header_);
+
+    ~PartitionedSink() override;
 
     String getName() const override { return "PartitionedSink"; }
 
@@ -32,19 +40,19 @@ public:
 
     static String replaceWildcards(const String & haystack, const String & partition_id);
 
+protected:
+    std::shared_ptr<IPartitionStrategy> partition_strategy;
+
 private:
     ContextPtr context;
-    Block sample_block;
+    SharedHeader source_header;
 
-    ExpressionActionsPtr partition_by_expr;
-    String partition_by_column_name;
-
-    absl::flat_hash_map<StringRef, SinkPtr> partition_id_to_sink;
-    HashMapWithSavedHash<StringRef, size_t> partition_id_to_chunk_index;
+    absl::flat_hash_map<std::string_view, SinkPtr> partition_id_to_sink;
+    HashMapWithSavedHash<std::string_view, size_t> partition_id_to_chunk_index;
     IColumn::Selector chunk_row_index_to_partition_index;
     Arena partition_keys_arena;
 
-    SinkPtr getSinkForPartitionKey(StringRef partition_key);
+    SinkPtr getSinkForPartitionKey(std::string_view partition_key);
 };
 
 }

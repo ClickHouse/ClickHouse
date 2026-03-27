@@ -13,18 +13,18 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-RawBLOBRowInputFormat::RawBLOBRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
+RawBLOBRowInputFormat::RawBLOBRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_)
     : IRowInputFormat(header_, in_, std::move(params_))
 {
-    if (header_.columns() > 1)
+    if (header_->columns() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "This input format is only suitable for tables with a single column of type String but the number of columns is {}",
-            header_.columns());
+            header_->columns());
 
-    if (!isString(removeNullable(removeLowCardinality(header_.getByPosition(0).type))))
+    if (!isString(removeNullable(removeLowCardinality(header_->getByPosition(0).type))))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "This input format is only suitable for tables with a single column of type String but the column type is {}",
-            header_.getByPosition(0).type->getName());
+            header_->getByPosition(0).type->getName());
 }
 
 bool RawBLOBRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
@@ -56,7 +56,7 @@ void registerInputFormatRawBLOB(FormatFactory & factory)
             const RowInputFormatParams & params,
             const FormatSettings &)
     {
-        return std::make_shared<RawBLOBRowInputFormat>(sample, buf, params);
+        return std::make_shared<RawBLOBRowInputFormat>(std::make_shared<const Block>(sample), buf, params);
     });
 }
 

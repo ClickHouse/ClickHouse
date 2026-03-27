@@ -100,7 +100,7 @@ void MemoryWriteBuffer::addChunk()
     }
     else
     {
-        next_chunk_size = std::max(1uz, static_cast<size_t>(chunk_tail->size() * growth_rate));
+        next_chunk_size = std::max(1uz, static_cast<size_t>(static_cast<double>(chunk_tail->size()) * growth_rate));
         next_chunk_size = std::min(next_chunk_size, max_chunk_size);
     }
 
@@ -112,7 +112,7 @@ void MemoryWriteBuffer::addChunk()
         if (0 == next_chunk_size)
         {
             set(position(), 0);
-            throw MemoryWriteBuffer::CurrentBufferExhausted();
+            throw WriteBuffer::CurrentBufferExhausted();
         }
     }
 

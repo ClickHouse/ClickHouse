@@ -5,7 +5,7 @@ CREATE TABLE test_table
 (
     id UInt64,
     value String
-) ENGINE=TinyLog;
+) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO test_table VALUES (0, 'Value_0'), (1, 'Value_1'), (2, 'Value_2');
 
@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS test_table_for_in;
 CREATE TABLE test_table_for_in
 (
     id UInt64
-) ENGINE=TinyLog;
+) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO test_table_for_in VALUES (0), (1);
 

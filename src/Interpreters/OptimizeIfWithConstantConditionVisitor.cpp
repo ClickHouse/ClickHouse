@@ -98,13 +98,19 @@ void OptimizeIfWithConstantConditionVisitorData::visit(ASTFunction & function_no
     if (tryExtractConstValueFromCondition(condition_expr, condition))
     {
         ASTPtr replace_ast = condition ? then_expr : else_expr;
+        bool replacement_supports_alias = dynamic_cast<ASTWithAlias *>(replace_ast.get());
+        String if_alias = ast->tryGetAlias();
+        /// We cannot set the resulting alias if the replace ast does not support it (e.g. ASTAsterisk), so it's better to do nothing
+        if (!if_alias.empty() && !replacement_supports_alias)
+            return;
+
         ASTPtr child_copy = ast;
         String replace_alias = replace_ast->tryGetAlias();
-        String if_alias = ast->tryGetAlias();
 
         if (replace_alias.empty())
         {
-            replace_ast->setAlias(if_alias);
+            if (!if_alias.empty())
+                replace_ast->setAlias(if_alias);
             ast = replace_ast;
         }
         else
@@ -113,12 +119,14 @@ void OptimizeIfWithConstantConditionVisitorData::visit(ASTFunction & function_no
             /// But IAST has only method for deep copy of subtree.
             /// This can be a reason of performance degradation in case of deep queries.
             ASTPtr replace_ast_deep_copy = replace_ast->clone();
-            replace_ast_deep_copy->setAlias(if_alias);
+            if (!if_alias.empty())
+                replace_ast_deep_copy->setAlias(if_alias);
             ast = replace_ast_deep_copy;
         }
 
         if (!if_alias.empty())
         {
+            ast->setAlias(if_alias);
             auto alias_it = aliases.find(if_alias);
             if (alias_it != aliases.end() && alias_it->second.get() == child_copy.get())
                 alias_it->second = ast;

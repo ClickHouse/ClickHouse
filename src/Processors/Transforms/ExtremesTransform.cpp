@@ -1,11 +1,12 @@
 #include <Processors/Transforms/ExtremesTransform.h>
-
+#include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <Common/NaNUtils.h>
 
 namespace DB
 {
 
-ExtremesTransform::ExtremesTransform(const Block & header)
+ExtremesTransform::ExtremesTransform(SharedHeader header)
     : ISimpleTransform(header, header, true)
 {
     /// Port for Extremes.
@@ -81,7 +82,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
                 Field min_value;
                 Field max_value;
 
-                src->getExtremes(min_value, max_value);
+                src->getExtremes(min_value, max_value, 0, src->size());
 
                 extremes_columns[i] = src->cloneEmpty();
 
@@ -103,11 +104,19 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
             Field cur_min_value;
             Field cur_max_value;
 
-            columns[i]->getExtremes(cur_min_value, cur_max_value);
+            columns[i]->getExtremes(cur_min_value, cur_max_value, 0, columns[i]->size());
 
-            if (cur_min_value < min_value)
+            // getExtremes implementations for Nullable and floating point are ignoring Nulls, so do the same here
+            auto isNullORNaN = [] (const Field & value)
+            {
+                if (value.isNull())
+                    return true;
+                Float64 rawVal;
+                return value.tryGet<Float64>(rawVal) && isNaN(rawVal);
+            };
+            if (isNullORNaN(min_value) || (!isNullORNaN(cur_min_value) && cur_min_value < min_value))
                 min_value = cur_min_value;
-            if (cur_max_value > max_value)
+            if (isNullORNaN(max_value) || (!isNullORNaN(cur_max_value) && cur_max_value > max_value))
                 max_value = cur_max_value;
 
             MutableColumnPtr new_extremes = extremes_columns[i]->cloneEmpty();

@@ -1,9 +1,16 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <memory>
+#include <unordered_map>
+#include <unordered_set>
+
+#include <city.h>
 
 namespace DB
 {
+
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
 /** This structure holds query tree node ptr and its hash. It can be used as hash map key to avoid unnecessary hash
   * recalculations.
@@ -47,8 +54,10 @@ using QueryTreeNodeConstRawPtrWithHashSet = std::unordered_set<QueryTreeNodeCons
 template <typename Value>
 using QueryTreeNodePtrWithHashMap = std::unordered_map<QueryTreeNodePtrWithHash, Value>;
 
-template <typename Value>
-using QueryTreeNodeConstRawPtrWithHashMap = std::unordered_map<QueryTreeNodeConstRawPtrWithHash, Value>;
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+using ColumnNodePtrWithHash = QueryTreeNodeWithHash<ColumnNodePtr>;
+using ColumnNodePtrWithHashSet = std::unordered_set<ColumnNodePtrWithHash>;
 
 }
 

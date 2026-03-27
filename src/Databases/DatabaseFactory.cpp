@@ -1,15 +1,19 @@
 #include <filesystem>
 
+#include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Databases/DatabaseShared.h>
+#endif
+
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/queryToString.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
-#include <Core/Settings.h>
 
 
 namespace fs = std::filesystem;
@@ -32,16 +36,21 @@ namespace ErrorCodes
 
 void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
 {
+    auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+
+    if (!default_db_disk->isSymlinkSupported())
+        return;
+
     const String & engine_name = create.storage->engine->name;
     const String & database_name = create.getDatabase();
 
     if (engine_name != "Ordinary")
         return;
 
-    if (!FS::isSymlink(metadata_path))
+    if (!default_db_disk->isSymlink(metadata_path))
         return;
 
-    String target_path = FS::readSymlink(metadata_path).string();
+    String target_path = default_db_disk->readSymlink(metadata_path);
     fs::path path_to_remove = metadata_path;
     if (path_to_remove.filename().empty())
         path_to_remove = path_to_remove.parent_path();

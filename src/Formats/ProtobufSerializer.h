@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_PROTOBUF
-#   include <Columns/IColumn.h>
+#   include <Columns/IColumn_fwd.h>
 #   include <Core/NamesAndTypes.h>
 #   include <Formats/ProtobufSchemas.h>
 
@@ -17,6 +17,7 @@ class ProtobufWriter;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
+using Strings = std::vector<String>;
 class WriteBuffer;
 
 /// Utility class, does all the work for serialization in the Protobuf format.
@@ -31,6 +32,7 @@ public:
     virtual void reset() {}
 
     virtual void setColumns(const MutableColumnPtr * columns, size_t num_columns) = 0;
+    virtual void startReading() {}
     virtual void readRow(size_t row_num) = 0;
     virtual void insertDefaults(size_t row_num) = 0;
 
@@ -44,6 +46,7 @@ public:
         bool with_length_delimiter,
         bool with_envelope,
         bool flatten_google_wrappers,
+        bool oneof_presence,
         ProtobufReader & reader);
 
     static std::unique_ptr<ProtobufSerializer> create(
@@ -56,7 +59,7 @@ public:
         ProtobufWriter & writer);
 };
 
-NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields);
-
+NamesAndTypesList
+protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields, bool oneof_presence);
 }
 #endif

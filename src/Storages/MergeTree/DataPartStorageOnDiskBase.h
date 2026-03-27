@@ -42,11 +42,10 @@ public:
     bool supportParallelWrite() const override;
     bool isBroken() const override;
     bool isReadonly() const override;
-    void syncRevision(UInt64 revision) const override;
-    UInt64 getRevision() const override;
     std::string getDiskPath() const override;
     ReservationPtr reserve(UInt64 bytes) const override;
     ReservationPtr tryReserve(UInt64 bytes) const override;
+    DiskPtr getDisk() const;
 
     ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const override;
     ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const override;
@@ -56,7 +55,6 @@ public:
         const NameSet & files_without_checksums,
         const String & path_in_backup,
         const BackupSettings & backup_settings,
-        const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs,
@@ -115,8 +113,9 @@ public:
     SyncGuardPtr getDirectorySyncGuard() const override;
     bool hasActiveTransaction() const override;
 
+    bool isCaseInsensitive() const override;
+
 protected:
-    DiskPtr getDisk() const;
 
     DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
     virtual MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const = 0;

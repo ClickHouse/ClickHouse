@@ -39,6 +39,8 @@ mv ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt ${USER_FILES_PATH}/${
 
 rm ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/d.txt
 
+sleep 2
+
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;"
 
 ${CLICKHOUSE_CLIENT} --query "detach table file_log;"
@@ -64,6 +66,8 @@ ${CLICKHOUSE_CLIENT} --query "attach table file_log;"
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;"
 
 truncate ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/a.txt --size 0
+
+sleep 2
 
 # exception happend
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;" 2>&1 | grep -q "Code: 33" && echo 'OK' || echo 'FAIL'

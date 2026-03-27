@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
@@ -9,7 +10,6 @@
 
 #include <atomic>
 #include <mutex>
-#include <thread>
 
 
 namespace Poco { class Logger; }
@@ -52,6 +52,8 @@ public:
         time_t time = 0;  /// The number of seconds from the insertion of the first row into the block.
         size_t rows = 0;  /// The number of rows in the block.
         size_t bytes = 0; /// The number of (uncompressed) bytes in the block.
+
+        std::string toString() const;
     };
 
     /** num_shards - the level of internal parallelism (the number of independent buffers)
@@ -90,7 +92,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
@@ -107,7 +109,16 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
-    bool supportsSampling() const override { return true; }
+    bool supportsSampling() const override
+    {
+        /// During reads, Buffer queries both the in-memory buffers and the destination table simultaneously.
+        /// Sampling on the buffer part is handled probabilistically (no sampling key required).
+        /// Sampling on the destination part requires the destination to have a sampling key.
+        /// If there is no destination, only the buffer is read, so sampling is always supported.
+        if (auto destination = getDestinationTable())
+            return destination->supportsSampling();
+        return true;
+    }
     bool supportsPrewhere() const override;
     bool supportsFinal() const override { return true; }
 
@@ -116,8 +127,8 @@ public:
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     std::optional<UInt64> lifetimeRows() const override { return lifetime_writes.rows; }
     std::optional<UInt64> lifetimeBytes() const override { return lifetime_writes.bytes; }
@@ -182,12 +193,14 @@ private:
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
     void backgroundFlush();
-    void reschedule();
+    void reschedule(size_t min_delay);
 
     StoragePtr getDestinationTable() const;
 
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
+
+    static constexpr size_t BACKGROUND_RESCHEDULE_MIN_DELAY = 1;
 };
 
 }

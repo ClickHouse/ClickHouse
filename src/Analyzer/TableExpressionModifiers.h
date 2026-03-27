@@ -14,6 +14,7 @@ class TableExpressionModifiers
 public:
     using Rational = ASTSampleRatio::Rational;
 
+    TableExpressionModifiers() = default;
     TableExpressionModifiers(bool has_final_,
         std::optional<Rational> sample_size_ratio_,
         std::optional<Rational> sample_offset_ratio_)

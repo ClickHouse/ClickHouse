@@ -10,7 +10,7 @@ CREATE TABLE 01754_dictionary_db.complex_key_simple_attributes_source_table
    value_first String,
    value_second String
 )
-ENGINE = TinyLog;
+ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO 01754_dictionary_db.complex_key_simple_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
 INSERT INTO 01754_dictionary_db.complex_key_simple_attributes_source_table VALUES(1, 'id_key_1', 'value_1', 'value_second_1');
@@ -43,7 +43,7 @@ SELECT dictGetOrDefault('01754_dictionary_db.direct_dictionary_complex_key_simpl
 SELECT 'dictHas';
 SELECT dictHas('01754_dictionary_db.direct_dictionary_complex_key_simple_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM 01754_dictionary_db.direct_dictionary_complex_key_simple_attributes;
+SELECT * FROM 01754_dictionary_db.direct_dictionary_complex_key_simple_attributes ORDER BY ALL;
 
 DROP DICTIONARY 01754_dictionary_db.direct_dictionary_complex_key_simple_attributes;
 DROP TABLE 01754_dictionary_db.complex_key_simple_attributes_source_table;
@@ -55,7 +55,7 @@ CREATE TABLE 01754_dictionary_db.complex_key_complex_attributes_source_table
    value_first String,
    value_second Nullable(String)
 )
-ENGINE = TinyLog;
+ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO 01754_dictionary_db.complex_key_complex_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
 INSERT INTO 01754_dictionary_db.complex_key_complex_attributes_source_table VALUES(1, 'id_key_1', 'value_1', NULL);

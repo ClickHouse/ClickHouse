@@ -31,6 +31,7 @@ private:
 
     size_t size_of_data;
     bool inner_nullable;
+    bool result_is_nullable;
 
 public:
     AggregateFunctionOrFill(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
@@ -38,6 +39,7 @@ public:
         , nested_function{nested_function_}
         , size_of_data{nested_function->sizeOfData()}
         , inner_nullable{nested_function->getResultType()->isNullable()}
+        , result_is_nullable{createResultType(nested_function_->getResultType())->isNullable()}
     {
         // nothing
     }
@@ -223,9 +225,11 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena) const override
     {
-        nested_function->mergeBatch(row_begin, row_end, places, place_offset, rhs, arena);
+        nested_function->mergeBatch(row_begin, row_end, places, place_offset, rhs, thread_pool, is_cancelled, arena);
         for (size_t i = row_begin; i < row_end; ++i)
             (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
     }
@@ -253,6 +257,9 @@ public:
             if (inner_type_->isNullable())
                 return inner_type_;
 
+            if (!inner_type_->canBeInsideNullable())
+                return inner_type_;
+
             return std::make_shared<DataTypeNullable>(inner_type_);
         }
         else
@@ -275,7 +282,7 @@ public:
             {
                 // -OrNull
 
-                if (inner_nullable)
+                if (!result_is_nullable || inner_nullable)
                 {
                     if constexpr (merge)
                         nested_function->insertMergeResultInto(place, to, arena);
@@ -287,7 +294,10 @@ public:
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
 
                     col.getNullMapColumn().insertDefault();
-                    nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    if constexpr (merge)
+                        nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
+                    else
+                        nested_function->insertResultInto(place, col.getNestedColumn(), arena);
                 }
             }
             else

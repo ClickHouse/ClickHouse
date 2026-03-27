@@ -4,12 +4,12 @@ create table values_01564(
     constraint c1 check a < 10) engine Memory;
 
 -- client error hint after broken insert values
-insert into values_01564 values ('f'); -- { clientError CANNOT_PARSE_TEXT }
+insert into values_01564 values ('f'); -- { error CANNOT_PARSE_TEXT }
 
-insert into values_01564 values ('f'); -- { clientError CANNOT_PARSE_TEXT }
+insert into values_01564 values ('f'); -- { error CANNOT_PARSE_TEXT }
 select 1;
 
-insert into values_01564 values ('f'); -- { clientError CANNOT_PARSE_TEXT }
+insert into values_01564 values ('f'); -- { error CANNOT_PARSE_TEXT }
 select nonexistent column; -- { serverError UNKNOWN_IDENTIFIER }
 
 -- syntax error hint after broken insert values
@@ -44,7 +44,7 @@ select 'a' || distinct one || 'c' from system.one; -- { clientError SYNTAX_ERROR
 
 -- a failing insert and then a normal insert (#https://github.com/ClickHouse/ClickHouse/issues/19353)
 CREATE TABLE t0 (c0 String, c1 Int32) ENGINE = Memory() ;
-INSERT INTO t0(c0, c1) VALUES ("1",1) ; -- { clientError UNKNOWN_IDENTIFIER }
+INSERT INTO t0(c0, c1) VALUES ("1",1) ; -- { error UNKNOWN_IDENTIFIER }
 INSERT INTO t0(c0, c1) VALUES ('1', 1) ;
 
 -- the return code must be zero after the final query has failed with expected error

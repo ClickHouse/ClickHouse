@@ -1,18 +1,21 @@
-
-#include <zstd.h>
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
 #include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
 #include <iomanip>
-#include <memory>
 #include <iostream>
+#include <memory>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <vector>
+#include <zstd.h>
 
-#if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
+#if defined(OS_DARWIN) && defined(__GNUC__)
 #   include <machine/endian.h>
+#elif defined(OS_FREEBSD) && defined(__GNUC__)
+#   include <machine/endian.h>
+#   include <sys/endian.h>
 #else
 #   include <endian.h>
 #endif
@@ -23,7 +26,7 @@
 #   define htole64(x) OSSwapHostToLittleInt64(x)
 #endif
 
-#include "types.h"
+#include <types.h>
 
 /// blocking write
 ssize_t write_data(int fd, const void *buf, size_t count)
@@ -174,7 +177,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
             return 1;
         }
         pointer += current_block_size;
-        printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / size * 100); // NOLINT(modernize-use-std-print)
+        printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / static_cast<float>(size) * 100); // NOLINT(modernize-use-std-print)
         total_size += size;
         compressed_size += current_block_size;
         current_block_size = 0;
@@ -182,7 +185,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     std::cout <<
         "Compressed size: " << compressed_size <<
         ", compression rate: " << std::fixed << std::setprecision(2) <<
-        static_cast<float>(compressed_size) / total_size * 100 << "%"
+        static_cast<float>(compressed_size) / static_cast<float>(total_size) * 100 << "%"
         << std::endl;
 
     if (0 != munmap(input, info_in.st_size) ||
@@ -252,7 +255,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
 
     /// Store information about each file and compress it
     FileData* files_data = new FileData[count + is_exec];
-    const char * names[count + is_exec];
+    std::vector<const char *> names(count + is_exec);
     for (int i = 0; i <= count; ++i)
     {
         const char* filename = nullptr;
@@ -342,15 +345,14 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
     /// save location of files information
     metadata.start_of_files_data = htole64(pointer);
 
-    if (0 != saveMetaData(names, count + is_exec, output_fd, metadata, files_data, pointer, sum_file_size))
+    if (0 != saveMetaData(names.data(), count + is_exec, output_fd, metadata, files_data, pointer, sum_file_size))
     {
         delete [] files_data;
         return 1;
     }
 
-    std::cout << "Compression rate: " << std::fixed << std::setprecision(2) <<
-        static_cast<float>(total_compressed_size) / total_size * 100 << "%"
-        << std::endl;
+    std::cout << "Compression rate: " << std::fixed << std::setprecision(2)
+              << static_cast<float>(total_compressed_size) / static_cast<float>(total_size) * 100 << "%" << std::endl;
 
     delete [] files_data;
     return 0;

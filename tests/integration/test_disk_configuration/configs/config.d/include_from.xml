@@ -1,0 +1,8 @@
+<clickhouse>
+  <include_endpoint>
+    <endpoint>http://minio1:9001/root/data/</endpoint>
+  </include_endpoint>
+  <disk_encrypted_keys>
+    <key_hex>00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff</key_hex>
+  </disk_encrypted_keys>
+</clickhouse>

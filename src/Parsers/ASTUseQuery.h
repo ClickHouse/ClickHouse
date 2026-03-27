@@ -29,7 +29,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTUseQuery>(*this);
+        auto res = make_intrusive<ASTUseQuery>(*this);
         res->children.clear();
         if (database)
             res->set(res->database, database->clone());
@@ -39,10 +39,10 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Use; }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "USE " << (settings.hilite ? hilite_none : "");
-        database->formatImpl(settings, state, frame);
+        ostr << "USE ";
+        database->format(ostr, settings, state, frame);
     }
 };
 

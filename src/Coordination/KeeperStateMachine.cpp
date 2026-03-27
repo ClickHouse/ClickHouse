@@ -1,13 +1,17 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <exception>
+#include <shared_mutex>
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
-#include <Common/thread_local_rng.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
+#include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
-#include <Coordination/KeeperStorage.h>
+#include <Common/ProfiledLocks.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Disks/DiskLocal.h>
@@ -16,11 +20,14 @@
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
 #include <sys/mman.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -35,6 +42,11 @@ namespace ProfileEvents
     extern const Event KeeperReadSnapshot;
     extern const Event KeeperSaveSnapshot;
     extern const Event KeeperStorageLockWaitMicroseconds;
+    extern const Event KeeperStorageLockHoldMicroseconds;
+    extern const Event KeeperStorageSharedLockWaitMicroseconds;
+    extern const Event KeeperStorageSharedLockHoldMicroseconds;
+    extern const Event KeeperProcessAndResponsesLockWaitMicroseconds;
+    extern const Event KeeperProcessAndResponsesLockHoldMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -56,6 +68,7 @@ namespace CoordinationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 IKeeperStateMachine::IKeeperStateMachine(
@@ -127,10 +140,23 @@ void KeeperStateMachine<Storage>::init()
     {
         try
         {
+            std::lock_guard lock(snapshots_lock);
+
             latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
             auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
             latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
             chassert(latest_snapshot_info);
+
+            try
+            {
+                latest_snapshot_size.store(
+                    latest_snapshot_info->disk->getFileSize(latest_snapshot_info->path),
+                    std::memory_order_relaxed);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to get snapshot size during init");
+            }
 
             if (isLocalDisk(*latest_snapshot_info->disk))
                 latest_snapshot_buf = nullptr;
@@ -142,14 +168,13 @@ void KeeperStateMachine<Storage>::init()
         }
         catch (...)
         {
-            tryLogCurrentException(
-                log,
-                fmt::format(
-                    "Aborting because of failure to load from latest snapshot with index {}. Problematic snapshot can be removed but it will "
-                    "lead to data loss",
-                    latest_log_index));
-            std::abort();
-        }
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery. Problematic "
+                "snapshot can be removed but it will lead to data loss",
+                latest_log_index,
+                getCurrentExceptionMessage(/* with_stacktrace= */ false, /* check_embedded_stacktrace= */ true));
+            }
     }
 
     auto last_committed_idx = keeper_context->lastCommittedIndex();
@@ -167,21 +192,23 @@ namespace
 {
 
 void assertDigest(
-    const KeeperStorageBase::Digest & expected,
-    const KeeperStorageBase::Digest & actual,
+    const KeeperDigest & expected,
+    const KeeperDigest & actual,
     const Coordination::ZooKeeperRequest & request,
     uint64_t log_idx,
+    uint64_t session_id,
     bool committing)
 {
     if (!KeeperStorageBase::checkDigest(expected, actual))
     {
         LOG_FATAL(
             getLogger("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}' at log index {}.\nExpected digest - {}, actual digest - {} "
+            "Digest for nodes is not matching after {} request of type '{}' at log index {} for session {}.\nExpected digest - {}, actual digest - {} "
             "(digest {}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
             request.getOpNum(),
             log_idx,
+            session_id,
             expected.value,
             actual.value,
             expected.version,
@@ -190,20 +217,22 @@ void assertDigest(
     }
 }
 
-template <bool shared = false>
-struct LockGuardWithStats final
-{
-    using LockType = std::conditional_t<shared, std::shared_lock<SharedMutex>, std::unique_lock<SharedMutex>>;
-    LockType lock;
-    explicit LockGuardWithStats(SharedMutex & mutex)
-    {
-        Stopwatch watch;
-        LockType l(mutex);
-        ProfileEvents::increment(ProfileEvents::KeeperStorageLockWaitMicroseconds, watch.elapsedMicroseconds());
-        lock = std::move(l);
-    }
+/// Macros to construct timed lock guards for storage_mutex with appropriate ProfileEvents.
+/// We cannot use a factory function because TSA does not track lock ownership across function boundaries.
+#define KEEPER_STORAGE_LOCK_EXCLUSIVE(name) \
+    ProfiledExclusiveLock name(storage_mutex, ProfileEvents::KeeperStorageLockWaitMicroseconds, ProfileEvents::KeeperStorageLockHoldMicroseconds)
 
-    ~LockGuardWithStats() = default;
+#define KEEPER_STORAGE_LOCK_SHARED(name) \
+    ProfiledSharedLock name(storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds, ProfileEvents::KeeperStorageSharedLockHoldMicroseconds)
+
+union XidHelper
+{
+    struct
+    {
+        uint32_t lower;
+        uint32_t upper;
+    } parts;
+    int64_t xid;
 };
 
 }
@@ -211,6 +240,8 @@ struct LockGuardWithStats final
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
+
     double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
     int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
     if (sleep_ms != 0 && sleep_probability != 0)
@@ -238,27 +269,45 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 
     request_for_session->log_idx = log_idx;
 
-    preprocess(*request_for_session);
+    const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+    {
+        ZooKeeperOpentelemetrySpans::maybeInitialize(
+            request_for_session->request->spans.pre_commit,
+            request_for_session->request->tracing_context,
+            start_time_us);
+
+        ZooKeeperOpentelemetrySpans::maybeFinalize(
+            request_for_session->request->spans.pre_commit,
+            [&]
+            {
+                return std::vector<OpenTelemetry::SpanAttribute>{
+                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                    {"keeper.session_id", request_for_session->session_id},
+                    {"keeper.xid", request_for_session->request->xid},
+                    {"raft.log_idx", log_idx},
+                };
+            },
+            status,
+            error_message);
+    };
+
+    try
+    {
+        preprocess(*request_for_session);
+    }
+    catch (...)
+    {
+        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+        throw;
+    }
+
+    maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
+
     return result;
 }
 
-namespace
-{
-
-union XidHelper
-{
-    struct
-    {
-        uint32_t lower;
-        uint32_t upper;
-    } parts;
-    int64_t xid;
-};
-
-};
-
 // Serialize the request for the log entry
-nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const KeeperStorageBase::RequestForSession & request_for_session)
+nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
 {
     DB::WriteBufferFromNuraftBuffer write_buf;
     DB::writeIntBinary(request_for_session.session_id, write_buf);
@@ -266,11 +315,9 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     const auto & request = request_for_session.request;
     size_t request_size = sizeof(uint32_t) + Coordination::size(request->getOpNum()) + request->sizeImpl();
     Coordination::write(static_cast<int32_t>(request_size), write_buf);
+
     XidHelper xid_helper{.xid = request->xid};
-    if (request_for_session.use_xid_64)
-        Coordination::write(xid_helper.parts.lower, write_buf);
-    else
-        Coordination::write(static_cast<int32_t>(xid_helper.xid), write_buf);
+    Coordination::write(xid_helper.parts.lower, write_buf);
 
     Coordination::write(request->getOpNum(), write_buf);
     request->writeImpl(write_buf);
@@ -278,24 +325,38 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     DB::writeIntBinary(request_for_session.time, write_buf);
     /// we fill with dummy values to eliminate unnecessary copy later on when we will write correct values
     DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
-    DB::writeIntBinary(KeeperStorageBase::DigestVersion::NO_DIGEST, write_buf); /// digest version or NO_DIGEST flag
+    DB::writeIntBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), write_buf); /// digest version or NO_DIGEST flag
     DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
 
-    if (request_for_session.use_xid_64)
-        Coordination::write(xid_helper.parts.upper, write_buf); /// for 64bit XID MSB
+    /// Write upper part of XID if either:
+    /// 1. use_xid_64
+    /// 2. !use_xid_64 && request->tracing_context -> pass zeroes
+    if (request_for_session.use_xid_64 || request->tracing_context)
+    {
+        Coordination::write(xid_helper.parts.upper, write_buf);
+    }
+
+    if (request->tracing_context)
+    {
+        request->tracing_context->serialize(write_buf);
+    }
+
     /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
     return write_buf.getBuffer();
 }
 
-std::shared_ptr<KeeperStorageBase::RequestForSession> IKeeperStateMachine::parseRequest(
+std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
 {
     ReadBufferFromNuraftBuffer buffer(data);
-    auto request_for_session = std::make_shared<KeeperStorageBase::RequestForSession>();
+    auto request_for_session = std::make_shared<KeeperRequestForSession>();
     readIntBinary(request_for_session->session_id, buffer);
 
     int32_t length;
     Coordination::read(length, buffer);
+    /// Request should not exceed max_request_size (this is verified in KeeperTCPHandler)
+    if (length < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid request length: {}", length);
 
     /// because of backwards compatibility, only 32bit xid could be written
     /// for that reason we serialize XID in 2 parts:
@@ -333,7 +394,7 @@ std::shared_ptr<KeeperStorageBase::RequestForSession> IKeeperStateMachine::parse
 
         request_for_session->digest.emplace();
         readIntBinary(request_for_session->digest->version, buffer);
-        if (request_for_session->digest->version != KeeperStorageBase::DigestVersion::NO_DIGEST || !buffer.eof())
+        if (request_for_session->digest->version != KeeperDigestVersion::NO_DIGEST || !buffer.eof())
             readIntBinary(request_for_session->digest->value, buffer);
     }
 
@@ -345,6 +406,15 @@ std::shared_ptr<KeeperStorageBase::RequestForSession> IKeeperStateMachine::parse
     else
     {
         xid_helper.xid = static_cast<int32_t>(xid_helper.parts.lower);
+    }
+
+    std::optional<OpenTelemetry::TracingContext> tracing_context;
+    if (!buffer.eof())
+    {
+        version = WITH_OPTIONAL_TRACING_CONTEXT;
+
+        tracing_context.emplace();
+        tracing_context->deserialize(buffer);
     }
 
     if (serialization_version)
@@ -394,6 +464,9 @@ std::shared_ptr<KeeperStorageBase::RequestForSession> IKeeperStateMachine::parse
     request_for_session->request->xid = xid;
     request_for_session->request->readImpl(buffer);
 
+    if (tracing_context)
+        request_for_session->request->tracing_context = std::move(tracing_context);
+
     if (should_cache && !final)
     {
         std::lock_guard lock(request_cache_mutex);
@@ -404,19 +477,20 @@ std::shared_ptr<KeeperStorageBase::RequestForSession> IKeeperStateMachine::parse
 }
 
 template<typename Storage>
-bool KeeperStateMachine<Storage>::preprocess(const KeeperStorageBase::RequestForSession & request_for_session)
+std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & request_for_session)
 {
     const auto op_num = request_for_session.request->getOpNum();
     if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
-        return true;
+        return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
 
     if (storage->isFinalized())
-        return false;
+        return std::nullopt;
 
+    KeeperDigest digest_after_preprocessing;
     try
     {
-        LockGuardWithStats<true> lock(storage_mutex);
-        storage->preprocessRequest(
+        KEEPER_STORAGE_LOCK_SHARED(lock);
+        digest_after_preprocessing = storage->preprocessRequest(
             request_for_session.request,
             request_for_session.session_id,
             request_for_session.time,
@@ -427,26 +501,33 @@ bool KeeperStateMachine<Storage>::preprocess(const KeeperStorageBase::RequestFor
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to preprocess stored log at index {}, aborting to avoid inconsistent state", request_for_session.log_idx));
-        std::abort();
+        LOG_FATAL(
+            log,
+            "Failed to preprocess stored log at index {}: {}",
+            request_for_session.log_idx,
+            getCurrentExceptionMessage(true, true, false));
+        LOG_FATAL(log, "Aborting to avoid inconsistent state");
+        abort();
     }
 
     if (keeper_context->digestEnabled() && request_for_session.digest)
         assertDigest(
             *request_for_session.digest,
-            storage->getNodesDigest(false, /*lock_transaction_mutex=*/true),
+            digest_after_preprocessing,
             *request_for_session.request,
             request_for_session.log_idx,
+            request_for_session.session_id,
             false);
 
-    return true;
+    return digest_after_preprocessing;
 }
 
 template<typename Storage>
-void KeeperStateMachine<Storage>::reconfigure(const KeeperStorageBase::RequestForSession& request_for_session)
+void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & request_for_session)
 {
-    LockGuardWithStats lock(storage_mutex);
-    KeeperStorageBase::ResponseForSession response = processReconfiguration(request_for_session);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+    KeeperResponseForSession response = processReconfiguration(request_for_session);
+    response.response->enqueue_ts = std::chrono::steady_clock::now();
     if (!responses_queue.push(response))
     {
         ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -457,17 +538,17 @@ void KeeperStateMachine<Storage>::reconfigure(const KeeperStorageBase::RequestFo
 }
 
 template<typename Storage>
-KeeperStorageBase::ResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
-    const KeeperStorageBase::RequestForSession & request_for_session)
+KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
+    const KeeperRequestForSession & request_for_session)
 {
     ProfileEvents::increment(ProfileEvents::KeeperReconfigRequest);
 
-    const auto & request = static_cast<const Coordination::ZooKeeperReconfigRequest&>(*request_for_session.request);
+    const auto & request = static_cast<const Coordination::ZooKeeperReconfigRequest &>(*request_for_session.request);
     const int64_t session_id = request_for_session.session_id;
     const int64_t zxid = request_for_session.zxid;
 
     using enum Coordination::Error;
-    auto bad_request = [&](Coordination::Error code = ZBADARGUMENTS) -> KeeperStorageBase::ResponseForSession
+    auto bad_request = [&](Coordination::Error code = ZBADARGUMENTS) -> KeeperResponseForSession
     {
         auto res = std::make_shared<Coordination::ZooKeeperReconfigResponse>();
         res->xid = request.xid;
@@ -479,7 +560,7 @@ KeeperStorageBase::ResponseForSession KeeperStateMachine<Storage>::processReconf
     if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, true))
         return bad_request(ZNOAUTH);
 
-    KeeperDispatcher& dispatcher = *keeper_context->getDispatcher();
+    KeeperDispatcher & dispatcher = *keeper_context->getDispatcher();
     if (!dispatcher.reconfigEnabled())
         return bad_request(ZUNIMPLEMENTED);
     if (request.version != -1)
@@ -527,6 +608,8 @@ KeeperStorageBase::ResponseForSession KeeperStateMachine<Storage>::processReconf
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
+    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
+
     auto request_for_session = parseRequest(data, true);
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
@@ -536,8 +619,11 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
     if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
         return nullptr;
 
-    auto try_push = [&](const KeeperStorageBase::ResponseForSession & response)
+    auto try_push = [&](KeeperResponseForSession & response)
     {
+        response.response->enqueue_ts = std::chrono::steady_clock::now();
+        if (response.request)
+            ZooKeeperOpentelemetrySpans::maybeInitialize(response.request->spans.dispatcher_responses_queue, response.request->tracing_context);
         if (!responses_queue.push(response))
         {
             ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -545,6 +631,28 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
                 "Failed to push response with session id {} to the queue, probably because of shutdown",
                 response.session_id);
         }
+    };
+
+    const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+    {
+        ZooKeeperOpentelemetrySpans::maybeInitialize(
+            request_for_session->request->spans.commit,
+            request_for_session->request->tracing_context,
+            start_time_us);
+
+        ZooKeeperOpentelemetrySpans::maybeFinalize(
+            request_for_session->request->spans.commit,
+            [&]
+            {
+                return std::vector<OpenTelemetry::SpanAttribute>{
+                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                    {"keeper.session_id", request_for_session->session_id},
+                    {"keeper.xid", request_for_session->request->xid},
+                    {"raft.log_idx", log_idx},
+                };
+            },
+            status,
+            error_message);
     };
 
     try
@@ -555,15 +663,13 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             const Coordination::ZooKeeperSessionIDRequest & session_id_request
                 = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
             int64_t session_id;
-            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
-            response->internal_id = session_id_request.internal_id;
-            response->server_id = session_id_request.server_id;
-            KeeperStorageBase::ResponseForSession response_for_session;
+            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
+            KeeperResponseForSession response_for_session;
             response_for_session.session_id = -1;
             response_for_session.response = response;
             response_for_session.request = request_for_session->request;
 
-            LockGuardWithStats lock(storage_mutex);
+            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             session_id = storage->getSessionID(session_id_request.session_timeout_ms);
             LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
             response->session_id = session_id;
@@ -579,9 +685,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             }
 
             {
-                LockGuardWithStats<true> lock(storage_mutex);
-                std::lock_guard response_lock(process_and_responses_lock);
-                KeeperStorageBase::ResponsesForSessions responses_for_sessions
+                KEEPER_STORAGE_LOCK_SHARED(lock);
+                ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds, ProfileEvents::KeeperProcessAndResponsesLockHoldMicroseconds);
+                KeeperResponsesForSessions responses_for_sessions
                     = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
                 for (auto & response_for_session : responses_for_sessions)
                 {
@@ -598,6 +704,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
                     storage->getNodesDigest(true, /*lock_transaction_mutex=*/true),
                     *request_for_session->request,
                     request_for_session->log_idx,
+                    request_for_session->session_id,
                     true);
         }
 
@@ -610,9 +717,12 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
     }
     catch (...)
     {
+        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
         tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
         throw;
     }
+
+    maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
 
     return nullptr;
 }
@@ -646,6 +756,8 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
     }
 
     { /// deserialize and apply snapshot to storage
+        std::lock_guard lock(snapshots_lock);
+
         SnapshotDeserializationResult<Storage> snapshot_deserialization_result;
         if (latest_snapshot_ptr)
             snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_ptr);
@@ -653,7 +765,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
             snapshot_deserialization_result
                 = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
 
-        LockGuardWithStats storage_lock(storage_mutex);
+        KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
         /// maybe some logs were preprocessed with log idx larger than the snapshot idx
         /// we have to apply them to the new storage
         storage->applyUncommittedState(*snapshot_deserialization_result.storage, snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
@@ -693,12 +805,12 @@ void IKeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 }
 
 template<typename Storage>
-void KeeperStateMachine<Storage>::rollbackRequest(const KeeperStorageBase::RequestForSession & request_for_session, bool allow_missing)
+void KeeperStateMachine<Storage>::rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing)
 {
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
 
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
@@ -718,8 +830,9 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     auto snapshot_meta_copy = nuraft::snapshot::deserialize(*snp_buf);
     CreateSnapshotTask snapshot_task;
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
-        LockGuardWithStats lock(storage_mutex);
-        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot<Storage>>(storage.get(), snapshot_meta_copy, getClusterConfig());
+        KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot<Storage>>(
+            storage.get(), snapshot_meta_copy, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
     }
 
     /// create snapshot task for background execution (in snapshot thread)
@@ -769,6 +882,17 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                             "Created persistent snapshot {} with path {}",
                             latest_snapshot_meta->get_last_log_idx(),
                             latest_snapshot_info->path);
+
+                        try
+                        {
+                            latest_snapshot_size.store(
+                                latest_snapshot_info->disk->getFileSize(latest_snapshot_info->path),
+                                std::memory_order_relaxed);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log, "Failed to get snapshot size after creation");
+                        }
                     }
                 }
 
@@ -783,7 +907,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
         }
         {
             /// Destroy snapshot with lock
-            LockGuardWithStats lock(storage_mutex);
+            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             LOG_TRACE(log, "Clearing garbage after snapshot");
             /// Turn off "snapshot mode" and clear outdate part of storage state
             storage->clearGarbageAfterSnapshot();
@@ -793,6 +917,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
 
         when_done(ret, exception);
 
+        std::lock_guard lock(snapshots_lock);
         return ret ? latest_snapshot_info : nullptr;
     };
 
@@ -842,6 +967,17 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
         LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), latest_snapshot_info->path);
         obj_id++;
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshot);
+
+        try
+        {
+            latest_snapshot_size.store(
+                latest_snapshot_info->disk->getFileSize(latest_snapshot_info->path),
+                std::memory_order_relaxed);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to get snapshot size after save");
+        }
     }
     catch (...)
     {
@@ -900,7 +1036,7 @@ int IKeeperStateMachine::read_logical_snp_obj(
         return -1;
     }
 
-    const auto & [path, disk, size] = *latest_snapshot_info;
+    const auto & [path, disk] = *latest_snapshot_info;
     if (isLocalDisk(*disk))
     {
         auto full_path = fs::path(disk->getPath()) / path;
@@ -923,33 +1059,40 @@ int IKeeperStateMachine::read_logical_snp_obj(
 }
 
 template<typename Storage>
-void KeeperStateMachine<Storage>::processReadRequest(const KeeperStorageBase::RequestForSession & request_for_session)
+void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSession & request_for_session)
 {
     /// Pure local request, just process it with storage
-    LockGuardWithStats<true> storage_lock(storage_mutex);
-    std::lock_guard response_lock(process_and_responses_lock);
-    auto responses = storage->processRequest(
-        request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
-    for (auto & response_for_session : responses)
     {
-        if (response_for_session.response->xid != Coordination::WATCH_XID)
-            response_for_session.request = request_for_session.request;
-        if (!responses_queue.push(response_for_session))
-            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
+        KEEPER_STORAGE_LOCK_SHARED(storage_lock);
+        ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds, ProfileEvents::KeeperProcessAndResponsesLockHoldMicroseconds);
+        auto responses = storage->processRequest(
+            request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
+        for (auto & response_for_session : responses)
+        {
+            if (response_for_session.response->xid != Coordination::WATCH_XID)
+                response_for_session.request = request_for_session.request;
+            response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
+            if (response_for_session.request)
+                ZooKeeperOpentelemetrySpans::maybeInitialize(response_for_session.request->spans.dispatcher_responses_queue, response_for_session.request->tracing_context);
+            if (!responses_queue.push(response_for_session))
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
+        }
     }
 }
 
 template<typename Storage>
 void KeeperStateMachine<Storage>::shutdownStorage()
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+    if (!storage)
+        return;
     storage->finalize();
 }
 
 template<typename Storage>
 std::vector<int64_t> KeeperStateMachine<Storage>::getDeadSessions()
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getDeadSessions();
 }
 
@@ -960,20 +1103,20 @@ int64_t KeeperStateMachine<Storage>::getNextZxid() const
 }
 
 template<typename Storage>
-KeeperStorageBase::Digest KeeperStateMachine<Storage>::getNodesDigest() const
+KeeperDigest KeeperStateMachine<Storage>::getNodesDigest() const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
 }
 
 template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
+int64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
 {
     return storage->getZXID();
 }
 
 template<typename Storage>
-const KeeperStorageBase::Stats & KeeperStateMachine<Storage>::getStorageStats() const TSA_NO_THREAD_SAFETY_ANALYSIS
+const KeeperStorageStats & KeeperStateMachine<Storage>::getStorageStats() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     return storage->getStorageStats();
 }
@@ -981,102 +1124,84 @@ const KeeperStorageBase::Stats & KeeperStateMachine<Storage>::getStorageStats() 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getNodesCount() const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getNodesCount();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getTotalWatchesCount() const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getTotalWatchesCount();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getWatchedPathsCount() const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getWatchedPathsCount();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getSessionsWithWatchesCount() const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getSessionsWithWatchesCount();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getTotalEphemeralNodesCount() const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getTotalEphemeralNodesCount();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getSessionWithEphemeralNodesCount() const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getSessionWithEphemeralNodesCount();
 }
 
 template<typename Storage>
 void KeeperStateMachine<Storage>::dumpWatches(WriteBufferFromOwnString & buf) const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpWatches(buf);
 }
 
 template<typename Storage>
 void KeeperStateMachine<Storage>::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpWatchesByPath(buf);
 }
 
 template<typename Storage>
 void KeeperStateMachine<Storage>::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpSessionsAndEphemerals(buf);
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getApproximateDataSize() const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getApproximateDataSize();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getKeyArenaSize() const
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getArenaDataSize();
 }
 
 template<typename Storage>
 uint64_t KeeperStateMachine<Storage>::getLatestSnapshotSize() const
 {
-    auto snapshot_info = [&]
-    {
-        std::lock_guard lock(snapshots_lock);
-        return latest_snapshot_info;
-    }();
-
-    if (snapshot_info == nullptr || snapshot_info->disk == nullptr)
-        return 0;
-
-    /// there is a possibility multiple threads can try to get size
-    /// this can happen in rare cases while it's not a heavy operation
-    size_t size = snapshot_info->size.load(std::memory_order_relaxed);
-    if (size == 0)
-    {
-        size = snapshot_info->disk->getFileSize(snapshot_info->path);
-        snapshot_info->size.store(size, std::memory_order_relaxed);
-    }
-
-    return size;
+    return latest_snapshot_size.load(std::memory_order_relaxed);
 }
 
 ClusterConfigPtr IKeeperStateMachine::getClusterConfig() const
@@ -1094,7 +1219,7 @@ ClusterConfigPtr IKeeperStateMachine::getClusterConfig() const
 template<typename Storage>
 void KeeperStateMachine<Storage>::recalculateStorageStats()
 {
-    LockGuardWithStats lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     LOG_INFO(log, "Recalculating storage stats");
     storage->recalculateStats();
     LOG_INFO(log, "Done recalculating storage stats");

@@ -1,34 +1,28 @@
 ---
-slug: /en/development/build-cross-s390x
-sidebar_position: 69
-title: How to Build, Run and Debug ClickHouse on Linux for s390x (zLinux)
-sidebar_label: Build on Linux for s390x (zLinux)
+description: 'Guide for building ClickHouse from source for the s390x architecture'
+sidebar_label: 'Build on Linux for s390x (zLinux)'
+sidebar_position: 30
+slug: /development/build-cross-s390x
+title: 'Build on Linux for s390x (zLinux)'
+doc_type: 'guide'
 ---
 
-At the time of writing (2024 May), support for the s390x platform is considered experimental, i.e. some features are disabled or broken on s390x.
+# Build on Linux for s390x (zLinux)
 
-## Building ClickHouse for s390x
+ClickHouse has experimental support for s390x.
 
-s390x has two OpenSSL-related build options:
-- By default, OpenSSL is build on s390x as a shared library. This is different from all other platforms, where OpenSSL is build as static library.
-- To build OpenSSL as a static library regardless, pass `-DENABLE_OPENSSL_DYNAMIC=0` to CMake.
+## Building ClickHouse for s390x {#building-clickhouse-for-s390x}
 
-These instructions assume that the host machine is x86_64 and has all the tooling required to build natively based on the [build instructions](../development/build.md). It also assumes that the host is Ubuntu 22.04 but the following instructions should also work on Ubuntu 20.04.
+s390x, as other platforms, builds OpenSSL as a static library. If you want to build with dynamic OpenSSL, you need to pass `-DENABLE_OPENSSL_DYNAMIC=1` to CMake.
+
+These instructions assume that the host machine is Linux x86_64/ARM and has all the tooling required to build natively based on the [build instructions](../development/build.md). It also assumes that the host is Ubuntu 22.04 but the following instructions should also work on Ubuntu 20.04.
 
 In addition to installing the tooling used to build natively, the following additional packages need to be installed:
 
 ```bash
-apt-get install binutils-s390x-linux-gnu libc6-dev-s390x-cross gcc-s390x-linux-gnu binfmt-support qemu-user-static
-```
-
-If you wish to cross compile rust code install the rust cross compile target for s390x:
-
-```bash
+apt-get mold
 rustup target add s390x-unknown-linux-gnu
 ```
-
-The s390x build uses the mold linker, download it from https://github.com/rui314/mold/releases/download/v2.0.0/mold-2.0.0-x86_64-linux.tar.gz
-and place it into your `$PATH`.
 
 To build for s390x:
 
@@ -37,20 +31,27 @@ cmake -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-s390x.cmake ..
 ninja
 ```
 
-## Running
+## Running {#running}
+
+To emulate you'll need QEMU user static binary for s390x. On Ubuntu it can be installed with:
+
+```bash
+apt-get install binfmt-support binutils-s390x-linux-gnu qemu-user-static
+```
 
 Once built, the binary can be run with, e.g.:
 
 ```bash
-qemu-s390x-static -L /usr/s390x-linux-gnu ./clickhouse
+qemu-s390x-static -L /usr/s390x-linux-gnu ./programs/clickhouse local --query "Select 2"
+2
 ```
 
-## Debugging
+## Debugging {#debugging}
 
 Install LLDB:
 
 ```bash
-apt-get install lldb-15
+apt-get install lldb-21
 ```
 
 To Debug a s390x executable, run clickhouse using QEMU in debug mode:
@@ -60,6 +61,7 @@ qemu-s390x-static -g 31338 -L /usr/s390x-linux-gnu ./clickhouse
 ```
 
 In another shell run LLDB and attach, replace `<Clickhouse Parent Directory>` and `<build directory>` with the values corresponding to your environment.
+
 ```bash
 lldb-15
 (lldb) target create ./clickhouse
@@ -89,15 +91,15 @@ Process 1 stopped
    453      /// PHDR cache is required for query profiler to work reliably
 ```
 
-## Visual Studio Code integration
+## Visual Studio Code integration {#visual-studio-code-integration}
 
 - [CodeLLDB](https://github.com/vadimcn/vscode-lldb) extension is required for visual debugging.
 - [Command Variable](https://github.com/rioj7/command-variable) extension can help dynamic launches if using [CMake Variants](https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/variants.md).
-- Make sure to set the backend to your LLVM installation eg. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"`
+- Make sure to set the backend to your LLVM installation eg. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-21.so"`
 - Make sure to run the clickhouse executable in debug mode prior to launch. (It is also possible to create a `preLaunchTask` that automates this)
 
-### Example configurations
-#### cmake-variants.yaml
+### Example configurations {#example-configurations}
+#### cmake-variants.yaml {#cmake-variantsyaml}
 ```yaml
 buildType:
   default: relwithdebinfo
@@ -133,7 +135,7 @@ toolchain:
         CMAKE_TOOLCHAIN_FILE: cmake/linux/toolchain-s390x.cmake
 ```
 
-#### launch.json
+#### launch.json {#launchjson}
 ```json
 {
     "version": "0.2.0",
@@ -150,16 +152,16 @@ toolchain:
 }
 ```
 
-#### settings.json
+#### settings.json {#settingsjson}
 This would also put different builds under different subfolders of the `build` folder.
 ```json
 {
     "cmake.buildDirectory": "${workspaceFolder}/build/${buildKitVendor}-${buildKitVersion}-${variant:toolchain}-${variant:buildType}",
-    "lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"
+    "lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-21.so"
 }
 ```
 
-#### run-debug.sh
+#### run-debug.sh {#run-debugsh}
 ```sh
 #! /bin/sh
 echo 'Starting debugger session'
@@ -167,7 +169,7 @@ cd $1
 qemu-s390x-static -g 2159 -L /usr/s390x-linux-gnu $2 $3 $4
 ```
 
-#### tasks.json
+#### tasks.json {#tasksjson}
 Defines a task to run the compiled executable in `server` mode under a `tmp` folder next to the binaries, with configuration from under `programs/server/config.xml`.
 ```json
 {

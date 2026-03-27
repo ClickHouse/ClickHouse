@@ -71,9 +71,10 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
 
     String short_name;
     std::optional<std::pair<String, String>> database_and_table_name;
-    if (type == AccessEntityType::ROW_POLICY)
+    if (type == AccessEntityType::ROW_POLICY || type == AccessEntityType::MASKING_POLICY)
     {
-        String database, table_name;
+        String database;
+        String table_name;
         bool wildcard = false;
         bool default_database = false;
         if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
@@ -90,7 +91,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
             all = true;
     }
 
-    auto query = std::make_shared<ASTShowAccessEntitiesQuery>();
+    auto query = make_intrusive<ASTShowAccessEntitiesQuery>();
     node = query;
 
     query->type = type;

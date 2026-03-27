@@ -1,20 +1,23 @@
 ---
-slug: /en/engines/table-engines/special/join
+description: 'Optional prepared data structure for usage in JOIN operations.'
+sidebar_label: 'Join'
 sidebar_position: 70
-sidebar_label: Join
+slug: /engines/table-engines/special/join
+title: 'Join table engine'
+doc_type: 'reference'
 ---
 
-# Join Table Engine
+# Join table engine
 
-Optional prepared data structure for usage in [JOIN](/docs/en/sql-reference/statements/select/join.md/#select-join) operations.
+Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join) operations.
 
 :::note
-This is not an article about the [JOIN clause](/docs/en/sql-reference/statements/select/join.md/#select-join) itself.
+In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
 :::
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -22,27 +25,27 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 
-See the detailed description of the [CREATE TABLE](/docs/en/sql-reference/statements/create/table.md/#create-table-query) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
-## Engine Parameters
+## Engine parameters {#engine-parameters}
 
-### join_strictness
+### `join_strictness` {#join_strictness}
 
-`join_strictness` – [JOIN strictness](/docs/en/sql-reference/statements/select/join.md/#select-join-types).
+`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join#supported-types-of-join).
 
-### join_type
+### `join_type` {#join_type}
 
-`join_type` – [JOIN type](/docs/en/sql-reference/statements/select/join.md/#select-join-types).
+`join_type` – [JOIN type](/sql-reference/statements/select/join#supported-types-of-join).
 
-### Key columns
+### Key columns {#key-columns}
 
 `k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
 
 Enter `join_strictness` and `join_type` parameters without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If the parameters do not match, ClickHouse does not throw an exception and may return incorrect data.
 
-## Specifics and Recommendations {#specifics-and-recommendations}
+## Specifics and recommendations {#specifics-and-recommendations}
 
-### Data Storage {#data-storage}
+### Data storage {#data-storage}
 
 `Join` table data is always located in the RAM. When inserting rows into a table, ClickHouse writes data blocks to the directory on the disk so that they can be restored when the server restarts.
 
@@ -55,40 +58,40 @@ You can use `INSERT` queries to add data to the `Join`-engine tables. If the tab
 Main use-cases for `Join`-engine tables are following:
 
 - Place the table to the right side in a `JOIN` clause.
-- Call the [joinGet](/docs/en/sql-reference/functions/other-functions.md/#joinget) function, which lets you extract data from the table the same way as from a dictionary.
+- Call the [joinGet](/sql-reference/functions/other-functions.md/#joinGet) function, which lets you extract data from the table the same way as from a dictionary.
 
-### Deleting Data {#deleting-data}
+### Deleting data {#deleting-data}
 
-`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/docs/en/sql-reference/statements/alter/index.md#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
+`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/sql-reference/statements/alter/index.md#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
 
-### Limitations and Settings {#join-limitations-and-settings}
+### Limitations and settings {#join-limitations-and-settings}
 
 When creating a table, the following settings are applied:
 
-#### join_use_nulls
+#### `join_use_nulls` {#join_use_nulls}
 
-[join_use_nulls](/docs/en/operations/settings/settings.md/#join_use_nulls)
+[join_use_nulls](/operations/settings/settings.md/#join_use_nulls)
 
-#### max_rows_in_join
+#### `max_rows_in_join` {#max_rows_in_join}
 
-[max_rows_in_join](/docs/en/operations/settings/query-complexity.md/#settings-max_rows_in_join)
+[max_rows_in_join](/operations/settings/settings#max_rows_in_join)
 
-#### max_bytes_in_join
+#### `max_bytes_in_join` {#max_bytes_in_join}
 
-[max_bytes_in_join](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)
+[max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
 
-#### join_overflow_mode
+#### `join_overflow_mode` {#join_overflow_mode}
 
-[join_overflow_mode](/docs/en/operations/settings/query-complexity.md/#settings-join_overflow_mode)
+[join_overflow_mode](/operations/settings/settings#join_overflow_mode)
 
-#### join_any_take_last_row
+#### `join_any_take_last_row` {#join_any_take_last_row}
 
-[join_any_take_last_row](/docs/en/operations/settings/settings.md/#join_any_take_last_row)
-#### join_use_nulls
+[join_any_take_last_row](/operations/settings/settings.md/#join_any_take_last_row)
+#### `join_use_nulls` {#join_use_nulls-1}
 
-#### persistent
+#### Persistent {#persistent}
 
-Disables persistency for the Join and [Set](/docs/en/engines/table-engines/special/set.md) table engines.
+Disables persistency for the Join and [Set](/engines/table-engines/special/set.md) table engines.
 
 Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 
@@ -99,39 +102,39 @@ Possible values:
 
 Default value: `1`.
 
-The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
+The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
 
-The `Join`-engine allows to specify [join_use_nulls](/docs/en/operations/settings/settings.md/#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/docs/en/sql-reference/statements/select/index.md) query should have the same `join_use_nulls` value.
+The `Join`-engine allows to specify [join_use_nulls](/operations/settings/settings.md/#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/sql-reference/statements/select/index.md) query should have the same `join_use_nulls` value.
 
-## Usage Examples {#example}
+## Usage examples {#example}
 
 Creating the left-side table:
 
-``` sql
+```sql
 CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
 ```
 
-``` sql
+```sql
 INSERT INTO id_val VALUES (1,11)(2,12)(3,13);
 ```
 
 Creating the right-side `Join` table:
 
-``` sql
+```sql
 CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
 ```
 
-``` sql
+```sql
 INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23);
 ```
 
 Joining the tables:
 
-``` sql
+```sql
 SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
 ```
 
-``` text
+```text
 ┌─id─┬─val─┬─id_val_join.val─┐
 │  1 │  11 │              21 │
 │  2 │  12 │               0 │
@@ -141,11 +144,11 @@ SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
 
 As an alternative, you can retrieve data from the `Join` table, specifying the join key value:
 
-``` sql
+```sql
 SELECT joinGet('id_val_join', 'val', toUInt32(1));
 ```
 
-``` text
+```text
 ┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
 │                                         21 │
 └────────────────────────────────────────────┘

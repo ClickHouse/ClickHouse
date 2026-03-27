@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import glob
 import os.path
 import random
@@ -5,11 +6,14 @@ import re
 import sys
 import uuid
 from collections import namedtuple
+from typing import Dict
+from datetime import datetime
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import TSV, assert_eq_with_retry, wait_condition
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -18,6 +22,12 @@ instance = cluster.add_instance(
     "instance",
     main_configs=["configs/backups_disk.xml"],
     user_configs=["configs/zookeeper_retries.xml"],
+    external_dirs=["/backups/"],
+)
+instance_with_short_timeout = cluster.add_instance(
+    "instance_with_short_timeout",
+    main_configs=["configs/backups_disk.xml"],
+    user_configs=["configs/max_execution_time.xml"],
     external_dirs=["/backups/"],
 )
 
@@ -30,6 +40,16 @@ def create_and_fill_table(engine="MergeTree", n=100):
     instance.query(
         f"INSERT INTO test.table SELECT number, toString(number) FROM numbers({n})"
     )
+
+
+def format_settings(settings):
+    if not settings:
+        return ""
+
+    def vstr(v):
+        return "'" + v + "'" if type(v) == str else str(v)
+
+    return "SETTINGS " + ",".join(f"{k}={vstr(v)}" for k, v in settings.items())
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -49,7 +69,8 @@ def cleanup_after_test():
         instance.query("DROP DATABASE IF EXISTS test")
         instance.query("DROP DATABASE IF EXISTS test2")
         instance.query("DROP DATABASE IF EXISTS test3")
-        instance.query("DROP USER IF EXISTS u1")
+        instance.query("DROP DATABASE IF EXISTS restored")
+        instance.query("DROP USER IF EXISTS u1, u2")
         instance.query("DROP ROLE IF EXISTS r1, r2")
         instance.query("DROP SETTINGS PROFILE IF EXISTS prof1")
         instance.query("DROP ROW POLICY IF EXISTS rowpol1 ON test.table")
@@ -95,10 +116,42 @@ def has_mutation_in_backup(mutation_id, backup_name, database, table):
     )
 
 
-BackupInfo = namedtuple(
-    "BackupInfo",
-    "name id status error num_files total_size num_entries uncompressed_size compressed_size files_read bytes_read",
-)
+def get_events_for_query(query_id: str) -> Dict[str, int]:
+    events = TSV(
+        instance.query(
+            f"""
+            SYSTEM FLUSH LOGS;
+
+            WITH arrayJoin(ProfileEvents) as pe
+            SELECT pe.1, pe.2
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+            """
+        )
+    )
+    result = {
+        event: int(value)
+        for event, value in [line.split("\t") for line in events.lines]
+    }
+    result["query_id"] = query_id
+    return result
+
+
+@dataclass
+class BackupInfo:
+    name: str
+    id: int
+    start_time: datetime
+    end_time: datetime
+    status: str
+    error: str
+    num_files: int
+    total_size: int
+    num_entries: int
+    uncompressed_size: int
+    compressed_size: int
+    files_read: int
+    bytes_read: int
 
 
 def get_backup_info_from_system_backups(by_id=None, by_name=None):
@@ -111,6 +164,8 @@ def get_backup_info_from_system_backups(by_id=None, by_name=None):
     [
         name,
         id,
+        start_time,
+        end_time,
         status,
         error,
         num_files,
@@ -122,7 +177,7 @@ def get_backup_info_from_system_backups(by_id=None, by_name=None):
         bytes_read,
     ] = (
         instance.query(
-            f"SELECT name, id, status, error, num_files, total_size, num_entries, uncompressed_size, compressed_size, files_read, bytes_read "
+            f"SELECT name, id, start_time, end_time, status, error, num_files, total_size, num_entries, uncompressed_size, compressed_size, files_read, bytes_read "
             f"FROM system.backups WHERE {where_condition} LIMIT 1"
         )
         .strip("\n")
@@ -140,6 +195,8 @@ def get_backup_info_from_system_backups(by_id=None, by_name=None):
     return BackupInfo(
         name=name,
         id=id,
+        start_time=start_time,
+        end_time=end_time,
         status=status,
         error=error,
         num_files=num_files,
@@ -167,6 +224,35 @@ def test_restore_table(engine):
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+@pytest.mark.parametrize(
+    "engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"]
+)
+def test_restore_empty_table(engine):
+    backup_name = new_backup_name()
+    create_and_fill_table(engine=engine, n=0)
+
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+
+def test_restore_empty_memory_table_failpoint():
+    backup_name = new_backup_name()
+    create_and_fill_table(engine="Memory", n=0)
+
+    instance.query("SYSTEM ENABLE FAILPOINT backup_add_empty_memory_table")
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+    instance.query("SYSTEM DISABLE FAILPOINT backup_add_empty_memory_table")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
 
 
 def test_restore_materialized_view_with_definer():
@@ -282,6 +368,67 @@ def test_incremental_backup():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
 
 
+def test_incremental_backup_after_settings_change():
+    def get_table_ddl(tablename: str):
+        """
+        Return single-line DDL
+        """
+        ddl = instance.query(
+            f"SELECT create_table_query FROM system.tables WHERE name = '{tablename}' AND database = 'test' SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1, show_create_query_identifier_quoting_rule='when_necessary', show_create_query_identifier_quoting_style='Backticks'"
+        )
+        return re.sub(
+            r"[\\\n]", "", ddl
+        )  # remove quoted backslash and the last end of line, the same format in test/table.sql file in a backup
+
+    backup_name = new_backup_name()
+    increment_backup_name = new_backup_name()
+    increment_backup_name2 = new_backup_name()
+    create_and_fill_table(n=1)
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == TSV([["1", "0"]])
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    metadata_path = os.path.join(
+        get_path_to_backup(backup_name), "metadata/test/table.sql"
+    )
+
+    with open(metadata_path) as metadata:
+        ddl = metadata.read()
+
+        assert ddl == get_table_ddl("table")
+
+    instance.query("ALTER TABLE test.table ADD COLUMN new_col String")
+
+    instance.query(
+        f"BACKUP TABLE test.table TO {increment_backup_name} SETTINGS base_backup = {backup_name}"
+    )
+
+    increment_backup_metadata_path = os.path.join(
+        get_path_to_backup(increment_backup_name), "metadata/test/table.sql"
+    )
+
+    with open(increment_backup_metadata_path) as metadata:
+        ddl = metadata.read()
+        assert ddl == get_table_ddl("table")
+
+    instance.query(
+        "ALTER TABLE test.table MODIFY SETTING non_replicated_deduplication_window = 0"
+    )
+
+    instance.query(
+        f"BACKUP TABLE test.table TO {increment_backup_name2} SETTINGS base_backup = {increment_backup_name}"
+    )
+
+    increment_backup_metadata_path2 = os.path.join(
+        get_path_to_backup(increment_backup_name2), "metadata/test/table.sql"
+    )
+
+    with open(increment_backup_metadata_path2) as metadata:
+        ddl = metadata.read()
+        # If checksums for the first part of the files are equal only the diff will be written
+        assert ddl == ", non_replicated_deduplication_window = 0"
+
+
 def test_increment_backup_without_changes():
     backup_name = new_backup_name()
     incremental_backup_name = new_backup_name()
@@ -299,6 +446,7 @@ def test_increment_backup_without_changes():
     assert backup_info.error == ""
     assert backup_info.num_files > 0
     assert backup_info.total_size > 0
+    assert backup_info.start_time < backup_info.end_time
     assert (
         0 < backup_info.num_entries and backup_info.num_entries <= backup_info.num_files
     )
@@ -316,14 +464,18 @@ def test_increment_backup_without_changes():
     assert backup2_info.error == ""
     assert backup2_info.num_files == backup_info.num_files
     assert backup2_info.total_size == backup_info.total_size
+    assert backup2_info.start_time > backup_info.end_time
+    assert backup2_info.start_time < backup2_info.end_time
     assert backup2_info.num_entries == 0
     assert backup2_info.uncompressed_size > 0
     assert backup2_info.compressed_size == backup2_info.uncompressed_size
 
     # restore the second backup
     # we expect to see all files in the meta info of the restore and a sum of uncompressed and compressed sizes
+    restore_query_id = uuid.uuid4().hex
     id_restore = instance.query(
-        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
+        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}",
+        query_id=restore_query_id,
     ).split("\t")[0]
 
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == TSV(
@@ -331,18 +483,27 @@ def test_increment_backup_without_changes():
     )
 
     restore_info = get_backup_info_from_system_backups(by_id=id_restore)
+    restore_events = get_events_for_query(restore_query_id)
 
     assert restore_info.status == "RESTORED"
     assert restore_info.error == ""
     assert restore_info.num_files == backup2_info.num_files
     assert restore_info.total_size == backup2_info.total_size
     assert restore_info.num_entries == backup2_info.num_entries
+    assert restore_info.start_time < restore_info.end_time
     assert restore_info.uncompressed_size == backup2_info.uncompressed_size
     assert restore_info.compressed_size == backup2_info.compressed_size
-    assert restore_info.files_read == backup2_info.num_files
-    assert restore_info.bytes_read == backup2_info.total_size
+    assert (
+        restore_info.files_read + restore_events["RestorePartsSkippedFiles"]
+        == backup2_info.num_files
+    )
+    assert (
+        restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"]
+        == backup2_info.total_size
+    )
 
 
+@pytest.mark.timeout(1800)
 def test_incremental_backup_overflow():
     if (
         instance.is_built_with_thread_sanitizer()
@@ -360,10 +521,11 @@ def test_incremental_backup_overflow():
     )
     # Create a column of 4GB+10K
     instance.query(
-        "INSERT INTO test.table SELECT toString(repeat('A', 1024)) FROM numbers((4*1024*1024)+10)"
+        "INSERT INTO test.table SELECT toString(repeat('A', 1024)) FROM numbers((4*1024*1024)+10)",
+        timeout=600,
     )
     # Force one part
-    instance.query("OPTIMIZE TABLE test.table FINAL")
+    instance.query("OPTIMIZE TABLE test.table FINAL", timeout=600)
 
     # ensure that the column's size on disk is indeed greater then 4GB
     assert (
@@ -622,12 +784,10 @@ def test_zip_archive_with_bad_compression_method():
 
     expected_error = "Unknown compression method specified for a zip archive"
     assert expected_error in instance.query_and_get_error(
-        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='archive_with_bad_compression_method', compression_method='foobar'"
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{id}', compression_method='foobar'"
     )
     assert (
-        instance.query(
-            "SELECT status FROM system.backups WHERE id='archive_with_bad_compression_method'"
-        )
+        instance.query(f"SELECT status FROM system.backups WHERE id='{id}'")
         == "BACKUP_FAILED\n"
     )
 
@@ -744,12 +904,10 @@ def test_tar_archive_with_password():
 
     expected_error = "Setting a password is not currently supported for libarchive"
     assert expected_error in instance.query_and_get_error(
-        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='tar_archive_with_password', password='password123'"
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{id}', password='password123'"
     )
     assert (
-        instance.query(
-            "SELECT status FROM system.backups WHERE id='tar_archive_with_password'"
-        )
+        instance.query(f"SELECT status FROM system.backups WHERE id='{id}'")
         == "BACKUP_FAILED\n"
     )
 
@@ -763,12 +921,10 @@ def test_tar_archive_with_bad_compression_method():
 
     expected_error = "Using compression_method and compression_level options are not supported for tar archives"
     assert expected_error in instance.query_and_get_error(
-        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='tar_archive_with_bad_compression_method', compression_method='foobar'"
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{id}', compression_method='foobar'"
     )
     assert (
-        instance.query(
-            "SELECT status FROM system.backups WHERE id='tar_archive_with_bad_compression_method'"
-        )
+        instance.query(f"SELECT status FROM system.backups WHERE id='{id}'")
         == "BACKUP_FAILED\n"
     )
 
@@ -973,6 +1129,66 @@ def test_materialized_view_with_target_table():
     assert instance.query("SELECT * FROM test.view ORDER BY x") == TSV(
         [["a", 990], ["b", 991]]
     )
+
+
+def test_skip_rmv_backup():
+    size = 100
+    create_and_fill_table(n=size)
+    instance.query(
+        "CREATE TABLE test.target(x Int64) ENGINE=MergeTree ORDER BY tuple()"
+    )
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.view REFRESH EVERY 6 HOURS TO test.target AS SELECT x FROM test.table"
+    )
+
+    backup_name = new_backup_name()
+    backup_settings = {"backup_data_from_refreshable_materialized_view_targets": False}
+
+    instance.query(
+        f"BACKUP DATABASE test TO {backup_name} {format_settings(backup_settings)}"
+    )
+
+    assert not os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            f"data/test/target/",
+        )
+    )
+
+    instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
+    instance.query("SYSTEM REFRESH VIEW restored.view")
+    instance.query("SYSTEM WAIT VIEW restored.view")
+
+    assert int(instance.query(f"SELECT count(*) FROM restored.target")) == size
+
+
+def test_rmv_append_backup():
+    size = 100
+    create_and_fill_table(n=size)
+    instance.query(
+        "CREATE TABLE test.target(x Int64) ENGINE=MergeTree ORDER BY tuple()"
+    )
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.view REFRESH EVERY 6 HOURS APPEND TO test.target AS SELECT x FROM test.table"
+    )
+    instance.query("SYSTEM REFRESH VIEW test.view")
+    instance.query("SYSTEM WAIT VIEW test.view")
+
+    backup_name = new_backup_name()
+    backup_settings = {"backup_data_from_refreshable_materialized_view_targets": False}
+
+    instance.query(
+        f"BACKUP DATABASE test TO {backup_name} {format_settings(backup_settings)}"
+    )
+    assert os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            f"data/test/target/",
+        )
+    )
+    instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
+
+    assert int(instance.query(f"SELECT count(*) FROM restored.target")) >= size
 
 
 def test_temporary_table():
@@ -1220,9 +1436,14 @@ def test_system_users_required_privileges():
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")
 
-    expected_error = (
-        "necessary to have the grant CREATE USER, CREATE ROLE, ROLE ADMIN ON *.*"
+    expected_error = "necessary to have the grant ROLE ADMIN ON *.*"
+    assert expected_error in instance.query_and_get_error(
+        f"RESTORE ALL FROM {backup_name}", user="u2"
     )
+
+    instance.query("GRANT ROLE ADMIN ON *.* TO u2")
+
+    expected_error = "necessary to have the grant CREATE ROLE ON r1"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u2"
     )
@@ -1382,7 +1603,7 @@ def test_restore_table_not_evaluate_table_defaults():
     )
 
     # INSERT needs dictionary `test2.dict` and it will cause loading it.
-    error = "necessary to have the grant SELECT(key, value) ON test2.src"  # User `u1` has no privileges for reading `test2.src`
+    error = "necessary to have the grant SELECT ON test2.src"  # User `u1` has no privileges for reading `test2.src`
     assert error in instance.query_and_get_error(
         "INSERT INTO test2.tbl (a, b) SELECT number, number + 1 FROM numbers(5, 5)"
     )
@@ -1521,6 +1742,10 @@ def test_backup_all(exclude_system_log_tables):
             "asynchronous_insert_log",
             "backup_log",
             "error_log",
+            "blob_storage_log",
+            "aggregated_zookeeper_log",
+            "zookeeper_connection_log",
+            "background_schedule_pool_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 
@@ -1560,48 +1785,88 @@ def test_backup_all(exclude_system_log_tables):
     instance.query("DROP USER u1")
 
 
+@pytest.mark.parametrize("include_database_name", [False, True])
+def test_backup_database_except(include_database_name):
+    create_and_fill_table()
+
+    session_id = new_session_id()
+    instance.query(
+        "CREATE TABLE test.omit_table (s String) ENGINE = MergeTree ORDER BY s",
+    )
+
+    omit_table_name = "test.omit_table" if include_database_name else "omit_table"
+    backup_name = new_backup_name()
+    backup_command = (
+        f"BACKUP DATABASE test EXCEPT TABLES {omit_table_name} TO {backup_name}"
+    )
+
+    instance.http_query(backup_command, params={"session_id": session_id})
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP TABLE test.omit_table")
+
+    restore_command = f"RESTORE ALL FROM {backup_name}"
+
+    session_id = new_session_id()
+    instance.http_query(
+        restore_command, params={"session_id": session_id}, method="POST"
+    )
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    assert instance.query("EXISTS TABLE test.omit_table") == "0\n"
+
+    instance.query("DROP TABLE test.table")
+
+
 def test_operation_id():
     create_and_fill_table(n=30)
 
     backup_name = new_backup_name()
 
+    first_id = uuid.uuid4().hex
+
     [id, status] = instance.query(
-        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='first' ASYNC"
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{first_id}' ASYNC"
     ).split("\t")
 
-    assert id == "first"
+    assert id == first_id
     assert status == "CREATING_BACKUP\n" or status == "BACKUP_CREATED\n"
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE id='first'",
+        f"SELECT status, error FROM system.backups WHERE id='{first_id}'",
         TSV([["BACKUP_CREATED", ""]]),
     )
 
     instance.query("DROP TABLE test.table")
 
+    second_id = uuid.uuid4().hex
+
     [id, status] = instance.query(
-        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='second' ASYNC"
+        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='{second_id}' ASYNC"
     ).split("\t")
 
-    assert id == "second"
+    assert id == second_id
     assert status == "RESTORING\n" or status == "RESTORED\n"
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE id='second'",
+        f"SELECT status, error FROM system.backups WHERE id='{second_id}'",
         TSV([["RESTORED", ""]]),
     )
 
-    # Reuse the same ID again
-    instance.query("DROP TABLE test.table")
+    other_backup_name = new_backup_name()
 
-    [id, status] = instance.query(
-        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='first'"
-    ).split("\t")
+    # It is not allowed to use the same ID again.
+    expected_error = "there is another restore with the same ID"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE test.table TO {other_backup_name} SETTINGS id='{second_id}'"
+    )
 
-    assert id == "first"
-    assert status == "RESTORED\n"
+    # system.backups still keeps information about the previous operation.
+    assert instance.query(
+        f"SELECT status, error FROM system.backups WHERE id='{second_id}'"
+    ) == TSV([["RESTORED", ""]])
 
 
 def test_system_backups():
@@ -1618,6 +1883,7 @@ def test_system_backups():
     assert info.error == ""
     assert info.num_files > 0
     assert info.total_size > 0
+    assert info.start_time < info.end_time
     assert 0 < info.num_entries and info.num_entries <= info.num_files
     assert info.uncompressed_size > 0
     assert info.compressed_size == info.uncompressed_size
@@ -1639,19 +1905,31 @@ def test_system_backups():
     instance.query("DROP TABLE test.table")
 
     # Restore
-    id = instance.query(f"RESTORE TABLE test.table FROM {backup_name}").split("\t")[0]
-    restore_info = get_backup_info_from_system_backups(by_id=id)
+    restore_query_id = uuid.uuid4().hex
+    id = instance.query(
+        f"RESTORE TABLE test.table FROM {backup_name}", query_id=restore_query_id
+    ).split("\t")[0]
 
-    assert restore_info.name == escaped_backup_name
-    assert restore_info.status == "RESTORED"
-    assert restore_info.error == ""
-    assert restore_info.num_files == info.num_files
-    assert restore_info.total_size == info.total_size
-    assert restore_info.num_entries == info.num_entries
-    assert restore_info.uncompressed_size == info.uncompressed_size
-    assert restore_info.compressed_size == info.compressed_size
-    assert restore_info.files_read == restore_info.num_files
-    assert restore_info.bytes_read == restore_info.total_size
+    def verify_restore_info():
+        restore_info = get_backup_info_from_system_backups(by_id=id)
+        restore_events = get_events_for_query(restore_query_id)
+        return (
+            restore_info.name == escaped_backup_name
+            and restore_info.status == "RESTORED"
+            and restore_info.error == ""
+            and restore_info.start_time < restore_info.end_time
+            and restore_info.num_files == info.num_files
+            and restore_info.total_size == info.total_size
+            and restore_info.num_entries == info.num_entries
+            and restore_info.uncompressed_size == info.uncompressed_size
+            and restore_info.compressed_size == info.compressed_size
+            and restore_info.files_read + restore_events["RestorePartsSkippedFiles"]
+            == restore_info.num_files
+            and restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"]
+            == restore_info.total_size
+        )
+
+    wait_condition(verify_restore_info, lambda x: x)
 
     # Failed backup.
     backup_name = new_backup_name()
@@ -1685,12 +1963,22 @@ def test_mutation():
         "INSERT INTO test.table SELECT number, toString(number) FROM numbers(10, 5)"
     )
 
+    # Complete the first mutation synchronously so it's fully applied to all parts.
+    instance.query(
+        "ALTER TABLE test.table UPDATE x=x+1 WHERE 1 SETTINGS mutations_sync=1"
+    )
+
+    # Stop merges to prevent subsequent mutations from being applied,
+    # ensuring they remain pending and deterministically appear in the backup.
+    instance.query("SYSTEM STOP MERGES test.table")
+
     instance.query("ALTER TABLE test.table UPDATE x=x+1 WHERE 1")
-    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(3) WHERE 1")
-    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(3) WHERE 1")
+    instance.query("ALTER TABLE test.table UPDATE x=x+1 WHERE 1")
 
     backup_name = new_backup_name()
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("SYSTEM START MERGES test.table")
 
     assert not has_mutation_in_backup("0000000004", backup_name, "test", "table")
     assert has_mutation_in_backup("0000000005", backup_name, "test", "table")
@@ -1834,15 +2122,64 @@ def test_tables_dependency():
         f"Table {t14} has 1 dependencies: {t2} (level 1)",
         f"Table {t15} has no dependencies (level 0)",
     ]
+    log_content = instance.grep_in_log("BackupMetadataFinder:")
     for expect in expect_in_logs:
         assert any(
-            [
-                instance.contains_in_log(f"RestorerFromBackup: {x}")
-                for x in tuple(expect)
-            ]
-        )
+            f"BackupMetadataFinder: {x}" in log_content for x in tuple(expect)
+        ), f"Expected one of {tuple(expect)} in log, but not found"
 
     drop()
+
+
+def test_required_privileges_with_partial_revokes():
+    backup_name = new_backup_name()
+    instance.query("CREATE USER u1")
+    instance.query("GRANT SELECT ON *.* TO u1")
+    instance.query("REVOKE SELECT ON system.zookeeper* FROM u1")
+    instance.query("REVOKE SELECT ON foo.* FROM u1")
+
+    instance.query(f"BACKUP TABLE system.users TO {backup_name}")
+    instance.query("DROP USER u1")
+
+    instance.query("CREATE USER u2")
+    instance.query("GRANT SELECT ON *.* TO u2 WITH GRANT OPTION")
+    instance.query("GRANT CREATE USER ON *.* TO u2")
+    instance.query("REVOKE SELECT ON system.zookeeper* FROM u2")
+    instance.query("REVOKE SELECT ON foo.* FROM u2")
+
+    instance.query(f"RESTORE ALL FROM {backup_name}", user="u2")
+    instance.query("DROP USER u1")
+
+    instance.query("REVOKE SELECT ON f* FROM u2")
+    # To restore the backup we should have the SELECT permission on any table except system.zookeeper* and foo.*, but now we don't have it on f*.
+    assert "Not enough privileges" in instance.query_and_get_error(
+        f"RESTORE ALL FROM {backup_name}", user="u2"
+    )
+
+
+def test_rmv_no_definer():
+    backup_name = new_backup_name()
+    instance.query("CREATE DATABASE test")
+    instance.query("CREATE USER u1")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO u1")
+    instance.query("CREATE TABLE test.src (x UInt64) ENGINE = MergeTree ORDER BY x")
+    instance.query("CREATE TABLE test.tgt (x UInt64) ENGINE = MergeTree ORDER BY x")
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 6 HOUR TO test.tgt (id UInt64) DEFINER = u1 SQL SECURITY DEFINER AS SELECT * FROM test.src"
+    )
+
+    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    instance.query("DROP TABLE test.rmv")
+    instance.query("DROP USER u1")
+
+    instance.query(f"RESTORE ALL FROM {backup_name}")
+
+    assert (
+        instance.query(
+            "SELECT name FROM system.tables where database='test' AND name='rmv'"
+        ).strip()
+        == "rmv"
+    )
 
 
 # Test for the "clickhouse_backupview" utility.
@@ -1859,3 +2196,112 @@ def test_backupview():
     if instance.is_built_with_sanitizer():
         return  # This test is actually for clickhouse_backupview, not for ClickHouse itself.
     test_backupview_module.test_backupview_1()
+
+
+@pytest.mark.parametrize(
+    "engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"]
+)
+def test_restore_table_with_checksum_data_file_name(engine):
+    backup_name = new_backup_name()
+    create_and_fill_table(engine=engine)
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS data_file_name_generator='checksum'"
+    )
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_incremental_backup_with_checksum_data_file_name():
+    backup_name = new_backup_name()
+    incremental_backup_name = new_backup_name()
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS data_file_name_generator='checksum'"
+    )
+
+    instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "102\t5081\n"
+    instance.query(
+        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}, data_file_name_generator='checksum'"
+    )
+
+    instance.query(
+        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
+    )
+    assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
+
+
+def test_async_backup_restore_with_max_execution_time_zero():
+    """
+    Regression test: async BACKUP/RESTORE with max_execution_time = 0 in query SETTINGS
+    was incorrectly cancelled by the max_execution_time from the user's profile, even when
+    the query explicitly set max_execution_time = 0 to disable the timeout.
+
+    Root cause: QueryStatus cached limits.max_execution_time at construction time from the
+    original query settings (profile value). BackupsWorker called applySettingsChanges()
+    to apply BACKUP/RESTORE SETTINGS, updating the context — but not the cached
+    ProcessListElement, so the old profile-level timeout still fired via checkTimeLimit().
+    CancellationChecker was also registered with the old timeout at insert time.
+
+    The test uses a PAUSEABLE_ONCE failpoint to stall the background task long enough
+    for the profile-level timeout (500ms) to fire, which reliably triggers the bug.
+    The instance_with_short_timeout node has max_execution_time = 0.5 in its default profile.
+    """
+    import time
+
+    inst = instance_with_short_timeout
+    backup_name = new_backup_name()
+    inst.query("CREATE DATABASE IF NOT EXISTS test")
+    inst.query("CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x%10")
+    inst.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)")
+
+    try:
+        # Pause backup before it starts so the 500ms profile-level timeout fires.
+        inst.query("SYSTEM ENABLE FAILPOINT backup_pause_on_start")
+        [backup_id, _] = inst.query(
+            f"BACKUP TABLE test.table TO {backup_name}"
+            " SETTINGS async = 1, max_execution_time = 0",
+        ).split("\t")
+
+        inst.query("SYSTEM WAIT FAILPOINT backup_pause_on_start PAUSE")
+        time.sleep(0.7)  # exceed the 500ms profile-level timeout
+        inst.query("SYSTEM NOTIFY FAILPOINT backup_pause_on_start")
+
+        assert_eq_with_retry(
+            inst,
+            f"SELECT status, error FROM system.backups WHERE id='{backup_id}'",
+            TSV([["BACKUP_CREATED", ""]]),
+        )
+
+        # Same for RESTORE.
+        inst.query("DROP TABLE test.table")
+        inst.query("SYSTEM ENABLE FAILPOINT restore_pause_on_start")
+        [restore_id, _] = inst.query(
+            f"RESTORE TABLE test.table FROM {backup_name}"
+            " SETTINGS async = 1, max_execution_time = 0",
+        ).split("\t")
+
+        inst.query("SYSTEM WAIT FAILPOINT restore_pause_on_start PAUSE")
+        time.sleep(0.7)
+        inst.query("SYSTEM NOTIFY FAILPOINT restore_pause_on_start")
+
+        assert_eq_with_retry(
+            inst,
+            f"SELECT status, error FROM system.backups WHERE id='{restore_id}'",
+            TSV([["RESTORED", ""]]),
+        )
+
+        assert inst.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    finally:
+        inst.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
+        inst.query("SYSTEM DISABLE FAILPOINT restore_pause_on_start")
+        inst.query("DROP DATABASE IF EXISTS test")

@@ -1,5 +1,7 @@
 #include <Storages/IMessageProducer.h>
 #include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -22,7 +24,7 @@ void AsynchronousMessageProducer::start(const ContextPtr & context)
         throw;
     }
 
-    producing_task = context->getSchedulePool().createTask(getProducingTaskName(), [this]
+    producing_task = context->getSchedulePool().createTask(StorageID::createEmpty(), getProducingTaskName(), [this]
     {
         LOG_TEST(log, "Starting producing task loop");
 

@@ -1,11 +1,13 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <BridgeHelper/LibraryBridgeHelper.h>
+#include <Core/Block.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Interpreters/Context_fwd.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
-#include <BridgeHelper/LibraryBridgeHelper.h>
-#include <QueryPipeline/QueryPipeline.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -42,7 +44,7 @@ public:
 
     QueryPipeline loadAll();
 
-    QueryPipeline loadIds(const std::vector<uint64_t> & ids);
+    QueryPipeline loadIds(const VectorWithMemoryTracking<uint64_t> & ids);
 
     QueryPipeline loadKeys(const Block & requested_block);
 

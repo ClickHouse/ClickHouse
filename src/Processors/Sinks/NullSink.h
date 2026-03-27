@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/ISink.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -8,7 +9,7 @@ namespace DB
 class NullSink : public ISink
 {
 public:
-    explicit NullSink(Block header) : ISink(std::move(header)) {}
+    explicit NullSink(SharedHeader header) : ISink(std::move(header)) {}
     String getName() const override { return "NullSink"; }
 
     Status prepare() override

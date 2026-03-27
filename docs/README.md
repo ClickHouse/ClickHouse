@@ -36,9 +36,9 @@ Writing the docs is extremely useful for project's users and developers, and gro
 
 ## What is the ClickHouse Documentation
 
-The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most actual. All other languages are supported as much as they can by contributors from different countries.
+The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most current. All other languages are supported by contributors from different countries as much as possible.
 
-At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, and Chinese. We store the reference documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs), and user guides in a separate repo [Clickhouse/clickhouse-docs](https://github.com/ClickHouse/clickhouse-docs).
+At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, and Chinese. We store the reference documentation alongside the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs), and user guides in a separate repo [ClickHouse/clickhouse-docs](https://github.com/ClickHouse/clickhouse-docs).
 
 To get the latter launch the `get-clickhouse-docs.sh` script.
 
@@ -60,7 +60,7 @@ You can contribute to the documentation in many ways, for example:
 
     When you are saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper automatic checks applying. If you have no permissions for adding labels, the reviewer of your PR adds it.
 
-Contribute all new information in English language. Other languages are translations from English.
+Contribute all new information in English. Other languages are translations from English.
 
 <a name="markdown-cheatsheet"/>
 
@@ -106,7 +106,7 @@ Contribute all new information in English language. Other languages are translat
         4 spaces indented text.
     ```
 
-- Text hidden behind a cut (single sting that opens on click):
+- Text hidden behind a cut (single string that opens on click):
 
     ```text
     <details markdown="1"> <summary>Visible text</summary>
@@ -207,4 +207,4 @@ Templates:
 
 ## How to Build Documentation
 
-You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contrib-writing-guide.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.
+You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/contrib-writing-guide.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.

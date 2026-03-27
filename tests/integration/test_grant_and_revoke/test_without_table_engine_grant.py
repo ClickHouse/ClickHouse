@@ -38,7 +38,7 @@ def test_table_engine_and_source_grant():
     instance.query("CREATE USER A")
     instance.query("GRANT CREATE TABLE ON test.table1 TO A")
 
-    instance.query("GRANT POSTGRES ON *.* TO A")
+    instance.query("GRANT READ, WRITE ON POSTGRES TO A")
 
     instance.query(
         """
@@ -50,7 +50,7 @@ def test_table_engine_and_source_grant():
 
     instance.query("DROP TABLE test.table1")
 
-    instance.query("REVOKE POSTGRES ON *.* FROM A")
+    instance.query("REVOKE READ, WRITE ON POSTGRES FROM A")
 
     assert "Not enough privileges" in instance.query_and_get_error(
         """
@@ -62,7 +62,7 @@ def test_table_engine_and_source_grant():
 
     # expecting grant POSTGRES instead of grant PostgreSQL due to discrepancy between source access type and table engine
     # similarily, other sources should also use their own defined name instead of the name of table engine
-    assert "grant POSTGRES ON *.*" in instance.query_and_get_error(
+    assert "grant TABLE ENGINE ON PostgreSQL" in instance.query_and_get_error(
         """
         CREATE TABLE test.table1(a Integer)
         engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
@@ -81,3 +81,22 @@ def test_table_engine_and_source_grant():
     )
 
     instance.query("DROP TABLE test.table1")
+
+
+
+def test_create_database_does_not_require_table_engine_grant():
+    # Regression test for PR #98984: `CREATE DATABASE` must not require `TABLE ENGINE` grants
+    # even when `table_engines_require_grant = false`. Database engines (e.g. `Atomic`) are not
+    # table engines. Before the fix, `getAllStorages()` incorrectly included database engines in
+    # the grant check, so `ACCESS_DENIED` was raised despite the setting being disabled.
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE DATABASE ON *.* TO A")
+
+    # `CREATE DATABASE` with the default engine must succeed.
+    instance.query("CREATE DATABASE test_user_db", user="A")
+    instance.query("DROP DATABASE test_user_db")
+
+    # Explicitly specifying `Atomic` must also succeed — it is a database engine, not a table engine.
+    instance.query("CREATE DATABASE test_user_db ENGINE = Atomic", user="A")
+    instance.query("DROP DATABASE test_user_db")

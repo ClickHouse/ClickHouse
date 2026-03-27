@@ -11,7 +11,6 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
 
@@ -40,7 +39,7 @@ void backupUserDefinedSQLObjects(
     backup_entries.reserve(objects.size());
     for (const auto & [object_name, create_object_query] : objects)
         backup_entries.emplace_back(
-            escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(queryToString(create_object_query)));
+            escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(create_object_query->formatWithSecretsOneLine()));
 
     auto context = backup_entries_collector.getContext();
     const auto & storage = context->getUserDefinedSQLObjectsStorage();

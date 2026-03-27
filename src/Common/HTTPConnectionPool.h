@@ -40,7 +40,7 @@ public:
     using ConnectionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
     /// can throw Poco::Net::Exception, DB::NetException, DB::Exception
-    virtual ConnectionPtr getConnection(const ConnectionTimeouts & timeouts) = 0;
+    virtual ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) = 0;
     virtual const Metrics & getMetrics() const = 0;
     virtual ~IHTTPConnectionPoolForEndpoint() = default;
 
@@ -67,6 +67,7 @@ public:
         size_t soft_limit = 100;
         size_t warning_limit = 1000;
         size_t store_limit = 10000;
+        size_t hard_limit = 25000;
 
         static constexpr size_t warning_step = 100;
     };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupInfo.h>
+#include <Common/SettingsChanges.h>
 #include <optional>
 
 
@@ -110,6 +111,13 @@ struct RestoreSettings
     /// If this flag is false then RESTORE will throw an exception in that case.
     bool skip_unresolved_access_dependencies = false;
 
+    /// If true, RESTORE will not fail when the backup contains users/roles with more permissions
+    /// than the restoring user is allowed to grant. Instead, the restored grants will be limited
+    /// to what the restoring user can grant (similar to GRANT CURRENT GRANTS).
+    /// This is useful for cloud environments where the restoring user may not have all the permissions
+    /// that were present in the original system.
+    bool restore_access_entities_with_current_grants = false;
+
     /// Try to update dependents of restored access entities.
     /// For example: if a backup contains a profile assigned to a user: `CREATE PROFILE p1; CREATE USER u1 SETTINGS PROFILE p1`
     /// and now we're restoring only profile `p1` and user `u1` already exists, then
@@ -125,6 +133,9 @@ struct RestoreSettings
 
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
+
+    /// Whether native copy is allowed for AzureBlobStorage
+    bool allow_azure_native_copy = true;
 
     /// Whether base backup from S3 should inherit credentials from the RESTORE query.
     bool use_same_s3_credentials_for_base_backup = false;
@@ -154,6 +165,9 @@ struct RestoreSettings
     /// UUID of the restore. If it's not set it will be generated randomly.
     /// This is used to generate coordination path and for concurrency check
     std::optional<UUID> restore_uuid;
+
+    /// Core settings specified in the query.
+    SettingsChanges core_settings;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

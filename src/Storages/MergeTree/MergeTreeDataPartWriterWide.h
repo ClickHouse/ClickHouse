@@ -19,6 +19,8 @@ using ColumnNameToMark = std::unordered_map<String, StreamsWithMarks>;
 /// Writes data part in wide format.
 class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
+    using Base = MergeTreeDataPartWriterOnDisk;
+
 public:
     MergeTreeDataPartWriterWide(
         const String & data_part_name_,
@@ -31,17 +33,23 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        const MergeTreeIndexGranularity & index_granularity);
+        MergeTreeIndexGranularityPtr index_granularity_,
+        WrittenOffsetSubstreams * written_offset_substreams_);
 
-    void write(const Block & block, const IColumn::Permutation * permutation) override;
+    void write(const Block & block, const IColumnPermutation * permutation) override;
 
+    void finalizeIndexGranularity() final;
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
 
     void finish(bool sync) final;
+    void cancel() noexcept override;
+
+    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
+
+    static ISerialization::EnumerateStreamsSettings getEnumerateSettings(const MergeTreeWriterSettings & settings);
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
@@ -55,14 +63,14 @@ private:
     void writeColumn(
         const NameAndTypePair & name_and_type,
         const IColumn & column,
-        WrittenOffsetColumns & offset_columns,
+        WrittenOffsetSubstreams & offset_substreams,
         const Granules & granules);
 
     /// Write single granule of one column.
     void writeSingleGranule(
         const NameAndTypePair & name_and_type,
         const IColumn & column,
-        WrittenOffsetColumns & offset_columns,
+        const WrittenOffsetSubstreams & offset_substreams,
         ISerialization::SerializeBinaryBulkStatePtr & serialization_state,
         ISerialization::SerializeBinaryBulkSettings & serialize_settings,
         const Granule & granule);
@@ -70,30 +78,24 @@ private:
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & name_and_type,
-        const ColumnPtr & column_sample,
-        WrittenOffsetColumns & offset_columns);
+        const WrittenOffsetSubstreams & offset_substreams);
 
     /// Write mark to disk using stream and rows count
-    void flushMarkToFile(
-        const StreamNameAndMark & stream_with_mark,
-        size_t rows_in_mark);
+    void flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark);
 
     /// Write mark for column taking offsets from column stream
     void writeSingleMark(
         const NameAndTypePair & name_and_type,
-        WrittenOffsetColumns & offset_columns,
+        const WrittenOffsetSubstreams & offset_substreams,
         size_t number_of_rows);
 
     void writeFinalMark(
         const NameAndTypePair & name_and_type,
-        WrittenOffsetColumns & offset_columns);
+        WrittenOffsetSubstreams & offset_substreams);
 
     void addStreams(
         const NameAndTypePair & name_and_type,
-        const ColumnPtr & column,
-        const ASTPtr & effective_codec_desc);
-
-    void initDynamicStreamsIfNeeded(const Block & block);
+        const ASTPtr & effective_codec_desc) override;
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -114,7 +116,10 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+
+    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
+        const WrittenOffsetSubstreams & offset_substreams) const;
     const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
@@ -143,9 +148,7 @@ private:
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
 
-    Block block_sample;
-
-    bool is_dynamic_streams_initialized = false;
+    String already_written_stream_holder;
 };
 
 }

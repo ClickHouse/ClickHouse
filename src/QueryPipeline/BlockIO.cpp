@@ -4,14 +4,18 @@
 namespace DB
 {
 
-namespace ErrorCodes
+void BlockIO::resetPipeline(bool cancel)
 {
-    extern const int QUERY_WAS_CANCELLED;
+    if (cancel)
+        pipeline.cancel();
+    /// May use storage that is protected by pipeline, so should be destroyed first
+    query_metadata_cache.reset();
+    pipeline.reset();
 }
 
 void BlockIO::reset()
 {
-    /** process_list_entry should be destroyed after in, after out and after pipeline,
+    /** process_list_entries should be destroyed after in, after out and after pipeline,
       *  since in, out and pipeline contain pointer to objects inside process_list_entry (query-level MemoryTracker for example),
       *  which could be used before destroying of in and out.
       *
@@ -21,8 +25,9 @@ void BlockIO::reset()
       */
     /// TODO simplify it all
 
-    pipeline.reset();
-    process_list_entry.reset();
+    releaseQuerySlot();
+    resetPipeline(/*cancel=*/false);
+    process_list_entries.clear();
 
     /// TODO Do we need also reset callbacks? In which order?
 }
@@ -35,11 +40,13 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) noexcept
     /// Explicitly reset fields, so everything is destructed in right order
     reset();
 
-    process_list_entry      = std::move(rhs.process_list_entry);
+    process_list_entries    = std::move(rhs.process_list_entries);
+    query_metadata_cache    = std::move(rhs.query_metadata_cache);
     pipeline                = std::move(rhs.pipeline);
 
-    finish_callback         = std::move(rhs.finish_callback);
-    exception_callback      = std::move(rhs.exception_callback);
+    finalize_query_pipeline = std::move(rhs.finalize_query_pipeline);
+    finish_callbacks        = std::move(rhs.finish_callbacks);
+    exception_callbacks     = std::move(rhs.exception_callbacks);
 
     null_format             = rhs.null_format;
 
@@ -51,51 +58,57 @@ BlockIO::~BlockIO()
     reset();
 }
 
-void BlockIO::onFinish()
+void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 {
-    if (finish_callback)
-        finish_callback(pipeline);
-
-    pipeline.reset();
+    releaseQuerySlot();
+    if (finalize_query_pipeline)
+    {
+        /// Keep the same teardown order as in resetPipeline:
+        query_metadata_cache.reset();
+        const QueryPipelineFinalizedInfo query_pipeline_finalized_info = finalize_query_pipeline(std::move(pipeline));
+        for (const auto & callback : finish_callbacks)
+            callback(query_pipeline_finalized_info, finish_time);
+    }
+    else
+        resetPipeline(/*cancel=*/false);
 }
 
-void BlockIO::onException()
+void BlockIO::onException(bool log_as_error)
 {
-    if (exception_callback)
-        exception_callback(/* log_error */ true);
+    releaseQuerySlot();
+    setAllDataSent();
 
-    pipeline.reset();
+    for (const auto & callback : exception_callbacks)
+        callback(log_as_error);
+
+    resetPipeline(/*cancel=*/true);
 }
 
 void BlockIO::onCancelOrConnectionLoss()
 {
-    /// Query was not finished gracefully, so we should call exception_callback
-    /// But we don't have a real exception
-    try
-    {
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled or a client has unexpectedly dropped the connection");
-    }
-    catch (...)
-    {
-        if (exception_callback)
-        {
-            exception_callback(/* log_error */ false);
-        }
-
-        /// destroy pipeline and write buffers with an exception context
-        pipeline.reset();
-    }
-
+    releaseQuerySlot();
+    resetPipeline(/*cancel=*/true);
 }
 
 void BlockIO::setAllDataSent() const
 {
     /// The following queries does not have process_list_entry:
-    /// - internal
     /// - SHOW PROCESSLIST
-    if (process_list_entry)
-        process_list_entry->getQueryStatus()->setAllDataSent();
+    for (const auto & entry : process_list_entries)
+    {
+        if (entry)
+            entry->getQueryStatus()->setAllDataSent();
+    }
 }
 
+void BlockIO::releaseQuerySlot() const
+{
+    /// If the query executed an external query, we need to release all query slots
+    for (const auto & entry : process_list_entries)
+    {
+        if (entry)
+            entry->getQueryStatus()->releaseQuerySlot();
+    }
+}
 
 }

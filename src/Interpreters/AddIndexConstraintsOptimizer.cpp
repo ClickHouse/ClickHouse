@@ -132,7 +132,7 @@ namespace
                             auto * helper_func = helper_ast->as<ASTFunction>();
                             helper_func->name = getReverseRelationMap().at(mostStrict(need_result, actual_result));
                             helper_func->arguments->children[index] = primary_key_ast->clone();
-                            result.insert(CNFQuery::AtomicFormula{atom.negative, helper_ast});
+                            result.insert(CNFQueryAtomicFormula{atom.negative, helper_ast});
                             return true;
                         }
                     }
@@ -173,7 +173,7 @@ void AddIndexConstraintsOptimizer::perform(CNFQuery & cnf_query)
     if (!and_group.empty())
     {
         CNFQuery::OrGroup new_or_group;
-        new_or_group.insert(CNFQuery::AtomicFormula{false, makeASTFunction("indexHint", TreeCNFConverter::fromCNF(CNFQuery(std::move(and_group))))});
+        new_or_group.insert(CNFQueryAtomicFormula{false, makeASTFunction("indexHint", TreeCNFConverter::fromCNF(CNFQuery(std::move(and_group))))});
         cnf_query.appendGroup(CNFQuery::AndGroup{new_or_group});
     }
 }

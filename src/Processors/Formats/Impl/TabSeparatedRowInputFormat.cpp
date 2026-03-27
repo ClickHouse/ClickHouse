@@ -1,6 +1,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
+#include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -10,8 +12,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
-#include <boost/range/adaptor/map.hpp>
-#include "Formats/FormatSettings.h"
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -35,7 +36,7 @@ static void checkForCarriageReturn(ReadBuffer & in)
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_,
     const Params & params_,
     bool with_names_,
@@ -47,7 +48,7 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::unique_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -63,7 +64,8 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
         with_types_,
         format_settings_,
         std::make_unique<TabSeparatedFormatReader>(*in_, format_settings_, is_raw),
-        format_settings_.tsv.try_detect_header)
+        format_settings_.tsv.try_detect_header,
+        format_settings_.tsv.allow_variable_number_of_columns)
     , buf(std::move(in_))
 {
 }
@@ -409,7 +411,7 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
             {
-                return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, std::move(params), with_names, with_types, is_raw, settings);
+                return std::make_shared<TabSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, is_raw, settings);
             });
         };
 

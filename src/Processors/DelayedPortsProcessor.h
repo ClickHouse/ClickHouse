@@ -1,8 +1,13 @@
 #pragma once
+
+#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
+
+#include <vector>
 
 namespace DB
 {
+class Block;
 
 /// Processor with N inputs and N outputs. Only moves data from i-th input to i-th output as is.
 /// Some ports are delayed. Delayed ports are processed after other outputs are all finished.
@@ -11,7 +16,7 @@ namespace DB
 class DelayedPortsProcessor final : public IProcessor
 {
 public:
-    DelayedPortsProcessor(const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty = false);
+    DelayedPortsProcessor(SharedHeader header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty = false);
 
     String getName() const override { return "DelayedPorts"; }
 

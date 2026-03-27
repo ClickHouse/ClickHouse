@@ -1,8 +1,13 @@
+#include <cstddef>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/Context.h>
+#include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -39,16 +44,18 @@ void MutatePlainMergeTreeTask::prepare()
         future_part,
         task_context);
 
-    storage.writePartLog(
-        PartLogElement::MUTATE_PART_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {});
-
     stopwatch = std::make_unique<Stopwatch>();
 
-    write_part_log = [this] (const ExecutionStatus & execution_status)
+    const auto & mutation_ids = merge_mutate_entry->mutation_ids;
+    chassert(!mutation_ids.empty());
+
+    storage.writePartLog(
+        PartLogElement::MUTATE_PART_START, {}, 0,
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, mutation_ids, {});
+
+    write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-        mutate_task.reset();
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,
@@ -57,7 +64,8 @@ void MutatePlainMergeTreeTask::prepare()
             new_part,
             future_part->parts,
             merge_list_entry.get(),
-            std::move(profile_counters_snapshot));
+            std::move(profile_counters_snapshot),
+            mutation_ids, {});
     };
 
     if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])
@@ -73,16 +81,22 @@ void MutatePlainMergeTreeTask::prepare()
             time(nullptr), task_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
+void MutatePlainMergeTreeTask::finish()
+{
+    if (merge_mutate_entry)
+        merge_mutate_entry->finalize();
+}
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
+    auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::executeStep");
     /// Metrics will be saved in the local profile_counters.
     ProfileEventsScope profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group);
+        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     switch (state)
     {
@@ -105,13 +119,21 @@ bool MutatePlainMergeTreeTask::executeStep()
                     data_part_storage.precommitTransaction();
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
-                /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, transaction, /*rename_in_transaction=*/ true);
-                transaction.renameParts();
-                transaction.commit();
+                /// Hold data_parts_lock across both renameTempPartAndReplace and commit to prevent
+                /// a race with REPLACE PARTITION. Without this, there is a window where the mutation
+                /// result is PreActive (not yet committed): REPLACE PARTITION's
+                /// removePartsInRangeFromWorkingSet only removes Active parts and misses the PreActive
+                /// mutation result. After REPLACE releases the lock, the mutation's commit promotes
+                /// the PreActive part to Active, "resurrecting" old data.
+                {
+                    auto lock = storage.lockParts();
+                    storage.renameTempPartAndReplaceUnlocked(new_part, transaction, lock, /*rename_in_transaction=*/ false);
+                    transaction.commit(lock);
+                }
 
-                storage.updateMutationEntriesErrors(future_part, true, "");
+                storage.updateMutationEntriesErrors(future_part, true, "", "");
                 mutate_task->updateProfileEvents();
+
                 write_part_log({});
 
                 state = State::NEED_FINISH;
@@ -123,16 +145,18 @@ bool MutatePlainMergeTreeTask::executeStep()
                     merge_mutate_entry->txn->onException();
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
                 LOG_ERROR(getLogger("MutatePlainMergeTreeTask"), exception_message);
-                storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
+                String error_code_name(ErrorCodes::getName(getCurrentExceptionCode()));
+                storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
                 mutate_task->updateProfileEvents();
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 tryLogCurrentException(__PRETTY_FUNCTION__);
-                return false;
+                throw;
             }
         }
         case State::NEED_FINISH:
         {
             // Nothing to do
+            finish();
             state = State::SUCCESS;
             return false;
         }
@@ -145,13 +169,31 @@ bool MutatePlainMergeTreeTask::executeStep()
     return false;
 }
 
+void MutatePlainMergeTreeTask::cancel() noexcept
+{
+    auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::cancel");
+    if (mutate_task)
+        mutate_task->cancel();
+
+    if (new_part)
+        new_part->removeIfNeeded();
+
+    /// We need to destroy task here because it holds RAII wrapper for
+    /// temp directories which guards temporary dir from background removal which can
+    /// conflict with the next scheduled merge because it will be possible after merge_mutate_entry->finalize()
+    mutate_task.reset();
+
+    if (merge_mutate_entry)
+        merge_mutate_entry->finalize();
+}
+
+
 ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
-    auto context = Context::createCopy(storage.getContext());
+    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
     context->makeQueryContextForMutate(*storage.getSettings());
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
-    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
     return context;
 }
 

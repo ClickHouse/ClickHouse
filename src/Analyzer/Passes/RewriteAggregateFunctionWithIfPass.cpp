@@ -1,22 +1,19 @@
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Core/Settings.h>
 
 #include <Functions/FunctionFactory.h>
 
-#include <Interpreters/Context.h>
-
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
+
 
 namespace DB
 {
@@ -75,8 +72,8 @@ public:
 
                 QueryTreeNodes new_arguments{2};
 
-                /// We need to preserve the output type from if()
-                if (if_arguments_nodes[1]->getResultType()->getName() != if_node->getResultType()->getName())
+                /// We need to preserve the output type from if(). Notice that the return type of count() is the same either way
+                if (if_arguments_nodes[1]->getResultType()->getName() != if_node->getResultType()->getName() && lower_name != "count")
                     new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[1]), if_node->getResultType(), getContext());
                 else
                     new_arguments[0] = std::move(if_arguments_nodes[1]);
@@ -102,12 +99,14 @@ public:
 
                 QueryTreeNodes new_arguments{2};
 
-                if (if_arguments_nodes[2]->getResultType()->getName() != if_node->getResultType()->getName())
+                /// We need to preserve the output type from if(). Notice that the return type of count() is the same either way
+                if (if_arguments_nodes[2]->getResultType()->getName() != if_node->getResultType()->getName() && lower_name != "count")
                     new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[2]), if_node->getResultType(), getContext());
                 else
                     new_arguments[0] = std::move(if_arguments_nodes[2]);
 
                 auto not_function = std::make_shared<FunctionNode>("not");
+                not_function->markAsOperator();
                 auto & not_function_arguments = not_function->getArguments().getNodes();
                 not_function_arguments.push_back(std::move(if_arguments_nodes[0]));
                 not_function->resolveAsFunction(

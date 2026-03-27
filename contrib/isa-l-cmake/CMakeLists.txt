@@ -34,13 +34,9 @@ set(ISAL_C_SRC
         ${ISAL_SOURCE_DIR}/erasure_code/ec_base.c
         ${ISAL_SOURCE_DIR}/erasure_code/ec_base_aliases.c
         ${ISAL_SOURCE_DIR}/erasure_code/ec_highlevel_func.c
-        ${ISAL_SOURCE_DIR}/erasure_code/gen_rs_matrix_limits.c
-        ${ISAL_SOURCE_DIR}/erasure_code/gf_vect_dot_prod_1tbl.c
         ${ISAL_SOURCE_DIR}/igzip/adler32_base.c
         ${ISAL_SOURCE_DIR}/igzip/encode_df.c
         ${ISAL_SOURCE_DIR}/igzip/flatten_ll.c
-        ${ISAL_SOURCE_DIR}/igzip/generate_custom_hufftables.c
-        ${ISAL_SOURCE_DIR}/igzip/generate_static_inflate.c
         ${ISAL_SOURCE_DIR}/igzip/huff_codes.c
         ${ISAL_SOURCE_DIR}/igzip/hufftables_c.c
         ${ISAL_SOURCE_DIR}/igzip/igzip_base_aliases.c
@@ -51,7 +47,6 @@ set(ISAL_C_SRC
         ${ISAL_SOURCE_DIR}/igzip/igzip.c
         ${ISAL_SOURCE_DIR}/mem/mem_zero_detect_base_aliases.c
         ${ISAL_SOURCE_DIR}/mem/mem_zero_detect_base.c
-        ${ISAL_SOURCE_DIR}/programs/igzip_cli.c
         ${ISAL_SOURCE_DIR}/raid/raid_base_aliases.c
         ${ISAL_SOURCE_DIR}/raid/raid_base.c
 )
@@ -195,7 +190,7 @@ target_include_directories(_isal
 
 # Here must remove "-fno-sanitize=undefined" from COMPILE_OPTIONS.
 # Otherwise nasm compiler would fail to proceed due to unrecognition of "-fno-sanitize=undefined"
-if (SANITIZE STREQUAL "undefined")
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     get_target_property(target_options _isal COMPILE_OPTIONS)
     list(REMOVE_ITEM target_options "-fno-sanitize=undefined")
     set_property(TARGET _isal PROPERTY COMPILE_OPTIONS ${target_options})

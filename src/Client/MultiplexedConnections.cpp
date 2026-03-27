@@ -1,7 +1,9 @@
 #include <Client/MultiplexedConnections.h>
 
+#include <cmath>
 #include <Common/thread_local_rng.h>
 #include <Core/Protocol.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
@@ -18,6 +20,7 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsSeconds receive_timeout;
@@ -100,6 +103,21 @@ void MultiplexedConnections::sendScalarsData(Scalars & data)
     }
 }
 
+void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendQueryPlan(query_plan);
+    }
+}
+
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -128,7 +146,8 @@ void MultiplexedConnections::sendQuery(
     const String & query_id,
     UInt64 stage,
     ClientInfo & client_info,
-    bool with_pending_data)
+    bool with_pending_data,
+    const std::vector<String> & external_roles)
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -140,6 +159,24 @@ void MultiplexedConnections::sendQuery(
     /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
     modified_settings[Setting::dialect] = Dialect::clickhouse;
     modified_settings[Setting::dialect].changed = false;
+
+    /// Scale interactive_delay by sqrt(fanout) to reduce progress/profile event traffic
+    /// from distributed queries. Each remote server will send updates less frequently,
+    /// proportional to the square root of the total number of remote connections.
+    /// Also add per-connection jitter to avoid TCP incast and make the progress bar smooth.
+    {
+        size_t total_fanout = distributed_fanout * replica_states.size();
+        if (total_fanout > 1)
+        {
+            UInt64 delay = modified_settings[Setting::interactive_delay];
+            double scale = std::sqrt(static_cast<double>(total_fanout));
+            /// Add random jitter in range [1.0, 2.0) to desynchronize progress reports
+            /// across connections, avoiding TCP incast and making the progress bar smooth.
+            double jitter = 1.0 + (thread_local_rng() % 1000) / 1000.0;
+            delay = static_cast<UInt64>(std::ceil(static_cast<double>(delay) * scale * jitter));
+            modified_settings[Setting::interactive_delay] = delay;
+        }
+    }
 
     for (auto & replica : replica_states)
     {
@@ -169,6 +206,7 @@ void MultiplexedConnections::sendQuery(
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
+    chassert(num_replicas > 0);
     if (num_replicas > 1)
     {
         if (enable_offset_parallel_processing)
@@ -181,18 +219,19 @@ void MultiplexedConnections::sendQuery(
                 modified_settings[Setting::parallel_replica_offset] = i;
 
             replica_states[i].connection->sendQuery(
-                timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+                timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
         }
     }
     else
     {
         /// Use single replica.
         replica_states[0].connection->sendQuery(
-            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
     }
 
     sent_query = true;
 }
+
 
 void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {
@@ -210,12 +249,12 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
 }
 
 
-void MultiplexedConnections::sendReadTaskResponse(const String & response)
+void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    current_connection->sendReadTaskResponse(response);
+    current_connection->sendClusterFunctionReadTaskResponse(response);
 }
 
 
@@ -330,6 +369,36 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return buf.str();
 }
 
+UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_callback)
+{
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
+    if (!hasActiveConnections())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
+
+    ReplicaState & state = getReplicaForReading();
+    current_connection = state.connection;
+    if (current_connection == nullptr)
+        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "No available replica");
+
+    try
+    {
+        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
+        return current_connection->receivePacketType();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
+        {
+            /// Exception may happen when packet is received, e.g. when got unknown packet.
+            /// In this case, invalidate replica, so that we would not read from it anymore.
+            current_connection->disconnect();
+            invalidateReplica(state);
+        }
+        throw;
+    }
+}
+
 Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
     if (!sent_query)
@@ -345,7 +414,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     Packet packet;
     try
     {
-        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
         packet = current_connection->receivePacket();
     }
     catch (Exception & e)

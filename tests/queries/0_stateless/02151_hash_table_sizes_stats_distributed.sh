@@ -53,7 +53,7 @@ check_preallocated_elements() {
   $CLICKHOUSE_CLIENT --param_query_id="$1" -q "
     SELECT COUNT(*)
       FROM system.query_log
-     WHERE event_date >= yesterday() AND (query_id = {query_id:String} OR initial_query_id = {query_id:String})
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (query_id = {query_id:String} OR initial_query_id = {query_id:String})
            AND ProfileEvents['AggregationPreallocatedElementsInHashTables'] BETWEEN $2 AND $3
   GROUP BY query_id"
 }
@@ -63,7 +63,7 @@ check_convertion_to_two_level() {
   $CLICKHOUSE_CLIENT --param_query_id="$1" -q "
     SELECT SUM(ProfileEvents['AggregationHashTablesInitializedAsTwoLevel']) BETWEEN 1 AND $max_threads
       FROM system.query_log
-     WHERE event_date >= yesterday() AND (query_id = {query_id:String} OR initial_query_id = {query_id:String})
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (query_id = {query_id:String} OR initial_query_id = {query_id:String})
   GROUP BY query_id"
 }
 
@@ -75,7 +75,7 @@ print_border() {
 expected_results=()
 
 check_expectations() {
-  $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+  $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
   for i in "${!expected_results[@]}"; do
     read -a args <<< "${expected_results[$i]}"

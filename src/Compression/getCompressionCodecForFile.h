@@ -13,4 +13,8 @@ namespace DB
 /// from metadata.
 CompressionCodecPtr getCompressionCodecForFile(const IDataPartStorage & data_part_storage, const String & relative_path);
 
+/// Same as above which is used by clickhouse-compressor to print compression statistics of each data block.
+CompressionCodecPtr
+getCompressionCodecForFile(ReadBuffer & read_buffer, UInt32 & size_compressed, UInt32 & size_decompressed, bool skip_to_next_block);
+
 }

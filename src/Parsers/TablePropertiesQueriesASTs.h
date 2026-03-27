@@ -26,8 +26,7 @@ struct ASTExistsViewQueryIDAndQueryNames
 {
     static constexpr auto ID = "ExistsViewQuery";
     static constexpr auto Query = "EXISTS VIEW";
-    /// No temporary view are supported, just for parsing
-    static constexpr auto QueryTemporary = "";
+    static constexpr auto QueryTemporary = "EXISTS TEMPORARY VIEW";
 };
 
 
@@ -50,8 +49,7 @@ struct ASTShowCreateViewQueryIDAndQueryNames
 {
     static constexpr auto ID = "ShowCreateViewQuery";
     static constexpr auto Query = "SHOW CREATE VIEW";
-    /// No temporary view are supported, just for parsing
-    static constexpr auto QueryTemporary = "";
+    static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY VIEW";
 };
 
 struct ASTShowCreateDatabaseQueryIDAndQueryNames
@@ -88,18 +86,18 @@ class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDa
 public:
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTExistsDatabaseQuery>(*this);
+        auto res = make_intrusive<ASTExistsDatabaseQuery>(*this);
         res->children.clear();
         cloneTableOptions(*res);
         return res;
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
-                    << " " << (settings.hilite ? hilite_none : "");
-        database->formatImpl(settings, state, frame);
+        ostr << ASTExistsDatabaseQueryIDAndQueryNames::Query
+                    << " ";
+        database->format(ostr, settings, state, frame);
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Exists; }
@@ -110,18 +108,18 @@ class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShow
 public:
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTShowCreateDatabaseQuery>(*this);
+        auto res = make_intrusive<ASTShowCreateDatabaseQuery>(*this);
         res->children.clear();
         cloneTableOptions(*res);
         return res;
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
-                      << " " << (settings.hilite ? hilite_none : "");
-        database->formatImpl(settings, state, frame);
+        ostr << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
+                      << " ";
+        database->format(ostr, settings, state, frame);
     }
 };
 
@@ -134,7 +132,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTDescribeQuery>(*this);
+        auto res = make_intrusive<ASTDescribeQuery>(*this);
         res->children.clear();
         if (table_expression)
         {
@@ -148,11 +146,11 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Describe; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << "DESCRIBE TABLE" << (settings.hilite ? hilite_none : "");
-        table_expression->formatImpl(settings, state, frame);
+        ostr
+                      << "DESCRIBE TABLE";
+        table_expression->format(ostr, settings, state, frame);
     }
 
 };

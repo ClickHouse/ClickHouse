@@ -4,7 +4,6 @@
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
@@ -13,7 +12,6 @@
 #include <Interpreters/StorageID.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
-#include <list>
 #include <mutex>
 #include <atomic>
 
@@ -22,6 +20,8 @@ namespace CurrentMetrics
 {
     extern const Metric Merge;
 }
+
+class MemoryTracker;
 
 namespace DB
 {
@@ -106,6 +106,7 @@ struct MergeListElement : boost::noncopyable
     std::atomic<MergeAlgorithm> merge_algorithm;
 
     ThreadGroupPtr thread_group;
+    CurrentMetrics::Increment num_parts_metric_increment;
 
     MergeListElement(
         const StorageID & table_id_,
@@ -114,7 +115,7 @@ struct MergeListElement : boost::noncopyable
 
     MergeInfo getInfo() const;
 
-    const MemoryTracker & getMemoryTracker() const { return thread_group->memory_tracker; }
+    const MemoryTracker & getMemoryTracker() const;
 
     MergeListElement * ptr() { return this; }
 

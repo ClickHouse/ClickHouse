@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-azure-blob-storage, no-s3-storage
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-flaky-check, no-msan
+# Tag no-flaky-check -- not compatible with ThreadFuzzer
+# Tag no-msan -- too long for MSAN
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ENGINE="MergeTree"
 
 RUN_ONLY=""
-#RUN_ONLY="Test case 20: engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True"
+#RUN_ONLY="Test case 17: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False"
 
 i=0
 for insert_method in "InsertSelect" "InsertValues"; do

@@ -2,13 +2,9 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Field.h>
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
-#include <DataTypes/IDataType.h>
-#include <Functions/FunctionHelpers.h>
-#include <Common/Exception.h>
 
 #include "config.h"
 
@@ -23,19 +19,18 @@ namespace llvm
     class IRBuilderBase;
 }
 
+struct FunctionsStressTestThread;
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
+class IDataType;
+struct DataTypeWithConstInfo;
+using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
-/// A left-closed and right-open interval representing the preimage of a function.
-using FieldInterval = std::pair<Field, Field>;
-using OptionalFieldInterval = std::optional<FieldInterval>;
+class Field;
+struct FieldInterval;
+using FieldIntervalPtr = std::shared_ptr<FieldInterval>;
 
 /// The simplest executable object.
 /// Motivation:
@@ -45,6 +40,7 @@ using OptionalFieldInterval = std::optional<FieldInterval>;
 class IExecutableFunction
 {
 public:
+    IExecutableFunction();
 
     virtual ~IExecutableFunction() = default;
 
@@ -53,7 +49,12 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
+    /// Cancel current execution if possible
+    /// Method `execute` called from another thread should stop after this method is called and throw an exception.
+    virtual void cancelExecution() const {}
+
 protected:
+    friend struct ::FunctionsStressTestThread;
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
 
@@ -63,10 +64,15 @@ protected:
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
-      *  if some of arguments are NULL constants then return NULL constant,
+      *  if some of arguments are NULL constants then return NULL constant (the underlying function
+      *   may or may not be executed in this case),
       *  if some of arguments are Nullable, then execute function as usual for columns,
-      *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
+      *   where Nullable columns are substituted with nested columns,
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
+      * The underlying function may or may not be called for the rows containing NULLs. When called,
+      * arbitrary values are used instead of NULLs - whatever values happened to be in ColumnNullable's
+      * nested column; typically default values, but that's not guaranteed.
+      * So this only makes sense for functions that don't fail and don't have side effects.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
@@ -95,12 +101,27 @@ protected:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
+    /** If function arguments have replicated columns with the same indexes and all other arguments are constants, call function on nested columns.
+      * Otherwise, convert all replicated columns to ordinary columns.
+      */
+    virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
+
     /** Some arguments could remain constant during this implementation.
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
-    /** True if function can be called on default arguments (include Nullable's) and won't throw.
+    /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
+      *
+      * Useful when executing on LowCardinality dictionary, which contains default value even if
+      * none of the rows use it.
+      *
+      * *Not* useful when executing on Nullable columns. The value behind a NULL is
+      * not necessarily default. E.g.:
+      *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
+      *   ┌──x─┐
+      *   │ 42 │
+      *   └────┘
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
@@ -120,6 +141,12 @@ private:
 
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+
+    ColumnPtr executeWithoutReplicatedColumns(
+         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+
+    bool short_circuit_function_evaluation_for_nulls = false;
+    double short_circuit_function_evaluation_for_nulls_threshold = 0.0;
 };
 
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
@@ -137,25 +164,19 @@ public:
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        bool dry_run = false) const
-    {
-        checkFunctionArgumentSizes(arguments, input_rows_count);
-        return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
-    }
+        bool dry_run) const;
 
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    const Array & getParameters() const final
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IFunctionBase doesn't support getParameters method");
-    }
+    const Array & getParameters() const final;
 
     /// Do preparations and return executable.
     /// sample_columns should contain data types of arguments and values of constants, if relevant.
     virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
 #if USE_EMBEDDED_COMPILER
+    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     virtual bool isCompilable() const { return false; }
 
@@ -167,10 +188,7 @@ public:
       *       templates with default arguments is impossible and including LLVM in such a generic header
       *       as this one is a major pain.
       */
-    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
-    }
+    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/) const;
 
 #endif
 
@@ -184,7 +202,7 @@ public:
 
     /** If function isSuitableForConstantFolding then, this method will be called during query analysis
       * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
-      * return they result based on some constant arguments.
+      * return the result based on some constant arguments.
       * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForNothing,
       * useDefaultImplementationForConstants, useDefaultImplementationForLowCardinality are not applied.
       */
@@ -224,6 +242,10 @@ public:
       * Sometimes, functions are "deterministic" in scope of single query
       *  (even for distributed query), but not deterministic it general.
       * Example: now(). Another example: functions that work with periodically updated dictionaries.
+      *
+      * Also means that the function cannot return different values depending on
+      * the constness of arguments (same value, different constness => same result).
+      * Counterexamples: `isConstant`, `toColumnTypeName`.
       */
 
     virtual bool isDeterministic() const { return true; }
@@ -304,25 +326,23 @@ public:
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
       * NULL can be passed as one of the arguments. This means that the corresponding range is unlimited on the left or on the right.
       */
-    virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
-    }
+    virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const;
 
     /** Get the preimage of a function in the form of a left-closed and right-open interval. Call only if hasInformationAboutPreimage.
-      * std::nullopt might be returned if the point (a single value) is invalid for this function.
+      * nullptr might be returned if the point (a single value) is invalid for this function.
       */
-    virtual OptionalFieldInterval getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
-    }
-
+    virtual FieldIntervalPtr getPreimage(const IDataType & /*type*/, const Field & /*point*/) const;
 };
 
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 
 /** Creates IFunctionBase from argument types list (chooses one function overload).
+  * Warning: One instance of IFunctionOverloadResolver can only be used to resolve one overload.
+  *          To resolve a different overload, get a new IFunctionOverloadResolver from the factory.
+  *          Calling `build` again with different arguments will subtly break things in some cases.
+  *          TODO: Fix this. Known offenders are IFunction implementations with mutable fields,
+  *                e.g. see `mutable bool to_nullable` in FunctionsConversion.h
   */
 class IFunctionOverloadResolver : public std::enable_shared_from_this<IFunctionOverloadResolver>
 {
@@ -359,10 +379,7 @@ public:
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
     /// You pass data types with empty DataTypeFunction for lambda arguments.
     /// This function will replace it with DataTypeFunction containing actual types.
-    virtual void getLambdaArgumentTypesImpl(DataTypes & arguments [[maybe_unused]]) const
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} can't have lambda-expressions as arguments", getName());
-    }
+    virtual void getLambdaArgumentTypesImpl(DataTypes & arguments [[maybe_unused]]) const;
 
     /// Returns indexes of arguments, that must be ColumnConst
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
@@ -375,17 +392,16 @@ public:
     /// Function should implement this method if its result type doesn't depend on the arguments types.
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
+    /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
+    virtual bool allowsOmittingParentheses() const { return false; }
+
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
+
 protected:
 
-    virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "buildImpl is not implemented for {}", getName());
-    }
+    virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const;
 
-    virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
-    }
+    virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// This function will be called in default implementation. You can overload it or the previous one.
     virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
@@ -440,9 +456,17 @@ protected:
       */
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
 
-private:
+    /** If useDefaultImplementationForVariant() is true, then special FunctionBaseVariantAdaptor will be used
+     *  if function arguments has Variant column. This adaptor will build and execute this function for all
+     *  internal types inside Variant column separately and construct result based on results for these types.
+     *  The result will be Variant with the union of all variant types from arguments.
+     *
+     *  We cannot use default implementation for Variant if function doesn't use default implementation for NULLs,
+     *  because Variant column can contain NULLs and we should know how to process them.
+      */
+    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
+private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };
@@ -459,11 +483,19 @@ public:
 
     virtual String getName() const = 0;
 
+    /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
+    ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting
+    ///  getReturnTypeImpl sometimes; I didn't understand it. This only applies to conversion functions,
+    ///  not any IFunction. Are there other cases where getReturnTypeImpl result is not passed through?
+    ///  I don't know. If you know, consider documenting it here.)
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
     virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         return executeImpl(arguments, result_type, input_rows_count);
     }
+
+    /// Cancel current `executeImpl` execution if possible
+    virtual void cancelExecution() const {}
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
@@ -502,15 +534,19 @@ public:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
+    /** If function arguments have replicated columns with the same indexes and all other arguments are constants, call function on nested columns.
+      * Otherwise, convert all replicated columns to ordinary columns.
+      */
+    virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
+
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
-    /** True if function can be called on default arguments (include Nullable's) and won't throw.
-      * Counterexample: modulo(0, 0)
-      */
+    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
+
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /// Properties from IFunctionBase (see IFunction.h)
@@ -529,23 +565,17 @@ public:
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }
 
+    /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
+    virtual bool allowsOmittingParentheses() const { return false; }
+
     using Monotonicity = IFunctionBase::Monotonicity;
-    virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
-    }
-    virtual OptionalFieldInterval getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
-    }
+    virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const;
+    virtual FieldIntervalPtr getPreimage(const IDataType & /*type*/, const Field & /*point*/) const;
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     virtual size_t getNumberOfArguments() const = 0;
 
-    virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
-    }
+    virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
@@ -559,15 +589,13 @@ public:
 
     virtual bool isVariadic() const { return false; }
 
-    virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} can't have lambda-expressions as arguments", getName());
-    }
+    virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const;
 
     virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const { return {}; }
 
 
 #if USE_EMBEDDED_COMPILER
+    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     bool isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const;
 
@@ -581,10 +609,7 @@ protected:
 
     virtual bool isCompilableImpl(const DataTypes & /*arguments*/, const DataTypePtr & /*result_type*/) const { return false; }
 
-    virtual llvm::Value * compileImpl(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/, const DataTypePtr & /*result_type*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
-    }
+    virtual llvm::Value * compileImpl(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/, const DataTypePtr & /*result_type*/) const;
 
 #endif
 };

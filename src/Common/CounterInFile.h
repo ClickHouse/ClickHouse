@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -104,6 +105,7 @@ public:
                 wb.truncate(0);
                 DB::writeIntText(res, wb);
                 DB::writeChar('\n', wb);
+                wb.finalize();
                 wb.sync();
             }
 
@@ -176,6 +178,7 @@ public:
                 wb.truncate(0);
                 DB::writeIntText(value, wb);
                 DB::writeChar('\n', wb);
+                wb.finalize();
                 wb.sync();
             }
         }

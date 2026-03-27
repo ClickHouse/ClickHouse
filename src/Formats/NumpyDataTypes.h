@@ -1,8 +1,13 @@
 #pragma once
+
 #include <cstddef>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+
+
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -44,9 +49,9 @@ public:
     Endianness getEndianness() const { return endianness; }
 
     virtual NumpyDataTypeIndex getTypeIndex() const = 0;
-    virtual size_t getSize() const { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function getSize() is not implemented"); }
-    virtual void setSize(size_t) { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function setSize() is not implemented"); }
-    virtual String str() const { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function str() is not implemented"); }
+    virtual size_t getSize() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function getSize is not implemented"); }
+    virtual void setSize(size_t) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function setSize is not implemented"); }
+    virtual String str() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function str is not implemented"); }
 
 protected:
     Endianness endianness;
@@ -64,7 +69,7 @@ public:
             case 4: type_index = is_signed ? NumpyDataTypeIndex::Int32 : NumpyDataTypeIndex::UInt32; break;
             case 8: type_index = is_signed ? NumpyDataTypeIndex::Int64 : NumpyDataTypeIndex::UInt64; break;
             default:
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Incorrect int type with size {}", size);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect int type with size {}", size);
         }
     }
 
@@ -72,10 +77,11 @@ public:
     {
         return type_index;
     }
+    size_t getSize() const override { return size; }
     bool isSigned() const { return is_signed; }
     String str() const override
     {
-        DB::WriteBufferFromOwnString buf;
+        WriteBufferFromOwnString buf;
         writeChar(static_cast<char>(endianness), buf);
         writeChar(is_signed ? 'i' : 'u', buf);
         writeIntText(size, buf);
@@ -98,7 +104,7 @@ public:
             case 4: type_index = NumpyDataTypeIndex::Float32; break;
             case 8: type_index = NumpyDataTypeIndex::Float64; break;
             default:
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Numpy float type with size {} is not supported", size);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Numpy float type with size {} is not supported", size);
         }
     }
 
@@ -106,9 +112,10 @@ public:
     {
         return type_index;
     }
+    size_t getSize() const override { return size; }
     String str() const override
     {
-        DB::WriteBufferFromOwnString buf;
+        WriteBufferFromOwnString buf;
         writeChar(static_cast<char>(endianness), buf);
         writeChar('f', buf);
         writeIntText(size, buf);
@@ -131,7 +138,7 @@ public:
     void setSize(size_t size_) override { size = size_; }
     String str() const override
     {
-        DB::WriteBufferFromOwnString buf;
+        WriteBufferFromOwnString buf;
         writeChar(static_cast<char>(endianness), buf);
         writeChar('S', buf);
         writeIntText(size, buf);
@@ -146,6 +153,8 @@ class NumpyDataTypeUnicode : public NumpyDataType
 public:
     NumpyDataTypeUnicode(Endianness endianness_, size_t size_) : NumpyDataType(endianness_), size(size_)
     {
+        if (size > std::numeric_limits<size_t>::max() / 4)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Numpy Unicode element size {} is too large", size);
         type_index = NumpyDataTypeIndex::Unicode;
     }
 
@@ -154,3 +163,5 @@ public:
 private:
     size_t size;
 };
+
+}

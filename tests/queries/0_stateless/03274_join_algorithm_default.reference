@@ -1,0 +1,100 @@
+1
+(Expression)
+ExpressionTransform × 16
+  (Expression)
+  ExpressionTransform × 16
+    (Join)
+    SimpleSquashingTransform × 16
+      JoiningTransform × 16 2 → 1
+        Resize 1 → 16
+          (Expression)
+          ExpressionTransform
+            (Expression)
+            ExpressionTransform
+              (Limit)
+              Limit
+                (ReadFromSystemNumbers)
+                NumbersRange 0 → 1
+          (Expression)
+          Resize × 2 16 → 1
+            FillingRightJoinSide
+              SimpleSquashingTransform
+                FillingRightJoinSide
+                  SimpleSquashingTransform
+                    FillingRightJoinSide
+                      SimpleSquashingTransform
+                        FillingRightJoinSide
+                          SimpleSquashingTransform
+                            FillingRightJoinSide
+                              SimpleSquashingTransform
+                                FillingRightJoinSide
+                                  SimpleSquashingTransform
+                                    FillingRightJoinSide
+                                      SimpleSquashingTransform
+                                        FillingRightJoinSide
+                                          SimpleSquashingTransform
+                                            FillingRightJoinSide
+                                              SimpleSquashingTransform
+                                                FillingRightJoinSide
+                                                  SimpleSquashingTransform
+                                                    FillingRightJoinSide
+                                                      SimpleSquashingTransform
+                                                        FillingRightJoinSide
+                                                          SimpleSquashingTransform
+                                                            FillingRightJoinSide
+                                                              SimpleSquashingTransform
+                                                                FillingRightJoinSide
+                                                                  SimpleSquashingTransform
+                                                                    FillingRightJoinSide
+                                                                      SimpleSquashingTransform
+                                                                        FillingRightJoinSide
+                                                                          SimpleSquashingTransform
+                                                                            Resize 1 → 16
+                                                                              ExpressionTransform
+                                                                                (Expression)
+                                                                                ExpressionTransform
+                                                                                  (Limit)
+                                                                                  Limit
+                                                                                    (ReadFromSystemNumbers)
+                                                                                    NumbersRange 0 → 1
+1
+(Expression)
+ExpressionTransform
+  (Expression)
+  ExpressionTransform
+    (Join)
+    JoiningTransform 2 → 1
+      (Expression)
+      ExpressionTransform
+        (Expression)
+        ExpressionTransform
+          (Limit)
+          Limit
+            (ReadFromSystemNumbers)
+            NumbersRange 0 → 1
+      (Expression)
+      FillingRightJoinSide
+        ExpressionTransform
+          (Expression)
+          ExpressionTransform
+            (Limit)
+            Limit
+              (ReadFromSystemNumbers)
+              NumbersRange 0 → 1
+(Expression)
+ExpressionTransform
+  (Join)
+  JoiningTransform 2 → 1
+    (Expression)
+    ExpressionTransform
+      (Limit)
+      Limit
+        (ReadFromSystemNumbers)
+        NumbersRange 0 → 1
+    (Expression)
+    FillingRightJoinSide
+      ExpressionTransform
+        (Limit)
+        Limit
+          (ReadFromSystemNumbers)
+          NumbersRange 0 → 1

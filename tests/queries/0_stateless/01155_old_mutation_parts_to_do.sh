@@ -12,8 +12,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} -q "drop table if exists rmt;"
 
+# max_replicated_mutations_in_queue is to pause mutations until later in the test.
+# max_merge_selecting_sleep_ms is to be less affected by concurrent tests taking up mutation thread
+# pool slots and delaying our mutations.
 ${CLICKHOUSE_CLIENT} -q "create table rmt (n int, m int, s String) engine=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', '1')
-order by n settings max_replicated_mutations_in_queue=0;"
+order by n settings max_replicated_mutations_in_queue=0, max_merge_selecting_sleep_ms=5000;"
 
 ${CLICKHOUSE_CLIENT} -q "insert into rmt values (1, 1, '2');"     # 0_0_0_0
 ${CLICKHOUSE_CLIENT} --mutations_sync=0 -q "alter table rmt update m = m*toInt8(s) where 1;"  # 0000000000

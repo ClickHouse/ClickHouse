@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include <base/TypeName.h>
 
 namespace DB
 {
@@ -14,9 +15,15 @@ class SerializationNumber : public SimpleTextSerialization
 {
     static_assert(is_arithmetic_v<T>);
 
+protected:
+    SerializationNumber() = default;
+
 public:
     using FieldType = T;
     using ColumnType = ColumnVector<T>;
+
+    static UInt128 getHash();
+    static SerializationPtr create();
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
@@ -33,7 +40,7 @@ public:
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const override;
 };
 
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <Columns/ColumnArray.h>
 #include <IO/WriteSettings.h>
 #include <Storages/Statistics/Statistics.h>
 
@@ -17,22 +16,25 @@ class MergedBlockOutputStream final : public IMergedBlockOutputStream
 public:
     MergedBlockOutputStream(
         const MergeTreeMutableDataPartPtr & data_part,
+        MergeTreeSettingsPtr data_settings,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
-        const ColumnsStatistics & statistics,
         CompressionCodecPtr default_codec_,
+        MergeTreeIndexGranularityPtr index_granularity_ptr,
         TransactionID tid,
-        bool reset_columns_ = false,
-        bool save_marks_in_cache = false,
-        bool blocks_are_granules_size = false,
-        const WriteSettings & write_settings = {},
-        const MergeTreeIndexGranularity & computed_index_granularity = {});
+        size_t part_uncompressed_bytes,
+        bool reset_columns_,
+        bool blocks_are_granules_size,
+        const WriteSettings & write_settings,
+        WrittenOffsetSubstreams * written_offset_substreams);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
     /// If the data is pre-sorted.
     void write(const Block & block) override;
+
+    void cancel() noexcept override;
 
     /** If the data is not sorted, but we have previously calculated the permutation, that will sort it.
       * This method is used to save RAM, since you do not need to keep two blocks at once - the original one and the sorted one.
@@ -53,21 +55,24 @@ public:
         ~Finalizer();
 
         void finish();
+        void cancel() noexcept;
     };
 
     /// Finalize writing part and fill inner structures
     /// If part is new and contains projections, they should be added before invoking this method.
     Finalizer finalizePartAsync(
         const MergeTreeMutableDataPartPtr & new_part,
+        const GatheredData & gathered_data,
         bool sync,
-        const NamesAndTypesList * total_columns_list = nullptr,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+        const NamesAndTypesList * total_columns_list = nullptr);
 
     void finalizePart(
         const MergeTreeMutableDataPartPtr & new_part,
+        const GatheredData & gathered_data,
         bool sync,
-        const NamesAndTypesList * total_columns_list = nullptr,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+        const NamesAndTypesList * total_columns_list = nullptr);
+
+    void finalizeIndexGranularity();
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.
@@ -78,13 +83,13 @@ private:
     using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
     WrittenFiles finalizePartOnDisk(
         const MergeTreeMutableDataPartPtr & new_part,
-        MergeTreeData::DataPart::Checksums & checksums);
+        MergeTreeData::DataPart::Checksums & checksums,
+        const GatheredData & gathered_data);
 
     NamesAndTypesList columns_list;
-    IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
-    WriteSettings write_settings;
+    MergeTreeWriterSettings writer_settings;
 };
 
 using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;

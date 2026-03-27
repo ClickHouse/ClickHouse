@@ -24,5 +24,30 @@
                 </http_response_headers>
             </handler>
         </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <url>/test_dynamic_handler_auth_with_password</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <user>with_password</user>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <url>/test_dynamic_handler_auth_with_password_fail</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <user>incorrect_user</user>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <url>/test_dynamic_handler_auth_without_password</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <user>without_password</user>
+            </handler>
+        </rule>
     </http_handlers>
 </clickhouse>

@@ -3,7 +3,6 @@
 #include <Common/NamePrompter.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/IDatabase.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 
 namespace DB
@@ -15,6 +14,7 @@ namespace ErrorCodes
 }
 
 class ASTCreateQuery;
+class ASTStorage;
 
 template <typename ValueType>
 static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
@@ -22,7 +22,7 @@ static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &eng
     if (!ast || !ast->as<ASTLiteral>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
 
-    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
+    return static_cast<ValueType>(ast->as<ASTLiteral>()->value.safeGet<ValueType>());
 }
 
 class DatabaseFactory : private boost::noncopyable, public IHints<>

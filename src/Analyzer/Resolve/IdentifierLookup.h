@@ -1,6 +1,5 @@
 #pragma once
 
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -45,6 +44,7 @@ struct IdentifierLookup
 {
     Identifier identifier;
     IdentifierLookupContext lookup_context;
+    ASTPtr original_ast_node = nullptr;
 
     bool isExpressionLookup() const
     {
@@ -94,7 +94,9 @@ enum class IdentifierResolvePlace : UInt8
     /// Valid only for table lookup
     CTE,
     /// Valid only for table lookup
-    DATABASE_CATALOG
+    DATABASE_CATALOG,
+    /// Functions that can be used without parentheses
+    NILADIC_FUNCTION,
 };
 
 inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
@@ -107,44 +109,50 @@ inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
         case IdentifierResolvePlace::JOIN_TREE: return "JOIN_TREE";
         case IdentifierResolvePlace::CTE: return "CTE";
         case IdentifierResolvePlace::DATABASE_CATALOG: return "DATABASE_CATALOG";
+        case IdentifierResolvePlace::NILADIC_FUNCTION: return "NILADIC_FUNCTION";
     }
 }
 
+struct IdentifierResolveScope;
+
 struct IdentifierResolveResult
 {
-    IdentifierResolveResult() = default;
-
     QueryTreeNodePtr resolved_identifier;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
-    bool resolved_from_parent_scopes = false;
+
+    explicit operator bool() const
+    {
+        chassert(check_invariant());
+        return resolved_identifier != nullptr;
+    }
 
     [[maybe_unused]] bool isResolved() const
     {
+        chassert(check_invariant());
         return resolve_place != IdentifierResolvePlace::NONE;
-    }
-
-    [[maybe_unused]] bool isResolvedFromParentScopes() const
-    {
-        return resolved_from_parent_scopes;
     }
 
     [[maybe_unused]] bool isResolvedFromExpressionArguments() const
     {
+        chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::EXPRESSION_ARGUMENTS;
     }
 
     [[maybe_unused]] bool isResolvedFromAliases() const
     {
+        chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::ALIASES;
     }
 
     [[maybe_unused]] bool isResolvedFromJoinTree() const
     {
+        chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::JOIN_TREE;
     }
 
     [[maybe_unused]] bool isResolvedFromCTEs() const
     {
+        chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::CTE;
     }
 
@@ -156,7 +164,7 @@ struct IdentifierResolveResult
             return;
         }
 
-        buffer << resolved_identifier->formatASTForErrorMessage() << " place " << toString(resolve_place) << " resolved from parent scopes " << resolved_from_parent_scopes;
+        buffer << resolved_identifier->formatASTForErrorMessage() << " place " << toString(resolve_place);
     }
 
     [[maybe_unused]] String dump() const
@@ -166,18 +174,30 @@ struct IdentifierResolveResult
 
         return buffer.str();
     }
+
+private:
+    bool check_invariant() const noexcept
+    {
+        return (resolved_identifier == nullptr) == (resolve_place == IdentifierResolvePlace::NONE);
+    }
 };
 
 struct IdentifierResolveState
 {
-    IdentifierResolveResult resolve_result;
-    bool cyclic_identifier_resolve = false;
+    size_t count = 1;
 };
 
-struct IdentifierResolveSettings
+struct IdentifierResolveContext
 {
     /// Allow to check join tree during identifier resolution
     bool allow_to_check_join_tree = true;
+
+    /// Allow to check aliases during identifier resolution.
+    /// It's not allowed to use aliases during identifier resolution in parent scopes:
+    /// 1. If enable_global_with_statement is disabled.
+    /// 2. If initial scope is a QueryNode and it's TableExpression lookup,
+    ///    identifier is allowed to be resolved only as CTE.
+    bool allow_to_check_aliases = true;
 
     /// Allow to check CTEs during table identifier resolution
     bool allow_to_check_cte = true;
@@ -190,6 +210,20 @@ struct IdentifierResolveSettings
 
     /// Allow to resolve subquery during identifier resolution
     bool allow_to_resolve_subquery_during_identifier_resolution = true;
+
+    /// Disable resolve of niladic functions without parentheses. Example: SELECT now; instead of SELECT now();
+    bool allow_to_resolve_niladic_functions = true;
+
+    /// Initial scope where identifier resolution started.
+    /// Should be used to resolve aliased expressions.
+    IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
+
+    IdentifierResolveContext & resolveAliasesAt(IdentifierResolveScope * scope_to_resolve_alias_expression_)
+    {
+        if (!scope_to_resolve_alias_expression)
+            scope_to_resolve_alias_expression = scope_to_resolve_alias_expression_;
+        return *this;
+    }
 };
 
 }

@@ -1,5 +1,4 @@
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/queryToString.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -8,12 +7,12 @@
 
 #include <Columns/ColumnConst.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ConstantValue.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
 
-#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -49,7 +48,7 @@ public:
 
                 WriteBufferFromOwnString out;
                 result_type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
-                node = std::make_shared<ConstantNode>(std::make_shared<ConstantValue>(out.str(), result_type));
+                node = std::make_shared<ConstantNode>(out.str(), std::move(result_type));
             }
         }
     }
@@ -57,24 +56,35 @@ public:
 
 }
 
-ASTPtr getASTForExternalDatabaseFromQueryTree(const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression)
+ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression)
 {
-    auto new_tree = query_tree->clone();
+    auto replacement_table_expression = table_expression->clone();
+    auto new_tree = query_tree->cloneAndReplace(table_expression, replacement_table_expression);
 
     PrepareForExternalDatabaseVisitor visitor;
     visitor.visit(new_tree);
-    const auto * query_node = new_tree->as<QueryNode>();
+    auto * query_node = new_tree->as<QueryNode>();
 
     const auto & join_tree = query_node->getJoinTree();
     bool allow_where = true;
     if (const auto * join_node = join_tree->as<JoinNode>())
     {
         if (join_node->getKind() == JoinKind::Left)
-            allow_where = join_node->getLeftTableExpression()->isEqual(*table_expression);
+            allow_where = join_node->getLeftTableExpression()->isEqual(*replacement_table_expression);
         else if (join_node->getKind() == JoinKind::Right)
-            allow_where = join_node->getRightTableExpression()->isEqual(*table_expression);
+            allow_where = join_node->getRightTableExpression()->isEqual(*replacement_table_expression);
         else
             allow_where = (join_node->getKind() == JoinKind::Inner);
+    }
+
+    /// Remove all sub-expressions (operands of AND) that depend on columns from other tables.
+    /// This is needed for a correct push-down of these filters to an external storage.
+    if (allow_where)
+    {
+        if (query_node->hasPrewhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
+        if (query_node->hasWhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
     }
 
     auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });

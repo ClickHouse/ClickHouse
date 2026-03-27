@@ -1,10 +1,12 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+#include <Storages/IStorage.h>
 
 #include <pcg_random.hpp>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -29,26 +31,20 @@ struct BackgroundTaskSchedulingSettings
 };
 
 class MergeTreeData;
+class BackgroundJobsAssignee;
+
+class IBackgroundOperation
+{
+public:
+    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
+    virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
+    virtual Int32 getBiasBackoffSeconds() const { return 0; }
+
+    virtual ~IBackgroundOperation() = default;
+};
 
 class BackgroundJobsAssignee : public WithContext
 {
-private:
-    MergeTreeData & data;
-
-    /// Settings for execution control of background scheduling task
-    BackgroundTaskSchedulingSettings sleep_settings;
-    /// Useful for random backoff timeouts generation
-    pcg64 rng;
-
-    /// How many times execution of background job failed or we have
-    /// no new jobs.
-    size_t no_work_done_count = 0;
-
-    /// Scheduling task which assign jobs in background pool
-    BackgroundSchedulePool::TaskHolder holder;
-    /// Mutex for thread safety
-    std::mutex holder_mutex;
-
 public:
     /// In case of ReplicatedMergeTree the first assignee will be responsible for
     /// polling the replication queue and schedule operations according to the LogEntry type
@@ -67,6 +63,10 @@ public:
     void postpone();
     void finish();
 
+    /// Update the cached storage ID after a table rename,
+    /// so that finish() can correctly find tasks belonging to this storage.
+    void updateStorageID(const StorageID & new_id);
+
     bool scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
     bool scheduleFetchTask(ExecutableTaskPtr fetch_task);
     bool scheduleMoveTask(ExecutableTaskPtr move_task);
@@ -76,16 +76,35 @@ public:
     ~BackgroundJobsAssignee();
 
     BackgroundJobsAssignee(
-        MergeTreeData & data_,
+        IBackgroundOperation & data_,
+        const StorageID & storage_id_,
         Type type,
         ContextPtr global_context_);
 
 private:
+    IBackgroundOperation & data;
+    StorageID storage_id;
+
+    /// Useful for random backoff timeouts generation
+    pcg64 rng;
+
+    /// How many times execution of background job failed or we have
+    /// no new jobs.
+    size_t no_work_done_count = 0;
+
+    /// Scheduling task which assign jobs in background pool
+    BackgroundSchedulePoolTaskHolder holder;
+    /// Mutex for thread safety
+    std::mutex holder_mutex;
+
+    /// Settings for execution control of background scheduling task
+    BackgroundTaskSchedulingSettings sleep_settings;
+
     static String toString(Type type);
 
     /// Function that executes in background scheduling pool
     void threadFunc();
+
+    BackgroundTaskSchedulingSettings getSettings() const;
 };
-
-
 }

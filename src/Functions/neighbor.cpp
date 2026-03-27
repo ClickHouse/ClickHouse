@@ -108,29 +108,29 @@ public:
         const ColumnWithTypeAndName & offset_elem = arguments[1];
         bool has_defaults = arguments.size() == 3;
 
-        ColumnPtr source_column_casted = castColumn(source_elem, result_type);
+        ColumnPtr source_column_cast = castColumn(source_elem, result_type);
         ColumnPtr offset_column = offset_elem.column;
 
-        ColumnPtr default_column_casted;
+        ColumnPtr default_column_cast;
         if (has_defaults)
         {
             const ColumnWithTypeAndName & default_elem = arguments[2];
-            default_column_casted = castColumn(default_elem, result_type);
+            default_column_cast = castColumn(default_elem, result_type);
         }
 
-        bool source_is_constant = isColumnConst(*source_column_casted);
+        bool source_is_constant = isColumnConst(*source_column_cast);
         bool offset_is_constant = isColumnConst(*offset_column);
 
         bool default_is_constant = false;
         if (has_defaults)
-             default_is_constant = isColumnConst(*default_column_casted);
+             default_is_constant = isColumnConst(*default_column_cast);
 
         if (source_is_constant)
-            source_column_casted = assert_cast<const ColumnConst &>(*source_column_casted).getDataColumnPtr();
+            source_column_cast = assert_cast<const ColumnConst &>(*source_column_cast).getDataColumnPtr();
         if (offset_is_constant)
             offset_column = assert_cast<const ColumnConst &>(*offset_column).getDataColumnPtr();
         if (default_is_constant)
-            default_column_casted = assert_cast<const ColumnConst &>(*default_column_casted).getDataColumnPtr();
+            default_column_cast = assert_cast<const ColumnConst &>(*default_column_cast).getDataColumnPtr();
 
         if (offset_is_constant)
         {
@@ -177,18 +177,18 @@ public:
             {
                 /// Degenerate case, just copy source column as is.
                 return source_is_constant
-                    ? ColumnConst::create(source_column_casted, input_rows_count)
-                    : source_column_casted;
+                    ? ColumnConst::create(source_column_cast, input_rows_count)
+                    : source_column_cast;
             }
             if (offset > 0)
             {
-                insert_range_from(source_is_constant, source_column_casted, offset, static_cast<Int64>(input_rows_count) - offset);
-                insert_range_from(default_is_constant, default_column_casted, static_cast<Int64>(input_rows_count) - offset, offset);
+                insert_range_from(source_is_constant, source_column_cast, offset, static_cast<Int64>(input_rows_count) - offset);
+                insert_range_from(default_is_constant, default_column_cast, static_cast<Int64>(input_rows_count) - offset, offset);
                 return result_column;
             }
 
-            insert_range_from(default_is_constant, default_column_casted, 0, -offset);
-            insert_range_from(source_is_constant, source_column_casted, 0, static_cast<Int64>(input_rows_count) + offset);
+            insert_range_from(default_is_constant, default_column_cast, 0, -offset);
+            insert_range_from(source_is_constant, source_column_cast, 0, static_cast<Int64>(input_rows_count) + offset);
             return result_column;
         }
 
@@ -205,9 +205,9 @@ public:
             Int64 src_idx = row + offset;
 
             if (src_idx >= 0 && src_idx < static_cast<Int64>(input_rows_count))
-                result_column->insertFrom(*source_column_casted, source_is_constant ? 0 : src_idx);
+                result_column->insertFrom(*source_column_cast, source_is_constant ? 0 : src_idx);
             else if (has_defaults)
-                result_column->insertFrom(*default_column_casted, default_is_constant ? 0 : row);
+                result_column->insertFrom(*default_column_cast, default_is_constant ? 0 : row);
             else
                 result_column->insertDefault();
         }
@@ -220,7 +220,67 @@ public:
 
 REGISTER_FUNCTION(Neighbor)
 {
-    factory.registerFunction<FunctionNeighbor>();
+    FunctionDocumentation::Description description = R"(
+Returns a value from a column at a specified offset from the current row.
+This function is deprecated and error-prone because it operates on the physical order of data blocks which may not correspond to the logical order expected by users.
+Consider using proper window functions instead.
+
+The function can be enabled by setting `allow_deprecated_error_prone_window_functions = 1`.
+)";
+    FunctionDocumentation::Syntax syntax = "neighbor(column, offset[, default_value])";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "The source column.", {"Any"}},
+        {"offset", "The offset from the current row. Positive values look forward, negative values look backward.", {"Integer"}},
+        {"default_value", "Optional. The value to return if the offset goes beyond the data bounds. If not specified, uses the default value for the column type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a value from the specified offset, or default if out of bounds.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
+            )",
+            R"(
+┌─number─┬─neighbor(number, 2)─┐
+│      0 │                   2 │
+│      1 │                   3 │
+│      2 │                   4 │
+│      3 │                   5 │
+│      4 │                   6 │
+│      5 │                   7 │
+│      6 │                   8 │
+│      7 │                   9 │
+│      8 │                   0 │
+│      9 │                   0 │
+└────────┴─────────────────────┘
+            )"
+        },
+        {
+            "With default value",
+            R"(
+SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
+            )",
+            R"(
+┌─number─┬─neighbor(number, 2, 999)─┐
+│      0 │                        2 │
+│      1 │                        3 │
+│      2 │                        4 │
+│      3 │                        5 │
+│      4 │                        6 │
+│      5 │                        7 │
+│      6 │                        8 │
+│      7 │                        9 │
+│      8 │                      999 │
+│      9 │                      999 │
+└────────┴──────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionNeighbor>(documentation);
 }
 
 }

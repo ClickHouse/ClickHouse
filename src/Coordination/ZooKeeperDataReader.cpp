@@ -9,6 +9,8 @@
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperStorage_fwd.h>
+#include <Coordination/KeeperStorage.h>
 
 
 namespace DB
@@ -31,7 +33,8 @@ int64_t getZxidFromName(const std::string & filename)
 
 void deserializeSnapshotMagic(ReadBuffer & in)
 {
-    int32_t magic_header, version;
+    int32_t magic_header;
+    int32_t version;
     int64_t dbid;
     Coordination::read(magic_header, in);
     Coordination::read(version, in);
@@ -86,7 +89,7 @@ void deserializeACLMap(Storage & storage, ReadBuffer & in)
             acls.push_back(acl);
             acls_len--;
         }
-        storage.acl_map.addMapping(map_index, acls);
+        storage.acl_map.addMapping(static_cast<ACLId>(map_index), acls);
 
         count--;
     }
@@ -105,7 +108,14 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
         String data;
         Coordination::read(data, in);
         node.setData(data);
-        Coordination::read(node.acl_id, in);
+        {
+            int64_t acl_id_64;
+            Coordination::read(acl_id_64, in);
+            /// Some strange ACL ID during deserialization from ZooKeeper
+            if (acl_id_64 == -1)
+                acl_id_64 = 0;
+            node.acl_id = static_cast<ACLId>(acl_id_64);
+        }
 
         /// Deserialize stat
         Coordination::read(node.stats.czxid, in);
@@ -134,7 +144,10 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
             storage.container.insertOrReplace(path, node);
 
             if (ephemeral_owner != 0)
+            {
                 storage.committed_ephemerals[ephemeral_owner].insert(path);
+                ++storage.committed_ephemeral_nodes;
+            }
 
             storage.acl_map.addUsage(node.acl_id);
         }
@@ -148,13 +161,13 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
     {
         if (itr.key != "/")
         {
-            auto parent_path = parentNodePath(itr.key);
+            auto parent_path = Coordination::parentNodePath(itr.key);
             storage.container.updateValue(
                 parent_path,
                 [my_path = itr.key](typename Storage::Node & value)
                 {
-                    value.addChild(getBaseNodeName(my_path));
-                    value.stats.increaseNumChildren();
+                    value.addChild(Coordination::getBaseNodeName(my_path));
+                    value.increaseNumChildren();
                 });
         }
     }
@@ -227,7 +240,8 @@ void deserializeKeeperStorageFromSnapshotsDir(Storage & storage, const std::stri
 
 void deserializeLogMagic(ReadBuffer & in)
 {
-    int32_t magic_header, version;
+    int32_t magic_header;
+    int32_t version;
     int64_t dbid;
     Coordination::read(magic_header, in);
     Coordination::read(version, in);
@@ -552,6 +566,12 @@ template<typename Storage>
 void deserializeLogAndApplyToStorage(Storage & storage, const std::string & log_path, LoggerPtr log)
 {
     ReadBufferFromFile reader(log_path);
+
+    if (reader.eof())
+    {
+        LOG_WARNING(log, "Log file {} is empty, skipping", log_path);
+        return;
+    }
 
     LOG_INFO(log, "Deserializing log {}", log_path);
     deserializeLogMagic(reader);

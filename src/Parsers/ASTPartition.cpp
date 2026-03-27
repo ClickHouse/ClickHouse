@@ -43,7 +43,7 @@ String ASTPartition::getID(char delim) const
 
 ASTPtr ASTPartition::clone() const
 {
-    auto res = std::make_shared<ASTPartition>(*this);
+    auto res = make_intrusive<ASTPartition>(*this);
     res->children.clear();
 
     if (value)
@@ -61,20 +61,20 @@ ASTPtr ASTPartition::clone() const
     return res;
 }
 
-void ASTPartition::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (value)
     {
-        value->formatImpl(settings, state, frame);
+        value->format(ostr, settings, state, frame);
     }
     else if (all)
     {
-        settings.ostr << "ALL";
+        ostr << "ALL";
     }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
-        id->formatImpl(settings, state, frame);
+        ostr << "ID ";
+        id->format(ostr, settings, state, frame);
     }
 }
 }

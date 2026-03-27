@@ -1,5 +1,6 @@
 #include <Common/Base58.h>
-
+#include <Common/Base58fd.h>
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -62,6 +63,7 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst)
 
 std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst)
 {
+    // clang-format off
     static const Int8 map_digits[256] =
     {
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -81,6 +83,7 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     };
+    // clang-format on
 
     size_t processed = 0;
     size_t idx = 0;
@@ -99,7 +102,7 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
     {
         Int8 digit = map_digits[*src];
         UInt32 carry = digit == -1 ? 0xFFFFFFFFU : static_cast<UInt32>(digit);
-        if (carry == static_cast<UInt32>(-1))
+        if (carry == 0xFFFFFFFFU)
         {
             return {};
         }
@@ -128,6 +131,36 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
     }
 
     return zeros + idx;
+}
+
+size_t encodeBase58_32(const UInt8 * src, UInt8 * dst)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return TargetSpecific::x86_64_v3::encodeBase58_32(reinterpret_cast<const uint8_t *>(src), reinterpret_cast<uint8_t *>(dst));
+    else
+#endif
+        return TargetSpecific::Default::encodeBase58_32(reinterpret_cast<const uint8_t *>(src), reinterpret_cast<uint8_t *>(dst));
+}
+
+size_t encodeBase58_64(const UInt8 * src, UInt8 * dst)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return TargetSpecific::x86_64_v3::encodeBase58_64(reinterpret_cast<const uint8_t *>(src), reinterpret_cast<uint8_t *>(dst));
+    else
+#endif
+        return TargetSpecific::Default::encodeBase58_64(reinterpret_cast<const uint8_t *>(src), reinterpret_cast<uint8_t *>(dst));
+}
+
+std::optional<size_t> decodeBase58_32(const UInt8 * src, size_t src_length, UInt8 * dst)
+{
+    return TargetSpecific::Default::decodeBase58_32(reinterpret_cast<const uint8_t *>(src), src_length, reinterpret_cast<uint8_t *>(dst));
+}
+
+std::optional<size_t> decodeBase58_64(const UInt8 * src, size_t src_length, UInt8 * dst)
+{
+    return TargetSpecific::Default::decodeBase58_64(reinterpret_cast<const uint8_t *>(src), src_length, reinterpret_cast<uint8_t *>(dst));
 }
 
 }

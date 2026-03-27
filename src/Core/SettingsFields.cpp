@@ -1,16 +1,21 @@
-#include <Core/SettingsFields.h>
-#include <Core/Field.h>
+#include <Columns/IColumn.h>
 #include <Core/AccurateComparison.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
-#include <Common/logger_useful.h>
+#include <Core/Field.h>
+#include <Core/SettingsFields.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/logger_useful.h>
 
 #include <boost/algorithm/string/predicate.hpp>
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
 #include <cctz/time_zone.h>
+#pragma clang diagnostic pop
 
 #include <cmath>
 
@@ -26,26 +31,45 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+bool stringToBool(const String & str)
+{
+    if (str == "0")
+        return false;
+    if (str == "1")
+        return true;
+    if (boost::iequals(str, "false"))
+        return false;
+    if (boost::iequals(str, "true"))
+        return true;
+    throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
+}
 
 namespace
 {
+    template<typename T>
+    void validateFloatingPointSettingValue(T value)
+    {
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (!std::isfinite(value))
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
+                    "Float setting value must be finite, got {}", value);
+        }
+    }
+
     template <typename T>
     T stringToNumber(const String & str)
     {
         if constexpr (std::is_same_v<T, bool>)
         {
-            if (str == "0")
-                return false;
-            if (str == "1")
-                return true;
-            if (boost::iequals(str, "false"))
-                return false;
-            if (boost::iequals(str, "true"))
-                return true;
-            throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
+            return stringToBool(str);
         }
         else
-            return parseWithSizeSuffix<T>(str);
+        {
+            T value = parseWithSizeSuffix<T>(str);
+            validateFloatingPointSettingValue(value);
+            return value;
+        }
     }
 
     template <typename T>
@@ -53,22 +77,24 @@ namespace
     {
         if (f.getType() == Field::Types::String)
         {
-            return stringToNumber<T>(f.safeGet<const String &>());
+            return stringToNumber<T>(f.safeGet<String>());
         }
         if (f.getType() == Field::Types::UInt64)
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<UInt64>(), result))
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            validateFloatingPointSettingValue(result);
             return result;
         }
         if (f.getType() == Field::Types::Int64)
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<Int64>(), result))
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            validateFloatingPointSettingValue(result);
             return result;
         }
         if (f.getType() == Field::Types::Bool)
@@ -78,6 +104,7 @@ namespace
         if (f.getType() == Field::Types::Float64)
         {
             Float64 x = f.safeGet<Float64>();
+            validateFloatingPointSettingValue(x);
             if constexpr (std::is_floating_point_v<T>)
             {
                 return T(x);
@@ -109,7 +136,7 @@ namespace
 
         auto type_string = std::make_shared<DataTypeString>();
         DataTypeMap type_map(type_string, type_string);
-        auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
+        auto serialization = type_map.getDefaultSerialization();
         auto column = type_map.createColumn();
 
         ReadBufferFromString buf(str);
@@ -122,13 +149,29 @@ namespace
         if (f.getType() == Field::Types::String)
         {
             /// Allow to parse Map from string field. For the convenience.
-            const auto & str = f.safeGet<const String &>();
+            const auto & str = f.safeGet<String>();
             return stringToMap(str);
         }
 
-        return f.safeGet<const Map &>();
+        return f.safeGet<Map>();
     }
 
+}
+
+template <typename T>
+SettingFieldNumber<T>::SettingFieldNumber(Type x)
+{
+    validateFloatingPointSettingValue(x);
+    value = x;
+};
+
+template <typename T>
+SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(Type x)
+{
+    validateFloatingPointSettingValue(x);
+    value = x;
+    changed = true;
+    return *this;
 }
 
 template <typename T>
@@ -220,7 +263,7 @@ namespace
     UInt64 fieldToMaxThreads(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return stringToMaxThreads(f.safeGet<const String &>());
+            return stringToMaxThreads(f.safeGet<String>());
         return fieldToNumber<UInt64>(f);
     }
 }
@@ -390,7 +433,7 @@ String SettingFieldMap::toString() const
 {
     auto type_string = std::make_shared<DataTypeString>();
     DataTypeMap type_map(type_string, type_string);
-    auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
+    auto serialization = type_map.getDefaultSerialization();
     auto column = type_map.createColumn();
     column->insert(value);
 
@@ -436,7 +479,7 @@ namespace
 
     char fieldToChar(const Field & f)
     {
-        return stringToChar(f.safeGet<const String &>());
+        return stringToChar(f.safeGet<String>());
     }
 }
 

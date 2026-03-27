@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -41,10 +42,10 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)
     {
         // first we do modulo with replica count
-        auto modulo_function = makeASTFunction("positiveModulo", custom_key_ast, std::make_shared<ASTLiteral>(replicas_count));
+        auto modulo_function = makeASTFunction("positiveModulo", custom_key_ast, make_intrusive<ASTLiteral>(replicas_count));
 
         /// then we compare result to the current replica number (offset)
-        auto equals_function = makeASTFunction("equals", std::move(modulo_function), std::make_shared<ASTLiteral>(replica_num));
+        auto equals_function = makeASTOperator("equals", std::move(modulo_function), make_intrusive<ASTLiteral>(replica_num));
 
         return equals_function;
     }
@@ -70,7 +71,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt64) max value",
-                    range_upper);
+                    rational_cast<double>(range_upper));
         }
         else if (typeid_cast<const DataTypeUInt32 *>(custom_key_column_type.get()))
         {
@@ -80,7 +81,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt32) max value",
-                    range_upper);
+                    rational_cast<double>(range_upper));
         }
         else if (typeid_cast<const DataTypeUInt16 *>(custom_key_column_type.get()))
         {
@@ -90,7 +91,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt16) max value",
-                    range_upper);
+                    rational_cast<double>(range_upper));
         }
         else if (typeid_cast<const DataTypeUInt8 *>(custom_key_column_type.get()))
         {
@@ -100,7 +101,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt8) max value",
-                    range_upper);
+                    rational_cast<double>(range_upper));
         }
     }
 
@@ -114,8 +115,8 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid custom key filter range: Range upper bound {} must be larger than range lower bound {}",
-            range_lower,
-            range_upper);
+            rational_cast<double>(range_lower),
+            rational_cast<double>(range_upper));
 
     RelativeSize size_of_universum = range_upper - range_lower;
 
@@ -133,8 +134,8 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     RelativeSize lower_limit_rational = range_lower + relative_range_offset * size_of_universum;
     RelativeSize upper_limit_rational = range_lower + (relative_range_offset + relative_range_size) * size_of_universum;
 
-    UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
-    UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
+    UInt64 lower = static_cast<UInt64>(boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational));
+    UInt64 upper = static_cast<UInt64>(boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational));
 
     if (lower_limit_rational > range_lower)
         has_lower_limit = true;
@@ -145,12 +146,12 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     chassert(has_lower_limit || has_upper_limit);
 
     /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
-    std::shared_ptr<ASTFunction> lower_function;
-    std::shared_ptr<ASTFunction> upper_function;
+    boost::intrusive_ptr<ASTFunction> lower_function;
+    boost::intrusive_ptr<ASTFunction> upper_function;
 
     if (has_lower_limit)
     {
-        lower_function = makeASTFunction("greaterOrEquals", custom_key_ast, std::make_shared<ASTLiteral>(lower));
+        lower_function = makeASTOperator("greaterOrEquals", custom_key_ast, make_intrusive<ASTLiteral>(lower));
 
         if (!has_upper_limit)
             return lower_function;
@@ -158,7 +159,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     if (has_upper_limit)
     {
-        upper_function = makeASTFunction("less", custom_key_ast, std::make_shared<ASTLiteral>(upper));
+        upper_function = makeASTOperator("less", custom_key_ast, make_intrusive<ASTLiteral>(upper));
 
         if (!has_lower_limit)
             return upper_function;
@@ -166,7 +167,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     chassert(upper_function && lower_function);
 
-    return makeASTFunction("and", std::move(lower_function), std::move(upper_function));
+    return makeASTOperator("and", std::move(lower_function), std::move(upper_function));
 }
 
 ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context)

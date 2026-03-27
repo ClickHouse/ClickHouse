@@ -1,12 +1,16 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
+#include <Common/CurrentThread.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Interpreters/TransactionLog.h>
+#include <Common/setThreadName.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -31,6 +35,7 @@ void MergePlainMergeTreeTask::onCompleted()
 
 bool MergePlainMergeTreeTask::executeStep()
 {
+    auto component_guard = Coordination::setCurrentComponent("MergePlainMergeTreeTask::executeStep");
     /// All metrics will be saved in the thread_group, including all scheduled tasks.
     /// In profile_counters only metrics from this thread will be saved.
     ProfileEventsScope profile_events_scope(&profile_counters);
@@ -39,7 +44,7 @@ bool MergePlainMergeTreeTask::executeStep()
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
     {
-        switcher.emplace((*merge_list_entry)->thread_group);
+        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
     }
 
     switch (state)
@@ -62,6 +67,7 @@ bool MergePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
+                tryLogCurrentException(__PRETTY_FUNCTION__, "Exception is in merge_task.");
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
@@ -94,12 +100,12 @@ void MergePlainMergeTreeTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {});
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, {}, {});
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-        merge_task.reset();
+        auto projections_duration_ms = merge_task ? merge_task->grabProjectionsMergeTime() : std::map<String, UInt64>{};
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
             execution_status,
@@ -108,7 +114,9 @@ void MergePlainMergeTreeTask::prepare()
             new_part,
             future_part->parts,
             merge_list_entry.get(),
-            std::move(profile_counters_snapshot));
+            std::move(profile_counters_snapshot),
+            {},
+            projections_duration_ms);
     };
 
     transfer_profile_counters_to_initial_query = [this, query_thread_group = CurrentThread::getGroup()] ()
@@ -152,13 +160,29 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
-    if (auto * mark_cache = storage.getContext()->getMarkCache().get())
+    auto prewarm_caches = storage.getCachesToPrewarm(new_part->getBytesUncompressedOnDisk());
+
+    if (prewarm_caches.mark_cache)
     {
         auto marks = merge_task->releaseCachedMarks();
-        addMarksToCache(*new_part, marks, mark_cache);
+        addMarksToCache(*new_part, marks, prewarm_caches.mark_cache.get());
+    }
+
+    if (prewarm_caches.index_mark_cache)
+    {
+        auto index_marks = merge_task->releaseCachedIndexMarks();
+        addMarksToCache(*new_part, index_marks, prewarm_caches.index_mark_cache.get());
+    }
+
+    if (prewarm_caches.primary_index_cache)
+    {
+        /// Move index to cache and reset it here because we need
+        /// a correct part name after rename for a key of cache entry.
+        new_part->moveIndexToCache(*prewarm_caches.primary_index_cache);
     }
 
     write_part_log({});
+
     StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
     transfer_profile_counters_to_initial_query();
 
@@ -169,15 +193,34 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
+
+    merge_mutate_entry->finalize();
+}
+
+void MergePlainMergeTreeTask::cancel() noexcept
+{
+    auto component_guard = Coordination::setCurrentComponent("MergePlainMergeTreeTask::cancel");
+    if (merge_task)
+        merge_task->cancel();
+
+    if (new_part)
+        new_part->removeIfNeeded();
+
+    /// We need to destroy task here because it holds RAII wrapper for
+    /// temp directories which guards temporary dir from background removal which can
+    /// conflict with the next scheduled merge because it will be possible after merge_mutate_entry->finalize()
+    merge_task.reset();
+
+    if (merge_mutate_entry)
+        merge_mutate_entry->finalize();
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
-    auto context = Context::createCopy(storage.getContext());
+    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
     context->makeQueryContextForMerge(*storage.getSettings());
-    auto queryId = getQueryId();
-    context->setCurrentQueryId(queryId);
-    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MERGE);
+    auto query_id = getQueryId();
+    context->setCurrentQueryId(query_id);
     return context;
 }
 

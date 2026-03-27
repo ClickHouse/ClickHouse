@@ -1,6 +1,7 @@
 services:
     zoo1:
         image: ${image:-clickhouse/integration-test}
+        stop_grace_period: 5s
         restart: always
         user: ${user:-}
         volumes:
@@ -30,13 +31,16 @@ services:
             - SYS_NICE
         security_opt:
             - label:disable
+            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1
             - inet6
             - rotate
+        cpus: 3
     zoo2:
         image: ${image:-clickhouse/integration-test}
+        stop_grace_period: 5s
         restart: always
         user: ${user:-}
         volumes:
@@ -66,13 +70,16 @@ services:
             - SYS_NICE
         security_opt:
             - label:disable
+            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1
             - inet6
             - rotate
+        cpus: 3
     zoo3:
         image: ${image:-clickhouse/integration-test}
+        stop_grace_period: 5s
         restart: always
         user: ${user:-}
         volumes:
@@ -102,8 +109,10 @@ services:
             - SYS_NICE
         security_opt:
             - label:disable
+            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1
             - inet6
             - rotate
+        cpus: 3

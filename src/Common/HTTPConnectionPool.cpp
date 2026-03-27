@@ -8,10 +8,12 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProxyConfiguration.h>
+#include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -91,10 +93,11 @@ namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
+    extern const int HTTP_CONNECTION_LIMIT_REACHED;
 }
 
 
-IHTTPConnectionPoolForEndpoint::Metrics getMetricsForStorageConnectionPool()
+static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForStorageConnectionPool()
 {
     return IHTTPConnectionPoolForEndpoint::Metrics{
         .created = ProfileEvents::StorageConnectionsCreated,
@@ -110,7 +113,7 @@ IHTTPConnectionPoolForEndpoint::Metrics getMetricsForStorageConnectionPool()
 }
 
 
-IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
+static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
 {
     return IHTTPConnectionPoolForEndpoint::Metrics{
         .created = ProfileEvents::DiskConnectionsCreated,
@@ -126,7 +129,7 @@ IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
 }
 
 
-IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
+static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
 {
     return IHTTPConnectionPoolForEndpoint::Metrics{
         .created = ProfileEvents::HTTPConnectionsCreated,
@@ -142,7 +145,7 @@ IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
 }
 
 
-IHTTPConnectionPoolForEndpoint::Metrics getConnectionPoolMetrics(HTTPConnectionGroupType type)
+static IHTTPConnectionPoolForEndpoint::Metrics getConnectionPoolMetrics(HTTPConnectionGroupType type)
 {
     switch (type)
     {
@@ -170,6 +173,12 @@ public:
         mute_warning_until = 0;
     }
 
+    HTTPConnectionPools::Limits getLimits() const
+    {
+        std::lock_guard lock(mutex);
+        return limits;
+    }
+
     bool isSoftLimitReached() const
     {
         std::lock_guard lock(mutex);
@@ -182,9 +191,15 @@ public:
         return total_connections_in_group >= limits.store_limit;
     }
 
-    void atConnectionCreate()
+    void atConnectionCreate(std::string host, UInt16 port)
     {
         std::lock_guard lock(mutex);
+
+        if (isHardLimitReached())
+            throw Exception(
+                ErrorCodes::HTTP_CONNECTION_LIMIT_REACHED,
+                "Cannot create new connection to {}:{}, hard limit {} for connections in group {} is reached",
+                host, port, limits.hard_limit, getType());
 
         ++total_connections_in_group;
 
@@ -196,7 +211,7 @@ public:
         }
     }
 
-    void atConnectionDestroy()
+    void atConnectionDestroy() noexcept
     {
         std::lock_guard lock(mutex);
 
@@ -216,6 +231,11 @@ public:
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const { return metrics; }
 
 private:
+    bool isHardLimitReached() const TSA_REQUIRES(mutex)
+    {
+        return limits.hard_limit > 0 && total_connections_in_group >= limits.hard_limit;
+    }
+
     const HTTPConnectionGroupType type;
     const IHTTPConnectionPoolForEndpoint::Metrics metrics;
 
@@ -321,21 +341,21 @@ private:
             isExpired = true;
         }
 
-        void reconnect() override
+        void reconnect(UInt64 * connect_time) override
         {
             Session::close();
 
             if (auto lock = pool.lock())
             {
                 auto timeouts = getTimeouts(*this);
-                auto new_connection = lock->getConnection(timeouts);
+                auto new_connection = lock->getConnection(timeouts, connect_time);
                 Session::assign(*new_connection);
                 Session::setKeepAliveRequest(Session::getKeepAliveRequest() + 1);
             }
             else
             {
                 auto timer = CurrentThread::getProfileEvents().timer(metrics.elapsed_microseconds);
-                Session::reconnect();
+                Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
         }
@@ -387,7 +407,7 @@ private:
             Session::flushRequest();
         }
 
-        std::ostream & sendRequest(Poco::Net::HTTPRequest & request) override
+        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
         {
             auto idle = idleTime();
 
@@ -396,9 +416,13 @@ private:
                 Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
             if (ResourceLink link = CurrentThread::getWriteResourceLink())
                 Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIOWrite(), log, request.getMethod(), request.getURI()));
+            if (auto throttler = CurrentThread::getReadThrottler())
+                Session::setReceiveThrottler(throttler);
+            if (auto throttler = CurrentThread::getWriteThrottler())
+                Session::setSendThrottler(throttler);
 
-            std::ostream & result = Session::sendRequest(request);
-            result.exceptions(std::ios::badbit);
+            std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
+            chassert(result.exceptions() & std::ios::badbit);
 
             request_stream = &result;
             request_stream_completed = false;
@@ -412,7 +436,7 @@ private:
         std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
         {
             std::istream & result = Session::receiveResponse(response);
-            result.exceptions(std::ios::badbit);
+            chassert(result.exceptions() & std::ios::badbit);
 
             response_stream = &result;
             response_stream_completed = false;
@@ -455,6 +479,8 @@ private:
             response_stream = nullptr;
             Session::setSendDataHooks();
             Session::setReceiveDataHooks();
+            Session::setSendThrottler();
+            Session::setReceiveThrottler();
 
             group->atConnectionDestroy();
 
@@ -479,8 +505,10 @@ private:
             , group(group_)
             , metrics(std::move(metrics_))
         {
+            // atConnectionCreate can throw. If it does, this object's constructor fails and its destructor won't be called,
+            // so we must call atConnectionCreate before incrementing active_count to avoid leaking the metric increment.
+            group->atConnectionCreate(Session::getHost(), Session::getPort());
             CurrentMetrics::add(metrics.active_count);
-            group->atConnectionCreate();
         }
 
         template <class... Args>
@@ -496,9 +524,9 @@ private:
             return std::make_shared<make_shared_enabler>(std::forward<Args>(args)...);
         }
 
-        void doConnect()
+        void doConnect(UInt64 * connect_time)
         {
-            Session::reconnect();
+            Session::reconnect(connect_time);
         }
 
         bool isCompleted() const
@@ -557,7 +585,7 @@ public:
         return host;
     }
 
-    IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts) override
+    IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) override
     {
         std::vector<ConnectionPtr> expired_connections;
 
@@ -572,10 +600,23 @@ public:
 
             wipeExpiredImpl(expired_connections);
 
-            if (!stored_connections.empty())
+            while (!stored_connections.empty())
             {
                 auto it = stored_connections.top();
                 stored_connections.pop();
+
+                /// Check if the server has already closed this connection (sent FIN/RST).
+                /// This catches the case where the server's actual keep-alive timeout is shorter
+                /// than what the pool assumes (e.g. S3 closes idle connections after ~5s while our
+                /// pool may assume 30s).
+                if (isStale(*it))
+                {
+                    it->markAsExpired();
+                    expired_connections.push_back(it);
+                    ProfileEvents::increment(getMetrics().expired, 1);
+                    CurrentMetrics::sub(getMetrics().stored_count, 1);
+                    continue;
+                }
 
                 setTimeouts(*it, timeouts);
 
@@ -586,7 +627,7 @@ public:
             }
         }
 
-        return prepareNewConnection(timeouts);
+        return prepareNewConnection(timeouts, connect_time);
     }
 
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
@@ -654,8 +695,25 @@ private:
         return connection->isKeepAliveExpired(0.8);
     }
 
+    /// Detect connections that have been silently closed by the remote end.
+    /// An idle keep-alive connection should have no data pending in the socket.
+    /// If poll(SELECT_READ, 0) returns true on such a connection, it means the
+    /// server has sent a FIN (or RST), so the next request on this connection
+    /// would fail with "No message received" (NoMessageException).
+    static bool isStale(Session & connection)
+    {
+        try
+        {
+            return connection.socket().poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ);
+        }
+        catch (Poco::IOException &)
+        {
+            return true;
+        }
+    }
 
-    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts)
+
+    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
 
@@ -673,13 +731,13 @@ private:
         try
         {
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
-            connection->doConnect();
+            connection->doConnect(connect_time);
         }
         catch (...)
         {
             address.setFail();
             ProfileEvents::increment(getMetrics().errors);
-            connection->reset();
+            (*connection).reset();
             throw;
         }
 
@@ -687,7 +745,7 @@ private:
         return connection;
     }
 
-    void atConnectionDestroy(PooledConnection & connection)
+    void atConnectionDestroy(PooledConnection & connection) noexcept
     {
         if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
         {
@@ -702,17 +760,25 @@ private:
             return;
         }
 
-        auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-        connection_to_store->assign(connection);
-
+        try
         {
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
-            std::lock_guard lock(mutex);
-            stored_connections.push(connection_to_store);
-        }
+            auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+            connection_to_store->assign(connection);
 
-        CurrentMetrics::add(getMetrics().stored_count, 1);
-        ProfileEvents::increment(getMetrics().preserved, 1);
+            {
+                MemoryTrackerSwitcher switcher{&total_memory_tracker};
+                std::lock_guard lock(mutex);
+                stored_connections.push(connection_to_store);
+            }
+
+            CurrentMetrics::add(getMetrics().stored_count, 1);
+            ProfileEvents::increment(getMetrics().preserved, 1);
+        }
+        catch (...)
+        {
+            ProfileEvents::increment(getMetrics().reset, 1);
+            tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
+        }
     }
 
 
@@ -779,7 +845,7 @@ struct Hasher
     }
 };
 
-IExtendedPool::Ptr
+static IExtendedPool::Ptr
 createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, bool secure, ProxyConfiguration proxy_configuration)
 {
     if (secure)
@@ -789,7 +855,7 @@ createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, 
             group, std::move(host), port, secure, std::move(proxy_configuration));
 #else
         throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED, "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+            ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
     else

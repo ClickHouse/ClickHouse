@@ -4,7 +4,7 @@ Short description.
 
 **Syntax** (without SELECT)
 
-``` sql
+```sql
 <function syntax>
 ```
 
@@ -33,17 +33,17 @@ The example must show usage and/or a use cases. The following text contains reco
 
 Input table (Optional):
 
-``` text
+```text
 ```
 
 Query:
 
-``` sql
+```sql
 ```
 
 Result:
 
-``` text
+```text
 ```
 
 **See Also** (Optional)

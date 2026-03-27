@@ -18,11 +18,6 @@ node5 = cluster.add_instance(
 )
 node6 = cluster.add_instance("node6", main_configs=["configs/config_for_remote.xml"])
 
-if not is_arm():
-    node7 = cluster.add_instance(
-        "node7", main_configs=["configs/config_for_redirect.xml"], with_hdfs=True
-    )
-
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -176,6 +171,54 @@ def test_config_without_allowed_hosts(start_cluster):
     )
 
 
+def test_mysql_dictionary_host_filter(start_cluster):
+    """MySQL dictionary source should respect RemoteHostFilter for inline DDL params."""
+    # node5 has an empty <remote_url_allow_hosts> section, so all hosts are denied.
+    # CREATE DICTIONARY succeeds because dictionary loading is async.
+    # The host filter check runs in the factory lambda at load time, before
+    # any TCP connection is attempted, so no running MySQL server is required.
+    node5.query("DROP DICTIONARY IF EXISTS default.test_mysql_host_filter")
+    node5.query(
+        """
+        CREATE DICTIONARY default.test_mysql_host_filter (id UInt64, val String)
+        PRIMARY KEY id
+        SOURCE(MYSQL(HOST '10.0.0.1' PORT 3306 DB 'test' TABLE 'tbl'
+                     USER 'root' PASSWORD 'pass'))
+        LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1)
+        """
+    )
+    # dictGet forces synchronous loading; the host filter check should throw "not allowed"
+    # before any MySQL TCP connection is attempted.
+    error = node5.query_and_get_error(
+        "SELECT dictGet('default.test_mysql_host_filter', 'val', toUInt64(1))"
+    )
+    assert "not allowed" in error, f"Expected host filter error, got: {error}"
+    node5.query("DROP DICTIONARY IF EXISTS default.test_mysql_host_filter")
+
+
+def test_mysql_dictionary_replica_host_filter(start_cluster):
+    """MySQL dictionary source with REPLICA(...) syntax should respect RemoteHostFilter."""
+    # Covers the replica branch: if (config.has(settings_config_prefix + ".replica"))
+    node5.query("DROP DICTIONARY IF EXISTS default.test_mysql_replica_filter")
+    node5.query(
+        """
+        CREATE DICTIONARY default.test_mysql_replica_filter (id UInt64, val String)
+        PRIMARY KEY id
+        SOURCE(MYSQL(
+            USER 'root' PASSWORD 'pass' DB 'test' TABLE 'tbl'
+            REPLICA(PRIORITY 1 HOST '10.0.0.1' PORT 3306)
+            REPLICA(PRIORITY 2 HOST '10.0.0.2' PORT 3307)
+        ))
+        LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1)
+        """
+    )
+    error = node5.query_and_get_error(
+        "SELECT dictGet('default.test_mysql_replica_filter', 'val', toUInt64(1))"
+    )
+    assert "not allowed" in error, f"Expected host filter error, got: {error}"
+    node5.query("DROP DICTIONARY IF EXISTS default.test_mysql_replica_filter")
+
+
 def test_table_function_remote(start_cluster):
     assert "not allowed in configuration file" not in node6.query_and_get_error(
         "SELECT * FROM remoteSecure('example01-01-{1|2}', system, events)",
@@ -271,34 +314,3 @@ def test_table_function_remote(start_cluster):
             "SELECT * FROM remote('localhost:800', system, metrics)"
         )
     )
-
-
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
-def test_redirect(start_cluster):
-    hdfs_api = start_cluster.hdfs_api
-
-    hdfs_api.write_data("/simple_storage", "1\t\n")
-    assert hdfs_api.read_data("/simple_storage") == "1\t\n"
-    node7.query(
-        "CREATE TABLE table_test_7_1 (word String) ENGINE=URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', CSV)"
-    )
-    assert "not allowed" in node7.query_and_get_error(
-        "SET max_http_get_redirects=1; SELECT * from table_test_7_1"
-    )
-    node7.query("DROP TABLE table_test_7_1")
-
-
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
-def test_HDFS(start_cluster):
-    assert "not allowed" in node7.query_and_get_error(
-        "CREATE TABLE table_test_7_2 (word String) ENGINE=HDFS('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'CSV')"
-    )
-    assert "not allowed" in node7.query_and_get_error(
-        "SELECT * FROM hdfs('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'word String')"
-    )
-
-
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
-def test_schema_inference(start_cluster):
-    error = node7.query_and_get_error("desc url('http://test.com`, 'TSVRaw'')")
-    assert error.find("ReadWriteBufferFromHTTPBase") == -1
