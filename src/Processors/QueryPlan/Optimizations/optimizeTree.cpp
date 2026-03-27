@@ -415,10 +415,13 @@ void optimizeTreeSecondPass(
             if (optimization_settings.limit_by_partitions_independently)
                 optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
 
-            if (optimization_settings.read_in_order)
+            /// Skip when Cascades is enabled: it handles read-in-order via
+            /// `SortedReadImplementation`.  The heuristic would convert SortingStep::Full
+            /// to FinishSorting before Cascades can strip it as a physical property.
+            if (optimization_settings.read_in_order && !optimization_settings.enable_cascades_optimizer)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
-            if (optimization_settings.distinct_in_order)
+            if (optimization_settings.distinct_in_order && !optimization_settings.enable_cascades_optimizer)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.push_limit_by_into_sort)

@@ -6,15 +6,15 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Core/SortDescription.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
 namespace DB
 {
 
-/// Trace a column name back through the DAG to its original input name.
-/// For ALIAS chains (e.g., __table3.l_orderkey -> l_orderkey), returns the input name.
-/// For computed columns (FUNCTION nodes), returns empty - can't be translated.
+/// Trace a column name back through ALIAS chains to the original INPUT name.
+/// Returns empty for FUNCTION nodes (computed columns).
 static String traceColumnToInput(const ActionsDAG & dag, const String & output_name)
 {
     const ActionsDAG::Node * node = dag.tryFindInOutputs(output_name);
@@ -30,10 +30,8 @@ static String traceColumnToInput(const ActionsDAG & dag, const String & output_n
     return {};
 }
 
-/// Translate distribution column names through an ActionsDAG.
-/// Returns false if any column set becomes empty (all names are computed by this step),
-/// signaling that the passthrough implementation should be rejected so that
-/// DistributionEnforcer fires on this step's output where the column exists.
+/// Translate distribution column names through an ActionsDAG to input names.
+/// Returns false if any column set becomes empty (all computed — reject passthrough).
 static bool translateDistributionColumns(const ActionsDAG & dag, std::vector<NameSet> & columns)
 {
     for (auto & column_set : columns)
@@ -60,10 +58,41 @@ static bool translateDistributionColumns(const ActionsDAG & dag, std::vector<Nam
     return true;
 }
 
-/// Stateless per-row steps that can safely run on any subset of the data independently.
-/// This whitelist is safe by default: a step type not listed here falls through to
-/// `DefaultImplementation` at {1 node}. The failure mode is a missed optimization,
-/// never incorrect results.
+/// Translate sort column names through an ActionsDAG to input names.
+/// Returns false if any column is computed (FUNCTION node).
+static bool translateSortDescription(const ActionsDAG & dag, SortDescription & sort_desc)
+{
+    for (auto & col_desc : sort_desc)
+    {
+        String input_name = traceColumnToInput(dag, col_desc.column_name);
+        if (!input_name.empty())
+        {
+            col_desc.column_name = input_name;
+        }
+        else if (!dag.tryFindInOutputs(col_desc.column_name))
+        {
+            /// Not in DAG outputs — may be a passthrough input column. Keep it.
+        }
+        else
+        {
+            /// Computed by this step (FUNCTION) — can't translate to input.
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Get the `ActionsDAG` from an `ExpressionStep` or `FilterStep`, or nullptr.
+static const ActionsDAG * tryGetActionsDAG(const IQueryPlanStep * step)
+{
+    if (const auto * expr_step = typeid_cast<const ExpressionStep *>(step))
+        return &expr_step->getExpression();
+    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
+        return &filter_step->getExpression();
+    return nullptr;
+}
+
+/// Stateless per-row steps that can run on any data partition independently.
 static bool isDistributionPassthrough(const IQueryPlanStep * step)
 {
     return typeid_cast<const ExpressionStep *>(step) != nullptr
@@ -72,14 +101,10 @@ static bool isDistributionPassthrough(const IQueryPlanStep * step)
 }
 
 
-/// Implementation rule for stateless per-row steps (`ExpressionStep`, `FilterStep`,
-/// `BuildRuntimeFilterStep`). These steps can run on any data partition independently,
-/// so it is safe to propagate the parent's distribution to the input and to create
-/// speculative multi-node variants at each candidate node count.
-///
-/// The multi-node variants give `DistributionEnforcer` something to attach GatherExchanges
-/// to, enabling plans like:
-///   Agg(1 node) -> GatherExchange -> Expression(N nodes) -> Join(N nodes)
+/// Implementation rule for stateless per-row steps. Propagates distribution to the
+/// input and creates speculative multi-node variants at each candidate node count.
+/// Also creates sorted passthrough variants that delegate sorting to the child group,
+/// enabling `SortedRead` to eliminate explicit Sort steps for PK-aligned ORDER BY.
 class DistributionPassthrough : public IOptimizationRule
 {
 public:
@@ -122,6 +147,48 @@ protected:
             }
         }
 
+        /// Sorted passthrough: delegate sorting to the child (column names translated
+        /// through the DAG).  Competes with unsorted variant + `SortingEnforcer`.
+        /// When child has `SortedRead` matching PK, eliminates Sort entirely.
+        if (!required_properties.sorting.empty())
+        {
+            const ActionsDAG * dag = tryGetActionsDAG(expression->getQueryPlanStep());
+            SortDescription input_sorting = required_properties.sorting;
+            bool can_translate = !dag || translateSortDescription(*dag, input_sorting);
+
+            if (can_translate)
+            {
+                auto create_sorted_variant = [&](const DistributionDescription & dist)
+                {
+                    auto sorted_impl = std::make_shared<GroupExpression>(*expression);
+                    sorted_impl->setApplied(*this, required_properties);
+
+                    chassert(sorted_impl->inputs.size() == 1);
+                    auto & sorted_input_props = sorted_impl->inputs[0].required_properties;
+
+                    sorted_input_props.distribution = dist;
+                    sorted_input_props.sorting = input_sorting;
+                    sorted_input_props.sort_limit = required_properties.sort_limit;
+
+                    sorted_impl->properties.distribution = dist;
+                    sorted_impl->properties.sorting = required_properties.sorting;
+                    sorted_impl->properties.sort_limit = required_properties.sort_limit;
+
+                    memo.getGroup(expression->group_id)->addPhysicalExpression(sorted_impl);
+                    result.push_back(sorted_impl);
+                };
+
+                for (size_t candidate : candidates)
+                {
+                    DistributionDescription dist;
+                    dist.node_count = candidate;
+                    create_sorted_variant(dist);
+                }
+
+                create_sorted_variant({});
+            }
+        }
+
         return result;
     }
 
@@ -137,9 +204,7 @@ private:
         chassert(implementation_expression->inputs.size() == 1);
         auto & input_props = implementation_expression->inputs[0].required_properties;
 
-        /// Construction-time sorting on the input conflicts with multi-node distribution.
-        /// Both input and output stay at {1 node}; `DistributionEnforcer` adds
-        /// an exchange on this step's output if the parent needs multi-node.
+        /// Construction-time sorting conflicts with multi-node distribution.
         if (!input_props.sorting.empty() && distribution.node_count > 1)
             return nullptr;
 
@@ -150,12 +215,7 @@ private:
             /// Translate distribution column names through the step's DAG.
             if (!input_props.distribution.columns.empty())
             {
-                const ActionsDAG * dag = nullptr;
-                if (const auto * expr_step = typeid_cast<const ExpressionStep *>(implementation_expression->plan_step.get()))
-                    dag = &expr_step->getExpression();
-                else if (const auto * filter_step = typeid_cast<const FilterStep *>(implementation_expression->plan_step.get()))
-                    dag = &filter_step->getExpression();
-
+                const ActionsDAG * dag = tryGetActionsDAG(implementation_expression->plan_step.get());
                 if (dag && !translateDistributionColumns(*dag, input_props.distribution.columns))
                     return nullptr;
             }

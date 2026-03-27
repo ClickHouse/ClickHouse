@@ -250,6 +250,18 @@ ExpressionCost CostEstimator::estimateReadCost(
         };
     }
 
+    if (dynamic_cast<const SortedReadStrategy *>(strategy) != nullptr)
+    {
+        /// Same IO as regular read, plus sequential cost: reading in order produces
+        /// a merge-sorted stream, limiting internal parallelism vs multithreaded read.
+        Float64 rows = this_step_statistics.estimated_row_count;
+        Float64 io = rows * bytes_per_row / distribution_node_count;
+        return ExpressionCost{
+            .cost = Cost{.io = io, .sequential = rows / distribution_node_count},
+            .subtree_cost = {},
+        };
+    }
+
     if (dynamic_cast<const ReplicatedReadStrategy *>(strategy) != nullptr)
     {
         /// Replicated read on shared storage: every node reads the full table from

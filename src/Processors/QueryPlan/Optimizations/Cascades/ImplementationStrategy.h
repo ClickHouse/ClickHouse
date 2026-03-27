@@ -69,6 +69,12 @@ struct ReplicatedReadStrategy final : IReadStrategy
     String getName() const override { return "ReplicatedRead"; }
 };
 
+/// Sorted read: reads in primary key order, eliminating explicit Sort.
+struct SortedReadStrategy final : IReadStrategy
+{
+    String getName() const override { return "SortedRead"; }
+};
+
 using ImplementationStrategyPtr = std::shared_ptr<const IImplementationStrategy>;
 
 }
