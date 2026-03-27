@@ -603,14 +603,14 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     KeeperRequestForSession request_info;
     request_info.use_xid_64 = use_xid_64;
     request_info.request = request;
-    using namespace std::chrono;
-    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    const UInt64 enqueue_time_us = ZooKeeperOpentelemetrySpans::now();
+    request_info.time = enqueue_time_us / 1000;
     request_info.session_id = session_id;
 
     if (keeper_context->isShutdownCalled())
         return false;
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context, enqueue_time_us);
 
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
