@@ -1,3 +1,9 @@
+-- Pin enable_join_runtime_filters=1 to avoid a bug where the query condition cache
+-- returns stale results after INSERT when runtime filters are disabled and
+-- query_plan_join_shard_by_pk_ranges is enabled, causing the second SELECT to
+-- return 0 rows instead of the expected result.
+SET enable_join_runtime_filters = 1;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
