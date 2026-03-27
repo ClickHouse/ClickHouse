@@ -8,7 +8,7 @@ SET max_parser_depth = 50;
 SELECT parseQueryToJSON('SELECT ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))'); -- { serverError TOO_DEEP_RECURSION }
 
 -- Reset to default.
-SET max_parser_depth = 0;
+SET max_parser_depth = 1000;
 
 -- formatQueryFromJSON should enforce max_ast_depth.
 -- Use a limit high enough for the outer query (depth ~8) but low enough
@@ -17,7 +17,7 @@ SET max_ast_depth = 10;
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 + 2 + 3 + 4 + 5')); -- { serverError TOO_DEEP_AST }
 
 -- Reset to default.
-SET max_ast_depth = 0;
+SET max_ast_depth = 1000;
 
 -- formatQueryFromJSON should enforce max_ast_elements.
 -- The outer query has ~8 AST elements, so use a limit above that
@@ -26,7 +26,7 @@ SET max_ast_elements = 15;
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a, b, c, d, e, f, g, h, i, j, k, l FROM t')); -- { serverError TOO_BIG_AST }
 
 -- Reset to default.
-SET max_ast_elements = 0;
+SET max_ast_elements = 50000;
 
 -- Malformed JSON should produce a clear error.
 SELECT formatQueryFromJSON('not json'); -- { serverError BAD_ARGUMENTS }
