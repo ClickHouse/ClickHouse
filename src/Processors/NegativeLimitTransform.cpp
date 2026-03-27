@@ -169,7 +169,7 @@ NegativeLimitTransform::Status NegativeLimitTransform::prepare()
         {
             /// Step I: cut the front chunk's prefix that is before limit + offset.
             chassert(!chunks.empty());
-            auto & chunk = chunks.front().chunk;
+            auto & chunk = chunks.front();
             const UInt64 front_rows = chunk.getNumRows();
             const UInt64 start = (queued_row_count - limit) - offset;
             chassert(start < front_rows);
@@ -286,7 +286,7 @@ NegativeLimitTransform::Status NegativeLimitTransform::advancePort(size_t pos)
             rows_before_limit_at_least->add(rows);
         }
 
-        chunks.push_back(ChunkWithPort{std::move(chunk)});
+        chunks.push_back(std::move(chunk));
 
         if (!with_ties)
         {
@@ -295,7 +295,7 @@ NegativeLimitTransform::Status NegativeLimitTransform::advancePort(size_t pos)
             /// It is written this way to avoid potential overflow.
             while (!chunks.empty())
             {
-                const UInt64 front_rows = chunks.front().chunk.getNumRows();
+                const UInt64 front_rows = chunks.front().getNumRows();
                 const UInt64 rem = queued_row_count - front_rows;
                 if (rem >= offset && (rem - offset) >= limit)
                 {
@@ -332,7 +332,7 @@ NegativeLimitTransform::Status NegativeLimitTransform::advancePort(size_t pos)
                 boundary.limit_boundary_chunk_idx = 0;
                 for (; boundary.limit_boundary_chunk_idx < chunks.size(); ++boundary.limit_boundary_chunk_idx)
                 {
-                    UInt64 chunk_rows = chunks[boundary.limit_boundary_chunk_idx].chunk.getNumRows();
+                    UInt64 chunk_rows = chunks[boundary.limit_boundary_chunk_idx].getNumRows();
                     if (cumulative + chunk_rows > target)
                         break;
                     cumulative += chunk_rows;
@@ -341,7 +341,7 @@ NegativeLimitTransform::Status NegativeLimitTransform::advancePort(size_t pos)
                 boundary.limit_boundary_row_idx = target - cumulative;
 
                 chassert(boundary.limit_boundary_chunk_idx < chunks.size());
-                chassert(boundary.limit_boundary_row_idx < chunks[boundary.limit_boundary_chunk_idx].chunk.getNumRows());
+                chassert(boundary.limit_boundary_row_idx < chunks[boundary.limit_boundary_chunk_idx].getNumRows());
 
                 findRunStartChunk();
                 chassert(boundary.tie_run_start_chunk_idx <= boundary.limit_boundary_chunk_idx);
@@ -353,15 +353,15 @@ NegativeLimitTransform::Status NegativeLimitTransform::advancePort(size_t pos)
             {
                 /// Boundary was already initialized. Appending `rows` rows moves
                 /// the boundary right by exactly `rows`.
-                const auto & old_boundary_chunk = chunks[boundary.limit_boundary_chunk_idx].chunk;
+                const auto & old_boundary_chunk = chunks[boundary.limit_boundary_chunk_idx];
                 UInt64 old_row_idx = boundary.limit_boundary_row_idx;
 
                 advanceLimitBoundary(rows);
                 chassert(boundary.limit_boundary_chunk_idx < chunks.size());
-                chassert(boundary.limit_boundary_row_idx < chunks[boundary.limit_boundary_chunk_idx].chunk.getNumRows());
+                chassert(boundary.limit_boundary_row_idx < chunks[boundary.limit_boundary_chunk_idx].getNumRows());
 
                 if (!sortKeysEqual(
-                        old_boundary_chunk, old_row_idx, chunks[boundary.limit_boundary_chunk_idx].chunk, boundary.limit_boundary_row_idx))
+                        old_boundary_chunk, old_row_idx, chunks[boundary.limit_boundary_chunk_idx], boundary.limit_boundary_row_idx))
                 {
                     findRunStartChunk();
                     chassert(boundary.tie_run_start_chunk_idx <= boundary.limit_boundary_chunk_idx);
@@ -385,7 +385,7 @@ void NegativeLimitTransform::advanceLimitBoundary(UInt64 delta)
 {
     while (delta > 0)
     {
-        const UInt64 chunk_rows = chunks[boundary.limit_boundary_chunk_idx].chunk.getNumRows();
+        const UInt64 chunk_rows = chunks[boundary.limit_boundary_chunk_idx].getNumRows();
         const UInt64 remaining_in_chunk = chunk_rows - boundary.limit_boundary_row_idx - 1;
 
         if (delta <= remaining_in_chunk)
@@ -402,7 +402,7 @@ void NegativeLimitTransform::advanceLimitBoundary(UInt64 delta)
 
 void NegativeLimitTransform::findRunStartChunk()
 {
-    const auto & boundary_chunk = chunks[boundary.limit_boundary_chunk_idx].chunk;
+    const auto & boundary_chunk = chunks[boundary.limit_boundary_chunk_idx];
 
     /// Scan leftward from the boundary chunk. For each chunk, check whether
     /// its first row matches the boundary key (meaning the whole chunk is tied,
@@ -411,13 +411,13 @@ void NegativeLimitTransform::findRunStartChunk()
     boundary.tie_run_start_chunk_idx = boundary.limit_boundary_chunk_idx;
     while (boundary.tie_run_start_chunk_idx > 0)
     {
-        const auto & cur_chunk = chunks[boundary.tie_run_start_chunk_idx].chunk;
+        const auto & cur_chunk = chunks[boundary.tie_run_start_chunk_idx];
 
         /// First row differs from boundary key — tie-run starts inside this chunk.
         if (!sortKeysEqual(cur_chunk, 0, boundary_chunk, boundary.limit_boundary_row_idx))
             break;
 
-        const auto & prev_chunk = chunks[boundary.tie_run_start_chunk_idx - 1].chunk;
+        const auto & prev_chunk = chunks[boundary.tie_run_start_chunk_idx - 1];
 
         /// Previous chunk's last row differs — tie-run doesn't extend further left.
         if (!sortKeysEqual(prev_chunk, prev_chunk.getNumRows() - 1, boundary_chunk, boundary.limit_boundary_row_idx))
@@ -431,7 +431,7 @@ void NegativeLimitTransform::discardChunksBeforeRunStart()
 {
     while (boundary.tie_run_start_chunk_idx > 0)
     {
-        queued_row_count -= chunks.front().chunk.getNumRows();
+        queued_row_count -= chunks.front().getNumRows();
         chunks.pop_front();
 
         --boundary.limit_boundary_chunk_idx;
@@ -453,8 +453,8 @@ void NegativeLimitTransform::cutFrontChunkToRunStart()
     /// The run start chunk may contain rows before the tie-run start.
     /// Binary search for the first row equal to the boundary key.
     chassert(boundary.tie_run_start_chunk_idx == 0);
-    auto & run_start_chunk = chunks[boundary.tie_run_start_chunk_idx].chunk;
-    const auto & boundary_chunk = chunks[boundary.limit_boundary_chunk_idx].chunk;
+    auto & run_start_chunk = chunks[boundary.tie_run_start_chunk_idx];
+    const auto & boundary_chunk = chunks[boundary.limit_boundary_chunk_idx];
 
     /// If the run start chunk's first row already matches the boundary key,
     /// there's nothing to cut.
@@ -505,7 +505,7 @@ NegativeLimitTransform::Status NegativeLimitTransform::pushRows(UInt64 to_push)
     {
         chassert(!chunks.empty());
 
-        auto & chunk = chunks.front().chunk;
+        auto & chunk = chunks.front();
         const UInt64 front_rows = chunk.getNumRows();
 
         if (front_rows <= to_push)

@@ -82,16 +82,11 @@ private:
 
     Stage stage = Stage::Pull;
 
-    struct ChunkWithPort
-    {
-        Chunk chunk;
-    };
-
     size_t next_output_port = 0;
 
     /// Stores the pending chunks. With ties, chunks before the tie-run start are
     /// discarded during Pull. A deque is used for indexed access during boundary tracking.
-    std::deque<ChunkWithPort> chunks;
+    std::deque<Chunk> chunks;
 
     /// WITH TIES boundary tracking state.
     /// The boundary is the first row of the limit window.
@@ -176,7 +171,7 @@ private:
     {
         [[maybe_unused]] UInt64 actual = 0;
         for (const auto & c : chunks)
-            actual += c.chunk.getNumRows();
+            actual += c.getNumRows();
         chassert(actual == queued_row_count);
     }
 };
