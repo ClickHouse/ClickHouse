@@ -260,7 +260,7 @@ bool ExistsCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuer
 void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBase * client) const
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
-    bool result;
+    bool result = false;
     if (query->args.size() == 2)
     {
         auto watch_id = query->args[1].safeGet<String>();
