@@ -44,6 +44,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
             {"enable_materialized_cte", false, false, "New setting"},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
+            {"use_columns_cache", false, false, "New setting to enable columns cache for MergeTree tables"},
+            {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
+            {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -74,9 +77,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_expire_default_max_snapshot_age_ms", 432000000, 432000000, "New setting."},
             {"iceberg_expire_default_max_ref_age_ms", 9223372036854775807, 9223372036854775807, "New setting."},
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
-            {"use_columns_cache", false, false, "New setting to enable columns cache for MergeTree tables"},
-            {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
-            {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
         });
