@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET query_plan_merge_expressions = 1;
 SET allow_experimental_correlated_subqueries = 1;
 SET enable_parallel_replicas = 0;
 SET correlated_subqueries_substitute_equivalent_expressions=1;

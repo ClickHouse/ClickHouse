@@ -5,6 +5,7 @@
 -- Test that the skip indexes are utilized for AND and OR connected filter conditions
 
 -- Settings needed to achieve stable EXPLAIN PLAN output
+SET query_plan_merge_expressions = 1;
 SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;
