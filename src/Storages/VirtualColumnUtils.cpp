@@ -727,10 +727,17 @@ static void materializeCommonVirtualColumnInDAG(const std::string & name, const 
     dag.getOutputs().push_back(&alias_node);
 }
 
-ActionsDAG constructMaterializingCommonVirtualColumnsDAG(
-    const Block & header,
-    const Names & requested_columns,
-    const StoragePtr & storage)
+static bool needMaterializeCommonVirtualColumns(const Block & header, const VirtualsDescriptionPtr & virtual_columns, const Names & requested_columns)
+{
+    for (const auto & column_name : requested_columns)
+        if (!header.has(column_name))
+            if (const auto * desc = virtual_columns->tryGetDescription(column_name); desc && desc->isCommon())
+                return true;
+
+    return false;
+}
+
+ActionsDAG constructMaterializingCommonVirtualColumnsDAG(const Block & header, const Names & requested_columns, const StoragePtr & storage)
 {
     ActionsDAG dag(header.getColumnsWithTypeAndName());
     const auto virtual_columns = storage->getVirtualsPtr();
@@ -758,8 +765,12 @@ QueryPlan extendWithCommonVirtualColumns(
     if (!query_plan.isInitialized())
         return query_plan;
 
+    if (!needMaterializeCommonVirtualColumns(*query_plan.getCurrentHeader(), storage->getVirtualsPtr(), requested_columns))
+        return query_plan;
+
     auto dag = constructMaterializingCommonVirtualColumnsDAG(*query_plan.getCurrentHeader(), requested_columns, storage);
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
+    expression_step->setStepDescription("Materialize common virtual columns");
     query_plan.addStep(std::move(expression_step));
 
     return query_plan;
@@ -771,6 +782,9 @@ Pipe extendWithCommonVirtualColumns(
     const StoragePtr & storage)
 {
     if (pipe.empty())
+        return pipe;
+
+    if (!needMaterializeCommonVirtualColumns(pipe.getHeader(), storage->getVirtualsPtr(), requested_columns))
         return pipe;
 
     auto dag = constructMaterializingCommonVirtualColumnsDAG(pipe.getHeader(), requested_columns, storage);
