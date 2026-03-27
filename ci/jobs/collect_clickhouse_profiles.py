@@ -26,7 +26,9 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 temp_dir = f"{current_directory}/ci/tmp"
-repo_path = "/ClickHouse"
+# In Docker the repo is mounted at /ClickHouse; for local --no-docker runs use cwd.
+# Check that /ClickHouse actually resolves to this working directory (not a stale symlink).
+repo_path = "/ClickHouse" if os.path.realpath("/ClickHouse") == os.path.realpath(current_directory) else current_directory
 
 # Build directories
 PGO_BUILD_DIR = f"{temp_dir}/build_pgo_generate"
@@ -330,7 +332,7 @@ def main():
             results.append(
                 Result.from_commands_run(
                     name="Build (PGO instrumented)",
-                    command="command time -v ninja clickhouse-bundle",
+                    command="command time -v ninja clickhouse",
                     workdir=PGO_BUILD_DIR,
                 )
             )
