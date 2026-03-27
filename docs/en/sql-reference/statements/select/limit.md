@@ -139,9 +139,26 @@ SELECT * FROM (
 
 Skipping the first 2 rows and taking 3 would normally return `1, 1, 2`, but the second `2` is included because it ties with the last row.
 
-:::note
-`WITH TIES` is not supported with negative limits.
-:::
+`WITH TIES` also works with negative limits and offsets. It includes additional rows that have the same `ORDER BY` values as the first selected row:
+
+```sql
+SELECT number % 3 AS n FROM numbers(15)
+ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+Without `WITH TIES`, the result would be `1, 1, 2, 2`. With `WITH TIES`, three extra rows with value `1` are included because they tie with the first selected row.
 
 This modifier can be combined with the [`ORDER BY ... WITH FILL`](/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier) modifier.
 
