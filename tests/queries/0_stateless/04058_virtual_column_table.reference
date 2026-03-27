@@ -11,7 +11,7 @@ Join	9	t_join
 GenerateRandom	t_gen
 system.one	one
 system.numbers	numbers
-MaterializedView	14	t_mview_inner
+MaterializedView	14	t_mview
 WHERE_filter	1	t_mt
 WHERE_filter	14	t_mt
 Merge_WHERE	t_mt

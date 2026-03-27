@@ -49,7 +49,7 @@ SELECT _table, key FROM view1 ORDER BY key ASC;
 d1	1
 d1	2
 SELECT _table, key, value FROM mv1 ORDER BY key ASC;
-d7	10	2
+mv1	10	2
 SELECT _table, * FROM dist5 ORDER BY key ASC;
 d8	5	50
 d8	6	60
