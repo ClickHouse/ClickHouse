@@ -385,6 +385,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
         {"enable_memory_settings", [&](const JSONObjectType & value) { enable_memory_settings = value.getBool(); }},
+        {"enable_sync_settings", [&](const JSONObjectType & value) { enable_sync_settings = value.getBool(); }},
         {"enable_backups", [&](const JSONObjectType & value) { enable_backups = value.getBool(); }},
         {"enable_renames", [&](const JSONObjectType & value) { enable_renames = value.getBool(); }},
         {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
@@ -854,8 +855,17 @@ void FuzzConfig::validateClickHouseHealth()
                 " UNION ALL "
                 "(SELECT ifNull(sum(\"lost_part_count\"), 0) x, 2 y FROM \"system\".\"replicas\")"
                 " UNION ALL "
-                "(SELECT count() x, 3 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
-                "concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%'))"
+                /// Single scan of text_log for all pattern-based checks (3, 8, 10, 11, 12).
+                /// arrayZip + arrayJoin emits one row per pattern while reading text_log only once.
+                "(SELECT t.1 x, t.2 y FROM ("
+                "SELECT arrayJoin(arrayZip("
+                "[countIf(message ILIKE concat('%','POTENTIALLY','_BROKEN','_DATA','_PART','%')),"
+                " countIf(message ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),"
+                " countIf(message ILIKE concat('%','LOGICAL','_ERROR','%')),"
+                " countIf(message ILIKE concat('%','CORRUPTED','_DATA','%')),"
+                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%'))],"
+                "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12)])) AS t"
+                " FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60)) tlog)"
                 " UNION ALL "
                 "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
                 " WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)"
@@ -868,16 +878,7 @@ void FuzzConfig::validateClickHouseHealth()
                 "(SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, \"system\".\"part_log\")"
                 " WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
-                "(SELECT count() x, 8 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
-                "concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%'))"
-                " UNION ALL "
                 "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
-                " UNION ALL "
-                "(SELECT count() x, 10 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
-                "concat('%', 'LOGICAL', '_ERROR', '%'))"
-                " UNION ALL "
-                "(SELECT count() x, 11 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
-                "concat('%', 'CORRUPTED', '_DATA', '%'))"
                 ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
                 "TabSeparated;",
                 fuzzer_out_file.generic_string())))
@@ -896,7 +897,8 @@ void FuzzConfig::validateClickHouseHealth()
                "replica(s) with REPLICA_ALREADY_EXISTS errors",
                "replication queue exception(s)",
                "LOGICAL_ERROR(s) in text_log",
-               "CORRUPTED_DATA(s) in text_log"};
+               "CORRUPTED_DATA(s) in text_log",
+               "CHECKSUM_DOESNT_MATCH error(s) in text_log"};
         static const DB::Strings detail_queries = {
             R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
             R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
@@ -908,7 +910,8 @@ void FuzzConfig::validateClickHouseHealth()
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)"};
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {

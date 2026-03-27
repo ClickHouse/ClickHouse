@@ -2224,6 +2224,7 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
                 && rg.nextSmallNumber() < 4;
 
             nqcte->set_recursive(recursive);
+            nqcte->set_is_materialized(rg.nextSmallNumber() < 4);
             generateDerivedTable(
                 rg,
                 rel,
