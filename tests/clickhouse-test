@@ -1412,6 +1412,29 @@ class SettingsRandomizer:
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
         "use_statistics_cache": lambda: random.random() > 0.05,
+        # More query plan optimizations
+        "enable_optimize_predicate_expression": lambda: random.random() > 0.05,
+        "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
+        "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
+        "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
+        "enable_add_distinct_to_in_subqueries": lambda: random.random() < 0.3,
+        "query_plan_filter_push_down": lambda: random.random() > 0.05,
+        "query_plan_merge_filters": lambda: random.random() > 0.05,
+        "query_plan_lift_up_array_join": lambda: random.random() > 0.05,
+        "query_plan_push_down_limit": lambda: random.random() > 0.05,
+        "query_plan_split_filter": lambda: random.random() > 0.05,
+        "query_plan_merge_expressions": lambda: random.random() > 0.05,
+        "query_plan_execute_functions_after_sorting": lambda: random.random() > 0.05,
+        "query_plan_lift_up_union": lambda: random.random() > 0.05,
+        "query_plan_read_in_order": lambda: random.random() > 0.05,
+        "query_plan_aggregation_in_order": lambda: random.random() > 0.05,
+        "query_plan_remove_redundant_sorting": lambda: random.random() > 0.05,
+        "query_plan_remove_redundant_distinct": lambda: random.random() > 0.05,
+        "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
+        "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
+        "query_plan_convert_any_join_to_semi_or_anti_join": lambda: random.random() > 0.05,
+        "query_plan_merge_filter_into_join_condition": lambda: random.random() > 0.05,
+        "query_plan_enable_multithreading_after_window_functions": lambda: random.random() > 0.05,
     }
 
     dependent_settings = {
