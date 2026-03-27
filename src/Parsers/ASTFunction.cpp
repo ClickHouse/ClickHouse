@@ -32,6 +32,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int UNKNOWN_FUNCTION;
 }
@@ -169,6 +170,8 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTFunction");
 
     setIsOperator(r.getBool("is_operator"));
     setIsWindowFunction(r.getBool("is_window_function"));

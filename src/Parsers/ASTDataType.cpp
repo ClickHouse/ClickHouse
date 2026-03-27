@@ -1,4 +1,5 @@
 #include <Parsers/ASTDataType.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -7,6 +8,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 String ASTDataType::getID(char delim) const
 {
@@ -45,6 +51,8 @@ void ASTDataType::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTDataType");
 
     auto args = r.readChild("arguments");
     if (args)
