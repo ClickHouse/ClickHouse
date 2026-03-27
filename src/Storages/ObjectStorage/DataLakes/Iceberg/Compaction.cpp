@@ -506,15 +506,13 @@ bool writeConsolidatedManifestFile(
     }
 
     // Collect data files grouped by partition key
-    // Map: partition_key_string -> { partition_values (Row), file paths, statistics }
+    // Map: partition_key_string -> { partition_values (Row), file paths }
     struct PartitionData
     {
         Row partition_values;
         std::vector<IcebergPathFromMetadata> file_paths;
-        DataFileStatistics statistics;
 
-        explicit PartitionData(Poco::JSON::Array::Ptr schema)
-            : statistics(schema)
+        explicit PartitionData(Poco::JSON::Array::Ptr /*schema*/)
         {}
     };
 
@@ -614,7 +612,7 @@ bool writeConsolidatedManifestFile(
             pd.partition_values,
             partition_types,
             pd.file_paths,
-            pd.statistics,
+            std::nullopt,
             sample_block_,
             new_snapshot.snapshot,
             write_format,
