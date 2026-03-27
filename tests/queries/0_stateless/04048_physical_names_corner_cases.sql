@@ -487,3 +487,55 @@ SELECT a, `m.x`, `m.y` FROM t_phys_nested_multi ORDER BY a;
 OPTIMIZE TABLE t_phys_nested_multi FINAL;
 SELECT a, `m.x`, `m.y` FROM t_phys_nested_multi ORDER BY a;
 DROP TABLE t_phys_nested_multi;
+
+-- Test 19: ATTACH PARTITION FROM with compatible physical names (same
+-- logical-to-physical mapping, different next_physical_column_id) should succeed.
+SELECT 'Test 19: partition transfer compatible mappings';
+DROP TABLE IF EXISTS t_phys_part_src;
+DROP TABLE IF EXISTS t_phys_part_dst;
+CREATE TABLE t_phys_part_src (a UInt64, b String)
+ENGINE = MergeTree ORDER BY a PARTITION BY a
+SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+CREATE TABLE t_phys_part_dst (a UInt64, b String)
+ENGINE = MergeTree ORDER BY a PARTITION BY a
+SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+-- Make the counters differ: add and drop a column only in src.
+ALTER TABLE t_phys_part_src ADD COLUMN c UInt64;
+ALTER TABLE t_phys_part_src DROP COLUMN c;
+INSERT INTO t_phys_part_src VALUES (1, 'hello');
+ALTER TABLE t_phys_part_dst ATTACH PARTITION 1 FROM t_phys_part_src;
+SELECT a, b FROM t_phys_part_dst;
+DROP TABLE t_phys_part_src;
+DROP TABLE t_phys_part_dst;
+
+-- Test 20: ATTACH PARTITION FROM with incompatible physical names
+-- (different logical-to-physical mapping after rename) should be rejected.
+SELECT 'Test 20: partition transfer incompatible mappings';
+DROP TABLE IF EXISTS t_phys_part_src2;
+DROP TABLE IF EXISTS t_phys_part_dst2;
+CREATE TABLE t_phys_part_src2 (a UInt64, b String)
+ENGINE = MergeTree ORDER BY a PARTITION BY a
+SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+CREATE TABLE t_phys_part_dst2 (a UInt64, b String)
+ENGINE = MergeTree ORDER BY a PARTITION BY a
+SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_physical_names',
+    activate_physical_names_for_existing_tables = 1;
+-- Diverge: rename b→c in src only, then rename c→b back so schemas match
+-- but physical names differ (src: b→"b" after round-trip rename, vs dst: b→"b" identity).
+-- Actually: after RENAME b→c, physical name stays "b", logical becomes "c".
+-- After RENAME c→b, physical stays "b", logical becomes "b" again. Mapping is same!
+-- Instead: add+drop a column in src so counter diverges, then add b via a different path.
+ALTER TABLE t_phys_part_src2 DROP COLUMN b;
+ALTER TABLE t_phys_part_src2 ADD COLUMN b String;
+-- Now src has b→"1" (counter-allocated) while dst has b→"b" (identity).
+INSERT INTO t_phys_part_src2 VALUES (1, 'hello');
+ALTER TABLE t_phys_part_dst2 ATTACH PARTITION 1 FROM t_phys_part_src2; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_phys_part_src2;
+DROP TABLE t_phys_part_dst2;

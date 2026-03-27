@@ -9198,7 +9198,8 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Tables have incompatible physical name mapping state: "
             "one table has physical names active while the other does not");
-    if (my_has_pn && src_has_pn && my_pn->toString() != src_pn->toString())
+    if (my_has_pn && src_has_pn
+        && my_pn->getLogicalToPhysical() != src_pn->getLogicalToPhysical())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Tables have different physical name mappings; "
             "partition operations require identical logical-to-physical column mappings");
