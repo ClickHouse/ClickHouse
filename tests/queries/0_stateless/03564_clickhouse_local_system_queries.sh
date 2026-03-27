@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#REMOVEME restart ci
+
 # Test that clickhouse-local properly handles SYSTEM queries that are not supported
 # These queries should throw UNSUPPORTED_METHOD errors instead of LOGICAL_ERROR
 
