@@ -176,6 +176,8 @@ def main():
         "max_tables": random.randint(3, 10),
         "max_views": random.randint(0, 10),
         "max_dictionaries": random.randint(0, 10),
+        "max_functions": random.randint(0, 8),
+        "max_policies": random.randint(0, 8),
         "max_columns": random.randint(1, 8),
         "min_nested_rows": min_nested_rows,
         "max_nested_rows": random.randint(min_nested_rows, max_nested_rows),
@@ -205,6 +207,7 @@ def main():
         "allow_health_check": False,  # I have to test this first
         "enable_compatibility_settings": random.randint(1, 4) == 1,
         "enable_memory_settings": random.randint(1, 4) == 1,
+        "enable_sync_settings": random.randint(1, 4) == 1,
         "enable_backups": random.randint(1, 4) == 1,
         "enable_renames": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
