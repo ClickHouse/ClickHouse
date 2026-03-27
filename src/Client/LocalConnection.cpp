@@ -47,6 +47,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool allow_experimental_pipe_syntax;
 }
 
 namespace ErrorCodes
@@ -214,7 +215,7 @@ void LocalConnection::sendQuery(
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
         else
-            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select], settings[Setting::allow_experimental_pipe_syntax]);
 
         ASTPtr parsed_query;
         if (dialect == Dialect::kusto)

@@ -11,6 +11,7 @@
 #include <Parsers/ParserExplainQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserPipelinedQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
@@ -68,11 +69,13 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
     ParserBackupQuery backup_p;
     ParserSnapshotQuery snapshot_p;
+    ParserPipelinedQuery pipelined_p(allow_pipe_syntax);
 
     ASTPtr query;
 
     bool parsed =
            explain_p.parse(pos, query, expected)
+        || pipelined_p.parse(pos, query, expected)
         || select_p.parse(pos, query, expected)
         || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
         || show_tables_p.parse(pos, query, expected)

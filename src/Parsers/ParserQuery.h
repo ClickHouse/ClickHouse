@@ -12,6 +12,7 @@ private:
     const char * end;
     bool allow_settings_after_format_in_insert = false;
     bool implicit_select = false;
+    bool allow_pipe_syntax = false;
 
     bool allow_execute_as = true;
     bool allow_in_parallel_with = true;
@@ -20,10 +21,15 @@ private:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
-    explicit ParserQuery(const char * end_, bool allow_settings_after_format_in_insert_ = false, bool implicit_select_ = false)
+    explicit ParserQuery(
+        const char * end_,
+        bool allow_settings_after_format_in_insert_ = false,
+        bool implicit_select_ = false,
+        bool allow_pipe_syntax_ = false)
         : end(end_)
         , allow_settings_after_format_in_insert(allow_settings_after_format_in_insert_)
         , implicit_select(implicit_select_)
+        , allow_pipe_syntax(allow_pipe_syntax_)
     {
     }
 };

@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
     extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool allow_experimental_pipe_syntax;
     extern const SettingsString polyglot_dialect;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
@@ -415,7 +416,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     else if (dialect == Dialect::polyglot)
         parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
     else
-        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select], settings[Setting::allow_experimental_pipe_syntax]);
 
     if (is_interactive || ignore_error)
     {

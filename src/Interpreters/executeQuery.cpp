@@ -122,6 +122,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool allow_experimental_pipe_syntax;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsFloat ast_fuzzer_runs;
@@ -1188,7 +1189,7 @@ static BlockIO executeQueryImpl(
         }
         else
         {
-            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select], settings[Setting::allow_experimental_pipe_syntax]);
             /// TODO: parser should fail early when max_query_size limit is reached.
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 

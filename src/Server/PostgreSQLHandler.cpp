@@ -55,6 +55,7 @@ namespace Setting
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsBool allow_experimental_pipe_syntax;
 }
 
 namespace ErrorCodes
@@ -631,7 +632,8 @@ void PostgreSQLHandler::processQuery()
             settings[Setting::max_parser_depth],
             settings[Setting::max_parser_backtracks],
             settings[Setting::allow_settings_after_format_in_insert],
-            settings[Setting::implicit_select]);
+            settings[Setting::implicit_select],
+            settings[Setting::allow_experimental_pipe_syntax]);
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 
