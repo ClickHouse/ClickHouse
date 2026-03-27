@@ -60,7 +60,7 @@ public:
     const VirtualColumnDescription * tryGetDescription(const String & name) const { return tryGetDescription(name, VirtualsKind::All); }
     const VirtualColumnDescription & getDescription(const String & name) const { return getDescription(name, VirtualsKind::All); }
 
-    Block getSampleBlock() const;
+    Block getSampleBlock(VirtualsKind kind = VirtualsKind::All, bool exclude_common = false) const;
     NamesAndTypesList getNamesAndTypesList(VirtualsKind kind = VirtualsKind::All, bool exclude_common = false) const;
 
 private:

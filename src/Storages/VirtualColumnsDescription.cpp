@@ -75,11 +75,11 @@ const VirtualColumnDescription & VirtualColumnsDescription::getDescription(const
     return *column;
 }
 
-Block VirtualColumnsDescription::getSampleBlock() const
+Block VirtualColumnsDescription::getSampleBlock(VirtualsKind kind, bool exclude_common) const
 {
     Block result;
-    for (const auto & desc : container)
-        result.insert({desc.type->createColumn(), desc.type, desc.name});
+    for (const auto & column : getNamesAndTypesList(kind, exclude_common))
+        result.insert({column.type->createColumn(), column.type, column.name});
     return result;
 }
 
