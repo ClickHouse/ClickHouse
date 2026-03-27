@@ -1,3 +1,5 @@
+SET query_plan_remove_unused_columns = 1;
+
 CREATE TABLE test
 (
     `key` UInt64,

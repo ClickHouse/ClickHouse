@@ -6,6 +6,7 @@
 -- This test uses all the skip index types - minmax, set, bloom filter, text
 
 -- Settings needed to achieve stable EXPLAIN PLAN output
+SET query_plan_merge_expressions = 1;
 SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;

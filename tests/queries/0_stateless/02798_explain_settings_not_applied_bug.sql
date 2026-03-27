@@ -16,6 +16,6 @@ SELECT a
 FROM t
 GROUP BY a
 FORMAT PrettySpace
-SETTINGS optimize_aggregation_in_order = 1;
+SETTINGS optimize_aggregation_in_order = 1, query_plan_aggregation_in_order = 1;
 
 DROP TABLE t;

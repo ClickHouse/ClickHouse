@@ -1,3 +1,4 @@
+SET query_plan_merge_expressions = 1;
 SET optimize_rewrite_regexp_functions = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET optimize_move_to_prewhere = 1;
