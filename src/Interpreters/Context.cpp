@@ -104,6 +104,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/HypotheticalIndexStore.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/Session.h>
@@ -2463,6 +2464,22 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
         external_tables_mapping.erase(iter);
     }
     return holder;
+}
+
+HypotheticalIndexStore & Context::getHypotheticalIndexStore()
+{
+    std::lock_guard lock(mutex);
+    if (!hypothetical_index_store)
+        hypothetical_index_store = std::make_shared<HypotheticalIndexStore>();
+    return *hypothetical_index_store;
+}
+
+const HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
+{
+    std::lock_guard lock(mutex);
+    if (!hypothetical_index_store)
+        hypothetical_index_store = std::make_shared<HypotheticalIndexStore>();
+    return *hypothetical_index_store;
 }
 
 
