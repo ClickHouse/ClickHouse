@@ -112,6 +112,33 @@ uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list
     return sum;
 }
 
+/// Read specific named metrics from a cgroups v2 memory.stat file into a map.
+/// Only reads keys present in the provided list, ignoring the rest.
+Metrics readNamedMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list<std::string_view> keys)
+{
+    Metrics result;
+    while (!buf.eof())
+    {
+        std::string current_key;
+        readStringUntilWhitespace(current_key, buf);
+
+        if (std::find(keys.begin(), keys.end(), current_key) == keys.end())
+        {
+            std::string dummy;
+            readStringUntilNewlineInto(dummy, buf);
+            buf.tryIgnore(1);
+            continue;
+        }
+
+        assertChar(' ', buf);
+        uint64_t value = 0;
+        readIntText(value, buf);
+        result[std::move(current_key)] = value;
+        buf.tryIgnore(1);
+    }
+    return result;
+}
+
 struct CgroupsV1Reader : ICgroupsReader
 {
     explicit CgroupsV1Reader(const fs::path & stat_file_dir) : buf(stat_file_dir / "memory.stat") { }
@@ -144,7 +171,19 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"}, {"kernel"}, &warnings_printed);
+        auto metrics = readNamedMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel", "slab_reclaimable"});
+
+        uint64_t usage = metrics["anon"] + metrics["sock"];
+
+        /// `kernel` in cgroups v2 includes `slab_reclaimable` (dentry/inode cache),
+        /// which is a filesystem metadata cache the kernel drops under memory
+        /// pressure. Including it inflates `MemoryTracking` well above the actual
+        /// process RSS, leading to premature `MEMORY_LIMIT_EXCEEDED` errors.
+        uint64_t kernel = metrics["kernel"];
+        uint64_t slab_reclaimable = std::min(kernel, metrics["slab_reclaimable"]);
+        usage += kernel - slab_reclaimable;
+
+        return usage;
     }
 
     std::string dumpAllStats() override
