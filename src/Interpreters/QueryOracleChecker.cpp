@@ -436,7 +436,8 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
         /// Show first few differing rows for diagnostics.
         size_t max_diff = 5;
         size_t shown = 0;
-        size_t ri = 0, pi = 0;
+        size_t ri = 0;
+        size_t pi = 0;
         while ((ri < ref_rows.size() || pi < part_rows.size()) && shown < max_diff)
         {
             if (ri < ref_rows.size() && (pi >= part_rows.size() || ref_rows[ri] < part_rows[pi]))
@@ -1058,7 +1059,7 @@ void QueryOracleChecker::tryPopulateTable(const ASTSelectQuery & select, const C
         if (!table_expr || !table_expr->database_and_table_name)
             continue;
 
-        auto table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
+        auto * table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
         if (!table_id)
             continue;
 
