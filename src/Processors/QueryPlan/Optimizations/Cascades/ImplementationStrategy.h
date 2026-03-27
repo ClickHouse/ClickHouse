@@ -37,6 +37,16 @@ struct ShuffleJoinStrategy final : IJoinStrategy
     String getName() const override { return "Shuffle HashJoin"; }
 };
 
+struct LocalMergeJoinStrategy final : IJoinStrategy
+{
+    String getName() const override { return "Local MergeJoin"; }
+};
+
+struct ShuffleMergeJoinStrategy final : IJoinStrategy
+{
+    String getName() const override { return "Shuffle MergeJoin"; }
+};
+
 /// --- Aggregation strategies ---
 
 struct LocalAggregationStrategy final : IAggregationStrategy

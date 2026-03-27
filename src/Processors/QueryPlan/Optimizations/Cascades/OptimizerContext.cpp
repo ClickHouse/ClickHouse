@@ -23,6 +23,7 @@ namespace ErrorCodes
 
 OptimizationRulePtr createJoinCommutativity();
 OptimizationRulePtr createHashJoinImplementation();
+OptimizationRulePtr createMergeJoinImplementation();
 OptimizationRulePtr createAggregationImplementation();
 OptimizationRulePtr createTwoPhaseAggregationTransformation();
 OptimizationRulePtr createLocalReadImplementation();
@@ -43,6 +44,7 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, size_t clu
 
     addRule(createJoinCommutativity());
     addRule(createHashJoinImplementation());
+    addRule(createMergeJoinImplementation());
     addRule(createDefaultImplementation());
     addRule(createDistributionPassthrough());
     addRule(createTwoPhaseAggregationTransformation());

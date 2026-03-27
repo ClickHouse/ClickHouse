@@ -201,14 +201,24 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
         Float64 parallelism)
 {
     const bool is_broadcast = dynamic_cast<const BroadcastJoinStrategy *>(strategy) != nullptr;
+    const bool is_merge_join = dynamic_cast<const LocalMergeJoinStrategy *>(strategy) != nullptr
+        || dynamic_cast<const ShuffleMergeJoinStrategy *>(strategy) != nullptr;
 
     ExpressionCost join_cost;
 
-    /// Uniform CPU formula for all strategies:
-    ///   left_rows  = probe-side scan
-    ///   2 * right  = build phase (hash + insert)
-    ///   output     = result materialization
-    /// Divided by parallelism: partitioned data splits across nodes, replicated does not.
+    if (is_merge_join)
+    {
+        /// Linear scan of both sorted inputs + output materialization. No hash table.
+        join_cost.cost.cpu = (left_statistics.estimated_row_count
+                              + right_statistics.estimated_row_count
+                              + this_step_statistics.estimated_row_count) / parallelism;
+        /// The merge is single-threaded (two cursors walking sorted streams).
+        join_cost.cost.sequential = (left_statistics.estimated_row_count
+                                     + right_statistics.estimated_row_count) / parallelism;
+        return join_cost;
+    }
+
+    /// Hash join: probe scan + build phase (hash + insert) + output materialization.
     join_cost.cost.cpu = (left_statistics.estimated_row_count
                           + 2.0 * right_statistics.estimated_row_count
                           + this_step_statistics.estimated_row_count) / parallelism;

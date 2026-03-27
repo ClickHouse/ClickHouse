@@ -1,0 +1,106 @@
+-- 1. JOIN on PK: MergeJoin + SortedRead
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.a UInt64 : 0
+         INPUT : 1 -> __table1.b String : 1
+         INPUT : 2 -> __table2.a UInt64 : 2
+         INPUT : 3 -> __table2.c String : 3
+         ALIAS __table1.a :: 0 -> a UInt64 : 4
+         ALIAS __table1.b :: 1 -> b String : 0
+         ALIAS __table2.a :: 2 -> t_right.a UInt64 : 1
+         ALIAS __table2.c :: 3 -> c String : 2
+Positions: 4 0 1 2
+  JoinLogical (Local MergeJoin  swapped)
+  Join: t_right[100] ⋈ t_left[100]
+  ResultRows: 100
+  Type: INNER
+  Strictness: ALL
+  Locality: UNSPECIFIED
+  Expression: equals(__table1.a, __table2.a)
+  Expression:
+  Actions: INPUT : 0 -> __table1.a UInt64 : 0
+           INPUT :: 1 -> __table1.b String : 1
+           INPUT : 2 -> __table2.a UInt64 : 2
+           INPUT :: 3 -> __table2.c String : 3
+           FUNCTION equals(__table1.a : 0, __table2.a : 2) -> equals(__table1.a, __table2.a) UInt8 : 4
+  Positions: 0 1 2 3
+  Expression Sources:
+  __table1.a: {1}
+  __table1.b: {1}
+  __table2.a: {0}
+  __table2.c: {0}
+    Expression (Change column names to column identifiers)
+    Actions: INPUT : 0 -> a UInt64 : 0
+             INPUT : 1 -> c String : 1
+             ALIAS a :: 0 -> __table2.a UInt64 : 2
+             ALIAS c :: 1 -> __table2.c String : 0
+    Positions: 2 0
+      ReadFromMergeTree (SortedRead default.t_right)
+      ReadType: InOrder
+      Parts: 1
+      Granules: 1
+    Expression (Change column names to column identifiers)
+    Actions: INPUT : 0 -> a UInt64 : 0
+             INPUT : 1 -> b String : 1
+             ALIAS a :: 0 -> __table1.a UInt64 : 2
+             ALIAS b :: 1 -> __table1.b String : 0
+    Positions: 2 0
+      ReadFromMergeTree (SortedRead default.t_left)
+      ReadType: InOrder
+      Parts: 1
+      Granules: 1
+-- 2. JOIN non-PK right: HashJoin
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.a UInt64 : 0
+         INPUT : 1 -> __table1.b String : 1
+         INPUT : 2 -> __table2.a UInt64 : 2
+         INPUT : 3 -> __table2.c String : 3
+         ALIAS __table1.a :: 0 -> a UInt64 : 4
+         ALIAS __table1.b :: 1 -> b String : 0
+         ALIAS __table2.a :: 2 -> t_right_no_pk.a UInt64 : 1
+         ALIAS __table2.c :: 3 -> c String : 2
+Positions: 4 0 1 2
+  JoinLogical (Local HashJoin  swapped)
+  Join: t_right_no_pk[100] ⋈ t_left[100]
+  ResultRows: 100
+  Type: INNER
+  Strictness: ALL
+  Locality: UNSPECIFIED
+  Expression: equals(__table1.a, __table2.a)
+  Expression:
+  Actions: INPUT : 0 -> __table1.a UInt64 : 0
+           INPUT :: 1 -> __table1.b String : 1
+           INPUT : 2 -> __table2.a UInt64 : 2
+           INPUT :: 3 -> __table2.c String : 3
+           FUNCTION equals(__table1.a : 0, __table2.a : 2) -> equals(__table1.a, __table2.a) UInt8 : 4
+  Positions: 0 1 2 3
+  Expression Sources:
+  __table1.a: {1}
+  __table1.b: {1}
+  __table2.a: {0}
+  __table2.c: {0}
+    Expression (Change column names to column identifiers)
+    Actions: INPUT : 0 -> a UInt64 : 0
+             INPUT : 1 -> c String : 1
+             ALIAS a :: 0 -> __table2.a UInt64 : 2
+             ALIAS c :: 1 -> __table2.c String : 0
+    Positions: 2 0
+      ReadFromMergeTree (default.t_right_no_pk)
+      ReadType: Default
+      Parts: 1
+      Granules: 1
+    Expression (Change column names to column identifiers)
+    Actions: INPUT : 0 -> a UInt64 : 0
+             INPUT : 1 -> b String : 1
+             ALIAS a :: 0 -> __table1.a UInt64 : 2
+             ALIAS b :: 1 -> __table1.b String : 0
+    Positions: 2 0
+      ReadFromMergeTree (default.t_left)
+      ReadType: Default
+      Parts: 1
+      Granules: 1
+-- 3. Correctness
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
