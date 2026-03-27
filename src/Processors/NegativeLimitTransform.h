@@ -17,8 +17,8 @@ namespace DB
 /// The reason to have multiple ports is to be able to stop all sources when limit is reached, in a query like:
 ///     SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT -1
 ///
-/// This processor also supports WITH TIES, which means that if the last row of the limit window is tied with following rows,
-/// those are included in the output as well.
+/// This processor also supports WITH TIES, which extends the output backward to include
+/// all rows that tie on the ORDER BY columns with the first row of the limit window.
 /// For WITH TIES, there must be a single input stream, and a non-empty SortDescription must be provided to determine the tie key.
 ///
 /// For WITH TIES, we use the following definitions:
