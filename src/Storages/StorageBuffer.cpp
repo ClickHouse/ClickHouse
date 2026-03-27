@@ -33,6 +33,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
@@ -441,7 +442,8 @@ void StorageBuffer::read(
         Pipes pipes_from_buffers;
         pipes_from_buffers.reserve(num_shards);
         for (auto & buf : buffers)
-            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
+            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(
+                VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()), buf, storage_snapshot));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
         if (query_info.input_order_info)
@@ -457,6 +459,9 @@ void StorageBuffer::read(
     if (pipe_from_buffers.empty())
         return;
 
+    pipe_from_buffers = VirtualColumnUtils::extendWithCommonVirtualColumns(
+        std::move(pipe_from_buffers), column_names, shared_from_this());
+
     QueryPlan buffers_plan;
 
     /** If the sources from the table were processed before some non-initial stage of query execution,
@@ -470,7 +475,8 @@ void StorageBuffer::read(
             auto storage = std::make_shared<StorageValues>(
                     getStorageID(),
                     storage_snapshot->getAllColumnsDescription(),
-                    std::move(pipe_from_buffers));
+                    std::move(pipe_from_buffers),
+                    *getVirtualsPtr());
 
             auto interpreter
                 = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
