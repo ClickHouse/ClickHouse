@@ -1,4 +1,4 @@
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunctionHelper.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -27,7 +27,7 @@ namespace
     }
 }
 
-SQLQueryPiece applySimpleFunctionHelper(
+SQLQueryPiece applySimpleFunction(
     const PQT::Node * node,
     ConverterContext & context,
     const std::function<ASTPtr(ASTs)> & apply_function_to_ast,
@@ -35,7 +35,7 @@ SQLQueryPiece applySimpleFunctionHelper(
 {
     if (arguments.empty())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "applySimpleFunctionHelper: Require arguments: {}",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "applySimpleFunction: Require arguments: {}",
                         node->toString(*context.promql_tree));
     }
 
@@ -118,7 +118,7 @@ SQLQueryPiece applySimpleFunctionHelper(
 
                 if (res.store_method == StoreMethod::VECTOR_GRID)
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "applySimpleFunctionHelper: Can't handle multiple instant vector arguments: {}",
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "applySimpleFunction: Can't handle multiple instant vector arguments: {}",
                                     getPromQLText(argument, context));
                 }
 
@@ -132,7 +132,7 @@ SQLQueryPiece applySimpleFunctionHelper(
             case StoreMethod::RAW_DATA:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "applySimpleFunctionHelper: Can't handle argument {} because of its store method {}",
+                                "applySimpleFunction: Can't handle argument {} because of its store method {}",
                                 getPromQLText(argument, context), argument.store_method);
             }
         }
