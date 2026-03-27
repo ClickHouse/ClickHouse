@@ -77,7 +77,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     int32_t metadata_version = metadata_snapshot->getMetadataVersion();
     const auto storage_settings_ptr = storage.getSettings();
 
-    auto part_log_writer = [&](const ExecutionStatus & execution_status)
+    auto part_log_writer = [this](const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(

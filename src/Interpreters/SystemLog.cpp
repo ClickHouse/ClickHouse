@@ -598,16 +598,16 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     size_t flush_size = to_flush.size();
     bool is_manual_flush = flush_policy->isManualFlush(to_flush_end);
 
-    // we need query context to do inserts to target table with MV containing subqueries or joins
-    auto insert_context = Context::createCopy(context);
-    insert_context->makeQueryContext();
-    addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
-
-    auto thread_group = ThreadGroup::createForBackgroundOps(insert_context);
-    ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::SYSTEM_LOG_FLUSH, true);
-
     try
     {
+        // we need query context to do inserts to target table with MV containing subqueries or joins
+        auto insert_context = Context::createCopy(context);
+        insert_context->makeQueryContext();
+        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
+
+        auto thread_group = ThreadGroup::createForBackgroundOps(insert_context);
+        ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::SYSTEM_LOG_FLUSH, true);
+
         LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
             to_flush.size(), to_flush_end);
 

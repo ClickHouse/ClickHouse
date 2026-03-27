@@ -316,7 +316,7 @@ ReplicatedMergeMutateTaskBase::ReplicatedMergeMutateTaskBase(
     , selected_entry(selected_entry_)
     , entry(*selected_entry->log_entry)
     , log(log_)
-    /// This is needed to ask an asssignee to assign a new merge/mutate operation
+    /// This is needed to ask an assignee to assign a new merge/mutate operation
     /// It takes bool argument and true means that current task is successfully executed.
     , task_result_callback(task_result_callback_)
     , rng(randomSeed())
