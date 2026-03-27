@@ -10,11 +10,15 @@ DROP TABLE IF EXISTS d1;
 DROP TABLE IF EXISTS d2;
 DROP TABLE IF EXISTS d3;
 DROP TABLE IF EXISTS d4;
+DROP TABLE IF EXISTS d5;
 DROP TABLE IF EXISTS d6;
 DROP TABLE IF EXISTS d7;
 DROP TABLE IF EXISTS d8;
+DROP TABLE IF EXISTS buffer1;
 DROP VIEW IF EXISTS view1;
+DROP VIEW IF EXISTS view2;
 DROP VIEW IF EXISTS mv1;
+DROP VIEW IF EXISTS mv2;
 DROP TABLE IF EXISTS dist5;
 DROP TABLE IF EXISTS dist6;
 
@@ -48,9 +52,16 @@ CREATE TABLE m5 ENGINE=Merge(currentDatabase(), '^(m1|m2)$');
 
 CREATE VIEW view1 AS SELECT key, _table FROM d1;
 
+CREATE TABLE d5 (key Int, value Int) ENGINE=MergeTree() ORDER BY key;
+INSERT INTO d5 VALUES (7, 70);
+INSERT INTO d5 VALUES (8, 80);
+CREATE TABLE buffer1 AS d5 ENGINE = Buffer(currentDatabase(), d5, 1, 10000, 10000, 10000, 10000, 100000000, 100000000);
+INSERT INTO buffer1 VALUES (9, 90);
+
 CREATE TABLE d6 (key Int, value Int) ENGINE = MergeTree ORDER BY value;
 CREATE TABLE d7 (key Int, value Int) ENGINE = SummingMergeTree ORDER BY key;
 CREATE MATERIALIZED VIEW mv1 TO d7 AS SELECT key, count(value) AS value FROM d6 GROUP BY key;
+CREATE MATERIALIZED VIEW mv2 ENGINE = SummingMergeTree ORDER BY key AS SELECT key, count(value) AS value FROM d6 GROUP BY key;
 INSERT INTO d6 VALUES (10, 100), (10, 110);
 
 -- { echoOn }
@@ -80,12 +91,17 @@ SELECT _table, key, value FROM (SELECT _table, key, value FROM d1 UNION ALL SELE
 
 SELECT _table, key FROM view1 ORDER BY key ASC;
 
+SELECT _table, key, value FROM buffer1 ORDER BY key ASC;
+
 SELECT _table, key, value FROM mv1 ORDER BY key ASC;
+SELECT _table, key, value FROM mv2 ORDER BY key ASC;
 
 SELECT _table, * FROM dist5 ORDER BY key ASC;
 SELECT _table, * FROM dist6 ORDER BY key ASC;
 SELECT _table, * FROM m3 ORDER BY key ASC;
 SELECT _table, * FROM m4 WHERE _table = 'd8' ORDER BY key ASC;
 SELECT _table, * FROM m5 WHERE _table = 'd8' ORDER BY key ASC;
+
+SELECT * FROM (SELECT *, _table FROM d1 UNION ALL SELECT *, _table FROM d2) ORDER BY key ASC;
 
 SELECT * FROM d1 PREWHERE _table = 'd1'; -- { serverError ILLEGAL_PREWHERE }

@@ -48,8 +48,14 @@ d2	4	40
 SELECT _table, key FROM view1 ORDER BY key ASC;
 d1	1
 d1	2
+SELECT _table, key, value FROM buffer1 ORDER BY key ASC;
+d5	7	70
+d5	8	80
+buffer1	9	90
 SELECT _table, key, value FROM mv1 ORDER BY key ASC;
 mv1	10	2
+SELECT _table, key, value FROM mv2 ORDER BY key ASC;
+mv2	10	2
 SELECT _table, * FROM dist5 ORDER BY key ASC;
 d8	5	50
 d8	6	60
@@ -71,4 +77,9 @@ d8	6	60
 SELECT _table, * FROM m5 WHERE _table = 'd8' ORDER BY key ASC;
 d8	5	50
 d8	6	60
+SELECT * FROM (SELECT *, _table FROM d1 UNION ALL SELECT *, _table FROM d2) ORDER BY key ASC;
+1	10	d1
+2	20	d1
+3	30	d2
+4	40	d2
 SELECT * FROM d1 PREWHERE _table = 'd1'; -- { serverError ILLEGAL_PREWHERE }
