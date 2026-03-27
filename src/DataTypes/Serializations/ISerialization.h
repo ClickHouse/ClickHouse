@@ -12,6 +12,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
+#include <functional>
 #include <memory>
 #include <set>
 
@@ -172,6 +173,12 @@ public:
             return *this;
         }
 
+        SubstreamData & withLazyColumnCreator(std::function<ColumnPtr()> lazy_column_creator_)
+        {
+            lazy_column_creator = std::move(lazy_column_creator_);
+            return *this;
+        }
+
         SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
@@ -182,6 +189,11 @@ public:
         /// when we call enumerateStreams after deserializeBinaryBulkStatePrefix
         /// to enumerate dynamic streams.
         DeserializeBinaryBulkStatePtr deserialize_state;
+
+        /// When column is null, this optional creator can materialize it on demand.
+        /// Used for derived subcolumns (e.g. String `.size`) whose data can be
+        /// computed from a parent column without being stored separately.
+        std::function<ColumnPtr()> lazy_column_creator;
     };
 
     struct Substream
@@ -230,7 +242,6 @@ public:
             ObjectTypedPath,
             ObjectDynamicPath,
             ObjectSharedData,
-            ObjectSharedDataBucket,
             ObjectSharedDataStructure,
             ObjectSharedDataStructurePrefix,
             ObjectSharedDataStructureSuffix,
@@ -245,6 +256,9 @@ public:
             ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
             ObjectStructure,
+
+            Bucket,
+            MapBucketsInfo,
 
             Regular,
         };
@@ -263,8 +277,8 @@ public:
         /// Path name for Object type elements.
         String object_path_name;
 
-        /// Index of a bucket in Object shared data serialization.
-        size_t object_shared_data_bucket = 0;
+        /// Index of a bucket in Object shared data serialization or Map serialization with buckets.
+        size_t bucket = 0;
 
         /// Data for current substream.
         SubstreamData data;
@@ -324,6 +338,14 @@ public:
         MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
         /// Number of buckets that should be used for Object shared data serialization.
         size_t object_shared_data_buckets = 1;
+        /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
+        size_t max_buckets_in_map = 1;
+        /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
+        MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
+        /// Coefficient used in sqrt and linear map_buckets_strategy.
+        double map_buckets_coefficient = 1.0;
+        /// Minimum average map size to apply bucketing; if avg size is below this, a single bucket is used.
+        size_t map_buckets_min_avg_size = 0;
         /// Type of MergeTree data part we serialize/deserialize data from if any.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
 
@@ -365,14 +387,14 @@ public:
 
         bool use_compact_variant_discriminators_serialization = false;
 
-        enum class ObjectAndDynamicStatisticsMode
+        enum class StatisticsMode
         {
             NONE,   /// Don't write statistics.
             PREFIX, /// Write statistics in prefix.
             PREFIX_EMPTY, /// Write empty statistics in prefix.
             SUFFIX, /// Write statistics in suffix.
         };
-        ObjectAndDynamicStatisticsMode object_and_dynamic_write_statistics = ObjectAndDynamicStatisticsMode::NONE;
+        StatisticsMode write_statistics = StatisticsMode::NONE;
 
         /// Serialization versions that should be used for Dynamic and Object columns.
         MergeTreeDynamicSerializationVersion dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V2;
@@ -382,6 +404,14 @@ public:
 
         /// Number of buckets to use in Object shared data serialization if corresponding version supports it.
         size_t object_shared_data_buckets = 1;
+        /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
+        size_t max_buckets_in_map = 1;
+        /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
+        MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
+        /// Coefficient used in sqrt and linear map_buckets_strategy.
+        double map_buckets_coefficient = 1.0;
+        /// Minimum average map size to apply bucketing; if avg size is below this, a single bucket is used.
+        size_t map_buckets_min_avg_size = 0;
 
         bool native_format = false;
         const FormatSettings * format_settings = nullptr;
@@ -646,7 +676,7 @@ public:
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
-    static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
+    static bool isMetadataStream(const SubstreamPath & path);
 
     /// Returns true if stream with specified path corresponds to Variant subcolumn.
     static bool isVariantSubcolumn(const SubstreamPath & path);
