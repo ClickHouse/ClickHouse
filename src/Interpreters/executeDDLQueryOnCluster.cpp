@@ -122,19 +122,26 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     if (addresses.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No hosts defined to execute distributed DDL query");
 
-    std::vector<HostID> hosts;
-    hosts.reserve(addresses.size());
+    /// Exclude replicas that are marked as skip_distributed_ddl; they remain available
+    /// for Distributed table routing but must not receive ON CLUSTER DDL tasks.
+    std::vector<const Cluster::Address *> effective_addresses;
+    effective_addresses.reserve(addresses.size());
     for (const auto * address : addresses)
     {
         if (!address->skip_distributed_ddl)
-            hosts.emplace_back(*address);
+            effective_addresses.push_back(address);
     }
 
-    if (hosts.empty())
+    if (effective_addresses.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "No hosts to execute distributed DDL query: all replicas in cluster '{}' have skip_distributed_ddl set",
             cluster->getName());
+
+    std::vector<HostID> hosts;
+    hosts.reserve(effective_addresses.size());
+    for (const auto * address : effective_addresses)
+        hosts.emplace_back(*address);
 
     /// The current database in a distributed query need to be replaced with either
     /// the local current database or a shard's default database.
@@ -150,7 +157,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     if (need_replace_current_database)
     {
         Strings host_default_databases;
-        for (const auto * address : addresses)
+        for (const auto * address : effective_addresses)
         {
             if (!address->default_database.empty())
                 host_default_databases.push_back(address->default_database);
