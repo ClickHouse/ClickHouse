@@ -67,18 +67,34 @@ def get_release_branches(repo: str) -> List[str]:
     return [pr["headRefName"] for pr in json.loads(output)]
 
 
-def is_reverted(repo: str, pr_number: int) -> bool:
-    """Return True if a merged revert PR for the given PR number is found."""
-    # GitHub search: PRs whose title/body contain both "Revert" and "#<number>".
-    query = f'type:pr repo:{repo} is:merged "Revert" "#{pr_number}"'
-    return bool(gh_search(query, per_page=10, max_results=10))
+def find_revert_pr(repo: str, pr_number: int) -> Dict[str, Any]:
+    """Return the revert PR item if one exists, otherwise an empty dict.
+
+    Three layers of protection against false positives:
+    - `in:title` — search only PR titles, not bodies (avoids matching the
+      original PR that mentions its own number in the body).
+    - Self-match exclusion — skip any result whose number equals pr_number.
+    - Title validation — the matched title must start with "Revert " and
+      contain the exact "#<N>" token (avoids e.g. "Revert #1234" matching
+      a search for #123).
+    """
+    query = f'type:pr repo:{repo} is:merged "Revert #{pr_number}" in:title'
+    items = gh_search(query, per_page=10, max_results=10)
+    for item in items:
+        if item["number"] == pr_number:
+            continue  # self-match
+        title = item.get("title", "")
+        if title.startswith("Revert ") and f"#{pr_number}" in title:
+            return item
+    return {}
 
 
 def mark_ready(repo: str, pr_number: int, dry_run: bool) -> None:
     label = shlex.quote(Labels.READY_FOR_BACKPORT)
     if dry_run:
-        print(f"DRY RUN: would add {Labels.READY_FOR_BACKPORT!r} to PR #{pr_number}")
+        print(f"  DRY RUN: would add {Labels.READY_FOR_BACKPORT!r} to PR #{pr_number}")
         return
+    print(f"  Adding {Labels.READY_FOR_BACKPORT!r} to PR #{pr_number}")
     Shell.run(
         f"gh pr edit {pr_number} --add-label {label} --repo {repo}",
         verbose=True,
@@ -93,8 +109,9 @@ def remove_backport_labels(
         return
     remove_args = " ".join(f"--remove-label {shlex.quote(l)}" for l in to_remove)
     if dry_run:
-        print(f"DRY RUN: would remove labels {to_remove} from PR #{pr_number}")
+        print(f"  DRY RUN: would remove labels {to_remove} from PR #{pr_number}")
         return
+    print(f"  Removing labels {to_remove} from PR #{pr_number}")
     Shell.run(
         f"gh pr edit {pr_number} {remove_args} --repo {repo}",
         verbose=True,
@@ -143,8 +160,12 @@ def main() -> int:
         title = pr["title"]
         pr_labels = [l["name"] for l in pr.get("labels", [])]
         print(f"Checking PR #{number}: {title}")
-        if is_reverted(repo, number):
-            print(f"  PR #{number} was reverted — removing backport labels")
+        revert_pr = find_revert_pr(repo, number)
+        if revert_pr:
+            print(
+                f"  Reverted by PR #{revert_pr['number']}: {revert_pr.get('title', '')} "
+                f"({revert_pr.get('html_url', '')})"
+            )
             remove_backport_labels(repo, number, pr_labels, all_backport_labels, args.dry_run)
             continue
         mark_ready(repo, number, args.dry_run)
