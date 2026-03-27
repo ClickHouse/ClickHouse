@@ -36,7 +36,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int KEEPER_EXCEPTION;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
     extern const int LOGICAL_ERROR;
@@ -90,10 +89,7 @@ namespace
         writeBinary(node.getData(), out);
 
         /// Serialize ACL
-        if (version >= SnapshotVersion::V7)
-            writeBinary(node.acl_id, out);
-        else
-            writeBinary(static_cast<uint64_t>(node.acl_id), out);
+        writeBinary(node.acl_id, out);
         /// Write is_sequential for backwards compatibility
         if (version < SnapshotVersion::V6)
             writeBinary(false, out);
@@ -109,19 +105,10 @@ namespace
         writeBinary(node.stats.ephemeralOwner(), out);
         if (version < SnapshotVersion::V6)
             writeBinary(static_cast<int32_t>(node.stats.data_size), out);
-        writeBinary(node.numChildren(), out);
+        writeBinary(node.stats.numChildren(), out);
         writeBinary(node.stats.pzxid, out);
 
-        if (version >= SnapshotVersion::V7)
-            writeBinary(node.stats.seqNum(), out);
-        else
-        {
-            auto seq_num = node.stats.seqNum();
-            if (seq_num < std::numeric_limits<int32_t>::min() || seq_num > std::numeric_limits<int32_t>::max())
-                throw Exception(ErrorCodes::KEEPER_EXCEPTION,
-                    "Sequential node counter {} overflows int32, upgrade to snapshot version >= V7", seq_num);
-            writeBinary(static_cast<int32_t>(seq_num), out);
-        }
+        writeBinary(node.stats.seqNum(), out);
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
             writeBinary(node.sizeInBytes(), out);
@@ -137,25 +124,9 @@ namespace
             in.readStrict(node.data.get(), node.stats.data_size);
         }
 
-        if (version >= SnapshotVersion::V7)
+        if (version >= SnapshotVersion::V1)
         {
             readBinary(node.acl_id, in);
-
-            if (cleanup_acl)
-                node.acl_id = 0;
-        }
-        else if (version >= SnapshotVersion::V1)
-        {
-            /// V1-V6 stored acl_id as uint64_t
-            uint64_t acl_id_64;
-            readBinary(acl_id_64, in);
-
-            /// Some strange ACL ID during deserialization from ZooKeeper
-            if (acl_id_64 == std::numeric_limits<uint64_t>::max())
-                acl_id_64 = 0;
-
-            chassert(acl_id_64 <= std::numeric_limits<ACLId>::max());
-            node.acl_id = static_cast<ACLId>(acl_id_64);
 
             if (cleanup_acl)
                 node.acl_id = 0;
@@ -178,6 +149,10 @@ namespace
             if (!cleanup_acl)
                 node.acl_id = acl_map.convertACLs(acls);
         }
+
+        /// Some strange ACLID during deserialization from ZooKeeper
+        if (node.acl_id == std::numeric_limits<uint64_t>::max())
+            node.acl_id = 0;
 
         acl_map.addUsage(node.acl_id);
 
@@ -209,24 +184,15 @@ namespace
         }
         int32_t num_children = 0;
         readBinary(num_children, in);
-        node.setNumChildren(num_children);
+        if (ephemeral_owner == 0)
+            node.stats.setNumChildren(num_children);
 
         readBinary(node.stats.pzxid, in);
 
-        if (version >= SnapshotVersion::V7)
-        {
-            int64_t seq_num = 0;
-            readBinary(seq_num, in);
-            if (ephemeral_owner == 0)
-                node.stats.setSeqNum(seq_num);
-        }
-        else
-        {
-            int32_t seq_num = 0;
-            readBinary(seq_num, in);
-            if (ephemeral_owner == 0)
-                node.stats.setSeqNum(seq_num);
-        }
+        int32_t seq_num = 0;
+        readBinary(seq_num, in);
+        if (ephemeral_owner == 0)
+            node.stats.setSeqNum(seq_num);
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
         {
@@ -274,16 +240,13 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
     writeBinary(snapshot.session_id, out);
 
     /// Better to sort before serialization, otherwise snapshots can be different on different replicas
-    std::vector<std::pair<ACLId, Coordination::ACLs>> sorted_acl_map(snapshot.acl_map.begin(), snapshot.acl_map.end());
+    std::vector<std::pair<int64_t, Coordination::ACLs>> sorted_acl_map(snapshot.acl_map.begin(), snapshot.acl_map.end());
     ::sort(sorted_acl_map.begin(), sorted_acl_map.end());
     /// Serialize ACLs map
     writeBinary(sorted_acl_map.size(), out);
     for (const auto & [acl_id, acls] : sorted_acl_map)
     {
-        if (snapshot.version >= SnapshotVersion::V7)
-            writeBinary(acl_id, out);
-        else
-            writeBinary(static_cast<uint64_t>(acl_id), out);
+        writeBinary(acl_id, out);
         writeBinary(acls.size(), out);
         for (const auto & acl : acls)
         {
@@ -370,7 +333,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     uint8_t version;
     readBinary(version, in);
     SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
-    if (current_version > MAX_SUPPORTED_SNAPSHOT_VERSION)
+    if (current_version > CURRENT_SNAPSHOT_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
 
     deserialization_result.snapshot_meta = deserializeSnapshotMetadata(in);
@@ -415,19 +378,8 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         size_t current_map_size = 0;
         while (current_map_size < acls_map_size)
         {
-            ACLId acl_id;
-            if (current_version >= SnapshotVersion::V7)
-            {
-                readBinary(acl_id, in);
-            }
-            else
-            {
-                /// V1-V6 stored acl_id as uint64_t (8 bytes)
-                uint64_t acl_id_64;
-                readBinary(acl_id_64, in);
-                chassert(acl_id_64 <= std::numeric_limits<ACLId>::max());
-                acl_id = static_cast<ACLId>(acl_id_64);
-            }
+            uint64_t acl_id;
+            readBinary(acl_id, in);
 
             size_t acls_size;
             readBinary(acls_size, in);
@@ -518,8 +470,8 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
 
         auto ephemeral_owner = node.stats.ephemeralOwner();
         if constexpr (!use_rocksdb)
-            if (!node.stats.isEphemeral() && node.numChildren() > 0)
-                node.getChildren().reserve(node.numChildren());
+            if (!node.stats.isEphemeral() && node.stats.numChildren() > 0)
+                node.getChildren().reserve(node.stats.numChildren());
 
         if (ephemeral_owner != 0)
         {
@@ -557,7 +509,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         {
             if (itr.key != "/")
             {
-                if (itr.value.numChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
+                if (itr.value.stats.numChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
                 {
 #ifdef NDEBUG
                     /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
@@ -565,7 +517,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         getLogger("KeeperSnapshotManager"),
                         "Children counter in stat.numChildren {}"
                         " is different from actual children size {} for node {}",
-                        itr.value.numChildren(),
+                        itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
                         itr.key);
 #else
@@ -573,7 +525,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         ErrorCodes::LOGICAL_ERROR,
                         "Children counter in stat.numChildren {}"
                         " is different from actual children size {} for node {}",
-                        itr.value.numChildren(),
+                        itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
                         itr.key);
 #endif
@@ -633,9 +585,8 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
 }
 
 template<typename Storage>
-KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_)
+KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_)
     : storage(storage_)
-    , version(version_)
     , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
@@ -653,9 +604,8 @@ KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(Storage * storage_, uint64
 
 template<typename Storage>
 KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(
-    Storage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_)
+    Storage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_)
     : storage(storage_)
-    , version(version_)
     , snapshot_meta(snapshot_meta_)
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)

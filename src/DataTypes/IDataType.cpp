@@ -347,11 +347,11 @@ SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr s
     for (auto kind : kind_stack)
     {
         if (settings.canUseSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
-            serialization = SerializationSparse::create(serialization);
+            serialization = std::make_shared<SerializationSparse>(serialization);
         else if (kind == ISerialization::Kind::DETACHED)
-            serialization = SerializationDetached::create(serialization);
+            serialization = std::make_shared<SerializationDetached>(serialization);
         else if (kind == ISerialization::Kind::REPLICATED)
-            serialization = SerializationReplicated::create(serialization);
+            serialization = std::make_shared<SerializationReplicated>(serialization);
     }
 
     return serialization;

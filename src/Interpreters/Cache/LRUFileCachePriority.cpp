@@ -28,7 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_ENOUGH_SPACE;
 }
 
 void LRUFileCachePriority::State::add(uint64_t size_, uint64_t elements_, const CacheStateGuard::Lock &)
@@ -552,12 +551,7 @@ bool LRUFileCachePriority::modifySizeLimits(
 
     if (state->getSize(lock) > max_size_ || state->getElementsCount(lock) > max_elements_)
     {
-        /// This is not a logical error: during dynamic cache resize with SLRU,
-        /// concurrent `tryIncreasePriority` can promote entries from probationary
-        /// to protected queue between eviction candidate collection and this call,
-        /// causing a sub-queue to temporarily exceed its new limit.
-        /// The caller catches this and retries on the next config reload.
-        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot modify size limits to {} in size and {} in elements: "
                         "not enough space freed. Current size: {}/{}, elements: {}/{} ({})",
                         max_size_, max_elements_, state->getSize(lock), max_size.load(),
