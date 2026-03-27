@@ -11,7 +11,8 @@ namespace DB
 class ASTProjectionDeclaration;
 
 /// Projection index that accelerates spatial queries on geometry columns
-/// (Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, Geometry) using S2 cells.
+/// (Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, Geometry,
+///  and their Nullable variants) using S2 cells.
 ///
 /// SQL syntax:
 ///   PROJECTION <name> INDEX <geometry_column> TYPE s2(max_cells=8, min_level=16, max_level=20)
@@ -42,7 +43,7 @@ public:
 
     struct Params
     {
-        String source_column;       /// The geometry column to index (Point/Ring/LineString/MultiLineString/Polygon/MultiPolygon/Geometry).
+        String source_column;       /// The geometry column to index (Point/Ring/LineString/MultiLineString/Polygon/MultiPolygon/Geometry, or Nullable).
 
         UInt64 max_cells = 8;       /// Maximum number of S2 cells in the covering.
         UInt64 min_level = 16;      /// Minimum S2 cell level (0 = coarsest, 30 = finest).

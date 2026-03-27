@@ -57,8 +57,4 @@ CREATE TABLE t_s2_bad5
     PROJECTION pr INDEX s TYPE s2(strict_decode = 1)
 )
 ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO t_s2_bad5 VALUES (1, 'abc'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-DROP TABLE IF EXISTS t_s2_bad5;
+ORDER BY id; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

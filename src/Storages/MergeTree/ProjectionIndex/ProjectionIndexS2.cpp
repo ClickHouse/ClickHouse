@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -10,6 +11,7 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
@@ -313,6 +315,9 @@ struct GeometryDecodeCache
         std::vector<SphericalRing> rings;                     /// discriminator 5
     };
     std::optional<GeometryVariantData> geometry_data;
+
+    /// Non-null when the source column is Nullable; points into the ColumnNullable's null map.
+    const NullMap * null_map = nullptr;
 };
 
 /// Bulk-decode an entire column of geometry values into a cache.
@@ -323,10 +328,21 @@ std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & 
     const auto & factory = DataTypeFactory::instance();
     ColumnPtr full_column = column->convertToFullColumnIfConst();
 
+    /// Unwrap Nullable: strip the Nullable wrapper from both column and type,
+    /// and remember the null map so tryDecodeGeometry() can skip NULL rows.
+    const NullMap * null_map = nullptr;
+    DataTypePtr inner_type = type;
+    if (const auto * col_nullable = typeid_cast<const ColumnNullable *>(full_column.get()))
+    {
+        null_map = &col_nullable->getNullMapData();
+        full_column = col_nullable->getNestedColumnPtr();
+        inner_type = removeNullable(type);
+    }
+
     try
     {
         /// Geometry (Variant) type: decode each nested column separately.
-        if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
+        if (inner_type->getCustomName() && inner_type->getCustomName()->getName() == "Geometry")
         {
             const auto * column_variant = typeid_cast<const ColumnVariant *>(full_column.get());
             if (!column_variant)
@@ -364,66 +380,73 @@ std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & 
             if (const auto * col = get_variant(5))
                 cache.geometry_data->rings = ColumnToRingsConverter<SphericalPoint>::convert(col->getPtr());
 
+            cache.null_map = null_map;
             return cache;
         }
 
-        if (factory.get("Point")->equals(*type))
+        if (factory.get("Point")->equals(*inner_type))
         {
             auto decoded = ColumnToPointsConverter<SphericalPoint>::convert(full_column);
             GeometryDecodeCache cache;
             cache.kind = GeometryDecodeCache::Kind::Point;
             cache.rows = decoded.size();
             cache.decoded = std::move(decoded);
+            cache.null_map = null_map;
             return cache;
         }
 
-        if (factory.get("Ring")->equals(*type))
+        if (factory.get("Ring")->equals(*inner_type))
         {
             auto decoded = ColumnToRingsConverter<SphericalPoint>::convert(full_column);
             GeometryDecodeCache cache;
             cache.kind = GeometryDecodeCache::Kind::Ring;
             cache.rows = decoded.size();
             cache.decoded = std::move(decoded);
+            cache.null_map = null_map;
             return cache;
         }
 
-        if (factory.get("LineString")->equals(*type))
+        if (factory.get("LineString")->equals(*inner_type))
         {
             auto decoded = ColumnToLineStringsConverter<SphericalPoint>::convert(full_column);
             GeometryDecodeCache cache;
             cache.kind = GeometryDecodeCache::Kind::LineString;
             cache.rows = decoded.size();
             cache.decoded = std::move(decoded);
+            cache.null_map = null_map;
             return cache;
         }
 
-        if (factory.get("MultiLineString")->equals(*type))
+        if (factory.get("MultiLineString")->equals(*inner_type))
         {
             auto decoded = ColumnToMultiLineStringsConverter<SphericalPoint>::convert(full_column);
             GeometryDecodeCache cache;
             cache.kind = GeometryDecodeCache::Kind::MultiLineString;
             cache.rows = decoded.size();
             cache.decoded = std::move(decoded);
+            cache.null_map = null_map;
             return cache;
         }
 
-        if (factory.get("Polygon")->equals(*type))
+        if (factory.get("Polygon")->equals(*inner_type))
         {
             auto decoded = ColumnToPolygonsConverter<SphericalPoint>::convert(full_column);
             GeometryDecodeCache cache;
             cache.kind = GeometryDecodeCache::Kind::Polygon;
             cache.rows = decoded.size();
             cache.decoded = std::move(decoded);
+            cache.null_map = null_map;
             return cache;
         }
 
-        if (factory.get("MultiPolygon")->equals(*type))
+        if (factory.get("MultiPolygon")->equals(*inner_type))
         {
             auto decoded = ColumnToMultiPolygonsConverter<SphericalPoint>::convert(full_column);
             GeometryDecodeCache cache;
             cache.kind = GeometryDecodeCache::Kind::MultiPolygon;
             cache.rows = decoded.size();
             cache.decoded = std::move(decoded);
+            cache.null_map = null_map;
             return cache;
         }
     }
@@ -436,7 +459,7 @@ std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & 
 
     if (strict_mode)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "ProjectionIndexS2 supports only Point/Ring/LineString/MultiLineString/Polygon/MultiPolygon/Geometry, got {}", type->getName());
+            "ProjectionIndexS2 supports only Point/Ring/LineString/MultiLineString/Polygon/MultiPolygon/Geometry (and their Nullable variants), got {}", type->getName());
 
     return std::nullopt;
 }
@@ -450,6 +473,11 @@ std::optional<DecodedGeometry> tryDecodeGeometry(const GeometryDecodeCache & cac
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ProjectionIndexS2 row {} out of decode cache range {}", row, cache.rows);
         return std::nullopt;
     }
+
+    /// NULL rows in Nullable geometry columns — return nullopt so calculate()
+    /// emits face cells (safe: no false negatives, just no pruning for this row).
+    if (cache.null_map && (*cache.null_map)[row])
+        return std::nullopt;
 
     DecodedGeometry out;
 
@@ -1027,6 +1055,29 @@ void ProjectionIndexS2::fillProjectionDescription(
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "ProjectionIndexS2 cannot be used when table contains columns named `_part_index`, `_part_offset`, or `_parent_part_offset`");
+    }
+
+    /// Validate that the INDEX column has a supported geometry type.
+    {
+        auto col = columns.getPhysical(params.source_column);
+        auto col_type = removeNullable(col.type);
+        const auto & factory = DataTypeFactory::instance();
+
+        bool is_supported = (col_type->getCustomName() && col_type->getCustomName()->getName() == "Geometry")
+            || factory.get("Point")->equals(*col_type)
+            || factory.get("Ring")->equals(*col_type)
+            || factory.get("LineString")->equals(*col_type)
+            || factory.get("MultiLineString")->equals(*col_type)
+            || factory.get("Polygon")->equals(*col_type)
+            || factory.get("MultiPolygon")->equals(*col_type);
+
+        if (!is_supported)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "ProjectionIndexS2 INDEX column '{}' has unsupported type '{}'. "
+                "Supported types: Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, Geometry (and their Nullable variants)",
+                params.source_column,
+                col.type->getName());
     }
 
     result.type = ProjectionDescription::Type::Normal;

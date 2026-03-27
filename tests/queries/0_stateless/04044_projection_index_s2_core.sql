@@ -129,25 +129,6 @@ SETTINGS min_table_rows_to_use_projection_index = 0, max_projection_rows_to_use_
 
 DROP TABLE t_s2_multi;
 
--- ── Table 3: non-strict decode — no crash on non-geometry column ────────────────
-
-DROP TABLE IF EXISTS t_s2_non_strict;
-CREATE TABLE t_s2_non_strict
-(
-    id UInt64,
-    s String,
-    PROJECTION s2_proj INDEX s TYPE s2(strict_decode = 0)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO t_s2_non_strict VALUES (1, 'abc');
-
--- 6. Non-strict decode does not crash, returns correct row count
-SELECT count() FROM t_s2_non_strict;
-
-DROP TABLE t_s2_non_strict;
-
 -- ── Table 4: Point — S2 projection index on Point column ─────────────────────
 
 DROP TABLE IF EXISTS t_s2_point;
