@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
