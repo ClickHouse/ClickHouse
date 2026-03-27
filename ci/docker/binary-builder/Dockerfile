@@ -50,6 +50,28 @@ RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     echo "Installed PGO+BOLT toolchain from commit ${TOOLCHAIN_COMMIT}" \
     ; fi
 
+# Optional PGO+BOLT profiles for ClickHouse binary optimization
+# Set CLICKHOUSE_PROFILES_COMMIT to a master commit SHA to download pre-collected profiles.
+# Set to "none" (default) to skip — profiles are opt-in.
+ARG CLICKHOUSE_PROFILES_COMMIT=none
+RUN if [ "$CLICKHOUSE_PROFILES_COMMIT" != "none" ]; then \
+    arch=${TARGETARCH:-amd64} && \
+    case $arch in \
+        amd64) tarch=amd64 ;; \
+        arm64) tarch=aarch64 ;; \
+    esac && \
+    mkdir -p /opt/clickhouse-profiles && \
+    for profile in clickhouse-pgo.profdata.zst clickhouse-bolt.fdata.zst; do \
+        url="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${CLICKHOUSE_PROFILES_COMMIT}/collect_clickhouse_profiles_pgo_bolt_${tarch}/${profile}" && \
+        if curl -fsSL -o "/opt/clickhouse-profiles/${profile}" "$url"; then \
+            zstd -d --rm "/opt/clickhouse-profiles/${profile}" && \
+            echo "Downloaded ${profile}" ; \
+        else \
+            echo "Profile ${profile} not available (optional)" ; \
+        fi ; \
+    done \
+    ; fi
+
 # Download and install mold for s390x build
 ARG MOLD_VERSION=2.40.4
 RUN arch=${TARGETARCH:-amd64} \

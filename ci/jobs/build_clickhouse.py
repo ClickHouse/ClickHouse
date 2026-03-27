@@ -149,6 +149,19 @@ def main():
     if not is_private and info.pr_number != 0 and "ENABLE_THINLTO=1" in cmake_cmd:
         cmake_cmd += " -DDISABLE_ALL_DEBUG_SYMBOLS=1"
 
+    # PGO/BOLT profile integration for release builds
+    pgo_profile = "/opt/clickhouse-profiles/clickhouse-pgo.profdata"
+    bolt_profile = "/opt/clickhouse-profiles/clickhouse-bolt.fdata"
+    use_pgo = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
+    use_bolt = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
+
+    if use_pgo:
+        print(f"PGO profile found at {pgo_profile}, enabling profile-guided optimization")
+        cmake_cmd += f" -DCLICKHOUSE_PGO_PROFILE_PATH={pgo_profile}"
+    if use_bolt:
+        print(f"BOLT profile found at {bolt_profile}, enabling BOLT post-link optimization")
+        cmake_cmd += " -DENABLE_CLICKHOUSE_BOLT=ON"
+
     cmake_cmd += f" {repo_path_normalized} -B {build_dir_normalized}"
 
     res = True
@@ -269,6 +282,40 @@ def main():
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
         res = results[-1].is_ok()
+
+        # Apply BOLT post-link optimization if profiles are available
+        if res and use_bolt:
+            clickhouse_binary = f"{build_dir}/programs/clickhouse"
+            clickhouse_bolted = f"{build_dir}/programs/clickhouse.bolt"
+            bolt_cmd = (
+                f"llvm-bolt {clickhouse_binary} "
+                f"-o {clickhouse_bolted} "
+                f"-data={bolt_profile} "
+                f"-reorder-blocks=ext-tsp "
+                f"-reorder-functions=cdsort "
+                f"-split-functions "
+                f"-split-all-cold "
+                f"-split-eh "
+                f"-dyno-stats "
+                f"-use-gnu-stack"
+            )
+            bolt_result = Result.from_commands_run(
+                name="BOLT optimization",
+                command=bolt_cmd,
+            )
+            results.append(bolt_result)
+            if bolt_result.is_ok():
+                # Replace original binary with BOLT-optimized version
+                Shell.check(f"mv {clickhouse_bolted} {clickhouse_binary}")
+                print("BOLT optimization applied successfully")
+            else:
+                # BOLT is best-effort: if it fails, continue with the unoptimized binary
+                print("WARNING: BOLT optimization failed, continuing with unoptimized binary")
+                results[-1] = Result(
+                    name="BOLT optimization (skipped)",
+                    status=Result.Status.SUCCESS,
+                    info="BOLT post-processing failed (best-effort), using PGO-only binary",
+                )
 
     if (
         res
