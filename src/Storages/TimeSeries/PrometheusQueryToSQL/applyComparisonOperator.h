@@ -6,12 +6,12 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-/// Returns whether a specified string is the name of a prometheus math binary operator:
-/// '+', '-', '*', '/', '%', '^', 'atan2'
-bool isMathBinaryOperator(std::string_view operator_name);
+/// Returns whether a specified string is the name of a prometheus comparison operator:
+/// '==', '!=', '>', '<', '>=', '<='
+bool isComparisonOperator(std::string_view operator_name);
 
-/// Applies a prometheus math binary operator.
-SQLQueryPiece applyMathBinaryOperator(
+/// Applies a prometheus comparison operator.
+SQLQueryPiece applyComparisonOperator(
     const PQT::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
     SQLQueryPiece && right_argument,
