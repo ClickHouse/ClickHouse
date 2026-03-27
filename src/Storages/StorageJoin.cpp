@@ -772,7 +772,7 @@ Pipe StorageJoin::read(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
 
     auto source_sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(physical_column_names));
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);

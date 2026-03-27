@@ -390,7 +390,7 @@ Pipe StorageStripeLog::read(
     if (!data_file_size)
         return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
 
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
     auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
 
     size_t size = indices_for_selected_columns->blocks.size();

@@ -269,7 +269,7 @@ void StorageRedis::read(
     auto sample_block = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
 
     auto reading = std::make_unique<ReadFromRedis>(
-        VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()), query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams);
+        VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr()), query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams);
 
     query_plan.addStep(std::move(reading));
     query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());

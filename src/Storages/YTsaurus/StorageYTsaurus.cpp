@@ -73,7 +73,7 @@ Pipe StorageYTsaurus::read(
     size_t num_streams)
 {
     storage_snapshot->check(column_names);
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
 
     BlockPtr sample_block = std::make_shared<Block>();
     ColumnsDescription columns_description = storage_snapshot->metadata->getColumns();

@@ -442,7 +442,7 @@ void StorageBuffer::read(
         pipes_from_buffers.reserve(num_shards);
         for (auto & buf : buffers)
             pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(
-                VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()), buf, storage_snapshot));
+                VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr()), buf, storage_snapshot));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
         if (query_info.input_order_info)

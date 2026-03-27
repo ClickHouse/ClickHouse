@@ -383,7 +383,7 @@ void StorageNATS::read(
     if (!getStreamName().empty() && getConsumerName().empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "To read from NATS jet stream, you must specify `nats_consumer_name` setting");
 
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
     auto sample_block = storage_snapshot->getSampleBlockForColumns(physical_column_names);
     auto modified_context = addSettings(local_context);
 
@@ -711,7 +711,7 @@ bool StorageNATS::streamToViews()
     auto block_io = interpreter.execute();
 
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
-    auto column_names = VirtualColumnUtils::filterCommonVirtualColumns(block_io.pipeline.getHeader().getNames(), table);
+    auto column_names = VirtualColumnUtils::filterCommonVirtualColumns(block_io.pipeline.getHeader().getNames(), storage_snapshot->metadata, table->getVirtualsPtr());
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
     auto block_size = getMaxBlockSize();

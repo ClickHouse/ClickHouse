@@ -65,7 +65,7 @@ Pipe StorageSystemStoragePolicies::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
 
     MutableColumnPtr col_policy_name = ColumnString::create();
     MutableColumnPtr col_volume_name = ColumnString::create();

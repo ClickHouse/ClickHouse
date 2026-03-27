@@ -1032,7 +1032,7 @@ void StorageLog::read(
 {
     storage_snapshot->check(column_names);
     plan.addStep(std::make_unique<ReadFromStorageLogStep>(
-        VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()),
+        VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr()),
         local_context,
         std::static_pointer_cast<StorageLog>(shared_from_this()),
         storage_snapshot,

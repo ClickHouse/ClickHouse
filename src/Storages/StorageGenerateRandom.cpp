@@ -993,7 +993,7 @@ Pipe StorageGenerateRandom::read(
 
     const ColumnsDescription & our_columns = storage_snapshot->metadata->getColumns();
     Block block_header;
-    for (const auto & name : VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()))
+    for (const auto & name : VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr()))
     {
         const auto & name_type = our_columns.get(name);
         MutableColumnPtr column = name_type.type->createColumn();

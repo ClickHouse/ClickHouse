@@ -40,7 +40,7 @@ void StorageSystemNumbers::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
 
     query_plan.addStep(std::make_unique<ReadFromSystemNumbersStep>(
         physical_column_names, query_info, storage_snapshot, context, shared_from_this(), max_block_size, num_streams));

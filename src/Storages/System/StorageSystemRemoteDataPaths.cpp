@@ -188,7 +188,7 @@ void StorageSystemRemoteDataPaths::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
 
     auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::All, /*exclude_common=*/ true));
     auto read_step = std::make_unique<ReadFromSystemRemoteDataPaths>(

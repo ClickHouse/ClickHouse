@@ -504,7 +504,7 @@ void StorageObjectStorage::read(
 
     configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,

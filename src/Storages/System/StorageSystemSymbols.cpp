@@ -131,7 +131,7 @@ Pipe StorageSystemSymbols::read(
     context->getAccess()->checkAccess(AccessType::INTROSPECTION);
 
     storage_snapshot->check(column_names);
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
 
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
     auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, physical_column_names);

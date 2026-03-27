@@ -105,7 +105,7 @@ Pipe StorageSQLite::read(
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
     storage_snapshot->check(column_names);
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
 
     String query = transformQueryForExternalDatabase(
         query_info,

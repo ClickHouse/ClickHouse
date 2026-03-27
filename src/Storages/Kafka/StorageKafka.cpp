@@ -247,7 +247,7 @@ void StorageKafka::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
     query_plan.addStep(std::make_unique<ReadFromStorageKafka>(
         physical_column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
     query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
@@ -698,7 +698,7 @@ bool StorageKafka::streamToViews()
             *this,
             storage_snapshot,
             kafka_context,
-            VirtualColumnUtils::filterCommonVirtualColumns(block_io.pipeline.getHeader().getNames(), table),
+            VirtualColumnUtils::filterCommonVirtualColumns(block_io.pipeline.getHeader().getNames(), storage_snapshot->metadata, table->getVirtualsPtr()),
             log,
             block_size,
             false);

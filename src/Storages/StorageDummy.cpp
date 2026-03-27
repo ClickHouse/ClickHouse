@@ -44,7 +44,7 @@ void StorageDummy::read(QueryPlan & query_plan,
     size_t)
 {
     query_plan.addStep(std::make_unique<ReadFromDummy>(
-        VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()),
+        VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr()),
         query_info,
         original_storage_snapshot ? original_storage_snapshot : storage_snapshot,
         local_context,

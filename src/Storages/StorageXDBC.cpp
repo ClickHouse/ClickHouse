@@ -132,7 +132,7 @@ void StorageXDBC::read(
     storage_snapshot->check(column_names);
 
     bridge_helper->startBridgeSync();
-    IStorageURLBase::read(query_plan, VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()), storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    IStorageURLBase::read(query_plan, VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr()), storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 
     query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 }

@@ -799,16 +799,14 @@ Pipe extendWithCommonVirtualColumns(
 
 Names filterCommonVirtualColumns(
     const Names & column_names,
-    const StoragePtr & storage)
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsDescriptionPtr & virtual_columns)
 {
-    const auto virtual_columns = storage->getVirtualsPtr();
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-
     Names result;
     result.reserve(column_names.size());
     for (const auto & name : column_names)
     {
-        if (storage->isVirtualColumn(name, metadata_snapshot))
+        if (!metadata_snapshot->getColumns().has(name) && virtual_columns->has(name))
             if (const auto * desc = virtual_columns->tryGetDescription(name); desc && desc->isCommon())
                 continue;
 
@@ -818,12 +816,8 @@ Names filterCommonVirtualColumns(
     /// If all requested columns were common virtuals, we still need at least one
     /// physical column so the storage has something to read.
     if (result.empty())
-    {
-        const auto & metadata = storage->getInMemoryMetadataPtr();
-        const auto & all_physical = metadata->getColumns().getAllPhysical();
-        if (!all_physical.empty())
+        if (const auto & all_physical = metadata_snapshot->getColumns().getAllPhysical(); !all_physical.empty())
             result.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
-    }
 
     return result;
 }

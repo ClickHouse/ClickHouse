@@ -196,7 +196,7 @@ void StorageMemory::read(
     size_t num_streams)
 {
     query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(
-        VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()),
+        VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr()),
         query_info,
         storage_snapshot,
         context,

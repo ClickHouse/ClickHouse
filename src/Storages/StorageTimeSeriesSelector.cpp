@@ -414,7 +414,7 @@ namespace
 void StorageTimeSeriesSelector::read(
     QueryPlan & query_plan,
     const Names & column_names,
-    const StorageSnapshotPtr & /* storage_snapshot */,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /* processed_stage */,
@@ -451,7 +451,7 @@ void StorageTimeSeriesSelector::read(
         config.timestamp_data_type,
         config.scalar_data_type);
 
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 

@@ -98,7 +98,7 @@ Pipe StorageMongoDB::read(
     storage_snapshot->check(column_names);
 
     Block sample_block;
-    for (const String & column_name : VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this()))
+    for (const String & column_name : VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr()))
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         sample_block.insert({ column_data.type, column_data.name });

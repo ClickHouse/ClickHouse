@@ -887,7 +887,7 @@ void StorageHive::read(
 
     auto this_ptr = std::static_pointer_cast<StorageHive>(shared_from_this());
 
-    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, storage_snapshot->metadata, getVirtualsPtr());
 
     auto reading = std::make_unique<ReadFromHive>(
         physical_column_names,

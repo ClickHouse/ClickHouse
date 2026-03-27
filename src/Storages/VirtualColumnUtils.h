@@ -16,6 +16,8 @@ class Chunk;
 class NamesAndTypesList;
 class QueryPlan;
 class Pipe;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 class ExpressionActions;
 class IMergeTreeDataPart;
@@ -184,7 +186,8 @@ Pipe extendWithCommonVirtualColumns(
 /// Filter out common virtual column names (marked with is_common) from the given list.
 Names filterCommonVirtualColumns(
     const Names & column_names,
-    const StoragePtr & storage);
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsDescriptionPtr & virtual_columns);
 
 }
 
