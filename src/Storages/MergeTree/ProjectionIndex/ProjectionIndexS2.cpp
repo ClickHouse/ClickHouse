@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/typeid_cast.h>
@@ -281,11 +282,14 @@ struct GeometryDecodeCache
         LineString,
         MultiLineString,
         Polygon,
-        MultiPolygon
+        MultiPolygon,
+        Geometry
     };
 
     Kind kind;
     size_t rows = 0;
+
+    /// For single-type columns (Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon):
     std::variant<
         std::vector<SphericalPoint>,
         std::vector<SphericalRing>,
@@ -293,10 +297,26 @@ struct GeometryDecodeCache
         std::vector<SphericalMultiLineString>,
         std::vector<SphericalPolygon>,
         std::vector<SphericalMultiPolygon>> decoded;
+
+    /// For Geometry (Variant) columns: each nested column decoded separately.
+    /// Discriminator mapping (sorted alphabetically by type name):
+    ///   0 = LineString, 1 = MultiLineString, 2 = MultiPolygon,
+    ///   3 = Point, 4 = Polygon, 5 = Ring, 255 = NULL
+    struct GeometryVariantData
+    {
+        const ColumnVariant * column_variant = nullptr;
+        std::vector<SphericalLineString> linestrings;         /// discriminator 0
+        std::vector<SphericalMultiLineString> multilinestrings; /// discriminator 1
+        std::vector<SphericalMultiPolygon> multipolygons;     /// discriminator 2
+        std::vector<SphericalPoint> points;                   /// discriminator 3
+        std::vector<SphericalPolygon> polygons;               /// discriminator 4
+        std::vector<SphericalRing> rings;                     /// discriminator 5
+    };
+    std::optional<GeometryVariantData> geometry_data;
 };
 
 /// Bulk-decode an entire column of geometry values into a cache.
-/// Supports Point, LineString, MultiLineString, Polygon, MultiPolygon.
+/// Supports Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, and Geometry (Variant).
 /// Returns nullopt if the column type is not a supported geometry type.
 std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & column, const DataTypePtr & type, bool strict_mode)
 {
@@ -305,6 +325,48 @@ std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & 
 
     try
     {
+        /// Geometry (Variant) type: decode each nested column separately.
+        if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
+        {
+            const auto * column_variant = typeid_cast<const ColumnVariant *>(full_column.get());
+            if (!column_variant)
+                return std::nullopt;
+
+            GeometryDecodeCache cache;
+            cache.kind = GeometryDecodeCache::Kind::Geometry;
+            cache.rows = column_variant->size();
+            cache.geometry_data.emplace();
+            cache.geometry_data->column_variant = column_variant;
+
+            /// Global discriminator order (DataTypeVariant sorts by name alphabetically):
+            ///   0 = LineString, 1 = MultiLineString, 2 = MultiPolygon,
+            ///   3 = Point, 4 = Polygon, 5 = Ring
+            /// Use getVariantByGlobalDiscriminator() to avoid dependence on local ordering.
+            auto get_variant = [&](size_t global_discr) -> const IColumn *
+            {
+                auto local_discr = column_variant->localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(global_discr));
+                if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                    return nullptr;
+                const auto & col = column_variant->getVariantByLocalDiscriminator(local_discr);
+                return col.size() > 0 ? &col : nullptr;
+            };
+
+            if (const auto * col = get_variant(0))
+                cache.geometry_data->linestrings = ColumnToLineStringsConverter<SphericalPoint>::convert(col->getPtr());
+            if (const auto * col = get_variant(1))
+                cache.geometry_data->multilinestrings = ColumnToMultiLineStringsConverter<SphericalPoint>::convert(col->getPtr());
+            if (const auto * col = get_variant(2))
+                cache.geometry_data->multipolygons = ColumnToMultiPolygonsConverter<SphericalPoint>::convert(col->getPtr());
+            if (const auto * col = get_variant(3))
+                cache.geometry_data->points = ColumnToPointsConverter<SphericalPoint>::convert(col->getPtr());
+            if (const auto * col = get_variant(4))
+                cache.geometry_data->polygons = ColumnToPolygonsConverter<SphericalPoint>::convert(col->getPtr());
+            if (const auto * col = get_variant(5))
+                cache.geometry_data->rings = ColumnToRingsConverter<SphericalPoint>::convert(col->getPtr());
+
+            return cache;
+        }
+
         if (factory.get("Point")->equals(*type))
         {
             auto decoded = ColumnToPointsConverter<SphericalPoint>::convert(full_column);
@@ -374,7 +436,7 @@ std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & 
 
     if (strict_mode)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "ProjectionIndexS2 supports only Point/Ring/LineString/MultiLineString/Polygon/MultiPolygon, got {}", type->getName());
+            "ProjectionIndexS2 supports only Point/Ring/LineString/MultiLineString/Polygon/MultiPolygon/Geometry, got {}", type->getName());
 
     return std::nullopt;
 }
@@ -426,9 +488,57 @@ std::optional<DecodedGeometry> tryDecodeGeometry(const GeometryDecodeCache & cac
         return out;
     }
 
-    out.kind = DecodedGeometry::Kind::MultiPolygon;
-    out.value = std::get<std::vector<SphericalMultiPolygon>>(cache.decoded)[row];
-    return out;
+    if (cache.kind == GeometryDecodeCache::Kind::MultiPolygon)
+    {
+        out.kind = DecodedGeometry::Kind::MultiPolygon;
+        out.value = std::get<std::vector<SphericalMultiPolygon>>(cache.decoded)[row];
+        return out;
+    }
+
+    /// Geometry (Variant) type: use global discriminator to determine the type of each row.
+    if (cache.kind == GeometryDecodeCache::Kind::Geometry)
+    {
+        const auto & gd = *cache.geometry_data;
+        const auto * cv = gd.column_variant;
+
+        auto global_discr = cv->globalDiscriminatorAt(row);
+        if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+            return std::nullopt;
+
+        auto offset = cv->offsetAt(row);
+
+        switch (global_discr)
+        {
+            case 0: /// LineString
+                out.kind = DecodedGeometry::Kind::LineString;
+                out.value = gd.linestrings[offset];
+                return out;
+            case 1: /// MultiLineString
+                out.kind = DecodedGeometry::Kind::MultiLineString;
+                out.value = gd.multilinestrings[offset];
+                return out;
+            case 2: /// MultiPolygon
+                out.kind = DecodedGeometry::Kind::MultiPolygon;
+                out.value = gd.multipolygons[offset];
+                return out;
+            case 3: /// Point
+                out.kind = DecodedGeometry::Kind::Point;
+                out.value = gd.points[offset];
+                return out;
+            case 4: /// Polygon
+                out.kind = DecodedGeometry::Kind::Polygon;
+                out.value = gd.polygons[offset];
+                return out;
+            case 5: /// Ring
+                out.kind = DecodedGeometry::Kind::Ring;
+                out.value = gd.rings[offset];
+                return out;
+            default:
+                return std::nullopt;
+        }
+    }
+
+    return std::nullopt;
 }
 
 #if USE_S2_GEOMETRY

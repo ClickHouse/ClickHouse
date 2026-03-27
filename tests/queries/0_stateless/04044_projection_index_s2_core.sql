@@ -316,3 +316,49 @@ SELECT groupArray(id) FROM
 );
 
 DROP TABLE t_s2_mline;
+
+-- ── Table 8: Geometry — S2 projection index on Geometry (Variant) column ──────
+
+DROP TABLE IF EXISTS t_s2_geom;
+CREATE TABLE t_s2_geom
+(
+    id UInt64,
+    g Geometry,
+    PROJECTION s2_proj INDEX g TYPE s2(max_cells = 8, min_level = 15, max_level = 15)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_s2_geom VALUES
+(1, CAST((0.005, 0.005), 'Point'));
+INSERT INTO t_s2_geom VALUES
+(2, CAST([[(10.0, 10.0), (10.01, 10.0), (10.01, 10.01), (10.0, 10.01), (10.0, 10.0)]], 'Polygon'));
+INSERT INTO t_s2_geom VALUES
+(3, CAST([(30.0, 30.0), (30.01, 30.01)], 'Ring'));
+INSERT INTO t_s2_geom VALUES
+(4, CAST([(50.0, 50.0), (50.01, 50.01)], 'LineString'));
+INSERT INTO t_s2_geom VALUES
+(5, CAST([[(70.0, 70.0), (70.01, 70.01)]], 'MultiLineString'));
+
+-- 14. No false negatives: ST_Intersects with Geometry column (mixed types)
+SELECT
+    (SELECT count() FROM t_s2_geom
+     WHERE ST_Intersects(g,
+        CAST([[(0.0, 0.0), (0.01, 0.0), (0.01, 0.01), (0.0, 0.01), (0.0, 0.0)]], 'Polygon')))
+    =
+    (SELECT count() FROM t_s2_geom
+     WHERE ST_Intersects(g,
+        CAST([[(0.0, 0.0), (0.01, 0.0), (0.01, 0.01), (0.0, 0.01), (0.0, 0.0)]], 'Polygon'))
+     SETTINGS enable_s2_index_pruning = 0);
+
+-- 15. Correct row IDs returned for Geometry column
+SELECT groupArray(id) FROM
+(
+    SELECT id FROM t_s2_geom
+    WHERE ST_Intersects(g,
+        CAST([[(0.0, 0.0), (0.01, 0.0), (0.01, 0.01), (0.0, 0.01), (0.0, 0.0)]], 'Polygon'))
+    ORDER BY id
+);
+
+DROP TABLE t_s2_geom;
