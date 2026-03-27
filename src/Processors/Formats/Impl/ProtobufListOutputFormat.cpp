@@ -49,6 +49,7 @@ void ProtobufListOutputFormat::resetFormatterImpl()
     (*serializer).reset();
 }
 
+void registerOutputFormatProtobufList(FormatFactory & factory);
 void registerOutputFormatProtobufList(FormatFactory & factory)
 {
     factory.registerOutputFormat(

@@ -811,6 +811,8 @@ void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
     assertDetachedTableNotInUse(uuid);
 }
 
+void registerDatabaseAtomic(DatabaseFactory & factory);
+
 void registerDatabaseAtomic(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

@@ -131,6 +131,7 @@ NamesAndTypesList ProtobufListSchemaReader::readSchema()
     return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields, oneof_presence);
 }
 
+void registerInputFormatProtobufList(FormatFactory & factory);
 void registerInputFormatProtobufList(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -157,6 +158,7 @@ void registerInputFormatProtobufList(FormatFactory & factory)
         });
 }
 
+void registerProtobufListSchemaReader(FormatFactory & factory);
 void registerProtobufListSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("ProtobufList", [](const FormatSettings & settings)

@@ -48,6 +48,7 @@ void CapnProtoRowOutputFormat::write(const Columns & columns, size_t row_num)
 
 }
 
+void registerOutputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory)
 {
     factory.registerOutputFormat("CapnProto", [](

@@ -2734,6 +2734,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
     LOG_INFO(getLogger("InterpreterCreateQuery"), "Removed {} transaction metadata files for table, relative path: {}.", total_removed, table_data_path);
 }
 
+void registerInterpreterCreateQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

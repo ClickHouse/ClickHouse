@@ -199,6 +199,7 @@ BlockIO InterpreterDeleteQuery::execute()
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
 }
 
+void registerInterpreterDeleteQuery(InterpreterFactory & factory);
 void registerInterpreterDeleteQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)

@@ -142,8 +142,7 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
     return {configuration->getString(key)};
 }
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 {

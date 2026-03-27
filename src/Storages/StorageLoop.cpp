@@ -47,6 +47,7 @@ namespace DB
         ));
     }
 
+    void registerStorageLoop(StorageFactory & factory);
     void registerStorageLoop(StorageFactory & factory)
     {
         factory.registerStorage("Loop", [](const StorageFactory::Arguments & args)

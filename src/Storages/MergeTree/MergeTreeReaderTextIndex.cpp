@@ -499,7 +499,7 @@ void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
 }
 
 /// Finds the union of the posting lists for range [granule_offset, granule_offset + num_rows)
-void applyPostingsAny(
+static void applyPostingsAny(
     IColumn & column,
     PostingsMap & postings_map,
     PaddedPODArray<UInt32> & indices,
@@ -538,7 +538,7 @@ void applyPostingsAny(
 }
 
 /// Finds the intersection of the posting lists for range [granule_offset, granule_offset + num_rows)
-void applyPostingsAll(
+static void applyPostingsAll(
     IColumn & column,
     PostingsMap & postings_map,
     PaddedPODArray<UInt32> & indices,
@@ -609,6 +609,11 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
 }
 
+MergeTreeReaderPtr createMergeTreeReaderTextIndex(
+    const IMergeTreeReader * main_reader,
+    const MergeTreeIndexWithCondition & index,
+    const NamesAndTypesList & columns_to_read,
+    bool can_skip_mark);
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,

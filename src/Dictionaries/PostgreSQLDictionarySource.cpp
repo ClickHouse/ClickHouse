@@ -211,6 +211,7 @@ static void validateConfigKeys(
 
 #endif
 
+void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory);
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,

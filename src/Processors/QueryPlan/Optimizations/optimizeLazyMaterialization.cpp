@@ -42,7 +42,7 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 /// Returns two vectors of total size equal to the number of columns in the header.
 /// The first vector (size of `inputs.size()`) contains positions of the inputs in the header.
 /// The second vector contains other positions (sorted).
-std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
     std::unordered_map<std::string, std::list<size_t>> name_to_position;
     for (size_t i = 0; i < header.columns(); ++i)
@@ -71,7 +71,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(c
 /// Returns a boolean mask which indicate if the header column is required.
 /// The required_output_positions is the same mask for the output header.
 /// There may be less DAG outputs than required_output_positions.size().
-std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
+static std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
 {
     std::unordered_set<const ActionsDAG::Node *> required_nodes;
     std::stack<const ActionsDAG::Node *> stack;
@@ -113,7 +113,7 @@ std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block
 }
 
 /// Add filter column to required_output_positions.
-void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_positions, const FilterStep & filter_step)
+static void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_positions, const FilterStep & filter_step)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
@@ -145,7 +145,7 @@ struct SplitExpressionStepResult
 
 /// Split if ActionsDAG can produce unused pair of input/output which only changes the order.
 /// Remove them from the DAG.
-void removeDanglingNodes(ActionsDAG & dag)
+static void removeDanglingNodes(ActionsDAG & dag)
 {
     std::unordered_set<const ActionsDAG::Node *> used_nodes;
     for (const auto & node : dag.getNodes())
@@ -168,7 +168,7 @@ void removeDanglingNodes(ActionsDAG & dag)
     dag.removeUnusedActions();
 }
 
-SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, std::vector<bool> required_output_positions)
+static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, std::vector<bool> required_output_positions)
 {
     const auto & expression = expression_step.getExpression();
     const auto & outputs = expression.getOutputs();
@@ -192,7 +192,7 @@ struct SplitFilterResult
     ActionsDAG lazy_expression_step;
 };
 
-SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bool> required_output_positions)
+static SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bool> required_output_positions)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
@@ -220,7 +220,7 @@ SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bo
     return { std::move(required_input_positions), std::move(filter_dag_info), std::move(split_result.second) };
 }
 
-std::unique_ptr<LazilyReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
+static std::unique_ptr<LazilyReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
 {
     const auto & cols = reading_step.getOutputHeader()->getColumnsWithTypeAndName();
     chassert(cols.size() == required_output_positions.size());
@@ -233,7 +233,7 @@ std::unique_ptr<LazilyReadFromMergeTree> removeUnusedColumnsFromReadingStep(Read
     return reading_step.keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
 }
 
-ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
+static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
 {
     bool added_part_starting_offset;
     bool added_part_offset;

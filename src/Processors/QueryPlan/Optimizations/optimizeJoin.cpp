@@ -85,7 +85,7 @@ static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name
     return 0;
 }
 
-NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
+static NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
 {
     NameSet output_names;
 
@@ -147,7 +147,7 @@ NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & acti
 }
 
 /// If we have stats for column names for storage we need to find corresponding internal column names
-void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
+static void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     std::unordered_map<String, ColumnStats> original = std::move(mapped);
     mapped = {};
@@ -195,7 +195,7 @@ struct RuntimeHashStatisticsContext
     }
 };
 
-RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
+static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     std::optional<Float64> total_number_of_distinct_values = 1;
@@ -232,7 +232,7 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
+static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -505,7 +505,7 @@ struct QueryGraphBuilder
     }
 };
 
-void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
+static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 {
     size_t shift = lhs.relation_stats.size();
 
@@ -571,7 +571,7 @@ constexpr bool isInnerOrCross(JoinKind kind)
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
-size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
+static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
     if (isTrivialStep(node))
         node = node->children[0];
@@ -839,7 +839,7 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
-QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
+static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);

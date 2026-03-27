@@ -116,6 +116,7 @@ catch (...)
     throw;
 }
 
+void registerInputFormatProtobuf(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory)
 {
     for (bool with_length_delimiter : {false, true})
@@ -160,6 +161,7 @@ NamesAndTypesList ProtobufSchemaReader::readSchema()
     return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields, oneof_presence);
 }
 
+void registerProtobufSchemaReader(FormatFactory & factory);
 void registerProtobufSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("Protobuf", [](const FormatSettings & settings)

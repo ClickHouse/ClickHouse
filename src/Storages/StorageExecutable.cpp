@@ -207,6 +207,7 @@ void StorageExecutable::read(
     query_plan.addResources(std::move(resources));
 }
 
+void registerStorageExecutable(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory)
 {
     auto register_storage = [](const StorageFactory::Arguments & args, bool is_executable_pool) -> StoragePtr

@@ -390,6 +390,7 @@ void JSONEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
     transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
+void registerInputFormatJSONEachRow(FormatFactory & factory);
 void registerInputFormatJSONEachRow(FormatFactory & factory)
 {
     auto register_format = [&](const String & format_name, bool json_strings)
@@ -420,6 +421,7 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRow");
 }
 
+void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
@@ -428,6 +430,7 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
     factory.registerFileSegmentationEngine("NDJSON", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
+void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory)
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONEachRow", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
@@ -436,6 +439,7 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory
     factory.registerNonTrivialPrefixAndSuffixChecker("NDJSON", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
+void registerJSONEachRowSchemaReader(FormatFactory & factory);
 void registerJSONEachRowSchemaReader(FormatFactory & factory)
 {
     auto register_schema_reader = [&](const String & format_name)

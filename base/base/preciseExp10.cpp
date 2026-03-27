@@ -29,6 +29,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ----------------------------------------------------------------------
 */
 
+#include <base/preciseExp10.h>
+
 #include <cmath>
 
 double preciseExp10(double x)

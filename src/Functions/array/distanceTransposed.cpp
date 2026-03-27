@@ -498,6 +498,9 @@ private:
 };
 
 /// Used by TupleOrArrayFunction
+FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
+FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_);
+
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 {
     return FunctionArrayDistance<L2DistanceTransposed>::create(context_);

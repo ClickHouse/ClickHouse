@@ -75,6 +75,7 @@ RollupTransform::RollupTransform(SharedHeader header, AggregatingTransformParams
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {}
 
+MutableColumnPtr getColumnWithDefaults(Block const & header, size_t key, size_t n);
 MutableColumnPtr getColumnWithDefaults(Block const & header, size_t key, size_t n)
 {
     auto const & col = header.getByPosition(key);

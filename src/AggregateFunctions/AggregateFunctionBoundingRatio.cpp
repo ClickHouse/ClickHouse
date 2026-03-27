@@ -200,6 +200,7 @@ AggregateFunctionPtr createAggregateFunctionRate(const std::string & name, const
 
 }
 
+void registerAggregateFunctionRate(AggregateFunctionFactory & factory);
 void registerAggregateFunctionRate(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

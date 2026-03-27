@@ -39,31 +39,14 @@ static constexpr std::array boolean_functions{
     "or"sv};
 
 
-bool isBooleanFunction(const String & func_name)
+static bool isBooleanFunction(const String & func_name)
 {
     return std::any_of(
         boolean_functions.begin(), boolean_functions.end(), [&](const auto boolean_func) { return func_name == boolean_func; });
 }
 
-bool isNodeFunction(const QueryTreeNodePtr & node, const String & func_name)
-{
-    if (const auto * function_node = node->as<FunctionNode>())
-        return function_node->getFunctionName() == func_name;
-    return false;
-}
 
-QueryTreeNodePtr getFunctionArgument(const QueryTreeNodePtr & node, size_t idx)
-{
-    if (const auto * function_node = node->as<FunctionNode>())
-    {
-        const auto & args = function_node->getArguments().getNodes();
-        if (idx < args.size())
-            return args[idx];
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected '{}' to be a function with at least {} arguments", node->formatASTForErrorMessage(), idx + 1);
-}
-
-QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
+static QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
 {
     for (const auto & node : nodes)
     {
@@ -79,7 +62,7 @@ QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
 
 /// Checks if the node is combination of isNull and notEquals functions of two the same arguments:
 /// [ (a <> b AND) ] (a IS NULL) AND (b IS NULL)
-bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs)
+static bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs)
 {
     QueryTreeNodePtrWithHashSet all_arguments;
     QueryTreeNodePtrWithHashSet is_null_arguments;
@@ -119,7 +102,7 @@ bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, 
     return true;
 }
 
-bool isBooleanConstant(const QueryTreeNodePtr & node, bool expected_value)
+static bool isBooleanConstant(const QueryTreeNodePtr & node, bool expected_value)
 {
     const auto * constant_node = node->as<ConstantNode>();
     if (!constant_node || !constant_node->getResultType()->equals(DataTypeUInt8()))
@@ -130,7 +113,7 @@ bool isBooleanConstant(const QueryTreeNodePtr & node, bool expected_value)
 }
 
 /// Returns true if expression consists of only conjunctions of functions with the specified name or true constants
-bool isOnlyConjunctionOfFunctions(
+static bool isOnlyConjunctionOfFunctions(
     const QueryTreeNodePtr & node,
     const String & func_name,
     const QueryTreeNodePtrWithHashSet & allowed_arguments)
@@ -160,7 +143,7 @@ bool isOnlyConjunctionOfFunctions(
 
 /// We can rewrite to a <=> b only if we are joining on a and b,
 /// because the function is not yet implemented for other cases.
-bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const JoinNode & join_node)
+static bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const JoinNode & join_node)
 {
     const auto & argument_nodes = node_function.getArguments().getNodes();
     if (argument_nodes.size() != 2)
@@ -177,7 +160,7 @@ bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const 
            (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
 }
 
-void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeNodes &nodes, QueryTreeNodePtr node)
+static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeNodes &nodes, QueryTreeNodePtr node)
 {
     const auto [_, inserted] = set.emplace(node);
     if (inserted)
@@ -185,7 +168,7 @@ void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeNodes &n
 }
 
 // Returns the flattened AND/OR node if the passed-in node can be flattened. Doesn't modify the passed-in node.
-std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode & node, const ContextPtr & context)
+static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode & node, const ContextPtr & context)
 {
     const auto & function_name = node.getFunctionName();
     if (function_name != "or" && function_name != "and")
@@ -260,7 +243,7 @@ struct CommonExpressionExtractionResult
 // Optimize disjuctions by extracting common expressions in disjuncts.
 // Example: A or B or (B and C)
 // Result: A or B
-std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(const QueryTreeNodes & disjuncts, const ContextPtr & context)
+static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(const QueryTreeNodes & disjuncts, const ContextPtr & context)
 {
     std::vector<QueryTreeNodePtrWithHashSet> disjunct_sets;
     disjunct_sets.reserve(disjuncts.size());
@@ -341,7 +324,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDis
     return CommonExpressionExtractionResult{ .new_node = new_or_node, .common_expressions = {} };
 }
 
-std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(const QueryTreeNodePtr & node, const ContextPtr & context)
+static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * or_node = node->as<FunctionNode>();
     if (!or_node || or_node->getFunctionName() != "or")
@@ -475,7 +458,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     return CommonExpressionExtractionResult{new_or_node, common_exprs};
 }
 
-void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr & context)
+static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr & context)
 {
     [[maybe_unused]] auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "or");
@@ -511,7 +494,7 @@ void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr 
     }
 }
 
-void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr & context)
+static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "and");
@@ -557,7 +540,7 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
     node = std::move(new_root_node);
 }
 
-void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
+static void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
 {
     chassert(node.get() == &function_node);
     if (function_node.getFunctionName() == "or")

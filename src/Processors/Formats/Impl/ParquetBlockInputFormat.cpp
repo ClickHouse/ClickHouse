@@ -554,7 +554,7 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
     return hyperrectangle;
 }
 
-std::unordered_set<std::size_t> getBloomFilterFilteringColumnKeys(const KeyCondition::RPN & rpn)
+static std::unordered_set<std::size_t> getBloomFilterFilteringColumnKeys(const KeyCondition::RPN & rpn)
 {
     std::unordered_set<std::size_t> column_keys;
 
@@ -572,7 +572,7 @@ std::unordered_set<std::size_t> getBloomFilterFilteringColumnKeys(const KeyCondi
     return column_keys;
 }
 
-const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
+static const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
     const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata,
     const std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> & clickhouse_column_index_to_parquet_index,
     std::size_t clickhouse_column_index)
@@ -638,6 +638,7 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_gro
 {
 }
 
+void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
@@ -1402,6 +1403,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     return result;
 }
 
+void registerInputFormatParquet(FormatFactory & factory);
 void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerFileBucketInfo(
@@ -1495,6 +1497,7 @@ void registerInputFormatParquet(FormatFactory & factory)
     });
 }
 
+void registerParquetSchemaReader(FormatFactory & factory);
 void registerParquetSchemaReader(FormatFactory & factory)
 {
     factory.registerSplitter("Parquet", []

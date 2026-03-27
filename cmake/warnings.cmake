@@ -31,7 +31,7 @@ no_warning(double-promotion)
 no_warning(exit-time-destructors)
 no_warning(float-equal)
 no_warning(global-constructors)
-no_warning(missing-prototypes)
+# -Wmissing-prototypes is enabled
 no_warning(missing-variable-declarations)
 no_warning(padded)
 no_warning(switch-enum)

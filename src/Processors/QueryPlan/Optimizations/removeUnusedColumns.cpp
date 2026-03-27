@@ -89,7 +89,7 @@ enum class RemoveChildrenOutputResult
 };
 }
 
-bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
+static bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
 {
     return std::all_of(
         node.children.begin(),
@@ -97,12 +97,12 @@ bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
         [](const QueryPlan::Node * child) { return child->step->canRemoveUnusedColumns() && child->step->canRemoveColumnsFromOutput(); });
 }
 
-bool updatedAnything(const IQueryPlanStep::RemovedUnusedColumns & result)
+static bool updatedAnything(const IQueryPlanStep::RemovedUnusedColumns & result)
 {
     return result != IQueryPlanStep::RemovedUnusedColumns::None;
 }
 
-bool removedAnyInput(const IQueryPlanStep::RemovedUnusedColumns & result)
+static bool removedAnyInput(const IQueryPlanStep::RemovedUnusedColumns & result)
 {
     return result == IQueryPlanStep::RemovedUnusedColumns::OutputAndInput;
 }
@@ -114,7 +114,7 @@ bool removedAnyInput(const IQueryPlanStep::RemovedUnusedColumns & result)
 /// Also sets the `prevent_input_removal` flag to ensure these absorbed columns are not
 /// removed on subsequent optimization passes.
 /// Works with both ExpressionStep and FilterStep parents.
-bool absorbExtraChildColumns(QueryPlan::Node & node, size_t child_id)
+static bool absorbExtraChildColumns(QueryPlan::Node & node, size_t child_id)
 {
     ActionsDAG * dag = nullptr;
 

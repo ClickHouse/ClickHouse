@@ -917,7 +917,7 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
     return filters;
 }
 
-RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
+static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
     std::vector<PartsRangesIterator> selected_ranges;

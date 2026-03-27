@@ -241,6 +241,7 @@ DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, cons
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
+void registerDatabaseFilesystem(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

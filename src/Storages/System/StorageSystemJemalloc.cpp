@@ -21,7 +21,7 @@ namespace DB
 
 #if USE_JEMALLOC
 
-UInt64 getJeMallocValue(const char * name)
+static UInt64 getJeMallocValue(const char * name)
 {
     UInt64 value{};
     size_t size = sizeof(value);
@@ -37,7 +37,7 @@ UInt64 getJeMallocValue(const char * name)
     return value;
 }
 
-void fillJemallocBins(MutableColumns & res_columns)
+static void fillJemallocBins(MutableColumns & res_columns)
 {
     /// Bins for small allocations
     auto small_bins_count = getJeMallocValue("arenas.nbins");

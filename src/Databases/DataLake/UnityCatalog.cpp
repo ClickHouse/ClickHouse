@@ -42,7 +42,7 @@ struct UnityCatalogFullSchemaName
     std::string schema_name;
 };
 
-UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
+static UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
 {
     auto first_dot = full_name.find('.');
     auto catalog_name = full_name.substr(0, first_dot);

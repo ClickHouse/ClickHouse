@@ -52,6 +52,7 @@ struct TheilsUData : CrossTabData
 
 }
 
+void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

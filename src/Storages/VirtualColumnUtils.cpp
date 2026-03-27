@@ -61,7 +61,7 @@ namespace ErrorCodes
 namespace VirtualColumnUtils
 {
 
-void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
+static void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
     for (const auto & node : dag.getNodes())
     {

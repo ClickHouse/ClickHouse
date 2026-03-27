@@ -425,6 +425,7 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
     }
 }
 
+void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory);
 void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

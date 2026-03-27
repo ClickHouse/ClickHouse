@@ -455,6 +455,7 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
 }
 
 
+void registerStorageTimeSeries(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory)
 {
     factory.registerStorage("TimeSeries", [](const StorageFactory::Arguments & args)

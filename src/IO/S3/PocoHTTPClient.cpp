@@ -190,7 +190,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     }
 }
 
-ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
+static ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
 {
     return ConnectionTimeouts()
         .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
@@ -410,7 +410,7 @@ void PocoHTTPClient::makeRequestInternal(
     makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
 }
 
-String getMethod(const Aws::Http::HttpRequest & request)
+static String getMethod(const Aws::Http::HttpRequest & request)
 {
     switch (request.GetMethod())
     {

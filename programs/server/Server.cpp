@@ -481,6 +481,7 @@ namespace ProfileEvents
 
 namespace fs = std::filesystem;
 
+int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
@@ -579,7 +580,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     return address;
 }
 
-Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
+static Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
     auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
     if (listen_hosts.empty())
@@ -590,7 +591,7 @@ Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
     return listen_hosts;
 }
 
-Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & config)
+static Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
     auto interserver_listen_hosts = DB::getMultipleValuesFromConfig(config, "", "interserver_listen_host");
     if (!interserver_listen_hosts.empty())
@@ -600,7 +601,7 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
     return getListenHosts(config);
 }
 
-bool getListenTry(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
+static bool getListenTry(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
 {
     bool listen_try = server_settings[ServerSetting::listen_try];
     if (!listen_try)
@@ -753,6 +754,7 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 }
 
 
+void checkForUsersNotInMainConfig( const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings, const std::string & config_path, const std::string & users_config_path, LoggerPtr log);
 void checkForUsersNotInMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
@@ -950,7 +952,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
 }
 
-void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings, ContextMutablePtr context, Poco::Logger * log)
+static void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings, ContextMutablePtr context, Poco::Logger * log)
 {
     try
     {

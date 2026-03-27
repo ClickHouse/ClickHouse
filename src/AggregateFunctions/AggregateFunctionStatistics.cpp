@@ -476,6 +476,7 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
 
 }
 
+void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & factory)
 {
     /// varSampStable documentation

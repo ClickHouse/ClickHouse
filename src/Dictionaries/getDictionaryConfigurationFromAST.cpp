@@ -617,7 +617,7 @@ void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names
 
 }
 
-void checkLifetime(const ASTCreateQuery & query)
+static void checkLifetime(const ASTCreateQuery & query)
 {
     if (query.dictionary->layout && query.dictionary->layout->layout_type == "direct")
     {

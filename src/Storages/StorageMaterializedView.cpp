@@ -988,6 +988,7 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
     return supported_columns;
 }
 
+void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory)
 {
     factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)

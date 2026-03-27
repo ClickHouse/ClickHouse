@@ -754,6 +754,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(sample_block.cloneWithColumns(std::move(res_columns)))));
 }
 
+void registerInterpreterExplainQuery(InterpreterFactory & factory);
 void registerInterpreterExplainQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)

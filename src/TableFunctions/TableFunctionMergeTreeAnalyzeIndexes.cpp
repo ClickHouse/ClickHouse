@@ -39,7 +39,7 @@ namespace ErrorCodes
 
 /// Both `['a', 'b']` and `array('a', 'b')` are parsed as `_CAST(['a', 'b'], 'Array(String)')` with analyzer.
 /// While for non-analyzer there is no _CAST
-std::vector<String> extractParts(const ASTPtr & argument, const ContextPtr & context)
+static std::vector<String> extractParts(const ASTPtr & argument, const ContextPtr & context)
 {
     ASTPtr array = argument;
     if (const auto * func = array->as<ASTFunction>())
@@ -261,6 +261,7 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
     return res;
 }
 
+void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory)
 {
     factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ false), TableFunctionFactoryData{

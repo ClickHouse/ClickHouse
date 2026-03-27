@@ -2589,6 +2589,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     return true;
 }
 
+void registerDatabaseReplicated(DatabaseFactory & factory);
 void registerDatabaseReplicated(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

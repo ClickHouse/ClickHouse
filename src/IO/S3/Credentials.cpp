@@ -403,7 +403,7 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException()
     return response_data;
 }
 
-String getGCPAvailabilityZoneOrException()
+static String getGCPAvailabilityZoneOrException()
 {
     Poco::URI uri(String(GCP_METADATA_SERVICE_ENDPOINT) + "/computeMetadata/v1/instance/zone");
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());

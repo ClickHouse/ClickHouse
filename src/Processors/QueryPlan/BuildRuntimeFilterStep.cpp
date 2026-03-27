@@ -199,6 +199,7 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
 
 }
 
+void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("BuildRuntimeFilter", BuildRuntimeFilterStep::deserialize);

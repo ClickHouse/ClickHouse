@@ -213,6 +213,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<true>>());

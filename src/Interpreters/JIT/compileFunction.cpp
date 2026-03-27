@@ -77,13 +77,13 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows)
     return result;
 }
 
-llvm::StructType * buildColumnDataStruct(llvm::IRBuilderBase & b)
+static llvm::StructType * buildColumnDataStruct(llvm::IRBuilderBase & b)
 {
     auto * char_ptr_type = b.getInt8Ty()->getPointerTo();
     return llvm::StructType::get(char_ptr_type, char_ptr_type, char_ptr_type);
 }
 
-llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
+static llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
 {
     auto * data_ptr_type = b.getInt8Ty()->getPointerTo();
     auto * offset_ptr_type = b.getInt8Ty()->getPointerTo();
@@ -91,7 +91,7 @@ llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
     return llvm::StructType::get(data_ptr_type, offset_ptr_type, index_type);
 }
 
-llvm::StructType * buildFixedStringType(llvm::IRBuilderBase &b)
+static llvm::StructType * buildFixedStringType(llvm::IRBuilderBase &b)
 {
     auto * data_ptr_type = b.getInt8Ty()->getPointerTo();
     return llvm::StructType::get(data_ptr_type, b.getInt64Ty());

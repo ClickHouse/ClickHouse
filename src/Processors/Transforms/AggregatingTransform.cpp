@@ -94,7 +94,7 @@ Chunk convertToChunk(const Block & block)
     return chunk;
 }
 
-Chunk convertToChunk(Aggregator::AggregatedChunk && agg_chunk)
+static Chunk convertToChunk(Aggregator::AggregatedChunk && agg_chunk)
 {
     auto info = std::make_shared<AggregatedChunkInfo>();
     info->bucket_num = agg_chunk.bucket_num;

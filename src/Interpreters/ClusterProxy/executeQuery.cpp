@@ -93,7 +93,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
+static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,
     const Settings & settings,

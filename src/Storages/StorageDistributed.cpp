@@ -2039,6 +2039,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     }
 }
 
+void registerStorageDistributed(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory)
 {
     factory.registerStorage("Distributed", [](const StorageFactory::Arguments & args)

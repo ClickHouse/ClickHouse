@@ -392,6 +392,7 @@ void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & el
         elem.used_row_policies.emplace(used_row_policy);
 }
 
+void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory);
 void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

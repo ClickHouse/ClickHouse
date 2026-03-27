@@ -271,6 +271,7 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
 
 }
 
+void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

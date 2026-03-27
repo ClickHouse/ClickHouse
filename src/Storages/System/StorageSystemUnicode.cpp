@@ -176,7 +176,7 @@ constexpr UProperty string_properties[]
 // Other properties
 constexpr UProperty other_properties[] = {UCHAR_SCRIPT_EXTENSIONS, UCHAR_IDENTIFIER_TYPE};
 
-std::vector<std::pair<String, UProperty>> getPropNames()
+static std::vector<std::pair<String, UProperty>> getPropNames()
 {
     std::vector<std::pair<String, UProperty>> properties;
 

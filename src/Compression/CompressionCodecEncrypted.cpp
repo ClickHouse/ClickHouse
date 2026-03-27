@@ -2,6 +2,7 @@
 #include <base/MemorySanitizer.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/registerCompressionCodecs.h>
 #include <IO/VarInt.h>
 #include <Parsers/IAST.h>
 #include <base/types.h>

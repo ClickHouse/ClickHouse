@@ -1187,6 +1187,7 @@ IPAddressDictionary::RowIdxConstIter IPAddressDictionary::lookupIP(IPValueType t
     return ipNotFound();
 }
 
+void registerDictionaryTrie(DictionaryFactory & factory);
 void registerDictionaryTrie(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string &,

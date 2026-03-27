@@ -578,6 +578,7 @@ void ORCBlockOutputFormat::prepareWriter()
     writer = orc::createWriter(*schema, &output_stream, options);
 }
 
+void registerOutputFormatORC(FormatFactory & factory);
 void registerOutputFormatORC(FormatFactory & factory)
 {
     factory.registerOutputFormat("ORC", [](

@@ -344,6 +344,7 @@ void StorageView::checkAlterIsPossible(const AlterCommands & commands, ContextPt
     }
 }
 
+void registerStorageView(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory)
 {
     factory.registerStorage("View", [](const StorageFactory::Arguments & args)

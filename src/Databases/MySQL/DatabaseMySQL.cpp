@@ -592,6 +592,7 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     attachTable(local_context, table_name, storage, {});
 }
 
+void registerDatabaseMySQL(DatabaseFactory & factory);
 void registerDatabaseMySQL(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

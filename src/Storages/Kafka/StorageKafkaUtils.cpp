@@ -95,6 +95,7 @@ namespace ErrorCodes
 }
 
 
+void registerStorageKafka(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args) -> std::shared_ptr<IStorage>

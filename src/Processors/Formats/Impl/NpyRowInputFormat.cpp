@@ -536,6 +536,7 @@ std::optional<size_t> NpySchemaReader::readNumberOrRows()
     return header.shape[0];
 }
 
+void registerInputFormatNpy(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory)
 {
     factory.registerInputFormat("Npy", [](
@@ -549,6 +550,7 @@ void registerInputFormatNpy(FormatFactory & factory)
 
     factory.markFormatSupportsSubsetOfColumns("Npy");
 }
+void registerNpySchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Npy", [](ReadBuffer & buf, const FormatSettings &)

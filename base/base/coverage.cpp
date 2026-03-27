@@ -158,7 +158,12 @@ void resetCoverage()
 
 #else
 
-std::span<const uintptr_t> getCoverage()
+std::span<const uintptr_t> getCurrentCoverage()
+{
+    return {};
+}
+
+std::span<const uintptr_t> getCumulativeCoverage()
 {
     return {};
 }

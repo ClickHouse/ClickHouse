@@ -59,7 +59,7 @@ static String trimAndEscape(std::string_view name, size_t max_length = 128)
     return escapeForFileName(std::string(name));
 }
 
-UInt256 calculateHash(std::string_view data [[maybe_unused]])
+static UInt256 calculateHash(std::string_view data [[maybe_unused]])
 {
 #if USE_SSL
     UInt256 hash;
@@ -70,7 +70,7 @@ UInt256 calculateHash(std::string_view data [[maybe_unused]])
 #endif
 }
 
-std::string hashToHex(const UInt256 & hash)
+static std::string hashToHex(const UInt256 & hash)
 {
     std::string hash_hex;
     hash_hex.resize(2 * sizeof(UInt256));
@@ -82,7 +82,7 @@ std::string hashToHex(const UInt256 & hash)
 }
 
 
-std::expected<void, PreformattedMessage> checkValidWasmCode(std::string_view name, std::string_view wasm_code)
+static std::expected<void, PreformattedMessage> checkValidWasmCode(std::string_view name, std::string_view wasm_code)
 {
     if (name.empty() || 128 < name.size() || !std::all_of(name.data(), name.data() + name.size(), isWordCharASCII))
     {
@@ -104,7 +104,7 @@ std::expected<void, PreformattedMessage> checkValidWasmCode(std::string_view nam
     return {};
 }
 
-std::expected<String, PreformattedMessage> validateModuleFile(const DiskPtr & user_scripts_disk, const String & path)
+static std::expected<String, PreformattedMessage> validateModuleFile(const DiskPtr & user_scripts_disk, const String & path)
 {
     std::filesystem::path file_path(path);
 
@@ -198,7 +198,7 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
 }
 
 
-void linkHostFunctions(WasmModule & module)
+static void linkHostFunctions(WasmModule & module)
 {
     for (const auto & declaration : module.getImports())
     {

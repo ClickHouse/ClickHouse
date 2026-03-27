@@ -62,6 +62,7 @@ QueryPlanStepPtr NegativeOffsetStep::deserialize(Deserialization & ctx)
     return std::make_unique<NegativeOffsetStep>(ctx.input_headers.front(), offset);
 }
 
+void registerNegativeOffsetStep(QueryPlanStepRegistry & registry);
 void registerNegativeOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("NegativeOffset", NegativeOffsetStep::deserialize);

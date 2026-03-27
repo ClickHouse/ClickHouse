@@ -837,6 +837,7 @@ public:
 }
 
 
+int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;

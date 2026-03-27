@@ -182,7 +182,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-void applySettingsOverridesForLocal(ContextMutablePtr context)
+static void applySettingsOverridesForLocal(ContextMutablePtr context)
 {
     Settings settings = context->getSettingsCopy();
 
@@ -1343,8 +1343,7 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 
 }
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+int mainEntryClickHouseLocal(int argc, char ** argv);
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {

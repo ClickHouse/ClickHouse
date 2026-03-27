@@ -412,7 +412,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     return res;
 }
 
-bool matchesLikePattern(const String & haystack,
+static bool matchesLikePattern(const String & haystack,
                         const String & like_pattern,
                         bool case_insensitive)
 {
@@ -853,6 +853,7 @@ bool InterpreterDropQuery::supportsTransactions() const
             && drop.table;
 }
 
+void registerInterpreterDropQuery(InterpreterFactory & factory);
 void registerInterpreterDropQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

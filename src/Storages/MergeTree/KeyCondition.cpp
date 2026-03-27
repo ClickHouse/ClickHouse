@@ -499,7 +499,7 @@ static bool isLogicalOperator(const String & func_name)
 ///   - An "atom" (relational operator, constant, expression)
 ///   - A logical constant expression
 ///   - Any other function
-ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversion = false)
+static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversion = false)
 {
     const ASTFunction * func = node->as<ASTFunction>();
 
@@ -1019,7 +1019,7 @@ DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 /// signatures, and none of the functions produce `NULL` output.
 ///
 /// After functions chain execution, fills result column and its type.
-bool applyFunctionChainToColumn(
+static bool applyFunctionChainToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_data_type,
     const std::vector<FunctionBasePtr> & functions,
@@ -1382,7 +1382,7 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 /// - DAG `p -> CAST(p, 'UInt8')`:
 ///   input:  `['123']`  type `String`
 ///   output: `[123]`  type `UInt8`
-bool applyDeterministicDagToColumn(
+static bool applyDeterministicDagToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
     const String & input_name,
@@ -1749,7 +1749,7 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     }
 }
 
-bool tryPrepareSetColumnsForIndex(
+static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,

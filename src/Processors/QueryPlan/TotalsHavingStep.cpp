@@ -225,6 +225,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
         final);
 }
 
+void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("TotalsHaving", TotalsHavingStep::deserialize);

@@ -610,6 +610,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 }
 
 
+void registerStorageMongoDB(StorageFactory & factory);
 void registerStorageMongoDB(StorageFactory & factory)
 {
     factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)

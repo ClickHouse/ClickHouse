@@ -648,7 +648,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
-void addStructureAndFormatToArgsIfNeededAzure(
+static void addStructureAndFormatToArgsIfNeededAzure(
     ASTs & args,
     const String & structure_,
     const String & format_,

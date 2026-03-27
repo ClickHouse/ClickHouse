@@ -991,6 +991,7 @@ void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr quer
     }
 }
 
+void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

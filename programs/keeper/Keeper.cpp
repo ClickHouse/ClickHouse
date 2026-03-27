@@ -73,6 +73,7 @@ constexpr unsigned char keeper_resource_embedded_xml[] =
 
 extern const char * GIT_HASH;
 
+int mainEntryClickHouseKeeper(int argc, char ** argv);
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
     DB::Keeper app;

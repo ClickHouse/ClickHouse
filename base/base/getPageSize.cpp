@@ -2,7 +2,7 @@
 #include <unistd.h>
 #include <cstdlib>
 
-Int64 getPageSizeImpl()
+static Int64 getPageSizeImpl()
 {
     Int64 page_size = sysconf(_SC_PAGESIZE);
     if (page_size < 0)

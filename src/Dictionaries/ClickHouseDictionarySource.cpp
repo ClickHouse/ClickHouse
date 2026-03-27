@@ -234,6 +234,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     return readInvalidateQuery(pipeline);
 }
 
+void registerDictionarySourceClickHouse(DictionarySourceFactory & factory);
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,

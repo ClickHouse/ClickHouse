@@ -693,6 +693,7 @@ std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
     return data_types;
 }
 
+void registerInputFormatMsgPack(FormatFactory & factory);
 void registerInputFormatMsgPack(FormatFactory & factory)
 {
     factory.registerInputFormat("MsgPack", [](
@@ -706,6 +707,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
     factory.registerFileExtension("messagepack", "MsgPack");
 }
 
+void registerMsgPackSchemaReader(FormatFactory & factory);
 void registerMsgPackSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("MsgPack", [](ReadBuffer & buf, const FormatSettings & settings)

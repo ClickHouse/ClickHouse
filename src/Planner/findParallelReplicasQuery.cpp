@@ -72,7 +72,7 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
 /// subquery has only LEFT / RIGHT / ALL INNER JOIN (or none), and left / right part is MergeTree table or subquery candidate as well.
 ///
 /// Additional checks are required, so we return many candidates. The innermost subquery is on top.
-std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
+static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     std::vector<const QueryNode *> res;
 
@@ -190,7 +190,7 @@ public:
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
 };
 
-QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const ContextPtr & context)
+static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const ContextPtr & context)
 {
     ReplaceTableNodeToDummyVisitor visitor(context);
     visitor.visit(query);
@@ -212,7 +212,7 @@ static void dumpStack(const std::vector<const QueryNode *> & stack)
 /// Find the best candidate for parallel replicas execution by verifying query plan.
 /// If query plan has only Expression, Filter or Join steps, we can execute it fully remotely and check the next query.
 /// Otherwise we can execute current query up to WithMergableStage only.
-const QueryNode * findQueryForParallelReplicas(
+static const QueryNode * findQueryForParallelReplicas(
     std::vector<const QueryNode *> stack,
     const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping,
     const Settings & settings)

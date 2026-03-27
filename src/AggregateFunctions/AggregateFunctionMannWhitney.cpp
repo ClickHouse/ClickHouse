@@ -268,6 +268,7 @@ AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(
 }
 
 
+void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

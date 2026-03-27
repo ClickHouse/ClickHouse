@@ -1322,6 +1322,7 @@ bool StorageRabbitMQ::tryStreamToViews()
 }
 
 
+void registerStorageRabbitMQ(StorageFactory & factory);
 void registerStorageRabbitMQ(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)

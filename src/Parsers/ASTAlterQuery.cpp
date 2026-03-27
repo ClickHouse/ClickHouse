@@ -71,14 +71,6 @@ ASTPtr ASTAlterCommand::clone() const
     return res;
 }
 
-/// When the alter command is about statistics, the Parentheses is necessary to avoid ambiguity.
-bool needToFormatWithParentheses(ASTAlterCommand::Type type)
-{
-    return type == ASTAlterCommand::ADD_STATISTICS
-        || type == ASTAlterCommand::DROP_STATISTICS
-        || type == ASTAlterCommand::MATERIALIZE_STATISTICS
-        || type == ASTAlterCommand::MODIFY_STATISTICS;
-}
 
 void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {

@@ -521,7 +521,7 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
 // information but pollute stack traces).
 // Replace parts from @c replacements with shorter aliases
-String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
+static String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
     if (symbol_name.empty())
         return "?";

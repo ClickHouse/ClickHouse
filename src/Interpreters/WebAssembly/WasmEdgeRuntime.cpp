@@ -45,7 +45,7 @@ extern const int BAD_ARGUMENTS;
 namespace DB::WebAssembly
 {
 
-WasmValKind fromWasmEdgeValueType(WasmEdge_ValType val_type)
+static WasmValKind fromWasmEdgeValueType(WasmEdge_ValType val_type)
 {
 #define M(T) \
     if (WasmEdge_ValTypeIs##T(val_type)) \
@@ -56,7 +56,7 @@ WasmValKind fromWasmEdgeValueType(WasmEdge_ValType val_type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmVal fromWasmEdgeValue(WasmEdge_Value val)
+static WasmVal fromWasmEdgeValue(WasmEdge_Value val)
 {
     #define M(T) \
         if (WasmEdge_ValTypeIs##T(val.Type)) \
@@ -72,7 +72,7 @@ WasmVal fromWasmEdgeValue(WasmEdge_Value val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmEdge_ValType toWasmEdgeValueType(WasmValKind k)
+static WasmEdge_ValType toWasmEdgeValueType(WasmValKind k)
 {
     #define M(T) \
         if (k == WasmValKind::T) \
@@ -83,7 +83,7 @@ WasmEdge_ValType toWasmEdgeValueType(WasmValKind k)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmEdge_Value toWasmEdgeValue(WasmVal val)
+static WasmEdge_Value toWasmEdgeValue(WasmVal val)
 {
     #define M(T) \
     { \
@@ -145,7 +145,7 @@ auto WasmEdgeResourcePtrCreate(Args &&... args)
     return WasmEdgeResourcePtr<ResourceT>(resource);
 }
 
-WasmEdge_Bytes wasmedgeBytesWrap(std::string_view data)
+static WasmEdge_Bytes wasmedgeBytesWrap(std::string_view data)
 {
     if (data.size() > std::numeric_limits<WasmSizeT>::max())
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Data is too large for wasm, size: {}", data.size());
@@ -153,7 +153,7 @@ WasmEdge_Bytes wasmedgeBytesWrap(std::string_view data)
     return WasmEdge_BytesWrap(reinterpret_cast<const uint8_t *>(data.data()), static_cast<uint32_t>(data.size()));
 }
 
-WasmEdge_String wasmedgeStringWrap(std::string_view data)
+static WasmEdge_String wasmedgeStringWrap(std::string_view data)
 {
     if (data.size() > std::numeric_limits<WasmSizeT>::max())
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Data is too large for wasm, size: {}", data.size());
@@ -162,7 +162,7 @@ WasmEdge_String wasmedgeStringWrap(std::string_view data)
 }
 
 
-void wasmedgeCheckResult(WasmEdge_Result result, const std::string_view & msg)
+static void wasmedgeCheckResult(WasmEdge_Result result, const std::string_view & msg)
 {
     if (!WasmEdge_ResultOK(result))
         throw Exception(ErrorCodes::WASM_ERROR, "{}: {}", msg, WasmEdge_ResultGetMessage(result));
@@ -212,7 +212,7 @@ struct WasmEdgeFunctionProps
 };
 
 
-auto getWasmEdgeVmConfig(WasmModule::Config cfg)
+static auto getWasmEdgeVmConfig(WasmModule::Config cfg)
 {
     auto config = WasmEdgeResourcePtrCreate<WasmEdge_ConfigureCreate>();
     if (!config)
@@ -581,7 +581,7 @@ std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view modu
 }
 
 
-void wasmEdgeLogCallback(const WasmEdge_LogMessage * msg)
+static void wasmEdgeLogCallback(const WasmEdge_LogMessage * msg)
 {
     std::string logger_name(msg->LoggerName.Buf, msg->LoggerName.Length);
     auto log = getLogger(logger_name);

@@ -20,7 +20,7 @@
 namespace DB
 {
 
-const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnumValues()
+static const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnumValues()
 {
     static const std::vector<std::pair<String, Int8>> values = []
     {

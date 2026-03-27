@@ -1336,6 +1336,7 @@ void ReadFromStorageLogStep::initializePipeline(QueryPipelineBuilder & pipeline,
     pipeline.init(std::move(pipe));
 }
 
+void registerStorageLog(StorageFactory & factory);
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

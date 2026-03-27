@@ -753,6 +753,7 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
     return result;
 }
 
+void registerDictionaryFlat(DictionaryFactory & factory);
 void registerDictionaryFlat(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & full_name,

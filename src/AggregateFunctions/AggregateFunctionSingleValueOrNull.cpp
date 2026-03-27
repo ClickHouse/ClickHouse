@@ -192,6 +192,7 @@ AggregateFunctionPtr createAggregateFunctionSingleValueOrNull(
 
 }
 
+void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_singleValueOrNull = R"(

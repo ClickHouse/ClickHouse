@@ -756,6 +756,7 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
     }
 }
 
+void registerInterpreterAlterQuery(InterpreterFactory & factory);
 void registerInterpreterAlterQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

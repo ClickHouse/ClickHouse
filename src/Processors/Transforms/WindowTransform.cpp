@@ -2779,6 +2779,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
 };
 
 
+void registerWindowFunctions(AggregateFunctionFactory & factory);
 void registerWindowFunctions(AggregateFunctionFactory & factory)
 {
     // Why didn't I implement lag/lead yet? Because they are a mess. I imagine

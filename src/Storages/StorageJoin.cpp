@@ -373,6 +373,7 @@ void StorageJoin::convertRightBlock(Block & block) const
         JoinCommon::convertColumnToNullable(col);
 }
 
+void registerStorageJoin(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory)
 {
     auto has_builtin_fn = [](std::string_view name)

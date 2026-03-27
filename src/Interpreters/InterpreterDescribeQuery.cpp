@@ -307,6 +307,7 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
     }, ISerialization::SubstreamData(column.type->getDefaultSerialization()).withType(column.type));
 }
 
+void registerInterpreterDescribeQuery(InterpreterFactory & factory);
 void registerInterpreterDescribeQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

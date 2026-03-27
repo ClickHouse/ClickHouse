@@ -112,7 +112,7 @@ using AggregateFunctionMatches = std::vector<AggregateFunctionMatch>;
 
 /// Here we try to match aggregate functions from the query to
 /// aggregate functions from projection.
-std::optional<AggregateFunctionMatches> matchAggregateFunctions(
+static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
     const AggregateProjectionInfo & info,
     const AggregateDescriptions & aggregates,
     const MatchedTrees::Matches & matches,
@@ -250,7 +250,7 @@ static void appendAggregateFunctions(
     }
 }
 
-std::optional<ActionsDAG> analyzeAggregateProjection(
+static std::optional<ActionsDAG> analyzeAggregateProjection(
     const AggregateProjectionInfo & info,
     const QueryDAG & query,
     const DAGIndex & query_index,
@@ -339,7 +339,7 @@ struct AggregateProjectionCandidates
     String only_count_column;
 };
 
-AggregateProjectionCandidates getAggregateProjectionCandidates(
+static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
     AggregatingStep & aggregating,
     ReadFromMergeTree & reading,
@@ -446,7 +446,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     return candidates;
 }
 
-AggregateProjectionCandidates getAggregateProjectionCandidates(QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading)
+static AggregateProjectionCandidates getAggregateProjectionCandidates(QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading)
 {
     const auto metadata = reading.getStorageMetadata();
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
@@ -524,6 +524,12 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 /// Pseudo projection name used to indicate exact count optimization
 static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projection";
 
+std::optional<String> optimizeUseAggregateProjections(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    bool allow_implicit_projections,
+    bool is_parallel_replicas_initiator_with_projection_support,
+    size_t max_step_description_length);
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,

@@ -423,6 +423,7 @@ void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, Dat
     transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, reader.getEscapingRule(), &json_inference_info);
 }
 
+void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCustomSeparated(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
@@ -443,6 +444,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
     }
 }
 
+void registerCustomSeparatedSchemaReader(FormatFactory & factory);
 void registerCustomSeparatedSchemaReader(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})

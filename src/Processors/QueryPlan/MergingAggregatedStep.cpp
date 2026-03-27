@@ -330,6 +330,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     return merging_aggregated_step;
 }
 
+void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("MergingAggregated", MergingAggregatedStep::deserialize);

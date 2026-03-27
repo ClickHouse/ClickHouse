@@ -40,6 +40,7 @@ struct CramersVBiasCorrectedData : CrossTabData
 
 }
 
+void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory & factory);
 void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

@@ -617,6 +617,7 @@ void AvroRowOutputFormat::resetFormatterImpl()
     file_writer_ptr.reset();
 }
 
+void registerOutputFormatAvro(FormatFactory & factory);
 void registerOutputFormatAvro(FormatFactory & factory)
 {
     factory.registerOutputFormat("Avro", [](

@@ -109,7 +109,7 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     return {};
 }
 
-std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
+static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
 {
     std::vector<ActionsAndName> res;
 
@@ -403,6 +403,7 @@ QueryPlanStepPtr FilterStep::clone() const
     return std::make_unique<FilterStep>(*this);
 }
 
+void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Filter", FilterStep::deserialize);

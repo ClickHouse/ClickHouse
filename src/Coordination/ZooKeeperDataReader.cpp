@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-int64_t getZxidFromName(const std::string & filename)
+static int64_t getZxidFromName(const std::string & filename)
 {
     std::filesystem::path path(filename);
     std::string extension = path.extension();
@@ -31,7 +31,7 @@ int64_t getZxidFromName(const std::string & filename)
     return zxid;
 }
 
-void deserializeSnapshotMagic(ReadBuffer & in)
+static void deserializeSnapshotMagic(ReadBuffer & in)
 {
     int32_t magic_header;
     int32_t version;
@@ -238,7 +238,7 @@ void deserializeKeeperStorageFromSnapshotsDir(Storage & storage, const std::stri
         throw Exception(ErrorCodes::CORRUPTED_DATA, "No snapshots found on path {}. At least one snapshot must exist.", path);
 }
 
-void deserializeLogMagic(ReadBuffer & in)
+static void deserializeLogMagic(ReadBuffer & in)
 {
     int32_t magic_header;
     int32_t version;

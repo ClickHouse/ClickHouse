@@ -377,6 +377,7 @@ private:
     std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(rw_lock);
 };
 
+RuntimeFilterLookupPtr createRuntimeFilterLookup();
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
 {
     return std::make_shared<RuntimeFilterLookup>();

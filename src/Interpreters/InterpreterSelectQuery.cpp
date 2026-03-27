@@ -240,7 +240,7 @@ namespace ErrorCodes
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
-FilterDAGInfoPtr generateFilterActions(
+static FilterDAGInfoPtr generateFilterActions(
     const StorageID & table_id,
     const ASTPtr & row_policy_filter_expression,
     const ContextPtr & context,
@@ -3660,6 +3660,7 @@ bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
     return result;
 }
 
+void registerInterpreterSelectQuery(InterpreterFactory & factory);
 void registerInterpreterSelectQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

@@ -523,6 +523,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 }
 
 
+void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)

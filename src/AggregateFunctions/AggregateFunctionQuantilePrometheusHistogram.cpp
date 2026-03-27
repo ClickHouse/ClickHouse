@@ -243,6 +243,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantilePrometheusHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantilePrometheusHistogram(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.

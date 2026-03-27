@@ -239,7 +239,7 @@ void MemoryTracker::injectFault() const
         description ? " memory tracker" : "Memory tracker");
 }
 
-void incrementAllocationWithoutCheck(Int64 size)
+static void incrementAllocationWithoutCheck(Int64 size)
 {
     /// Note, it is always blocked for release build, so we do not write MemoryAllocatedWithoutCheck there
     if (MemoryTrackerDebugBlockerInThread::isBlocked())

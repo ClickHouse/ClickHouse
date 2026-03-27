@@ -51,7 +51,7 @@ const String & ruleTypeStr(RuleType rule_type)
     }
 }
 
-RuleType ruleType(const String & s)
+static RuleType ruleType(const String & s)
 {
     if (s == "all")
         return RuleTypeAll;
@@ -253,7 +253,7 @@ std::ostream & operator<<(std::ostream & stream, const Pattern & a)
     return stream;
 }
 
-std::string buildTaggedRegex(std::string regexp_str)
+static std::string buildTaggedRegex(std::string regexp_str)
 {
     /*
     * tags list in format (for name or any value can use regexp, alphabet sorting not needed)

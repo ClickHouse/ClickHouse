@@ -98,7 +98,7 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
+static void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
 {
     struct Frame
     {

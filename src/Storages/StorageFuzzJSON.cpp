@@ -715,6 +715,7 @@ StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_a
     return configuration;
 }
 
+void registerStorageFuzzJSON(StorageFactory & factory);
 void registerStorageFuzzJSON(StorageFactory & factory)
 {
     factory.registerStorage(

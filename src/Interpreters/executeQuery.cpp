@@ -538,7 +538,7 @@ QueryLogElement logQueryStart(
     return elem;
 }
 
-void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
+static void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
 {
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
     {
@@ -591,7 +591,7 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage query_result_cache_usage, bool pulling_pipeline)
+static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage query_result_cache_usage, bool pulling_pipeline)
 {
     if (query_result_cache_usage == QueryResultCacheUsage::Write)
         /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
@@ -627,7 +627,7 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && q
         .pipeline_dump = std::move(pipeline_dump)};
 }
 
-void logQueryFinishImpl(
+static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
@@ -986,7 +986,7 @@ void logExceptionBeforeStart(
     }
 }
 
-void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
         return;

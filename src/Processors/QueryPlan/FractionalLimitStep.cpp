@@ -109,6 +109,7 @@ QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(), limit_fraction, offset_fraction, offset, with_ties, std::move(description));
 }
 
+void registerFractionalLimitStep(QueryPlanStepRegistry & registry);
 void registerFractionalLimitStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("FractionalLimit", FractionalLimitStep::deserialize);

@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
+static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {
     Parquet::ReadOptions options;
     options.format = format_settings;

@@ -498,6 +498,7 @@ namespace
 template class DirectDictionary<DictionaryKeyType::Simple>;
 template class DirectDictionary<DictionaryKeyType::Complex>;
 
+void registerDictionaryDirect(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory)
 {
     factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::Simple>, false);

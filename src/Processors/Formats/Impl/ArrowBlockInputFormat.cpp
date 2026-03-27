@@ -283,6 +283,7 @@ std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
     return *rows;
 }
 
+void registerInputFormatArrow(FormatFactory & factory);
 void registerInputFormatArrow(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -306,6 +307,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         });
 }
 
+void registerArrowSchemaReader(FormatFactory & factory);
 void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(

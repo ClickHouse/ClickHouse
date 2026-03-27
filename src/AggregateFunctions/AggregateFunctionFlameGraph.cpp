@@ -638,6 +638,7 @@ static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string 
     return std::make_shared<AggregateFunctionFlameGraph>(argument_types);
 }
 
+void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory);
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

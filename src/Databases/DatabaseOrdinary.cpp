@@ -764,6 +764,7 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
 }
 
+void registerDatabaseOrdinary(DatabaseFactory & factory);
 void registerDatabaseOrdinary(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

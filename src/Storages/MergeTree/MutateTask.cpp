@@ -1188,7 +1188,7 @@ static void processStatisticsChanges(
 }
 
 /// Initialize and write to disk new part fields like checksums, columns, etc.
-void finalizeMutatedPart(
+static void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
     const IMergedBlockOutputStream::GatheredData & all_gathered_data,

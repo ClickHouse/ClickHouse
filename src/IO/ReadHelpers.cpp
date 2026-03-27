@@ -1097,7 +1097,7 @@ void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & sett
     readCSVStringInto<String, true>(s, buf, settings);
 }
 
-void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
+static void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
 {
     /// Check that delimiters are not empty.
     if (first_delimiter.empty() || second_delimiter.empty())

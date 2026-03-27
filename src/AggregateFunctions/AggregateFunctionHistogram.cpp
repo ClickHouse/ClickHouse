@@ -430,6 +430,7 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
 
 }
 
+void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("histogram", {createAggregateFunctionHistogram, {}});

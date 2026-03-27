@@ -1309,8 +1309,7 @@ void Client::readArguments(
 }
 
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+int mainEntryClickHouseClient(int argc, char ** argv);
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

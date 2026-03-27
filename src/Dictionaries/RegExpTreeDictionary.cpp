@@ -976,6 +976,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
     return result;
 }
 
+void registerDictionaryRegExpTree(DictionaryFactory & factory);
 void registerDictionaryRegExpTree(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & /*name*/,

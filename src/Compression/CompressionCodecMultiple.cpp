@@ -1,5 +1,6 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
+#include <Compression/registerCompressionCodecs.h>
 #include <Common/PODArray.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/WriteHelpers.h>

@@ -624,7 +624,7 @@ String encodeDataType(const DataTypePtr & type)
     return buf.str();
 }
 
-DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
+static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
 {
     ++complexity;
     size_t max_complexity = getMaxTypeDecodingComplexity();

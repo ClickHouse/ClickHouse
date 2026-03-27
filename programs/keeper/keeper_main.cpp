@@ -100,6 +100,11 @@ static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & a
 #if !defined(USE_MUSL)
 extern "C"
 {
+    void * dlopen(const char *, int);
+    void * dlmopen(long, const char *, int); // NOLINT
+    int dlclose(void *);
+    const char * dlerror();
+
     void * dlopen(const char *, int)
     {
         return nullptr;
@@ -127,12 +132,12 @@ extern "C"
 /// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
 extern "C" void (*je_malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
+static __attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
 #elif USE_JEMALLOC
 #include <unordered_set>
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
 extern "C" void (*je_malloc_message)(void *, const char * s);
-__attribute__((constructor(0))) void init_je_malloc_message()
+static __attribute__((constructor(0))) void init_je_malloc_message()
 {
     je_malloc_message = [](void *, const char * str)
     {
@@ -156,7 +161,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 /// OpenSSL early initialization.
 /// See also EnvironmentChecks.cpp for other static initializers.
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
-__attribute__((constructor(202))) void init_ssl()
+static __attribute__((constructor(202))) void init_ssl()
 {
     DB::OpenSSLInitializer::instance();
 }

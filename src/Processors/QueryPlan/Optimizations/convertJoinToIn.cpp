@@ -38,7 +38,7 @@ struct NamePair
 
 using NamePairs = std::vector<NamePair>;
 
-InConversion buildInConversion(
+static InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,

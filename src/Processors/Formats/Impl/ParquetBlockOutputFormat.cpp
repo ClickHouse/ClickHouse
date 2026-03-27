@@ -603,6 +603,7 @@ void ParquetBlockOutputFormat::threadFunction()
     }
 }
 
+void registerOutputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory)
 {
     factory.registerOutputFormat(

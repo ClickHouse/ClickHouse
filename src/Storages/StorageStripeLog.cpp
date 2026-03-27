@@ -706,6 +706,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 }
 
 
+void registerStorageStripeLog(StorageFactory & factory);
 void registerStorageStripeLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

@@ -85,7 +85,7 @@ struct WriteBufferFromS3::PartData
     }
 };
 
-BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3RequestSettings & settings)
+static BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3RequestSettings & settings)
 {
     BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings[S3RequestSetting::strict_upload_part_size];

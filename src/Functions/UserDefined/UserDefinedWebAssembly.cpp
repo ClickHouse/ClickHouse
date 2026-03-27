@@ -492,7 +492,7 @@ private:
 };
 
 
-WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
+static WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
 {
     WebAssembly::WasmModule::Config cfg;
 

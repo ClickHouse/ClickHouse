@@ -200,6 +200,7 @@ std::optional<size_t> ORCSchemaReader::readNumberOrRows()
     return file_reader->NumberOfRows();
 }
 
+void registerInputFormatORC(FormatFactory & factory);
 void registerInputFormatORC(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -231,6 +232,7 @@ void registerInputFormatORC(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
+void registerORCSchemaReader(FormatFactory & factory);
 void registerORCSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(

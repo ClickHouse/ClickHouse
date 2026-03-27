@@ -1194,6 +1194,7 @@ static void processLog(const Options & options)
 
 }
 
+int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv)
 try
 {

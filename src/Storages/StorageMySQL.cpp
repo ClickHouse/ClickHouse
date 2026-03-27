@@ -383,6 +383,7 @@ void ReadFromMySQLStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
 }
 
 
+void registerStorageMySQL(StorageFactory & factory);
 void registerStorageMySQL(StorageFactory & factory)
 {
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)

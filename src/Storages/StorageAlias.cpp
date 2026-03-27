@@ -297,6 +297,7 @@ QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
     return target_storage->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
 }
 
+void registerStorageAlias(StorageFactory & factory);
 void registerStorageAlias(StorageFactory & factory)
 {
     factory.registerStorage("Alias", [](const StorageFactory::Arguments & args)

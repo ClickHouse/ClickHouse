@@ -333,6 +333,7 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const S
 }
 
 
+void registerStorageSet(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory)
 {
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)

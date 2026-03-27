@@ -456,6 +456,7 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
 }
 
+void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

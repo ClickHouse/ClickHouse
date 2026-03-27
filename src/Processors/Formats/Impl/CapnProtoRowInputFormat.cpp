@@ -141,6 +141,7 @@ NamesAndTypesList CapnProtoSchemaReader::readSchema()
     return capnProtoSchemaToCHSchema(schema, format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference);
 }
 
+void registerInputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -167,6 +168,7 @@ void registerInputFormatCapnProto(FormatFactory & factory)
         });
 }
 
+void registerCapnProtoSchemaReader(FormatFactory & factory);
 void registerCapnProtoSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("CapnProto", [](const FormatSettings & settings)

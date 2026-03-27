@@ -36,6 +36,8 @@ CubeStep::CubeStep(const SharedHeader & input_header_, Aggregator::Params params
 {
 }
 
+ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number);
+
 ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
 {
     ActionsDAG dag(header->getColumnsWithTypeAndName());

@@ -130,6 +130,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 }
 
 #if USE_AWS_S3
+void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -148,6 +149,7 @@ void registerStorageS3Queue(StorageFactory & factory)
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
+void registerStorageAzureQueue(StorageFactory & factory);
 void registerStorageAzureQueue(StorageFactory & factory)
 {
     factory.registerStorage(

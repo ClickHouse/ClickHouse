@@ -257,6 +257,7 @@ DictionaryPtr createLayout(const std::string & /*name*/,
         return std::make_unique<PolygonDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, configuration);
 }
 
+void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
     factory.registerLayout("polygon_simple", createLayout<PolygonDictionarySimple>, true);

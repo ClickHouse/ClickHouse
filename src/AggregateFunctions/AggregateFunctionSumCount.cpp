@@ -119,6 +119,7 @@ createAggregateFunctionSumCount(const std::string & name, const DataTypes & argu
 
 }
 
+void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_sumCount = R"(

@@ -819,6 +819,7 @@ ObjectStoragePtr DiskLocal::getObjectStorage()
     return std::make_shared<LocalObjectStorage>(settings_object_storage);
 }
 
+void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check);
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
 {
     auto creator = [global_skip_access_check](

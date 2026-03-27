@@ -231,6 +231,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     return res;
 }
 
+void registerDatabaseMemory(DatabaseFactory & factory);
 void registerDatabaseMemory(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
