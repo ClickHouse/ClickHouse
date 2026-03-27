@@ -7,6 +7,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_TIMEZONE_ESCAPED=$($CLICKHOUSE_CLIENT --query="SELECT timezone()" | sed 's/[]\/$*.^+:()[]/\\&/g')
 
+# Remove randomized session_timezone from URL so that X-ClickHouse-Timezone header matches the server timezone
+CLICKHOUSE_URL_WO_SESSION_TZ=$(echo "${CLICKHOUSE_URL}" | sed 's/\&session_timezone\=[A-Za-z0-9\/\%\_\-\+\-]*//g' | sed 's/\?session_timezone\=[A-Za-z0-9\/\%\_\-\+\-]*\&/\?/g')
+
 function run_and_check_headers()
 {
     query=$1
@@ -14,7 +17,7 @@ function run_and_check_headers()
 
     echo "$query"
 
-    ${CLICKHOUSE_CURL} -sS -v "${CLICKHOUSE_URL}&query_id=$query_id" -d "$1" 2>&1 \
+    ${CLICKHOUSE_CURL} -sS -v "${CLICKHOUSE_URL_WO_SESSION_TZ}&query_id=$query_id" -d "$1" 2>&1 \
         | grep -e "< X-ClickHouse-Query-Id" -e "< X-ClickHouse-Timezone" -e "< X-ClickHouse-Format" -e "< Content-Type" \
         | sed "s/$CLICKHOUSE_TIMEZONE_ESCAPED/timezone/" \
         | sed "s/$query_id/query_id/" \
