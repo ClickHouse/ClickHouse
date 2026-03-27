@@ -361,7 +361,7 @@ With two arguments `(json, original_query)`, preserves comments, whitespace, and
     }
     };
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, func_arguments, {}, returned_value, examples, {}, category};
+    FunctionDocumentation documentation = {description, syntax, func_arguments, {}, returned_value, examples, {26, 4}, category};
 
     factory.registerFunction<FunctionFormatQueryFromJSON>(documentation);
 }

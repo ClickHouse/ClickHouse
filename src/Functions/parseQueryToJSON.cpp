@@ -110,7 +110,7 @@ The resulting JSON can be passed to `formatQueryFromJSON` to reconstruct the SQL
     }
     };
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, func_arguments, {}, returned_value, examples, {}, category};
+    FunctionDocumentation documentation = {description, syntax, func_arguments, {}, returned_value, examples, {26, 4}, category};
 
     factory.registerFunction<FunctionParseQueryToJSON>(documentation);
 }
