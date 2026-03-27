@@ -1,5 +1,6 @@
 #include <Storages/Kafka/StorageKafka2.h>
 
+#include <Storages/VirtualColumnUtils.h>
 #include <Columns/IColumn.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
@@ -764,7 +765,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
     LOG_TEST(log, "Polling consumer");
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     Block non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized());
-    auto virtual_header = getVirtualsHeader();
+    auto virtual_header = getVirtualsPtr()->getSampleBlock(VirtualsKind::All, /*exclude_common=*/ true);
 
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
@@ -1232,13 +1233,20 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
 
     auto [blocks, offset_guard] = std::move(*maybe_blocks_and_guard);
 
+    auto source_header = blocks.front().cloneEmpty();
+    const auto & pipeline_header = block_io.pipeline.getHeader();
+
+    auto adding_virtuals_dag = VirtualColumnUtils::constructMaterializingCommonVirtualColumnsDAG(
+        source_header, pipeline_header.getNames(), shared_from_this());
+
     auto converting_dag = ActionsDAG::makeConvertingActions(
-        blocks.front().cloneEmpty().getColumnsWithTypeAndName(),
-        block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
+        adding_virtuals_dag.getResultColumns(),
+        pipeline_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name,
         modified_context);
 
-    auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+    auto merged_dag = ActionsDAG::merge(std::move(adding_virtuals_dag), std::move(converting_dag));
+    auto converting_actions = std::make_shared<ExpressionActions>(std::move(merged_dag));
 
     for (auto & block : blocks)
         converting_actions->execute(block);

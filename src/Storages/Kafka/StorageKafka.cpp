@@ -3,6 +3,7 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
@@ -692,7 +694,15 @@ bool StorageKafka::streamToViews()
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
+        auto source = std::make_shared<KafkaSource>(
+            *this,
+            storage_snapshot,
+            kafka_context,
+            VirtualColumnUtils::filterCommonVirtualColumns(block_io.pipeline.getHeader().getNames(), table),
+            log,
+            block_size,
+            false);
+
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -707,6 +717,27 @@ bool StorageKafka::streamToViews()
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    const auto & pipeline_header = block_io.pipeline.getHeader();
+    const auto & pipe_header = pipe.getHeader();
+
+    auto adding_virtuals_dag = VirtualColumnUtils::constructMaterializingCommonVirtualColumnsDAG(
+        pipe_header, pipeline_header.getNames(), table);
+
+    auto converting_dag = ActionsDAG::makeConvertingActions(
+        adding_virtuals_dag.getResultColumns(),
+        pipeline_header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        kafka_context);
+
+    auto merged_dag = ActionsDAG::merge(std::move(adding_virtuals_dag), std::move(converting_dag));
+    auto expression = std::make_shared<ExpressionActions>(std::move(merged_dag));
+    pipe.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<ExpressionTransform>(header, expression);
+    });
+
+    assertBlocksHaveEqualStructure(pipe.getHeader(), pipeline_header, "StorageKafka streamToViews");
 
     std::atomic_size_t rows = 0;
     {
