@@ -5,7 +5,8 @@ Adds the `ready-for-backport` label to PRs that satisfy all of the following:
      `pr-critical-bugfix`, or a version-specific `vX.Y-must-backport`).
   2. Were merged more than READY_DELAY_DAYS days ago, giving time for any
      potential revert to land first.
-  3. Have not been reverted (no merged "Revert #<N>" PR found).
+  3. Have not been reverted (no merged PR with title `Revert "..."` and
+     body `Reverts {repo}#<N>` found).
   4. Do not already carry `ready-for-backport` or `pr-backports-created`.
 
 The label is later consumed by `cherry_pick.py`, which skips PRs without it.
