@@ -1266,7 +1266,7 @@ class JobConfigs:
         name=JobNames.COLLECT_CLICKHOUSE_PROFILES,
         runs_on=[],  # from parametrize()
         command="python3 ./ci/jobs/collect_clickhouse_profiles.py",
-        run_in_docker="clickhouse/performance-comparison",
+        run_in_docker=BINARY_DOCKER_COMMAND,
         timeout=8 * 3600,
         digest_config=Job.CacheDigestConfig(
             include_paths=[

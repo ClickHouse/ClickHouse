@@ -32,8 +32,11 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         zip \
         clang-tidy-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
+        bolt-${LLVM_VERSION} \
     && ln -sf /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
     && ln -sf /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
+    && ln -sf /usr/bin/llvm-bolt-${LLVM_VERSION} /usr/bin/llvm-bolt \
+    && ln -sf /usr/bin/merge-fdata-${LLVM_VERSION} /usr/bin/merge-fdata \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

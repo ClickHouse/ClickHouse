@@ -165,7 +165,7 @@ def start_server(server_dir, port=9000, keeper_port=9181, raft_port=9234):
     # Wait for readiness
     for attempt in range(30):
         res, out, _ = Shell.get_res_stdout_stderr(
-            f'clickhouse-client --port {port} --query "select 1"', verbose=True
+            f'{server_dir}/clickhouse-client --port {port} --query "select 1"', verbose=True
         )
         if out.strip() == "1":
             print("Server ready")
@@ -242,7 +242,7 @@ def configure_datasets(server_dir, port=9000):
     time.sleep(2)
     for attempt in range(30):
         res, out, _ = Shell.get_res_stdout_stderr(
-            f'clickhouse-client --port {port} --query "select 1"', verbose=True
+            f'{server_dir}/clickhouse-client --port {port} --query "select 1"', verbose=True
         )
         if out.strip() == "1":
             break
@@ -252,8 +252,8 @@ def configure_datasets(server_dir, port=9000):
         return False
 
     Shell.check(
-        f"clickhouse-client --port {port} --query 'create database IF NOT EXISTS test' "
-        f"&& clickhouse-client --port {port} --query 'rename table datasets.hits_v1 to test.hits'",
+        f"{server_dir}/clickhouse-client --port {port} --query 'create database IF NOT EXISTS test' "
+        f"&& {server_dir}/clickhouse-client --port {port} --query 'rename table datasets.hits_v1 to test.hits'",
         verbose=True,
     )
     stop_server(proc, log_fd)
@@ -517,7 +517,7 @@ def main():
             results.append(
                 Result.from_commands_run(
                     name="Merge BOLT profiles",
-                    command=f"merge-fdata {BOLT_PROFILES_DIR}/prof* > {BOLT_FDATA_PATH}",
+                    command=f"merge-fdata-{LLVM_VERSION} {BOLT_PROFILES_DIR}/prof* > {BOLT_FDATA_PATH}",
                 )
             )
             if results[-1].is_ok():
