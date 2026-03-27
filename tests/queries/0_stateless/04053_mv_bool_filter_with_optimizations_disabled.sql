@@ -8,8 +8,8 @@
 -- semantics as if it were an exact key lookup.  `Bool` `true` means "any non-zero
 -- value", so -1 and -2 both satisfy `c0 = TRUE`.
 
-DROP TABLE IF EXISTS t1;
 DROP VIEW IF EXISTS v0;
+DROP TABLE IF EXISTS t1;
 
 CREATE TABLE t1 (c0 Int8) ENGINE = EmbeddedRocksDB PRIMARY KEY c0;
 INSERT INTO t1 VALUES (-1), (-2);
