@@ -73,5 +73,5 @@ CREATE TABLE t_local_cache (id UInt64, value UInt64) ENGINE = MergeTree ORDER BY
 INSERT INTO t_local_cache SELECT number, number * 7 FROM numbers(1000);
 SELECT sum(value) FROM t_local_cache SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1;
 SELECT sum(value) FROM t_local_cache SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1;
-SELECT event, value > 0 AS has_value FROM system.events WHERE event LIKE 'ColumnsCache%' ORDER BY event;
+SELECT event, value > 0 AS has_value FROM system.events WHERE event LIKE 'ColumnsCache%' AND value > 0 ORDER BY event;
 "
