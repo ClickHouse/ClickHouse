@@ -1,4 +1,5 @@
 import pytest
+import random
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -28,11 +29,12 @@ def test_projection_rebuild_uses_only_required_columns(started_cluster):
     node1.query("insert into tab select number, number, rightPad('', 100, 'a'), 0 from numbers(30000) settings max_block_size=10000;")
     # Here we merge parts, and projections should be rebuild
     # Initially we kept `data` column in projection squash, ~10 temporary parts were created by min_insert_block_size_bytes limit
-    node1.query("optimize table tab final settings mutations_sync=2, alter_sync=2;")
+    query_id = "test_projection_rebuild_uses_only_required_columns_{}".format(random.randint(0, 100000))
+    node1.query("optimize table tab final settings mutations_sync=2, alter_sync=2;", query_id=query_id)
+
     node1.query("system flush logs;")
 
-    uuid = node1.query("select uuid from system.tables where table = 'tab';").strip()
-    cnt = node1.query("select count() from system.text_log where query_id like '{}::all_%_2' and message like '%Reading%from part p_%from the beginning of the part%'".format(uuid))
+    cnt = node1.query("select count() from system.text_log where query_id = '{}' and message like '%Reading%from part p_%from the beginning of the part%'".format(query_id))
     # One projection part per source part
     assert (cnt == '3\n')
     # Here we check that _parent_part_offset is calculated properly. It was fixed in https://github.com/ClickHouse/ClickHouse/pull/93827
