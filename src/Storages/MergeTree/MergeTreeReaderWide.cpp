@@ -213,6 +213,14 @@ size_t MergeTreeReaderWide::readRows(
 
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
+                /// Columns dropped by pending mutations don't need cache entries.
+                /// Push a placeholder to keep the vector aligned with column positions.
+                if (isColumnDroppedByPendingMutation(pos))
+                {
+                    cached_columns.emplace_back(ColumnsCacheKey{}, nullptr);
+                    continue;
+                }
+
                 const auto & column_name = columns_to_read[pos].name;
                 auto intersecting = columns_cache->getIntersecting(
                     data_part_info_for_read->getTableUUID(),
@@ -249,17 +257,27 @@ size_t MergeTreeReaderWide::readRows(
                 /// with different task boundaries, resulting in different row ranges.
                 /// We must check BOTH row_begin and row_end to ensure the offset
                 /// calculation is correct for all columns.
-                size_t cached_row_begin_0 = cached_columns[0].first.row_begin;
-                size_t cached_row_end_0 = cached_columns[0].first.row_end;
-                bool consistent = true;
-                for (const auto & [key, col] : cached_columns)
+                /// Find the first non-dropped column to use as the reference row range.
+                size_t ref_pos = 0;
+                while (ref_pos < num_columns && isColumnDroppedByPendingMutation(ref_pos))
+                    ++ref_pos;
+
+                /// If all columns are dropped, there's nothing to serve from cache.
+                bool consistent = (ref_pos < num_columns);
+                size_t cached_row_begin_0 = consistent ? cached_columns[ref_pos].first.row_begin : 0;
+                size_t cached_row_end_0 = consistent ? cached_columns[ref_pos].first.row_end : 0;
+
+                for (size_t i = ref_pos + 1; i < num_columns && consistent; ++i)
                 {
+                    if (isColumnDroppedByPendingMutation(i))
+                        continue;
+
+                    const auto & key = cached_columns[i].first;
                     if (key.row_begin != cached_row_begin_0 || key.row_end != cached_row_end_0)
                     {
                         consistent = false;
                         LOG_TEST(log, "Inconsistent cached block range: expected=[{}, {}), got=[{}, {})",
                             cached_row_begin_0, cached_row_end_0, key.row_begin, key.row_end);
-                        break;
                     }
                 }
 
@@ -298,8 +316,13 @@ size_t MergeTreeReaderWide::readRows(
                 : data_part_info_for_read->getRowCount();
             size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
 
-            const auto & cached_row_begin = cached_columns[0].first.row_begin;
-            const auto & cached_row_end = cached_columns[0].first.row_end;
+            /// Find the first non-dropped column for the reference row range.
+            size_t ref_col_v = 0;
+            while (ref_col_v < num_columns && isColumnDroppedByPendingMutation(ref_col_v))
+                ++ref_col_v;
+
+            const auto & cached_row_begin = cached_columns[ref_col_v].first.row_begin;
+            const auto & cached_row_end = cached_columns[ref_col_v].first.row_end;
 
             /// Calculate offset within the cached block and how many rows to extract
             size_t offset_in_cache = row_begin - cached_row_begin;
@@ -310,6 +333,9 @@ size_t MergeTreeReaderWide::readRows(
             /// if columns had different row counts when cached.
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
+                if (isColumnDroppedByPendingMutation(pos))
+                    continue;
+
                 const auto & cached_col = cached_columns[pos].second;
                 if (offset_in_cache + rows_to_serve > cached_col->size())
                 {
@@ -335,14 +361,26 @@ size_t MergeTreeReaderWide::readRows(
                 : data_part_info_for_read->getRowCount();
             size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
 
-            const auto & cached_row_begin = cached_columns[0].first.row_begin;
-            const auto & cached_row_end = cached_columns[0].first.row_end;
+            /// Find the first non-dropped column for the reference row range.
+            size_t ref_col = 0;
+            while (ref_col < num_columns && isColumnDroppedByPendingMutation(ref_col))
+                ++ref_col;
+
+            const auto & cached_row_begin = cached_columns[ref_col].first.row_begin;
+            const auto & cached_row_end = cached_columns[ref_col].first.row_end;
 
             size_t offset_in_cache = row_begin - cached_row_begin;
             size_t rows_to_serve = std::min(row_end_query - row_begin, cached_row_end - row_begin);
 
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
+                /// Column was dropped by a pending mutation. Don't serve stale data from cache.
+                if (isColumnDroppedByPendingMutation(pos))
+                {
+                    res_columns[pos] = nullptr;
+                    continue;
+                }
+
                 const auto & column_to_read = columns_to_read[pos];
                 bool append = res_columns[pos] != nullptr;
                 if (!append)
