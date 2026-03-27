@@ -32,6 +32,8 @@
 
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
+#include <Interpreters/HypotheticalIndexStore.h>
+#include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -739,6 +741,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 writeCString("<no current transaction>", buf);
             }
 
+            break;
+        }
+        case ASTExplainQuery::WhatIf:
+        {
+            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN WHATIF query");
+
+            auto whatif_result = WhatIfIndexEstimator::run(ast.getExplainedQuery(), query_context, ast.getSettings());
+            whatif_result.format(buf);
             break;
         }
     }
