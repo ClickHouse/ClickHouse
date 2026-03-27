@@ -37,6 +37,7 @@ namespace
 
 SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dictionary_type_)
      : dictionary_type(dictionary_type_)
+     , nested_serialization(dictionary_type_->getDefaultSerialization())
      , dict_inner_serialization(removeNullable(dictionary_type_)->getDefaultSerialization())
 {
 }
@@ -48,7 +49,6 @@ UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type
     auto dict_type_name = dictionary_type_->getName();
     hash.update(dict_type_name.size());
     hash.update(dict_type_name);
-    hash.update(removeNullable(dictionary_type_)->getDefaultSerialization()->getHash());
     return hash.get128();
 }
 
@@ -725,11 +725,11 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
 void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->serializeBinary(field, ostr, settings);
+    nested_serialization->serializeBinary(field, ostr, settings);
 }
 void SerializationLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->deserializeBinary(field, istr, settings);
+    nested_serialization->deserializeBinary(field, istr, settings);
 }
 
 void SerializationLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -842,8 +842,7 @@ void SerializationLowCardinality::serializeImpl(
 {
     const auto & low_cardinality_column = getColumnLowCardinality(column);
     size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
-    auto serialization = dictionary_type->getDefaultSerialization();
-    (serialization.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
+    (nested_serialization.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
 }
 
 template <typename... Params, typename... Args>
@@ -853,9 +852,7 @@ void SerializationLowCardinality::deserializeImpl(
     auto & low_cardinality_column = getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
-    auto serialization = dictionary_type->getDefaultSerialization();
-    (serialization.get()->*func)(*temp_column, std::forward<Args>(args)...);
-
+    (nested_serialization.get()->*func)(*temp_column, std::forward<Args>(args)...);
     low_cardinality_column.insertFromFullColumn(*temp_column, 0);
 }
 
@@ -866,8 +863,7 @@ bool SerializationLowCardinality::tryDeserializeImpl(
     auto & low_cardinality_column = getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
-    auto serialization = dictionary_type->getDefaultSerialization();
-    if (!(serialization.get()->*func)(*temp_column, std::forward<Args>(args)...))
+    if (!(nested_serialization.get()->*func)(*temp_column, std::forward<Args>(args)...))
         return false;
 
     low_cardinality_column.insertFromFullColumn(*temp_column, 0);
