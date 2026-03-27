@@ -4,7 +4,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadStatus.h>
 #include <Interpreters/InsertDeduplication.h>
 
 

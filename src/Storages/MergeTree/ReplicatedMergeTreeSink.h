@@ -2,7 +2,6 @@
 
 #include <string>
 #include <base/types.h>
-#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Processors/Sinks/SinkToStorage.h>
