@@ -2,6 +2,7 @@ import base64
 import concurrent
 import errno
 import http.client
+import inspect
 import json
 import logging
 import os
@@ -21,7 +22,7 @@ import traceback
 import urllib.parse
 import uuid
 from contextlib import contextmanager
-from functools import cache
+from functools import cache, wraps
 from pathlib import Path
 from typing import Any, List, Sequence, Tuple, Union
 
@@ -62,6 +63,34 @@ from .kazoo_client import KazooClientWithImplicitRetries
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
 from .test_tools import assert_eq_with_retry, exec_query_with_retry
+
+def with_default_target_node(default_target_node):
+    """Decorator that injects a default value for the ``target_node`` parameter.
+
+    The decorated function **must** declare a ``target_node`` keyword
+    argument.  The wrapper makes it optional: when the caller omits it
+    (or passes ``None``), ``default_target_node`` is used instead.
+    """
+
+    def decorator(func):
+        sig = inspect.signature(func)
+        if "target_node" not in sig.parameters:
+            raise TypeError(
+                f"Function {func.__name__} must accept a 'target_node' argument "
+                f"to be decorated with @with_default_target_node"
+            )
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            bound = sig.bind_partial(*args, **kwargs)
+            if bound.arguments.get("target_node") is None:
+                bound.arguments["target_node"] = default_target_node
+            return func(*bound.args, **bound.kwargs)
+
+        return wrapper
+
+    return decorator
+
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
