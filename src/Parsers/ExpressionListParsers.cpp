@@ -2956,22 +2956,29 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
         if (is_like)
         {
+            auto saved_pos = pos;
+
             /// Consume the ESCAPE keyword
             ParserKeyword(Keyword::ESCAPE).ignore(pos, expected);
 
             ASTPtr escape_ast;
-            if (!ParserStringLiteral().parse(pos, escape_ast, expected))
-                return Action::NONE;
+            if (ParserStringLiteral().parse(pos, escape_ast, expected))
+            {
+                ASTs arguments;
+                if (layers.back()->popLastNOperands(arguments, 2))
+                {
+                    auto function = makeASTFunction(top_op.function_name, arguments[0], arguments[1], escape_ast);
+                    function->setIsOperator(true);
 
-            ASTs arguments;
-            if (!layers.back()->popLastNOperands(arguments, 2))
-                return Action::NONE;
+                    layers.back()->pushOperand(std::move(function));
+                    return Action::OPERATOR;
+                }
+            }
 
-            auto function = makeASTFunction(top_op.function_name, arguments[0], arguments[1], escape_ast);
-            function->setIsOperator(true);
-
-            layers.back()->pushOperand(std::move(function));
-            return Action::OPERATOR;
+            /// Parsing ESCAPE clause failed — restore operator stack and position
+            pos = saved_pos;
+            layers.back()->pushOperator(top_op);
+            return Action::NONE;
         }
 
         /// Not a LIKE operator on top, push the popped operator back and fall through

@@ -423,8 +423,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
           * They are needed only if this expression is included in another expression with the operator.
           */
 
-        bool is_like_with_escape = arguments->children.size() == 3
-            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike");
+        bool is_like_with_escape = false;
+        if (arguments->children.size() == 3
+            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike"))
+        {
+            if (const auto * escape_literal = arguments->children[2]->as<ASTLiteral>())
+                is_like_with_escape = escape_literal->value.getType() == Field::Types::String;
+        }
         if (!written && (arguments->children.size() == 2 || is_like_with_escape))
         {
             static constexpr std::array<FunctionOperatorMapping, 21> operators =
