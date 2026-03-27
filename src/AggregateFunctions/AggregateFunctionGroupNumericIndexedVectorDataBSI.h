@@ -4,9 +4,6 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
 #include <Common/JSONBuilder.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/SetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <base/demangle.h>
 
@@ -111,7 +108,7 @@ private:
      * data_array stores all indexes and values whose value is not 0 using roaringBitmap and Bit-Sliced Index.
      */
     std::shared_ptr<Roaring> zero_indexes = std::make_shared<Roaring>();
-    VectorWithMemoryTracking<std::shared_ptr<Roaring>> data_array;
+    std::vector<std::shared_ptr<Roaring>> data_array;
 
     /// The only way NaN and Inf values can enter BSI is if user adds them as they cannot appear in BSI by any permitted operation.
     /// Do not allow user to do this as it achieves nothing and is very likely by mistake.
@@ -652,8 +649,8 @@ public:
 
     /// Set Roaring containers to RoaringBitmapWithSmallSet
     static inline void setContainers(
-        VectorWithMemoryTracking<roaring::internal::container_t *> & ctns,
-        VectorWithMemoryTracking<UInt8> & types,
+        std::vector<roaring::internal::container_t *> & ctns,
+        std::vector<UInt8> & types,
         UInt32 container_id,
         BSINumericIndexedVector & vector)
     {
@@ -700,8 +697,8 @@ public:
                 length,
                 static_cast<UInt32>(roaring::internal::DEFAULT_MAX_SIZE));
 
-        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
-        VectorWithMemoryTracking<UInt8> types(total_bit_num);
+        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
+        std::vector<UInt8> types(total_bit_num);
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             ctns[i] = roaring::internal::array_container_create_given_capacity(length);
@@ -721,9 +718,9 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt16>> bit_buffer(64, VectorWithMemoryTracking<UInt16>(k_batch_size, 0));
+        std::vector<std::vector<UInt16>> bit_buffer(64, std::vector<UInt16>(k_batch_size, 0));
         /// number of keys in each bitmap of vector.
-        VectorWithMemoryTracking<UInt16> cnt(64);
+        std::vector<UInt16> cnt(64);
 
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
@@ -808,8 +805,8 @@ public:
 
         const UInt32 total_bit_num = vector.getTotalBitNum();
 
-        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
-        VectorWithMemoryTracking<UInt8> types(total_bit_num);
+        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
+        std::vector<UInt8> types(total_bit_num);
 
         for (size_t i = 0; i < total_bit_num; ++i)
         {
@@ -818,7 +815,7 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        VectorWithMemoryTracking<UInt32> bit_buffer(64 * k_batch_size, 0);
+        std::vector<UInt32> bit_buffer(64 * k_batch_size, 0);
         size_t cnt = 0;
         constexpr UInt64 shift = 6;
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
@@ -892,8 +889,8 @@ public:
 
         const UInt32 total_bit_num = vector.getTotalBitNum();
 
-        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
-        VectorWithMemoryTracking<UInt8> types(total_bit_num);
+        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
+        std::vector<UInt8> types(total_bit_num);
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             ctns[i] = array_container_create_given_capacity(roaring::internal::DEFAULT_MAX_SIZE);
@@ -901,8 +898,8 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt16>> bit_buffer(total_bit_num, VectorWithMemoryTracking<UInt16>(k_batch_size, 0));
-        VectorWithMemoryTracking<UInt16> cnt(total_bit_num);
+        std::vector<std::vector<UInt16>> bit_buffer(total_bit_num, std::vector<UInt16>(k_batch_size, 0));
+        std::vector<UInt16> cnt(total_bit_num);
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
             memset(cnt.data(), 0, sizeof(UInt16) * total_bit_num);
@@ -1085,7 +1082,7 @@ public:
         PaddedPODArray<Float64> rhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        SetWithMemoryTracking<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
+        std::set<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = and_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1149,7 +1146,7 @@ public:
         PaddedPODArray<Float64> lhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        SetWithMemoryTracking<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
+        std::set<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = lhs_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1823,7 +1820,7 @@ public:
         if ((which.isUInt() or which.isInt()) and fraction_bit_num > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "fraction_bit_num should be zero when value type is Int/UInt");
 
-        MapWithMemoryTracking<IndexType, UInt64> index2value;
+        std::map<IndexType, UInt64> index2value;
 
         PaddedPODArray<IndexType> zero_indexes_array;
         zero_indexes->rb_to_array(zero_indexes_array);

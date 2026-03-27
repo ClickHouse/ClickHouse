@@ -1,10 +1,8 @@
 import copy
 import fnmatch
-import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
 from . import Artifact
@@ -44,16 +42,11 @@ class Job:
         command: str
 
         # What job requires
-        #   May be `Artifact.Config.name` (for physical artifacts) or `Job.Config.name` (for ordering only)
+        #   May be phony or physical names
         requires: List[str] = field(default_factory=list)
 
-        # If True, jobs listed in `requires` by `Job.Config.name` are treated as
-        # hard dependencies: they must run (and cannot be skipped as unaffected)
-        # unless their artifacts are already cached by CI.
-        needs_jobs_from_requires: bool = False
-
         # What job provides
-        #   May be only `Artifact.Config.name`
+        #   May be phony or physical names
         provides: List[str] = field(default_factory=list)
 
         job_requirements: Optional["Job.Requirements"] = None
@@ -78,9 +71,6 @@ class Job:
         result_name_for_cidb: str = ""
 
         parameter: Any = None
-
-        # Per-job secrets (exported only for this job, not all jobs in the workflow)
-        secrets: list = field(default_factory=list)
 
         # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
@@ -217,11 +207,6 @@ class Job:
             res.post_hooks = post_hooks
             return res
 
-        def set_timeout(self, timeout):
-            res = copy.deepcopy(self)
-            res.timeout = timeout
-            return res
-
         @staticmethod
         def get_job(job_configs, job_name):
             for job in job_configs:
@@ -275,10 +260,5 @@ class Job:
             if self.timeout_shell_cleanup:
                 return
             if self.run_in_docker:
-                container_name = (
-                    "praktika_"
-                    + hashlib.sha1(
-                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
-                    ).hexdigest()[:12]
-                )
-                self.timeout_shell_cleanup = f"docker rm -f {container_name}"
+                # the container name is always the same (praktika) for every image
+                self.timeout_shell_cleanup = "docker rm -f praktika"

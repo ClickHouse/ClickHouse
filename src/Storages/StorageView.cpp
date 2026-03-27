@@ -145,7 +145,7 @@ StorageView::StorageView(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
     SelectQueryDescription description;
 
-    description.inner_query = query.select->ptr();
+    description.inner_query = query.getChild(*query.select);
 
     NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);
@@ -179,7 +179,7 @@ void StorageView::read(
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto view_context = getViewContext(context, storage_snapshot);
-        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
+        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }

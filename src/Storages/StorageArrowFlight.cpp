@@ -36,10 +36,10 @@ namespace Setting
     extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
 }
 
-StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_, const StorageID * table_id)
+StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_)
 {
     StorageArrowFlight::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context_, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context_))
     {
         configuration = StorageArrowFlight::processNamedCollectionResult(*named_collection);
     }
@@ -312,7 +312,7 @@ void registerStorageArrowFlight(StorageFactory & factory)
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
             ASTs & engine_args = args.engine_args;
-            auto config = StorageArrowFlight::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
+            auto config = StorageArrowFlight::getConfiguration(engine_args, args.getLocalContext());
             auto connection = std::make_shared<ArrowFlightConnection>(config);
 
             return std::make_shared<StorageArrowFlight>(

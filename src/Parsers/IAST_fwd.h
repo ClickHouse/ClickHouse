@@ -1,15 +1,22 @@
 #pragma once
 
-#include <boost/container/vector.hpp>
-#include <boost/smart_ptr/intrusive_ptr.hpp>
+#include <vector>
 
 namespace DB
 {
+    class IAST;
 
-class IAST;
+    void intrusive_ptr_add_ref(const IAST * p);
+    void intrusive_ptr_release(const IAST * p);
+}
 
-void intrusive_ptr_add_ref(const IAST * p) noexcept;
-void intrusive_ptr_release(const IAST * p) noexcept;
+
+#include <boost/container/vector.hpp>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
+#include <boost/smart_ptr/intrusive_ref_counter.hpp>
+
+namespace DB
+{
 
 using ASTPtr = boost::intrusive_ptr<IAST>;
 /// Boost vector with smaller stored size to save memory for AST children vectors.

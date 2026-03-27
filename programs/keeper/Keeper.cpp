@@ -35,7 +35,6 @@
 
 #include <Interpreters/Context.h>
 
-#include <Coordination/KeeperContext.h>
 #include <Coordination/FourLetterCommand.h>
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
@@ -63,9 +62,6 @@
 #include <Disks/registerDisks.h>
 
 /// A minimal file used when the keeper is run without installation
-///
-/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to
-/// make a scratch build.
 constexpr unsigned char keeper_resource_embedded_xml[] =
 {
 #embed "keeper_embedded.xml"
@@ -106,13 +102,11 @@ namespace ServerSetting
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
-    extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
     extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
     extern const ServerSettingsDouble memory_worker_purge_total_memory_threshold_ratio;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsBool memory_worker_use_cgroup;
-    extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
 }
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
@@ -328,12 +322,11 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 #if USE_JEMALLOC
-    Jemalloc::verifySetup(
+    Jemalloc::setup(
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
-        server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
 #endif
     Poco::Logger * log = &logger();
 
@@ -356,7 +349,32 @@ try
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
 
-    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
+    auto update_memory_soft_limit_in_config = [&](Poco::Util::AbstractConfiguration & config)
+    {
+        UInt64 memory_soft_limit = 0;
+        if (config.has("keeper_server.max_memory_usage_soft_limit"))
+        {
+            memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+        }
+
+        /// if memory soft limit is not set, we will use default value
+        if (memory_soft_limit == 0)
+        {
+            Float64 ratio = 0.9;
+            if (config.has("keeper_server.max_memory_usage_soft_limit_ratio"))
+                ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio");
+
+            size_t physical_server_memory = getMemoryAmount();
+            if (ratio > 0 && physical_server_memory > 0)
+            {
+                memory_soft_limit = static_cast<UInt64>(static_cast<double>(physical_server_memory) * ratio);
+                config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
+            }
+        }
+        LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
+    };
+
+    update_memory_soft_limit_in_config(config());
 
     std::string path = getKeeperPath(config());
     std::filesystem::create_directories(path);
@@ -389,7 +407,6 @@ try
         .purge_dirty_pages_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
         .purge_total_memory_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_total_memory_threshold_ratio],
         .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
-        .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
     };
 
@@ -616,19 +633,18 @@ try
         getKeeperPath(config()),
         /* zk_node_cache_= */ nullptr,
         unused_event,
-        [&](ConfigurationPtr loaded_config, bool /* initial_loading */)
+        [&](ConfigurationPtr config, bool /* initial_loading */)
         {
-            config().replace("default", loaded_config, PRIO_DEFAULT, true);
+            updateLevels(*config, logger());
 
-            updateLevels(config(), logger());
-            KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
+            update_memory_soft_limit_in_config(*config);
 
-            if (config().has("keeper_server"))
-                global_context->updateKeeperConfiguration(config());
+            if (config->has("keeper_server"))
+                global_context->updateKeeperConfiguration(*config);
 
 #if USE_SSL
-            CertificateReloader::instance().tryLoad(config());
-            CertificateReloader::instance().tryLoadClient(config());
+            CertificateReloader::instance().tryLoad(*config);
+            CertificateReloader::instance().tryLoadClient(*config);
 #endif
         });
 
@@ -637,10 +653,6 @@ try
         main_config_reloader.reset();
 
         async_metrics.stop();
-
-        /// Signal Keeper TCP handlers to close before waiting for connections,
-        /// otherwise they keep running indefinitely and block shutdown.
-        global_context->signalKeeperDispatcherShutdown();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         size_t current_connections = 0;

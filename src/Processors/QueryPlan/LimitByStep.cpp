@@ -50,7 +50,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
 void LimitByStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
 
     settings.out << prefix << "Columns: ";
 
@@ -96,7 +96,7 @@ void LimitByStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> LimitByStep::deserialize(Deserialization & ctx)
 {
     UInt64 group_length;
     UInt64 group_offset;

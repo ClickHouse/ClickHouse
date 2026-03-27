@@ -32,7 +32,6 @@ public:
     virtual void reset() {}
 
     virtual void setColumns(const MutableColumnPtr * columns, size_t num_columns) = 0;
-    virtual void startReading() {}
     virtual void readRow(size_t row_num) = 0;
     virtual void insertDefaults(size_t row_num) = 0;
 

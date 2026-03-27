@@ -182,9 +182,7 @@ public:
 
                     GeoPolygonContainer polygon_wrapper(std::move(exterior), std::move(holes));
 
-                    int64_t polygon_size = 0;
-                    maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution, 0, &polygon_size);
-                    const size_t vec_size = static_cast<size_t>(polygon_size);
+                    const size_t vec_size = maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution);
                     if (vec_size > MAX_ARRAY_SIZE)
                         throw Exception(
                             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
@@ -193,7 +191,7 @@ public:
 
                     std::vector<H3Index> hindex_vec;
                     hindex_vec.resize(vec_size);
-                    polygonToCells(polygon_wrapper.unwrap(), resolution, 0, hindex_vec.data());
+                    polygonToCells(polygon_wrapper.unwrap(), resolution, hindex_vec.data());
 
                     dst_data.reserve(dst_data.size() + vec_size);
                     for (auto hindex : hindex_vec)
@@ -276,7 +274,6 @@ REGISTER_FUNCTION(H3PolygonToCells)
 {
     factory.registerFunction<FunctionH3PolygonToCells>(FunctionDocumentation{
         .description="Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon.",
-        .syntax = "h3PolygonToCells(geometry, resolution)",
         .introduced_in = {25, 11},
         .category = FunctionDocumentation::Category::Geo});
 }

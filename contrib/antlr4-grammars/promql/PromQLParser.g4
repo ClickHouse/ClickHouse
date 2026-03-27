@@ -44,8 +44,8 @@ expression
 // Unary operations have the same precedence as multiplications
 
 vectorOperation
-    : <assoc = right> vectorOperation subqueryOp
-    | <assoc = right> vectorOperation powOp vectorOperation
+    : <assoc = right> vectorOperation powOp vectorOperation
+    | <assoc = right> vectorOperation subqueryOp
     | unaryOp vectorOperation
     | vectorOperation multOp vectorOperation
     | vectorOperation addOp vectorOperation
@@ -66,7 +66,7 @@ powOp
     ;
 
 multOp
-    : (MULT | DIV | MOD | ATAN2) grouping?
+    : (MULT | DIV | MOD) grouping?
     ;
 
 addOp
@@ -227,7 +227,6 @@ keyword
     : AND
     | OR
     | UNLESS
-    | ATAN2
     | BY
     | WITHOUT
     | ON

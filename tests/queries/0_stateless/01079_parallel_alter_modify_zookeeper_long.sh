@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-fasttest, no-parallel, no-async-insert
-# no-async-insert: concurrent ALTER MODIFY COLUMN changes column types while inserts are in flight.
-# With async inserts, the buffered block type may not match the altered column type at flush time,
-# causing TYPE_MISMATCH errors in the HTTP response that pollute stdout.
+# Tags: long, zookeeper, no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

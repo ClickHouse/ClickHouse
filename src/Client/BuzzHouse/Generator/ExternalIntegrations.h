@@ -24,7 +24,6 @@
 #    include <mongocxx/collection.hpp>
 #    include <mongocxx/database.hpp>
 #    include <mongocxx/exception/exception.hpp>
-#    include <mongocxx/instance.hpp>
 #endif
 
 #if USE_LIBPQXX
@@ -304,7 +303,7 @@ public:
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
-    void setBackupDetails(const String &, BackupOut *);
+    void setBackupDetails(const String &, BackupRestore *);
 
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
@@ -321,7 +320,7 @@ public:
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
-    void setBackupDetails(const String &, BackupOut *);
+    void setBackupDetails(const String &, BackupRestore *);
 
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
@@ -473,7 +472,7 @@ public:
 
     void replicateSettings(PeerTableDatabase pt);
 
-    void setBackupDetails(IntegrationCall dc, const String & filename, BackupOut * bout);
+    void setBackupDetails(IntegrationCall dc, const String & filename, BackupRestore * br);
 };
 
 }

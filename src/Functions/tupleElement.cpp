@@ -26,8 +26,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int BAD_ARGUMENTS;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
 }
 
@@ -316,7 +315,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -333,7 +332,7 @@ private:
                 return {index + size};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -346,7 +345,7 @@ private:
 
             if (argument_size == 2)
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
+                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
             return std::nullopt;
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant Int, UInt or String", getName());
@@ -363,7 +362,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "QBit doesn't have an element with index '{}'", index);
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "QBit doesn't have an element with index '{}'", index);
 
             return std::nullopt;
         }
@@ -390,11 +389,6 @@ private:
         /// return this nested object as JSON column, so nested tupleElement(..., path2) can be applied to it.
         auto literal_subcolumn_type = object_type.getSubcolumnType(element_name);
         auto literal_subcolumn = object_type.getSubcolumn(element_name, object_column);
-        /// The only exception is when requested path had type hint, in this case we consider that this path is present in all rows
-        /// and we should return it as a literal subcolumn with the hint type.
-        if (object_type.getTypedPaths().contains(element_name))
-            return literal_subcolumn;
-
         auto sub_object_subcolumn_name = "^`" + element_name + "`";
         auto sub_object_subcolumn_type = object_type.getSubcolumnType(sub_object_subcolumn_name);
         auto sub_object_subcolumn = object_type.getSubcolumn(sub_object_subcolumn_name, object_column);

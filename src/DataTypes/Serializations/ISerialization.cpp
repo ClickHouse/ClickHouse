@@ -3,21 +3,17 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
-#include <Common/Exception.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <absl/strings/str_split.h>
 #include <base/EnumReflection.h>
-#include <base/demangle.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <base/types.h>
+#include <boost/algorithm/string_regex.hpp>
 
 namespace DB
 {
@@ -32,38 +28,6 @@ namespace ErrorCodes
     extern const int MULTIPLE_STREAMS_REQUIRED;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int LOGICAL_ERROR;
-}
-
-void throwEmptySerializationState(const ISerialization * serialization)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "Got empty state for {}", demangle(typeid(*serialization).name()));
-}
-
-void throwInvalidSerializationState(const ISerialization * serialization, const std::type_info & expected, const std::type_info & got)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "Invalid State for {}. Expected: {}, got {}",
-            demangle(typeid(*serialization).name()),
-            demangle(expected.name()),
-            demangle(got.name()));
-}
-
-UInt128 ISerialization::getHash() const
-{
-    if (!cached_hash)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash is not set for serialization {}", typeid(*this).name());
-    return *cached_hash;
-}
-
-SerializationPtr ISerialization::pooled(UInt128 hash, std::function<ISerialization *()> creator)
-{
-    return SerializationObjectPool::getOrCreate(hash, [hash, c = std::move(creator)]() -> ISerialization *
-    {
-        auto * obj = c();
-        obj->cached_hash = hash;
-        return obj;
-    });
 }
 
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
@@ -127,7 +91,7 @@ String ISerialization::kindStackToString(const KindStack & kind_stack)
     return result;
 }
 
-static ISerialization::Kind stringToKind(std::string_view str)
+static ISerialization::Kind stringToKind(const String & str)
 {
     if (str == "Default")
         return ISerialization::Kind::DEFAULT;
@@ -142,7 +106,8 @@ static ISerialization::Kind stringToKind(std::string_view str)
 
 ISerialization::KindStack ISerialization::stringToKindStack(const String & str)
 {
-    std::vector<std::string_view> kind_strings = absl::StrSplit(str, absl::ByString("Over"));
+    std::vector<String> kind_strings;
+    boost::algorithm::split_regex(kind_strings, str, boost::regex("Over"));
     KindStack kind_stack;
     for (size_t i = 0; i != kind_strings.size(); ++i)
     {
@@ -296,12 +261,11 @@ String getNameForSubstreamPath(
     SubstreamIterator end,
     bool escape_for_file_name,
     bool encode_sparse_stream,
-    bool escape_variant_substreams,
-    size_t initial_array_level = 0)
+    bool escape_variant_substreams)
 {
     using Substream = ISerialization::Substream;
 
-    size_t array_level = initial_array_level;
+    size_t array_level = 0;
     for (auto it = begin; it != end; ++it)
     {
         if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
@@ -363,10 +327,8 @@ String getNameForSubstreamPath(
             stream_name += ".object_structure";
         else if (it->type == SubstreamType::ObjectSharedData)
             stream_name += ".object_shared_data";
-        else if (it->type == SubstreamType::Bucket)
-            stream_name += "." + std::to_string(it->bucket);
-        else if (it->type == SubstreamType::MapBucketsInfo)
-            stream_name += ".buckets_info";
+        else if (it->type == SubstreamType::ObjectSharedDataBucket)
+            stream_name +=   "." + std::to_string(it->object_shared_data_bucket);
         else if (it->type == SubstreamType::ObjectSharedDataStructure)
             stream_name += ".structure";
         else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
@@ -457,14 +419,14 @@ String ISerialization::getFileNameForRenamedColumnStream(const NameAndTypePair &
     return getFileNameForRenamedColumnStream(column_from.getNameInStorage(), column_to.getNameInStorage(), file_name);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream, size_t initial_array_level)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream)
 {
-    return getSubcolumnNameForStream(path, path.size(), encode_sparse_stream, initial_array_level);
+    return getSubcolumnNameForStream(path, path.size(), encode_sparse_stream);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream, size_t initial_array_level)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream)
 {
-    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream, false, initial_array_level);
+    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream, false);
     if (!subcolumn_name.empty())
         subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
 
@@ -561,7 +523,7 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
         deserialize(column);
         return true;
     }
-    catch (...) // Ok: tryDeserializeText is a try-pattern
+    catch (...)
     {
         if (column.size() > prev_size)
             column.popBack(column.size() - prev_size);
@@ -569,11 +531,6 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
     }
 }
 
-}
-
-void ISerialization::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    serializeBinary(column, row_num, ostr, {});
 }
 
 bool ISerialization::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
@@ -630,11 +587,11 @@ void ISerialization::serializeTextRaw(const IColumn & column, size_t row_num, Wr
     serializeText(column, row_num, ostr, settings);
 }
 
-size_t ISerialization::getArrayLevel(const SubstreamPath & path, size_t prefix_len)
+size_t ISerialization::getArrayLevel(const SubstreamPath & path)
 {
     size_t level = 0;
-    for (size_t i = 0; i < prefix_len; ++i)
-        level += path[i].type == Substream::ArrayElements;
+    for (const auto & elem : path)
+        level += elem.type == Substream::ArrayElements;
     return level;
 }
 
@@ -688,13 +645,12 @@ bool ISerialization::isLowCardinalityDictionarySubcolumn(const DB::ISerializatio
     return path[path.size() - 1].type == SubstreamType::DictionaryKeys;
 }
 
-bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & path)
+bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerialization::SubstreamPath & path)
 {
     if (path.empty())
         return false;
 
-    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure
-        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
+    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
 }
 
 bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams)
@@ -726,14 +682,6 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
 
     ssize_t last_elem = prefix_len - 1;
     auto res = path[last_elem].data;
-
-    /// Materialize the column on demand via a lazy creator if one is attached.
-    /// This supports deferred column creation for derived subcolumns like
-    /// String `.size`, whose data is computed from a parent column and should
-    /// only be materialized when actually requested.
-    if (!res.column && res.lazy_column_creator)
-        res.column = res.lazy_column_creator();
-
     for (ssize_t i = last_elem - 1; i >= 0; --i)
     {
         const auto & creator = path[i].creator;

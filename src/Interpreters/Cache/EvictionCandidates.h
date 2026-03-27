@@ -1,7 +1,7 @@
 #pragma once
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/UserCacheUsage.h>
-#include <Interpreters/Cache/FileCacheOriginInfo.h>
+#include <Interpreters/Cache/UserInfo.h>
 #include <deque>
 
 namespace DB
@@ -20,11 +20,10 @@ struct QueueEvictionInfo
 {
     explicit QueueEvictionInfo(
         const std::string & description_,
-        const FileCacheOriginInfo::UserID & user_id_)
-        : description(description_), user_id(user_id_) {}
+        const FileCacheUserInfo::UserID & user_id_) : description(description_), user_id(user_id_) {}
 
     const std::string description;
-    const FileCacheOriginInfo::UserID user_id;
+    const FileCacheUserInfo::UserID user_id;
 
     size_t size_to_evict = 0;
     size_t elements_to_evict = 0;

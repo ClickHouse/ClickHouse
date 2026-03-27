@@ -22,9 +22,7 @@
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
 #include <base/getPageSize.h>
-#include <base/memcmpSmall.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
 #include <Core/Types.h>
 
@@ -393,7 +391,6 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
-    symbol_resolver->registerSymbol("memcmpSmallCharsAllowOverflow15", reinterpret_cast<void *>(&memcmpSmallCharsAllowOverflow15));
 
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
     symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&__divti3));
@@ -524,12 +521,13 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
+    auto target_analysis = machine->getTargetIRAnalysis();
+    fam.registerPass([&] { return target_analysis; });
+
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
 
-    /// Pass the actual TargetMachine so that all optimization passes
-    /// (including target-specific ones) have proper target information.
-    llvm::PassBuilder pb(machine.get(), pto);
+    llvm::PassBuilder pb(nullptr, pto);
 
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);

@@ -1,7 +1,6 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
 #include <Poco/JSON/Object.h>
@@ -61,19 +60,14 @@ void SerializationInfoTuple::add(const SerializationInfo & other)
 {
     SerializationInfo::add(other);
 
-    const auto * other_info = typeid_cast<const SerializationInfoTuple *>(&other);
-    if (!other_info)
-    {
-        return;
-    }
-
+    const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
     for (const auto & [name, elem] : name_to_elem)
     {
-        auto it = other_info->name_to_elem.find(name);
-        if (it != other_info->name_to_elem.end())
+        auto it = other_info.name_to_elem.find(name);
+        if (it != other_info.name_to_elem.end())
             elem->add(*it->second);
         else
-            elem->addDefaults(other_info->getData().num_rows);
+            elem->addDefaults(other_info.getData().num_rows);
     }
 }
 
@@ -102,16 +96,11 @@ void SerializationInfoTuple::replaceData(const SerializationInfo & other)
 {
     SerializationInfo::replaceData(other);
 
-    const auto * other_info = typeid_cast<const SerializationInfoTuple *>(&other);
-    if (!other_info)
-    {
-        return;
-    }
-
+    const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
     for (const auto & [name, elem] : name_to_elem)
     {
-        auto it = other_info->name_to_elem.find(name);
-        if (it != other_info->name_to_elem.end())
+        auto it = other_info.name_to_elem.find(name);
+        if (it != other_info.name_to_elem.end())
             elem->replaceData(*it->second);
     }
 }

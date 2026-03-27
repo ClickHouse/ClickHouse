@@ -109,13 +109,13 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (!(exists_view || parse_show_create_view))
         {
             if (temporary || s_temporary.ignore(pos, expected))
-                query->setIsTemporary(true);
+                query->temporary = true;
 
             if (!s_table.ignore(pos, expected))
                 s_dictionary.ignore(pos, expected);
         }
 
-        query->setIsTemporary(temporary);
+        query->temporary = temporary;
 
         if (!name_p.parse(pos, table, expected))
             return false;

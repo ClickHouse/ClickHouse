@@ -106,26 +106,6 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
 {
 }
 
-// c-tor for method createForFlushAsyncInsertQueue
-ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
-    : master_thread_id(CurrentThread::get().thread_id)
-    , query_context(query_context_)
-    , global_context(query_context_->getGlobalContext())
-    , fatal_error_callback(parent->fatal_error_callback)
-    , os_threads_nice_value(parent->os_threads_nice_value)
-    , memory_spill_scheduler(parent->memory_spill_scheduler)
-    , performance_counters(VariableContext::Process, &parent->performance_counters)
-    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
-{
-    shared_data.query_is_canceled_predicate = [this] () -> bool {
-        if (auto context_locked = query_context.lock())
-        {
-            return context_locked->isCurrentQueryKilled();
-        }
-        return false;
-    };
-}
-
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
 {
     std::vector<UInt64> res;
@@ -219,13 +199,6 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
         res_group = create(context, os_threads_nice_value);
     }
     res_group->memory_tracker.setDescription("MaterializeView");
-    return res_group;
-}
-
-ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
-{
-    auto res_group = std::make_shared<ThreadGroup>(context, parent);
-    res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;
 }
 
@@ -646,8 +619,7 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
     }
     catch (...)
     {
-        /// GlobalProfiler is optional.
-        tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize GlobalProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.", LogsLevel::warning);
+        tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
     }
 #endif
 }
@@ -688,7 +660,7 @@ void ThreadStatus::initQueryProfiler()
     catch (...)
     {
         /// QueryProfiler is optional.
-        tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize QueryProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.", LogsLevel::warning);
+        tryLogCurrentException("ThreadStatus", "Cannot initialize QueryProfiler");
     }
 }
 
@@ -773,6 +745,50 @@ void CurrentThread::detachFromGroupIfNotDetached()
     if (unlikely(!current_thread))
         return;
     current_thread->detachFromGroup();
+}
+
+CurrentThread::QueryScope::QueryScope(ContextMutablePtr query_context, std::function<void()> fatal_error_callback)
+{
+    if (!query_context->hasQueryContext())
+        query_context->makeQueryContext();
+
+    auto group = ThreadGroup::createForQuery(query_context, std::move(fatal_error_callback));
+    CurrentThread::attachToGroup(group);
+}
+
+CurrentThread::QueryScope::QueryScope(ContextPtr query_context, std::function<void()> fatal_error_callback)
+{
+    if (!query_context->hasQueryContext())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Cannot initialize query scope without query context");
+
+    auto group = ThreadGroup::createForQuery(query_context, std::move(fatal_error_callback));
+    CurrentThread::attachToGroup(group);
+}
+
+void CurrentThread::QueryScope::logPeakMemoryUsage()
+{
+    auto group = CurrentThread::getGroup();
+    if (!group)
+        return;
+
+    log_peak_memory_usage_in_destructor = false;
+    group->memory_tracker.logPeakMemoryUsage();
+}
+
+CurrentThread::QueryScope::~QueryScope()
+{
+    try
+    {
+        if (log_peak_memory_usage_in_destructor)
+            logPeakMemoryUsage();
+
+        CurrentThread::detachFromGroupIfNotDetached();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("CurrentThread", __PRETTY_FUNCTION__);
+    }
 }
 
 }

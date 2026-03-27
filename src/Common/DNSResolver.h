@@ -53,9 +53,6 @@ public:
 
     /// Get this server host name
     String getHostName();
-    /// Updates host name and its IPs
-    /// Returns true if IPs of the host name have been changed
-    bool updateHostNameAndAddresses();
 
     /// Disables caching
     void setDisableCacheFlag(bool is_disabled = true);
@@ -70,12 +67,10 @@ public:
     void removeHostFromCache(const std::string & host);
 
     /// Updates all known hosts in cache.
-    void updateCache(UInt32 max_consecutive_failures);
+    /// Returns true if IP of any host has been changed or an element was dropped (too many failures)
+    bool updateCache(UInt32 max_consecutive_failures);
 
     void setFilterSettings(bool dns_allow_resolve_names_to_ipv4, bool dns_allow_resolve_names_to_ipv6);
-
-    bool getFilterIPv4() const;
-    bool getFilterIPv6() const;
 
     /// Returns a copy of cache entries
     std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
@@ -84,7 +79,7 @@ public:
 
 private:
     template <typename UpdateF, typename ElemsT>
-    void updateCacheImpl(
+    bool updateCacheImpl(
         UpdateF && update_func,
         ElemsT && elems,
         UInt32 max_consecutive_failures,
@@ -109,8 +104,7 @@ private:
     void addToNewAddresses(const Poco::Net::IPAddress & address);
 
     IPAddresses resolveIPAddressWithCache(const std::string & host);
-    IPAddresses getResolvedIPAddressesWithFiltering(const std::string & host);
-    std::unordered_set<String> reverseResolveWithCache(const Poco::Net::IPAddress & address);
+    IPAddresses getResolvedIPAdressessWithFiltering(const std::string & host);
 };
 
 }

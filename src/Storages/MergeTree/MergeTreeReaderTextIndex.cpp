@@ -49,7 +49,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->settings)
     , index(std::move(index_))
     , can_skip_mark(can_skip_mark_)
-    , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index.index).getPostingListCodec())
 {
     for (const auto & column : columns_)
     {
@@ -233,6 +232,7 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
         may_be_true_granules.add(static_cast<UInt32>(mark));
 
     analyzed_granules.add(static_cast<UInt32>(mark));
+    granule_text.resetAfterAnalysis();
     return can_skip_mark && !may_be_true;
 }
 
@@ -340,7 +340,7 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
     }
 }
 
-double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
+double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const MergeTreeIndexGranuleText::TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
 {
     chassert(!query.tokens.empty());
 
@@ -360,10 +360,7 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
             /// The the expected cardinality of the intersection is:
             /// N * pn = N * (|A1| * |A2| * ... * |An| / N) = |A1| * |A2| * ... * |An| / N^(n-1).
 
-            /// Compute in log-space to avoid double overflow when many tokens
-            /// have large cardinalities: log(N * p1 * p2 * ... * pn) =
-            /// sum(log(|Ai|)) - (n-1) * log(N).
-            double log_cardinality = 0.0;
+            double cardinality = 1.0;
 
             for (const auto & token : query.tokens)
             {
@@ -371,11 +368,11 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
                 if (it == remaining_tokens.end())
                     return 0;
 
-                log_cardinality += std::log(static_cast<double>(it->second->cardinality));
+                cardinality *= it->second.cardinality;
             }
 
-            log_cardinality -= static_cast<double>(query.tokens.size() - 1) * std::log(static_cast<double>(total_rows));
-            return std::exp(log_cardinality);
+            cardinality /= std::pow(total_rows, query.tokens.size() - 1);
+            return cardinality;
         }
         case TextSearchMode::Any:
         {
@@ -392,7 +389,7 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
             for (const auto & token : query.tokens)
             {
                 auto it = remaining_tokens.find(token);
-                double token_cardinality = it == remaining_tokens.end() ? 0 : it->second->cardinality;
+                double token_cardinality = it == remaining_tokens.end() ? 0 : it->second.cardinality;
                 cardinality *= (1.0 - (token_cardinality / static_cast<double>(total_rows)));
             }
 
@@ -431,7 +428,7 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
             continue;
         }
 
-        auto token_postings = readPostingsBlocksForToken(token, *token_info, *rows_range);
+        auto token_postings = readPostingsBlocksForToken(token, token_info, *rows_range);
 
         if (token_postings.size() == 1)
         {
@@ -470,7 +467,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
         if (inserted)
         {
             auto * postings_stream = large_postings_streams.at(token).get();
-            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx, postings_serialization, granule_text.getIndexIdForCaches());
+            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx, granule_text.getPostingListCodec());
         }
 
         token_postings.push_back(it->second);
@@ -490,9 +487,9 @@ void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
         if (it == postings_blocks.end())
             continue;
 
-        for (size_t i = 0; i < token_info->ranges.size(); ++i)
+        for (size_t i = 0; i < token_info.ranges.size(); ++i)
         {
-            if (!token_info->ranges[i].intersects(range))
+            if (!token_info.ranges[i].intersects(range))
                 it->second.erase(i);
         }
     }

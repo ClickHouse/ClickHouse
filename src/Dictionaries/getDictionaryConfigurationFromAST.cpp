@@ -7,7 +7,6 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -45,7 +44,7 @@ struct AttributeConfiguration
     std::string expression;
 };
 
-using AttributeNameToConfiguration = UnorderedMapWithMemoryTracking<std::string, AttributeConfiguration>;
+using AttributeNameToConfiguration = std::unordered_map<std::string, AttributeConfiguration>;
 
 String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr)
 {
@@ -514,11 +513,6 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
                     "Please update the dictionary definition to remove function usage");
             }
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
-            if (!builder)
-            {
-                throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-                    "The dictionary definition contains unsupported function {}", func->name);
-            }
             auto function = builder->build({});
             function->prepare({});
 
