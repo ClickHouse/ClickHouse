@@ -5,7 +5,7 @@ CREATE TABLE t(a UInt32, b UInt32) ENGINE=MergeTree() ORDER BY a SETTINGS index_
 
 INSERT INTO t SELECT number, number % 12345 FROM numbers_mt(1e7);
 
-SET max_threads=4, optimize_read_in_order=1;
+SET max_threads=4, optimize_read_in_order=1, read_in_order_max_primary_key_ratio=1.0;
 
 SELECT countIf(explain like '%ScatterByPartitionTransform%')
 FROM (

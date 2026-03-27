@@ -11,6 +11,7 @@ SET optimize_read_in_order = 1;
 SET read_in_order_use_buffering = 1;
 SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
+SET read_in_order_max_primary_key_ratio = 1.0;
 
 SELECT count() FROM
 (

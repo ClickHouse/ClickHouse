@@ -29,10 +29,10 @@ select * from (explain pipeline select sum(x) from t settings max_threads=4, max
 
 -- For read-in-order, disable everything
 set query_plan_remove_redundant_sorting=0; -- to keep reading in order
-select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, optimize_read_in_order=1, query_plan_read_in_order=1;
-select * from (explain pipeline select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, optimize_read_in_order=1, query_plan_read_in_order=1) where explain like '%Resize%';
-select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, max_streams_to_max_threads_ratio=8, optimize_read_in_order=1, query_plan_read_in_order=1;
-select * from (explain pipeline select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, max_streams_to_max_threads_ratio=8, optimize_read_in_order=1, query_plan_read_in_order=1) where explain like '%Resize%';
+select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, optimize_read_in_order=1, query_plan_read_in_order=1, read_in_order_max_primary_key_ratio=1.0;
+select * from (explain pipeline select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, optimize_read_in_order=1, query_plan_read_in_order=1, read_in_order_max_primary_key_ratio=1.0) where explain like '%Resize%';
+select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, max_streams_to_max_threads_ratio=8, optimize_read_in_order=1, query_plan_read_in_order=1, read_in_order_max_primary_key_ratio=1.0;
+select * from (explain pipeline select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, max_streams_to_max_threads_ratio=8, optimize_read_in_order=1, query_plan_read_in_order=1, read_in_order_max_primary_key_ratio=1.0) where explain like '%Resize%';
 
 -- { echoOff }
 drop table t;
