@@ -57,6 +57,13 @@ def http_post(node, path, body=""):
     return resp.text.strip(), resp.status_code
 
 
+def http_request(node, method, path, body=""):
+    """Issue an HTTP request with the given method."""
+    url = f"http://{node.ip_address}:8123{path}"
+    resp = requests.request(method, url, data=body)
+    return resp.text.strip(), resp.status_code
+
+
 def create_handler(node, name, url, query, methods=None, url_type=""):
     """Helper to CREATE HANDLER via SQL."""
     methods_clause = ""
@@ -92,7 +99,7 @@ def alter_handler(node, name, query=None, url=None, url_type="", methods=None):
 
 
 def test_local_create_drop(cluster):
-    """CREATE HANDLER → verify HTTP → DROP → verify gone."""
+    """CREATE HANDLER -> verify HTTP -> DROP -> verify gone."""
     node = cluster.instances["node"]
 
     create_handler(node, "h_local_1", "/test_local_1", "SELECT 42 AS answer")
@@ -101,12 +108,12 @@ def test_local_create_drop(cluster):
     assert code == 200
 
     drop_handler(node, "h_local_1")
-    _, code = http_get(node, "/test_local_1")
-    assert code != 200 or "42" not in _
+    text, code = http_get(node, "/test_local_1")
+    assert code != 200, f"Expected non-200 after DROP, got {code} with body '{text}'"
 
 
 def test_local_persistence_restart(cluster):
-    """CREATE HANDLER → restart → verify handler survives restart → DROP → restart → verify gone."""
+    """CREATE HANDLER -> restart -> verify handler survives restart -> DROP -> restart -> verify gone."""
     node = cluster.instances["node"]
 
     create_handler(node, "h_persist", "/test_persist", "SELECT 101 AS persisted")
@@ -128,12 +135,12 @@ def test_local_persistence_restart(cluster):
     node.restart_clickhouse()
 
     # Verify gone after restart
-    _, code = http_get(node, "/test_persist")
-    assert code != 200 or "101" not in _
+    text, code = http_get(node, "/test_persist")
+    assert code != 200, f"Handler still active after DROP + restart, got {code}"
 
 
 def test_local_alter_persistence(cluster):
-    """CREATE → ALTER → restart → verify altered query persists."""
+    """CREATE -> ALTER -> restart -> verify altered query persists."""
     node = cluster.instances["node"]
 
     create_handler(node, "h_alter_p", "/test_alter_p", "SELECT 1 AS before_alter")
@@ -144,7 +151,7 @@ def test_local_alter_persistence(cluster):
     text, _ = http_get(node, "/test_alter_p")
     assert text == "2"
 
-    # Restart — altered state must persist
+    # Restart -- altered state must persist
     node.restart_clickhouse()
 
     text, _ = http_get(node, "/test_alter_p")
@@ -166,8 +173,8 @@ def test_local_url_prefix(cluster):
     assert code == 200
 
     # Exact different path should not match
-    _, code = http_get(node, "/other_path")
-    assert code != 200 or "201" not in _
+    text, code = http_get(node, "/other_path")
+    assert code != 200, f"Non-matching path returned {code}"
 
     drop_handler(node, "h_prefix")
 
@@ -189,14 +196,14 @@ def test_local_url_regexp(cluster):
     assert code == 200
 
     # Non-matching path
-    _, code = http_get(node, "/re_test/abc")
-    assert code != 200 or "202" not in _
+    text, code = http_get(node, "/re_test/abc")
+    assert code != 200, f"Non-matching regexp path returned {code}"
 
     drop_handler(node, "h_regexp")
 
 
 def test_local_method_filtering(cluster):
-    """Method filtering — POST-only handler should not match GET."""
+    """Method filtering -- POST-only handler should not match GET."""
     node = cluster.instances["node"]
 
     create_handler(
@@ -208,9 +215,9 @@ def test_local_method_filtering(cluster):
     assert text == "203"
     assert code == 200
 
-    # GET should NOT match
+    # GET should NOT match -- should fall through to default handler
     text, code = http_get(node, "/method_test")
-    assert "203" not in text
+    assert "203" not in text, f"GET matched POST-only handler: '{text}'"
 
     drop_handler(node, "h_post_only")
 
@@ -227,10 +234,12 @@ def test_local_multi_methods(cluster):
         methods=["GET", "POST"],
     )
 
-    text_get, _ = http_get(node, "/multi_method")
-    text_post, _ = http_post(node, "/multi_method")
+    text_get, code_get = http_get(node, "/multi_method")
+    text_post, code_post = http_post(node, "/multi_method")
     assert text_get == "204"
+    assert code_get == 200
     assert text_post == "204"
+    assert code_post == 200
 
     drop_handler(node, "h_multi")
 
@@ -272,6 +281,96 @@ def test_local_alter_if_exists_nonexistent(cluster):
 
 
 # ---------------------------------------------------------------------------
+# Validation tests
+# ---------------------------------------------------------------------------
+
+
+def test_alter_no_clauses_rejected(cluster):
+    """ALTER HANDLER with no URL/METHODS/AS clause should be rejected."""
+    node = cluster.instances["node"]
+
+    create_handler(node, "h_noop_test", "/noop_test", "SELECT 1")
+    with pytest.raises(Exception, match="BAD_ARGUMENTS"):
+        node.query("ALTER HANDLER h_noop_test")
+    drop_handler(node, "h_noop_test")
+
+
+def test_invalid_method_rejected(cluster):
+    """CREATE HANDLER with an invalid HTTP method should be rejected."""
+    node = cluster.instances["node"]
+
+    with pytest.raises(Exception, match="BAD_ARGUMENTS"):
+        node.query(
+            "CREATE HANDLER h_badmethod URL '/badmethod' METHODS (FOOBAR) AS 'SELECT 1'"
+        )
+
+
+def test_invalid_query_syntax_rejected(cluster):
+    """CREATE HANDLER with invalid SQL in AS clause should be rejected."""
+    node = cluster.instances["node"]
+
+    with pytest.raises(Exception, match="SYNTAX_ERROR"):
+        node.query(
+            "CREATE HANDLER h_badsql URL '/badsql' AS 'this is not SQL at all'"
+        )
+
+
+def test_duplicate_exact_url_rejected(cluster):
+    """Two handlers with the same exact URL and overlapping methods should be rejected."""
+    node = cluster.instances["node"]
+
+    create_handler(node, "h_dup1", "/dup_url_test", "SELECT 1")
+    with pytest.raises(Exception, match="BAD_ARGUMENTS"):
+        create_handler(node, "h_dup2", "/dup_url_test", "SELECT 2")
+    drop_handler(node, "h_dup1")
+
+
+def test_put_delete_methods(cluster):
+    """PUT and DELETE methods should be accepted and work correctly."""
+    node = cluster.instances["node"]
+
+    create_handler(
+        node, "h_put", "/put_test", "SELECT 600 AS put_result", methods=["PUT"]
+    )
+    text, code = http_request(node, "PUT", "/put_test")
+    assert text == "600"
+    assert code == 200
+    drop_handler(node, "h_put")
+
+    create_handler(
+        node, "h_delete", "/delete_test", "SELECT 700 AS del_result", methods=["DELETE"]
+    )
+    text, code = http_request(node, "DELETE", "/delete_test")
+    assert text == "700"
+    assert code == 200
+    drop_handler(node, "h_delete")
+
+
+def test_alter_invalid_method_rejected(cluster):
+    """ALTER HANDLER with invalid method should be rejected."""
+    node = cluster.instances["node"]
+
+    create_handler(node, "h_alter_badmethod", "/alter_badmethod", "SELECT 1")
+    with pytest.raises(Exception, match="BAD_ARGUMENTS"):
+        node.query(
+            "ALTER HANDLER h_alter_badmethod METHODS (PATCH)"
+        )
+    drop_handler(node, "h_alter_badmethod")
+
+
+def test_alter_invalid_query_rejected(cluster):
+    """ALTER HANDLER with invalid SQL should be rejected."""
+    node = cluster.instances["node"]
+
+    create_handler(node, "h_alter_badsql", "/alter_badsql", "SELECT 1")
+    with pytest.raises(Exception, match="SYNTAX_ERROR"):
+        node.query(
+            "ALTER HANDLER h_alter_badsql AS 'NOT VALID SQL GIBBERISH'"
+        )
+    drop_handler(node, "h_alter_badsql")
+
+
+# ---------------------------------------------------------------------------
 # Keeper config fallback tests
 # ---------------------------------------------------------------------------
 # ZooKeeper-based handler storage is not yet implemented; the server falls
@@ -290,7 +389,7 @@ def test_keeper_config_fallback_persistence(cluster):
     assert text == "205"
     assert code == 200
 
-    # Restart — handler should survive via local-disk fallback
+    # Restart -- handler should survive via local-disk fallback
     node1.restart_clickhouse()
 
     text, code = http_get(node1, "/fallback_test")

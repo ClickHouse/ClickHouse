@@ -52,11 +52,11 @@ bool ParserCreateHandlerQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     if (!s_url.ignore(pos, expected))
         return false;
 
-    std::string url_type = "exact";
+    HandlerURLType url_type = HandlerURLType::Exact;
     if (s_prefix.ignore(pos, expected))
-        url_type = "prefix";
+        url_type = HandlerURLType::Prefix;
     else if (s_regexp.ignore(pos, expected))
-        url_type = "regexp";
+        url_type = HandlerURLType::Regexp;
 
     ASTPtr url_ast;
     if (!string_literal_p.parse(pos, url_ast, expected))
@@ -98,7 +98,7 @@ bool ParserCreateHandlerQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     query->if_not_exists = if_not_exists;
     query->cluster = std::move(cluster_str);
     query->url = std::move(url);
-    query->url_type = std::move(url_type);
+    query->url_type = url_type;
     query->methods = std::move(methods);
     query->query = std::move(query_str);
 

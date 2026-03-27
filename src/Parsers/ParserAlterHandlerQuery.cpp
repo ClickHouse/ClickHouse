@@ -56,18 +56,18 @@ bool ParserAlterHandlerQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
     if (s_url.ignore(pos, expected))
     {
-        std::string url_type = "exact";
+        HandlerURLType url_type = HandlerURLType::Exact;
         if (s_prefix.ignore(pos, expected))
-            url_type = "prefix";
+            url_type = HandlerURLType::Prefix;
         else if (s_regexp.ignore(pos, expected))
-            url_type = "regexp";
+            url_type = HandlerURLType::Regexp;
 
         ASTPtr url_ast;
         if (!string_literal_p.parse(pos, url_ast, expected))
             return false;
 
         query->url = url_ast->as<ASTLiteral &>().value.safeGet<String>();
-        query->url_type = std::move(url_type);
+        query->url_type = url_type;
     }
 
     if (s_methods.ignore(pos, expected))

@@ -2,6 +2,7 @@
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTAlterHandlerQuery.h>
 #include <Parsers/ParserCreateHandlerQuery.h>
+#include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
@@ -14,7 +15,9 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <unordered_set>
 
 
 namespace fs = std::filesystem;
@@ -25,9 +28,40 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
 }
 
 static constexpr auto custom_handlers_storage_config_path = "custom_handlers_storage";
+
+/// Validate that each method in the list is one of the allowed HTTP methods.
+static void validateMethods(const std::vector<std::string> & methods)
+{
+    static const std::unordered_set<std::string> allowed_methods = {"GET", "POST", "PUT", "DELETE"};
+    for (const auto & m : methods)
+    {
+        if (!allowed_methods.contains(m))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unknown HTTP method '{}'. Allowed methods: GET, POST, PUT, DELETE", m);
+    }
+}
+
+/// Parse the handler query string for syntactic correctness (but do not analyze).
+static void validateQuerySyntax(const std::string & query_str)
+{
+    try
+    {
+        ParserQuery parser(query_str.data() + query_str.size());
+        parseQuery(parser, query_str, 0, 0, 0);
+    }
+    catch (const Exception & e)
+    {
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Handler query is not valid SQL: {}", e.message());
+    }
+}
+
 
 CustomHandlersFactory & CustomHandlersFactory::instance()
 {
@@ -37,13 +71,13 @@ CustomHandlersFactory & CustomHandlersFactory::instance()
 
 bool CustomHandlersFactory::exists(const std::string & handler_name) const
 {
-    std::lock_guard lock(mutex);
+    std::shared_lock lock(mutex);
     return handlers.contains(handler_name);
 }
 
 CustomHandlerDefinition CustomHandlersFactory::get(const std::string & handler_name) const
 {
-    std::lock_guard lock(mutex);
+    std::shared_lock lock(mutex);
     auto it = handlers.find(handler_name);
     if (it == handlers.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler `{}` does not exist", handler_name);
@@ -52,21 +86,82 @@ CustomHandlerDefinition CustomHandlersFactory::get(const std::string & handler_n
 
 std::optional<CustomHandlerDefinition> CustomHandlersFactory::tryGet(const std::string & handler_name) const
 {
-    std::lock_guard lock(mutex);
+    std::shared_lock lock(mutex);
     auto it = handlers.find(handler_name);
     if (it == handlers.end())
         return std::nullopt;
     return it->second;
 }
 
-std::vector<CustomHandlerDefinition> CustomHandlersFactory::getAll() const
+std::vector<CustomHandlerDefinition> CustomHandlersFactory::getSortedSnapshot() const
 {
-    std::lock_guard lock(mutex);
-    std::vector<CustomHandlerDefinition> result;
-    result.reserve(handlers.size());
+    std::shared_lock lock(mutex);
+    return sorted_snapshot;
+}
+
+void CustomHandlersFactory::rebuildSortedSnapshot()
+{
+    sorted_snapshot.clear();
+    sorted_snapshot.reserve(handlers.size());
     for (const auto & [_, def] : handlers)
-        result.push_back(def);
-    return result;
+        sorted_snapshot.push_back(def);
+    std::sort(sorted_snapshot.begin(), sorted_snapshot.end(),
+        [](const CustomHandlerDefinition & a, const CustomHandlerDefinition & b)
+        {
+            return a.name < b.name;
+        });
+}
+
+void CustomHandlersFactory::checkAmbiguity(const CustomHandlerDefinition & def) const
+{
+    if (def.url_type == HandlerURLType::Regexp)
+        return;
+
+    for (const auto & [_, existing] : handlers)
+    {
+        if (existing.name == def.name)
+            continue;
+
+        if (existing.url_type == HandlerURLType::Regexp)
+            continue;
+
+        bool urls_conflict = false;
+
+        if (def.url_type == HandlerURLType::Exact && existing.url_type == HandlerURLType::Exact)
+            urls_conflict = (def.url == existing.url);
+        else if (def.url_type == HandlerURLType::Prefix && existing.url_type == HandlerURLType::Prefix)
+            urls_conflict = (def.url == existing.url);
+        else if (def.url_type == HandlerURLType::Exact && existing.url_type == HandlerURLType::Prefix)
+            urls_conflict = (def.url.starts_with(existing.url));
+        else if (def.url_type == HandlerURLType::Prefix && existing.url_type == HandlerURLType::Exact)
+            urls_conflict = (existing.url.starts_with(def.url));
+
+        if (!urls_conflict)
+            continue;
+
+        /// Check if there is method overlap
+        bool methods_overlap = false;
+        for (const auto & m : def.methods)
+        {
+            for (const auto & em : existing.methods)
+            {
+                if (m == em)
+                {
+                    methods_overlap = true;
+                    break;
+                }
+            }
+            if (methods_overlap)
+                break;
+        }
+
+        if (methods_overlap)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Handler `{}` conflicts with existing handler `{}`: "
+                "both match URL '{}' with overlapping methods",
+                def.name, existing.name, def.url);
+    }
 }
 
 CustomHandlerDefinition CustomHandlersFactory::parseDefinition(const ASTCreateHandlerQuery & create_query) const
@@ -81,7 +176,7 @@ CustomHandlerDefinition CustomHandlersFactory::parseDefinition(const ASTCreateHa
     if (def.methods.empty())
         def.methods.push_back("GET");
 
-    if (def.url_type == "regexp")
+    if (def.url_type == HandlerURLType::Regexp)
         def.compiled_regex = std::make_shared<re2::RE2>(def.url);
 
     return def;
@@ -110,7 +205,10 @@ std::string CustomHandlersFactory::serializeHandler(const std::string & handler_
 
 void CustomHandlersFactory::create(const ASTCreateHandlerQuery & query)
 {
-    std::lock_guard lock(mutex);
+    validateMethods(query.methods);
+    validateQuerySyntax(query.query);
+
+    std::unique_lock lock(mutex);
 
     if (handlers.contains(query.handler_name))
     {
@@ -119,7 +217,10 @@ void CustomHandlersFactory::create(const ASTCreateHandlerQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler `{}` already exists", query.handler_name);
     }
 
-    handlers[query.handler_name] = parseDefinition(query);
+    auto def = parseDefinition(query);
+    checkAmbiguity(def);
+
+    handlers[query.handler_name] = std::move(def);
 
     try
     {
@@ -130,11 +231,23 @@ void CustomHandlersFactory::create(const ASTCreateHandlerQuery & query)
         handlers.erase(query.handler_name);
         throw;
     }
+
+    rebuildSortedSnapshot();
 }
 
 void CustomHandlersFactory::alter(const ASTAlterHandlerQuery & query)
 {
-    std::lock_guard lock(mutex);
+    if (!query.url && !query.methods && !query.query)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "ALTER HANDLER requires at least one of URL, METHODS, or AS clause");
+
+    if (query.methods)
+        validateMethods(*query.methods);
+    if (query.query)
+        validateQuerySyntax(*query.query);
+
+    std::unique_lock lock(mutex);
 
     auto it = handlers.find(query.handler_name);
     if (it == handlers.end())
@@ -150,8 +263,8 @@ void CustomHandlersFactory::alter(const ASTAlterHandlerQuery & query)
     if (query.url)
     {
         new_def.url = *query.url;
-        new_def.url_type = query.url_type.value_or("exact");
-        if (new_def.url_type == "regexp")
+        new_def.url_type = query.url_type.value_or(HandlerURLType::Exact);
+        if (new_def.url_type == HandlerURLType::Regexp)
             new_def.compiled_regex = std::make_shared<re2::RE2>(new_def.url);
         else
             new_def.compiled_regex = nullptr;
@@ -162,6 +275,8 @@ void CustomHandlersFactory::alter(const ASTAlterHandlerQuery & query)
 
     if (query.query)
         new_def.query = *query.query;
+
+    checkAmbiguity(new_def);
 
     it->second = std::move(new_def);
 
@@ -174,11 +289,13 @@ void CustomHandlersFactory::alter(const ASTAlterHandlerQuery & query)
         it->second = std::move(old_def);
         throw;
     }
+
+    rebuildSortedSnapshot();
 }
 
 void CustomHandlersFactory::remove(const std::string & handler_name)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
 
     auto it = handlers.find(handler_name);
     if (it == handlers.end())
@@ -196,11 +313,13 @@ void CustomHandlersFactory::remove(const std::string & handler_name)
         handlers[handler_name] = std::move(old_def);
         throw;
     }
+
+    rebuildSortedSnapshot();
 }
 
 bool CustomHandlersFactory::removeIfExists(const std::string & handler_name)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
 
     auto it = handlers.find(handler_name);
     if (it == handlers.end())
@@ -218,6 +337,8 @@ bool CustomHandlersFactory::removeIfExists(const std::string & handler_name)
         handlers[handler_name] = std::move(old_def);
         throw;
     }
+
+    rebuildSortedSnapshot();
     return true;
 }
 
@@ -239,8 +360,7 @@ void CustomHandlersFactory::unpersist(const std::string & handler_name) const
 
 void CustomHandlersFactory::loadFromConfig(const ContextPtr & context)
 {
-    std::lock_guard lock(mutex);
-    global_context = context;
+    std::unique_lock lock(mutex);
 
     const auto & config = context->getConfigRef();
     const auto storage_type = config.getString(
@@ -273,6 +393,8 @@ void CustomHandlersFactory::loadFromConfig(const ContextPtr & context)
             "Unknown custom_handlers_storage type '{}', expected 'local', 'zookeeper', or 'keeper'",
             storage_type);
     }
+
+    rebuildSortedSnapshot();
 }
 
 void CustomHandlersFactory::loadFromDisk(const std::string & path)
@@ -312,10 +434,6 @@ void CustomHandlersFactory::loadFromDisk(const std::string & path)
             LOG_ERROR(log, "Failed to load handler from {}: {}", entry.path().string(), getCurrentExceptionMessage(true));
         }
     }
-}
-
-void CustomHandlersFactory::shutdown()
-{
 }
 
 void CustomHandlersFactory::saveToDisk(const std::string & handler_name, const std::string & content) const

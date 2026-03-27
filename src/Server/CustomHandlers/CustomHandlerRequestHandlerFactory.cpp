@@ -4,6 +4,8 @@
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/IServer.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <Common/re2.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -17,13 +19,18 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_sql_handlers;
+}
+
 namespace
 {
 
-/// Extracts the path portion of the URI (before '?')
+/// Extracts the path portion of the URI (before '?' or '#')
 std::string getRequestPath(const std::string & uri)
 {
-    auto pos = uri.find('?');
+    auto pos = uri.find_first_of("?#");
     if (pos != std::string::npos)
         return uri.substr(0, pos);
     return uri;
@@ -33,20 +40,20 @@ bool matchesURL(const CustomHandlerDefinition & def, const std::string & request
 {
     std::string request_path = getRequestPath(request_uri);
 
-    if (def.url_type == "exact")
-        return request_path == def.url;
-
-    if (def.url_type == "prefix")
-        return startsWith(request_path, def.url);
-
-    if (def.url_type == "regexp")
+    switch (def.url_type)
     {
-        if (!def.compiled_regex || !def.compiled_regex->ok())
-            return false;
-        return re2::RE2::FullMatch(request_path, *def.compiled_regex);
+        case HandlerURLType::Exact:
+            return request_path == def.url;
+        case HandlerURLType::Prefix:
+            return startsWith(request_path, def.url);
+        case HandlerURLType::Regexp:
+        {
+            if (!def.compiled_regex || !def.compiled_regex->ok())
+                return false;
+            return re2::RE2::FullMatch(request_path, *def.compiled_regex);
+        }
     }
-
-    return false;
+    UNREACHABLE();
 }
 
 bool matchesMethod(const CustomHandlerDefinition & def, const std::string & method)
@@ -68,18 +75,15 @@ public:
 
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override
     {
-        auto handlers = CustomHandlersFactory::instance().getAll();
-
-        /// No SQL-defined handlers exist — skip matching entirely.
-        if (handlers.empty())
+        /// Check if the experimental setting is enabled; if not, skip matching entirely.
+        auto context = server.context();
+        if (!context->getSettingsRef()[Setting::allow_experimental_sql_handlers])
             return nullptr;
 
-        /// Sort by name for deterministic matching order
-        std::sort(handlers.begin(), handlers.end(),
-            [](const CustomHandlerDefinition & a, const CustomHandlerDefinition & b)
-            {
-                return a.name < b.name;
-            });
+        auto handlers = CustomHandlersFactory::instance().getSortedSnapshot();
+
+        if (handlers.empty())
+            return nullptr;
 
         for (const auto & handler : handlers)
         {
@@ -94,9 +98,15 @@ public:
             CompiledRegexPtr url_regex = handler.compiled_regex;
             std::unordered_map<String, CompiledRegexPtr> header_name_with_regex;
 
+            /// SQL-defined handlers do not have per-handler user config;
+            /// authentication goes through the normal query session path.
+            /// HTTPHandlerConnectionConfig only stores optional credentials,
+            /// which do not apply to SQL handlers.
+            HTTPHandlerConnectionConfig connection_config;
+
             return std::make_unique<PredefinedQueryHandler>(
                 server,
-                HTTPHandlerConnectionConfig{},
+                connection_config,
                 receive_params,
                 handler.query,
                 url_regex,

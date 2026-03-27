@@ -13,3 +13,9 @@ before drop: 777
 after drop matches: 0
 multi GET: 500
 multi POST: 500
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+SYNTAX_ERROR
+BAD_ARGUMENTS
+put: 600
+delete: 700

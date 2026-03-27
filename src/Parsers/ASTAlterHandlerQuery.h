@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Common/HandlerURLType.h>
 
 
 namespace DB
@@ -12,7 +13,7 @@ class ASTAlterHandlerQuery : public IAST, public ASTQueryWithOnCluster
 public:
     std::string handler_name;
     std::optional<std::string> url;
-    std::optional<std::string> url_type; /// "exact", "prefix", or "regexp"
+    std::optional<HandlerURLType> url_type;
     std::optional<std::vector<std::string>> methods;
     std::optional<std::string> query;
     bool if_exists = false;

@@ -28,7 +28,7 @@ CREATE [IF NOT EXISTS] HANDLER name URL [PREFIX|REGEXP] '/path' [METHODS (GET, P
 - `URL '/path'` — Exact URL path to match. Default matching mode.
 - `URL PREFIX '/path'` — Match any URL that starts with the given path prefix.
 - `URL REGEXP '/pattern'` — Match URLs using an RE2 regular expression.
-- `METHODS (GET, POST, ...)` — Allowed HTTP methods. Defaults to `GET` if omitted.
+- `METHODS (GET, POST, ...)` — Allowed HTTP methods. Supported: `GET`, `POST`, `PUT`, `DELETE`. Defaults to `GET` if omitted.
 - `AS 'query'` — The SQL query to execute when the handler matches.
 
 **Example**
@@ -111,12 +111,12 @@ SQL-defined handlers are matched **after** config-defined handlers (`<http_handl
 
 Three new privileges control handler management:
 
-- `CREATE_HANDLER` — required for `CREATE HANDLER`
-- `ALTER_HANDLER` — required for `ALTER HANDLER`
-- `DROP_HANDLER` — required for `DROP HANDLER`
+- `CREATE HANDLER` — required for `CREATE HANDLER`
+- `ALTER HANDLER` — required for `ALTER HANDLER`
+- `DROP HANDLER` — required for `DROP HANDLER`
 
 Grant example:
 
 ```sql
-GRANT CREATE_HANDLER, ALTER_HANDLER, DROP_HANDLER ON *.* TO my_user;
+GRANT CREATE HANDLER, ALTER HANDLER, DROP HANDLER ON *.* TO my_user;
 ```

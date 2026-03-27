@@ -105,3 +105,35 @@ RESULT_POST=$($CLICKHOUSE_CURL -X POST -d '' "${HTTP_BASE}/e2e_multi_${SUFFIX}")
 echo "multi GET: ${RESULT_GET}"
 echo "multi POST: ${RESULT_POST}"
 $CLICKHOUSE_CLIENT $SETTINGS -q "DROP HANDLER test_multi_${SUFFIX}"
+
+## Part 11: ALTER HANDLER with no clauses should fail
+
+$CLICKHOUSE_CLIENT $SETTINGS -q "CREATE HANDLER test_noop_${SUFFIX} URL '/e2e_noop_${SUFFIX}' AS 'SELECT 1'"
+$CLICKHOUSE_CLIENT $SETTINGS -q "ALTER HANDLER test_noop_${SUFFIX}" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT $SETTINGS -q "DROP HANDLER test_noop_${SUFFIX}"
+
+## Part 12: Invalid method name should fail
+
+$CLICKHOUSE_CLIENT $SETTINGS -q "CREATE HANDLER test_badmethod_${SUFFIX} URL '/e2e_badmethod_${SUFFIX}' METHODS (FOOBAR) AS 'SELECT 1'" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
+
+## Part 13: Invalid SQL in AS clause should fail
+
+$CLICKHOUSE_CLIENT $SETTINGS -q "CREATE HANDLER test_badsql_${SUFFIX} URL '/e2e_badsql_${SUFFIX}' AS 'this is not SQL at all'" 2>&1 | grep -m1 -o 'SYNTAX_ERROR'
+
+## Part 14: Duplicate exact URL should fail (ambiguity check)
+
+$CLICKHOUSE_CLIENT $SETTINGS -q "CREATE HANDLER test_dup1_${SUFFIX} URL '/e2e_dup_${SUFFIX}' AS 'SELECT 1'"
+$CLICKHOUSE_CLIENT $SETTINGS -q "CREATE HANDLER test_dup2_${SUFFIX} URL '/e2e_dup_${SUFFIX}' AS 'SELECT 2'" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT $SETTINGS -q "DROP HANDLER test_dup1_${SUFFIX}"
+
+## Part 15: PUT and DELETE methods
+
+$CLICKHOUSE_CLIENT $SETTINGS -q "CREATE HANDLER test_put_${SUFFIX} URL '/e2e_put_${SUFFIX}' METHODS (PUT) AS 'SELECT 600 AS put_result'"
+RESULT_PUT=$($CLICKHOUSE_CURL -X PUT -d '' "${HTTP_BASE}/e2e_put_${SUFFIX}")
+echo "put: ${RESULT_PUT}"
+$CLICKHOUSE_CLIENT $SETTINGS -q "DROP HANDLER test_put_${SUFFIX}"
+
+$CLICKHOUSE_CLIENT $SETTINGS -q "CREATE HANDLER test_del_${SUFFIX} URL '/e2e_del_${SUFFIX}' METHODS (DELETE) AS 'SELECT 700 AS delete_result'"
+RESULT_DEL=$($CLICKHOUSE_CURL -X DELETE "${HTTP_BASE}/e2e_del_${SUFFIX}")
+echo "delete: ${RESULT_DEL}"
+$CLICKHOUSE_CLIENT $SETTINGS -q "DROP HANDLER test_del_${SUFFIX}"

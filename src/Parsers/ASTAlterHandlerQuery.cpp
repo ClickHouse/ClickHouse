@@ -23,9 +23,9 @@ void ASTAlterHandlerQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSett
     if (url)
     {
         ostr << " URL";
-        if (url_type && *url_type == "prefix")
+        if (url_type && *url_type == HandlerURLType::Prefix)
             ostr << " PREFIX";
-        else if (url_type && *url_type == "regexp")
+        else if (url_type && *url_type == HandlerURLType::Regexp)
             ostr << " REGEXP";
         ostr << " " << quoteString(*url);
     }
