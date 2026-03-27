@@ -28,6 +28,7 @@
 
 #include <Processors/Port.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/Pipe.h>
@@ -722,6 +723,33 @@ static ActionsDAG constructMaterializingCommonVirtualColumnDAG(const std::string
     return ActionsDAG::makeAddingColumnActions(std::move(column));
 }
 
+ActionsDAG constructMaterializingCommonVirtualColumnsDAG(
+    const Block & header,
+    const Names & requested_columns,
+    const StoragePtr & storage)
+{
+    ActionsDAG dag(header.getColumnsWithTypeAndName());
+    const auto virtual_columns = storage->getVirtualsPtr();
+
+    for (const auto & column_name : requested_columns)
+    {
+        if (header.has(column_name))
+            continue;
+
+        const auto * desc = virtual_columns->tryGetDescription(column_name);
+        if (!desc || !desc->isCommon())
+            continue;
+
+        auto adding_dag = constructMaterializingCommonVirtualColumnDAG(desc->name, desc->type, storage);
+        ActionsDAG::NodeRawConstPtrs merged_outputs;
+        dag.mergeNodes(std::move(adding_dag), &merged_outputs);
+        for (const auto * node : merged_outputs)
+            dag.addOrReplaceInOutputs(*node);
+    }
+
+    return dag;
+}
+
 QueryPlan extendWithCommonVirtualColumns(
     QueryPlan && query_plan,
     const Names & requested_columns,
@@ -730,21 +758,9 @@ QueryPlan extendWithCommonVirtualColumns(
     if (!query_plan.isInitialized())
         return query_plan;
 
-    const auto virtual_columns = storage->getVirtualsPtr();
-    for (const auto & column_name : requested_columns)
-    {
-        const auto & plan_header = query_plan.getCurrentHeader();
-        if (plan_header->has(column_name))
-            continue;
-
-        const auto * desc = virtual_columns->tryGetDescription(column_name);
-        if (!desc || !desc->isCommon())
-            continue;
-
-        auto adding_column_dag = constructMaterializingCommonVirtualColumnDAG(desc->name, desc->type, storage);
-        auto expression_step = std::make_unique<ExpressionStep>(plan_header, std::move(adding_column_dag));
-        query_plan.addStep(std::move(expression_step));
-    }
+    auto dag = constructMaterializingCommonVirtualColumnsDAG(*query_plan.getCurrentHeader(), requested_columns, storage);
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
+    query_plan.addStep(std::move(expression_step));
 
     return query_plan;
 }
@@ -757,24 +773,12 @@ Pipe extendWithCommonVirtualColumns(
     if (pipe.empty())
         return pipe;
 
-    const auto virtual_columns = storage->getVirtualsPtr();
-    for (const auto & column_name : requested_columns)
+    auto dag = constructMaterializingCommonVirtualColumnsDAG(pipe.getHeader(), requested_columns, storage);
+    auto expression = std::make_shared<ExpressionActions>(std::move(dag));
+    pipe.addSimpleTransform([&](const SharedHeader & header)
     {
-        const auto & pipe_header = pipe.getHeader();
-        if (pipe_header.has(column_name))
-            continue;
-
-        const auto * desc = virtual_columns->tryGetDescription(column_name);
-        if (!desc || !desc->isCommon())
-            continue;
-
-        auto adding_column_dag = constructMaterializingCommonVirtualColumnDAG(desc->name, desc->type, storage);
-        auto expression = std::make_shared<ExpressionActions>(std::move(adding_column_dag));
-        pipe.addSimpleTransform([&](const SharedHeader & header)
-        {
-            return std::make_shared<ExpressionTransform>(header, expression);
-        });
-    }
+        return std::make_shared<ExpressionTransform>(header, expression);
+    });
 
     return pipe;
 }

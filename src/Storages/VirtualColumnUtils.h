@@ -161,6 +161,12 @@ DataPartsVector filterDataPartsWithExpression(
     const DataPartsVector & data_parts,
     const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
 
+/// Build an ActionsDAG that materializes common virtual columns as constants.
+ActionsDAG constructMaterializingCommonVirtualColumnsDAG(
+    const Block & header,
+    const Names & requested_columns,
+    const StoragePtr & storage);
+
 /// Append common virtual columns (marked with is_common) to the query plan as constant ExpressionSteps.
 /// Only adds columns that are in requested_columns but not already in the plan's header.
 QueryPlan extendWithCommonVirtualColumns(
