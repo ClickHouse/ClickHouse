@@ -388,8 +388,15 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
     if (num_rows_to_subtract > rows_per_granule.back())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows (num_read_rows = {}, rows_per_granule = [{}])",
-                        rows_per_granule.back(), num_rows_to_subtract, num_read_rows, fmt::join(rows_per_granule, ", "));
+                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows "
+                        "(num_read_rows = {}, total_rows_per_granule = {}, rows_per_granule = [{}], "
+                        "debug: max_rows={}, rows_from_read={}, rows_from_finalize_loop={}, rows_from_finalize_post={}, "
+                        "ranges_processed={}, skipped_marks={}, use_query_condition_cache={}, can_read_incomplete_granules={})",
+                        rows_per_granule.back(), num_rows_to_subtract, num_read_rows, total_rows_per_granule,
+                        fmt::join(rows_per_granule, ", "),
+                        debug_max_rows, debug_rows_from_read_in_loop, debug_rows_from_finalize_in_loop,
+                        debug_rows_from_finalize_post_loop, debug_num_ranges_processed, debug_skipped_marks,
+                        debug_use_query_condition_cache, debug_can_read_incomplete_granules);
     }
 
     rows_per_granule.back() -= num_rows_to_subtract;
@@ -1049,12 +1056,17 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// result.num_rows_read if the last granule in range also the last in part (so we have to adjust last granule).
     {
         bool use_query_condition_cache = merge_tree_reader->getMergeTreeReaderSettings().use_query_condition_cache;
+        result.debug_max_rows = max_rows;
+        result.debug_use_query_condition_cache = use_query_condition_cache;
+        result.debug_can_read_incomplete_granules = can_read_incomplete_granules;
         size_t space_left = max_rows;
         while (space_left && (!stream.isFinished() || !ranges.empty()))
         {
             if (stream.isFinished())
             {
-                result.addRows(stream.finalize(result.columns));
+                size_t finalized = stream.finalize(result.columns);
+                result.debug_rows_from_finalize_in_loop += finalized;
+                result.addRows(finalized);
                 if (current_mark && *current_mark < stream.last_mark)
                     result.addReadRange(MarkRange(*current_mark, stream.last_mark));
 
@@ -1062,12 +1074,14 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 result.addRange(ranges.front());
                 ranges.pop_front();
                 current_mark = stream.current_mark;
+                ++result.debug_num_ranges_processed;
             }
 
             if (merge_tree_reader->canSkipMark(currentMark(), stream.stream.currentTaskLastMark()))
             {
                 result.addGranule(0, {0, 0} /* unused when granule has no rows to read */);
                 stream.toNextMark();
+                ++result.debug_skipped_marks;
                 continue;
             }
 
@@ -1084,13 +1098,19 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             bool last = rows_to_read == space_left;
             UInt64 starting_offset = stream.currentPartOffset();
             UInt64 granule_offset = stream.current_mark;
-            result.addRows(stream.read(result.columns, rows_to_read, !last));
+            size_t read_rows = stream.read(result.columns, rows_to_read, !last);
+            result.debug_rows_from_read_in_loop += read_rows;
+            result.addRows(read_rows);
             result.addGranule(rows_to_read, {starting_offset, granule_offset});
             space_left = (rows_to_read > space_left ? 0 : space_left - rows_to_read);
         }
     }
 
-    result.addRows(stream.finalize(result.columns));
+    {
+        size_t finalized = stream.finalize(result.columns);
+        result.debug_rows_from_finalize_post_loop += finalized;
+        result.addRows(finalized);
+    }
     size_t last_mark = stream.isFinished() ? stream.last_mark : stream.current_mark;
     if (current_mark && current_mark < last_mark)
         result.addReadRange(MarkRange{*current_mark, last_mark});

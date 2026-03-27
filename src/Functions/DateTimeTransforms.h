@@ -397,6 +397,7 @@ struct ToYearWeekImpl
         return yw.first * 100 + yw.second;
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
 };
 
@@ -432,6 +433,7 @@ struct ToStartOfWeekImpl
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
 };
 
@@ -465,6 +467,7 @@ struct ToLastDayOfWeekImpl
         return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
 };
 
@@ -494,6 +497,11 @@ struct ToWeekImpl
         YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode);
         return yw.second;
     }
+
+    /// toWeek() is not monotonic because week numbers can wrap at year boundaries
+    /// (e.g. ISO week 52 -> week 1 in late December), depending on the week_mode.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/90240
+    static constexpr bool hasMonotonicity() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -727,7 +735,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     {
         if (!origin.has_value())
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
-        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
+        Int64 days = 0;
+        if (common::mulOverflow(weeks, static_cast<Int64>(7), days))
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, days, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -783,7 +794,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     {
         if (!origin.has_value())
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
+        Int64 months = 0;
+        if (common::mulOverflow(quarters, static_cast<Int64>(3), months))
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, months, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -806,7 +820,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     {
         if (!origin.has_value())
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
+        Int64 months = 0;
+        if (common::mulOverflow(years, static_cast<Int64>(12), months))
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, months, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -962,7 +979,8 @@ struct ToStartOfMillisecondImpl
         }
         if (scale_multiplier <= 1000)
         {
-            return datetime64 * (1000 / scale_multiplier);
+            /// Use unsigned arithmetic to avoid signed overflow UB.
+            return static_cast<DateTime64>(static_cast<UInt64>(datetime64) * static_cast<UInt64>(1000 / scale_multiplier));
         }
 
         auto droppable_part_with_sign
@@ -983,7 +1001,8 @@ struct ToStartOfMillisecondImpl
         }
         if (scale_multiplier <= 1000)
         {
-            return time64 * (1000 / scale_multiplier);
+            /// Use unsigned arithmetic to avoid signed overflow UB.
+            return static_cast<Time64>(static_cast<UInt64>(time64) * static_cast<UInt64>(1000 / scale_multiplier));
         }
 
         auto droppable_part_with_sign
@@ -1030,7 +1049,8 @@ struct ToStartOfMicrosecondImpl
         }
         if (scale_multiplier <= 1000000)
         {
-            return datetime64 * (1000000 / scale_multiplier);
+            /// Use unsigned arithmetic to avoid signed overflow UB.
+            return static_cast<DateTime64>(static_cast<UInt64>(datetime64) * static_cast<UInt64>(1000000 / scale_multiplier));
         }
 
         auto droppable_part_with_sign
@@ -1052,7 +1072,8 @@ struct ToStartOfMicrosecondImpl
         }
         if (scale_multiplier <= 1000000)
         {
-            return time64 * (1000000 / scale_multiplier);
+            /// Use unsigned arithmetic to avoid signed overflow UB.
+            return static_cast<Time64>(static_cast<UInt64>(time64) * static_cast<UInt64>(1000000 / scale_multiplier));
         }
 
         auto droppable_part_with_sign
@@ -1620,6 +1641,7 @@ struct ToDayOfWeekImpl
         return time_zone.toDayOfWeek(DayNum(d), mode);
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ToMondayImpl;
 };
 

@@ -1,5 +1,6 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
+#include <Common/ProfiledLocks.h>
 
 #include "config.h"
 
@@ -49,6 +50,11 @@
 
 #include <libnuraft/req_msg.hxx>
 
+namespace ProfileEvents
+{
+    extern const Event KeeperServerWriteLockWaitMicroseconds;
+    extern const Event KeeperServerWriteLockHoldMicroseconds;
+}
 
 namespace DB
 {
@@ -474,7 +480,7 @@ void KeeperServer::forceRecovery()
 {
     // notify threads containing the lock that we want to enter recovery mode
     is_recovering = true;
-    std::lock_guard lock{server_write_mutex};
+    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
     auto params = raft_instance->get_current_params();
     enterRecoveryMode(params);
     raft_instance->setConfig(state_manager->load_config());
@@ -732,7 +738,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions &
     for (const auto & request_for_session : requests_for_sessions)
         entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(request_for_session));
 
-    std::lock_guard lock{server_write_mutex};
+    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
     if (is_recovering)
         return nullptr;
 
@@ -1134,7 +1140,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
     const ClusterUpdateAction & action, bool last_command_was_leader_change)
 {
     using enum ConfigUpdateState;
-    std::lock_guard _{server_write_mutex};
+    ProfiledMutexLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
 
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
@@ -1204,7 +1210,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
     if (!diff.empty())
     {
-        std::lock_guard lock{server_write_mutex};
+        ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
         last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]).cluster_config;
     }
 
@@ -1213,7 +1219,8 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
 void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    std::unique_lock server_write_lock{server_write_mutex};
+    ProfiledMutexLock server_write_lock(
+        server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
     if (is_recovering) return;
     constexpr auto sleep_time = 500ms;
 
@@ -1221,7 +1228,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
 
     auto applied = [&] { LOG_INFO(log, "Applied {}", action); };
     auto not_leader = [&] { LOG_INFO(log, "Not leader anymore, aborting"); };
-    auto backoff_on_refusal = [&](size_t i)
+    auto backoff_on_refusal = [&](size_t i) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
         LOG_INFO(log, "Update was not accepted (try {}), backing off for {}", i + 1, sleep_time * (i + 1));
         server_write_lock.unlock();
