@@ -2,6 +2,7 @@
 -- Tag no-fasttest: Depends on Minio
 
 SET automatic_parallel_replicas_mode = 0;
+SET query_plan_merge_expressions = 1;
 SET enable_analyzer=1;
 SET enable_parallel_replicas=1;
 SET max_parallel_replicas=4;

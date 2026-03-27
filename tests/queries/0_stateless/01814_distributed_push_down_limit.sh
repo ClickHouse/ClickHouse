@@ -96,6 +96,7 @@ function test_distributed_push_down_limit_1()
         --distributed_push_down_limit 1
         --optimize_skip_unused_shards 1
         --optimize_distributed_group_by_sharding_key 1
+        --query_plan_aggregation_in_order 1
     )
     test_distributed_push_down_limit_with_query_log "${args[@]}"
 }

@@ -12,6 +12,7 @@ INSERT INTO customer SELECT number, 5 - (number % 2) FROM numbers(500);
 SET enable_parallel_replicas=0;
 SET query_plan_join_swap_table=0;
 SET join_algorithm='hash'; -- to make plan stable
+SET query_plan_convert_any_join_to_semi_or_anti_join=1;
 
 -- RIGHT ANTI JOIN
 SELECT REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')

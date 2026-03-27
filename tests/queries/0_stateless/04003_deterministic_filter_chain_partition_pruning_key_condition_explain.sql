@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
+SET query_plan_merge_expressions = 1;
+
 -- { echo }
 
 DROP TABLE IF EXISTS test_simple_key;

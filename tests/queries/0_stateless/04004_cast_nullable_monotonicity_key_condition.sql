@@ -1,6 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
+SET query_plan_merge_expressions = 1;
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 SET optimize_trivial_count_query = 1;

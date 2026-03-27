@@ -1,3 +1,5 @@
+SET query_plan_merge_expressions = 1;
+
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

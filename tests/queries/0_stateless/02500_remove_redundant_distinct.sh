@@ -9,8 +9,8 @@ if [ -z ${ENABLE_ANALYZER+x} ]; then
 fi
 
 OPTIMIZATION_SETTING="query_plan_remove_redundant_distinct"
-DISABLE_OPTIMIZATION="set enable_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="set enable_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="set enable_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0;SET query_plan_lift_up_union=1"
+ENABLE_OPTIMIZATION="set enable_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0;SET query_plan_lift_up_union=1"
 
 echo "-- Disabled $OPTIMIZATION_SETTING"
 query="SELECT DISTINCT *
