@@ -1197,11 +1197,10 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             || !access->isGranted(AccessType::CREATE_TABLE, table_id.getDatabaseName(), table_id.getTableName()))
             continue;
 
-        auto uuid = table->getStorageID().uuid;
         table.reset();
 
         auto full_name = table_id.getFullTableName();
-        auto detach_query = fmt::format("DETACH TABLE {}", full_name);
+        auto detach_query = fmt::format("DETACH TABLE {} SYNC", full_name);
         auto attach_query = fmt::format("ATTACH TABLE {}", full_name);
 
         try
@@ -1210,8 +1209,6 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                 auto detach = executeQuery(detach_query, context, QueryFlags{.internal = true}).second;
                 executeTrivialBlockIO(detach, context);
             }
-
-            database->waitDetachedTableNotInUse(uuid);
 
             {
                 auto attach = executeQuery(attach_query, context, QueryFlags{.internal = true}).second;
