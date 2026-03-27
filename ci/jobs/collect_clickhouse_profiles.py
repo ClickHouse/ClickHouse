@@ -316,6 +316,7 @@ def main():
             f"-DCMAKE_TOOLCHAIN_FILE={toolchain_file} "
             f"-DENABLE_TESTS=0 "
             f"-DENABLE_UTILS=0 "
+            f"-DCHECK_LARGE_OBJECT_SIZES=0 "
             f"-DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON "
             f"{repo_path} -B {PGO_BUILD_DIR}"
         )
