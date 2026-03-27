@@ -1,0 +1,32 @@
+-- 1. GROUP BY = join key (eager candidate)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_lineitem)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_orders)
+-- 2. GROUP BY ≠ join key (no eager)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      JoinLogical (Local HashJoin )
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_lineitem)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_orders)
+-- 3. Correctness
+0	495000
+1	495100
+2	495200
+3	495300
+4	495400
+-- 4. Correctness (GROUP BY ≠ join key)
+0	4995000
+1	4996000
+2	4997000
+3	4998000
+4	4999000
