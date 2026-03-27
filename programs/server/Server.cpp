@@ -1119,7 +1119,7 @@ static std::vector<String> getSanitizerNames()
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
-#if USE_SSH
+#if USE_SSH && defined(OS_LINUX)
     ::ssh::LibSSHInitializer::instance();
     ::ssh::libsshLogger::initialize();
 #endif
