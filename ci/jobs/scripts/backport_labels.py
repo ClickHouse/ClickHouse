@@ -155,6 +155,8 @@ def main() -> int:
         f"label:{label_filter} "
         f"-label:{Labels.PR_BACKPORTS_CREATED} "
         f"-label:{Labels.READY_FOR_BACKPORT} "
+        f"-label:{Labels.PR_CHERRYPICK} "
+        f"-label:{Labels.PR_BACKPORT} "
         f"merged:2020-01-01..{cutoff} "
         f"updated:>={updated_since}"
     )
