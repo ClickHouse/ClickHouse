@@ -930,6 +930,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         if (is_trivial_count_applied)
         {
             till_stage = QueryProcessingStage::WithMergeableState;
+
+            /// Log table access even when trivial count optimization skips reading
+            if (query_context->hasQueryContext() && !select_query_options.is_internal)
+            {
+                auto local_storage_id = storage->getStorageID();
+                query_context->getQueryContext()->addQueryAccessInfo(
+                    backQuoteIfNeed(local_storage_id.getDatabaseName()),
+                    local_storage_id.getFullTableName(),
+                    table_expression_data.getColumnNames());
+            }
         }
         else
         {
