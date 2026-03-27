@@ -114,18 +114,18 @@ FilterTransform::FilterTransform(
 
 IProcessor::Status FilterTransform::prepare()
 {
-    /// Once the output port is needed, prepared sets have been initialized.
     /// Re-evaluate the filter on the header to enable constant-fold early exit
     /// for expressions like `WHERE 1 IN (subquery)` or `WHERE x IN (empty set)`
     /// where the result becomes known only after the set is built.
+    /// Use updateHeader (dry-run) because sets may not be ready yet even when
+    /// output.isNeeded() is true (e.g. delayed set creation in mutations).
     if (!are_prepared_sets_initialized && output.isNeeded())
     {
         are_prepared_sets_initialized = true;
 
         if (expression && !on_totals)
         {
-            Block header = getInputPort().getHeader();
-            expression->execute(header);
+            auto header = expression->getActionsDAG().updateHeader(getInputPort().getHeader());
             auto & column = header.getByPosition(filter_column_position).column;
             if (column)
             {
