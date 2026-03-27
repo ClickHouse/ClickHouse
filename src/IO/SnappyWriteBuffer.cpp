@@ -6,15 +6,10 @@
 #include <snappy.h>
 #include <crc32c/crc32c.h>
 
-#include <Common/ErrorCodes.h>
 #include <IO/SnappyWriteBuffer.h>
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int SNAPPY_COMPRESS_FAILED;
-}
 
 namespace
 {
