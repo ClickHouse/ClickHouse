@@ -597,7 +597,8 @@ private:
         local_context->addViewSource(std::make_shared<StorageValues>(
             source_id,
             source_metadata->getColumns(),
-            std::move(data_block)));
+            std::move(data_block),
+            *source_storage->getVirtualsPtr()));
 
         QueryPipelineBuilder pipeline;
 

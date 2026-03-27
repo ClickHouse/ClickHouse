@@ -19,12 +19,14 @@ public:
     StorageValues(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
-        Block res_block_);
+        Block res_block_,
+        VirtualColumnsDescription virtuals_ = {});
 
     StorageValues(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
-        Pipe prepared_pipe_);
+        Pipe prepared_pipe_,
+        VirtualColumnsDescription virtuals_ = {});
 
     std::string getName() const override { return "Values"; }
 
