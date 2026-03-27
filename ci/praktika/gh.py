@@ -667,6 +667,7 @@ class GH:
         )
         info: str = ""
         comment: str = ""
+        extra_links: List[tuple] = dataclasses.field(default_factory=list)
 
         @classmethod
         def from_result(cls, result: Result, sha=""):
@@ -691,8 +692,8 @@ class GH:
                     for item in hlabels:
                         if isinstance(item, (list, tuple)) and len(item) >= 2:
                             text, href = item[0], item[1]
-                        if text and href:
-                            links.append(f"[{text}]({href})")
+                            if text and href:
+                                links.append(f"[{text}]({href})")
                     return ", ".join(links)
                 except Exception:
                     return ""
@@ -754,6 +755,13 @@ class GH:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
                 print(f"NOTE: {remaining} more jobs not shown in PR comment")
+            # Collect links from jobs that have hlabels (e.g. keeper-stress Grafana links).
+            # Include regardless of success/failure so Grafana links always appear when keeper-stress runs.
+            for job_result in getattr(result, "results", []) or []:
+                if job_result.ext.get("hlabels"):
+                    links_md = extract_hlabels_info(job_result)
+                    if links_md:
+                        summary.extra_links.append((job_result.name, links_md))
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
@@ -769,7 +777,9 @@ class GH:
                 symbol = "⏳"  # Hourglass (in progress)
 
             body = f"**Summary:** {symbol}\n"
-
+            if self.extra_links:
+                for job_name, links_md in self.extra_links:
+                    body += f"**{job_name}:** {links_md}\n"
             if self.failed_results:
                 if len(self.failed_results) > 15:
                     body += (

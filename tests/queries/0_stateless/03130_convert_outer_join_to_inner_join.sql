@@ -1,6 +1,7 @@
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
 SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
+SET query_plan_join_shard_by_pk_ranges = 0; -- adds 'Sharding:' lines to EXPLAIN output when enabled
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1
