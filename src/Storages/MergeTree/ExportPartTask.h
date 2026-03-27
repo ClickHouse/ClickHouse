@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class ExportPartTask : public IExecutableTask
+class ExportPartTask : public IExecutableTask, public std::enable_shared_from_this<ExportPartTask>
 {
 public:
     explicit ExportPartTask(

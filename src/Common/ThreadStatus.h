@@ -111,6 +111,16 @@ public:
     void attachQueryForLog(const String & query_, UInt64 normalized_hash = 0);
     void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue);
 
+    /// Override the cancellation predicate. All threads that subsequently attach to this
+    /// group via ThreadGroupSwitcher inherit the predicate in their local_data, making
+    /// isQueryCanceled() reflect task-level cancellation without a process-list entry.
+    /// Required for part and partition export cancellation during S3 outage.
+    void setCancelPredicate(QueryIsCanceledPredicate predicate)
+    {
+        std::lock_guard lock(mutex);
+        shared_data.query_is_canceled_predicate = std::move(predicate);
+    }
+
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
