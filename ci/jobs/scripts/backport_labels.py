@@ -18,8 +18,11 @@ import sys
 from datetime import date, timedelta
 from typing import Any, Dict, List
 
-sys.path.append(".")
-sys.path.append("ci")
+from pathlib import Path
+
+_repo_root = Path(__file__).parents[3]  # ci/jobs/scripts/ -> repo root
+sys.path.insert(0, str(_repo_root))
+sys.path.insert(0, str(_repo_root / "ci"))
 from jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from praktika.utils import Shell
 
