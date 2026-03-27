@@ -627,7 +627,11 @@ class BackportPRs:
         updated = (date.today() - timedelta(days=90)).isoformat() + "..*"
 
         query_args = {
-            "query": f"type:pr repo:{repo_name} -label:{backport_created_label}",
+            "query": (
+                f"type:pr repo:{repo_name} "
+                f"-label:{backport_created_label} "
+                f"label:{Labels.READY_FOR_BACKPORT}"
+            ),
             "label": ",".join(labels_to_backport),
             "updated": updated,
             "merged": [since_date, tomorrow],

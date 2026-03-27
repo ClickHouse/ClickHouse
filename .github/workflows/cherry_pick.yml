@@ -35,6 +35,10 @@ jobs:
           fetch-depth: 0
       - name: Debug Info
         uses: ./.github/actions/debug
+      - name: Mark PRs ready for backport
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          python3 ci/jobs/scripts/backport_labels.py
       - name: Cherry pick
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
