@@ -272,10 +272,29 @@ def configure_datasets(server_dir, port=9000):
     return True
 
 
+def parse_args():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Collect ClickHouse PGO/BOLT profiles")
+    parser.add_argument(
+        "--param",
+        help="Start from this stage (for resuming after partial runs)",
+        default=None,
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     os.makedirs(temp_dir, exist_ok=True)
 
     stages = list(JobStages)
+    if args.param:
+        assert args.param in JobStages, f"--param must be one of {list(JobStages)}"
+        print(f"Resuming from stage [{args.param}]")
+        while stages and stages[0] != args.param:
+            stages.pop(0)
+
     res = True
     results = []
 
