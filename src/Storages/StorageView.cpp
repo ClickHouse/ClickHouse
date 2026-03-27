@@ -18,6 +18,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Common/typeid_cast.h>
 
@@ -174,19 +175,21 @@ void StorageView::read(
         current_inner_query = query_info.view_query->clone();
     }
 
+    auto physical_column_names = VirtualColumnUtils::filterCommonVirtualColumns(column_names, shared_from_this());
+
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto view_context = getViewContext(context, storage_snapshot);
-        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
+        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, view_context, options, physical_column_names, query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
         auto view_context = getViewContext(context, storage_snapshot);
-        InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
+        InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, physical_column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
     }
@@ -199,6 +202,8 @@ void StorageView::read(
     auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
     materializing->setStepDescription("Materialize constants after VIEW subquery");
     query_plan.addStep(std::move(materializing));
+
+    query_plan = VirtualColumnUtils::extendWithCommonVirtualColumns(std::move(query_plan), column_names, shared_from_this());
 
     /// And also convert to expected structure.
     const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);

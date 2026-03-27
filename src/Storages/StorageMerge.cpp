@@ -710,7 +710,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_as_aliases;
             Names real_column_names = column_names;
-            if (has_table_virtual_column)
+            if (has_table_virtual_column
+                && (common_processed_stage != QueryProcessingStage::FetchColumns
+                    || std::dynamic_pointer_cast<StorageMerge>(storage)
+                    || std::dynamic_pointer_cast<StorageDistributed>(storage)))
                 real_column_names.emplace_back("_table");
 
             /// If there are no real columns requested from this table, we will read the smallest column.
