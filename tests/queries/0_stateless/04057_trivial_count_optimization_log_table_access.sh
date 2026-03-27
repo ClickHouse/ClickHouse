@@ -18,6 +18,9 @@ $CLICKHOUSE_CLIENT --query_id $query_id -q "SELECT COUNT(*) FROM test_table;"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 
-$CLICKHOUSE_CLIENT -q "SELECT query, length(tables), toString(tables) LIKE '%test_table%' AS contains_test_table FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryFinish';"
+$CLICKHOUSE_CLIENT -q "
+  SELECT query, length(tables), toString(tables) LIKE '%test_table%' AS contains_test_table
+  FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryFinish' AND current_database = currentDatabase();
+"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_table;"
