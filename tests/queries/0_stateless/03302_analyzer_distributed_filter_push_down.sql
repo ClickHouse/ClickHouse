@@ -2,6 +2,7 @@
 -- add_minmax_index_for_numeric_columns=0: Different plan
 
 set enable_analyzer=1;
+set query_plan_merge_expressions = 1;
 set serialize_query_plan = 0;
 set enable_parallel_replicas = 0;
 set optimize_on_insert = 1;

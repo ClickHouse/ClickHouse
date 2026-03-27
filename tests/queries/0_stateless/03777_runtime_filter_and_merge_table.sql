@@ -1,4 +1,5 @@
 SET enable_analyzer=1;
+SET query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS foo;
 DROP TABLE IF EXISTS foo1;

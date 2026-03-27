@@ -1,4 +1,5 @@
 SET query_plan_remove_unused_columns = 1;
+SET query_plan_merge_expressions = 1;
 
 CREATE TABLE test
 (

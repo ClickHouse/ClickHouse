@@ -1,5 +1,7 @@
 #!/usr/bin/env -S ${HOME}/clickhouse-client --queries-file
 
+SET query_plan_merge_expressions = 1;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;

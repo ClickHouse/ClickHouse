@@ -1,4 +1,6 @@
 -- Ensure that sparse columns does not leads to any errors/warnings while pushing via Distributed
+-- Pin max_block_size to ensure dumpColumnStructure output is deterministic (size=1 per block).
+SET max_block_size = 1;
 
 drop table if exists sparse;
 drop table if exists intermediate;

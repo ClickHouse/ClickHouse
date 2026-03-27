@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET query_plan_merge_expressions = 1;
 SET join_algorithm = 'hash';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 

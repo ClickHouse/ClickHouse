@@ -1,5 +1,6 @@
 -- { echoOn }
 set enable_analyzer=1;
+SET enable_optimize_predicate_expression = 1;
 SYSTEM STOP MERGES tbl;
 
 -- simple test case

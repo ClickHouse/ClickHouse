@@ -1,6 +1,7 @@
 -- Tags: long
 
 SET enable_analyzer = 1;
+SET query_plan_merge_expressions = 1;
 
 -- Too slow
 SET max_bytes_before_external_sort = 0;

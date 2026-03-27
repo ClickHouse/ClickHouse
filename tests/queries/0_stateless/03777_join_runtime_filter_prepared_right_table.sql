@@ -1,5 +1,6 @@
 SET enable_parallel_replicas = 0;
 SET enable_analyzer = 1;
+SET query_plan_merge_expressions = 1;
 
 CREATE TABLE t1 (key1 UInt64, key2 UInt64, key3 UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t1 VALUES (11, 12, 13), (21, 22, 23), (31, 32, 33), (41, 42, 43), (51, 52, 53);

@@ -1,4 +1,5 @@
 SET optimize_read_in_order = 1;
+SET query_plan_read_in_order = 1;
 DROP TABLE IF EXISTS mytable;
 
 CREATE TABLE mytable
