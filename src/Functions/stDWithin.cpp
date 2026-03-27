@@ -42,6 +42,10 @@ double haversineDistance(const SphericalPoint & a, const SphericalPoint & b)
     double h = std::sin(dlat / 2) * std::sin(dlat / 2)
              + std::cos(lat1) * std::cos(lat2) * std::sin(dlon / 2) * std::sin(dlon / 2);
 
+    /// Clamp h to [0, 1] to avoid NaN from asin(sqrt(h)) when h > 1 due to
+    /// floating-point rounding errors (can happen for nearly-antipodal points).
+    h = std::min(1.0, std::max(0.0, h));
+
     return 2.0 * EARTH_RADIUS_METERS * std::asin(std::sqrt(h));
 }
 

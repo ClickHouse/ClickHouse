@@ -617,6 +617,23 @@ std::optional<S2CellUnion> buildS2CoveringForGeometry(
     return result;
 }
 
+/// Insert all 6 face-level cells (level 0) for a row that cannot be properly indexed.
+/// This ensures the row is never pruned by the S2 projection index, avoiding false negatives.
+/// Each S2 face cell covers approximately 1/6 of Earth's surface.
+void insertFaceCellsForRow(
+    ColumnUInt64 & cell_id_column,
+    ColumnUInt64 & parent_offset_column,
+    UInt64 parent_offset)
+{
+    /// S2 has 6 face cells (cube faces) numbered 0-5.
+    /// S2CellId::FromFace(face) returns the face cell at level 0.
+    for (int face = 0; face < 6; ++face)
+    {
+        cell_id_column.insertValue(S2CellId::FromFace(face).id());
+        parent_offset_column.insertValue(parent_offset);
+    }
+}
+
 /// ── Filter DAG inspection helpers ────────────────────────────────────────────
 /// These helpers inspect the query's ActionsDAG to find and decompose
 /// polygonsIntersectSpherical(column, const_polygon) calls.
@@ -818,6 +835,13 @@ std::optional<UInt64> buildSingleAncestorCellId(const S2CellUnion & covering)
 /// buffer distance, then walk the ancestor cell up to that level.
 /// This ensures that any geometry within `distance_meters` of the query
 /// geometry will intersect with the expanded ancestor cell.
+///
+/// SAFETY MARGIN: We go TWO levels coarser than the minimum required, because:
+/// 1. The query geometry may sit near the edge of its containing cell.
+/// 2. Points within distance_meters could fall in a neighboring cell at the
+///    ancestor level, causing false negatives if we only go one level coarser.
+/// Going two levels coarser ensures the ancestor cell's diagonal is at least
+/// 4x the required distance, providing ample safety margin.
 std::optional<UInt64> expandAncestorByDistance(UInt64 ancestor_id, double distance_meters)
 {
     if (distance_meters <= 0)
@@ -828,10 +852,13 @@ std::optional<UInt64> expandAncestorByDistance(UInt64 ancestor_id, double distan
     /// Find the level where the maximum cell diagonal >= distance_radians.
     /// kMaxDiag.GetLevelForMaxValue returns the minimum level such that
     /// all cells at that level have diagonal <= value. We want the level
-    /// where diagonal >= distance, so we go one level coarser.
+    /// where diagonal >= distance, so we go coarser.
+    ///
+    /// We go TWO levels coarser (not one) to ensure safety when the query
+    /// geometry is near a cell boundary. Each level up roughly doubles the
+    /// cell size, so two levels up gives 4x margin.
     int buffer_level = S2::kMaxDiag.GetLevelForMaxValue(distance_radians);
-    if (buffer_level > 0)
-        --buffer_level;
+    buffer_level = std::max(0, buffer_level - 2);
 
     S2CellId cell(ancestor_id);
     if (!cell.is_valid())
@@ -1150,19 +1177,27 @@ Block ProjectionIndexS2::calculate(
 
     for (size_t row = 0; row < rows; ++row)
     {
+        const UInt64 parent_offset = parent_offsets[row];
+
         auto geometry = tryDecodeGeometry(*decode_cache, row, params.strict_decode);
         if (!geometry)
+        {
+            /// Cannot decode geometry — emit face cells to ensure row is never pruned.
+            /// This prevents false negatives for rows with malformed geometry data.
+            insertFaceCellsForRow(*cell_id_column, *parent_offset_column, parent_offset);
             continue;
+        }
 
         auto covering = buildS2CoveringForGeometry(*geometry, covering_options);
         if (!covering)
         {
             if (params.strict_decode)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to build S2 covering for row {}", row);
+            /// Cannot build covering (e.g., degenerate geometry) — emit face cells.
+            insertFaceCellsForRow(*cell_id_column, *parent_offset_column, parent_offset);
             continue;
         }
 
-        const UInt64 parent_offset = parent_offsets[row];
         for (const auto & cell : *covering)
         {
             cell_id_column->insertValue(cell.id());
