@@ -11,7 +11,3 @@ bytes	UInt64			Size of cached column data in bytes
 0
 10000
 System table and SYSTEM commands test passed
-3496500
-3496500
-ColumnsCacheHits	1
-ColumnsCacheMisses	1

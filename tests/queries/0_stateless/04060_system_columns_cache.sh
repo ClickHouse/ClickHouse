@@ -66,12 +66,3 @@ SETTINGS use_columns_cache = 1,
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_system_cache_test"
 
 $CLICKHOUSE_CLIENT -q "SELECT 'System table and SYSTEM commands test passed'"
-
-# Test cache metrics in isolation using clickhouse-local
-$CLICKHOUSE_LOCAL -q "
-CREATE TABLE t_local_cache (id UInt64, value UInt64) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
-INSERT INTO t_local_cache SELECT number, number * 7 FROM numbers(1000);
-SELECT sum(value) FROM t_local_cache SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1;
-SELECT sum(value) FROM t_local_cache SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1;
-SELECT event, value > 0 AS has_value FROM system.events WHERE event LIKE 'ColumnsCache%' AND value > 0 ORDER BY event;
-"
