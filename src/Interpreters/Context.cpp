@@ -340,6 +340,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
+    extern const SettingsMilliseconds get_zookeeper_lock_acquire_timeout_ms;
 }
 
 namespace MergeTreeSetting
@@ -418,6 +419,7 @@ namespace ErrorCodes
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -447,16 +449,16 @@ struct ContextSharedPart : boost::noncopyable
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
-    mutable std::mutex zookeeper_mutex;
+    mutable std::timed_mutex zookeeper_mutex;
 
-    mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
-    ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
+    mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper. Protected by zookeeper_mutex.
+    ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs. Protected by zookeeper_mutex.
 
     ConfigurationPtr sensitive_data_masker_config;
 
-    mutable std::mutex auxiliary_zookeepers_mutex;
-    mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers TSA_GUARDED_BY(auxiliary_zookeepers_mutex);    /// Map for auxiliary ZooKeeper clients.
-    ConfigurationPtr auxiliary_zookeepers_config TSA_GUARDED_BY(auxiliary_zookeepers_mutex);           /// Stores auxiliary zookeepers configs
+    mutable std::timed_mutex auxiliary_zookeepers_mutex;
+    mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers; /// Map for auxiliary ZooKeeper clients. Protected by auxiliary_zookeepers_mutex.
+    ConfigurationPtr auxiliary_zookeepers_config;                        /// Stores auxiliary zookeepers configs. Protected by auxiliary_zookeepers_mutex.
 
     /// No lock required for interserver_io_host, interserver_io_port, interserver_scheme modified only during initialization
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
@@ -4964,8 +4966,14 @@ void recordZooKeeperConnectionLoss()
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getZooKeeper");
-    std::lock_guard lock(shared->zookeeper_mutex);
-
+    auto lock_acquire_timeout = getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+    if (hasQueryContext())
+        lock_acquire_timeout = getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+    std::unique_lock lock(shared->zookeeper_mutex, std::defer_lock);
+    if (lock_acquire_timeout.totalMilliseconds() == 0)
+        lock.lock();
+    else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while acquiring ZooKeeper lock ({} ms)", lock_acquire_timeout.totalMilliseconds());
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
 
     if (!shared->zookeeper)
@@ -5237,7 +5245,14 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getAuxiliaryZooKeeper");
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+    auto lock_acquire_timeout = getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+    if (hasQueryContext())
+        lock_acquire_timeout = getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+    std::unique_lock lock(shared->auxiliary_zookeepers_mutex, std::defer_lock);
+    if (lock_acquire_timeout.totalMilliseconds() == 0)
+        lock.lock();
+    else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while acquiring auxiliary ZooKeeper lock ({} ms)", lock_acquire_timeout.totalMilliseconds());
     const auto config_name = "auxiliary_zookeepers." + name;
 
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
