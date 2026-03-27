@@ -16,6 +16,8 @@
 #include <Poco/String.h>
 #include <base/sort.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -160,3 +162,5 @@ const std::string & Collator::getLocale() const
 {
     return locale;
 }
+
+#pragma clang diagnostic pop

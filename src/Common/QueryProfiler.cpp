@@ -15,6 +15,8 @@
 #include <Common/thread_local_rng.h>
 #include <csignal>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace CurrentMetrics
 {
@@ -336,3 +338,5 @@ void QueryProfilerCPU::signalHandler(int sig, siginfo_t * info, void * context)
 }
 
 }
+
+#pragma clang diagnostic pop

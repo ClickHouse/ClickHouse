@@ -134,7 +134,10 @@ void checkRequiredInstructions()
 {
     struct sigaction sa{};
     struct sigaction sa_old{};
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     sa.sa_sigaction = sigIllCheckHandler;
+#pragma clang diagnostic pop
     sa.sa_flags = SA_SIGINFO;
     auto signal = SIGILL;
     if (sigemptyset(&sa.sa_mask) != 0

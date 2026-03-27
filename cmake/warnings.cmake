@@ -25,7 +25,7 @@ no_warning(c++98-compat-pedantic) # We don't care about C++98 compatibility (We 
 no_warning(c++20-compat) # Use C++20 features incompatible with older standards (consteval, constinit, implicit typename...)
 no_warning(sign-conversion) # TODO: Fix the code and enable it
 no_warning(deprecated-declarations) # TODO: Fix the code and enable it
-no_warning(disabled-macro-expansion)
+# -Wdisabled-macro-expansion is enabled
 no_warning(documentation-unknown-command)
 no_warning(double-promotion)
 no_warning(exit-time-destructors)

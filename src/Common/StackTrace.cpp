@@ -33,6 +33,9 @@
 #include <execinfo.h>
 #endif
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+
 namespace
 {
 /// Currently this variable is set up once on server startup.
@@ -748,3 +751,5 @@ void StackTrace::dropCache()
 
 thread_local bool asynchronous_stack_unwinding = false;
 thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
+
+#pragma clang diagnostic pop
