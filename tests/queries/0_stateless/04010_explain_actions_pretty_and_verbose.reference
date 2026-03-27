@@ -14,6 +14,8 @@ Offset 0
       Filter ((WHERE + Change column names to column identifiers))
       Filter column: greater(__table1.number, 100_UInt8) (removed)
         ReadFromSystemNumbers
+Output: key, total
+
 Expression (Project names)
 │  Actions: INPUT : 0 -> modulo(__table1.number, 10_UInt8) UInt8 : 0
 │           INPUT : 1 -> multiply(sum(__table1.number), 2_UInt8) UInt64 : 1
@@ -52,6 +54,9 @@ Expression (Project names)
                   │           FUNCTION greater(number :: 0, 100_UInt8 :: 1) -> greater(__table1.number, 100_UInt8) UInt8 : 3
                   │  Positions: 3 2
                   └──ReadFromSystemNumbers
+                        Output: number
+Output: key, total
+
 Limit (preliminary LIMIT)
 │  Limit 5
 │  Offset 0
@@ -68,3 +73,4 @@ Limit (preliminary LIMIT)
       └──Filter ((WHERE + Change column names to column identifiers))
          │  Filter column: greater(__table1.number, 100_UInt8) (removed)
          └──ReadFromSystemNumbers
+               Output: number

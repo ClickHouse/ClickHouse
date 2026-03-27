@@ -385,17 +385,20 @@ ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstima
 
 Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
 {
+    if (stats->getNumRows() == 0)
+        return 0;
     Float64 result = 0;
     for (const Range & range : ranges.ranges)
     {
-        result += stats->estimateRange(range);
+        if (auto estimate = stats->estimateRange(range))
+            result += *estimate;
+        else if (range.left == range.right)
+            result += static_cast<Float64>(stats->getNumRows()) * default_cond_equal_factor;
+        else
+            result += static_cast<Float64>(stats->getNumRows()) * default_cond_range_factor;
     }
-    /// In case that there is an empty statistics.
-    if (stats->getNumRows() == 0)
-        return 0;
     Float64 selectivity = result / static_cast<Float64>(stats->getNumRows());
-    selectivity = std::max<Float64>(selectivity, 0);
-    return selectivity;
+    return std::max<Float64>(selectivity, 0);
 }
 
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
