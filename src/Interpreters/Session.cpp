@@ -34,6 +34,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_sessions_for_user;
     extern const SettingsBool push_external_roles_in_interserver_queries;
+    extern const SettingsBool allow_experimental_audit_log;
 }
 
 namespace ErrorCodes
@@ -320,7 +321,7 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
-        if (auto audit_log = getAuditLogger(); audit_log && global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+        if (auto audit_log = getAuditLoggerIfEnabled())
         {
             LOG_AUDIT(audit_log, "User, {}, {}, Logout",
                     user->getName(), getClientInfo().current_address->host().toString());
@@ -356,7 +357,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     }
     catch (const Exception & e)
     {
-        if (auto audit_log = getAuditLogger(); audit_log && global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+        if (auto audit_log = getAuditLoggerIfEnabled())
         {
             const auto & client_info = getClientInfo();
             std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
@@ -435,7 +436,7 @@ void Session::checkIfUserIsStillValid()
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
-    if (auto audit_log = getAuditLogger(); audit_log && global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+    if (auto audit_log = getAuditLoggerIfEnabled())
     {
         LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",
                 user_name.has_value() ? user_name.value() : "",
@@ -763,7 +764,7 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      user_authenticated_with);
     }
 
-    if (auto audit_log = getAuditLogger(); audit_log && global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+    if (auto audit_log = getAuditLoggerIfEnabled())
     {
         LOG_AUDIT(audit_log, "User, {}, {}, LoginSuccess",
                 user->getName(), getClientInfo().current_address->host().toString());
@@ -795,6 +796,19 @@ void Session::closeSession(const String & session_id)
         return;
 
     NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_id, named_session);
+}
+
+LoggerPtr Session::getAuditLoggerIfEnabled() const
+{
+    const auto & settings = session_context ? session_context->getSettingsRef() : global_context->getSettingsRef();
+
+    if (!settings[Setting::allow_experimental_audit_log])
+        return nullptr;
+
+    if (!global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+        return nullptr;
+
+    return getAuditLogger();
 }
 
 }

@@ -108,6 +108,7 @@ private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
     void recordLoginSuccess(ContextPtr login_context) const;
+    LoggerPtr getAuditLoggerIfEnabled() const;
 
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
