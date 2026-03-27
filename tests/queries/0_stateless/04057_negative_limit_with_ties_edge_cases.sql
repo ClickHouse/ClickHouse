@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: Collations support is disabled
+
 -- { echo }
 
 SELECT 'DESC order, ties crossing chunk boundary';
