@@ -112,6 +112,13 @@ public:
                         Float64 xmax = col_xmax->getFloat64(i);
                         Float64 ymax = col_ymax->getFloat64(i);
 
+                        if (xmin > xmax || ymin > ymax)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid bounding box in function {}: "
+                                "xmin ({}) must be <= xmax ({}) and ymin ({}) must be <= ymax ({})",
+                                getName(), xmin, xmax, ymin, ymax);
+
                         /// Construct bounding box: min_corner(lon_min, lat_min), max_corner(lon_max, lat_max)
                         SphericalPoint min_corner;
                         boost::geometry::set<0>(min_corner, xmin);

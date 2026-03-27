@@ -34,3 +34,13 @@ SELECT 'multipolygon intersecting box';
 SELECT ST_IntersectsBox(
     CAST([[[(5.0, 5.0), (6.0, 5.0), (6.0, 6.0), (5.0, 6.0), (5.0, 5.0)]], [[(50.0, 50.0), (51.0, 50.0), (51.0, 51.0), (50.0, 51.0), (50.0, 50.0)]]], 'MultiPolygon'),
     0.0, 0.0, 10.0, 10.0);
+
+SELECT 'inverted xmin/xmax';
+SELECT ST_IntersectsBox(
+    CAST((5.0, 5.0), 'Point'),
+    10.0, 0.0, 0.0, 10.0); -- { serverError BAD_ARGUMENTS }
+
+SELECT 'inverted ymin/ymax';
+SELECT ST_IntersectsBox(
+    CAST((5.0, 5.0), 'Point'),
+    0.0, 10.0, 10.0, 0.0); -- { serverError BAD_ARGUMENTS }
