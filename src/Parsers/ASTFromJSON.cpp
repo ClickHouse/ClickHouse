@@ -94,8 +94,8 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         /// Expression types
         {"ExpressionList", [] { return make_intrusive<ASTExpressionList>(); }},
         {"Literal", [] { return make_intrusive<ASTLiteral>(Field{}); }},
-        {"Identifier", [] { return make_intrusive<ASTIdentifier>(""); }},
-        {"TableIdentifier", [] { return make_intrusive<ASTTableIdentifier>(""); }},
+        {"Identifier", [] { return make_intrusive<ASTIdentifier>("_placeholder"); }},
+        {"TableIdentifier", [] { return make_intrusive<ASTTableIdentifier>("_placeholder"); }},
         {"Function", [] { return make_intrusive<ASTFunction>(); }},
         {"Subquery", [] { return make_intrusive<ASTSubquery>(); }},
         {"QueryParameter", [] { return make_intrusive<ASTQueryParameter>("", ""); }},
