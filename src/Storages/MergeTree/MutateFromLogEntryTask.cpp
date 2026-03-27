@@ -63,7 +63,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         storage.writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
             entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
-            mutation_ids_for_log);
+            mutation_ids_for_log, {});
     };
 
     MergeTreeData::DataPartPtr source_part = storage.getActiveContainingPart(source_part_name);
@@ -230,7 +230,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,
-        entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), {}, mutation_ids_for_log);
+        entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), {}, mutation_ids_for_log, {});
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),

@@ -202,8 +202,8 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwInapplicable(); }
 
     bool hasDynamicStructure() const override { throwInapplicable(); }
-    void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwInapplicable(); }
-    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwInapplicable(); }
+    void takeExactDynamicStructureFrom(const IColumn &) override { throwInapplicable(); }
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwInapplicable(); }
     void fixDynamicStructure() override { throwInapplicable(); }
 
 private:
