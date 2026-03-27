@@ -1206,28 +1206,9 @@ bool StorageRabbitMQ::tryStreamToViews()
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    auto input = Pipe::unitePipes(std::move(pipes));
+    auto input = VirtualColumnUtils::extendWithCommonVirtualColumns(Pipe::unitePipes(std::move(pipes)), block_io.pipeline.getHeader().getNames(), table);
 
-    const auto & pipeline_header = block_io.pipeline.getHeader();
-    const auto & input_header = input.getHeader();
-
-    auto adding_virtuals_dag = VirtualColumnUtils::constructMaterializingCommonVirtualColumnsDAG(
-        input_header, pipeline_header.getNames(), table);
-
-    auto converting_dag = ActionsDAG::makeConvertingActions(
-        adding_virtuals_dag.getResultColumns(),
-        pipeline_header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        new_context);
-
-    auto merged_dag = ActionsDAG::merge(std::move(adding_virtuals_dag), std::move(converting_dag));
-    auto expression = std::make_shared<ExpressionActions>(std::move(merged_dag));
-    input.addSimpleTransform([&](const SharedHeader & header)
-    {
-        return std::make_shared<ExpressionTransform>(header, expression);
-    });
-
-    assertBlocksHaveEqualStructure(input.getHeader(), pipeline_header, "StorageRabbitMQ tryStreamToViews");
+    assertBlocksHaveEqualStructure(input.getHeader(), block_io.pipeline.getHeader(), "StorageRabbitMQ tryStreamToViews");
 
     block_io.pipeline.complete(std::move(input));
 

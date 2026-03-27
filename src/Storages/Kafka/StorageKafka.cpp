@@ -716,28 +716,9 @@ bool StorageKafka::streamToViews()
         source->setTimeLimit(max_execution_time);
     }
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
+    auto pipe = VirtualColumnUtils::extendWithCommonVirtualColumns(Pipe::unitePipes(std::move(pipes)), block_io.pipeline.getHeader().getNames(), table);
 
-    const auto & pipeline_header = block_io.pipeline.getHeader();
-    const auto & pipe_header = pipe.getHeader();
-
-    auto adding_virtuals_dag = VirtualColumnUtils::constructMaterializingCommonVirtualColumnsDAG(
-        pipe_header, pipeline_header.getNames(), table);
-
-    auto converting_dag = ActionsDAG::makeConvertingActions(
-        adding_virtuals_dag.getResultColumns(),
-        pipeline_header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        kafka_context);
-
-    auto merged_dag = ActionsDAG::merge(std::move(adding_virtuals_dag), std::move(converting_dag));
-    auto expression = std::make_shared<ExpressionActions>(std::move(merged_dag));
-    pipe.addSimpleTransform([&](const SharedHeader & header)
-    {
-        return std::make_shared<ExpressionTransform>(header, expression);
-    });
-
-    assertBlocksHaveEqualStructure(pipe.getHeader(), pipeline_header, "StorageKafka streamToViews");
+    assertBlocksHaveEqualStructure(pipe.getHeader(), block_io.pipeline.getHeader(), "StorageKafka streamToViews");
 
     std::atomic_size_t rows = 0;
     {

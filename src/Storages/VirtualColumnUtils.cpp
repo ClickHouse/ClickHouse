@@ -43,6 +43,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
+#include <Functions/materialize.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -709,7 +710,7 @@ DataPartsVector filterDataPartsWithExpression(
     return filtered_parts;
 }
 
-static ActionsDAG constructMaterializingCommonVirtualColumnDAG(const std::string & name, const DataTypePtr & data_type, const StoragePtr & storage)
+static void materializeCommonVirtualColumnInDAG(const std::string & name, const DataTypePtr & data_type, const StoragePtr & storage, ActionsDAG & dag)
 {
     ColumnWithTypeAndName column;
     column.name = name;
@@ -720,7 +721,10 @@ static ActionsDAG constructMaterializingCommonVirtualColumnDAG(const std::string
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown common virtual column");
 
-    return ActionsDAG::makeAddingColumnActions(std::move(column));
+    const auto * column_node = &dag.addColumn(std::move(column));
+    const auto & function_node = dag.addFunction(std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize<true>>()), {column_node}, {});
+    const auto & alias_node = dag.addAlias(function_node, name);
+    dag.getOutputs().push_back(&alias_node);
 }
 
 ActionsDAG constructMaterializingCommonVirtualColumnsDAG(
@@ -740,11 +744,7 @@ ActionsDAG constructMaterializingCommonVirtualColumnsDAG(
         if (!desc || !desc->isCommon())
             continue;
 
-        auto adding_dag = constructMaterializingCommonVirtualColumnDAG(desc->name, desc->type, storage);
-        ActionsDAG::NodeRawConstPtrs merged_outputs;
-        dag.mergeNodes(std::move(adding_dag), &merged_outputs);
-        for (const auto * node : merged_outputs)
-            dag.addOrReplaceInOutputs(*node);
+        materializeCommonVirtualColumnInDAG(desc->name, desc->type, storage, dag);
     }
 
     return dag;
