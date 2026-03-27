@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- ==========================================================================
 -- Comprehensive test for parseQueryToJSON / formatQueryFromJSON
 -- covering all AST types and all AST fields.
