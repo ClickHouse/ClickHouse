@@ -89,7 +89,7 @@ if (ENABLE_SKIM)
     add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
 endif()
 
-if (ENABLE_H3O)
+if (ENABLE_H3O AND ENABLE_H3)
     clickhouse_config_crate_flags(_ch_rust_h3o)
     target_include_directories(_ch_rust_h3o INTERFACE h3o/include)
     add_library(ch_rust::h3o ALIAS _ch_rust_h3o)
