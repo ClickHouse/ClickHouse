@@ -5,6 +5,16 @@ SET allow_prefetched_read_pool_for_remote_filesystem = 1;
 SET remote_filesystem_read_prefetch = 1;
 SET remote_filesystem_read_method = 'threadpool';
 SET max_rows_to_read = 0;
+SET filesystem_prefetch_step_bytes = 0;
+SET filesystem_prefetch_step_marks = 0;
+SET enable_filesystem_cache = 1;
+SET read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0;
+-- When merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability is on splitPartsRanges
+-- skips extracting non-intersecting ranges from level-0 parts (which all 3 parts are, since each has a single INSERT).
+-- All parts end up in the "intersecting" bucket, read via MergeTreeReadPoolInOrder which never calls
+-- prefetchBeginOfRange — so zero prefetched reads. Fixed by setting the injection probability to 0.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+
 
 DROP TABLE IF EXISTS tab;
 

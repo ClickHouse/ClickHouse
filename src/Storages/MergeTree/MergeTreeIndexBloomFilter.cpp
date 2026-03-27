@@ -5,7 +5,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -182,6 +184,102 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
 
     return std::any_of(
         hashes.begin(), hashes.end(), [&](const auto & hash_row) { return hashMatchesFilter(bloom_filter, hash_row, hash_functions); });
+}
+
+/// Information about a Map column's presence in the bloom filter index.
+/// Used to unify handling of both `arrayElement(map, key)` function calls
+/// and `map.key_<serialized_key>` subcolumn references produced by `FunctionToSubcolumnsPass`.
+struct MapIndexInfo
+{
+    size_t keys_index_position = 0;
+    size_t values_index_position = 0;
+    bool has_keys_index = false;
+    bool has_values_index = false;
+    Field key_field;
+};
+
+/// Try to resolve a Map column against the bloom filter index header by the map column name
+/// and the key as a Field. Returns std::nullopt if neither `mapKeys(<col>)` nor `mapValues(<col>)`
+/// is present in the index.
+std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_name, const Field & key_field, const Block & header)
+{
+    auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
+    auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
+
+    auto keys_position = header.findPositionByName(map_keys_index_column_name);
+    auto values_position = header.findPositionByName(map_values_index_column_name);
+
+    if (!keys_position && !values_position)
+        return std::nullopt;
+
+    MapIndexInfo info;
+    info.key_field = key_field;
+    if (keys_position)
+    {
+        info.has_keys_index = true;
+        info.keys_index_position = *keys_position;
+    }
+    if (values_position)
+    {
+        info.has_values_index = true;
+        info.values_index_position = *values_position;
+    }
+    return info;
+}
+
+/// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` and resolve it
+/// against the bloom filter index header. The subcolumn name format is produced by
+/// `FunctionToSubcolumnsPass`.
+std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, const Block & header)
+{
+    auto parsed = tryParseMapSubcolumnName(column_name);
+    if (!parsed)
+        return std::nullopt;
+
+    auto & [map_column_name, serialized_key] = *parsed;
+
+    auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
+    if (!header.has(map_keys_index_column_name))
+        return tryResolveMapIndexInfo(map_column_name, {}, header);
+
+    /// Deserialize the key from its text representation using the key type from the index header.
+    size_t keys_position = header.getPositionByName(map_keys_index_column_name);
+    const DataTypePtr & index_type = header.getByPosition(keys_position).type;
+    const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
+    const auto & key_type = array_type.getNestedType();
+
+    auto key_column = key_type->createColumn();
+    ReadBufferFromString buf(serialized_key);
+    key_type->getDefaultSerialization()->deserializeWholeText(*key_column, buf, FormatSettings());
+
+    Field key_field;
+    key_column->get(0, key_field);
+
+    return tryResolveMapIndexInfo(map_column_name, key_field, header);
+}
+
+/// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
+/// function call or a `map.key_<serialized_key>` subcolumn reference.
+std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode & key_node, const Block & header)
+{
+    if (key_node.isFunction())
+    {
+        auto key_node_function = key_node.toFunctionNode();
+        if (key_node_function.getFunctionName() == "arrayElement")
+        {
+            auto first_argument = key_node_function.getArgumentAt(0);
+            auto second_argument = key_node_function.getArgumentAt(1);
+
+            Field constant_value;
+            DataTypePtr constant_type;
+            if (!second_argument.tryGetConstant(constant_value, constant_type))
+                return std::nullopt;
+
+            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, header);
+        }
+    }
+
+    return tryParseMapSubcolumn(key_node.getColumnName(), header);
 }
 
 }
@@ -460,79 +558,60 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
             return match_with_subtype;
         }
+    }
 
-        if (key_node_function_name == "arrayElement")
+    /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header))
+    {
+        /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
+          * we return the default value for arrayElement.
+          *
+          * We cannot skip keys that does not exist in map if comparison is with default type value because
+          * that way we skip necessary granules where the map key does not exist.
+          */
+        if (!prepared_set)
+            return false;
+
+        auto default_column_to_check = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+        ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, type, ""};
+        ColumnsWithTypeAndName default_columns_with_type_to_check = {default_column_with_type_to_check};
+        auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
+        const auto & set_contains_default_value_predicate_column_typed = assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column);
+        bool set_contain_default_value = set_contains_default_value_predicate_column_typed.getData()[0];
+        if (set_contain_default_value)
+            return false;
+
+        if (map_info->has_keys_index)
         {
-            /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
-              * we return the default value for arrayElement.
-              *
-              * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where the map key does not exist.
-              */
-            if (!prepared_set)
-                return false;
-
-            auto default_column_to_check = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-            ColumnWithTypeAndName default_column_with_type_to_check { default_column_to_check, type, "" };
-            ColumnsWithTypeAndName default_columns_with_type_to_check = {default_column_with_type_to_check};
-            auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
-            const auto & set_contains_default_value_predicate_column_typed = assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column);
-            bool set_contain_default_value = set_contains_default_value_predicate_column_typed.getData()[0];
-            if (set_contain_default_value)
-                return false;
-
-            auto first_argument = key_node_function.getArgumentAt(0);
-            const auto column_name = first_argument.getColumnName();
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
-
-            if (header.has(map_keys_index_column_name))
-            {
-                /// For mapKeys we serialize key argument with bloom filter
-
-                auto second_argument = key_node_function.getArgumentAt(1);
-
-                Field constant_value;
-                DataTypePtr constant_type;
-
-                if (second_argument.tryGetConstant(constant_value, constant_type))
-                {
-                    size_t position = header.getPositionByName(map_keys_index_column_name);
-                    const DataTypePtr & index_type = header.getByPosition(position).type;
-                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), constant_value)));
-                }
-                else
-                {
-                    return false;
-                }
-            }
-            else if (header.has(map_values_index_column_name))
-            {
-                /// For mapValues we serialize set with bloom filter
-
-                size_t row_size = column->size();
-                size_t position = header.getPositionByName(map_values_index_column_name);
-                const DataTypePtr & index_type = header.getByPosition(position).type;
-                const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
-                const auto & array_nested_type = array_type.getNestedType();
-                const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
-            }
-            else
-            {
-                return false;
-            }
-
-            if (function_name == "in"  || function_name == "globalIn")
-                out.function = RPNElement::FUNCTION_IN;
-
-            if (function_name == "notIn"  || function_name == "globalNotIn")
-                out.function = RPNElement::FUNCTION_NOT_IN;
-
-            return true;
+            /// For mapKeys we serialize key argument with bloom filter
+            size_t position = map_info->keys_index_position;
+            const DataTypePtr & index_type = header.getByPosition(position).type;
+            const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), map_info->key_field)));
         }
+        else if (map_info->has_values_index)
+        {
+            /// For mapValues we serialize set with bloom filter
+            size_t row_size = column->size();
+            size_t position = map_info->values_index_position;
+            const DataTypePtr & index_type = header.getByPosition(position).type;
+            const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
+            const auto & array_nested_type = array_type.getNestedType();
+            const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
+        }
+        else
+        {
+            return false;
+        }
+
+        if (function_name == "in" || function_name == "globalIn")
+            out.function = RPNElement::FUNCTION_IN;
+
+        if (function_name == "notIn" || function_name == "globalNotIn")
+            out.function = RPNElement::FUNCTION_NOT_IN;
+
+        return true;
     }
 
     return false;
@@ -771,40 +850,34 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             return match_with_subtype;
         }
+    }
 
-        if (key_node_function_name == "arrayElement" && (function_name == "equals" || function_name == "notEquals"))
+    /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
+    if (function_name == "equals" || function_name == "notEquals")
+    {
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header))
         {
-            /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] = '' because if key does not exist in the map
-              * we return default the value for arrayElement.
+            /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
+              * we return the default value for arrayElement.
               *
               * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exist.
+              * that way we skip necessary granules where the map key does not exist.
               */
             if (value_field == value_type->getDefault())
                 return false;
 
-            auto first_argument = key_node_function.getArgumentAt(0);
-            const auto column_name = first_argument.getColumnName();
-
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
-
             size_t position = 0;
-            Field const_value = value_field;
-            DataTypePtr const_type;
+            Field const_value;
 
-            if (header.has(map_keys_index_column_name))
+            if (map_info->has_keys_index)
             {
-                position = header.getPositionByName(map_keys_index_column_name);
-                auto second_argument = key_node_function.getArgumentAt(1);
-
-                if (!second_argument.tryGetConstant(const_value, const_type))
-                    return false;
+                position = map_info->keys_index_position;
+                const_value = map_info->key_field;
             }
-            else if (header.has(map_values_index_column_name))
+            else if (map_info->has_values_index)
             {
-                position = header.getPositionByName(map_values_index_column_name);
+                position = map_info->values_index_position;
+                const_value = value_field;
             }
             else
             {
