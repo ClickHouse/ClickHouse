@@ -7,6 +7,8 @@ title: 'Nested(name1 Type1, Name2 Type2, ...)'
 doc_type: 'guide'
 ---
 
+# Nested(name1 Type1, Name2 Type2, ...) {#nestedname1-type1-name2-type2-}
+
 A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create/table.md) query. Each table row can correspond to any number of rows in a nested data structure.
 
 :::tip[Avoid using dots in column names]
@@ -126,7 +128,7 @@ FROM test.visits
 WHERE has(Goals.ID, 591325);
 ```
 
-Use [`arrayExists`](/sql-reference/functions/array-functions#arrayexists) when the condition is more complex:
+Use [`arrayExists`](/sql-reference/functions/array-functions#arrayExists) when the condition is more complex:
 
 ```sql
 -- Find visits that have at least one goal with ID greater than 1000000
