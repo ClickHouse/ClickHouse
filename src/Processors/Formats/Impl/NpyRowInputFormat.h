@@ -16,7 +16,7 @@ class ReadBuffer;
 
 struct NumpyHeader
 {
-    std::vector<int> shape;
+    std::vector<size_t> shape;
     std::shared_ptr<NumpyDataType> numpy_type;
 };
 
@@ -33,7 +33,6 @@ private:
 
     void readPrefix() override;
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
-    void readData(MutableColumns & columns);
 
     template <typename T>
     void readAndInsertInteger(IColumn * column, const DataTypePtr & data_type, const NumpyDataType & npy_type);
@@ -49,8 +48,6 @@ private:
 
     template <typename ColumnValue>
     void readBinaryValueAndInsertFloat16(MutableColumnPtr column, NumpyDataType::Endianness endianness);
-
-    void readRows(MutableColumns & columns);
 
     void readValue(IColumn * column);
 

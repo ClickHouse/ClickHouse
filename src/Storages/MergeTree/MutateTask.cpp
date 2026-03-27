@@ -86,6 +86,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace FailPoints
@@ -276,6 +277,12 @@ static void splitAndModifyMutationCommands(
                             for (const auto & column : projection.required_columns)
                             {
                                 if (projection.with_parent_part_offset && column == "_part_offset")
+                                    continue;
+
+                                if (projection.with_block_number && column == BlockNumberColumn::name)
+                                    continue;
+
+                                if (projection.with_block_offset && column == BlockOffsetColumn::name)
                                     continue;
 
                                 auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
@@ -627,6 +634,7 @@ getColumnsForNewDataPart(
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
             serialization_infos.getSettings().nullable_serialization_version,
+            serialization_infos.getSettings().map_serialization_version,
             serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
         };
     }
@@ -640,6 +648,7 @@ getColumnsForNewDataPart(
             (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
+            (*source_part->storage.getSettings())[MergeTreeSetting::map_serialization_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
         };
     }
