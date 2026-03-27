@@ -308,6 +308,37 @@ Field QueryOracleChecker::executeScalar(const String & query, const ContextMutab
 }
 
 
+std::vector<String> QueryOracleChecker::executeAndCollectSortedUniqueRows(const String & query, const ContextMutablePtr & context)
+{
+    auto rows = executeAndCollectSortedRows(query, context);
+    rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
+    return rows;
+}
+
+
+std::vector<String> QueryOracleChecker::executeWithSettings(
+    const String & query, const ContextMutablePtr & context,
+    const std::vector<std::pair<String, Field>> & settings)
+{
+    auto oracle_context = makeOracleContext(context);
+    oracle_context->setDefaultFormat("TabSeparated");
+    for (const auto & [name, value] : settings)
+        oracle_context->setSetting(name, value);
+
+    ReadBufferFromString istr(query);
+    WriteBufferFromOwnString ostr;
+    executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
+
+    String output = ostr.str();
+    if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
+        return {};
+
+    auto rows = splitIntoRows(output);
+    std::sort(rows.begin(), rows.end());
+    return rows;
+}
+
+
 bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const ContextMutablePtr & context)
 {
     if (!select.where())
@@ -491,6 +522,334 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     }
 
     LOG_TRACE(logger, "NoREC oracle passed (count={})", opt_count);
+    return true;
+}
+
+
+bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// TLP DISTINCT: for queries with DISTINCT, use UNION (not UNION ALL) to deduplicate partitions.
+    /// Reference: SELECT DISTINCT ... FROM t (no WHERE)
+    /// Partitioned: SELECT DISTINCT ... WHERE p UNION SELECT DISTINCT ... WHERE NOT p UNION SELECT DISTINCT ... WHERE isNull(p)
+    if (!select.where())
+        return false;
+
+    /// This oracle specifically requires DISTINCT and no GROUP BY/aggregates.
+    if (!select.distinct)
+        return false;
+
+    /// Use the common safety checks but skip the distinct check (we want it).
+    if (hasArrayJoin(select) || hasPasteJoin(select))
+        return false;
+    if (select.limitLength() || select.limitBy() || select.prewhere() || select.qualify())
+        return false;
+    if (!select.tables())
+        return false;
+    if (select.group_by_with_rollup || select.group_by_with_cube
+        || select.group_by_with_totals || select.group_by_with_grouping_sets)
+        return false;
+    if (hasAggregates(select) || select.groupBy() || select.having())
+        return false;
+
+    if (hasNonDeterministicFunctions(select.clone()))
+        return false;
+
+    ASTPtr predicate = select.where()->clone();
+
+    /// Reference: remove WHERE, keep DISTINCT.
+    auto ref_ast = select.clone();
+    auto & ref_select = ref_ast->as<ASTSelectQuery &>();
+    ref_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
+    stripOrderAndLimit(ref_select);
+    String ref_sql = formatAST(ref_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    /// Build 3 partitioned queries — each keeps DISTINCT.
+    auto clone1_ast = select.clone();
+    stripOrderAndLimit(clone1_ast->as<ASTSelectQuery &>());
+
+    auto clone2_ast = select.clone();
+    clone2_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("not", predicate->clone()));
+    stripOrderAndLimit(clone2_ast->as<ASTSelectQuery &>());
+
+    auto clone3_ast = select.clone();
+    clone3_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("isNull", predicate->clone()));
+    stripOrderAndLimit(clone3_ast->as<ASTSelectQuery &>());
+
+    /// Use UNION DISTINCT (not UNION ALL) to deduplicate across partitions.
+    auto list = make_intrusive<ASTExpressionList>();
+    list->children.push_back(clone1_ast);
+    list->children.push_back(clone2_ast);
+    list->children.push_back(clone3_ast);
+
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    union_query->union_mode = SelectUnionMode::UNION_DISTINCT;
+    union_query->is_normalized = true;
+    union_query->list_of_selects = list;
+    union_query->children.push_back(list);
+
+    ASTPtr union_ast = union_query;
+    String union_sql = formatAST(union_ast);
+    if (union_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "TLP DISTINCT oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "TLP DISTINCT oracle: partitioned: {}", union_sql);
+
+    auto ref_rows = executeAndCollectSortedRows(ref_sql, context);
+    auto part_rows = executeAndCollectSortedRows(union_sql, context);
+
+    if (ref_rows != part_rows)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "TLP DISTINCT oracle mismatch!\n"
+            "Reference query ({} rows): {}\n"
+            "Partitioned query ({} rows): {}",
+            ref_rows.size(), ref_sql,
+            part_rows.size(), union_sql);
+    }
+
+    LOG_TRACE(logger, "TLP DISTINCT oracle passed ({} rows)", ref_rows.size());
+    return true;
+}
+
+
+bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// TLP GROUP BY: for queries with GROUP BY and no aggregates in SELECT,
+    /// the SELECT list equals the GROUP BY columns (like DISTINCT).
+    /// We deduplicate both sides and compare as sets.
+    if (!select.where())
+        return false;
+    if (!select.groupBy())
+        return false;
+    if (hasAggregates(select) || select.having())
+        return false;
+
+    if (!isSafeForOracle(select))
+        return false;
+
+    if (hasNonDeterministicFunctions(select.clone()))
+        return false;
+
+    ASTPtr predicate = select.where()->clone();
+
+    /// Reference: remove WHERE, keep GROUP BY.
+    auto ref_ast = select.clone();
+    auto & ref_select = ref_ast->as<ASTSelectQuery &>();
+    ref_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
+    stripOrderAndLimit(ref_select);
+    String ref_sql = formatAST(ref_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    /// Build 3 partitioned queries — each keeps GROUP BY.
+    auto clone1_ast = select.clone();
+    stripOrderAndLimit(clone1_ast->as<ASTSelectQuery &>());
+
+    auto clone2_ast = select.clone();
+    clone2_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("not", predicate->clone()));
+    stripOrderAndLimit(clone2_ast->as<ASTSelectQuery &>());
+
+    auto clone3_ast = select.clone();
+    clone3_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("isNull", predicate->clone()));
+    stripOrderAndLimit(clone3_ast->as<ASTSelectQuery &>());
+
+    auto list = make_intrusive<ASTExpressionList>();
+    list->children.push_back(clone1_ast);
+    list->children.push_back(clone2_ast);
+    list->children.push_back(clone3_ast);
+
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    union_query->union_mode = SelectUnionMode::UNION_ALL;
+    union_query->is_normalized = true;
+    union_query->list_of_selects = list;
+    union_query->children.push_back(list);
+
+    ASTPtr union_ast = union_query;
+    String union_sql = formatAST(union_ast);
+    if (union_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "TLP GROUP BY oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "TLP GROUP BY oracle: partitioned: {}", union_sql);
+
+    /// Compare as sets — deduplicate both sides since each partition produces its own groups.
+    auto ref_rows = executeAndCollectSortedUniqueRows(ref_sql, context);
+    auto part_rows = executeAndCollectSortedUniqueRows(union_sql, context);
+
+    if (ref_rows != part_rows)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "TLP GROUP BY oracle mismatch!\n"
+            "Reference query ({} unique rows): {}\n"
+            "Partitioned query ({} unique rows): {}",
+            ref_rows.size(), ref_sql,
+            part_rows.size(), union_sql);
+    }
+
+    LOG_TRACE(logger, "TLP GROUP BY oracle passed ({} unique rows)", ref_rows.size());
+    return true;
+}
+
+
+bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// TLP HAVING: for queries with GROUP BY and HAVING, partition on HAVING instead of WHERE.
+    /// Reference: SELECT ... GROUP BY g (no HAVING)
+    /// Partitioned: SELECT ... GROUP BY g HAVING p UNION ALL ... HAVING NOT p UNION ALL ... HAVING isNull(p)
+    /// Compare as sets (deduplicated) since each partition independently groups.
+    if (!select.having())
+        return false;
+    if (!select.groupBy())
+        return false;
+
+    if (!isSafeForOracle(select))
+        return false;
+
+    if (hasNonDeterministicFunctions(select.clone()))
+        return false;
+
+    ASTPtr having_pred = select.having()->clone();
+
+    /// Reference: remove HAVING, keep GROUP BY and everything else.
+    auto ref_ast = select.clone();
+    auto & ref_select = ref_ast->as<ASTSelectQuery &>();
+    ref_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
+    stripOrderAndLimit(ref_select);
+    String ref_sql = formatAST(ref_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    /// Build 3 partitioned queries — partition on HAVING.
+    auto clone1_ast = select.clone();
+    stripOrderAndLimit(clone1_ast->as<ASTSelectQuery &>());
+
+    auto clone2_ast = select.clone();
+    clone2_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::HAVING, makeASTFunction("not", having_pred->clone()));
+    stripOrderAndLimit(clone2_ast->as<ASTSelectQuery &>());
+
+    auto clone3_ast = select.clone();
+    clone3_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::HAVING, makeASTFunction("isNull", having_pred->clone()));
+    stripOrderAndLimit(clone3_ast->as<ASTSelectQuery &>());
+
+    auto list = make_intrusive<ASTExpressionList>();
+    list->children.push_back(clone1_ast);
+    list->children.push_back(clone2_ast);
+    list->children.push_back(clone3_ast);
+
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    union_query->union_mode = SelectUnionMode::UNION_ALL;
+    union_query->is_normalized = true;
+    union_query->list_of_selects = list;
+    union_query->children.push_back(list);
+
+    ASTPtr union_ast = union_query;
+    String union_sql = formatAST(union_ast);
+    if (union_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "TLP HAVING oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "TLP HAVING oracle: partitioned: {}", union_sql);
+
+    /// Compare as sets — HAVING partitions produce independent group sets.
+    auto ref_rows = executeAndCollectSortedUniqueRows(ref_sql, context);
+    auto part_rows = executeAndCollectSortedUniqueRows(union_sql, context);
+
+    if (ref_rows != part_rows)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "TLP HAVING oracle mismatch!\n"
+            "Reference query ({} unique rows): {}\n"
+            "Partitioned query ({} unique rows): {}",
+            ref_rows.size(), ref_sql,
+            part_rows.size(), union_sql);
+    }
+
+    LOG_TRACE(logger, "TLP HAVING oracle passed ({} unique rows)", ref_rows.size());
+    return true;
+}
+
+
+bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// DQP (Differential Query Plans): run the same query with different optimizer settings.
+    /// If results differ, an optimization is producing wrong results.
+    /// Only run with ~10% probability to avoid excessive overhead.
+    if (thread_local_rng() % 10 != 0)
+        return false;
+
+    if (!isSafeForOracle(select))
+        return false;
+
+    if (hasNonDeterministicFunctions(select.clone()))
+        return false;
+
+    auto query_ast = select.clone();
+    stripOrderAndLimit(query_ast->as<ASTSelectQuery &>());
+    String query_sql = formatAST(query_ast);
+    if (query_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    /// Execute with default settings.
+    auto default_rows = executeAndCollectSortedRows(query_sql, context);
+
+    /// Skip empty results — DQP is most valuable for non-empty results.
+    if (default_rows.empty())
+        return false;
+
+    /// Settings pairs to toggle. Each pair flips an optimizer setting.
+    static const std::vector<std::pair<String, Field>> settings_variants[] = {
+        {{"optimize_read_in_order", Field(UInt64(0))}},
+        {{"optimize_aggregation_in_order", Field(UInt64(0))}},
+        {{"optimize_trivial_count_query", Field(false)}},
+        {{"optimize_move_to_prewhere", Field(false)}},
+        {{"query_plan_remove_redundant_sorting", Field(false)}},
+        {{"optimize_rewrite_sum_if_to_count_if", Field(false)}},
+    };
+
+    /// Pick one random settings variant.
+    size_t variant_idx = thread_local_rng() % std::size(settings_variants);
+    const auto & settings = settings_variants[variant_idx];
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+
+    String setting_name = settings[0].first;
+    LOG_TRACE(logger, "DQP oracle: query: {}, toggling: {}", query_sql, setting_name);
+
+    try
+    {
+        auto variant_rows = executeWithSettings(query_sql, context, settings);
+
+        if (default_rows != variant_rows)
+        {
+            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "DQP oracle mismatch! Setting: {}\n"
+                "Default ({} rows): {}\n"
+                "With {}=off ({} rows): {}",
+                setting_name,
+                default_rows.size(), query_sql,
+                setting_name, variant_rows.size(), query_sql);
+        }
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+            throw;
+        /// The variant query might fail with a different error — that's OK.
+        LOG_TRACE(logger, "DQP oracle: variant query failed (expected): {}", e.message());
+        return false;
+    }
+
+    LOG_TRACE(logger, "DQP oracle passed ({} rows, setting: {})", default_rows.size(), setting_name);
     return true;
 }
 
@@ -784,6 +1143,74 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     catch (...)
     {
         LOG_TRACE(logger, "TLP Aggregate oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
+    }
+
+    /// TLP DISTINCT oracle (uses UNION DISTINCT instead of UNION ALL)
+    try
+    {
+        if (checkTLPDistinct(*select, context))
+            any_check_performed = true;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+            throw;
+        LOG_TRACE(logger, "TLP DISTINCT oracle execution error (skipping): {}", e.message());
+    }
+    catch (...)
+    {
+        LOG_TRACE(logger, "TLP DISTINCT oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
+    }
+
+    /// TLP GROUP BY oracle (set comparison for non-aggregate GROUP BY)
+    try
+    {
+        if (checkTLPGroupBy(*select, context))
+            any_check_performed = true;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+            throw;
+        LOG_TRACE(logger, "TLP GROUP BY oracle execution error (skipping): {}", e.message());
+    }
+    catch (...)
+    {
+        LOG_TRACE(logger, "TLP GROUP BY oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
+    }
+
+    /// TLP HAVING oracle (partitions on HAVING instead of WHERE)
+    try
+    {
+        if (checkTLPHaving(*select, context))
+            any_check_performed = true;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+            throw;
+        LOG_TRACE(logger, "TLP HAVING oracle execution error (skipping): {}", e.message());
+    }
+    catch (...)
+    {
+        LOG_TRACE(logger, "TLP HAVING oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
+    }
+
+    /// DQP oracle (differential query plans — same query, different optimizer settings)
+    try
+    {
+        if (checkDQP(*select, context))
+            any_check_performed = true;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+            throw;
+        LOG_TRACE(logger, "DQP oracle execution error (skipping): {}", e.message());
+    }
+    catch (...)
+    {
+        LOG_TRACE(logger, "DQP oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
     }
 
     return any_check_performed;
