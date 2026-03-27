@@ -135,7 +135,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT DISTINCT ProfileEvents['USearchSearchCount']
 FROM system.query_log
-WHERE log_comment = '02354_vector_search_post_filter_strategy_query1'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND log_comment = '02354_vector_search_post_filter_strategy_query1'
 AND current_database = currentDatabase()
 AND type = 'QueryFinish';
 

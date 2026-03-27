@@ -34,11 +34,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
 #include <IO/readIntText.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
-#include <Poco/JSON/Parser.h>
-#include <Poco/Dynamic/Var.h>
-
 
 static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
@@ -160,17 +155,6 @@ inline void skipStringBinary(ReadBuffer & buf)
     size_t size = 0;
     readVarUInt(size, buf);
     buf.ignore(size);
-}
-
-inline void readJSONBinary(Poco::JSON::Object::Ptr & object, ReadBuffer & buf)
-{
-    String json;
-    readStringBinary(json, buf);
-
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var result = parser.parse(json);
-
-    object = result.extract<Poco::JSON::Object::Ptr>();
 }
 
 /// For historical reasons we store IPv6 as a String
@@ -2119,6 +2103,10 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 
 /// Skip to next character after next \n. If no \n in stream, skip to end.
 void skipToNextLineOrEOF(ReadBuffer & buf);
+
+/// Skip whitespace and SQL-style comments (-- to end of line, /* */ blocks).
+/// Used so that trailing comments after the last row in VALUES format do not cause parse errors.
+void skipWhitespaceAndSQLComments(ReadBuffer & buf);
 
 /// Skip to next character after next \r. If no \r in stream, skip to end.
 void skipToCarriageReturnOrEOF(ReadBuffer & buf);

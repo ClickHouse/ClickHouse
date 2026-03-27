@@ -1,13 +1,11 @@
 #include <Dictionaries/DictionaryStructure.h>
 
-#include <numeric>
-#include <unordered_map>
-#include <unordered_set>
-
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <Common/StringUtils.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
@@ -249,7 +247,7 @@ Strings DictionaryStructure::getKeysNames() const
 
 static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
 {
-    static const std::unordered_set<std::string_view> valid_keys
+    static const UnorderedSetWithMemoryTracking<std::string_view> valid_keys
         = {"name", "type", "expression", "null_value", "hierarchical", "bidirectional", "injective", "is_object_id"};
 
     for (const auto & key : keys)
@@ -259,7 +257,7 @@ static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & k
     }
 }
 
-std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
+VectorWithMemoryTracking<DictionaryAttribute> DictionaryStructure::getAttributes(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     bool complex_key_attributes)
@@ -272,8 +270,8 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     config.keys(config_prefix, config_elems);
     bool has_hierarchy = false;
 
-    std::unordered_set<String> attribute_names;
-    std::vector<DictionaryAttribute> res_attributes;
+    UnorderedSetWithMemoryTracking<String> attribute_names;
+    VectorWithMemoryTracking<DictionaryAttribute> res_attributes;
 
     const FormatSettings format_settings = {};
 

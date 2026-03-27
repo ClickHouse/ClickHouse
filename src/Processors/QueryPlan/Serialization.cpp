@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 static void serializeHeader(const Block & header, WriteBuffer & out)
@@ -90,7 +92,8 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         auto & frame = stack.top();
         auto * node = frame.node;
 
-        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get())
+            || typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get()))
         {
             frame.node = node->children.front();
             continue;
@@ -128,6 +131,30 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
     }
 
     serializeSets(registry, out, flags);
+}
+
+void QueryPlan::ensureSerialized(size_t max_supported_version) const
+{
+    if (serialized_plan)
+        return;  // Already serialized
+
+    serialized_plan = std::make_unique<WriteBufferFromOwnString>();
+    serialize(*serialized_plan, max_supported_version);
+    serialized_plan->finalize();
+}
+
+std::string_view QueryPlan::getSerializedData() const
+{
+    if (!serialized_plan)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Query plan is not serialized. Call ensureSerialized() first.");
+
+    return serialized_plan->stringView();
+}
+
+bool QueryPlan::isSerialized() const
+{
+    return serialized_plan != nullptr;
 }
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context)
@@ -195,7 +222,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         for (const auto & child : frame.children)
             input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, context, input_headers, output_header, settings};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())
@@ -210,6 +237,9 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
         frame.to_fill = &node;
+
+        for (const auto & storage : ctx.storage_holders)
+            plan.addStorageHolder(storage);
 
         stack.pop();
     }

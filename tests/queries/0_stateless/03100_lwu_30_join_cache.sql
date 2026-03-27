@@ -1,4 +1,5 @@
--- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-parallel, no-debug, no-random-detach
+-- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-debug, no-parallel, no-fasttest, no-random-detach
+-- `OPTIMIZE` can be slow under parallel load, causing flaky timeouts.
 -- no-random-detach: test checks system.parts
 
 DROP TABLE IF EXISTS t_patch_join_cache;

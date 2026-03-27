@@ -1,3 +1,4 @@
+#include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -5,6 +6,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SipHash.h>
+#include <Common/UniqueLock.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -31,12 +34,16 @@
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <base/JSON.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -50,6 +57,7 @@
 
 #include <atomic>
 #include <exception>
+#include <mutex>
 #include <optional>
 #include <string_view>
 
@@ -226,9 +234,9 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
         FieldRef max_value;
         const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_names[i]);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
-            column_nullable->getExtremesNullLast(min_value, max_value);
+            column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
         else
-            column.column->getExtremes(min_value, max_value);
+            column.column->getExtremes(min_value, max_value, 0, column.column->size());
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
@@ -256,8 +264,12 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
     {
         for (size_t i = 0; i < hyperrectangle.size(); ++i)
         {
-            hyperrectangle[i].left = std::min(hyperrectangle[i].left, other.hyperrectangle[i].left);
-            hyperrectangle[i].right = std::max(hyperrectangle[i].right, other.hyperrectangle[i].right);
+            hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, other.hyperrectangle[i].left)
+                ? hyperrectangle[i].left
+                : other.hyperrectangle[i].left;
+            hyperrectangle[i].right = accurateLess(hyperrectangle[i].right, other.hyperrectangle[i].right)
+                ? other.hyperrectangle[i].right
+                : hyperrectangle[i].right;
         }
     }
 }
@@ -391,11 +403,14 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , name(mutable_name)
     , info(info_)
     , index_granularity_info(storage_, storage_settings, part_type_)
+    , columns_sizes(std::make_shared<ColumnSizeByName>())
+    , secondary_index_sizes(std::make_shared<IndexSizeByName>())
     , part_type(part_type_)
     , parent_part(parent_part_)
     , parent_part_name(parent_part ? parent_part->name : "")
     , mutable_name(name_)
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::IMergeTreeDataPart");
     if (parent_part)
     {
         chassert(parent_part_name.starts_with(parent_part->info.getPartitionId()));     /// Make sure there's no prefix
@@ -447,7 +462,7 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
-    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     auto callback = [this] { return loadIndex(); };
     return index_cache.getOrSet(key, callback);
 }
@@ -458,7 +473,7 @@ void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
     if (!index)
         return;
 
-    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     index_cache.set(key, std::const_pointer_cast<Index>(index));
     index.reset();
 
@@ -471,7 +486,7 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     if (!index_cache)
         return;
 
-    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     index_cache->remove(key);
 }
 
@@ -480,7 +495,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     if (!vector_similarity_index_cache)
         return;
 
-    vector_similarity_index_cache->removeEntriesFromCache(getRelativePathOfActivePart());
+    vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)
@@ -703,6 +718,88 @@ bool IMergeTreeDataPart::isMovingPart() const
     return part_directory_path.parent_path().filename() == "moving";
 }
 
+void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) const
+{
+    if (!index_mark_cache)
+        return;
+
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return;
+
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    auto read_settings = storage.getContext()->getReadSettings();
+    std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
+
+    for (const auto & index_description : secondary_indices)
+    {
+        auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
+        auto index_name = skip_index->getFileName();
+        auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
+
+        if (!index_format)
+            continue;
+
+        for (const auto & substream : index_format.substreams)
+        {
+            auto stream_name = getStreamNameOrHash(index_name + substream.suffix, substream.extension, checksums);
+            if (!stream_name)
+                continue;
+
+            loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
+                info_for_read,
+                index_mark_cache,
+                index_granularity_info.getMarksFilePath(*stream_name),
+                index_granularity->getMarksCountForSkipIndex(index_description.granularity),
+                index_granularity_info,
+                /*save_marks_in_cache=*/ true,
+                read_settings,
+                /*load_marks_threadpool=*/ nullptr,
+                /*num_columns_in_mark=*/ 1));
+
+            loaders.back()->startAsyncLoad();
+        }
+    }
+
+    for (auto & loader : loaders)
+        loader->loadMarks();
+}
+
+void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache) const
+{
+    if (!index_mark_cache)
+        return;
+
+    /// Bypass QueryMetadataCache: this runs during part destruction, and caching a dying
+    /// storage's pointer would poison lookups if a new storage is allocated at the same address.
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(/*bypass_metadata_cache=*/ true);
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return;
+
+    for (const auto & index_description : secondary_indices)
+    {
+        auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
+        auto index_name = skip_index->getFileName();
+        auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
+
+        if (!index_format)
+            continue;
+
+        for (const auto & substream : index_format.substreams)
+        {
+            auto stream_name = getStreamNameOrHash(index_name + substream.suffix, substream.extension, checksums);
+            if (!stream_name)
+                continue;
+
+            auto marks_file = index_granularity_info.getMarksFilePath(*stream_name);
+            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / marks_file).string());
+            index_mark_cache->remove(key);
+        }
+    }
+}
+
 void IMergeTreeDataPart::clearCaches()
 {
     if (cleared_data_in_caches.exchange(true) || is_duplicate)
@@ -711,6 +808,7 @@ void IMergeTreeDataPart::clearCaches()
     /// Remove index and marks from the cache, because otherwise the cache will grow to its maximum size
     /// even if the overall index size is much less.
     removeMarksFromCache(storage.getContext()->getMarkCache().get());
+    removeIndexMarksFromCache(storage.getContext()->getIndexMarkCache().get());
     removeIndexFromCache(storage.getPrimaryIndexCache().get());
 
     /// Remove from other caches of secondary indexes
@@ -719,12 +817,11 @@ void IMergeTreeDataPart::clearCaches()
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
 {
-    size_t uncompressed_bytes = getBytesUncompressedOnDisk();
+    if (cleared_data_in_caches)
+        return false;
 
-    auto mark_cache = storage.getMarkCacheToPrewarm(uncompressed_bytes);
-    auto index_cache = storage.getPrimaryIndexCacheToPrewarm(uncompressed_bytes);
-
-    return (mark_cache || index_cache) && !cleared_data_in_caches;
+    auto caches = storage.getCachesToPrewarm(getBytesUncompressedOnDisk());
+    return caches.hasAny();
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -935,7 +1032,7 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
     chassert(filename.ends_with(STATS_FILE_SUFFIX));
 
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
-    String column_name = filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate);
+    String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
 
     if (!required_columns.empty() && !required_columns.contains(column_name))
         return nullptr;
@@ -961,8 +1058,16 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         auto file_buf = reader.readFile(filename, read_settings, file_size);
 
         CompressedReadBuffer compressed_buf(*file_buf);
-        auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-        result.emplace(column_desc->name, std::move(column_stat));
+        try
+        {
+            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            result.emplace(column_desc->name, std::move(column_stat));
+        }
+        catch (...)
+        {
+            LOG_WARNING(storage.log, "Cannot load statistics for column {} from file {}, ignoring: {}",
+                column_desc->name, filename, getCurrentExceptionMessage(false));
+        }
     }
 
     return result;
@@ -984,8 +1089,16 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
         auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
         CompressedReadBuffer compressed_buf(*file_buf);
-        auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-        result.emplace(column_desc->name, std::move(column_stat));
+        try
+        {
+            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            result.emplace(column_desc->name, std::move(column_stat));
+        }
+        catch (...)
+        {
+            LOG_WARNING(storage.log, "Cannot load statistics for column {} from file {}, ignoring: {}",
+                column_desc->name, filename, getCurrentExceptionMessage(false));
+        }
     }
 
     return result;
@@ -1001,6 +1114,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_columns) const
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
     if (auto * reader = getStatisticsPackedReader())
@@ -1059,16 +1173,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
         /// For constant granularity parts (non-adaptive marks), the last mark granularity
         /// is assumed to be a full granule because the mark file does not store per-granule
-        /// row counts. Now that we know the actual rows_count, fix the last mark.
-        if (rows_count > 0 && index_granularity->getConstantGranularity())
-        {
-            size_t total_from_granularity = index_granularity->getTotalRows();
-            if (total_from_granularity > rows_count)
-            {
-                size_t overestimate = total_from_granularity - rows_count;
-                index_granularity->adjustLastMark(index_granularity->getLastNonFinalMarkRows() - overestimate);
-            }
-        }
+        /// row counts, and the final mark is not distinguished from data marks.
+        /// Now that we know the actual rows_count, fix the last mark and detect the final mark.
+        if (auto * constant_granularity = dynamic_cast<MergeTreeIndexGranularityConstant *>(index_granularity.get()))
+            constant_granularity->fixFromRowsCount(rows_count);
 
         loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
         loadPartitionAndMinMaxIndex();
@@ -1248,6 +1356,7 @@ void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & inde
 
 std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadIndex");
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
@@ -2140,8 +2249,14 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         file.read(str_buf);
         bool valid_creation_tid = version.creation_tid == file.creation_tid;
         bool valid_removal_tid = version.removal_tid == file.removal_tid || version.removal_tid == Tx::PrehistoricTID;
-        bool valid_creation_csn = version.creation_csn == file.creation_csn || version.creation_csn == Tx::RolledBackCSN;
-        bool valid_removal_csn = version.removal_csn == file.removal_csn || version.removal_csn == Tx::PrehistoricCSN;
+        /// CSN may have been learned from the transaction log and cached in memory
+        /// (e.g., by VersionMetadata::isVisible) but not yet appended to the on-disk file.
+        bool valid_creation_csn = version.creation_csn == file.creation_csn
+            || version.creation_csn == Tx::RolledBackCSN
+            || file.creation_csn == Tx::UnknownCSN;
+        bool valid_removal_csn = version.removal_csn == file.removal_csn
+            || version.removal_csn == Tx::PrehistoricCSN
+            || file.removal_csn == Tx::UnknownCSN;
         bool valid_removal_tid_lock = (version.removal_tid.isEmpty() && version.removal_tid_lock == 0)
             || (version.removal_tid_lock == version.removal_tid.getHash());
         if (!valid_creation_tid || !valid_removal_tid || !valid_creation_csn || !valid_removal_csn || !valid_removal_tid_lock)
@@ -2213,6 +2328,7 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo(const MergeTreeSettings 
 
 void IMergeTreeDataPart::remove()
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::remove");
     chassert(assertHasValidVersionMetadata());
     part_is_probably_removed_from_disk = true;
 
@@ -2340,7 +2456,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     IDataPartStorage::ClonePartParams params
     {
         .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && (*storage_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication],
-        .keep_metadata_version = prefix == "covered-by-broken",
+        .keep_metadata_version = true,
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };
@@ -2376,16 +2492,20 @@ IndexSize IMergeTreeDataPart::getIndexSizeFromFile() const
 
     if (!pk.column_names.empty())
     {
+        bool is_compressed = true;
         auto bin_checksum = checksums.files.find("primary" + getIndexExtension(true));
         if (bin_checksum == checksums.files.end())
+        {
+            is_compressed = false;
             bin_checksum = checksums.files.find("primary" + getIndexExtension(false));
+        }
 
         if (bin_checksum != checksums.files.end())
         {
             return IndexSize{
                 .marks = index_granularity->getMarksCount(),
                 .data_compressed = bin_checksum->second.file_size,
-                .data_uncompressed = bin_checksum->second.uncompressed_size,
+                .data_uncompressed = is_compressed ? bin_checksum->second.uncompressed_size : bin_checksum->second.file_size,
             };
         }
     }
@@ -2543,6 +2663,12 @@ void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metad
 
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk() const
 {
+    UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
+    calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
+}
+
+void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const
+{
     calculateColumnsSizesOnDisk();
     calculateSecondaryIndicesSizesOnDisk();
     are_columns_and_secondary_indices_sizes_calculated = true;
@@ -2553,7 +2679,9 @@ void IMergeTreeDataPart::calculateColumnsSizesOnDisk() const
     if (getColumns().empty() || checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
-    calculateEachColumnSizes(columns_sizes, total_columns_size);
+    auto new_column_sizes_ptr = std::make_unique<ColumnSizeByName>();
+    calculateEachColumnSizes(*new_column_sizes_ptr, total_columns_size);
+    columns_sizes = std::move(new_column_sizes_ptr);
 }
 
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
@@ -2562,6 +2690,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate secondary indexes sizes when columns or checksums are not initialized");
 
     auto secondary_indices_descriptions = storage.getInMemoryMetadataPtr()->secondary_indices;
+    IndexSizeByName new_secondary_index_sizes;
 
     for (auto & index_description : secondary_indices_descriptions)
     {
@@ -2573,80 +2702,112 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
         {
             ColumnSize substream_size;
 
-            auto index_file_name = index_name + index_substream.suffix + index_substream.extension;
-            auto index_marks_file_name = index_name + index_substream.suffix + getMarksFileExtension();
+            auto index_stream_name = index_name + index_substream.suffix;
 
-            auto bin_checksum = checksums.files.find(index_file_name);
-            if (bin_checksum != checksums.files.end())
+            /// Check for both original and hashed filenames (hashed if the name is too long)
+            auto actual_index_file_name = getStreamNameOrHash(index_stream_name, index_substream.extension, checksums);
+            if (actual_index_file_name)
             {
-                substream_size.data_compressed = bin_checksum->second.file_size;
+                auto full_index_file_name = *actual_index_file_name + index_substream.extension;
+                auto bin_checksum = checksums.files.find(full_index_file_name);
+                if (bin_checksum != checksums.files.end())
+                {
+                    substream_size.data_compressed = bin_checksum->second.file_size;
 
-                /// For uncompressed files, the size of the uncompressed data is the same as the file size.
-                if (MergeTreeIndexSubstream::isCompressed(index_substream.type))
-                    substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
-                else
-                    substream_size.data_uncompressed = bin_checksum->second.file_size;
+                    /// For uncompressed files, the size of the uncompressed data is the same as the file size.
+                    if (MergeTreeIndexSubstream::isCompressed(index_substream.type))
+                        substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+                    else
+                        substream_size.data_uncompressed = bin_checksum->second.file_size;
+                }
             }
 
-            auto mrk_checksum = checksums.files.find(index_marks_file_name);
-            if (mrk_checksum != checksums.files.end())
-                substream_size.marks = mrk_checksum->second.file_size;
+            auto actual_marks_file_name = getStreamNameOrHash(index_stream_name, getMarksFileExtension(), checksums);
+            if (actual_marks_file_name)
+            {
+                auto full_marks_file_name = *actual_marks_file_name + getMarksFileExtension();
+                auto mrk_checksum = checksums.files.find(full_marks_file_name);
+                if (mrk_checksum != checksums.files.end())
+                    substream_size.marks = mrk_checksum->second.file_size;
+            }
 
             total_secondary_indices_size.add(substream_size);
-            secondary_index_sizes[index_description.name].add(substream_size);
+            new_secondary_index_sizes[index_description.name].add(substream_size);
         }
     }
+
+    secondary_index_sizes = std::make_shared<IndexSizeByName>(std::move(new_secondary_index_sizes));
 }
 
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
 {
-    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
-        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+        calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
 
     /// For some types of parts columns_size maybe not calculated
-    auto it = columns_sizes.find(column_name);
-    if (it != columns_sizes.end())
+    auto it = columns_sizes->find(column_name);
+    if (it != columns_sizes->end())
         return it->second;
 
     return ColumnSize{};
 }
 
-const IMergeTreeDataPart::ColumnSizeByName & IMergeTreeDataPart::getColumnSizes() const
+IMergeTreeDataPart::ColumnSizeByNameConstPtr IMergeTreeDataPart::getColumnSizes() const
 {
-    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
-        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+        calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
     return columns_sizes;
+}
+
+ColumnSize IMergeTreeDataPart::getSubcolumnSize(const String & subcolumn_name) const
+{
+    /// First, check if we already calculated the size of this subcolumn and have it in cache.
+    if (auto size = subcolumns_sizes_cache.get(subcolumn_name))
+        return *size;
+
+    /// If not, calculate the size of the subcolumn on disk and put it to cache.
+    auto size = calculateSubcolumnSize(subcolumn_name);
+    subcolumns_sizes_cache.add(subcolumn_name, size);
+    return size;
 }
 
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
 {
-    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
-        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+        calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
 
     return total_columns_size;
 }
 
 IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_index_name) const
 {
-    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated)
-        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+        calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
 
-    auto it = secondary_index_sizes.find(secondary_index_name);
-    if (it != secondary_index_sizes.end())
+    auto it = secondary_index_sizes->find(secondary_index_name);
+    if (it != secondary_index_sizes->end())
         return it->second;
 
     return ColumnSize{};
 }
 
+IMergeTreeDataPart::IndexSizeByNameConstPtr IMergeTreeDataPart::getSecondaryIndexSizes() const
+{
+    UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
+        calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
+    return secondary_index_sizes;
+}
+
 IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 {
-    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated)
-        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+        calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
 
     return total_secondary_indices_size;
 }
@@ -2654,12 +2815,18 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
 {
     auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
-    return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2");
+    /// Check for both original and hashed filenames
+    return getStreamNameOrHash(file_name, ".idx", checksums).has_value()
+        || getStreamNameOrHash(file_name, ".idx2", checksums).has_value();
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
 {
-    for (const auto & [column_name, size] : columns_sizes)
+    UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
+        calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
+
+    for (const auto & [column_name, size] : *columns_sizes)
         column_to_size[column_name] = size.data_compressed;
 }
 
@@ -2970,7 +3137,7 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
 std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & file_name) const
 {
     constexpr size_t size_hint = 4096;  /// These files are small.
-    if (auto res = getDataPartStorage().readFileIfExists(file_name, ReadSettings().adjustBufferSize(size_hint), size_hint))
+    if (auto res = getDataPartStorage().readFileIfExists(file_name, getReadSettings().adjustBufferSize(size_hint), size_hint))
     {
         if (isCompressedFromFileName(file_name))
             return std::make_unique<CompressedReadBufferFromFile>(std::move(res));

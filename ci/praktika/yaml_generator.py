@@ -1,4 +1,5 @@
 import dataclasses
+import math
 from typing import List
 
 from . import Artifact, Job, Workflow
@@ -79,6 +80,7 @@ concurrency:
 env:
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
+{ENV_SECRETS}
 
 jobs:
 {JOBS}\
@@ -99,6 +101,7 @@ on:
 env:
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
+{ENV_SECRETS}
 {GH_TOKEN_PERMISSIONS}
 
 jobs:
@@ -136,7 +139,7 @@ jobs:
   {JOB_NAME_NORMALIZED}:
     runs-on: [{RUNS_ON}]
     needs: [{NEEDS}]{IF_EXPRESSION}
-    name: "{JOB_NAME_GH}"
+    name: "{JOB_NAME_GH}"{TIMEOUT_MINUTES}
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
       pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
@@ -265,10 +268,28 @@ class PullRequestPushYamlGen:
         self.parser = parser
 
     def generate(self):
+        # Propagate transitive dependencies so that GH Actions expressions like
+        # `!contains(needs.*.outputs.pipeline_status, 'failure')` see the full
+        # upstream chain. Example: A -> B -> C. If A fails then B is skipped;
+        # without transitive `needs`, C may not see A in `needs.*`.
+        _memo: dict = {}
+
+        def _all_needs(job_name: str) -> set:
+            if job_name in _memo:
+                return _memo[job_name]
+            _memo[job_name] = set()  # guard against cycles
+            result = set(self.workflow_config.job_to_config[job_name].needs)
+            for dep in list(result):
+                result |= _all_needs(dep)
+            _memo[job_name] = result
+            return result
+
         job_items = []
         for i, job in enumerate(self.workflow_config.jobs):
             job_name_normalized = Utils.normalize_string(job.name)
-            needs = ", ".join(map(Utils.normalize_string, job.needs))
+            needs = ", ".join(
+                sorted(map(Utils.normalize_string, _all_needs(job.name)))
+            )
             job_name = job.name
             job_addons = []
             for addon in job.addons:
@@ -322,14 +343,25 @@ class PullRequestPushYamlGen:
             if job.name == Settings.FINISH_WORKFLOW_JOB_NAME:
                 if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_ALWAYS
 
+            # Emit timeout-minutes for any job whose configured timeout exceeds GitHub's 6h default.
+            # JobYaml has no timeout; get it from the original Job.Config in workflow config.
+            timeout_minutes = ""
+            orig_job = next((j for j in self.workflow_config.config.jobs if j.name == job.name), None)
+            if (
+                orig_job
+                and getattr(orig_job, "timeout", None)
+                and orig_job.timeout > 360 * 60
+            ):
+                timeout_minutes = f"\n    timeout-minutes: {math.ceil(orig_job.timeout / 60) + 5}"
+
             secrets_envs = []
-            for secret in self.workflow_config.secret_names_gh:
+            for secret in job.secret_names_gh:
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENV_SECRETS.format(
                         SECRET_NAME=secret
                     )
                 )
-            for var in self.workflow_config.variable_names_gh:
+            for var in job.variable_names_gh:
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENV_VARS.format(VAR_NAME=var)
                 )
@@ -343,6 +375,7 @@ class PullRequestPushYamlGen:
             job_item = YamlGenerator.Templates.TEMPLATE_JOB_0.format(
                 JOB_NAME_NORMALIZED=job_name_normalized,
                 IF_EXPRESSION=if_expression,
+                TIMEOUT_MINUTES=timeout_minutes,
                 RUNS_ON=", ".join(job.runs_on),
                 NEEDS=needs,
                 JOB_NAME_GH=job_name.replace('"', '\\"'),

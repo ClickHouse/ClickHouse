@@ -14,7 +14,7 @@ SELECT a.size0 FROM t_arr;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
-WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT a.size0 FROM %t_arr%'))
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT a.size0 FROM %t_arr%'))
     AND current_database = currentDatabase();
 
 SELECT '====tuple====';
@@ -31,7 +31,7 @@ SELECT t.u FROM t_tup;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
-WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT t._ FROM %t_tup%'))
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT t._ FROM %t_tup%'))
     AND current_database = currentDatabase();
 
 SELECT '====nullable====';
@@ -45,7 +45,7 @@ SELECT n.null FROM t_nul;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
-WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t_nul%'))
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t_nul%'))
     AND current_database = currentDatabase();
 
 SELECT '====map====';
@@ -63,7 +63,7 @@ SELECT m.values FROM t_map;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
-WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT m.% FROM %t_map%'))
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT m.% FROM %t_map%'))
     AND current_database = currentDatabase();
 
 DROP TABLE t_arr;

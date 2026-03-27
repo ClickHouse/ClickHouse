@@ -1,7 +1,9 @@
--- Tags: no-parallel, no-random-detach
+-- Tags: no-shared-merge-tree, no-random-detach
+-- no-shared-merge-tree -- smt don't assign mutation with stop merges. so last `system sync replica mut` doesn't help.
+-- Actually if we add sleep before last `system sync replica mut` test will pass, but I don't want to rewrite it as a separate test.
 -- no-random-detach: test uses DETACH/ATTACH itself
 
-create table mut (n int) engine=ReplicatedMergeTree('/test/02440/{database}/mut', '1') order by tuple();
+create table mut (n int) engine=ReplicatedMergeTree('/test/02440/{database}/mut', '1') order by tuple() settings number_of_free_entries_in_pool_to_execute_mutation=0;
 set insert_keeper_fault_injection_probability=0;
 insert into mut values (1);
 system stop merges mut;
@@ -27,9 +29,9 @@ select * from mut;
 select mutation_id, command, parts_to_do_names, is_done from system.mutations where database=currentDatabase() and table='mut';
 
 alter table mut modify setting max_number_of_mutations_for_replica=100;
-system sync replica mut;
+system sync replica mut strict;
 
--- and now it should (is_done may be 0, but it's okay)
+-- and now it should be done
 select * from mut;
 select mutation_id, command, parts_to_do_names from system.mutations where database=currentDatabase() and table='mut';
 

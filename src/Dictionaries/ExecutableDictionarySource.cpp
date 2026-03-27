@@ -161,7 +161,7 @@ BlockIO ExecutableDictionarySource::loadUpdatedAll()
     return io;
 }
 
-BlockIO ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO ExecutableDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -171,7 +171,7 @@ BlockIO ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return io;
 }
 
-BlockIO ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ExecutableDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -258,7 +258,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 
         bool execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false);
         std::string command_value = config.getString(settings_config_prefix + ".command");
-        std::vector<String> command_arguments;
+        VectorWithMemoryTracking<String> command_arguments;
 
         if (execute_direct)
         {
