@@ -117,7 +117,7 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
     if (remove_filter)
         settings.out << " (removed)";
     settings.out << '\n';
-    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
+    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, static_cast<double>(auto_include_threshold)) << '\n';
 
     if (!settings.compact && actions_dag)
     {
@@ -135,7 +135,7 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
 
 void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Mode", totalsModeToString(totals_mode, auto_include_threshold));
+    map.add("Mode", totalsModeToString(totals_mode, static_cast<double>(auto_include_threshold)));
     if (actions_dag)
     {
         map.add("Filter column", filter_column_name);

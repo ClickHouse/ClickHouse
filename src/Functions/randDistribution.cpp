@@ -15,6 +15,9 @@
 
 #include <random>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+
 namespace DB
 {
 
@@ -621,3 +624,5 @@ Returns a random Float64 number drawn from a [Poisson distribution](https://en.w
 }
 
 }
+
+#pragma clang diagnostic pop

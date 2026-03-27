@@ -17,6 +17,8 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 /** This is simple, not numerically stable
   *  implementations of variance/covariance/correlation functions.
@@ -270,3 +272,5 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
 }
 
 }
+
+#pragma clang diagnostic pop

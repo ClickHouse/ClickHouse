@@ -27,7 +27,7 @@ no_warning(sign-conversion) # TODO: Fix the code and enable it
 no_warning(deprecated-declarations) # TODO: Fix the code and enable it
 # -Wdisabled-macro-expansion is enabled
 no_warning(documentation-unknown-command) # Too many false positives from contrib headers (zstd) and backslashes in comments
-no_warning(double-promotion) # Too many warnings across the codebase to fix at once; implicit float-to-double is common in math code
+# -Wdouble-promotion is enabled: avoid implicit float-to-double conversions
 no_warning(exit-time-destructors) # We intentionally use global objects with non-trivial destructors (singletons, registries)
 no_warning(float-equal) # Exact float comparison is intentional in many places (hash functions, serialization, NaN checks)
 no_warning(global-constructors) # We intentionally use global constructors for registration and initialization

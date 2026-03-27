@@ -24,6 +24,8 @@
 #    include <simsimd/simsimd.h>
 #endif
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -511,3 +513,5 @@ FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_)
     return FunctionArrayDistance<CosineDistanceTransposed>::create(context_);
 }
 }
+
+#pragma clang diagnostic pop

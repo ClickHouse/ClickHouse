@@ -12,6 +12,9 @@
 
 #include <type_traits>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+
 namespace DB::HashedDictionaryImpl
 {
 
@@ -260,3 +263,5 @@ struct HashedDictionarySetType<dictionary_key_type, /* sparse= */ true, Key>
 };
 
 }
+
+#pragma clang diagnostic pop

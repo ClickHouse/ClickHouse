@@ -14,6 +14,8 @@
 #include <immintrin.h>
 #endif
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -714,3 +716,5 @@ FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_) { return Functi
 FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_) { return FunctionArrayDistance<CosineDistance>::create(context_); }
 
 }
+
+#pragma clang diagnostic pop

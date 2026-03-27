@@ -382,7 +382,7 @@ void ORCBlockOutputFormat::writeColumn(
         }
         case TypeIndex::Float32:
         {
-            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, [](const Float32 & value){ return value; });
+            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, [](const Float32 & value){ return static_cast<double>(value); });
             break;
         }
         case TypeIndex::Float64:

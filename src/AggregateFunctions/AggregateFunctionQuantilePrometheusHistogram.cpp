@@ -7,6 +7,8 @@
 
 #include <numeric>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -294,3 +296,5 @@ FROM VALUES('bucket_upper_bound Float64, cumulative_bucket_value UInt64', (0, 6)
 }
 
 }
+
+#pragma clang diagnostic pop

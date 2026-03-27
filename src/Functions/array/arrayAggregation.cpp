@@ -15,6 +15,8 @@
 
 #include <Functions/array/FunctionArrayMapped.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -558,3 +560,5 @@ If a lambda function `func` is specified, returns the product of elements of the
 }
 
 }
+
+#pragma clang diagnostic pop

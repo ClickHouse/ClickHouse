@@ -11,6 +11,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -314,3 +316,5 @@ SELECT toDecimalString(CAST(123.456 AS Decimal(10,3)), 2) AS decimal_val,
 }
 
 }
+
+#pragma clang diagnostic pop

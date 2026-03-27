@@ -25,6 +25,9 @@
 #include <string_view>
 #include <utility>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+
 namespace DB
 {
 
@@ -975,3 +978,5 @@ $$
 }
 
 }
+
+#pragma clang diagnostic pop

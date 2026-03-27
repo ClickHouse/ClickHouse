@@ -6,6 +6,8 @@
 
 #include <Functions/array/FunctionArrayMapped.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -196,3 +198,5 @@ REGISTER_FUNCTION(ArrayCumSum)
 }
 
 }
+
+#pragma clang diagnostic pop

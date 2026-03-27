@@ -6,6 +6,8 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -273,3 +275,5 @@ struct PositiveModuloOrNullImpl : PositiveModuloImpl<A, B>
 };
 
 }
+
+#pragma clang diagnostic pop

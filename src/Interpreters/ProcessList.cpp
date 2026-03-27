@@ -301,7 +301,7 @@ ProcessList::EntryPtr ProcessList::insert(
                 /// Set up memory profiling
                 thread_group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
 
-                thread_group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
+                thread_group->memory_tracker.setSampleProbability(static_cast<double>(settings[Setting::memory_profiler_sample_probability]));
                 thread_group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
                 thread_group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
 
@@ -323,8 +323,8 @@ ProcessList::EntryPtr ProcessList::insert(
             }
 
             thread_group->memory_tracker.setDescription("Query");
-            if (settings[Setting::memory_tracker_fault_probability] > 0.0)
-                thread_group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
+            if (static_cast<double>(settings[Setting::memory_tracker_fault_probability]) > 0.0)
+                thread_group->memory_tracker.setFaultProbability(static_cast<double>(settings[Setting::memory_tracker_fault_probability]));
 
             thread_group->memory_tracker.setOvercommitWaitingTime(settings[Setting::memory_usage_overcommit_max_wait_microseconds]);
 

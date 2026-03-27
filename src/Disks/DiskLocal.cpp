@@ -206,7 +206,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
             }
 
             /// Check min_ratio constraint
-            if (constraints->min_ratio > 0.0)
+            if (static_cast<double>(constraints->min_ratio) > 0.0)
             {
                 UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (static_cast<Float32>(*total_space)));
                 if (free_bytes_after < min_bytes_from_ratio)

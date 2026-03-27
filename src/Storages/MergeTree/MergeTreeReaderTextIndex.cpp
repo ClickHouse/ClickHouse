@@ -163,7 +163,7 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         else if (search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
         {
             const auto & settings = condition_text.getContext()->getSettingsRef();
-            double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];
+            double selectivity_threshold = static_cast<double>(settings[Setting::text_index_hint_max_selectivity]);
             size_t num_rows_in_part = data_part_info_for_read->getRowCount();
             double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_part);
 

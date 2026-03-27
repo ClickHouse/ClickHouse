@@ -22,6 +22,9 @@
 #include <stdexcept>
 #include <vector>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+
 namespace stl {
 
 inline bool est(const float* y, size_t n, size_t len, int ideg, float xs, float* ys, size_t nleft, size_t nright, float* w, bool userw, const float* rw) {
@@ -517,3 +520,5 @@ inline StlResult StlParams::fit(const std::vector<float>& y, size_t np) {
 }
 
 }
+
+#pragma clang diagnostic pop

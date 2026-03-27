@@ -14,6 +14,8 @@
 #include <cmath>
 #include <string>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -592,3 +594,5 @@ using HLL12 = HyperLogLogCounter<
     HyperLogLogMode::FullFeatured,
     DenominatorMode::Compact
 >;
+
+#pragma clang diagnostic pop

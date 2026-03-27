@@ -20,6 +20,8 @@
 #    include <Functions/FunctionHelpers.h>
 #    include <Functions/IFunction.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -204,4 +206,7 @@ Finds the period of the given series data using FFT - [Fast Fourier transform](h
     factory.registerFunction<FunctionSeriesPeriodDetectFFT>(documentation);
 }
 }
+
+#pragma clang diagnostic pop
+
 #endif

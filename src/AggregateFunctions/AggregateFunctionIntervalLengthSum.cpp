@@ -14,6 +14,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -342,3 +344,5 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
 }
 
 }
+
+#pragma clang diagnostic pop

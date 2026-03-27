@@ -187,12 +187,12 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_val
     /// However settings from storage context have to be applied
     const Settings & settings = context->getSettingsRef();
     group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
-    group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
+    group->memory_tracker.setSampleProbability(static_cast<double>(settings[Setting::memory_profiler_sample_probability]));
     group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
     group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
     group->memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
-    if (settings[Setting::memory_tracker_fault_probability] > 0.0)
-        group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
+    if (static_cast<double>(settings[Setting::memory_tracker_fault_probability]) > 0.0)
+        group->memory_tracker.setFaultProbability(static_cast<double>(settings[Setting::memory_tracker_fault_probability]));
 
     return group;
 }

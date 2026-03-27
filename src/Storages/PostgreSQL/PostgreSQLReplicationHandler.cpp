@@ -1167,9 +1167,9 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
 
 void PostgreSQLReplicationHandler::execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const
 {
-    if (fault_injection_probability > 0.)
+    if (fault_injection_probability > 0.f)
     {
-        std::bernoulli_distribution fault(fault_injection_probability);
+        std::bernoulli_distribution fault(static_cast<double>(fault_injection_probability));
         if (fault(thread_local_rng))
             throw pqxx::broken_connection("Fault injected");
     }

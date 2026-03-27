@@ -2527,7 +2527,7 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
                         /// left type is float and right type is decimal
                         auto * from_type = arguments[0].value->getType();
                         auto * from_value = arguments[0].value;
-                        result = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multiplier)));
+                        result = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, static_cast<double>(multiplier)));
                         result = nativeCast(builder, left.getPtr(), result, right.getPtr());
                     }
                     else
@@ -2657,7 +2657,7 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
                     {
                         /// left type is float and right type is decimal
                         auto * from_type = toNativeType(builder, left);
-                        result_value = builder.CreateFMul(input_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multiplier)));
+                        result_value = builder.CreateFMul(input_value, llvm::ConstantFP::get(from_type, static_cast<double>(multiplier)));
                         result_value = nativeCast(builder, left.getPtr(), result_value, right.getPtr());
                     }
                     else

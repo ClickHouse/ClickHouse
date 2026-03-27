@@ -11,6 +11,8 @@
 #include <memory>
 #include <string>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -218,3 +220,5 @@ This function throws an exception if the size of the resulting array exceeds mor
 }
 
 }
+
+#pragma clang diagnostic pop

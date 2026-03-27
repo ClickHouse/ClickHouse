@@ -186,16 +186,17 @@ Field QueryFuzzer::getRandomField(int type)
             return bad_int64_values[fuzz_rand() % std::size(bad_int64_values)];
         }
         case 1: {
-            static constexpr double values[] = {NAN,       INFINITY,
-                                                -INFINITY, 0.,
-                                                -0.,       0.0001,
-                                                0.5,       0.9999,
-                                                1.,        1.0001,
-                                                2.,        10.0001,
-                                                100.0001,  1000.0001,
-                                                1e10,      1e20,
-                                                FLT_MIN,   FLT_MIN + FLT_EPSILON,
-                                                FLT_MAX,   FLT_MAX + FLT_EPSILON};
+            static constexpr double values[] = {
+                std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+                -std::numeric_limits<double>::infinity(), 0.,
+                -0.,       0.0001,
+                0.5,       0.9999,
+                1.,        1.0001,
+                2.,        10.0001,
+                100.0001,  1000.0001,
+                1e10,      1e20,
+                static_cast<double>(FLT_MIN), static_cast<double>(FLT_MIN) + static_cast<double>(FLT_EPSILON),
+                static_cast<double>(FLT_MAX), static_cast<double>(FLT_MAX) + static_cast<double>(FLT_EPSILON)};
             return values[fuzz_rand() % std::size(values)];
         }
         case 2: {

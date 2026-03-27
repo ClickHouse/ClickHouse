@@ -9,6 +9,8 @@
 #include <boost/math/distributions/students_t.hpp>
 #include <Common/VectorWithMemoryTracking.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -666,3 +668,5 @@ struct AnalysisOfVarianceMoments
 };
 
 }
+
+#pragma clang diagnostic pop

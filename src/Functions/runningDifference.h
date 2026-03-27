@@ -14,6 +14,8 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -231,3 +233,5 @@ public:
 };
 
 }
+
+#pragma clang diagnostic pop
