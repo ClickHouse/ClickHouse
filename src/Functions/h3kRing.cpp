@@ -123,8 +123,7 @@ public:
                 continue;
             }
 
-            int64_t disk_size = 0;
-            maxGridDiskSize(k, &disk_size);
+            int64_t disk_size = maxGridDiskSize(k);
             const auto vec_size = static_cast<size_t>(disk_size);
             std::vector<H3Index, AllocatorWithMemoryTracking<H3Index>> hindex_vec;
             hindex_vec.resize(vec_size);
