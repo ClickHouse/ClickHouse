@@ -130,7 +130,7 @@ void CustomHandlersFactory::checkAmbiguity(const CustomHandlerDefinition & def) 
         if (def.url_type == HandlerURLType::Exact && existing.url_type == HandlerURLType::Exact)
             urls_conflict = (def.url == existing.url);
         else if (def.url_type == HandlerURLType::Prefix && existing.url_type == HandlerURLType::Prefix)
-            urls_conflict = (def.url == existing.url);
+            urls_conflict = (def.url.starts_with(existing.url) || existing.url.starts_with(def.url));
         else if (def.url_type == HandlerURLType::Exact && existing.url_type == HandlerURLType::Prefix)
             urls_conflict = (def.url.starts_with(existing.url));
         else if (def.url_type == HandlerURLType::Prefix && existing.url_type == HandlerURLType::Exact)

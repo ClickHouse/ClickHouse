@@ -3,9 +3,8 @@
 #include <boost/noncopyable.hpp>
 #include <Interpreters/Context_fwd.h>
 #include <Common/HandlerURLType.h>
+#include <Common/SharedMutex.h>
 #include <Common/re2.h>
-#include <mutex>
-#include <shared_mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -60,7 +59,7 @@ public:
     void loadFromConfig(const ContextPtr & context);
 
 private:
-    mutable std::shared_mutex mutex;
+    mutable SharedMutex mutex;
     std::unordered_map<std::string, CustomHandlerDefinition> handlers;
 
     /// Pre-sorted snapshot of all handlers, rebuilt on every DDL change.
