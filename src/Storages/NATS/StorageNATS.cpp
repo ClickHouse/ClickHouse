@@ -711,7 +711,7 @@ bool StorageNATS::streamToViews()
     auto block_io = interpreter.execute();
 
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
-    auto column_names = block_io.pipeline.getHeader().getNames();
+    auto column_names = VirtualColumnUtils::filterCommonVirtualColumns(block_io.pipeline.getHeader().getNames(), table);
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
     auto block_size = getMaxBlockSize();
@@ -735,7 +735,30 @@ bool StorageNATS::streamToViews()
         source->setTimeLimit(max_execution_time);
     }
 
-    block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
+    auto input = Pipe::unitePipes(std::move(pipes));
+
+    const auto & pipeline_header = block_io.pipeline.getHeader();
+    const auto & input_header = input.getHeader();
+
+    auto adding_virtuals_dag = VirtualColumnUtils::constructMaterializingCommonVirtualColumnsDAG(
+        input_header, pipeline_header.getNames(), table);
+
+    auto converting_dag = ActionsDAG::makeConvertingActions(
+        adding_virtuals_dag.getResultColumns(),
+        pipeline_header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        new_context);
+
+    auto merged_dag = ActionsDAG::merge(std::move(adding_virtuals_dag), std::move(converting_dag));
+    auto expression = std::make_shared<ExpressionActions>(std::move(merged_dag));
+    input.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<ExpressionTransform>(header, expression);
+    });
+
+    assertBlocksHaveEqualStructure(input.getHeader(), pipeline_header, "StorageNATS streamToViews");
+
+    block_io.pipeline.complete(std::move(input));
 
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
