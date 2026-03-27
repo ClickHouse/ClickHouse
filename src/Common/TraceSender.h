@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <Common/PipeFDs.h>
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
@@ -46,7 +47,10 @@ public:
 
     /// Collect a stack trace. This method is signal safe.
     /// Precondition: the TraceCollector object must be created.
-    static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras);
+    /// NO_SANITIZE_THREAD: this function is called from signal handlers where TSan cannot
+    /// properly reason about concurrency. The pipe write uses DiscardOnFailure, so a
+    /// write to a concurrently-closed fd is benign (results in EBADF, silently discarded).
+    static NO_SANITIZE_THREAD void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras);
 
 private:
     friend class TraceCollector;

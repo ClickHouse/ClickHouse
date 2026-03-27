@@ -5,7 +5,7 @@ SET allow_introspection_functions = 1;
 SET trace_profile_events = 0; -- This can inhibit profiler from working, because it prevents sending samples from different profilers concurrently.
 
 SET query_profiler_cpu_time_period_ns = 0;
-SET query_profiler_real_time_period_ns = 100000000;
+SET query_profiler_real_time_period_ns = 1e8;
 SET log_queries = 1;
 SELECT sleep(0.5), ignore('test real time query profiler');
 SET log_queries = 0;
@@ -21,7 +21,7 @@ SELECT count() > 0 FROM system.trace_log t WHERE event_date >= yesterday() AND e
 -- the interrupted functions, so the frame pointer chain from the saved ucontext_t is valid.
 SET max_rows_to_read = 0;
 SET log_queries = 1;
-SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(10000000000);
+SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(1e9);
 SET log_queries = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
@@ -32,7 +32,7 @@ SET query_profiler_real_time_period_ns = 0;
 SET query_profiler_cpu_time_period_ns = 1000000;
 SET log_queries = 1;
 SET max_rows_to_read = 0;
-SELECT count(), ignore('test cpu time query profiler') FROM numbers_mt(10000000000);
+SELECT count(), ignore('test cpu time query profiler') FROM numbers_mt(1e9);
 SET log_queries = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 

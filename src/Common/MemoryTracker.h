@@ -100,7 +100,7 @@ private:
         /// Only read on logging paths, not per allocation.
         alignas(DB::CH_CACHE_LINE_SIZE) std::atomic<const char *> description_ptr = nullptr;
 
-        Int64 profiler_step = 0;
+        std::atomic<Int64> profiler_step = 0;
 
         /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
         std::atomic<double> fault_probability = 0;
