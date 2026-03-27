@@ -12,3 +12,5 @@ polygon outside box
 0
 multipolygon intersecting box
 1
+inverted xmin/xmax
+inverted ymin/ymax

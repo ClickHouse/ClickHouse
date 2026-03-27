@@ -16,3 +16,6 @@ point in ring
 1
 polygon with hole - point in hole
 0
+const polygon, variable points
+1
+0

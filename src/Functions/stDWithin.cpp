@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/geometryConverters.h>
+#include <Functions/geometryConstOptimization.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -94,6 +95,8 @@ public:
         auto & res_data = res_column->getData();
         res_data.reserve(input_rows_count);
 
+        bool left_is_const = isColumnConst(*arguments[0].column);
+        bool right_is_const = isColumnConst(*arguments[1].column);
         auto col_distance = arguments[2].column->convertToFullColumnIfConst();
 
         callOnTwoGeometryDataTypes<SphericalPoint>(
@@ -121,43 +124,89 @@ public:
                     constexpr bool left_is_point = std::is_same_v<ColumnToPointsConverter<SphericalPoint>, LeftConverter>;
                     constexpr bool right_is_point = std::is_same_v<ColumnToPointsConverter<SphericalPoint>, RightConverter>;
 
-                    auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
-                    auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
-
-                    for (size_t i = 0; i < input_rows_count; ++i)
-                    {
-                        Float64 max_dist_meters = col_distance->getFloat64(i);
-
-                        if constexpr (!left_is_point)
-                            boost::geometry::correct(first[i]);
-                        if constexpr (!right_is_point)
-                            boost::geometry::correct(second[i]);
-
-                        Float64 dist_meters;
-                        if constexpr (left_is_point && right_is_point)
-                        {
-                            /// Point-Point: use haversine (boost::geometry::distance
-                            /// for spherical points returns radians, but haversine is
-                            /// more direct and well-tested).
-                            dist_meters = haversineDistance(first[i], second[i]);
-                        }
-                        else
-                        {
-                            /// boost::geometry::distance returns radians for spherical
-                            /// coordinate systems. Multiply by Earth radius for meters.
-                            double dist_radians = boost::geometry::distance(first[i], second[i]);
-                            dist_meters = dist_radians * EARTH_RADIUS_METERS;
-                        }
-
-                        res_data.emplace_back(dist_meters <= max_dist_meters);
-                    }
+                    executeDWithin<LeftConverter, RightConverter, left_is_point, right_is_point>(
+                        arguments, res_data, input_rows_count, left_is_const, right_is_const, *col_distance);
                 }
             });
 
         return res_column;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return false; }
+
+private:
+    template <typename LeftConverter, typename RightConverter, bool left_is_point, bool right_is_point>
+    static void executeDWithin(
+        const ColumnsWithTypeAndName & arguments,
+        PaddedPODArray<UInt8> & res_data,
+        size_t input_rows_count,
+        bool left_is_const,
+        bool right_is_const,
+        const IColumn & col_distance)
+    {
+        auto compute_distance = [](const auto & a, const auto & b) -> Float64
+        {
+            if constexpr (left_is_point && right_is_point)
+                return haversineDistance(a, b);
+            else
+                return boost::geometry::distance(a, b) * EARTH_RADIUS_METERS;
+        };
+
+        if (left_is_const && right_is_const)
+        {
+            auto first = LeftConverter::convert(getUnderlyingColumnData(arguments[0].column));
+            auto second = RightConverter::convert(getUnderlyingColumnData(arguments[1].column));
+            if constexpr (!left_is_point)
+                boost::geometry::correct(first[0]);
+            if constexpr (!right_is_point)
+                boost::geometry::correct(second[0]);
+
+            Float64 dist_meters = compute_distance(first[0], second[0]);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data.emplace_back(dist_meters <= col_distance.getFloat64(i));
+        }
+        else if (right_is_const)
+        {
+            auto second = RightConverter::convert(getUnderlyingColumnData(arguments[1].column));
+            if constexpr (!right_is_point)
+                boost::geometry::correct(second[0]);
+
+            auto first = LeftConverter::convert(arguments[0].column);
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if constexpr (!left_is_point)
+                    boost::geometry::correct(first[i]);
+                res_data.emplace_back(compute_distance(first[i], second[0]) <= col_distance.getFloat64(i));
+            }
+        }
+        else if (left_is_const)
+        {
+            auto first = LeftConverter::convert(getUnderlyingColumnData(arguments[0].column));
+            if constexpr (!left_is_point)
+                boost::geometry::correct(first[0]);
+
+            auto second = RightConverter::convert(arguments[1].column);
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if constexpr (!right_is_point)
+                    boost::geometry::correct(second[i]);
+                res_data.emplace_back(compute_distance(first[0], second[i]) <= col_distance.getFloat64(i));
+            }
+        }
+        else
+        {
+            auto first = LeftConverter::convert(arguments[0].column);
+            auto second = RightConverter::convert(arguments[1].column);
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if constexpr (!left_is_point)
+                    boost::geometry::correct(first[i]);
+                if constexpr (!right_is_point)
+                    boost::geometry::correct(second[i]);
+                res_data.emplace_back(compute_distance(first[i], second[i]) <= col_distance.getFloat64(i));
+            }
+        }
+    }
 };
 
 }

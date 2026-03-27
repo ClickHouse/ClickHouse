@@ -12,3 +12,6 @@ symmetry: ST_CoveredBy(A,B) == ST_Covers(B,A)
 1
 point in hole
 0
+const polygon, variable points
+1
+0

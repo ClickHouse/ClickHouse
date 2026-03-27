@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
+#include <Functions/geometryConstOptimization.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -56,6 +57,9 @@ public:
         auto & res_data = res_column->getData();
         res_data.reserve(input_rows_count);
 
+        bool left_is_const = isColumnConst(*arguments[0].column);
+        bool right_is_const = isColumnConst(*arguments[1].column);
+
         callOnTwoGeometryDataTypes<SphericalPoint>(
             arguments[0].type,
             arguments[1].type,
@@ -81,28 +85,19 @@ public:
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiLineString", getName());
                 else
                 {
-                    auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
-                    auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
+                    constexpr bool left_is_point = std::is_same_v<ColumnToPointsConverter<SphericalPoint>, LeftConverter>;
+                    constexpr bool right_is_point = std::is_same_v<ColumnToPointsConverter<SphericalPoint>, RightConverter>;
 
-                    for (size_t i = 0; i < input_rows_count; ++i)
-                    {
-                        /// boost::geometry::correct fixes ring orientation and closure for
-                        /// polygon-like types. It must NOT be called on Point — it would
-                        /// fail to compile since Point has no rings to correct.
-                        if constexpr (!std::is_same_v<ColumnToPointsConverter<SphericalPoint>, LeftConverter>)
-                            boost::geometry::correct(first[i]);
-                        if constexpr (!std::is_same_v<ColumnToPointsConverter<SphericalPoint>, RightConverter>)
-                            boost::geometry::correct(second[i]);
-
-                        res_data.emplace_back(boost::geometry::intersects(first[i], second[i]));
-                    }
+                    executeGeometryPredicate<SphericalPoint, LeftConverter, RightConverter, left_is_point, right_is_point>(
+                        arguments, res_data, input_rows_count, left_is_const, right_is_const,
+                        [](const auto & a, const auto & b) { return boost::geometry::intersects(a, b); });
                 }
             });
 
         return res_column;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 };
 
 }

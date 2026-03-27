@@ -43,3 +43,25 @@ SELECT ST_Within(
 ST_Contains(
     CAST([[(0.0, 0.0), (0.01, 0.0), (0.01, 0.01), (0.0, 0.01), (0.0, 0.0)]], 'Polygon'),
     CAST((0.005, 0.005), 'Point'));
+
+SELECT 'const polygon, variable points';
+SELECT ST_Within(
+    CAST(p, 'Point'),
+    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'))
+FROM VALUES('p Tuple(Float64, Float64)',
+    (5.0, 5.0), (15.0, 5.0), (0.5, 0.5), (-1.0, -1.0), (9.9, 9.9));
+
+SELECT 'const point, variable polygons';
+SELECT ST_Within(
+    CAST((5.0, 5.0), 'Point'),
+    CAST(poly, 'Polygon'))
+FROM VALUES('poly Array(Array(Tuple(Float64, Float64)))',
+    ([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]]),
+    ([[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]]));
+
+SELECT 'const multipolygon, variable points';
+SELECT ST_Within(
+    CAST(p, 'Point'),
+    CAST([[[(0.0, 0.0), (5.0, 0.0), (5.0, 5.0), (0.0, 5.0), (0.0, 0.0)]], [[(10.0, 10.0), (20.0, 10.0), (20.0, 20.0), (10.0, 20.0), (10.0, 10.0)]]], 'MultiPolygon'))
+FROM VALUES('p Tuple(Float64, Float64)',
+    (2.5, 2.5), (15.0, 15.0), (7.0, 7.0));

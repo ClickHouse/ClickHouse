@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
+#include <Functions/geometryConstOptimization.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -59,6 +60,9 @@ public:
         auto & res_data = res_column->getData();
         res_data.reserve(input_rows_count);
 
+        bool left_is_const = isColumnConst(*arguments[0].column);
+        bool right_is_const = isColumnConst(*arguments[1].column);
+
         callOnTwoGeometryDataTypes<SphericalPoint>(
             arguments[0].type,
             arguments[1].type,
@@ -93,19 +97,10 @@ public:
                     }
                     else
                     {
-                        auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
-                        auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
-
-                        for (size_t i = 0; i < input_rows_count; ++i)
-                        {
-                            if constexpr (!left_is_point)
-                                boost::geometry::correct(first[i]);
-                            if constexpr (!right_is_point)
-                                boost::geometry::correct(second[i]);
-
-                            /// ST_CONTAINS(A, B) = B is within A
-                            res_data.emplace_back(boost::geometry::within(second[i], first[i]));
-                        }
+                        /// ST_CONTAINS(A, B) = B is within A
+                        executeGeometryPredicate<SphericalPoint, LeftConverter, RightConverter, left_is_point, right_is_point>(
+                            arguments, res_data, input_rows_count, left_is_const, right_is_const,
+                            [](const auto & a, const auto & b) { return boost::geometry::within(b, a); });
                     }
                 }
             });
@@ -113,7 +108,7 @@ public:
         return res_column;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 };
 
 }

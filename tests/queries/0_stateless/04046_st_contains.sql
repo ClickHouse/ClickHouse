@@ -44,3 +44,10 @@ SELECT 'multipolygon contains point';
 SELECT ST_Contains(
     CAST([[[(0.0, 0.0), (0.01, 0.0), (0.01, 0.01), (0.0, 0.01), (0.0, 0.0)]], [[(1.0, 1.0), (1.01, 1.0), (1.01, 1.01), (1.0, 1.01), (1.0, 1.0)]]], 'MultiPolygon'),
     CAST((0.005, 0.005), 'Point'));
+
+SELECT 'const polygon, variable points';
+SELECT ST_Contains(
+    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'),
+    CAST(p, 'Point'))
+FROM VALUES('p Tuple(Float64, Float64)',
+    (5.0, 5.0), (15.0, 5.0), (0.5, 0.5));
