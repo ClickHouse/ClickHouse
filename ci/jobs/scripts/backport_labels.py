@@ -27,6 +27,8 @@ sys.path.insert(0, str(_repo_root / "ci"))
 from jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from praktika.utils import Shell
 
+READY_DELAY_DAYS = 7
+
 
 def gh_search(query: str, per_page: int = 100, max_results: int = 1000) -> List[Dict[str, Any]]:
     """Run a GitHub Issues search and return all matching items, handling pagination."""
