@@ -86,7 +86,7 @@ struct SQLColumn
 {
 public:
     uint32_t cname = 0;
-    SQLType * tp = nullptr;
+    std::unique_ptr<SQLType> tp;
     ColumnSpecial special = ColumnSpecial::NONE;
     std::optional<bool> nullable;
     std::optional<DModifier> dmod;
@@ -95,7 +95,7 @@ public:
     SQLColumn(const SQLColumn & c)
     {
         this->cname = c.cname;
-        this->tp = c.tp->typeDeepCopy();
+        this->tp = c.tp ? c.tp->typeDeepCopy() : nullptr;
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
@@ -103,8 +103,7 @@ public:
     SQLColumn(SQLColumn && c) noexcept
     {
         this->cname = c.cname;
-        this->tp = c.tp;
-        c.tp = nullptr;
+        this->tp = std::move(c.tp);
         this->special = c.special;
         this->nullable = c.nullable;
         this->dmod = c.dmod;
@@ -116,8 +115,7 @@ public:
             return *this;
         }
         this->cname = c.cname;
-        delete this->tp;
-        this->tp = c.tp->typeDeepCopy();
+        this->tp = c.tp ? c.tp->typeDeepCopy() : nullptr;
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
@@ -130,22 +128,28 @@ public:
             return *this;
         }
         this->cname = c.cname;
-        delete this->tp;
-        this->tp = c.tp;
-        c.tp = nullptr;
+        this->tp = std::move(c.tp);
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
         return *this;
     }
-    ~SQLColumn() { delete tp; }
+    ~SQLColumn() = default;
 
     bool canBeInserted() const;
 
     String getColumnName() const;
 };
 
-struct SQLDatabase
+struct WithCluster
+{
+public:
+    std::optional<String> cluster;
+
+    const std::optional<String> & getCluster() const { return cluster; }
+};
+
+struct SQLDatabase : WithCluster
 {
 public:
     bool random_engine = false;
@@ -157,7 +161,6 @@ public:
     uint32_t shard_counter = 0;
     uint32_t backup_number = 0;
     DatabaseEngineValues deng;
-    std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
     IntegrationCall integration = IntegrationCall::None;
     /// For DataLakeCatalog
@@ -185,8 +188,6 @@ public:
 
     bool isReplicatedOrSharedDatabase() const;
 
-    const std::optional<String> & getCluster() const;
-
     bool isAttached() const;
 
     bool isDettached() const;
@@ -202,7 +203,7 @@ public:
     void finishDatabaseSpecification(DatabaseEngine * de);
 };
 
-struct SQLBase
+struct SQLBase : WithCluster
 {
 public:
     String prefix;
@@ -217,7 +218,6 @@ public:
     uint32_t replica_counter = 0;
     uint32_t shard_counter = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    std::optional<String> cluster;
     std::optional<String> file_comp;
     std::optional<String> partition_strategy;
     std::optional<String> partition_columns_in_data_file;
@@ -366,8 +366,6 @@ public:
 
     bool hasClickHousePeer() const;
 
-    const std::optional<String> & getCluster() const;
-
     bool isAttached() const;
 
     bool isDettached() const;
@@ -433,7 +431,9 @@ public:
 struct SQLView : SQLBase
 {
 public:
-    bool is_materialized = false, is_refreshable = false, has_with_cols = false;
+    bool is_materialized = false;
+    bool is_refreshable = false;
+    bool has_with_cols = false;
     uint32_t staged_ncols = 0;
     std::unordered_set<uint32_t> cols;
 
@@ -458,16 +458,40 @@ public:
     bool supportsFinal() const;
 };
 
-struct SQLFunction
+struct SQLFunction : WithCluster
 {
 public:
     bool is_deterministic = false;
-    uint32_t fname = 0, nargs = 0;
-    std::optional<String> cluster;
-
-    const std::optional<String> & getCluster() const;
+    uint32_t fname = 0;
+    uint32_t nargs = 0;
 
     void setName(Function * f) const;
+};
+
+struct SQLPolicy : WithCluster
+{
+public:
+    bool is_row = true;
+    uint32_t policy_id = 0;
+    uint32_t table_id = 0;
+    /// USING predicate stored at creation time; absent means the policy allows all rows.
+    std::optional<WhereStatement> where_expr;
+    /// True when the policy was created with `TO buzzhouse_oracle_role` — eligible for the row policy oracle.
+    bool targets_oracle_role = false;
+
+    SQLPolicy() = default;
+    SQLPolicy(const SQLPolicy & other)
+        : WithCluster(other)
+    {
+        this->is_row = other.is_row;
+        this->policy_id = other.policy_id;
+        this->table_id = other.table_id;
+        this->where_expr = other.where_expr;
+        this->targets_oracle_role = other.targets_oracle_role;
+    }
+    SQLPolicy & operator=(const SQLPolicy & other) = default;
+
+    void setName(Policy * f) const;
 };
 
 struct ColumnPathChainEntry

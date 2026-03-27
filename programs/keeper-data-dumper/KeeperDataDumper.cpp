@@ -39,7 +39,7 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> ma
             ", emphemeralOwner: " << value.stats.ephemeralOwner() <<
             ", czxid: " << value.stats.czxid <<
             ", mzxid: " << value.stats.mzxid <<
-            ", numChildren: " << value.stats.numChildren() <<
+            ", numChildren: " << value.numChildren() <<
             ", dataLength: " << value.stats.data_size <<
             "}" << std::endl;
         std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;

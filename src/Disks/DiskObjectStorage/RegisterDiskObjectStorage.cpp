@@ -82,6 +82,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             std::move(cluster),
             std::move(metadata_storage),
             std::move(object_storages),
+            /*wrapped_disk=*/nullptr,
             config,
             config_prefix,
             use_fake_transaction);

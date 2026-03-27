@@ -183,7 +183,7 @@ struct WasmEdgeFunctionProps
     {
     }
 
-    WasmFunctionDeclaration getFunctionDeclaration() const
+    WasmFunctionDeclaration getFunctionDeclaration(std::string_view module_name) const
     {
         if (returns_count > 1)
             throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);
@@ -201,7 +201,7 @@ struct WasmEdgeFunctionProps
             WasmEdge_FunctionTypeGetReturns(func_ctx, &return_type_val, 1);
             return_type = fromWasmEdgeValueType(return_type_val);
         }
-        return WasmFunctionDeclaration(function_name, std::move(argument_types), return_type);
+        return WasmFunctionDeclaration(module_name, function_name, std::move(argument_types), return_type);
     }
 
     const WasmEdge_FunctionTypeContext * func_ctx;
@@ -446,7 +446,7 @@ std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_n
             function_name,
             params.size(),
             params_count,
-            formatFunctionDeclaration(func_it->second.getFunctionDeclaration()));
+            formatFunctionDeclaration(func_it->second.getFunctionDeclaration("")));
 
     std::vector<WasmEdge_Value> params_values(params.size());
     for (size_t i = 0; i < params.size(); ++i)
@@ -484,8 +484,9 @@ std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_n
 class WasmEdgeModule : public WasmModule
 {
 public:
-    explicit WasmEdgeModule(WasmEdge_ASTModuleContext * ast_module_ptr)
+    explicit WasmEdgeModule(std::string_view module_name_, WasmEdge_ASTModuleContext * ast_module_ptr)
         : ast_module(ast_module_ptr)
+        , module_name(module_name_)
     {
         auto exports_length = WasmEdge_ASTModuleListExportsLength(ast_module.get());
         if (exports_length >= 512)
@@ -523,6 +524,7 @@ public:
 
         for (const auto * import_ctx : imports)
         {
+            auto import_module_name = WasmEdge_ImportTypeGetModuleName(import_ctx);
             auto import_name = WasmEdge_ImportTypeGetExternalName(import_ctx);
             if (import_name.Length == 0)
                 throw Exception(ErrorCodes::WASM_ERROR, "Cannot get import name");
@@ -531,7 +533,8 @@ public:
             if (!function_type)
                 throw Exception(
                     ErrorCodes::WASM_ERROR, "Cannot get function for import '{}'", std::string_view(import_name.Buf, import_name.Length));
-            result.push_back(WasmEdgeFunctionProps(import_name, function_type).getFunctionDeclaration());
+            result.push_back(WasmEdgeFunctionProps(import_name, function_type).getFunctionDeclaration(
+                std::string_view(import_module_name.Buf, import_module_name.Length)));
         }
 
         return result;
@@ -550,12 +553,13 @@ public:
         const auto * function_type = WasmEdge_ExportTypeGetFunctionType(ast_module.get(), export_it->second);
         if (!function_type)
             throw Exception(ErrorCodes::WASM_ERROR, "Cannot get function for export '{}'", function_name);
-        return WasmEdgeFunctionProps(function_name, function_type).getFunctionDeclaration();
+        return WasmEdgeFunctionProps(function_name, function_type).getFunctionDeclaration(module_name);
     }
 
 private:
     WasmEdgeResourcePtr<WasmEdge_ASTModuleContext> ast_module;
     std::map<std::string, const WasmEdge_ExportTypeContext *, std::less<>> exports;
+    std::string module_name;
     std::vector<WasmHostFunction> host_functions;
 };
 
@@ -565,7 +569,7 @@ WasmEdgeRuntime::WasmEdgeRuntime()
     setLogLevel(LogsLevel::warning);
 }
 
-std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view wasm_code) const
+std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view module_name, std::string_view wasm_code) const
 {
     auto loader_ctx = WasmEdgeResourcePtrCreate<WasmEdge_LoaderCreate>(nullptr);
     WasmEdge_ASTModuleContext * ast_module_ptr = nullptr;
@@ -573,7 +577,7 @@ std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view wasm
     wasmedgeCheckResult(res, "cannot parse module");
     if (!ast_module_ptr)
         throw Exception(ErrorCodes::WASM_ERROR, "Cannot parse module");
-    return std::make_unique<WasmEdgeModule>(ast_module_ptr);
+    return std::make_unique<WasmEdgeModule>(module_name, ast_module_ptr);
 }
 
 
@@ -648,7 +652,7 @@ namespace DB::WebAssembly
 
 WasmEdgeRuntime::WasmEdgeRuntime() = default;
 
-std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view /* wasm_code */) const
+std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view /* module_name */, std::string_view /* wasm_code */) const
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WasmEdge support is disabled");
 }
