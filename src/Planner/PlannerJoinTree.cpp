@@ -28,6 +28,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
@@ -70,6 +71,7 @@
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -103,6 +105,7 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
@@ -154,6 +157,29 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Recursively find the first TableNode whose storage matches `target`.
+QueryTreeNodePtr findTableNodeByStorage(const QueryTreeNodePtr & node, const StoragePtr & target)
+{
+    const auto * tn = node->as<TableNode>();
+    if (tn && tn->getStorage() == target)
+    {
+        return node;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child)
+        {
+            auto found = findTableNodeByStorage(child, target);
+            if (found)
+            {
+                return found;
+            }
+        }
+    }
+    return nullptr;
+}
 
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
@@ -1193,9 +1219,58 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
                 }
 
+                /// For trivial views over Distributed tables, inline the view body and use the
+                /// underlying StorageDistributed directly. StorageDistributed will substitute the
+                /// distributed table node (inside the inlined subquery) with the shard-local table,
+                /// so each shard receives the full view body (aliases, WHERE, etc.) against its local table.
+                StoragePtr effective_storage = storage;
+                StorageSnapshotPtr effective_snapshot = storage_snapshot;
+                const auto * view = query_context->getSettingsRef()[Setting::optimize_trivial_view_pushdown_to_distributed]
+                    ? typeid_cast<const StorageView *>(storage.get())
+                    : nullptr;
+                if (view)
+                {
+                    auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
+                    if (underlying_dist)
+                    {
+                        /// Analyze the view's inner query to obtain its query tree.
+                        const auto & inner_query_ast = storage_snapshot->metadata->getSelectQuery().inner_query;
+                        auto options = SelectQueryOptions(QueryProcessingStage::FetchColumns).subquery();
+                        InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, query_context, options);
+                        const auto & inner_query_tree = inner_interp.getQueryTree();
+                        /// Mark as subquery so it serializes as (SELECT ...) in the FROM clause.
+                        inner_query_tree->as<QueryNode &>().setIsSubquery(true);
+                        /// Inherit the view's alias so outer ColumnNodes get the correct table qualifier.
+                        inner_query_tree->setAlias(table_expression_query_info.table_expression->getAlias());
+                        /// Find the underlying distributed table's node inside the inner query tree.
+                        auto dist_table_node = findTableNodeByStorage(inner_query_tree, underlying_dist);
+                        if (dist_table_node)
+                        {
+                            /// Replace the view's table expression in the outer query with the
+                            /// inlined inner query tree. StorageDistributed will then replace
+                            /// the distributed table node (now deep inside the subquery) with
+                            /// a StorageDummy for the shard-local table, so each shard receives
+                            /// the full view body (aliases, WHERE, etc.) reading from its local table.
+                            table_expression_query_info.query_tree = table_expression_query_info.query_tree->cloneAndReplace(
+                                table_expression_query_info.table_expression, inner_query_tree);
+                            table_expression_query_info.table_expression = dist_table_node;
+                            effective_storage = underlying_dist;
+                            effective_snapshot = underlying_dist->getStorageSnapshot(
+                                underlying_dist->getInMemoryMetadataPtr(), query_context);
+                        }
+                    }
+                }
+
                 if (!select_query_options.build_logical_plan)
-                    till_stage = storage->getQueryProcessingStage(
-                        query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+                {
+                    till_stage = effective_storage->getQueryProcessingStage(
+                        query_context, select_query_options.to_stage, effective_snapshot, table_expression_query_info);
+                }
+
+                Names extracted_column_names;
+                bool has_table_virtual_column
+                        = extractRequiredNonTableColumnsFromStorage(columns_names, effective_storage, effective_snapshot, till_stage, extracted_column_names);
+                const auto & storage_column_names = has_table_virtual_column ? extracted_column_names : columns_names;
 
                 if (select_query_options.build_logical_plan)
                 {
@@ -1272,10 +1347,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             updated_context = mutable_context;
                         }
 
-                        storage->read(
+                        effective_storage->read(
+                        effective_storage->read(
                             query_plan,
-                            columns_names,
-                            storage_snapshot,
+                            storage_column_names,
+                            effective_snapshot,
                             table_expression_query_info,
                             std::move(updated_context),
                             till_stage,
@@ -1284,10 +1360,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else
                     {
-                        storage->read(
+                        effective_storage->read(
                             query_plan,
-                            columns_names,
-                            storage_snapshot,
+                            storage_column_names,
+                            effective_snapshot,
                             table_expression_query_info,
                             query_context,
                             till_stage,

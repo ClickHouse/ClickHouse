@@ -36,6 +36,10 @@ public:
 
     StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
 
+    /// If this is a trivial view over a Distributed table, returns the underlying StorageDistributed.
+    /// Returns nullptr otherwise.
+    StoragePtr tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const;
+
     void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
