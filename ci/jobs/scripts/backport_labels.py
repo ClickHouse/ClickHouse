@@ -146,7 +146,7 @@ def main() -> int:
     )
     label_filter = ",".join(all_backport_labels)
 
-    updated_since = (date.today() - timedelta(days=30)).isoformat()
+    updated_since = (date.today() - timedelta(days=90)).isoformat()
     query = (
         f"type:pr repo:{repo} is:merged "
         f"label:{label_filter} "
