@@ -543,6 +543,12 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
     std::deque<ExplainPlan::Frame> stack;
 
+    if (settings.pretty)
+    {
+        QueryPlanFormat::formatOutputColumns(settings.out, *root->step, settings.header_prefix);
+        settings.out << '\n';
+    }
+
     /// Skip the expression steps if we are in the compact mode
     auto * first_node = skip_expressions(root);
 
@@ -565,9 +571,11 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
         if (frame.next_child < frame.node->children.size())
         {
+            size_t child_idx = frame.next_child;
+
             bool is_last = (frame.next_child + 1) == (frame.node->children.size());
             /// Skip the expression steps if we are in the compact mode
-            auto * next_node = skip_expressions(frame.node->children[frame.next_child]);
+            auto * next_node = skip_expressions(frame.node->children[child_idx]);
 
             stack.push_back(ExplainPlan::Frame{next_node,
                 0,
@@ -649,6 +657,8 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
+    if (optimization_settings.materialize_ctes)
+        QueryPlanOptimizations::resolveMaterializingCTEs(optimization_settings, *this, *root, nodes);
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }

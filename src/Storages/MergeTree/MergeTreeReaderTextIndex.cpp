@@ -360,7 +360,10 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
             /// The the expected cardinality of the intersection is:
             /// N * pn = N * (|A1| * |A2| * ... * |An| / N) = |A1| * |A2| * ... * |An| / N^(n-1).
 
-            double cardinality = 1.0;
+            /// Compute in log-space to avoid double overflow when many tokens
+            /// have large cardinalities: log(N * p1 * p2 * ... * pn) =
+            /// sum(log(|Ai|)) - (n-1) * log(N).
+            double log_cardinality = 0.0;
 
             for (const auto & token : query.tokens)
             {
@@ -368,11 +371,11 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
                 if (it == remaining_tokens.end())
                     return 0;
 
-                cardinality *= it->second->cardinality;
+                log_cardinality += std::log(static_cast<double>(it->second->cardinality));
             }
 
-            cardinality /= std::pow(total_rows, query.tokens.size() - 1);
-            return cardinality;
+            log_cardinality -= static_cast<double>(query.tokens.size() - 1) * std::log(static_cast<double>(total_rows));
+            return std::exp(log_cardinality);
         }
         case TextSearchMode::Any:
         {

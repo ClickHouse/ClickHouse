@@ -39,10 +39,21 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.4",
+        {
+            {"use_statistics_for_part_pruning", false, true, "New setting to use statistics for part pruning during query execution."},
+            {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
+            {"enable_materialized_cte", false, false, "New setting"},
+            {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
+        });
         addSettingsChanges(settings_changes_history, "26.3",
         {
+            {"allow_experimental_polyglot_dialect", false, false, "New setting to enable the polyglot SQL transpiler dialect."},
+            {"polyglot_dialect", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."},
+            {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
             {"optimize_syntax_fuse_functions", false, true, "The optimization is production-ready"},
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
+            {"enable_materialized_cte", false, false, "New setting"},
             {"use_parquet_metadata_cache", false, true, "Enables cache of parquet file metadata."},
             {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
             {"use_text_index_tokens_cache", false, false, "New setting"},
@@ -50,6 +61,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, true, "Allow duplicated paths in JSON type with literal and nested object by default"},
+            {"iceberg_metadata_staleness_ms", 0, 0, "New setting allowing using cached metadata version at READ operations to prevent fetching from remote catalog"},
             {"webassembly_udf_max_fuel", 100'000, 100'000, "New setting to limit CPU instructions (fuel) per WebAssembly UDF instance execution."},
             {"webassembly_udf_max_memory", 128_MiB, 128_MiB, "New setting to limit memory per WebAssembly UDF instance."},
             {"webassembly_udf_max_input_block_size", 0, 0, "New setting to limit input block size for WebAssembly UDFs."},
@@ -77,6 +89,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
+
             {"optimize_dry_run_check_part", true, true, "New setting"},
             {"parallel_non_joined_rows_processing", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."},
             {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
@@ -1090,12 +1103,25 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.4",
+        {
+            {"allow_commit_order_projection", false, false, "New setting"},
+            {"replicated_fetches_min_part_level", 0, 0, "New setting"},
+            {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
             {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
+            {"map_serialization_version", "basic", "basic", "Add a setting to control Map serialization version"},
+            {"map_serialization_version_for_zero_level_parts", "basic", "basic", "Add a setting to control Map serialization version for zero-level parts"},
+            {"max_buckets_in_map", 32, 32, "Add a setting to control the maximum number of buckets for 'with_buckets' Map serialization"},
+            {"map_buckets_strategy", "sqrt", "sqrt", "Add a setting to control the strategy for choosing the number of buckets for 'with_buckets' Map serialization"},
+            {"map_buckets_coefficient", 1.0, 1.0, "Add a setting to control the coefficient used in `sqrt` and `linear` strategy for calculating the number of buckets for 'with_buckets' Map serialization"},
+            {"map_buckets_min_avg_size", 32, 32, "Add a setting to control the minimum average map size (number of keys per row) required to apply `with_buckets` serialization"},
             {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
@@ -1106,6 +1132,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"},
         });
