@@ -300,7 +300,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
 {
     Int16 num_columns = readInt16(message, pos, size);
 
-    auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
+    auto process_column_value = [&](Int8 identifier, Int16 column_idx)
     {
         switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
         {
@@ -349,7 +349,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
     {
         try
         {
-            proccess_column_value(readInt8(message, pos, size), column_idx);
+            process_column_value(readInt8(message, pos, size), column_idx);
         }
         catch (...)
         {
@@ -454,7 +454,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
             auto & storage_data = storages.find(table_name)->second;
 
-            auto proccess_identifier = [&](Int8 identifier) -> bool
+            auto process_identifier = [&](Int8 identifier) -> bool
             {
                 bool read_next = true;
                 switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
@@ -483,11 +483,11 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             };
 
             /// Read either 'K' or 'O'. Never both of them. Also possible not to get both of them.
-            bool read_next = proccess_identifier(readInt8(replication_message, pos, size));
+            bool read_next = process_identifier(readInt8(replication_message, pos, size));
 
             /// 'N'. Always present, but could come in place of 'K' and 'O'.
             if (read_next)
-                proccess_identifier(readInt8(replication_message, pos, size));
+                process_identifier(readInt8(replication_message, pos, size));
 
             break;
         }

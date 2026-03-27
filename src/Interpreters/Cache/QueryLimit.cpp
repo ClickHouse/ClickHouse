@@ -14,7 +14,7 @@ namespace ErrorCodes
 static bool isQueryInitialized()
 {
     return CurrentThread::isInitialized()
-        && CurrentThread::get().getQueryContext()
+        && CurrentThread::get().tryGetQueryContext()
         && !CurrentThread::getQueryId().empty();
 }
 
@@ -71,10 +71,9 @@ void FileCacheQueryLimit::QueryContext::add(
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const FileCache::UserInfo & user,
     const CachePriorityGuard::WriteLock & lock)
 {
-    auto it = getPriority().add(key_metadata, offset, size, user, lock, /* state_lock */nullptr);
+    auto it = getPriority().add(key_metadata, offset, size, lock, /* state_lock */nullptr);
     auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
     if (!inserted)
     {

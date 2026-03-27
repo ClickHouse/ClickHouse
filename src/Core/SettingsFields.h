@@ -6,7 +6,6 @@
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
 
-#include <chrono>
 #include <string_view>
 
 namespace DB
@@ -251,17 +250,10 @@ struct SettingFieldTimespan final : SettingFieldBase
         : value(o.value), changed(o.changed)
     {}
 
-    template <class Rep, class Period = std::ratio<1>>
-    explicit SettingFieldTimespan(const std::chrono::duration<Rep, Period> & x)
-        : SettingFieldTimespan(Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(std::chrono::duration_cast<std::chrono::microseconds>(x).count())}) {}
-
     explicit SettingFieldTimespan(UInt64 x) : SettingFieldTimespan(Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(x * microseconds_per_unit)}) {}
     explicit SettingFieldTimespan(const Field & f);
 
     SettingFieldTimespan & operator =(const Poco::Timespan & x) { value = x; changed = true; return *this; }
-
-    template <class Rep, class Period = std::ratio<1>>
-    SettingFieldTimespan & operator =(const std::chrono::duration<Rep, Period> & x) { *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(std::chrono::duration_cast<std::chrono::microseconds>(x).count())}; return *this; }
 
     SettingFieldTimespan & operator =(UInt64 x) { *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(x * microseconds_per_unit)}; return *this; }
     SettingFieldTimespan & operator =(const Field & f) override;
@@ -280,9 +272,6 @@ struct SettingFieldTimespan final : SettingFieldBase
     void setChanged(bool changed_) override { changed = changed_; }
 
     operator Poco::Timespan() const { return value; } /// NOLINT
-
-    template <class Rep, class Period = std::ratio<1>>
-    operator std::chrono::duration<Rep, Period>() const { return std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(std::chrono::microseconds(value.totalMicroseconds())); } /// NOLINT
 
     explicit operator UInt64() const { return value.totalMicroseconds() / microseconds_per_unit; }
     explicit operator Field() const override;

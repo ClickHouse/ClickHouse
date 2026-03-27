@@ -14,6 +14,8 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/ErrnoException.h>
+#include <Common/FailPoint.h>
 
 namespace fs = std::filesystem;
 
@@ -42,6 +44,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char cache_filesystem_failure[];
 }
 
 String toString(FileSegmentKind kind)
@@ -326,8 +333,9 @@ void FileSegment::resetRemoteFileReader()
 FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
 {
     auto lk = lock();
-    if (remote_file_reader && (download_state == State::DOWNLOADED
-        || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION))
+    if (remote_file_reader
+        && (download_state == State::DOWNLOADED
+            || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION))
     {
         return std::move(remote_file_reader);
     }
@@ -414,6 +422,11 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
             cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0, flags);
         }
 
+        fiu_do_on(FailPoints::cache_filesystem_failure,
+        {
+            throw ErrnoException(EIO, "Failpoint: simulated cache disk IO failure");
+        });
+
         /// Size is equal to offset as offset for write buffer points to data end.
         cache_writer->set(from, /* size */size, /* offset */size);
         /// Reset the buffer when finished.
@@ -462,6 +475,14 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
         throw;
+    }
+    catch (const fs::filesystem_error & e)
+    {
+        auto lk = lock();
+        setDownloadFailedUnlocked(lk);
+        throw ErrnoException(e.code().value(),
+            "Filesystem error in cache write ({}), current cache state: {}",
+            e.what(), getInfoForLogUnlocked(lk));
     }
 
     chassert(getCurrentWriteOffset() == offset_in_file + size);
@@ -583,7 +604,7 @@ bool FileSegment::reserve(
         reserve_stat = &dummy_stat;
 
     bool reserved = cache->tryReserve(
-        *this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds, failure_reason);
+        *this, size_to_reserve, *reserve_stat, getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());
@@ -1098,8 +1119,7 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
         .references = static_cast<uint64_t>(file_segment.use_count()),
         .is_unbound = file_segment->is_unbound,
         .queue_entry_type = file_segment->queue_iterator ? file_segment->queue_iterator->getType() : QueueEntryType::None,
-        .user_id = key_metadata->user.user_id,
-        .user_weight = key_metadata->user.weight.value(),
+        .origin = key_metadata->origin,
     };
 }
 

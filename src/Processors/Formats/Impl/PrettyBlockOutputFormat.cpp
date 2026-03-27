@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
@@ -7,11 +8,13 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Common/CurrentThread.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
 #include <Common/TerminalSize.h>
+#include <Common/ThreadPool.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -57,7 +60,9 @@ void PrettyBlockOutputFormat::calculateWidths(
 
     /// len(num_rows + total_rows) + len(". ")
     prev_row_number_width = row_number_width;
-    row_number_width = static_cast<size_t>(std::floor(std::log10(num_rows + total_rows))) + 3;
+    row_number_width = num_rows + total_rows > 0
+        ? static_cast<size_t>(std::floor(std::log10(num_rows + total_rows))) + 3
+        : 3;
 
     size_t num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
@@ -799,6 +804,11 @@ void PrettyBlockOutputFormat::writeSuffixImpl()
 
         out << "Showed " << displayed_rows << " out of " << total_rows << " rows.\n";
     }
+}
+
+void PrettyBlockOutputFormat::onRowsReadBeforeUpdate()
+{
+    total_rows = getRowsReadBefore();
 }
 
 void registerOutputFormatPretty(FormatFactory & factory)

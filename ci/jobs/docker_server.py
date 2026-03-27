@@ -166,6 +166,8 @@ def buildx_args(
     action_url: str,
 ) -> List[str]:
     args = [
+        "--provenance=true",
+        "--sbom=true",
         f"--platform=linux/{arch}",
         f"--label=build-url={action_url}",
         f"--label=com.clickhouse.build.githash={sha}",
@@ -262,7 +264,6 @@ def build_and_push_image(
             "Merging is available only on push, separate %s images are created",
             f"{image.name}:{tag}-$arch",
         )
-
     return result
 
 
@@ -280,7 +281,12 @@ def test_docker_library(test_results) -> None:
         config_override = (
             Path(Utils.cwd()) / "ci/jobs/scripts/docker_server/config.sh"
         ).absolute()
-        Shell.check(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
+        if not Shell.check(
+            f"git clone --depth 1 {GITHUB_SERVER_URL}/{repo} {repo_path}",
+            verbose=True,
+            retries=3,
+        ):
+            raise RuntimeError(f"Failed to clone {repo}")
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
             cmd = f"{run_sh} {image} -c {repo_path / 'test/config.sh'} -c {config_override}"
@@ -297,6 +303,22 @@ def test_docker_library(test_results) -> None:
                 info=f"Exception while testing docker library: {traceback.format_exc()}",
             )
         )
+
+
+def check_server_readme(image_path: str) -> Result:
+    name = "Check README"
+    script = Path(f"{image_path}/README.sh")
+    if not script.is_file():
+        return Result(
+            name=name,
+            status=Result.Status.SKIPPED,
+            info="README.sh file is missing in the docker context",
+        )
+    # Regenerate README
+    Shell.check(script.as_posix())
+    return Result.from_commands_run(
+        name=name, command=f"git diff --exit-code {image_path}/README.md"
+    )
 
 
 def main():
@@ -406,6 +428,8 @@ def main():
         # The image is built locally only when we don't push it
         # See `--output=type=docker`
         test_docker_library(test_results)
+
+    test_results.append(check_server_readme(image.path))
 
     Result.create_from(results=test_results, stopwatch=sw).complete_job()
 

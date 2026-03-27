@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -80,6 +81,11 @@ const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
     return avg_value_size_hints;
 }
 
+bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
+{
+    return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage());
+}
+
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 {
     chassert(columns.size() == getColumns().size());
@@ -111,6 +117,10 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 
         if (MergeTreeRangeReader::virtuals_to_fill.contains(it->name))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
+
+        /// Virtual columns for text index are filled in another place.
+        if (isTextIndexVirtualColumn(it->name))
+            continue;
 
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
@@ -153,7 +163,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
                 converted_requested_columns,
                 Nested::convertToSubcolumns(available_columns),
                 partially_read_columns,
-                storage_snapshot->metadata);
+                storage_snapshot);
 
             should_evaluate_missing_defaults
                 = std::any_of(res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -213,9 +223,24 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         /// We should not perform any checks during reading from an existing table.
         enableAllExperimentalSettings(context_copy);
         context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
+
+        /// Create a combined columns description that includes both metadata columns and virtual columns.
+        /// This is needed to evaluate default expressions for virtual columns.
+        auto combined_columns = storage_snapshot->metadata->getColumns();
+
+        if (storage_snapshot->virtual_columns)
+        {
+            for (const auto & virtual_column : *storage_snapshot->virtual_columns)
+            {
+                if (virtual_column.default_desc.expression)
+                    combined_columns.add(virtual_column);
+            }
+        }
+
         auto dag = DB::evaluateMissingDefaults(
-            additional_columns, full_requested_columns,
-            storage_snapshot->metadata->getColumns(),
+            additional_columns,
+            full_requested_columns,
+            combined_columns,
             context_copy);
 
         if (dag)
@@ -226,7 +251,6 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                 ExpressionActionsSettings(context_copy->getSettingsRef()));
             actions->execute(additional_columns);
         }
-
         /// Move columns from block.
         it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)

@@ -38,19 +38,20 @@
 #include <DataTypes/DataTypesNumber.h>
 
 
-#include <IO/S3/Credentials.h>
-#include <IO/S3/Client.h>
-#include <IO/S3Settings.h>
+#include <Databases/DataLake/Common.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <Common/ProxyConfigurationResolverProvider.h>
-#include <Databases/DataLake/Common.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <IO/S3/Client.h>
+#include <IO/S3/Credentials.h>
+#include <IO/S3Settings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 
 namespace DB::ErrorCodes
 {
@@ -75,19 +76,6 @@ namespace DB::ServerSetting
     extern const ServerSettingsUInt64 s3_retry_attempts;
 }
 
-namespace DB::StorageObjectStorageSetting
-{
-    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
-}
-
-namespace DB::DatabaseDataLakeSetting
-{
-    extern const DatabaseDataLakeSettingsString storage_endpoint;
-    extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
-    extern const DatabaseDataLakeSettingsString region;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric MarkCacheBytes;
@@ -105,7 +93,6 @@ GlueCatalog::GlueCatalog(
     : ICatalog("")
     , DB::WithContext(context_)
     , log(getLogger("GlueCatalog(" + settings_.region + ")"))
-    , credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key)
     , region(settings_.region)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
@@ -113,6 +100,8 @@ GlueCatalog::GlueCatalog(
 {
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
+    creds_config.role_arn = settings.aws_role_arn;
+    creds_config.role_session_name = settings.aws_role_session_name;
 
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
@@ -143,6 +132,7 @@ GlueCatalog::GlueCatalog(
         /* opt_disk_name = */ {},
         /* request_throttler = */ {});
 
+
     Aws::Glue::GlueClientConfiguration client_configuration;
     client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
     client_configuration.connectTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_connect_timeout_ms]);
@@ -150,30 +140,32 @@ GlueCatalog::GlueCatalog(
     client_configuration.region = region;
     auto endpoint_provider = std::make_shared<Aws::Glue::GlueEndpointProvider>();
 
+    Aws::Auth::AWSCredentials credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key);
     /// Only for testing when we are mocking glue
     if (!endpoint.empty())
     {
         client_configuration.endpointOverride = endpoint;
         endpoint_provider->OverrideEndpoint(endpoint);
-        Aws::Auth::AWSCredentials fake_credentials_for_fake_catalog;
+
         if (credentials.IsEmpty())
         {
             /// You can specify any key for fake moto glue, it's just important
             /// for it not to be empty.
-            fake_credentials_for_fake_catalog.SetAWSAccessKeyId("testing");
-            fake_credentials_for_fake_catalog.SetAWSSecretKey("testing");
+            credentials.SetAWSAccessKeyId("testing");
+            credentials.SetAWSSecretKey("testing");
         }
-        else
-            fake_credentials_for_fake_catalog = credentials;
 
-        glue_client = std::make_unique<Aws::Glue::GlueClient>(fake_credentials_for_fake_catalog, endpoint_provider, client_configuration);
+        Poco::URI uri(endpoint);
+        if (uri.getScheme() == "http")
+            poco_config.scheme = Aws::Http::Scheme::HTTP;
     }
     else
     {
         LOG_TRACE(log, "Creating AWS glue client with credentials empty {}, region '{}', endpoint '{}'", credentials.IsEmpty(), region, endpoint);
-        auto credentials_provider = DB::S3::getCredentialsProvider(poco_config, credentials, creds_config);
-        glue_client = std::make_unique<Aws::Glue::GlueClient>(credentials_provider, endpoint_provider, client_configuration);
     }
+
+    credentials_provider = DB::S3::getCredentialsProvider(poco_config, credentials, creds_config);
+    glue_client = std::make_unique<Aws::Glue::GlueClient>(credentials_provider, endpoint_provider, client_configuration);
 
 }
 
@@ -298,7 +290,6 @@ bool GlueCatalog::tryGetTableMetadata(
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
 
-
     auto outcome = glue_client->GetTable(request);
     if (outcome.IsSuccess())
     {
@@ -378,12 +369,11 @@ bool GlueCatalog::tryGetTableMetadata(
                     continue;
 
                 String column_type = column.GetType();
-                if (column_type == "timestamp")
+                if (column_type == "timestamp" || column_type == "timestamp_nano")
                 {
                     if (!result.requiresDataLakeSpecificProperties())
                         setup_specific_properties();
-                    if (classifyTimestampTZ(column.GetName(), result))
-                        column_type = "timestamptz";
+                    column_type = getActualTimestampType(column.GetName(), result, column_type);
                 }
 
                 schema.push_back({column.GetName(), getType(column_type, can_be_nullable)});
@@ -425,8 +415,9 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
 
     if (storage_type == StorageType::S3)
     {
-        auto creds = std::make_shared<S3Credentials>(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken());
-        metadata.setStorageCredentials(creds);
+        auto credentials = credentials_provider->GetAWSCredentials();
+        auto s3_creds = std::make_shared<S3Credentials>(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken());
+        metadata.setStorageCredentials(s3_creds);
     }
     else
     {
@@ -446,7 +437,7 @@ bool GlueCatalog::empty() const
     return true;
 }
 
-bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const
+String GlueCatalog::getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const
 {
     auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
     if (!table_specific_properties.has_value())
@@ -457,20 +448,21 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
     if (!metadata_objects.get(metadata_uri))
     {
         auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
-        const auto & read_settings = getContext()->getReadSettings();
-
-        DB::StoredObject metadata_stored_object(metadata_path);
-        auto read_buf = object_storage->readObject(metadata_stored_object, read_settings);
-        String metadata_file_content;
-        readStringUntilEOF(metadata_file_content, *read_buf);
-
-        Poco::JSON::Parser parser;
-        Poco::Dynamic::Var result = parser.parse(metadata_file_content);
-        auto metadata_object = result.extract<Poco::JSON::Object::Ptr>();
+        auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
+        auto metadata_object = DB::Iceberg::getMetadataJSONObject(
+            metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
         metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
     }
 
     auto metadata_object = *metadata_objects.get(metadata_uri);
+    return resolveTimestampTypeFromMetadata(metadata_object, column_name, glue_column_type);
+}
+
+String GlueCatalog::resolveTimestampTypeFromMetadata(
+    const Poco::JSON::Object::Ptr & metadata_object,
+    const String & column_name,
+    const String & glue_column_type)
+{
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
     auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
@@ -483,12 +475,12 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
             {
                 auto field = fields->getObject(static_cast<UInt32>(j));
                 if (field->getValue<String>(DB::Iceberg::f_name) == column_name)
-                    return field->getValue<String>(DB::Iceberg::f_type) == DB::Iceberg::f_timestamptz;
+                    return field->getValue<String>(DB::Iceberg::f_type);
             }
         }
     }
 
-    return false;
+    return glue_column_type == "timestamp_nano" ? "timestamp_ns" : "timestamp";
 }
 
 GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
@@ -505,9 +497,14 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     if (args.size() == 1)
     {
         if (table_metadata.hasStorageCredentials())
+        {
             table_metadata.getStorageCredentials()->addCredentialsToEngineArgs(args);
-        else if (!credentials.IsExpiredOrEmpty())
+        }
+        else
+        {
+            auto credentials = credentials_provider->GetAWSCredentials();
             DataLake::S3Credentials(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken()).addCredentialsToEngineArgs(args);
+        }
     }
 
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
@@ -515,7 +512,7 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
     DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
 
-    auto object_storage = configuration->createObjectStorage(getContext(), true);
+    auto object_storage = configuration->createObjectStorage(getContext(), true, {});
 
     /// Parse S3 path to extract bucket and table path
     String table_path = s3_location;
@@ -548,14 +545,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     try
     {
         auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage,
-            table_path,
-            *storage_settings,
-            nullptr,
-            getContext(),
-            log.get(),
-            std::nullopt
-        );
+            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 

@@ -113,59 +113,40 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
 
     Stopwatch next_watch;
     Int64 wait = -1;
-    size_t size = 0;
-    size_t bytes_read = 0;
+    IAsynchronousReader::Result result;
 
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
 
-        size_t offset = 0;
-        {
-            Stopwatch watch;
-            CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
-            auto result = prefetch_future.get();
-            size = result.size;
-            offset = result.offset;
-            LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
-
-            /// If prefetch_future is valid, size should always be greater than zero.
-            assert(offset <= size);
-            bytes_read = size - offset;
-
-            wait = watch.elapsedMicroseconds();
-            ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, wait);
-        }
+        Stopwatch watch;
+        CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
+        result = prefetch_future.get();
+        wait = watch.elapsedMicroseconds();
+        ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, wait);
 
         prefetch_buffer.swap(memory);
-
-        /// Adjust the working buffer so that it ignores `offset` bytes.
-        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-        working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-        pos = working_buffer.begin();
     }
     else
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
 
-        auto result = asyncReadInto(memory.data(), memory.size(), DEFAULT_PREFETCH_PRIORITY).get();
-        size = result.size;
-        auto offset = result.offset;
-
-        LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
-        assert(offset <= size);
-        bytes_read = size - offset;
-
-        if (bytes_read)
-        {
-            /// Adjust the working buffer so that it ignores `offset` bytes.
-            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-            working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-            pos = working_buffer.begin();
-        }
+        result = asyncReadInto(memory.data(), memory.size(), DEFAULT_PREFETCH_PRIORITY).get();
     }
 
-    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    chassert(!result.page_cache_cell);
+    chassert(result.size >= result.offset);
+    size_t bytes_read = result.size - result.offset;
+
+    if (bytes_read)
+    {
+        /// Adjust the working buffer so that it ignores `offset` bytes.
+        internal_buffer = Buffer(result.buf, result.buf + result.size);
+        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
+        pos = working_buffer.begin();
+    }
+
+    file_offset_of_buffer_end = result.file_offset_of_buffer_end;
     prefetch_future = {};
 
     if (use_prefetch && bytes_read)

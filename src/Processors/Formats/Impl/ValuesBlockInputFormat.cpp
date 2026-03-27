@@ -14,6 +14,7 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -120,7 +121,7 @@ Chunk ValuesBlockInputFormat::read()
     {
         try
         {
-            skipWhitespaceIfAny(*buf);
+            skipWhitespaceAndSQLComments(*buf);
             if (buf->eof() || *buf->position() == ';')
                 break;
             if (need_only_count)
@@ -424,10 +425,12 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     bool parsed = false;
     ASTPtr ast;
     std::optional<IParser::Pos> ti_start;
+    LiteralTokenMap literal_token_map;
 
     if (!(*token_iterator)->isError() && !(*token_iterator)->isEnd())
     {
         Expected expected;
+        expected.literal_token_map = &literal_token_map;
         /// Keep a copy to the start of the column tokens to use if later if necessary
         ti_start = IParser::Pos(
             *token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
@@ -500,6 +503,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 *ti_start,
                 *token_iterator,
                 ast,
+                literal_token_map,
                 context,
                 &found_in_cache,
                 delimiter);
@@ -572,7 +576,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Insert value into the column.
     /// For Dynamic type we cannot just insert Field as we lose information about the data type.
     /// Instead try to create a column with single element and cast it to the destination type.
-    if (type.hasDynamicSubcolumns())
+    if (type.hasDynamicStructure())
     {
         auto const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
@@ -697,6 +701,13 @@ void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters
     auto context_copy = Context::createCopy(context);
     context_copy->setQueryParameters(parameters);
     context = std::move(context_copy);
+
+    // Reset templates when parameters change
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        templates[i].reset();
+        parser_type_for_column[i] = ParserType::Streaming;
+    }
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -712,7 +723,7 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
         first_row = false;
     }
 
-    skipWhitespaceIfAny(buf);
+    skipWhitespaceAndSQLComments(buf);
     if (buf.eof() || end_of_data)
         return {};
 
