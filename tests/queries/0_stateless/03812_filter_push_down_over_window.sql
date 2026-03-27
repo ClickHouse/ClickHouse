@@ -1,26 +1,93 @@
-CREATE TABLE test
+-- { echoOn }
+
+CREATE TABLE test1
 (
     id Int64
 )
 ENGINE = MergeTree();
 
-CREATE VIEW v
+CREATE VIEW v1
 AS (
     SELECT
         id,
         lagInFrame(id, 1, -1) OVER (
             ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
         ) AS prev_id
-    FROM test
+    FROM test1
     ORDER BY id
 );
 
-INSERT INTO test VALUES (1), (2), (3);
+INSERT INTO test1 VALUES (1), (2), (3);
 
-SELECT id, prev_id FROM v ORDER BY id;
+SELECT id, prev_id FROM v1 ORDER BY id;
+SELECT id, prev_id FROM v1 WHERE id >= 2 ORDER BY id;
+SELECT id, prev_id FROM v1 WHERE prev_id = 1 ORDER BY id;
 
-SELECT id, prev_id FROM v WHERE id = 3 ORDER BY id;
+SELECT id, prev_id FROM v1 ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
+SELECT id, prev_id FROM v1 WHERE id >= 2 ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
+SELECT id, prev_id FROM v1 WHERE prev_id = 1 ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
 
-SELECT id, prev_id FROM v ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
+CREATE TABLE test2
+(
+    category String,
+    id Int64,
+    value Int64
+)
+ENGINE = MergeTree()
+ORDER BY tuple();
 
-SELECT id, prev_id FROM v WHERE id = 3 ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
+INSERT INTO test2 VALUES ('x', 1, 100), ('x', 2, 200), ('y', 3, 300), ('y', 4, 400);
+
+CREATE VIEW v2
+AS (
+    SELECT
+        category,
+        id,
+        value,
+        sum(value) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_sum
+    FROM test2
+);
+
+SELECT category, id, value, running_sum FROM v2 ORDER BY id;
+SELECT category, id, value, running_sum FROM v2 WHERE category = 'y' ORDER BY id;
+SELECT category, id, value, running_sum FROM v2 WHERE category = 'y' ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
+
+-- See <https://github.com/ClickHouse/ClickHouse/issues/51203>
+CREATE TABLE users (
+    uid Int16,
+    name String,
+    department String,
+    started DateTime64()
+)
+ENGINE = MergeTree()
+PRIMARY KEY (department);
+
+CREATE VIEW users_with_previous
+AS (
+    SELECT
+        uid,
+        name,
+        department,
+        lagInFrame(uid, 1) OVER (partition BY department ORDER BY started ASC) AS previous_user
+    FROM users
+);
+
+INSERT INTO users VALUES (1231, 'John', 'Sales', '2023-06-08 12:00:00');
+INSERT INTO users VALUES (6666, 'Ksenia', 'Engineering', '2023-06-09 12:00:00');
+INSERT INTO users VALUES (8888, 'Alice', 'Engineering', '2023-06-10 12:00:00');
+
+SELECT
+    uid,
+    name,
+    department,
+    lagInFrame(uid, 1) OVER (partition BY department ORDER BY started ASC) AS previous_user
+FROM users
+WHERE department = 'Engineering'
+SETTINGS force_primary_key = 1;
+
+SELECT *
+FROM users_with_previous
+WHERE department = 'Engineering'
+SETTINGS
+    force_primary_key = 1,
+    query_plan_filter_push_down_over_window = 1;
