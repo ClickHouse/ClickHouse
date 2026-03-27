@@ -5971,6 +5971,90 @@ Possible values:
 
 - 0 - Disable
 - 1 - Enable
+
+**Example**
+```sql
+CREATE TABLE example (
+    id UInt64
+);
+INSERT INTO example VALUES (1), (2), (3);
+SELECT
+    id,
+    lagInFrame(id, 1, -1) OVER (
+        ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS prev_id
+FROM example
+ORDER BY id;
+```
+```response
+┌─id─┬─prev_id─┐
+│  1 │      -1 │
+│  2 │       1 │
+│  3 │       2 │
+└────┴─────────┘
+```
+
+A where clause will filter before the window is calculated and we thus get:
+```sql
+SELECT
+    id,
+    lagInFrame(id, 1, -1) OVER (
+        ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS prev_id
+FROM example
+WHERE id = 3
+ORDER BY id;
+```
+```response
+┌─id─┬─prev_id─┐
+│  3 │      -1 │
+└────┴─────────┘
+```
+
+Using a subquery we first calculate the window and only then filter:
+```sql
+SELECT
+    id,
+    prev_id
+FROM (
+    SELECT
+        id,
+        lagInFrame(id, 1, -1) OVER (
+            ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS prev_id
+    FROM example
+)
+WHERE id = 3
+ORDER BY id;
+```
+```response
+┌─id─┬─prev_id─┐
+│  3 │       2 │
+└────┴─────────┘
+```
+
+With `query_plan_filter_push_down_over_window = 1` we allow pushing the filtering down over the window in subqueries and views:
+```sql
+SELECT
+    id,
+    prev_id
+FROM (
+    SELECT
+        id,
+        lagInFrame(id, 1, -1) OVER (
+            ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS prev_id
+    FROM example
+)
+WHERE id = 3
+ORDER BY id
+SETTINGS query_plan_filter_push_down_over_window = 1;
+```
+```response
+┌─id─┬─prev_id─┐
+│  3 │      -1 │
+└────┴─────────┘
+```
 )", 0) \
     DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
 Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
