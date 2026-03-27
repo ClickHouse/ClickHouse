@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/PhysicalNameMapping.h>
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -207,7 +208,13 @@ void PhysicalNameMapping::finishRename(const String & old_logical_name)
 {
     auto it = logical_to_physical.find(old_logical_name);
     if (it == logical_to_physical.end())
+    {
+        LOG_WARNING(getLogger("PhysicalNameMapping"),
+            "finishRename: old logical name '{}' not found in mapping; "
+            "reconciliation may have already removed it",
+            old_logical_name);
         return;
+    }
 
     const String physical = it->second;
     logical_to_physical.erase(it);

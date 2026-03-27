@@ -9190,6 +9190,19 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
 
+    auto my_pn = getActivePhysicalNameMapping();
+    auto src_pn = src_data->getActivePhysicalNameMapping();
+    bool my_has_pn = (my_pn != nullptr);
+    bool src_has_pn = (src_pn != nullptr);
+    if (my_has_pn != src_has_pn)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Tables have incompatible physical name mapping state: "
+            "one table has physical names active while the other does not");
+    if (my_has_pn && src_has_pn && my_pn->toString() != src_pn->toString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Tables have different physical name mappings; "
+            "partition operations require identical logical-to-physical column mappings");
+
     return *src_data;
 }
 
