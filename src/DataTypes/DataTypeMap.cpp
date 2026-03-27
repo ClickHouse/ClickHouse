@@ -212,7 +212,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(s
 
     /// Create a serialization that reads only the bucket containing the requested key.
     const auto & map_serialization = assert_cast<const SerializationMap &>(*removeNamedSerialization(data.serialization));
-    auto key_value_serialization = SerializationMapKeyValue::create(
+    auto key_value_serialization = std::make_shared<SerializationMapKeyValue>(
         map_serialization.getValueSerialization(),
         map_serialization.getNestedSerialization(),
         map_serialization.getMapSerializationVersion(),

@@ -555,7 +555,7 @@ struct KeysOrValuesSubcolumnCreator : public ISerialization::ISubcolumnCreator
     ColumnPtr create(const ColumnPtr & prev) const override { return nested_creator->create(prev); }
     SerializationPtr create(const SerializationPtr & prev, const DataTypePtr & type) const override
     {
-        return SerializationMapKeysOrValues::create(nested_creator->create(prev, type), serialization_version);
+        return std::make_shared<SerializationMapKeysOrValues>(nested_creator->create(prev, type), serialization_version);
     }
 };
 
@@ -601,7 +601,7 @@ void SerializationMap::enumerateStreams(
         settings.path.push_back(Substream::ArraySizes);
         auto subcolumn_name = "size" + std::to_string(settings.array_level);
         auto array_size_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationArrayOffsets>(), subcolumn_name, SubstreamType::NamedOffsets);
-        auto map_size_serialization = SerializationMapSize::create(array_size_serialization, serialization_version);
+        auto map_size_serialization = std::make_shared<SerializationMapSize>(array_size_serialization, serialization_version);
         settings.path.back().data = SubstreamData(map_size_serialization)
             .withType(map_type ? std::make_shared<DataTypeUInt64>() : nullptr)
             .withColumn(map_column ? map_column->getNestedColumn().getOffsetsPtr() : nullptr);
