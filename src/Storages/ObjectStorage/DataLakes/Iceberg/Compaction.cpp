@@ -37,8 +37,15 @@ namespace DB::Setting
     extern const SettingsUInt64 iceberg_manifest_min_count_to_compact;
 }
 
+namespace DB::DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
+}
+
 namespace DB::Iceberg
 {
+
+static constexpr size_t MAX_COMPACTION_RETRIES = 100;
 
 using namespace DB;
 
@@ -168,7 +175,7 @@ ManifestStats getManifestStats(
     {
         LOG_TEST(log, "Reading manifest list for current snapshot_id {}", current_snapshot_id);
         auto manifest_list = getManifestList(
-            object_storage, persistent_table_components, context, current_manifest_list_path, log);
+            object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
 
         num_manifest_files = manifest_list.size();
 
@@ -396,14 +403,15 @@ static void writeDataFiles(
     }
 }
 
-void writeConsolidatedManifestFile(
+bool writeConsolidatedManifestFile(
     int metadata_version,
     Poco::JSON::Object::Ptr initial_metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage, ContextPtr context,
     SharedHeader sample_block_,
     String write_format,
-    CompressionMethod compression_method)
+    CompressionMethod compression_method,
+    const DataLakeStorageSettings & data_lake_settings)
 {
     auto log = getLogger("IcebergManifestConsolidation");
 
@@ -411,13 +419,13 @@ void writeConsolidatedManifestFile(
     if (!initial_metadata_object->has(Iceberg::f_current_snapshot_id))
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
-        return;
+        return true;
     }
     Int64 current_snapshot_id_val = initial_metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
     if (current_snapshot_id_val < 0)
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
-        return;
+        return true;
     }
 
     Int64 current_snapshot_id = current_snapshot_id_val;
@@ -446,7 +454,7 @@ void writeConsolidatedManifestFile(
     if (current_manifest_list_path.empty())
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
-        return;
+        return true;
     }
 
     LOG_INFO(log, "Writing consolidated manifest file from current snapshot {}", current_snapshot_id);
@@ -502,7 +510,7 @@ void writeConsolidatedManifestFile(
     struct PartitionData
     {
         Row partition_values;
-        std::vector<String> file_paths;
+        std::vector<IcebergPathFromMetadata> file_paths;
         DataFileStatistics statistics;
 
         explicit PartitionData(Poco::JSON::Array::Ptr schema)
@@ -524,7 +532,7 @@ void writeConsolidatedManifestFile(
     size_t total_data_files = 0;
 
     auto current_manifest_list = getManifestList(
-        object_storage, persistent_table_components, context, current_manifest_list_path, log);
+        object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
 
     for (const auto & manifest_file : current_manifest_list)
     {
@@ -545,18 +553,19 @@ void writeConsolidatedManifestFile(
             pd.partition_values = data_file->parsed_entry->partition_key_value;
             // A single manifest file within the current snapshot should not list the
             // same data file twice
-            if (std::find(pd.file_paths.begin(), pd.file_paths.end(), data_file->file_path) == pd.file_paths.end())
+            if (std::find(pd.file_paths.begin(), pd.file_paths.end(), data_file->parsed_entry->file_path_key) == pd.file_paths.end())
             {
-                pd.file_paths.push_back(data_file->file_path);
+                pd.file_paths.push_back(data_file->parsed_entry->file_path_key);
                 ++total_data_files;
             }
         }
     }
 
+    const auto & path_resolver = persistent_table_components.path_resolver;
+
     // Create file name generator for new metadata files
     FileNamesGenerator generator(
-        persistent_table_components.table_path,
-        persistent_table_components.table_path,
+        path_resolver.getTableLocation(),
         false,
         compression_method,
         write_format);
@@ -564,11 +573,11 @@ void writeConsolidatedManifestFile(
 
     // Use the current snapshot's own summary figures for the new snapshot record.
     MetadataGenerator metadata_generator(metadata_object);
-    auto generated_metadata_name = generator.generateMetadataName();
+    auto generated_metadata_info = generator.generateMetadataPathWithInfo();
 
     auto new_snapshot = metadata_generator.generateNextMetadata(
         generator,
-        generated_metadata_name.path_in_metadata,
+        generated_metadata_info.path,
         current_snapshot_id, // parent = current snapshot being compacted
         static_cast<Int64>(total_data_files),  // added_files  = total live files in new snapshot
         current_added_records,
@@ -582,17 +591,18 @@ void writeConsolidatedManifestFile(
     // Write one manifest file per partition
     auto partition_types = ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes();
 
-    std::vector<String> consolidated_manifest_paths;
-    Int64 total_manifest_file_size = 0;
+    std::vector<IcebergPathFromMetadata> consolidated_manifest_paths;
+    std::vector<Int64> manifest_entry_sizes;
 
     for (auto & [partition_key, pd] : partitions_map)
     {
         auto manifest_path = generator.generateManifestEntryName();
+        auto storage_manifest_path = path_resolver.resolve(manifest_path);
         LOG_INFO(log, "Creating manifest file for partition '{}': {} ({} data files)",
-                 partition_key, manifest_path.path_in_storage, pd.file_paths.size());
+                 partition_key, storage_manifest_path, pd.file_paths.size());
 
         auto buffer_manifest = object_storage->writeObject(
-            StoredObject(manifest_path.path_in_storage),
+            StoredObject(storage_manifest_path),
             WriteMode::Rewrite,
             std::nullopt,
             DBMS_DEFAULT_BUFFER_SIZE,
@@ -614,74 +624,76 @@ void writeConsolidatedManifestFile(
             Iceberg::FileContentType::DATA);
 
         buffer_manifest->finalize();
-        total_manifest_file_size += buffer_manifest->count();
+        Int64 manifest_size = buffer_manifest->count();
+        if (manifest_size == 0)
+            manifest_size = object_storage->getObjectMetadata(storage_manifest_path, /*with_tags=*/false).size_bytes;
+        manifest_entry_sizes.push_back(manifest_size);
 
-        consolidated_manifest_paths.push_back(manifest_path.path_in_metadata);
+        consolidated_manifest_paths.push_back(manifest_path);
     }
 
+    // Cleanup lambda removes the written manifest files and manifest list on commit conflict
+    auto cleanup = [&]()
+    {
+        for (const auto & mp : consolidated_manifest_paths)
+            object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(mp)));
+        object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(new_snapshot.manifest_list_path)));
+    };
+
     // Create manifest list pointing to all per-partition manifest files
+    auto storage_manifest_list_path = path_resolver.resolve(new_snapshot.manifest_list_path);
     LOG_INFO(log, "Creating manifest list with {} partition manifest(s): {}",
-             consolidated_manifest_paths.size(), new_snapshot.storage_metadata_path);
+             consolidated_manifest_paths.size(), storage_manifest_list_path);
 
     auto buffer_manifest_list = object_storage->writeObject(
-        StoredObject(new_snapshot.storage_metadata_path),
+        StoredObject(storage_manifest_list_path),
         WriteMode::Rewrite,
         std::nullopt,
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getWriteSettings());
 
     generateManifestList(
-        generator,
+        path_resolver,
         metadata_object,
         object_storage,
         context,
         consolidated_manifest_paths,
         new_snapshot.snapshot,
-        total_manifest_file_size,
+        manifest_entry_sizes,
         *buffer_manifest_list,
         Iceberg::FileContentType::DATA,
         false);
     buffer_manifest_list->finalize();
 
-    // Write final metadata file
+    // Commit: write metadata file with If-None-Match + update version hint with ETag-based CAS.
+    // Returns false if another writer already claimed this metadata version, so the caller retries.
     {
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
 
-        LOG_INFO(log, "Writing metadata file: {}", generated_metadata_name.path_in_storage);
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(generated_metadata_name.path_in_storage),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
+        auto hint_path = generator.generateVersionHint();
+        LOG_INFO(log, "Committing metadata file: {}",
+                 path_resolver.resolve(generated_metadata_info.path));
 
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
-    }
-
-    // Update version hint file to point to the new metadata
-    {
-        auto version_hint = generator.generateVersionHint();
-        LOG_INFO(log, "Updating version hint file: {}", version_hint.path_in_storage);
-
-        auto buffer_version_hint = object_storage->writeObject(
-            StoredObject(version_hint.path_in_storage),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-
-        // Extract version number from metadata filename
-        // Format: metadata/v<version>.metadata.json or metadata/v<version>-<uuid>.metadata.json
-        auto version_str = std::to_string(generator.getInitialVersion() - 1);
-        buffer_version_hint->write(version_str.data(), version_str.size());
-        buffer_version_hint->finalize();
+        if (!writeMetadataFileAndVersionHint(
+                path_resolver,
+                generated_metadata_info,
+                json_representation,
+                hint_path,
+                object_storage,
+                context,
+                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        {
+            LOG_INFO(log, "Metadata commit conflict detected, cleaning up temporary files");
+            cleanup();
+            return false;
+        }
     }
 
     LOG_INFO(log, "Successfully created {} partition manifest file(s) covering {} data files",
              consolidated_manifest_paths.size(), total_data_files);
+    return true;
 }
 
 void writeMetadataFiles(
@@ -919,58 +931,78 @@ void compactIcebergManifests(
     auto log = getLogger("IcebergManifestCompaction");
     LOG_INFO(log, "Starting manifest-only compaction for Iceberg table");
 
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage_,
-        persistent_table_components.table_path,
-        data_lake_settings,
-        persistent_table_components.metadata_cache,
-        context_,
-        log.get(),
-        persistent_table_components.table_uuid);
-
-    auto metadata_object = getMetadataJSONObject(
-        metadata_file_path,
-        object_storage_,
-        persistent_table_components.metadata_cache,
-        context_,
-        log,
-        persistent_table_components.metadata_compression_method,
-        persistent_table_components.table_uuid);
-
-    // Check if compaction is needed using the helper function
-    auto stats = getManifestStats(metadata_object, persistent_table_components, object_storage_, context_);
-    const size_t total_manifest_files_before = stats.num_manifest_files;
-    const size_t num_unique_partitions = stats.num_unique_partitions;
-
     const size_t min_count_to_compact = context_->getSettingsRef()[DB::Setting::iceberg_manifest_min_count_to_compact];
 
-    if (total_manifest_files_before <= min_count_to_compact)
+    for (size_t attempt = 0; attempt < MAX_COMPACTION_RETRIES; ++attempt)
     {
-        LOG_INFO(log, "Manifest compaction is not needed. Total manifest files: {} (threshold: {})",
-                 total_manifest_files_before, min_count_to_compact);
-        return;
+        if (attempt > 0)
+            LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
+
+        const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+            object_storage_,
+            persistent_table_components.table_path,
+            data_lake_settings,
+            persistent_table_components.metadata_cache,
+            context_,
+            log.get(),
+            persistent_table_components.table_uuid,
+            persistent_table_components.metadata_compression_method);
+
+        auto metadata_object = getMetadataJSONObject(
+            metadata_file_path,
+            object_storage_,
+            persistent_table_components.metadata_cache,
+            context_,
+            log,
+            persistent_table_components.metadata_compression_method,
+            persistent_table_components.table_uuid);
+
+        // Check if compaction is still needed after a concurrent write may have modified things
+        auto stats = getManifestStats(metadata_object, persistent_table_components, object_storage_, context_);
+        const size_t total_manifest_files_before = stats.num_manifest_files;
+        const size_t num_unique_partitions = stats.num_unique_partitions;
+
+        if (total_manifest_files_before <= min_count_to_compact)
+        {
+            LOG_INFO(log, "Manifest compaction is not needed. Total manifest files: {} (threshold: {})",
+                     total_manifest_files_before, min_count_to_compact);
+            return;
+        }
+
+        // If the number of manifest files already equals the number of unique partitions,
+        // the manifests are already optimally consolidated (one per partition) — nothing to do.
+        if (total_manifest_files_before <= num_unique_partitions)
+        {
+            LOG_INFO(log, "Manifest compaction is not needed. Manifest files ({}) already equal unique partitions ({})",
+                     total_manifest_files_before, num_unique_partitions);
+            return;
+        }
+
+        if (writeConsolidatedManifestFile(
+                metadata_version,
+                metadata_object,
+                persistent_table_components,
+                object_storage_,
+                context_,
+                sample_block_,
+                write_format,
+                persistent_table_components.metadata_compression_method,
+                data_lake_settings))
+        {
+            // Invalidate metadata cache so the next reader picks up the new state
+            if (persistent_table_components.metadata_cache)
+            {
+                persistent_table_components.metadata_cache->remove(persistent_table_components.table_path);
+                if (persistent_table_components.table_uuid)
+                    persistent_table_components.metadata_cache->remove(*persistent_table_components.table_uuid);
+            }
+            LOG_INFO(log, "Successfully compacted {} manifest files", total_manifest_files_before);
+            return;
+        }
     }
 
-    // If the number of manifest files already equals the number of unique partitions,
-    // the manifests are already optimally consolidated (one per partition) — nothing to do.
-    if (total_manifest_files_before <= num_unique_partitions)
-    {
-        LOG_INFO(log, "Manifest compaction is not needed. Manifest files ({}) already equal unique partitions ({})",
-                 total_manifest_files_before, num_unique_partitions);
-        return;
-    }
-
-    // Write new metadata files with consolidated manifests
-    writeConsolidatedManifestFile(metadata_version,
-                                  metadata_object,
-                                  persistent_table_components,
-                                  object_storage_,
-                                  context_,
-                                  sample_block_,
-                                  write_format,
-                                  persistent_table_components.metadata_compression_method);
-
-    LOG_INFO(log, "Successfully compacted {} manifest files", total_manifest_files_before);
+    LOG_WARNING(log, "Manifest compaction failed to commit after {} attempts due to concurrent modifications",
+                MAX_COMPACTION_RETRIES);
 }
 
 void compactIcebergTable(
