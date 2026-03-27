@@ -149,6 +149,7 @@ apply_settings_from_server	1
 archive_adaptive_buffer_max_size_bytes	8388608
 arrow_flight_request_descriptor_type	path
 ast_fuzzer_any_query	0
+ast_fuzzer_oracle	0
 ast_fuzzer_runs	0
 asterisk_include_alias_columns	0
 asterisk_include_materialized_columns	0
