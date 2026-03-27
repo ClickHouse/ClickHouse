@@ -17,9 +17,8 @@ import json
 import shlex
 import sys
 from datetime import date, timedelta
-from typing import Any, Dict, List
-
 from pathlib import Path
+from typing import Any, Dict, List
 
 _repo_root = Path(__file__).parents[3]  # ci/jobs/scripts/ -> repo root
 sys.path.insert(0, str(_repo_root))
@@ -61,14 +60,14 @@ def gh_search(query: str, per_page: int = 100, max_results: int = 1000) -> List[
 
 def get_release_branches(repo: str) -> List[str]:
     """Return head-branch names of all open release PRs."""
-    output = Shell.get_output(
+    output = Shell.get_output_or_raise(
         f"gh pr list --repo {repo} "
         f"--label {shlex.quote(Labels.RELEASE)} "
         f"--state open --json headRefName --limit 50",
         verbose=True,
     )
     if not output:
-        return []
+        raise RuntimeError(f"gh pr list returned empty output for repo: {repo}")
     return [pr["headRefName"] for pr in json.loads(output)]
 
 
@@ -111,7 +110,7 @@ def mark_ready(repo: str, pr_number: int, dry_run: bool) -> None:
 def remove_backport_labels(
     repo: str, pr_number: int, pr_labels: List[str], all_backport_labels: List[str], dry_run: bool
 ) -> None:
-    to_remove = [l for l in pr_labels if l in set(all_backport_labels) | {Labels.READY_FOR_BACKPORT}]
+    to_remove = [lbl for lbl in pr_labels if lbl in set(all_backport_labels) | {Labels.READY_FOR_BACKPORT}]
     if not to_remove:
         return
     remove_args = " ".join(f"--remove-label {shlex.quote(l)}" for l in to_remove)
