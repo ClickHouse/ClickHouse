@@ -252,12 +252,13 @@ ExpressionCost CostEstimator::estimateReadCost(
 
     if (dynamic_cast<const SortedReadStrategy *>(strategy) != nullptr)
     {
-        /// Same IO as regular read, plus sequential cost: reading in order produces
-        /// a merge-sorted stream, limiting internal parallelism vs multithreaded read.
+        /// Same IO as regular read. Small CPU overhead for merge-sorting part streams
+        /// (N-way merge of already-sorted parts). No sequential cost — the merge is
+        /// lightweight compared to the IO savings from eliminating an explicit Sort.
         Float64 rows = this_step_statistics.estimated_row_count;
         Float64 io = rows * bytes_per_row / distribution_node_count;
         return ExpressionCost{
-            .cost = Cost{.io = io, .sequential = rows / distribution_node_count},
+            .cost = Cost{.cpu = rows * 0.1 / distribution_node_count, .io = io},
             .subtree_cost = {},
         };
     }
@@ -290,10 +291,16 @@ ExpressionCost CostEstimator::estimateAggregationCost(
     const bool is_local = dynamic_cast<const LocalAggregationStrategy *>(strategy) != nullptr;
     const bool is_shuffle = dynamic_cast<const ShuffleAggregationStrategy *>(strategy) != nullptr;
     const bool is_partial = dynamic_cast<const PartialAggregationStrategy *>(strategy) != nullptr;
+    const bool is_streaming = dynamic_cast<const StreamingAggregationStrategy *>(strategy) != nullptr;
 
     ExpressionCost aggregation_cost;
 
-    if (is_local)
+    if (is_streaming)
+    {
+        /// Linear scan of sorted input, no hash table, no memory.
+        aggregation_cost.cost.cpu += input_statistics.estimated_row_count / parallelism;
+    }
+    else if (is_local)
     {
         aggregation_cost.cost.cpu +=
             this_step_statistics.estimated_row_count +

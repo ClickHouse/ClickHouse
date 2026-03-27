@@ -87,3 +87,58 @@ Positions: 1
 97
 96
 95
+-- 8. GROUP BY a (PK): streaming agg + SortedRead
+Expression ((Project names + Projection))
+Actions: INPUT :: 0 -> count() UInt64 : 0
+         INPUT : 1 -> __table1.a UInt64 : 1
+         ALIAS __table1.a :: 1 -> a UInt64 : 2
+Positions: 2 0
+  Aggregating
+  Keys: __table1.a
+  Aggregates:
+      count()
+        Function: count() → UInt64
+        Arguments: none
+  Order: __table1.a ASC
+  Skip merging: 0
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+    Actions: INPUT : 0 -> a UInt64 : 0
+             ALIAS a :: 0 -> __table1.a UInt64 : 1
+    Positions: 1
+      ReadFromMergeTree (SortedRead default.t_sorted)
+      ReadType: InOrder
+      Parts: 1
+      Granules: 1
+-- 9. GROUP BY b (non-PK): hash agg
+Expression ((Project names + Projection))
+Actions: INPUT :: 0 -> count() UInt64 : 0
+         INPUT : 1 -> __table1.b String : 1
+         ALIAS __table1.b :: 1 -> b String : 2
+Positions: 2 0
+  Aggregating
+  Keys: __table1.b
+  Aggregates:
+      count()
+        Function: count() → UInt64
+        Arguments: none
+  Skip merging: 0
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+    Actions: INPUT : 0 -> b String : 0
+             ALIAS b :: 0 -> __table1.b String : 1
+    Positions: 1
+      ReadFromMergeTree (default.t_sorted)
+      ReadType: Default
+      Parts: 1
+      Granules: 1
+-- 10. Correctness GROUP BY PK
+0	1
+1	1
+2	1
+3	1
+4	1
+-- 11. Correctness GROUP BY non-PK
+0	1
+1	1
+10	1
+11	1
+12	1

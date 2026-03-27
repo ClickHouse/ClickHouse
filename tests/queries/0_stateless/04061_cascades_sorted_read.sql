@@ -1,15 +1,13 @@
--- Tests for `SortedReadImplementation` and `LocalReadImplementation` in the
--- Cascades optimizer.
+-- Tests for `SortedReadImplementation`, `LocalReadImplementation`, and
+-- `StreamingAggregationStrategy` in the Cascades optimizer.
 --
 -- Key behaviors verified:
--- 1. ORDER BY on PK column: `SortedRead` eliminates the explicit Sorting step.
---    The sorted passthrough variant in `DistributionPassthrough` translates column
---    names through the Expression DAG, allowing `SortedRead` to satisfy the sorting
---    requirement directly via `ReadType: InOrder`.
--- 2. No ORDER BY: `LocalReadImplementation` provides unsorted {1 node} fallback,
---    `SortedRead` is not used (sequential cost makes it more expensive).
--- 3. ORDER BY on non-PK column: `SortedRead` cannot help, Sorting step is present.
--- 4. Table without sorting key: `LocalReadImplementation` handles it.
+-- 1. ORDER BY on PK: `SortedRead` eliminates the explicit Sorting step via
+--    `ReadType: InOrder`.
+-- 2. No ORDER BY: `LocalReadImplementation` provides unsorted fallback.
+-- 3. ORDER BY on non-PK column: Sorting step is present, `ReadType: Default`.
+-- 4. GROUP BY on PK: streaming aggregation on `SortedRead` input — no hash table.
+-- 5. GROUP BY on non-PK: hash aggregation (streaming can't help).
 
 SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
@@ -53,6 +51,26 @@ SELECT a FROM t_sorted ORDER BY a LIMIT 5;
 -- 7. Correctness: ORDER BY DESC.
 SELECT '-- 7. Correctness DESC';
 SELECT a FROM t_sorted ORDER BY a DESC LIMIT 5;
+
+-- 8. GROUP BY on PK: streaming aggregation with SortedRead, ReadType=InOrder.
+--    The streaming variant calls `applyOrder` on the cloned `AggregatingStep`,
+--    which uses `AggregatingInOrderTransform` — linear scan, no hash table.
+SELECT '-- 8. GROUP BY a (PK): streaming agg + SortedRead';
+EXPLAIN actions = 1 SELECT a, count() FROM t_sorted GROUP BY a;
+
+-- 9. GROUP BY on non-PK: hash aggregation, ReadType=Default.
+SELECT '-- 9. GROUP BY b (non-PK): hash agg';
+EXPLAIN actions = 1 SELECT b, count() FROM t_sorted GROUP BY b;
+
+-- 10. Correctness: GROUP BY on PK.
+SELECT '-- 10. Correctness GROUP BY PK';
+SELECT a, count() FROM t_sorted GROUP BY a ORDER BY a LIMIT 5
+SETTINGS make_distributed_plan = 0;
+
+-- 11. Correctness: GROUP BY on non-PK.
+SELECT '-- 11. Correctness GROUP BY non-PK';
+SELECT b, count() FROM t_sorted GROUP BY b ORDER BY b LIMIT 5
+SETTINGS make_distributed_plan = 0;
 
 DROP TABLE t_sorted;
 DROP TABLE t_no_key;

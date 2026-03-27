@@ -365,7 +365,7 @@ void optimizeTreeSecondPass(
                     if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
                         applied_projection_names.insert(*applied_projection);
 
-                if (optimization_settings.aggregation_in_order)
+                if (optimization_settings.aggregation_in_order && !optimization_settings.enable_cascades_optimizer)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }
 

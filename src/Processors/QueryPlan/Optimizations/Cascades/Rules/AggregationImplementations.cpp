@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Core/SortDescription.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <memory>
@@ -203,6 +204,40 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
                     result.push_back(single_key_agg);
                 }
             }
+        }
+    }
+
+    /// Strategy C: Streaming aggregation on sorted input — no hash table.
+    /// Requires non-empty GROUP BY keys, no grouping sets, no overflow row.
+    if (!agg_step->getParams().keys.empty()
+        && !agg_step->isGroupingSets()
+        && !agg_step->getParams().overflow_row)
+    {
+        SortDescription sort_desc;
+        for (const auto & key : agg_step->getParams().keys)
+            sort_desc.push_back(SortColumnDescription{String(key), 1, 0});
+
+        /// Local streaming variant: gather to 1 node, sorted input.
+        /// Distributed streaming (shuffle + sorted) is not created because
+        /// ShuffleExchange destroys sort order, negating the benefit.
+        {
+            auto new_step = agg_step->clone();
+            auto * typed = typeid_cast<AggregatingStep *>(new_step.get());
+            if (!typed)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "AggregationImplementation: clone of AggregatingStep returned unexpected type");
+            typed->applyOrder(sort_desc, sort_desc);
+            new_step->setStepDescription(fmt::format("Streaming {}", agg_step->getStepDescription()), 200);
+
+            GroupExpressionPtr streaming_agg = std::make_shared<GroupExpression>(*expression);
+            streaming_agg->plan_step = std::move(new_step);
+            streaming_agg->strategy = std::make_shared<StreamingAggregationStrategy>();
+            streaming_agg->inputs[0].required_properties.sorting = sort_desc;
+            streaming_agg->properties.distribution = {};
+
+            streaming_agg->setApplied(*this, required_properties);
+            memo.getGroup(expression->group_id)->addPhysicalExpression(streaming_agg);
+            result.push_back(streaming_agg);
         }
     }
 

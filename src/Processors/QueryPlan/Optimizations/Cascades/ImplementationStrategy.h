@@ -54,6 +54,12 @@ struct PartialAggregationStrategy final : IAggregationStrategy
     String getName() const override { return "PartialAggregation"; }
 };
 
+/// Streaming aggregation on sorted input — O(1) memory per group.
+struct StreamingAggregationStrategy final : IAggregationStrategy
+{
+    String getName() const override { return "StreamingAggregation"; }
+};
+
 /// --- Read strategies ---
 
 struct ParallelReadStrategy final : IReadStrategy
