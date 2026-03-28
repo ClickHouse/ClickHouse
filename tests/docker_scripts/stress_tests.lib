@@ -144,6 +144,8 @@ EOL
 
             <table_function_remote_max_addresses>200</table_function_remote_max_addresses>
 
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
 
             <constraints>
                 <max_execution_time>
