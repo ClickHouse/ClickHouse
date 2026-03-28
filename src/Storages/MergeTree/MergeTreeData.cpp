@@ -1290,10 +1290,11 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     /// Add all columns used in the partition key to the min-max index.
     DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
 
-    /// Reset positions before recomputing — ensures no stale values persist
-    /// when this function is called a second time from setProperties after ALTER.
-    minmax_idx_date_column_pos.store(-1, std::memory_order_release);
-    minmax_idx_time_column_pos.store(-1, std::memory_order_release);
+    /// Compute positions into local variables first, then publish once at the end.
+    /// This avoids a race where concurrent INSERT threads could observe a transient -1
+    /// and use it as an index into the hyperrectangle array.
+    Int64 new_date_column_pos = -1;
+    Int64 new_time_column_pos = -1;
 
     /// Try to find the date column in columns used by the partition key (a common case).
     /// If there are no - DateTime or DateTime64 would also suffice.
@@ -1309,13 +1310,13 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
         {
             if (!has_date_column)
             {
-                minmax_idx_date_column_pos.store(static_cast<Int64>(i), std::memory_order_release);
+                new_date_column_pos = static_cast<Int64>(i);
                 has_date_column = true;
             }
             else
             {
                 /// There is more than one Date column in partition key and we don't know which one to choose.
-                minmax_idx_date_column_pos.store(-1, std::memory_order_release);
+                new_date_column_pos = -1;
             }
         }
     }
@@ -1331,18 +1332,21 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
             {
                 if (!has_datetime_column)
                 {
-                    minmax_idx_time_column_pos.store(static_cast<Int64>(i), std::memory_order_release);
+                    new_time_column_pos = static_cast<Int64>(i);
                     has_datetime_column = true;
                 }
                 else
                 {
                     /// There is more than one DateTime column in partition key and we don't know which one to choose.
-                    minmax_idx_time_column_pos.store(-1, std::memory_order_release);
+                    new_time_column_pos = -1;
                 }
             }
         }
     }
 
+    /// Publish final positions atomically — concurrent readers never see transient values.
+    minmax_idx_date_column_pos.store(new_date_column_pos, std::memory_order_release);
+    minmax_idx_time_column_pos.store(new_time_column_pos, std::memory_order_release);
 }
 
 
