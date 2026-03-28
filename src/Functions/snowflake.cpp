@@ -231,7 +231,16 @@ public:
         auto factor = static_cast<double>(multiplier_msec) / static_cast<double>(multiplier_src);
 
         for (size_t i = 0; i < input_rows_count; ++i)
-            res_data[i] = static_cast<Int64>(static_cast<double>(src_data[i]) * factor - static_cast<double>(snowflake_epoch)) << time_shift;
+        {
+            double val = static_cast<double>(src_data[i]) * factor - static_cast<double>(snowflake_epoch);
+            /// Clamp to Int64 range to avoid undefined behavior on float-to-int cast.
+            constexpr double max_int64 = static_cast<double>(std::numeric_limits<Int64>::max());
+            constexpr double min_int64 = static_cast<double>(std::numeric_limits<Int64>::min());
+            if (val > max_int64 || val < min_int64 || std::isnan(val))
+                res_data[i] = 0;
+            else
+                res_data[i] = static_cast<Int64>(val) << time_shift;
+        }
 
         return res_column;
     }

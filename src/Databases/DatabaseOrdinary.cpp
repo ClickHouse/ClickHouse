@@ -181,6 +181,7 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     /// Set new engine for the old query
     engine->name = engine_name;
     engine->arguments = args;
+    engine->setNoEmptyArgs(true);
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 

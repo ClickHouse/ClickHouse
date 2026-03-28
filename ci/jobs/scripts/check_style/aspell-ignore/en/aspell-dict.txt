@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3588 
+personal_ws-1.1 en 3602
 AArch
 ABIs
 ACLs
@@ -300,6 +300,7 @@ DockerHub
 DoubleDelta
 Doxygen
 Dresseler
+DuckDB
 Durre
 ECMA
 ETag
@@ -735,6 +736,7 @@ NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
 NFKC
+NFKCCasefold
 NFKD
 NOAA
 NULLIF
@@ -785,6 +787,7 @@ OKLab
 OLAP
 OLTP
 ORCCompression
+ORMs
 OSCPUVirtualTimeMicroseconds
 OSCPUWaitMicroseconds
 OSContextSwitches
@@ -1132,6 +1135,8 @@ Subcolumns
 Subexpression
 Submodules
 Subqueries
+Subrequest
+Subrequests
 Substrings
 SummingMergeTree
 SuperSet
@@ -1492,6 +1497,7 @@ authType
 authenticatedUser
 authenticator
 authenticators
+autocomplete
 autocompletion
 autodetect
 autodetected
@@ -1604,6 +1610,7 @@ capnproto
 cardinalities
 cardinality
 cartesian
+caseFoldUTF
 caseWithExpression
 cashflow
 cashflows
@@ -1827,6 +1834,7 @@ defaultProfiles
 defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
+defragmentation
 delim
 deltaLake
 deltaLakeCluster
@@ -1849,6 +1857,7 @@ dereference
 deserialization
 deserialize
 deserialized
+deserializer
 deserializing
 dest
 destructor
@@ -1857,7 +1866,6 @@ detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
-detectProgrammingLanguage
 detectTonality
 determinator
 deterministically
@@ -2230,6 +2238,7 @@ initialQueryStartTime
 initializeAggregation
 injective
 inlined
+inlines
 innogames
 inodes
 insertio
@@ -2802,6 +2811,7 @@ protocol
 protos
 proxied
 prql
+pseudocode
 pseudorandom
 pseudorandomize
 pseudoterminal
@@ -2935,6 +2945,7 @@ reinterpretAsString
 reinterpretAsUInt
 reinterpretAsUUID
 remerge
+removeDiacriticsUTF
 remoteSecure
 repivot
 replaceAll
@@ -3121,6 +3132,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+strikethrough
 stringBytesEntropy
 stringBytesUniq
 stringCompare
@@ -3166,6 +3178,7 @@ subqueries
 subquery
 subranges
 subreddits
+subrequest
 subsecond
 subseconds
 subsequence
@@ -3376,6 +3389,7 @@ tokenizer
 tokenizers
 tokenizes
 tokenizing
+tokensForLikePattern
 toml
 toolchain
 toolset
@@ -3518,6 +3532,7 @@ varpop
 varpopstable
 varsamp
 varsampstable
+VarUInt
 vectorized
 vectorscan
 vendoring
