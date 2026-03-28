@@ -15,7 +15,7 @@
 namespace DB
 {
 
-ASTPtr wrapInSubquery(ASTPtr current_query, size_t seqno)
+ASTPtr wrapInSubquery(ASTPtr current_query, size_t /*seqno*/)
 {
     auto subquery = make_intrusive<ASTSubquery>();
     auto inner_union = make_intrusive<ASTSelectWithUnionQuery>();
@@ -27,7 +27,7 @@ ASTPtr wrapInSubquery(ASTPtr current_query, size_t seqno)
     inner_union->children.push_back(inner_list);
 
     subquery->children.push_back(inner_union);
-    subquery->setAlias(fmt::format("_pipe_subquery_{}", seqno));
+    // subquery->setAlias(fmt::format("_pipe_subquery_{}", seqno));
 
     auto table_expr = make_intrusive<ASTTableExpression>();
     table_expr->subquery = subquery;
@@ -177,8 +177,6 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         {
             if (has_limit)
                 wrap_current_query();
-
-            wrap_current_query();
 
             if (!pipe_join_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;

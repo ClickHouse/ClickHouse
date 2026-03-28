@@ -298,10 +298,8 @@ ASTPtr tryParseQuery(
       * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
       */
 
-    bool allow_pipe_syntax = true;
-
     IParser::Pos lookahead(token_iterator);
-    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead) && !allow_pipe_syntax)
+    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
