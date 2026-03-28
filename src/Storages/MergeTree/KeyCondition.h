@@ -21,7 +21,6 @@ namespace DB
 
 class ASTFunction;
 class Context;
-class IFunction;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -71,7 +70,7 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
-        bool skip_analysis_ = false); /// Toggled by `use_primary_key` setting. Useful for testing.
+        bool skip_analysis_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
 
     struct BloomFilterData
     {

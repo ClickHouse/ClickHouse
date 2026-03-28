@@ -14,7 +14,7 @@ public:
         const StorageID & table_id_,
         const StoragePtr & source_table_,
         const ColumnsDescription & columns,
-        const String & parts_regexp_,
+        std::vector<String> parts_,
         const ASTPtr & primary_key_predicate_,
         const OptionalVectorSearchParameters & vector_search_parameters_);
 

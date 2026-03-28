@@ -112,6 +112,13 @@ PlainMarksByName IMergeTreeDataPartWriter::releaseCachedMarks()
     return res;
 }
 
+PlainMarksByName IMergeTreeDataPartWriter::releaseCachedIndexMarks()
+{
+    PlainMarksByName res;
+    std::swap(cached_index_marks, res);
+    return res;
+}
+
 SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & column_name) const
 {
     auto it = serializations.find(column_name);

@@ -15,6 +15,8 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnNullable.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -25,6 +27,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeObject.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -35,7 +38,8 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <Interpreters/Context.h>
-
+#include <Interpreters/castColumn.h>
+#include <IO/WriteBufferFromString.h>
 #include "config.h"
 
 
@@ -88,7 +92,8 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const FormatSettings & format_settings)
+        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
+                            const FormatSettings & format_settings)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
@@ -97,11 +102,18 @@ public:
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", String(Name::name));
 
             const auto & first_column = arguments[0];
-            if (!isString(first_column.type))
+            bool is_object_input = isObject(first_column.type);
+
+            if (!isString(first_column.type) && !is_object_input)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "The first argument of function {} should be a string containing JSON, illegal type: "
+                                "The first argument of function {} should be a string containing JSON or a JSON object, illegal type: "
                                 "{}", String(Name::name), first_column.type->getName());
 
+            /// For JSON/Object type input: use subcolumn extraction (constant string keys only).
+            if (is_object_input)
+                return runForObjectColumn<Name, Impl>(arguments, result_type, input_rows_count, format_settings);
+
+            /// String input: parse JSON and extract values.
             const ColumnPtr & arg_json = first_column.column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
             const auto * col_json_string
@@ -167,6 +179,154 @@ public:
                     to->insertDefault();
             }
             return to;
+        }
+
+    private:
+        /// Helper to process ColumnObject directly using subcolumns.
+        /// Only supports constant string path keys (no indexes or non-const keys).
+        /// - Extract literal subcolumn (json.path) for scalar values
+        /// - Extract subobject subcolumn (json.^`path`) for nested objects
+        /// - Merge them row-by-row, preferring literal over subobject
+        /// - Cast the result to the function's return type
+        template <typename TName, template <typename> typename TImpl>
+        static ColumnPtr runForObjectColumn(
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            const FormatSettings & format_settings)
+        {
+            const auto & first_column = arguments[0];
+            const auto & data_type_object = assert_cast<const DataTypeObject &>(*first_column.type);
+
+            const auto * col_const = typeid_cast<const ColumnConst *>(first_column.column.get());
+            const auto * col_object = typeid_cast<const ColumnObject *>(
+                col_const ? col_const->getDataColumnPtr().get() : first_column.column.get());
+
+            if (!col_object)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column type for Object parsing");
+
+            /// Determine number of path arguments (parser type doesn't matter for this).
+            size_t num_index_arguments = TImpl<DummyJSONParser>::getNumberOfIndexArguments(arguments);
+
+            /// Build a dotted path from constant string key arguments only.
+            /// During constant folding (scalar queries without tables), arguments may not be
+            /// wrapped in ColumnConst even if they're effectively constant (single-row columns).
+            String path;
+            for (size_t i = 1; i <= num_index_arguments; ++i)
+            {
+                const auto & arg = arguments[i];
+                if (!isString(arg.type) || !arg.column)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {} with JSON type input supports only constant string path arguments",
+                        String(TName::name));
+
+                String key;
+                if (const auto * col_const_arg = typeid_cast<const ColumnConst *>(arg.column.get()))
+                {
+                    key = col_const_arg->getValue<String>();
+                }
+                else if (input_rows_count <= 1 && !arg.column->empty())
+                {
+                    /// Constant folding: single-row column that isn't wrapped in ColumnConst.
+                    key = (*arg.column)[0].safeGet<String>();
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {} with JSON type input supports only constant string path arguments",
+                        String(TName::name));
+                }
+
+                if (!path.empty())
+                    path += '.';
+                path += key;
+            }
+
+            /// Expand ColumnConst to full column if needed.
+            ColumnPtr object_column = col_const ? col_const->convertToFullColumn() : first_column.column;
+
+            /// Root case (no path specified) return defaults for most functions.
+            if (path.empty())
+                return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
+
+            /// Extract literal subcolumn (json.path returns the scalar value at that path).
+            auto literal_type = data_type_object.getSubcolumnType(path);
+            auto literal_subcolumn = data_type_object.getSubcolumn(path, object_column);
+
+            ColumnPtr merged;
+            DataTypePtr merged_type;
+
+            /// When the path has a type hint (literal_type is not Dynamic), the subobject may not be convertible to that type.
+            /// For typed paths we skip the subobject merge and use only the literal subcolumn.
+            if (literal_type && !isDynamic(literal_type))
+            {
+                merged = literal_subcolumn;
+                merged_type = literal_type;
+            }
+            else
+            {
+                /// Extract subobject subcolumn (json.^`path` returns nested object at that path).
+                String sub_object_name = "^`" + path + "`";
+                auto sub_object_type = data_type_object.getSubcolumnType(sub_object_name);
+                ColumnPtr sub_object_subcolumn = data_type_object.getSubcolumn(sub_object_name, object_column);
+
+                /// Merge literal and subobject subcolumns (same logic as `getObjectElement' in tupleElement.cpp):
+                /// For each row: prefer literal (scalar) value, if absent, use subobject (nested JSON).
+                if (sub_object_subcolumn->getNumberOfDefaultRows() == sub_object_subcolumn->size())
+                {
+                    /// No nested subobject at this path (only literal exists).
+                    merged = literal_subcolumn;
+                    merged_type = literal_type;
+                }
+                else
+                {
+                    /// Both exist: merge row-by-row.
+                    auto casted_sub_object = castColumn({sub_object_subcolumn, sub_object_type, ""}, literal_type);
+                    auto result_col = literal_type->createColumn();
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                    {
+                        if (!literal_subcolumn->isDefaultAt(i))
+                            result_col->insertFrom(*literal_subcolumn, i);
+                        else if (!sub_object_subcolumn->isDefaultAt(i))
+                            result_col->insertFrom(*casted_sub_object, i);
+                        else
+                            result_col->insertDefault();
+                    }
+                    merged = std::move(result_col);
+                    merged_type = literal_type;
+                }
+            }
+
+            /// For JSONExtractRaw: serialize each value as a JSON string
+            constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
+                        || std::string_view(TName::name) == std::string_view("JSONExtractRawCaseInsensitive");
+
+            if constexpr (is_extract_raw)
+            {
+                auto raw_col = ColumnString::create();
+                auto serialization = merged_type->getDefaultSerialization();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    if (merged->isDefaultAt(i))
+                    {
+                        raw_col->insertDefault();
+                    }
+                    else
+                    {
+                        WriteBufferFromOwnString buf;
+                        serialization->serializeTextJSON(*merged, i, buf, format_settings);
+                        raw_col->insert(buf.str());
+                    }
+                }
+                return raw_col;
+            }
+            else
+            {
+                auto casted = castColumnAccurateOrNull({merged, merged_type, ""}, result_type);
+                return result_type->isNullable() ? casted : removeNullable(casted);
+            }
         }
     };
 

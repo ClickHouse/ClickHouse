@@ -101,7 +101,6 @@ FROM
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<CramersVData>>(argument_types);
         },
-        {},
         documentation
     });
 }

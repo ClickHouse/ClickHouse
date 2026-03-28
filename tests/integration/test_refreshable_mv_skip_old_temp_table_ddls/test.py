@@ -125,8 +125,14 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
             node1.query(f"SYSTEM WAIT VIEW {db_name}.mv; SYSTEM REFRESH VIEW {db_name}.mv;")
         node1.query(f"SYSTEM WAIT VIEW {db_name}.mv")
 
-        # Make sure that the view is not refreshing
-        node1.query(f"SYSTEM STOP VIEW {db_name}.mv; SYSTEM WAIT VIEW {db_name}.mv;")
+        # Make sure that the view is not refreshing.
+        # WAIT VIEW may throw REFRESH_FAILED if a scheduled refresh happened to start
+        # (e.g. near an hour boundary) and was cancelled by STOP VIEW.
+        node1.query(f"SYSTEM STOP VIEW {db_name}.mv")
+        try:
+            node1.query(f"SYSTEM WAIT VIEW {db_name}.mv")
+        except QueryRuntimeException:
+            pass
 
         node2.query("SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution")
 

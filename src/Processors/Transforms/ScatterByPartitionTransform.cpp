@@ -85,6 +85,13 @@ void ScatterByPartitionTransform::work()
         if (output.isFinished())
             continue;
 
+        if (output_chunk.getNumRows() == 0 && output_chunk.getChunkInfos().empty())
+        {
+            /// Avoid pushing empty data chunks downstream.
+            was_processed = true;
+            continue;
+        }
+
         if (!output.canPush())
         {
             all_outputs_processed = false;

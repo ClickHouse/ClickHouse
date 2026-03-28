@@ -6,6 +6,7 @@
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/DatabaseReplicated.h>
 
 namespace DB
@@ -21,6 +22,7 @@ extern const int UNFINISHED;
 }
 
 DistributedQueryStatusSource::DistributedQueryStatusSource(
+    const String & zookeeper_name_,
     const String & zk_node_path,
     const String & zk_replicas_path,
     SharedHeader block,
@@ -28,6 +30,7 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
     const Strings & hosts_to_wait,
     const char * logger_name)
     : ISource(block)
+    , zookeeper_name(zookeeper_name_)
     , node_path(zk_node_path)
     , replicas_path(zk_replicas_path)
     , context(context_)
@@ -48,7 +51,6 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
     addTotalRowsApprox(waiting_hosts.size());
     timeout_seconds = context->getSettingsRef()[Setting::distributed_ddl_task_timeout];
 }
-
 
 IProcessor::Status DistributedQueryStatusSource::prepare()
 {
@@ -141,7 +143,7 @@ ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path 
     bool finished_exists = false;
 
     auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", getLogger("DDLQueryStatusSource"), getRetriesInfo());
-    retries_ctl.retryLoop([&]() { finished_exists = context->getZooKeeper()->tryGet(status_path, status_data); });
+    retries_ctl.retryLoop([&]() { finished_exists = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name)->tryGet(status_path, status_data); });
     if (finished_exists)
         status.tryDeserializeText(status_data);
 
@@ -210,12 +212,13 @@ Chunk DistributedQueryStatusSource::generate()
         Strings tmp_hosts;
         Strings tmp_active_hosts;
 
+        auto component_guard = Coordination::setCurrentComponent("DistributedQueryStatusSource::generate");
         {
             auto retries_ctl = ZooKeeperRetriesControl("executeDistributedQueryOnCluster", getLogger(getName()), getRetriesInfo());
             retries_ctl.retryLoop(
                 [&]()
                 {
-                    auto zookeeper = context->getZooKeeper();
+                    auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
                     Strings paths = getNodesToWait();
                     auto res = zookeeper->tryGetChildren(paths);
                     for (size_t i = 0; i < res.size(); ++i)

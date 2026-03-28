@@ -552,3 +552,23 @@ def test_yt_named_collection(started_cluster):
     instance.query("DROP NAMED COLLECTION ytsaurus_nc")
 
     yt.remove_table(table)
+
+
+def test_yt_parallelization(started_cluster):
+    table = "//tmp/table"
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    N = 111
+    data = "".join([f'{{"a" : {i} }}' for i in range(0, N)])
+
+    yt.create_table(table, data)
+    instance.query(
+        f"""
+        CREATE TABLE t0(a Int32)
+        ENGINE=YTsaurus('{yt_uri_helper.uri}', '//tmp/table', '{yt_uri_helper.token}')
+        SETTINGS max_streams = 4, min_rows_for_spawn_stream = 25
+        """
+    )
+    expected_sum = (0 + (N - 1)) * N // 2
+    assert int(instance.query("SELECT sum(a) FROM t0")) == expected_sum
+    instance.query("DROP TABLE t0 SYNC")
+    yt.remove_table(table)

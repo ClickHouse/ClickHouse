@@ -149,6 +149,7 @@ void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
         const ClusterConfigurationPtr & cluster,
         const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
     {
+        auto component_guard = Coordination::setCurrentComponent("registerMetadataStorageFromKeeper");
         LOG_INFO(getLogger("registerDiskS3"), "Using DiskS3 with metadata keeper");
 
         std::string zookeeper_name = config.getString(config_prefix + ".zookeeper_name", "default");

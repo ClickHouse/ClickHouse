@@ -343,6 +343,6 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction(
         "estimateCompressionRatio",
-        {createAggregateFunctionEstimateCompressionRatio, {.is_order_dependent = true, .is_window_function = true}, documentation});
+        {createAggregateFunctionEstimateCompressionRatio, documentation, {.is_order_dependent = true, .is_window_function = true}});
 }
 }

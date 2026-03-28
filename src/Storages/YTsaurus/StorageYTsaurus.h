@@ -26,7 +26,8 @@ struct YTsaurusStorageConfiguration
 
 /**
  *  Read only.
- *  One stream only.
+ *  One stream for dynamic table source.
+ *  Multiple stream for static table source.
  */
 class StorageYTsaurus final : public IStorage
 {

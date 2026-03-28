@@ -759,7 +759,8 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
     try
     {
         return convertFieldToType(from_value, to_type, from_type_hint, format_settings);
-    } catch (...)
+    }
+    catch (...) // Ok: tryConvertFieldToType is a try-pattern
     {
         return {};
     }

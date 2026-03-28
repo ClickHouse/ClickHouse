@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Columns/ColumnVariant.h>
 
 namespace DB
 {
@@ -67,24 +68,36 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect encoding name in geo json metadata: {}", encoding_name);
 
         Poco::JSON::Array::Ptr types = column_obj->getArray("geometry_types");
-        if (types->size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse does not support multiple geo types in one column");
 
-        String type = types->getElement<std::string>(0);
+        /// Per the GeoParquet spec, a missing or empty geometry_types array means the geometry
+        /// types are unknown (any type is valid). Multiple entries mean the column has mixed types.
+        /// In both cases, use GeoType::Mixed which maps to the Geometry (Variant) type.
         GeoType result_type;
-
-        if (type == "Point")
-            result_type = GeoType::Point;
-        else if (type == "LineString")
-            result_type = GeoType::LineString;
-        else if (type == "Polygon")
-            result_type = GeoType::Polygon;
-        else if (type == "MultiLineString")
-            result_type = GeoType::MultiLineString;
-        else if (type == "MultiPolygon")
-            result_type = GeoType::MultiPolygon;
+        if (!types || types->size() == 0)
+        {
+            result_type = GeoType::Mixed;
+        }
+        else if (types->size() == 1)
+        {
+            String type = types->getElement<std::string>(0);
+            if (type == "Point")
+                result_type = GeoType::Point;
+            else if (type == "LineString")
+                result_type = GeoType::LineString;
+            else if (type == "Polygon")
+                result_type = GeoType::Polygon;
+            else if (type == "MultiLineString")
+                result_type = GeoType::MultiLineString;
+            else if (type == "MultiPolygon")
+                result_type = GeoType::MultiPolygon;
+            else
+                /// Unknown or unsupported type name (e.g. "Point Z" for 3D geometries).
+                result_type = GeoType::Mixed;
+        }
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geo type {}", type);
+        {
+            result_type = GeoType::Mixed;
+        }
 
         geo_columns[column_name] = GeoColumnMetadata{.encoding = geo_encoding, .type = result_type};
     }
@@ -241,6 +254,7 @@ DataTypePtr getGeoDataType(GeoType type)
         case GeoType::Polygon: return DataTypeFactory::instance().get("Polygon");
         case GeoType::MultiLineString: return DataTypeFactory::instance().get("MultiLineString");
         case GeoType::MultiPolygon: return DataTypeFactory::instance().get("MultiPolygon");
+        case GeoType::Mixed: return DataTypeFactory::instance().get("Geometry");
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid GeoType: {}", uint8_t(type));
 }
@@ -298,6 +312,14 @@ static void appendMultiPolygonToGeoColumn(const MultiPolygon<CartesianPoint> & m
     offsets.push_back(offsets.back() + multipolygon.size());
 }
 
+/// Global discriminators for the Geometry type (Variant sorted alphabetically by type name):
+/// LineString=0, MultiLineString=1, MultiPolygon=2, Point=3, Polygon=4, Ring=5
+static constexpr ColumnVariant::Discriminator kLineStringDiscriminator = 0;
+static constexpr ColumnVariant::Discriminator kMultiLineStringDiscriminator = 1;
+static constexpr ColumnVariant::Discriminator kMultiPolygonDiscriminator = 2;
+static constexpr ColumnVariant::Discriminator kPointDiscriminator = 3;
+static constexpr ColumnVariant::Discriminator kPolygonDiscriminator = 4;
+
 void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColumn & col)
 {
     switch (type)
@@ -327,6 +349,45 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multi polygon");
             appendMultiPolygonToGeoColumn(std::get<MultiPolygon<CartesianPoint>>(object), col);
             return;
+        case GeoType::Mixed:
+        {
+            auto & variant_col = assert_cast<ColumnVariant &>(col);
+            ColumnVariant::Discriminator global_discr;
+
+            if (std::holds_alternative<CartesianPoint>(object))
+                global_discr = kPointDiscriminator;
+            else if (std::holds_alternative<LineString<CartesianPoint>>(object))
+                global_discr = kLineStringDiscriminator;
+            else if (std::holds_alternative<Polygon<CartesianPoint>>(object))
+                global_discr = kPolygonDiscriminator;
+            else if (std::holds_alternative<MultiLineString<CartesianPoint>>(object))
+                global_discr = kMultiLineStringDiscriminator;
+            else if (std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
+                global_discr = kMultiPolygonDiscriminator;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometry type in WKB/WKT data");
+
+            IColumn & nested_col = variant_col.getVariantByGlobalDiscriminator(global_discr);
+
+            /// Must record discriminator and offset before appending, so offset equals
+            /// the pre-insertion size of the nested column.
+            auto local_discr = variant_col.localDiscriminatorByGlobal(global_discr);
+            variant_col.getLocalDiscriminators().push_back(local_discr);
+            variant_col.getOffsets().push_back(nested_col.size());
+
+            if (std::holds_alternative<CartesianPoint>(object))
+                appendPointToGeoColumn(std::get<CartesianPoint>(object), nested_col);
+            else if (std::holds_alternative<LineString<CartesianPoint>>(object))
+                appendLineStringToGeoColumn(std::get<LineString<CartesianPoint>>(object), nested_col);
+            else if (std::holds_alternative<Polygon<CartesianPoint>>(object))
+                appendPolygonToGeoColumn(std::get<Polygon<CartesianPoint>>(object), nested_col);
+            else if (std::holds_alternative<MultiLineString<CartesianPoint>>(object))
+                appendMultiLineStringToGeoColumn(std::get<MultiLineString<CartesianPoint>>(object), nested_col);
+            else
+                appendMultiPolygonToGeoColumn(std::get<MultiPolygon<CartesianPoint>>(object), nested_col);
+
+            return;
+        }
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid GeoType: {}", uint8_t(type));
 }

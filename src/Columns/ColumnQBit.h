@@ -83,7 +83,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     std::string_view getDataAt(size_t n) const override { return tuple->getDataAt(n); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }
@@ -161,7 +161,7 @@ public:
     }
 
     void reserve(size_t n) override { tuple->reserve(n); }
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override { tuple->shrinkToFit(); }
     void ensureOwnership() override { tuple->ensureOwnership(); }
     void protect() override { tuple->protect(); }

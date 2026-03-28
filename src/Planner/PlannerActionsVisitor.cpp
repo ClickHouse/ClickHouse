@@ -69,8 +69,13 @@ namespace
  */
 String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node, Int64 optimize_const_name_size)
 {
-    const auto & [name, type] = constant_node.getValueNameAndType({.optimize_const_name_size = optimize_const_name_size});
-    bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, constant_node.getResultType());
+    const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
+    bool requires_cast_call = constant_node.hasSourceExpression();
+    if (!requires_cast_call)
+    {
+        auto field_type = applyVisitor(FieldToDataType(), constant_node.getValue());
+        requires_cast_call = ConstantNode::requiresCastCall(field_type, constant_node.getResultType());
+    }
 
     WriteBufferFromOwnString buffer;
     if (requires_cast_call)
@@ -396,7 +401,7 @@ public:
 
     static String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64 optimize_const_name_size)
     {
-        const auto & [name, type] = constant_node.getValueNameAndType({.optimize_const_name_size = optimize_const_name_size});
+        const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
         return name + "_" + constant_node.getResultType()->getName();
     }
 
@@ -808,8 +813,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
 
-    for (auto & action_scope_node : actions_stack)
-        action_scope_node.addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+    /// Add PLACEHOLDER only to the outermost scope (will be decorrelated later).
+    /// Inner scopes (e.g. lambda scopes) get INPUT so the lambda capture mechanism
+    /// can properly capture the correlated column value from the outer scope.
+    actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+
+    for (size_t i = 1; i < actions_stack.size(); ++i)
+        actions_stack[i].addInputColumnIfNecessary(column_node_name, node->getColumnType());
 
     return {column_node_name, Levels(0)};
 }

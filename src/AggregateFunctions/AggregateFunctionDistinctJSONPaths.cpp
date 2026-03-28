@@ -446,8 +446,8 @@ SELECT distinctJSONPathsAndTypes(json) FROM test_json;
     FunctionDocumentation::Category category_distinctJSONPathsAndTypes = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_distinctJSONPathsAndTypes = {description_distinctJSONPathsAndTypes, syntax_distinctJSONPathsAndTypes, arguments_distinctJSONPathsAndTypes, {}, returned_value_distinctJSONPathsAndTypes, examples_distinctJSONPathsAndTypes, introduced_in_distinctJSONPathsAndTypes, category_distinctJSONPathsAndTypes};
 
-    factory.registerFunction("distinctJSONPaths", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsData>, {}, documentation_distinctJSONPaths});
-    factory.registerFunction("distinctJSONPathsAndTypes", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsAndTypesData>, {}, documentation_distinctJSONPathsAndTypes});
+    factory.registerFunction("distinctJSONPaths", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsData>, documentation_distinctJSONPaths, {}});
+    factory.registerFunction("distinctJSONPathsAndTypes", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsAndTypesData>, documentation_distinctJSONPathsAndTypes, {}});
 }
 
 }

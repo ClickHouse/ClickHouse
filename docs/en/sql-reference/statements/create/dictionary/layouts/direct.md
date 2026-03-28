@@ -14,7 +14,7 @@ import TabItem from '@theme/TabItem';
 
 The dictionary is not stored in memory and directly goes to the source during the processing of a request.
 
-The dictionary key has the [UInt64](../../../data-types/int-uint.md) type.
+The dictionary key has the [UInt64](/sql-reference/data-types/int-uint.md) type.
 
 All types of [sources](../sources/#dictionary-sources), except local files, are supported.
 
@@ -42,4 +42,4 @@ LAYOUT(DIRECT())
 
 ## complex_key_direct {#complex_key_direct}
 
-This type of storage is for use with composite [keys](../keys-and-fields.md#dictionary-key-and-fields). Similar to `direct`.
+This type of storage is for use with composite [keys](../attributes.md#composite-key). Similar to `direct`.

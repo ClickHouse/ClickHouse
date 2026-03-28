@@ -20,6 +20,8 @@ macro(set_rust_target)
             set(Rust_CARGO_TARGET "x86_64-unknown-freebsd" CACHE INTERNAL "Rust config")
         elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-riscv64")
             set(Rust_CARGO_TARGET "riscv64gc-unknown-linux-gnu" CACHE INTERNAL "Rust config")
+        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-loongarch64")
+            set(Rust_CARGO_TARGET "loongarch64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         else()
             message(FATAL_ERROR "Unknown rust target for toolchain ${CMAKE_TOOLCHAIN_FILE}")
         endif()
@@ -146,11 +148,20 @@ else()
     list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()
 
+# Use v0 symbol mangling for shorter symbol names.
+# The legacy mangling produces extremely long symbols (up to 165 KB) from deeply nested
+# generic types in parser combinator libraries like chumsky (used by prqlc).
+# v0 mangling uses backreference compression for repeated type paths.
+list(APPEND RUSTFLAGS "-C" "symbol-mangling-version=v0")
+
+# Suppress warnings
 list(APPEND RUSTFLAGS
-    # Suppress warnings in delta-kernel-rs
+    # delta-kernel-rs
     "-Adead_code"
-    # Suppress warnings in skim
+    # skim
     "-Amismatched_lifetime_syntaxes"
+    # wasmtime
+    "-Aunused_parens -Aunused_imports"
 )
 
 list(JOIN RUSTFLAGS " " RUSTFLAGS)

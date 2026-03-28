@@ -22,6 +22,10 @@ namespace ErrorCodes
     DECLARE(Bool, force_read_table, false, "Force the use of read table instead of lookups for dynamic tables.", 0) \
     DECLARE(Bool, encode_utf8, false, "Enable the utf8 encoding in ytsaurus responses.", 0) \
     DECLARE(Bool, enable_heavy_proxy_redirection, true, "Enable redirection to heavy proxies for heavy queries. See: https://ytsaurus.tech/docs/en/user-guide/proxy/http-reference#hosts", 0) \
+    DECLARE(Bool, use_lock, true, "Lock table to do request, to get consistent snapshot. See: https://ytsaurus.tech/docs/en/user-guide/storage/transactions#locks", 0) \
+    DECLARE(Milliseconds, transaction_timeout_ms, 150000, "Timeout for YTSaurus transaction.", 0) \
+    DECLARE(UInt64, min_rows_for_spawn_stream, 1000, "Min number of rows to spawn the new stream. To use 8 streams the table must hold at least 8 * `min_rows_for_spawn_stream` rows.", 0) \
+    DECLARE(UInt64, max_streams, 4, "Max number of streams to read from static table.", 0) \
 
 DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS)

@@ -1,0 +1,9 @@
+Without parallel replicas:
+['ReadType: InOrder','ReadType: Default']
+With parallel replicas, sorting through JOIN:
+['ReadType: Default','ReadType: Default']
+With parallel replicas, aggregation through JOIN:
+['ReadType: Default','ReadType: Default']
+With parallel replicas, distinct through JOIN:
+['ReadType: Default','ReadType: Default']
+OK

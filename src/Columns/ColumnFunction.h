@@ -49,7 +49,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
-    std::vector<MutableColumnPtr> scatter(size_t num_columns,
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns,
                                           const IColumn::Selector & selector) const override;
 
     void getExtremes(Field &, Field &, size_t, size_t) const override {}
@@ -65,7 +65,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     std::string_view getDataAt(size_t) const override
     {

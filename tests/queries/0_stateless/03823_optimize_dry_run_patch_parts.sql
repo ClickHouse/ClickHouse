@@ -44,7 +44,7 @@ SELECT
     ProfileEvents['MergeWrittenRows'],
     ProfileEvents['PatchesAppliedInAllReadTasks']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query LIKE 'OPTIMIZE TABLE t_dry_run_patches DRY RUN PARTS%' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query LIKE 'OPTIMIZE TABLE t_dry_run_patches DRY RUN PARTS%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_dry_run_patches SYNC;

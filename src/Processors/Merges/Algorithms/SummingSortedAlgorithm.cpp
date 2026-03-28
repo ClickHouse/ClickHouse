@@ -1,21 +1,23 @@
-#include <memory>
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
 
+#include <memory>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/Exception.h>
-#include <Common/AlignedBuffer.h>
-#include <Common/Arena.h>
-#include <Common/FieldVisitorSum.h>
-#include <Common/StringUtils.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
-#include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Common/AlignedBuffer.h>
+#include <Common/Arena.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorSum.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -23,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CORRUPTED_DATA;
 }
 
@@ -538,6 +541,18 @@ static void postprocessChunk(
 static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num, const Names & column_names)
 {
     size_t num_columns = row.size();
+    const auto handle_exception = [&](const char * logger_name, const char * reason, const size_t column_index)
+    {
+        tryLogCurrentException(logger_name);
+
+        String column_name;
+        if (column_index < column_names.size())
+            column_name = column_names[column_index];
+
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "SummingSortedAlgorithm failed to read row {} of column {}{}, reason: {}",
+                        row_num, column_index, column_name.empty() ? "" : fmt::format(" ({})", column_name), reason);
+    };
+
     for (size_t i = 0; i < num_columns; ++i)
     {
         try
@@ -556,18 +571,20 @@ static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const Column
                 raw_columns[i]->get(row_num, row[i]);
             }
         }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                throw;
+
+            handle_exception(__PRETTY_FUNCTION__, e.what(), i);
+        }
+        catch (std::exception & e)
+        {
+            handle_exception(__PRETTY_FUNCTION__, e.what(), i);
+        }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-
-            /// Find out the name of the column and throw more informative exception.
-
-            String column_name;
-            if (i < column_names.size())
-                column_name = column_names[i];
-
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "SummingSortedAlgorithm failed to read row {} of column {})",
-                            toString(row_num), toString(i) + (column_name.empty() ? "" : " (" + column_name));
+            handle_exception(__PRETTY_FUNCTION__, "unknown exception", i);
         }
     }
 }

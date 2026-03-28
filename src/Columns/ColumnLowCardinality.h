@@ -56,9 +56,9 @@ public:
 
     Field operator[](size_t n) const override { return getDictionary()[getIndexes().getUInt(n)]; }
     void get(size_t n, Field & res) const override { getDictionary().get(getIndexes().getUInt(n), res); }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
     {
-        return getDictionary().getValueNameAndTypeImpl(name_buf, getIndexes().getUInt(n), options);
+        getDictionary().getValueNameImpl(name_buf, getIndexes().getUInt(n), options);
     }
 
     std::string_view getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
@@ -174,7 +174,7 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary());
     }
 
-    std::vector<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {

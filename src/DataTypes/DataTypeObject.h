@@ -55,9 +55,10 @@ public:
     void forEachChild(const ChildCallback &) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
+    bool hasDynamicStructure() const override { return true; }
     std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     String getSchemaFormatString() const;
