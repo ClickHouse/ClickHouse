@@ -182,8 +182,7 @@ public:
 
                     GeoPolygonContainer polygon_wrapper(std::move(exterior), std::move(holes));
 
-                    int64_t polygon_size = 0;
-                    maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution, 0, &polygon_size);
+                    int64_t polygon_size = maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution);
                     const size_t vec_size = static_cast<size_t>(polygon_size);
                     if (vec_size > MAX_ARRAY_SIZE)
                         throw Exception(
@@ -193,7 +192,7 @@ public:
 
                     std::vector<H3Index> hindex_vec;
                     hindex_vec.resize(vec_size);
-                    polygonToCells(polygon_wrapper.unwrap(), resolution, 0, hindex_vec.data());
+                    polygonToCells(polygon_wrapper.unwrap(), resolution, hindex_vec.data());
 
                     dst_data.reserve(dst_data.size() + vec_size);
                     for (auto hindex : hindex_vec)

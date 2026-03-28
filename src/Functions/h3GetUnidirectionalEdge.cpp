@@ -115,9 +115,7 @@ public:
     /// 'NEW_DIGIT_III' defined in '../contrib/h3/src/h3lib/lib/algos.c:121:24
     __attribute__((no_sanitize_address)) static UInt64 getUnidirectionalEdge(const UInt64 origin, const UInt64 dest)
     {
-        H3Index edge = 0;
-        cellsToDirectedEdge(origin, dest, &edge);
-        return edge;
+        return cellsToDirectedEdge(origin, dest);
     }
 };
 

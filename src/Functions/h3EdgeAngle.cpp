@@ -88,8 +88,7 @@ public:
                     MAX_H3_RES);
 
             // Numerical constant is 180 degrees / pi / Earth radius, Earth radius is from h3 sources
-            double edge_length = 0;
-            getHexagonEdgeLengthAvgM(resolution, &edge_length);
+            double edge_length = getHexagonEdgeLengthAvgM(resolution);
             Float64 res = 8.99320592271288084e-6 * edge_length;
 
             dst_data[row] = res;

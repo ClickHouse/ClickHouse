@@ -87,8 +87,7 @@ public:
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(resolution), getName(), MAX_H3_RES);
 
-            double res = 0;
-            getHexagonEdgeLengthAvgM(resolution, &res);
+            double res = getHexagonEdgeLengthAvgM(resolution);
 
             dst_data[row] = res;
         }
