@@ -12,6 +12,7 @@
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/NegativeLimitTransform.h>
+#include <Processors/FractionalLimitTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
@@ -196,7 +197,8 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             continue;
         }
 
-        if (typeid_cast<LimitTransform *>(processor) || typeid_cast<NegativeLimitTransform *>(processor))
+        if (typeid_cast<LimitTransform *>(processor) || typeid_cast<NegativeLimitTransform *>(processor)
+            || typeid_cast<FractionalLimitTransform *>(processor))
         {
             has_limit = true;
 
@@ -298,6 +300,8 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
                     lim->setInputPortHasCounter(port);
                 else if (auto * neg_lim = typeid_cast<NegativeLimitTransform *>(limit))
                     neg_lim->setInputPortHasCounter(port);
+                else if (auto * frac_lim = typeid_cast<FractionalLimitTransform *>(limit))
+                    frac_lim->setInputPortHasCounter(port);
             }
         }
     }
