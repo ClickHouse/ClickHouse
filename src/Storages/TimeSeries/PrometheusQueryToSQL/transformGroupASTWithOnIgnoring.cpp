@@ -1,4 +1,4 @@
-#include <Storages/TimeSeries/PrometheusQueryToSQL/makeASTForBinaryOperatorJoinGroup.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTWithOnIgnoring.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -8,21 +8,16 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-/// Returns an AST to evaluate the `join_group` column to join the sides of a binary operator on instant vectors.
-ASTPtr makeASTForBinaryOperatorJoinGroup(
+ASTPtr transformGroupASTWithOnIgnoring(
     const PQT::BinaryOperator * operator_node,
     ASTPtr && group,
-    bool metric_name_dropped_from_group,
-    bool * metric_name_dropped_from_join_group)
+    bool drop_metric_name,
+    bool & metric_name_dropped)
 {
-    bool dummy;
-    if (!metric_name_dropped_from_join_group)
-        metric_name_dropped_from_join_group = &dummy;
-
     /// Group #0 always means a group with no tags.
     if (const auto * literal = group->as<const ASTLiteral>(); literal && literal->value == Field{0u})
     {
-        *metric_name_dropped_from_join_group = true;
+        metric_name_dropped = true;
         return std::move(group);
     }
 
@@ -31,7 +26,7 @@ ASTPtr makeASTForBinaryOperatorJoinGroup(
         if (operator_node->labels.empty())
         {
             /// on() means we ignore all tags.
-            *metric_name_dropped_from_join_group = true;
+            metric_name_dropped = true;
             return make_intrusive<ASTLiteral>(0u);
         }
         else
@@ -44,7 +39,8 @@ ASTPtr makeASTForBinaryOperatorJoinGroup(
             std::sort(tags_to_keep.begin(), tags_to_keep.end());
             tags_to_keep.erase(std::unique(tags_to_keep.begin(), tags_to_keep.end()), tags_to_keep.end());
 
-            *metric_name_dropped_from_join_group = !std::binary_search(tags_to_keep.begin(), tags_to_keep.end(), kMetricName);
+            if (!metric_name_dropped && !std::binary_search(tags_to_keep.begin(), tags_to_keep.end(), kMetricName))
+                metric_name_dropped = true;
 
             return makeASTFunction(
                 "timeSeriesRemoveAllTagsExcept",
@@ -59,12 +55,18 @@ ASTPtr makeASTForBinaryOperatorJoinGroup(
 
         /// timeSeriesRemoveTags(group, ignoring_tags + ['__name__'])
         std::vector<std::string_view> tags_to_remove{operator_node->labels.begin(), operator_node->labels.end()};
-        if (!metric_name_dropped_from_group)
+
+        if (!metric_name_dropped && drop_metric_name)
+        {
             tags_to_remove.push_back(kMetricName);
+            metric_name_dropped = true;
+        }
+
         std::sort(tags_to_remove.begin(), tags_to_remove.end());
         tags_to_remove.erase(std::unique(tags_to_remove.begin(), tags_to_remove.end()), tags_to_remove.end());
 
-        *metric_name_dropped_from_join_group = true;
+        if (!metric_name_dropped && std::binary_search(tags_to_remove.begin(), tags_to_remove.end(), kMetricName))
+            metric_name_dropped = true;
 
         return makeASTFunction(
             "timeSeriesRemoveTags", std::move(group), make_intrusive<ASTLiteral>(Array{tags_to_remove.begin(), tags_to_remove.end()}));
@@ -72,12 +74,13 @@ ASTPtr makeASTForBinaryOperatorJoinGroup(
 
     /// Neither on() keyword nor ignoring() keyword are specified,
     /// so we use all the tags except the metric name "__name__".
-    *metric_name_dropped_from_join_group = true;
+    if (!metric_name_dropped && drop_metric_name)
+    {
+        group = makeASTFunction("timeSeriesRemoveTag", std::move(group), make_intrusive<ASTLiteral>(kMetricName));
+        metric_name_dropped = true;
+    }
 
-    if (metric_name_dropped_from_group)
-        return std::move(group);
-    else
-        return makeASTFunction("timeSeriesRemoveTag", std::move(group), make_intrusive<ASTLiteral>(kMetricName));
+    return std::move(group);
 }
 
 }
