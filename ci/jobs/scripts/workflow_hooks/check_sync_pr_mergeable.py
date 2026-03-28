@@ -11,12 +11,12 @@ SYNC_REPO = "ClickHouse/clickhouse-private"
 def check():
     info = Info()
 
-    if not info.pr_number > 0:
-        print(f"WARNING: Invalid or unknown pr number: {info.pr_number}")
+    if not info.linked_pr_number > 0:
+        print(f"WARNING: Invalid or unknown pr number: {info.linked_pr_number}")
         return True
 
     raw = Shell.get_output(
-        f"gh pr list --state open --head sync-upstream/pr/{info.pr_number} --repo {SYNC_REPO} --json number --jq '.[].number'",
+        f"gh pr list --state open --head sync-upstream/pr/{info.linked_pr_number} --repo {SYNC_REPO} --json number --jq '.[].number'",
         verbose=True,
         retries=3,
     )
@@ -32,7 +32,7 @@ def check():
 
     if len(sync_pr_numbers) > 1:
         print(
-            f"ERROR: Expected at most one open Sync PR for branch sync-upstream/pr/{info.pr_number}, "
+            f"ERROR: Expected at most one open Sync PR for branch sync-upstream/pr/{info.linked_pr_number}, "
             f"found {len(sync_pr_numbers)}: {sync_pr_numbers}"
         )
         return False
