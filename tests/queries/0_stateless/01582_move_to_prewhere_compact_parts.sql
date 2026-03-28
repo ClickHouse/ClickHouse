@@ -1,6 +1,7 @@
 -- Tags: no-random-merge-tree-settings
 
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 SET convert_query_to_cnf = 0;
 
 DROP TABLE IF EXISTS prewhere_move;

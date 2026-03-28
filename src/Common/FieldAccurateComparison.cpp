@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
+#include <Core/CompareHelper.h>
 #include <base/demangle.h>
 #include <Common/FieldVisitors.h>
 #include <IO/ReadBufferFromString.h>
@@ -43,10 +44,31 @@ public:
         else
         {
             if constexpr (std::is_same_v<T, U>)
-                return l == r;
+            {
+                if constexpr (std::is_floating_point_v<T>)
+                {
+                    /// NaN should be treated as equal to NaN for index range analysis
+                    /// (consistent with ClickHouse sort order where NaN has a defined position).
+                    static constexpr int nan_direction_hint = 1;
+                    return FloatCompareHelper<T>::equals(l, r, nan_direction_hint);
+                }
+                else
+                    return l == r;
+            }
 
             if constexpr (is_arithmetic_v<T> && is_arithmetic_v<U>)
+            {
+                /// NaN is not equal to any non-NaN value in cross-type comparisons.
+                if constexpr (std::is_floating_point_v<T>)
+                {
+                    if (isNaN(l)) return false;
+                }
+                if constexpr (std::is_floating_point_v<U>)
+                {
+                    if (isNaN(r)) return false;
+                }
                 return accurate::equalsOp(l, r);
+            }
 
             /// TODO This is wrong (does not respect scale).
             if constexpr (is_decimal_field<T> && is_decimal_field<U>)
@@ -110,10 +132,32 @@ public:
         else
         {
             if constexpr (std::is_same_v<T, U>)
-                return l < r;
+            {
+                if constexpr (std::is_floating_point_v<T>)
+                {
+                    /// NaN should be treated as greater than all normal values (consistent with ClickHouse sort order).
+                    /// Plain IEEE 754 `<` makes NaN incomparable, which breaks Range::intersectsRange.
+                    static constexpr int nan_direction_hint = 1;
+                    return FloatCompareHelper<T>::less(l, r, nan_direction_hint);
+                }
+                else
+                    return l < r;
+            }
 
             if constexpr (is_arithmetic_v<T> && is_arithmetic_v<U>)
+            {
+                /// For cross-type comparisons involving NaN, treat NaN as greater than all values
+                /// (consistent with ClickHouse sort order, nan_direction_hint = 1).
+                if constexpr (std::is_floating_point_v<T>)
+                {
+                    if (isNaN(l)) return false; /// NaN is not less than anything
+                }
+                if constexpr (std::is_floating_point_v<U>)
+                {
+                    if (isNaN(r)) return true; /// everything is less than NaN
+                }
                 return accurate::lessOp(l, r);
+            }
 
             /// TODO This is wrong (does not respect scale).
             if constexpr (is_decimal_field<T> && is_decimal_field<U>)

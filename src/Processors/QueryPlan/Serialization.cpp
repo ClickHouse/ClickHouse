@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -91,7 +92,8 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         auto & frame = stack.top();
         auto * node = frame.node;
 
-        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get())
+            || typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get()))
         {
             frame.node = node->children.front();
             continue;
@@ -220,7 +222,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         for (const auto & child : frame.children)
             input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, context, input_headers, output_header, settings};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())
@@ -235,6 +237,9 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
         frame.to_fill = &node;
+
+        for (const auto & storage : ctx.storage_holders)
+            plan.addStorageHolder(storage);
 
         stack.pop();
     }
