@@ -206,7 +206,6 @@ protected:
             .indexes = *indexes,
             .top_k_filter_info = std::nullopt,
             .reader_settings = reader_settings,
-            .storage_id = storage->getStorageID(),
             .log = getLogger("MergeTreeAnalyzeIndexSource"),
             .num_streams = num_streams,
             .find_exact_ranges = false,
