@@ -17,7 +17,6 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
-#include <Storages/MergeTree/MergeTreeLeaderElection.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 
@@ -28,6 +27,7 @@
 namespace DB
 {
 
+class MergeTreeLeaderElection;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
@@ -186,6 +186,8 @@ private:
     const bool support_transaction;
 
     std::unique_ptr<MergeTreeLeaderElection> leader_election_ptr;
+
+    void assertCanCommitTransaction() const override;
 
     void loadMutations();
 

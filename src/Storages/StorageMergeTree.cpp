@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergeTreeLeaderElection.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
@@ -233,22 +234,9 @@ void StorageMergeTree::startup()
 
     if ((*getSettings())[MergeTreeSetting::leader_election])
     {
-        ObjectStoragePtr object_storage;
-        for (const auto & disk : getDisks())
-        {
-            try
-            {
-                object_storage = disk->getObjectStorage();
-                break;
-            }
-            catch (...) // NOLINT(bugprone-empty-catch)
-            {
-            }
-        }
-
-        if (!object_storage)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The `leader_election` setting requires the table to be stored on an object storage disk (S3, Azure, GCS)");
+        /// The first disk should be the main data disk.
+        /// getObjectStorage will throw if it's not an object storage disk.
+        ObjectStoragePtr object_storage = getDisks().front()->getObjectStorage();
 
         auto heartbeat_ms = (*getSettings())[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
         auto session_timeout_ms = (*getSettings())[MergeTreeSetting::leader_election_session_timeout].totalMilliseconds();
@@ -263,14 +251,38 @@ void StorageMergeTree::startup()
             heartbeat_ms,
             session_timeout_ms);
 
+        leader_election_ptr->setOnLeadershipChangeCallback([this](bool became_leader)
+        {
+            if (became_leader)
+            {
+                LOG_INFO(log, "Became leader, starting background operations");
+                cleanup_thread.start();
+                background_operations_assignee.start();
+                startBackgroundMovesIfNeeded();
+            }
+            else
+            {
+                LOG_INFO(log, "Lost leadership, stopping background operations");
+                background_operations_assignee.finish();
+                background_moves_assignee.finish();
+                cleanup_thread.stop();
+            }
+        });
+
         leader_election_ptr->start();
     }
 
     try
     {
-        cleanup_thread.start();
-        background_operations_assignee.start();
-        startBackgroundMovesIfNeeded();
+        /// When leader_election is enabled, background write operations (merges, mutations, cleanup)
+        /// are started/stopped by the leadership change callback. Only start them here if we are not
+        /// doing leader election (i.e., this is a standalone writer).
+        if (!leader_election_ptr)
+        {
+            cleanup_thread.start();
+            background_operations_assignee.start();
+            startBackgroundMovesIfNeeded();
+        }
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
     }
@@ -3162,8 +3174,14 @@ void StorageMergeTree::assertNotReadonly() const
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
     if ((*getSettings())[MergeTreeSetting::table_readonly])
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode");
-    if (leader_election_ptr && !leader_election_ptr->isLeader())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode because this instance is not the leader");
+    if (leader_election_ptr)
+        leader_election_ptr->assertIsLeader();
+}
+
+void StorageMergeTree::assertCanCommitTransaction() const
+{
+    if (leader_election_ptr)
+        leader_election_ptr->assertIsLeader();
 }
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)

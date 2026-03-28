@@ -8478,6 +8478,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock)
 {
+    data.assertCanCommitTransaction();
+
     DataPartsVector total_covered_parts;
 
     if (!isEmpty())

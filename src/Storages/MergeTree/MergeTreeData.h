@@ -1400,6 +1400,10 @@ protected:
 
     bool require_part_metadata;
 
+    /// Called from Transaction::commit to verify the instance is allowed to commit changes.
+    /// Overridden in StorageMergeTree to check leader election status.
+    virtual void assertCanCommitTransaction() const {}
+
     /// Relative path data, changes during rename for ordinary databases use
     /// under lockForShare if rename is possible.
     String relative_data_path;

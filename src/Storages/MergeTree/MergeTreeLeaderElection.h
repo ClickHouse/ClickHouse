@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -44,8 +45,19 @@ public:
     /// Stop the background heartbeat task and relinquish leadership.
     void stop();
 
-    /// Returns true if this instance currently holds the leader lease.
-    bool isLeader() const { return is_leader.load(std::memory_order_acquire); }
+    /// Returns true if this instance currently holds the leader lease
+    /// and the heartbeat thread has renewed it recently enough (within session_timeout).
+    /// This protects against the case when the heartbeat thread stalls due to scheduling delays.
+    bool isLeader() const;
+
+    /// Throw TABLE_IS_READ_ONLY if not the leader.
+    void assertIsLeader() const;
+
+    using CallbackOnLeadershipChange = std::function<void(bool /* is_leader */)>;
+
+    /// Set a callback to be invoked when leadership status changes.
+    /// Used by StorageMergeTree to start/stop background threads.
+    void setOnLeadershipChangeCallback(CallbackOnLeadershipChange callback) { on_leadership_change = std::move(callback); }
 
 private:
     /// The periodic task body.
@@ -59,6 +71,8 @@ private:
     String buildLeaseContent() const;
 
     /// Parse the lease file content. Returns {leader_id, timestamp}.
+    /// On parse failure, returns empty leader_id and zero timestamp,
+    /// allowing the caller to treat a corrupted lease as stale.
     static std::pair<String, time_t> parseLeaseContent(const String & content);
 
     /// Generate a unique leader ID for this server instance.
@@ -72,8 +86,15 @@ private:
     UInt64 session_timeout_ms;
 
     std::atomic<bool> is_leader{false};
+
+    /// Monotonic time of the last successful lease renewal.
+    /// Used to detect stalled heartbeat threads.
+    std::atomic<std::chrono::steady_clock::time_point> last_renewal_time{std::chrono::steady_clock::time_point{}};
+
     String current_etag;
     String leader_id;
+
+    CallbackOnLeadershipChange on_leadership_change;
 
     BackgroundSchedulePoolTaskHolder task;
     LoggerPtr log;
