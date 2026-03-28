@@ -422,8 +422,6 @@ enum class AccessType : uint8_t
     M(NATS, "", GLOBAL, ALL) \
     M(RABBITMQ, "", GLOBAL, ALL) \
     M(SQS, "", GLOBAL, ALL) \
-    M(YTSAURUS, "", GLOBAL, ALL) \
-    M(ARROW_FLIGHT, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
     \
     /* Consts */ \

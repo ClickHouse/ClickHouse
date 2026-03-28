@@ -278,6 +278,12 @@ static void splitAndModifyMutationCommands(
                                 if (projection.with_parent_part_offset && column == "_part_offset")
                                     continue;
 
+                                if (projection.with_block_number && column == BlockNumberColumn::name)
+                                    continue;
+
+                                if (projection.with_block_offset && column == BlockOffsetColumn::name)
+                                    continue;
+
                                 auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
                                 if (column_in_storage && !part_columns.has(*column_in_storage))
                                     extra_columns_for_indices_and_projections.emplace(*column_in_storage);
