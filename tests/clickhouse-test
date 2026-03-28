@@ -2100,6 +2100,10 @@ class TestCase:
             # Skip tests that are incompatible with LLVM coverage
             return FailureReason.NO_LLVM_COVERAGE
 
+        if args.only_no_llvm_coverage and not (tags and "no-llvm-coverage" in tags):
+            # In --only-no-llvm-coverage mode, run only tests tagged no-llvm-coverage
+            return FailureReason.BUILD
+
         if tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
@@ -5097,6 +5101,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="This run will be used to collect code coverage with llvm-cov",
+    )
+    parser.add_argument(
+        "--only-no-llvm-coverage",
+        action="store_true",
+        default=False,
+        help="Run only tests tagged with 'no-llvm-coverage' (those incompatible with LLVM coverage builds)",
     )
     # Explicit, non-random settings (copy-paste friendly)
     parser.add_argument(

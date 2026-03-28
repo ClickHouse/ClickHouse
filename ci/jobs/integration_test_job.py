@@ -400,7 +400,7 @@ def get_parallel_sequential_tests_to_run(
         for p in Path("./tests/integration/").glob("test_*/test*.py")
     ]
 
-    if "amd_llvm_coverage" in (job_options or ""):
+    if "llvm_coverage" in (job_options or "") and "no-llvm-coverage" not in (job_options or ""):
         before = len(test_files)
         test_files = [
             f
@@ -410,8 +410,25 @@ def get_parallel_sequential_tests_to_run(
         print(
             f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
         )
+    elif "no-llvm-coverage" in (job_options or ""):
+        files_with_llvm_coverage_check = {
+            str(p.relative_to("./tests/integration/"))
+            for p in Path("./tests/integration/").glob("test_*/test*.py")
+            if "is_built_with_llvm_coverage" in p.read_text()
+        }
+        test_files = [
+            f
+            for f in test_files
+            if any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            or f in files_with_llvm_coverage_check
+        ]
+        print(
+            f"no-llvm-coverage: running only {len(test_files)} test files "
+            f"(from LLVM_COVERAGE_SKIP_PREFIXES or containing is_built_with_llvm_coverage)"
+        )
 
-    assert len(test_files) > 100
+    if "no-llvm-coverage" not in (job_options or ""):
+        assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
         test_files, total_batches, batch_num, workers, job_options, info
@@ -591,8 +608,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
             batch_num, total_batches = map(int, to.split("/"))
         elif any(build in to for build in ("amd_", "arm_")):
             build_type = to
-            if "amd_llvm_coverage" in to:
+            if "llvm_coverage" in to and "no-llvm-coverage" not in to:
                 is_llvm_coverage = True
+        elif to == "no-llvm-coverage":
+            pass  # handled in get_parallel_sequential_tests_to_run via job_options
         elif to == "old analyzer":
             use_old_analyzer = True
         elif to == "distributed plan":

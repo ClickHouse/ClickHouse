@@ -131,6 +131,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
     "targeted": "--flaky-check",  # to disable tests not compatible with the thread fuzzer
+    "no-llvm-coverage": "--only-no-llvm-coverage",
 }
 
 
@@ -187,7 +188,7 @@ def main():
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
-        elif "amd_llvm_coverage" in to:
+        elif "llvm_coverage" in to:
             is_llvm_coverage = True
         elif "coverage" in to:
             is_coverage = True
@@ -791,7 +792,7 @@ def main():
             )
             force_ok_exit = True
     if is_llvm_coverage and test_result:
-        # do not block pipeline on amd_llvm_coverage job failures
+        # do not block pipeline on llvm_coverage job failures
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
         force_ok_exit = True
 

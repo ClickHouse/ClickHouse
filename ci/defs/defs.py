@@ -372,8 +372,8 @@ class ToolSet:
 
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
-    CH_AMD_LLVM_COVERAGE_BUILD = (
-        "CH_AMD_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
+    CH_LLVM_COVERAGE_BUILD = (
+        "CH_LLVM_COVERAGE_BUILD"  # arm build with LLVM coverage enabled
     )
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
@@ -479,7 +479,7 @@ class ArtifactConfigs:
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
-            ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+            ArtifactNames.CH_LLVM_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_RELEASE,
             ArtifactNames.CH_AMD_ASAN_UBSAN,
             ArtifactNames.CH_AMD_TSAN,
