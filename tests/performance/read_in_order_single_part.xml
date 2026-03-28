@@ -13,11 +13,11 @@
     <fill_query>OPTIMIZE TABLE read_in_order_single_part FINAL</fill_query>
 
     <!-- Poor PK selectivity: LIKE '%...' cannot use the index, all granules are read.
-         PrefetchingConcatProcessor should parallelize the IO and filtering. -->
+         Multiple parallel streams read non-overlapping mark ranges in order. -->
     <query>SELECT * FROM read_in_order_single_part WHERE key LIKE '%/v' ORDER BY key FORMAT Null</query>
 
     <!-- Good PK selectivity: LIKE 'prefix%' uses the index, few granules are read.
-         Read-in-order is standard here, PrefetchingConcat still applies for the single part. -->
+         Read-in-order with parallel streams (no PrefetchingConcat for single-part tables). -->
     <query>SELECT * FROM read_in_order_single_part WHERE key LIKE 'k/1%' ORDER BY key FORMAT Null</query>
 
     <!-- ORDER BY without WHERE: all granules, tests pure read + concat throughput. -->

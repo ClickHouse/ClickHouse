@@ -33,7 +33,7 @@ SELECT countIf(path < prev_path) FROM (
 
 -- PrefetchingConcat should NOT be used with LIMIT (read_limit != 0).
 SELECT 'no_prefetching_with_limit';
-SELECT count() > 0 FROM (
+SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat
     ORDER BY path
     LIMIT 10

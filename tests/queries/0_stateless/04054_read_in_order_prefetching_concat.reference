@@ -3,7 +3,7 @@ no_prefetching_single_part
 correctness
 0
 no_prefetching_with_limit
-0
+1
 prefetching_multi_part
 1
 multi_part_correctness
