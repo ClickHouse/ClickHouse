@@ -1590,7 +1590,7 @@ class FunctionBinaryArithmetic : public IFunction
         else
             new_arguments[1] = {right_col->replicate(left_array_col->getOffsets()), arguments[1].type, arguments[1].name};
 
-        result_array_type = left_array_elements_type;
+        result_array_type = return_type_array->getNestedType();
 
         if (is_swapped)
             std::swap(new_arguments[1], new_arguments[0]);
