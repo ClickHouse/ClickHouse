@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS t_prefetching_concat;
 
 CREATE TABLE t_prefetching_concat (path String, value UInt64)
 ENGINE = MergeTree ORDER BY path
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0
 AS SELECT concat('path/', toString(number % 100000), '/file.log'), number FROM numbers(5000000);
 
 OPTIMIZE TABLE t_prefetching_concat FINAL;
@@ -17,7 +18,7 @@ SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat
     WHERE path LIKE '%file.log'
     ORDER BY path
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4
+    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 -- Verify correctness: output must be sorted.
@@ -26,7 +27,7 @@ SELECT count() FROM (
     SELECT path FROM t_prefetching_concat
     WHERE path LIKE '%file.log'
     ORDER BY path
-    SETTINGS max_threads = 4
+    SETTINGS max_threads = 4, optimize_read_in_order = 1
 );
 
 -- PrefetchingConcat should NOT be used with LIMIT (read_limit != 0).
@@ -35,7 +36,7 @@ SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat
     ORDER BY path
     LIMIT 10
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4
+    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 DROP TABLE t_prefetching_concat;
@@ -44,7 +45,8 @@ DROP TABLE t_prefetching_concat;
 -- are in reverse order after the split (the splitting takes parts from the back).
 DROP TABLE IF EXISTS t_prefetching_concat_multi;
 CREATE TABLE t_prefetching_concat_multi (key UInt64, value String)
-ENGINE = MergeTree ORDER BY key;
+ENGINE = MergeTree ORDER BY key
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 SYSTEM STOP MERGES t_prefetching_concat_multi;
 INSERT INTO t_prefetching_concat_multi SELECT number, toString(number) FROM numbers(100000);
 INSERT INTO t_prefetching_concat_multi SELECT number + 100000, toString(number) FROM numbers(100000);
@@ -55,7 +57,7 @@ SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_multi
     WHERE value LIKE '%5%'
     ORDER BY key
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4
+    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 DROP TABLE t_prefetching_concat_multi;

@@ -4,7 +4,11 @@ CREATE TABLE t_read_in_order_1 (id UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1024, index_granularity_bytes = '10M';
 
-INSERT INTO t_read_in_order_1 SELECT number, number FROM numbers(1000000);
+-- Use multiple parts so that PrefetchingConcatProcessor is not used
+-- (it requires a single part). This test is about BufferChunks behavior.
+SYSTEM STOP MERGES t_read_in_order_1;
+INSERT INTO t_read_in_order_1 SELECT number, number FROM numbers(500000);
+INSERT INTO t_read_in_order_1 SELECT number + 500000, number FROM numbers(500000);
 
 SET max_threads = 8;
 SET optimize_read_in_order = 1;
