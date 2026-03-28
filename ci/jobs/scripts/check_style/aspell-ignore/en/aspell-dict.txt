@@ -3132,6 +3132,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+strikethrough
 stringBytesEntropy
 stringBytesUniq
 stringCompare
