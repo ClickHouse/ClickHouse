@@ -142,6 +142,8 @@ struct StringHashTableEmpty
 public:
     bool hasZero() const { return has_zero; }
 
+    void prefetchByHash(size_t) const {} /// No-op: empty key storage is trivially small
+
     void setHasZero()
     {
         has_zero = true;
@@ -414,6 +416,21 @@ public:
     void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
         this->dispatch(*this, key_holder, EmplaceCallable(it, inserted));
+    }
+
+    struct PrefetchCallable
+    {
+        template <typename Map, typename KeyHolder>
+        void ALWAYS_INLINE operator()(Map & map, KeyHolder &&, size_t hash)
+        {
+            map.prefetchByHash(hash);
+        }
+    };
+
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder)
+    {
+        this->dispatch(*this, std::forward<KeyHolder>(key_holder), PrefetchCallable{});
     }
 
     struct FindCallable

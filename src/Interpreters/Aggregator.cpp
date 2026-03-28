@@ -1146,7 +1146,9 @@ void NO_INLINE Aggregator::executeImpl(
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-        const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+        /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
+        /// handles variable hash computation cost by measuring actual iteration latency.
+        const bool prefetch = params.enable_prefetch
             && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
