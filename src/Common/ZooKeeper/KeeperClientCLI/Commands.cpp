@@ -72,7 +72,7 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
 
         if (!res)
         {
-            client->cout << res.error() << "\n";
+            client->cerr << res.error() << "\n";
             return;
         }
 
@@ -232,7 +232,7 @@ void GetCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client
 
         if (!res)
         {
-            client->cout << res.error() << "\n";
+            client->cerr << res.error() << "\n";
             return;
         }
 
@@ -269,7 +269,7 @@ void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBa
 
         if (!res)
         {
-            client->cout << res.error() << "\n";
+            client->cerr << res.error() << "\n";
             return;
         }
 
