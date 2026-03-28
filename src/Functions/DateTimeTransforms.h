@@ -735,7 +735,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     {
         if (!origin.has_value())
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
-        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
+        Int64 days = 0;
+        if (common::mulOverflow(weeks, static_cast<Int64>(7), days))
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, days, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -791,7 +794,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     {
         if (!origin.has_value())
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
+        Int64 months = 0;
+        if (common::mulOverflow(quarters, static_cast<Int64>(3), months))
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, months, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -814,7 +820,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     {
         if (!origin.has_value())
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
+        Int64 months = 0;
+        if (common::mulOverflow(years, static_cast<Int64>(12), months))
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, months, time_zone, scale_multiplier, origin);
     }
 };
 

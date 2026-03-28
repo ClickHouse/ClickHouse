@@ -245,7 +245,7 @@ Octal literals are not supported to avoid accidental errors in interpretation.
 
 ### Compound {#compound}
 
-Arrays are constructed with square brackets `[1, 2, 3]`. Tuples are constructed with round brackets `(1, 'Hello, world!', 2)`.
+Arrays are constructed with `[]`: `[1, 2, 3]`. Tuples are constructed with `()`: `(1, 'Hello, world!', 2)`.
 Technically these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
 An array must consist of at least one item, and a tuple must have at least two items.
 
@@ -369,7 +369,7 @@ They are primarily designed to work in `SELECT` statements in place of identifie
 
 ## Functions {#functions}
 
-Function calls are written like an identifier with a list of arguments (possibly empty) in round brackets. 
+Function calls are written like an identifier with a list of arguments (possibly empty) in `()`. 
 In contrast to standard SQL, the brackets are required, even for an empty argument list. 
 For example: 
 

@@ -38,19 +38,20 @@
 #include <DataTypes/DataTypesNumber.h>
 
 
-#include <IO/S3/Credentials.h>
-#include <IO/S3/Client.h>
-#include <IO/S3Settings.h>
+#include <Databases/DataLake/Common.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <Common/ProxyConfigurationResolverProvider.h>
-#include <Databases/DataLake/Common.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <IO/S3/Client.h>
+#include <IO/S3/Credentials.h>
+#include <IO/S3Settings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 
 namespace DB::ErrorCodes
 {
@@ -544,14 +545,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     try
     {
         auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage,
-            table_path,
-            *storage_settings,
-            nullptr,
-            getContext(),
-            log.get(),
-            std::nullopt
-        );
+            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 
