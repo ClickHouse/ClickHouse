@@ -18,7 +18,9 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   \
   /etc/ssl/
 
-RUN apt-get update \
+# Refresh the kitware GPG key inherited from fasttest base image, it may be stale
+RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg \
+    && apt-get update \
     && apt-get install software-properties-common --yes --no-install-recommends --verbose-versions
 
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
