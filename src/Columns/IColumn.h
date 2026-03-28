@@ -719,18 +719,15 @@ public:
         ptr.reset(); /// Reset use_count to 1.
         res->forEachMutableSubcolumn([](WrappedPtr & subcolumn)
         {
-            auto detached = std::move(subcolumn).detach();
-            auto uc = detached->use_count();
-            subcolumn = IColumn::mutate(std::move(detached));
+            subcolumn = IColumn::mutate(std::move(subcolumn).detach());
+#if defined(DEBUG_OR_SANITIZER_BUILD)
             chassert(subcolumn->use_count() == 1);
-            if (uc == 1)
+            /// Verify sub-columns are also use_count=1.
+            subcolumn->forEachSubcolumn([](const WrappedPtr & sub)
             {
-                /// use_count was 1, so mutate returned the same object. Verify sub-columns are also use_count=1.
-                subcolumn->forEachSubcolumn([](const WrappedPtr & sub)
-                {
-                    chassert(sub->use_count() == 1);
-                });
-            }
+                chassert(sub->use_count() == 1);
+            });
+#endif
         });
         return res;
     }

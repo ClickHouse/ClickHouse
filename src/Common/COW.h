@@ -212,13 +212,13 @@ protected:
         chameleon_ptr(std::initializer_list<U> && arg) : value(std::forward<std::initializer_list<U>>(arg)) {}
 
         const T * get() const { return value.get(); }
-        T * get() { return const_cast<T *>(value.get()); }
+        T * get() { return &value->assumeMutableRef(); }
 
         const T * operator->() const { return get(); }
         T * operator->() { return get(); }
 
         const T & operator*() const { return *value; }
-        T & operator*() { return const_cast<T &>(*value); }
+        T & operator*() { return value->assumeMutableRef(); }
 
         operator const immutable_ptr<T> & () const { return value; } /// NOLINT
         operator immutable_ptr<T> & () { return value; } /// NOLINT

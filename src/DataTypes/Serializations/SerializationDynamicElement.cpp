@@ -205,7 +205,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         IColumn * non_nullable_variant_column = variant_column.get();
         NullMap * null_map = nullptr;
         bool is_low_cardinality_nullable = isColumnLowCardinalityNullable(*variant_column);
-        /// Resulting subolumn can be Nullable, but value is serialized in shared variant as non-Nullable.
+        /// Resulting subcolumn can be Nullable, but value is serialized in shared variant as non-Nullable.
         /// Extract non-nullable column and remember the null map to fill it during deserialization.
         if (isColumnNullable(*variant_column))
         {
