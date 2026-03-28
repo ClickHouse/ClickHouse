@@ -458,7 +458,7 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
     std::unordered_map<Location, LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
     std::unordered_map<Location, ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};
 
-    ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>(std::move(cluster_registry));
+    ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>("local_blobs", std::move(cluster_registry));
     ObjectStorageRouterPtr object_storages = std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry));
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
