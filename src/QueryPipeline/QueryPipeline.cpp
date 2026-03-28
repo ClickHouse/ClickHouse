@@ -11,6 +11,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/NegativeLimitTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
@@ -156,14 +157,14 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
     std::vector<IProcessor *> processors;
-    std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
+    std::map<IProcessor *, std::vector<size_t>> limit_candidates;
     std::unordered_set<IProcessor *> visited;
     bool has_limit = false;
 
     struct QueuedEntry
     {
         IProcessor * processor;
-        LimitTransform * limit_processor;
+        IProcessor * limit_processor;
         ssize_t limit_input_port;
     };
 
@@ -195,7 +196,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             continue;
         }
 
-        if (auto * limit = typeid_cast<LimitTransform *>(processor))
+        if (typeid_cast<LimitTransform *>(processor) || typeid_cast<NegativeLimitTransform *>(processor))
         {
             has_limit = true;
 
@@ -203,7 +204,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             if (limit_processor)
                 continue;
 
-            limit_processor = limit;
+            limit_processor = processor;
             limit_candidates[limit_processor] = {};
         }
         else if (limit_processor)
@@ -287,12 +288,17 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
     /// Case 7.
     for (auto && [limit, ports] : limit_candidates)
     {
-        /// If there are some input ports which don't have the counter, add it to LimitTransform.
+        /// If there are some input ports which don't have the counter, add it to the limit processor.
         if (ports.size() < limit->getInputs().size())
         {
             processors.push_back(limit);
             for (auto port : ports)
-                limit->setInputPortHasCounter(port);
+            {
+                if (auto * lim = typeid_cast<LimitTransform *>(limit))
+                    lim->setInputPortHasCounter(port);
+                else if (auto * neg_lim = typeid_cast<NegativeLimitTransform *>(limit))
+                    neg_lim->setInputPortHasCounter(port);
+            }
         }
     }
 
