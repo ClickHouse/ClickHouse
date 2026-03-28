@@ -291,6 +291,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
@@ -9006,6 +9007,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
         settings[MergeTreeSetting::nullable_serialization_version],
+        settings[MergeTreeSetting::map_serialization_version],
         settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
@@ -9558,7 +9560,8 @@ void MergeTreeData::writePartLog(
     const DataPartsVector & source_parts,
     const MergeListEntry * merge_entry,
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-    const Strings & mutation_ids)
+    const Strings & mutation_ids,
+    const std::map<String, UInt64> & projections_duration_ms)
 try
 {
     auto table_id = getStorageID();
@@ -9633,6 +9636,8 @@ try
     }
 
     part_log_elem.mutation_ids = mutation_ids;
+
+    part_log_elem.projections_duration_ms = projections_duration_ms;
 
     part_log->add(std::move(part_log_elem));
 }
@@ -9800,7 +9805,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                 cloned_part.part,
                 {moving_part.part},
                 nullptr,
-                profile_events_scope.getSnapshot());
+                profile_events_scope.getSnapshot(), {}, {});
         };
 
         // Register in global moves list (StorageSystemMoves)
@@ -10416,6 +10421,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         (*getSettings())[MergeTreeSetting::serialization_info_version],
         (*getSettings())[MergeTreeSetting::string_serialization_version],
         (*getSettings())[MergeTreeSetting::nullable_serialization_version],
+        (*getSettings())[MergeTreeSetting::map_serialization_version],
         (*getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
@@ -10665,6 +10671,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         (*settings)[MergeTreeSetting::serialization_info_version],
         (*settings)[MergeTreeSetting::string_serialization_version],
         (*settings)[MergeTreeSetting::nullable_serialization_version],
+        (*settings)[MergeTreeSetting::map_serialization_version],
         (*settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 

@@ -345,6 +345,7 @@ public:
     bool allow_health_check = true;
     bool enable_compatibility_settings = false;
     bool enable_memory_settings = false;
+    bool enable_sync_settings = false;
     bool enable_backups = true;
     bool enable_renames = true;
 

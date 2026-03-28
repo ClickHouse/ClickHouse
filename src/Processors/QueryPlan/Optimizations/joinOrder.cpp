@@ -578,12 +578,16 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
     JoinKind right_join_type = JoinKind::Inner;
 
     if (auto res = check(left_mask, right_mask))
-        left_join_type = res.value();
+    {
+        /// When original join stored a Left/Full kind for the left relation,
+        /// and it now appears on the left side of reordered join, reverse the kind
+        left_join_type = isLeftOrFull(res.value()) ? reverseJoinKind(res.value()) : res.value();
+    }
     else
         return {};
 
     if (auto res = check(right_mask, left_mask))
-        right_join_type = res.value();
+        right_join_type = isRightOrFull(res.value()) ? reverseJoinKind(res.value()) : res.value();
     else
         return {};
 
