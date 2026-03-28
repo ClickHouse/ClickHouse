@@ -268,7 +268,7 @@ void optimizeTreeSecondPass(
                     size_t changed_nodes = 0;
                     changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
                     changed_nodes += tryMergeFilters(&frame_node, nodes, {});
-                    changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
+                    changed_nodes += tryPushDownFilter(&frame_node, nodes, extra_settings);
 
                     if (!changed_nodes)
                         break;

@@ -1051,14 +1051,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<BuildRuntimeFilterStep>(parent_node, true, nodes, child))
         return updated_steps;
 
-    if (settings.filter_push_down_over_window)
+    if (settings.filter_push_down_over_window && typeid_cast<WindowStep *>(child.get()))
     {
-        if (typeid_cast<WindowStep *>(child.get()))
-        {
-            Names allowed_inputs = child->getInputHeaders().front()->getNames();
-            if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, allowed_inputs))
-                return updated_steps;
-        }
+        Names allowed_inputs = child->getInputHeaders().front()->getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, allowed_inputs))
+            return updated_steps;
     }
 
     if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child_node))
