@@ -1,5 +1,6 @@
 
 <clickhouse>
+    <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
     <test_get_config_static_handler>Test get static handler and config content</test_get_config_static_handler>
 
     <http_handlers>

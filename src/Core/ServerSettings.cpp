@@ -1764,6 +1764,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "zookeeper",
         "keeper",
         "auxiliary_zookeepers",
+        "allow_experimental_cluster_discovery",
         "macros",
         "interserver_http_credentials",
         "replica_group_name",
@@ -1786,6 +1787,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "user_defined_executable_functions_config",
         "nb_models",
         "dictionary",
+        "lemmatizers",
+        "synonyms_extensions",
+        "catboost_lib_path",
+        "path_to_regions_hierarchy_file",
+        "path_to_regions_names_files",
 
         /// Access control
         "users",
@@ -1865,6 +1871,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "delta_lake_metadata_log",
         "distributed_cache_log",
         "distributed_cache_server_log",
+        "instrumentation_trace_log",
 
         /// Other logging
         "query_masking_rules",
@@ -1894,6 +1901,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "allow_system_allocate_memory",
         "timezone",
         "allow_experimental_transactions",
+        "transaction_log",
         "allow_moving_table_directory_to_trash",
         "allow_remove_stale_moving_parts",
         "allow_zookeeper_write",
