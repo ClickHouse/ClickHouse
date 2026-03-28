@@ -322,6 +322,11 @@ bool DataTypeTuple::textCanContainOnlyValidUTF8() const
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->textCanContainOnlyValidUTF8(); });
 }
 
+bool DataTypeTuple::hasDynamicStructure() const
+{
+    return std::ranges::any_of(elems, [](auto && elem) { return elem->hasDynamicStructure(); });
+}
+
 bool DataTypeTuple::haveMaximumSizeOfValue() const
 {
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
@@ -348,18 +353,18 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
     return res;
 }
 
-SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
+SerializationPtr DataTypeTuple::doGetSerialization(const SerializationInfoSettings & settings) const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
         String elem_name = has_explicit_names ? names[i] : toString(i + 1);
-        auto serialization = elems[i]->getDefaultSerialization();
-        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name, SubstreamType::TupleElement);
+        auto serialization = elems[i]->getSerialization(settings);
+        serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
-    return std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names);
+    return SerializationTuple::create(std::move(serializations), has_explicit_names);
 }
 
 SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
@@ -371,14 +376,13 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     {
         String elem_name = has_explicit_names ? names[i] : toString(i + 1);
         auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
-        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name, SubstreamType::TupleElement);
+        serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
     auto kinds = info.getKindStack();
     /// Compatibility with older version that may propagate Sparse serialization for Tuple itself (in serialization.json)
     std::erase(kinds, ISerialization::Kind::SPARSE);
-    return IDataType::getSerialization(
-        kinds, info.getSettings(), std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names));
+    return wrapSerializationBasedOnKindStack(SerializationTuple::create(std::move(serializations), has_explicit_names), kinds, info.getSettings());
 }
 
 MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const

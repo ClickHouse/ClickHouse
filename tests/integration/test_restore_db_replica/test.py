@@ -535,12 +535,12 @@ def test_restore_db_replica_with_diffrent_table_metadata(
     )
 
     if restore_firstly_node_where_created:
-        assert node_1.query(
-            f"SELECT count(*) FROM {exclusive_database_name}.{test_table_2}"
-        ) == TSV([count_test_table_2]) 
-        assert node_2.query(
-            f"SELECT count(*) FROM {exclusive_database_name}.{test_table_2}"
-        ) == TSV([count_test_table_2]) 
+        check_contains_table(
+            node_1, f"{exclusive_database_name}.{test_table_2}", count_test_table_2
+        )
+        check_contains_table(
+            node_2, f"{exclusive_database_name}.{test_table_2}", count_test_table_2
+        )
     else:
         assert node_2.query(
             f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}_broken_tables'"

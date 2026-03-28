@@ -136,8 +136,6 @@ class HtmlRunnerHooks:
             _workflow.name, Result.Status.RUNNING, results=results
         )
         summary_result.start_time = Utils.timestamp()
-        summary_result.links.append(env.CHANGE_URL)
-        summary_result.links.append(env.RUN_URL)
         info = Info()
         report_url_current_sha = info.get_report_url(latest=False)
         summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
@@ -223,6 +221,12 @@ class HtmlRunnerHooks:
     @classmethod
     def post_run(cls, _workflow, _job, info_errors):
         result = Result.from_fs(_job.name)
+        env = _Environment.get()
+        if env.WORKFLOW_JOB_DATA:
+            result.add_ext_key_value(
+                "run_url",
+                f"{env.RUN_URL}/job/{env.WORKFLOW_JOB_DATA['check_run_id']}",
+            )
         _ResultS3.upload_result_files_to_s3(result).dump()
         storage_usage = None
         if StorageUsage.exist():
@@ -233,8 +237,6 @@ class HtmlRunnerHooks:
             storage_usage = StorageUsage.from_fs()
             result.ext["storage_usage"] = storage_usage
         _ResultS3.copy_result_to_s3(result)
-
-        env = _Environment.get()
 
         new_sub_results = [result]
         new_result_info = ""

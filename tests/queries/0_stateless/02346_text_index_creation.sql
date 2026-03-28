@@ -1,4 +1,3 @@
-SET enable_full_text_index = 1;
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Must not have no arguments.';
@@ -155,6 +154,26 @@ CREATE TABLE tab
 (
     str String,
     INDEX idx str TYPE text(tokenizer = array())
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT 'Test unicodeWord tokenizer.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = unicodeWord)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = unicodeWord())
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -682,14 +701,17 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY key; -- { serverError BAD_ARGUMENTS }
 
-CREATE TABLE tab
-(
-    key UInt64,
-    n_str Nullable(String),
-    INDEX idx n_str TYPE text(tokenizer = 'splitByNonAlpha')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab (
+    id UInt32,
+    n Nullable(Int32),
+    INDEX idx(n) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab (
+    id UInt32,
+    arr Array(Nullable(Int32)),
+    INDEX idx(arr) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
 SET allow_suspicious_low_cardinality_types = 1;
 

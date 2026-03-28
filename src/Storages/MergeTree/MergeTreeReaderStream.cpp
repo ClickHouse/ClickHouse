@@ -4,6 +4,7 @@
 
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <utility>
 #include <filesystem>
 
@@ -58,6 +59,7 @@ void MergeTreeReaderStream::init()
     if (initialized)
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::init");
     /// Compute the size of the buffer.
     auto [max_mark_range_bytes, sum_mark_range_bytes] = estimateMarkRangeBytes(all_mark_ranges);
 
@@ -96,6 +98,7 @@ void MergeTreeReaderStream::init()
             std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
             [this, estimated_sum_mark_range_bytes, read_settings]()
             {
+                auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
                 return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
@@ -288,7 +291,7 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     /// It consists of 2 parts of data - during the serialization the first part is written before the data and second - after the data.
     /// But during deserialization we read both parts before the data, so we can't use the marks and need to always return the
     /// whole file size.
-    if (settings.is_dynamic_or_object_structure)
+    if (settings.is_metadata_file)
         return file_size;
 
     /// This is a good scenario. The compressed block is finished within the right mark,

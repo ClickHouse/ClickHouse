@@ -38,7 +38,7 @@ public:
 
         /// Check that query has only SELECT clause
         if (!query_node || (query_node->hasWith() || query_node->hasPrewhere() || query_node->hasWhere() || query_node->hasGroupBy() ||
-            query_node->hasHaving() || query_node->hasWindow() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
+            query_node->hasHaving() || query_node->hasWindow() || query_node->hasQualify() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
             query_node->hasLimitBy() || query_node->hasLimit() || query_node->hasOffset()))
             return;
 

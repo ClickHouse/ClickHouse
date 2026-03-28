@@ -264,7 +264,6 @@ def build_and_push_image(
             "Merging is available only on push, separate %s images are created",
             f"{image.name}:{tag}-$arch",
         )
-
     return result
 
 
@@ -282,7 +281,12 @@ def test_docker_library(test_results) -> None:
         config_override = (
             Path(Utils.cwd()) / "ci/jobs/scripts/docker_server/config.sh"
         ).absolute()
-        Shell.check(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
+        if not Shell.check(
+            f"git clone --depth 1 {GITHUB_SERVER_URL}/{repo} {repo_path}",
+            verbose=True,
+            retries=3,
+        ):
+            raise RuntimeError(f"Failed to clone {repo}")
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
             cmd = f"{run_sh} {image} -c {repo_path / 'test/config.sh'} -c {config_override}"

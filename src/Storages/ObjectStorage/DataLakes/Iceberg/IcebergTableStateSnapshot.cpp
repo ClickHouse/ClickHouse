@@ -3,11 +3,15 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 
+namespace DB
+{
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
+}
 }
 
 namespace DB

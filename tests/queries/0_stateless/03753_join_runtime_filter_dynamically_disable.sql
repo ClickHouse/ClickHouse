@@ -12,6 +12,7 @@ INSERT INTO customer SELECT number, 6, 6 FROM numbers(1000);
 INSERT INTO customer SELECT number, 7, 7 FROM numbers(1000);
 INSERT INTO customer SELECT number, 100, 100 FROM numbers(10);
 
+set use_statistics=1;
 SET enable_analyzer=1;
 SET enable_join_runtime_filters=1;
 SET enable_parallel_replicas=0;
@@ -37,7 +38,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
    type = 'QueryFinish' AND log_comment='Q1'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -59,7 +60,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
    type = 'QueryFinish' AND log_comment='Q2'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -81,7 +82,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
    type = 'QueryFinish' AND log_comment='Q3'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -101,7 +102,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 AND ProfileEvents['RuntimeFilterBlocksProcessed'] = 0 AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
    type = 'QueryFinish' AND log_comment='Q4'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -121,7 +122,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
    type = 'QueryFinish' AND log_comment='Q5'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -141,7 +142,7 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
    type = 'QueryFinish' AND log_comment='Q6'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
@@ -163,6 +164,6 @@ SELECT
     ProfileEvents['RuntimeFilterBlocksSkipped'] = 0 AND ProfileEvents['RuntimeFilterBlocksProcessed'] > 0 AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
    type = 'QueryFinish' AND log_comment='Q7'
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
