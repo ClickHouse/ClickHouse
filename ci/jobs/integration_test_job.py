@@ -750,6 +750,17 @@ tar -czf ./ci/tmp/logs.tar.gz \
         sequential_test_modules = []
         assert not is_sequential
 
+    if is_flaky_check or is_targeted_check:
+        # Sort by module file so all tests from the same file are consecutive.
+        # With --dist=each, pytest preserves CLI argument order and uses it as the
+        # collection order. If tests from different modules interleave (e.g. CIDB
+        # returns them sorted by failure time), pytest finalizes and re-enters
+        # module-scoped fixtures between them, breaking tests that call
+        # cluster.add_instance() inside the fixture.
+        # For regular jobs, preserve the duration-aware ordering from get_optimal_test_batch.
+        parallel_test_modules = sorted(parallel_test_modules, key=lambda t: t.split("::")[0])
+        sequential_test_modules = sorted(sequential_test_modules, key=lambda t: t.split("::")[0])
+
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
         tag = info.docker_tag(image_name)
@@ -838,7 +849,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         parallel_workers = workers
         # Sequential tests cannot run in parallel, so we loop over them instead.
         # Run at least 3 times to have meaningful flakiness signal, at most workers times.
-        sequential_repeat_cnt = max(4, workers)
+        sequential_repeat_cnt = max(3, workers)
     else:
         parallel_dist = "--dist=loadfile"
         parallel_workers = workers
