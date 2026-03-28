@@ -625,6 +625,7 @@ class ClickHouseCluster:
         self.base_kerberos_kdc_cmd = []
         self.base_rabbitmq_cmd = []
         self.base_nats_cmd = []
+        self.base_localstack_cmd = []
         self.base_cassandra_cmd = []
         self.base_jdbc_bridge_cmd = []
         self.base_postgres_cmd = []
@@ -653,6 +654,7 @@ class ClickHouseCluster:
         self.with_kerberos_kdc = False
         self.with_rabbitmq = False
         self.with_nats = False
+        self.with_localstack = False
         self.with_odbc_drivers = False
         self.with_mongo = False
         self.with_net_trics = False
@@ -775,6 +777,10 @@ class ClickHouseCluster:
         self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
         self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
         self.nats_ssl_context = None
+
+        # available when with_localstack == True
+        self.localstack_host = "localstack"
+        self.localstack_port = 4566
 
         # available when with_nginx == True
         self.nginx_host = "nginx"
@@ -1639,6 +1645,21 @@ class ClickHouseCluster:
         )
         return self.base_nats_cmd
 
+    def setup_localstack_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_localstack = True
+        env_variables["LOCALSTACK_PORT"] = str(self.localstack_port)
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_localstack.yml")]
+        )
+        self.base_localstack_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_localstack.yml"),
+        )
+        return self.base_localstack_cmd
+
     def setup_mongo_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = True
         env_variables["MONGO_HOST"] = self.mongo_host
@@ -1968,6 +1989,7 @@ class ClickHouseCluster:
         with_secrets=False,
         with_rabbitmq=False,
         with_nats=False,
+        with_localstack=False,
         clickhouse_path_dir=None,
         with_odbc_drivers=False,
         with_postgres=False,
@@ -2115,6 +2137,7 @@ class ClickHouseCluster:
             with_kerberos_kdc=with_kerberos_kdc,
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
+            with_localstack=with_localstack,
             with_nginx=with_nginx,
             with_secrets=with_secrets
             or with_kerberos_kdc
@@ -2307,6 +2330,13 @@ class ClickHouseCluster:
         if with_nats and not self.with_nats:
             cmds.append(
                 self.setup_nats_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_localstack and not self.with_localstack:
+            cmds.append(
+                self.setup_localstack_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         if with_nginx and not self.with_nginx:
@@ -3752,6 +3782,14 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_nats_is_available()
 
+            if self.with_localstack and self.base_localstack_cmd:
+                logging.debug("Setup LocalStack")
+                subprocess_check_call(
+                    self.base_localstack_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                logging.debug("LocalStack is up")
+
             if self.with_nginx and self.base_nginx_cmd:
                 logging.debug("Setup nginx")
                 subprocess_check_call(
@@ -4349,6 +4387,7 @@ class ClickHouseInstance:
         with_kerberos_kdc,
         with_rabbitmq,
         with_nats,
+        with_localstack,
         with_nginx,
         with_secrets,
         with_mongo,
@@ -4471,6 +4510,7 @@ class ClickHouseInstance:
         self.with_kerberos_kdc = with_kerberos_kdc
         self.with_rabbitmq = with_rabbitmq
         self.with_nats = with_nats
+        self.with_localstack = with_localstack
         self.with_nginx = with_nginx
         self.with_secrets = with_secrets
         self.with_mongo = with_mongo
@@ -5878,6 +5918,9 @@ class ClickHouseInstance:
 
         if self.with_nats:
             depends_on.append("nats1")
+
+        if self.with_localstack:
+            depends_on.append("localstack")
 
         if self.with_zookeeper:
             depends_on += list(ZOOKEEPER_CONTAINERS)

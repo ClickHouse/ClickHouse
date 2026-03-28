@@ -90,10 +90,7 @@ VirtualColumnsDescription StorageSQS::createVirtuals()
 
 std::shared_ptr<Aws::SQS::SQSClient> StorageSQS::createClient() const
 {
-    /// Ensure the AWS SDK is initialized before constructing ClientConfiguration.
-    /// ClickHouse initializes the SDK lazily via S3::ClientFactory; calling instance()
-    /// here guarantees Aws::InitAPI has been called even when no S3 storage is in use.
-    [[maybe_unused]] auto & _ = DB::S3::ClientFactory::instance();
+    auto & _ = DB::S3::ClientFactory::instance();
 
     Aws::Client::ClientConfiguration config;
     config.region = (*sqs_settings)[SQSSetting::sqs_aws_region].value;
@@ -351,8 +348,6 @@ bool StorageSQS::tryStreamToViews()
 
     auto block_io = interpreter.execute();
 
-    /// Derive column names from the pipeline header so that virtual columns
-    /// requested by a materialized view are included in the SQSSource sample block.
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);

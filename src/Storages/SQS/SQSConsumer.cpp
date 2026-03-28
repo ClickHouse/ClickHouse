@@ -85,7 +85,6 @@ bool SQSConsumer::receive()
         if (error_type == Aws::SQS::SQSErrors::REQUEST_TIMEOUT)
             return false;
 
-        /// The queue may not exist yet or may have been deleted — log and retry later.
         if (error_type == Aws::SQS::SQSErrors::QUEUE_DOES_NOT_EXIST
             || error_type == Aws::SQS::SQSErrors::QUEUE_DELETED_RECENTLY)
         {
