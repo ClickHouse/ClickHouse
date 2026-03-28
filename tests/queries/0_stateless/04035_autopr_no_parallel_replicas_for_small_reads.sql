@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS t;
 
 CREATE TABLE t(key UInt64, value String) ENGINE = MergeTree ORDER BY key;
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
+SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 
 SET enable_analyzer=1;

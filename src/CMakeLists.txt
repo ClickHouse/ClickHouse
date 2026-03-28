@@ -232,6 +232,18 @@ endif ()
 
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
+# Arrow IPC buffers use intentionally unaligned int32 offset arrays — suppress the alignment check.
+# RocksDB EmbeddedRocksDB full scan hits a pointer-overflow when a corrupted slice size
+# causes pointer arithmetic to overflow. Pre-existing bug: https://github.com/ClickHouse/ClickHouse/issues/99862
+if (SANITIZE STREQUAL "address,undefined")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowColumnToCHColumn.cpp
+        PROPERTIES COMPILE_FLAGS "-fno-sanitize=alignment")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/Storages/RocksDB/StorageEmbeddedRocksDB.cpp
+        PROPERTIES COMPILE_FLAGS "-fno-sanitize=pointer-overflow")
+endif ()
+
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 if (TARGET ch_contrib::jemalloc)
@@ -384,6 +396,7 @@ if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
     set_source_files_properties(
             Common/Elf.cpp
             Common/Dwarf.cpp
+            Common/MachO.cpp
             Common/SymbolIndex.cpp
             Common/ThreadFuzzer.cpp
             PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")

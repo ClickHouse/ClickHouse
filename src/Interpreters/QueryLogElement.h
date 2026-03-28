@@ -71,6 +71,7 @@ struct QueryLogElement
     std::set<String> query_partitions;
     std::set<String> query_projections;
     std::set<String> query_views;
+    std::set<String> query_skip_indices;
 
     std::unordered_set<String> used_aggregate_functions;
     std::unordered_set<String> used_aggregate_function_combinators;
