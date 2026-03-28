@@ -1290,6 +1290,10 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     /// Add all columns used in the partition key to the min-max index.
     DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
 
+    /// Reset positions before recomputing — ensures no stale values persist
+    /// when this function is called a second time from setProperties after ALTER.
+    minmax_idx_date_column_pos.store(-1, std::memory_order_release);
+    minmax_idx_time_column_pos.store(-1, std::memory_order_release);
 
     /// Try to find the date column in columns used by the partition key (a common case).
     /// If there are no - DateTime or DateTime64 would also suffice.
