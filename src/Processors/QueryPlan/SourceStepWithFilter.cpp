@@ -100,6 +100,9 @@ void SourceStepWithFilter::describeActions(FormatSettings & format_settings) con
 {
     std::string prefix = format_settings.detail_prefix;
 
+    if (format_settings.pretty)
+        QueryPlanFormat::formatOutputColumns(format_settings.out, *this, prefix);
+
     if (query_info.prewhere_info || query_info.row_level_filter)
     {
         format_settings.out << prefix << "Prewhere info" << '\n';
