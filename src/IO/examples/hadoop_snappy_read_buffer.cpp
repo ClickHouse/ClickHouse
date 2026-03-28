@@ -11,7 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/HadoopSnappyReadBuffer.h>
 
-std::string uncompress(size_t buf_size)
+static std::string uncompress(size_t buf_size)
 {
     using namespace DB;
 

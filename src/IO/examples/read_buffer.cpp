@@ -7,7 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <base/types.h>
 
-int readAndPrint(DB::ReadBuffer & in)
+static int readAndPrint(DB::ReadBuffer & in)
 {
     try
     {

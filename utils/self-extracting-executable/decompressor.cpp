@@ -36,7 +36,7 @@
 #include <types.h>
 
 /// decompress part
-int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
+static int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
                off_t input_size, off_t output_size, ZSTD_DCtx* dctx)
 {
     size_t decompressed_size = ZSTD_decompressDCtx(dctx, output + out_offset, output_size, input + in_offset, input_size);
@@ -50,7 +50,7 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
 }
 
 /// decompress data from in_fd into out_fd
-int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
+static int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
 {
     off_t in_pointer = start;
     off_t out_pointer = 0;
@@ -170,13 +170,13 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     return 0;
 }
 
-bool isSudo()
+static bool isSudo()
 {
     return geteuid() == 0;
 }
 
 /// Read data about files and decompress them.
-int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
+static int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
@@ -344,7 +344,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #if defined(OS_DARWIN)
 
-    int read_exe_path(char *exe, size_t buf_sz)
+    static int read_exe_path(char *exe, size_t buf_sz)
     {
         uint32_t size = static_cast<uint32_t>(buf_sz);
         std::vector<char> apple(size);
@@ -357,7 +357,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #elif defined(OS_FREEBSD)
 
-    int read_exe_path(char *exe, size_t buf_sz)
+    static int read_exe_path(char *exe, size_t buf_sz)
     {
         int name[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
         size_t length = buf_sz;
@@ -369,7 +369,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #else
 
-    int read_exe_path(char *exe, size_t buf_sz)
+    static int read_exe_path(char *exe, size_t buf_sz)
     {
         ssize_t n = readlink("/proc/self/exe", exe, buf_sz - 1);
         if (n > 0)
@@ -381,7 +381,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 
-uint64_t getInode(const char * self)
+static uint64_t getInode(const char * self)
 {
     std::ifstream maps("/proc/self/maps");
     if (maps.fail())

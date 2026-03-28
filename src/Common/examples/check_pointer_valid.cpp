@@ -10,13 +10,13 @@ thread_local bool checking_pointer = false;
 thread_local jmp_buf signal_jump_buffer;
 
 
-void signalHandler(int sig, siginfo_t *, void *)
+static void signalHandler(int sig, siginfo_t *, void *)
 {
     if (checking_pointer && sig == SIGSEGV)
         siglongjmp(signal_jump_buffer, 1);
 }
 
-bool isPointerValid(const void * ptr)
+static bool isPointerValid(const void * ptr)
 {
     checking_pointer = true;
     if (0 == sigsetjmp(signal_jump_buffer, 1))

@@ -90,7 +90,7 @@ struct State
 using StatePtr = State *;
 
 
-Float NO_INLINE baseline_baseline(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE baseline_baseline(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     Arena arena;
     HashMap<UInt8, StatePtr> map;
@@ -109,7 +109,7 @@ Float NO_INLINE baseline_baseline(const PODArray<UInt8> & keys, const PODArray<F
 }
 
 
-Float NO_INLINE baseline(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE baseline(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     Arena arena;
     FixedHashMap<UInt8, StatePtr> map;
@@ -128,7 +128,7 @@ Float NO_INLINE baseline(const PODArray<UInt8> & keys, const PODArray<Float> & v
 }
 
 
-Float NO_INLINE implicit_zero(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE implicit_zero(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     Arena arena;
     FixedImplicitZeroHashMap<UInt8, StatePtr> map;
@@ -154,7 +154,7 @@ using FixedHashMapWithCalculatedSize = FixedHashMap<
     FixedHashMapCell<Key, Mapped>,
     FixedHashTableCalculatedSize<FixedHashMapCell<Key, Mapped>>>;
 
-Float NO_INLINE calculated_size(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE calculated_size(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     Arena arena;
     FixedHashMapWithCalculatedSize<UInt8, StatePtr> map;
@@ -173,7 +173,7 @@ Float NO_INLINE calculated_size(const PODArray<UInt8> & keys, const PODArray<Flo
 }
 
 
-Float NO_INLINE implicit_zero_and_calculated_size(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE implicit_zero_and_calculated_size(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     Arena arena;
     FixedImplicitZeroHashMapWithCalculatedSize<UInt8, StatePtr> map;
@@ -191,7 +191,7 @@ Float NO_INLINE implicit_zero_and_calculated_size(const PODArray<UInt8> & keys, 
     return map[0] ? map[0]->result() : 0;
 }
 
-Float NO_INLINE init_out_of_the_loop(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE init_out_of_the_loop(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     Arena arena;
     FixedImplicitZeroHashMapWithCalculatedSize<UInt8, StatePtr> map;
@@ -209,7 +209,7 @@ Float NO_INLINE init_out_of_the_loop(const PODArray<UInt8> & keys, const PODArra
     return map[0] ? map[0]->result() : 0;
 }
 
-Float NO_INLINE embedded_states(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE embedded_states(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     FixedImplicitZeroHashMapWithCalculatedSize<UInt8, State> map;
 
@@ -223,7 +223,7 @@ Float NO_INLINE embedded_states(const PODArray<UInt8> & keys, const PODArray<Flo
     return map[0].result();
 }
 
-Float NO_INLINE simple_lookup_table(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE simple_lookup_table(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     Arena arena;
     StatePtr map[256]{};
@@ -241,7 +241,7 @@ Float NO_INLINE simple_lookup_table(const PODArray<UInt8> & keys, const PODArray
     return map[0] ? map[0]->result() : 0;
 }
 
-Float NO_INLINE simple_lookup_table_embedded_states(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE simple_lookup_table_embedded_states(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     State map[256]{};
 
@@ -435,7 +435,7 @@ Float NO_INLINE microsort(const PODArray<UInt8> & keys, const PODArray<Float> & 
 }
 
 
-Float NO_INLINE buffered(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE buffered(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     State map[256]{};
 
@@ -517,7 +517,7 @@ struct State4
     }
 };
 
-Float NO_INLINE another_unrolled_x4(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+static Float NO_INLINE another_unrolled_x4(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     State4 map[256]{};
 

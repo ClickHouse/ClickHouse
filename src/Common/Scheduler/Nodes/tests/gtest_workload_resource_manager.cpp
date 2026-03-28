@@ -1291,12 +1291,12 @@ TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
     EXPECT_DOUBLE_EQ(actual_cap, expected_cap);
 }
 
-auto getAcquired()
+static auto getAcquired()
 {
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlAcquired);
 }
 
-auto getPreempted()
+static auto getPreempted()
 {
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
 }

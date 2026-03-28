@@ -8,8 +8,8 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
-#define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(String & ret, const TYPE &(VAR_NAME))
-#define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(String & ret, const uint32_t quote, const TYPE &(VAR_NAME))
+#define CONV_FN(TYPE, VAR_NAME) static void TYPE##ToString(String & ret, const TYPE &(VAR_NAME))
+#define CONV_FN_QUOTE(TYPE, VAR_NAME) static void TYPE##ToString(String & ret, const uint32_t quote, const TYPE &(VAR_NAME))
 
 namespace BuzzHouse
 {
@@ -79,7 +79,7 @@ CONV_FN(Database, db)
     ret += db.database();
 }
 
-void TableToString(String & ret, const bool quote, const Table & tab)
+static void TableToString(String & ret, const bool quote, const Table & tab)
 {
     ret += quote ? "`" : "";
     ret += tab.table();
@@ -109,7 +109,7 @@ CONV_FN(Role, r)
     ret += "`";
 }
 
-void ClusterToString(String & ret, const bool clause, const Cluster & cl)
+static void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
     if (cl.has_cluster())
     {
@@ -2805,7 +2805,7 @@ CONV_FN(FetchStatement, fet)
     ret += RowsKeyword_Name(fet.rows()).substr(4);
 }
 
-void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
+static void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
 {
     ret += "LIMIT ";
     ExprToString(ret, lim.limit());
@@ -2815,7 +2815,7 @@ void LimitStatementToString(String & ret, const bool has_offset, const LimitStat
     }
 }
 
-void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
+static void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
 {
     ret += (has_limit && off.comma()) ? "," : "OFFSET";
     ret += " ";

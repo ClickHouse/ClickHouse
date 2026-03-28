@@ -1052,14 +1052,14 @@ using MapSwiss = SwissTableHashMap<Key, Value>;
 using MapTwoLevelSwiss = TwoLevelSwissTableHashMap<Key, Value>;
 #endif
 
-void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
     for (auto it = begin; it != end; ++it)
         ++map[*it];
 }
 
 /// Aggregation with prefetching - compute hash and prefetch ahead before processing
-void aggregate1Prefetch(Map & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate1Prefetch(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t PREFETCH_LOOKAHEAD = 16;
 
@@ -1082,7 +1082,7 @@ void aggregate1Prefetch(Map & map, Source::const_iterator begin, Source::const_i
 }
 
 /// Aggregation with batch prefetching - prefetch multiple elements ahead
-void aggregate1BatchPrefetch(Map & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate1BatchPrefetch(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t BATCH_SIZE = 16;
 
@@ -1106,7 +1106,7 @@ void aggregate1BatchPrefetch(Map & map, Source::const_iterator begin, Source::co
         ++map[*it];
 }
 
-void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
     Map::LookupResult found = nullptr;
     auto prev_it = end;
@@ -1127,14 +1127,14 @@ void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator
     }
 }
 
-void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
     for (auto it = begin; it != end; ++it)
         ++map[*it];
 }
 
 /// TwoLevel aggregation with prefetching
-void aggregate2Prefetch(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate2Prefetch(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t PREFETCH_LOOKAHEAD = 16;
 
@@ -1157,7 +1157,7 @@ void aggregate2Prefetch(MapTwoLevel & map, Source::const_iterator begin, Source:
 }
 
 /// TwoLevel batch prefetch - prefetch multiple elements ahead
-void aggregate2BatchPrefetch(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate2BatchPrefetch(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t BATCH_SIZE = 16;
 
@@ -1182,7 +1182,7 @@ void aggregate2BatchPrefetch(MapTwoLevel & map, Source::const_iterator begin, So
 }
 
 /// TwoLevel with prefetching and sequential keys optimization
-void aggregate2PrefetchSeq(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate2PrefetchSeq(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t PREFETCH_LOOKAHEAD = 16;
 
@@ -1231,7 +1231,7 @@ void aggregate2PrefetchSeq(MapTwoLevel & map, Source::const_iterator begin, Sour
     }
 }
 
-void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
     MapTwoLevel::LookupResult found = nullptr;
     auto prev_it = end;
@@ -1254,7 +1254,7 @@ void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_
     }
 }
 
-void merge2(MapTwoLevel * maps, size_t num_threads, size_t bucket)
+static void merge2(MapTwoLevel * maps, size_t num_threads, size_t bucket)
 {
     for (size_t i = 1; i < num_threads; ++i)
         for (auto it = maps[i].impls[bucket].begin(); it != maps[i].impls[bucket].end(); ++it)
@@ -1262,7 +1262,7 @@ void merge2(MapTwoLevel * maps, size_t num_threads, size_t bucket)
 }
 
 /// Merge with prefetching
-void merge2Prefetch(MapTwoLevel * maps, size_t num_threads, size_t bucket)
+static void merge2Prefetch(MapTwoLevel * maps, size_t num_threads, size_t bucket)
 {
     static constexpr size_t PREFETCH_LOOKAHEAD = 8;
 
@@ -1292,7 +1292,7 @@ void merge2Prefetch(MapTwoLevel * maps, size_t num_threads, size_t bucket)
     }
 }
 
-void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t threshold = 65536;
 
@@ -1317,7 +1317,7 @@ void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_
     }
 }
 
-void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t threshold = 65536;
 
@@ -1339,7 +1339,7 @@ void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const
     }
 }
 
-void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t threshold = 65536;
     static constexpr size_t block_size = 8192;
@@ -1385,7 +1385,7 @@ void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Sour
 /// If local map is small enough, insert there.
 /// Otherwise try to insert into global map (with per-cell locking).
 /// If lock contention, fall back to local map.
-void aggregate5(Map & local_map, MapSmallLocks & global_map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate5(Map & local_map, MapSmallLocks & global_map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t threshold = 65536;
 
@@ -1415,14 +1415,14 @@ void aggregate5(Map & local_map, MapSmallLocks & global_map, Source::const_itera
 }
 
 /// Aggregate directly into shared map with small locks (no local map)
-void aggregate6(MapSmallLocks & global_map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate6(MapSmallLocks & global_map, Source::const_iterator begin, Source::const_iterator end)
 {
     for (auto it = begin; it != end; ++it)
         global_map.increment(*it);
 }
 
 /// Aggregate with local map overflow to shared map (blocking version)
-void aggregate7(Map & local_map, MapSmallLocks & global_map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate7(Map & local_map, MapSmallLocks & global_map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t threshold = 65536;
 
@@ -1443,13 +1443,13 @@ void aggregate7(Map & local_map, MapSmallLocks & global_map, Source::const_itera
 }
 
 /// ==================== Robin Hood Aggregation ====================
-void aggregateRobinHood(MapRobinHood & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregateRobinHood(MapRobinHood & map, Source::const_iterator begin, Source::const_iterator end)
 {
     for (auto it = begin; it != end; ++it)
         ++map[*it];
 }
 
-void aggregateRobinHoodPrefetch(MapRobinHood & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregateRobinHoodPrefetch(MapRobinHood & map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t PREFETCH_LOOKAHEAD = 16;
 
@@ -1470,13 +1470,13 @@ void aggregateRobinHoodPrefetch(MapRobinHood & map, Source::const_iterator begin
 
 #if defined(__x86_64__) || defined(__aarch64__)
 /// ==================== Swiss Table Aggregation ====================
-void aggregateSwiss(MapSwiss & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregateSwiss(MapSwiss & map, Source::const_iterator begin, Source::const_iterator end)
 {
     for (auto it = begin; it != end; ++it)
         ++map[*it];
 }
 
-void aggregateSwissPrefetch(MapSwiss & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregateSwissPrefetch(MapSwiss & map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t PREFETCH_LOOKAHEAD = 16;
 
@@ -1497,13 +1497,13 @@ void aggregateSwissPrefetch(MapSwiss & map, Source::const_iterator begin, Source
 #endif
 
 /// ==================== Two-Level Robin Hood Aggregation ====================
-void aggregateTwoLevelRobinHood(MapTwoLevelRobinHood & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregateTwoLevelRobinHood(MapTwoLevelRobinHood & map, Source::const_iterator begin, Source::const_iterator end)
 {
     for (auto it = begin; it != end; ++it)
         ++map[*it];
 }
 
-void aggregateTwoLevelRobinHoodPrefetch(MapTwoLevelRobinHood & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregateTwoLevelRobinHoodPrefetch(MapTwoLevelRobinHood & map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t PREFETCH_LOOKAHEAD = 16;
 
@@ -1522,7 +1522,7 @@ void aggregateTwoLevelRobinHoodPrefetch(MapTwoLevelRobinHood & map, Source::cons
         ++map[*it];
 }
 
-void mergeTwoLevelRobinHood(MapTwoLevelRobinHood * maps, size_t num_threads, size_t bucket)
+static void mergeTwoLevelRobinHood(MapTwoLevelRobinHood * maps, size_t num_threads, size_t bucket)
 {
     for (size_t i = 1; i < num_threads; ++i)
         for (auto it = maps[i].impls[bucket].begin(); it != maps[i].impls[bucket].end(); ++it)
@@ -1531,13 +1531,13 @@ void mergeTwoLevelRobinHood(MapTwoLevelRobinHood * maps, size_t num_threads, siz
 
 #if defined(__x86_64__) || defined(__aarch64__)
 /// ==================== Two-Level Swiss Table Aggregation ====================
-void aggregateTwoLevelSwiss(MapTwoLevelSwiss & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregateTwoLevelSwiss(MapTwoLevelSwiss & map, Source::const_iterator begin, Source::const_iterator end)
 {
     for (auto it = begin; it != end; ++it)
         ++map[*it];
 }
 
-void aggregateTwoLevelSwissPrefetch(MapTwoLevelSwiss & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregateTwoLevelSwissPrefetch(MapTwoLevelSwiss & map, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t PREFETCH_LOOKAHEAD = 16;
 
@@ -1556,7 +1556,7 @@ void aggregateTwoLevelSwissPrefetch(MapTwoLevelSwiss & map, Source::const_iterat
         ++map[*it];
 }
 
-void mergeTwoLevelSwiss(MapTwoLevelSwiss * maps, size_t num_threads, size_t bucket)
+static void mergeTwoLevelSwiss(MapTwoLevelSwiss * maps, size_t num_threads, size_t bucket)
 {
     for (size_t i = 1; i < num_threads; ++i)
         for (auto it = maps[i].impls[bucket].begin(); it != maps[i].impls[bucket].end(); ++it)

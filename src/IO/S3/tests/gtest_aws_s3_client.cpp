@@ -46,7 +46,7 @@ namespace DB::S3RequestSetting
 [[maybe_unused]] static Poco::Util::ServerApplication app;
 
 
-String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
+static String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
 {
     String content;
     for (const auto & [header_name, header_value] : message_header)
@@ -69,7 +69,7 @@ String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
     return content;
 }
 
-void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
+static void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
 {
     String version_id;
     UInt64 max_single_read_retries = 1;
@@ -90,7 +90,7 @@ void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::U
     DB::readStringUntilEOF(content, read_buffer);
 }
 
-void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
+static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
 {
     UInt64 max_unexpected_write_error_retries = 1;
 
@@ -111,7 +111,7 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
 
 using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, const DB::S3::URI &)>;
 
-void testServerSideEncryption(
+static void testServerSideEncryption(
     RequestFn do_request,
     bool disable_checksum,
     String server_side_encryption_customer_key_base64,

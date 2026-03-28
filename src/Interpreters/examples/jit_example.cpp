@@ -8,7 +8,7 @@
 
 #include <Interpreters/JIT/CHJIT.h>
 
-void test_function()
+static void test_function()
 {
     std::cerr << "Test function" << std::endl;
 }
