@@ -112,7 +112,9 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
     out.next();
     out.cancel();
 
+    LOG_TRACE(log, "SinkHello sent, registering connection for query id {} stream {}", query_id, stream_name);
     connections->addConnection(query_id, stream_name, socket);
+    LOG_TRACE(log, "Connection registered for query id {} stream {}", query_id, stream_name);
 }
 
 }
