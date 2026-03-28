@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
-#include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -35,6 +34,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+
 
 namespace DB
 {
@@ -80,6 +80,9 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         nullptr, // read_keys
         {} // file_progress_callback
     );
+    /// This iterator is used only to get a sample path for hive partitioning,
+    /// not for actual data reading, so do not emit ProfileEvents.
+    file_iterator->setEmitProfileEvents(false);
 
     const auto path = configuration->getRawPath();
 
@@ -133,7 +136,7 @@ StorageObjectStorage::StorageObjectStorage(
         is_datalake_query, columns_in_table_or_function_definition.toString(true));
 
     bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
-            || context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1;
+            || context->getSettingsRef()[Setting::delta_lake_snapshot_end_version] != -1;
 
     if (!is_table_function && is_delta_lake_cdf)
     {
@@ -190,6 +193,8 @@ StorageObjectStorage::StorageObjectStorage(
 
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+    else
+        validateSupportedColumns(columns, *configuration);
 
     configuration->check(context);
 
@@ -218,25 +223,6 @@ StorageObjectStorage::StorageObjectStorage(
         columns_in_table_or_function_definition.empty(),
         format_settings,
         context);
-
-    bool validate_schema_with_remote = !need_resolve_columns_or_format
-        && !configuration->isDataLakeConfiguration()
-        && !columns_in_table_or_function_definition.empty()
-        && !is_table_function
-        && mode == LoadingStrictnessLevel::CREATE
-        && !do_lazy_init;
-
-    validateColumns(
-        columns,
-        configuration_,
-        validate_schema_with_remote,
-        object_storage_,
-        &format_settings,
-        &sample_path,
-        context,
-        &hive_partition_columns_to_read_from_file_path,
-        &columns_in_table_or_function_definition,
-        log);
 
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty() && file_columns.empty())
@@ -483,7 +469,7 @@ void StorageObjectStorage::read(
                 return;
             }
         }
-        else if (auto end_version = settings[Setting::delta_lake_snapshot_start_version].value;
+        else if (auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
                  end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
             throw DB::Exception(

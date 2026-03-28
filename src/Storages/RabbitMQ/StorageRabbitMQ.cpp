@@ -898,19 +898,26 @@ void StorageRabbitMQ::startup()
 
 void StorageRabbitMQ::shutdown(bool)
 {
-    shutdown_called = true;
+    /// Needed to make this method idempotent
+    if (shutdown_called.exchange(true))
+        return;
 
-    for (auto & consumer : consumers_ref)
-        consumer.lock()->stop();
-
-    LOG_TRACE(log, "Deactivating background tasks");
-
-    /// In case it has not yet been able to setup connection;
+    LOG_TRACE(log, "Deactivating init task");
     deactivateTask(init_task, true, false);
+
+    for (auto & consumer_weak : consumers_ref)
+    {
+        auto consumer = consumer_weak.lock();
+        if (!consumer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RabbitMQ consumer has been unexpectedly destroyed");
+        consumer->stop();
+    }
 
     /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
     /// then wait for background event loop to finish.
+    LOG_TRACE(log, "Deactivating streaming task");
     deactivateTask(streaming_task, true, false);
+    LOG_TRACE(log, "Deactivating looping task");
     deactivateTask(looping_task, true, true);
 
     LOG_TRACE(log, "Cleaning up RabbitMQ after table usage");
@@ -918,8 +925,13 @@ void StorageRabbitMQ::shutdown(bool)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        for (auto & consumer : consumers_ref)
-            consumer.lock()->closeConnections();
+        for (auto & consumer_weak : consumers_ref)
+        {
+            auto consumer = consumer_weak.lock();
+            if (!consumer)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "RabbitMQ consumer has been unexpectedly destroyed");
+            consumer->closeConnections();
+        }
 
         if (drop_table)
             cleanupRabbitMQ();
@@ -930,6 +942,8 @@ void StorageRabbitMQ::shutdown(bool)
 
         for (size_t i = 0; i < num_created_consumers; ++i)
             popConsumer();
+
+        consumers_ref.clear();
     }
     catch (...)
     {
@@ -1041,27 +1055,7 @@ RabbitMQConsumerPtr StorageRabbitMQ::createConsumer()
 
 bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
 {
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
-
-    if (view_ids.empty())
-        return false;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return false;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-    }
-
-    return true;
+    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
 void StorageRabbitMQ::streamingToViewsFunc()

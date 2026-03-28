@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
@@ -114,7 +115,7 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
     {
         auto all_columns_sizes = part.getColumnSizes();
 
-        for (const auto & [_, size] : all_columns_sizes)
+        for (const auto & [_, size] : *all_columns_sizes)
         {
             if (size.data_compressed && (!data_compressed_size || size.data_compressed < data_compressed_size))
                 data_compressed_size = size.data_compressed;

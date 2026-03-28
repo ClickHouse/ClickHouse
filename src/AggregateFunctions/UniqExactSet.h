@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
@@ -87,7 +87,7 @@ public:
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = CurrentThread::getGroup()]()
+                auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
 
@@ -170,7 +170,9 @@ public:
                         }
                     };
 
-                    for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
+                    const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
+                    for (size_t i = 0; i < max_threads_to_enqueue
+                         && next_bucket_to_merge->load(std::memory_order_relaxed) < rhs.NUM_BUCKETS; ++i)
                         runner.enqueueAndKeepTrack(thread_func, Priority{});
                 }
                 catch (...)
