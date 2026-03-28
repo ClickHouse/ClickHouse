@@ -1,7 +1,7 @@
 #include <iostream>
 #include <unicode/unistr.h>
 
-static std::string utf8_to_lower(const std::string & input)
+[[maybe_unused]] static std::string utf8_to_lower(const std::string & input)
 {
     icu::UnicodeString unicodeInput(input.c_str(), "UTF-8");
     unicodeInput.toLower();

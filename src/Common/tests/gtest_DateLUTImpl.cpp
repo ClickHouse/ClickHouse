@@ -363,7 +363,7 @@ INSTANTIATE_TEST_SUITE_P(AllTimeZones,
     ::testing::ValuesIn(allTimezones())
 );
 
-static std::ostream & operator<<(std::ostream & ostr, const DateLUTImpl::Values & v)
+[[maybe_unused]] static std::ostream & operator<<(std::ostream & ostr, const DateLUTImpl::Values & v)
 {
     return ostr << "DateLUTImpl::Values{"
             << "\n\t date              : " << v.date

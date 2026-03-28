@@ -3081,7 +3081,7 @@ CONV_FN(BackupParam, bp)
     }
 }
 
-CONV_FN(BackupOut, bout)
+void BackupOutToString(String & ret, const BackupOut & bout)
 {
     const BackupOut_BackupOutput & output = bout.out();
 
@@ -3145,7 +3145,7 @@ CONV_FN(DatabaseEngine, deng)
     }
 }
 
-CONV_FN(CreateDatabase, create_database)
+void CreateDatabaseToString(String & ret, const CreateDatabase & create_database)
 {
     ret += "CREATE DATABASE ";
     if (create_database.if_not_exists())
@@ -3626,7 +3626,7 @@ CONV_FN(CreateTableSelect, create_table)
     ret += create_table.paren() ? ")" : "";
 }
 
-CONV_FN(CreateTable, create_table)
+void CreateTableToString(String & ret, const CreateTable & create_table)
 {
     CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
@@ -6070,7 +6070,7 @@ CONV_FN(SingleSQLQuery, query)
     }
 }
 
-CONV_FN(SQLQuery, query)
+void SQLQueryToString(String & ret, const SQLQuery & query)
 {
     SingleSQLQueryToString(ret, query.single_query());
     for (int i = 0; i < query.parallel_queries_size(); i++)

@@ -754,7 +754,7 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 }
 
 
-static void checkForUsersNotInMainConfig(
+[[maybe_unused]] static void checkForUsersNotInMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
     const std::string & config_path,

@@ -77,7 +77,7 @@ void printRanges(const auto & segments)
         std::cerr << '\n' << segment->range().toString() << " (state: " + DB::FileSegment::stateToString(segment->state()) + ")" << "\n";
 }
 
-static String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
+[[maybe_unused]] static String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
 {
     auto key_str = key.toString();
     return fs::path(base_path) / key_str.substr(0, 3) / key_str / DB::toString(offset);
@@ -302,7 +302,7 @@ static void increasePriority(const HolderPtr & holder)
         it->increasePriority();
 }
 
-static void increasePriority(const HolderPtr & holder, size_t pos)
+[[maybe_unused]] static void increasePriority(const HolderPtr & holder, size_t pos)
 {
     FileSegments::iterator it = holder->begin();
     std::advance(it, pos);

@@ -32,7 +32,7 @@ static std::string createSimpleTypeJson(const std::string & simple_type, bool re
         required);
 }
 
-static std::string createComplexTypeJson(const std::string & type_v3) {
+[[maybe_unused]] static std::string createComplexTypeJson(const std::string & type_v3) {
     return fmt::format(
         R"({{"name": "id", "type": "any", "required": false, "type_v3": {}}})",
         type_v3);

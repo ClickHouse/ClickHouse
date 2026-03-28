@@ -36,7 +36,10 @@ int main(int, char **)
 {
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     sa.sa_sigaction = signalHandler;
+#pragma clang diagnostic pop
     sa.sa_flags = SA_SIGINFO;
 
     if (sigemptyset(&sa.sa_mask)

@@ -1186,7 +1186,7 @@ TEST_P(SyncAsync, StrictUploadPartSize) {
     }
 }
 
-static String fillStringWithPattern(String pattern, int n)
+[[maybe_unused]] static String fillStringWithPattern(String pattern, int n)
 {
     String data;
     for (int i = 0; i < n; ++i)

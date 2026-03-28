@@ -78,7 +78,7 @@ int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * da
 
 extern "C"
 {
-void __lsan_ignore_object(const void *); // NOLINT(bugprone-reserved-identifier)
+void __lsan_ignore_object(const void *); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 }
 
 #ifndef ADDRESS_SANITIZER

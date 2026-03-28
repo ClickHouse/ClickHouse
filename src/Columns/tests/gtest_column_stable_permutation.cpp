@@ -58,7 +58,7 @@ static void columnGetPermutation(
     column.getPermutation(direction, IColumn::PermutationSortStability::Stable, limit, nan_direction_hint, out_permutation);
 }
 
-static void printColumn(const IColumn & column)
+[[maybe_unused]] static void printColumn(const IColumn & column)
 {
     size_t column_size = column.size();
     Field value;

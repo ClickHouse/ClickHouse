@@ -24,7 +24,7 @@ using namespace DB;
 using namespace std::literals;
 }
 
-static std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> parser)
+[[maybe_unused]] static std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> parser)
 {
     return ostr << "Parser: " << parser->getName();
 }
