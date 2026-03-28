@@ -24,6 +24,23 @@ struct IntNode
 
 }
 
+TEST(ACLMapTest, OverflowWraparound)
+{
+    DB::ACLMap acl_map;
+
+    auto id1 = acl_map.convertACLs({{1, "digest", "user1:pwd"}});
+    EXPECT_EQ(id1, 1);
+
+    /// Push max_acl_id to UINT32_MAX so the next allocation is at the boundary
+    acl_map.addMapping(std::numeric_limits<DB::ACLId>::max() - 1, {{1, "digest", "placeholder"}});
+
+    auto id2 = acl_map.convertACLs({{1, "digest", "user2:pwd"}});
+    EXPECT_EQ(id2, std::numeric_limits<DB::ACLId>::max());
+
+    auto id3 = acl_map.convertACLs({{1, "digest", "user3:pwd"}});
+    EXPECT_EQ(id3, 2);
+}
+
 TYPED_TEST(CoordinationTest, SnapshotableHashMapSimple)
 {
     DB::SnapshotableHashTable<IntNode> hello;
@@ -206,8 +223,17 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
 
     Storage storage(500, "", this->keeper_context);
-    addNode(storage, "/hello1", "world", 1);
-    addNode(storage, "/hello2", "somedata", 3);
+
+    /// Set ACLs on nodes to verify acl_id round-trips through V7 snapshots
+    auto acl_id1 = storage.acl_map.convertACLs({{31, "world", "anyone"}});
+    auto acl_id2 = storage.acl_map.convertACLs({{1, "digest", "user1:pwd"}});
+    storage.acl_map.addUsage(acl_id1);
+    storage.acl_map.addUsage(acl_id2);
+
+    addNode(storage, "/hello1", "world", 1, acl_id1);
+    addNode(storage, "/hello2", "somedata", 3, acl_id2);
+    const int64_t large_seq_num = static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 100;
+    storage.container.updateValue("/", [&](typename Storage::Node & node) { node.stats.setSeqNum(large_seq_num); });
     storage.session_id_counter = 5;
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
     storage.committed_ephemerals[3] = {"/hello2"};
@@ -215,7 +241,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     storage.getSessionID(130);
     storage.getSessionID(130);
 
-    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 2);
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 2, nullptr, DB::SnapshotVersion::V7);
 
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
     EXPECT_EQ(snapshot.session_id, 7);
@@ -245,6 +271,17 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     EXPECT_EQ(restored_storage->committed_ephemerals[3].size(), 1);
     EXPECT_EQ(restored_storage->committed_ephemerals[1].size(), 1);
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
+
+    /// Verify ACL round-trip
+    EXPECT_EQ(restored_storage->container.getValue("/hello1").acl_id, acl_id1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello2").acl_id, acl_id2);
+    auto restored_acls = restored_storage->acl_map.convertNumber(acl_id2);
+    EXPECT_EQ(restored_acls.size(), 1);
+    EXPECT_EQ(restored_acls[0].scheme, "digest");
+
+    /// Verify seq_num round-trip (int64_t, value > INT32_MAX)
+    if constexpr (!TestFixture::Storage::use_rocksdb)
+        EXPECT_EQ(restored_storage->container.find("/")->value.stats.seqNum(), large_seq_num);
 }
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
@@ -268,7 +305,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
     }
 
-    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50);
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 50);
     EXPECT_EQ(snapshot.snapshot_container_size, 54);
 
@@ -318,7 +355,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
             addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
         }
 
-        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, j * 50);
+        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, j * 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, j * 50);
         EXPECT_TRUE(fs::exists(std::string{"./snapshots/snapshot_"} + std::to_string(j * 50) + ".bin" + this->extension));
@@ -361,7 +398,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
         addNode(storage, fmt::format("/hello_{}", i), fmt::format("world_{}", i));
     }
     {
-        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50);
+        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
         for (size_t i = 0; i < 50; ++i)
         {
             storage.container.updateValue(fmt::format("/hello_{}", i), [&](auto & node) { node.setData(fmt::format("wrld_{}", i)); });
@@ -423,7 +460,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBroken)
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
     }
     {
-        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50);
+        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
@@ -460,7 +497,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     storage.getSessionID(130);
     storage.getSessionID(130);
 
-    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 2);
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 2, nullptr, this->keeper_context->getWriteSnapshotVersion());
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 2);
@@ -520,7 +557,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
         for (size_t j = 0; j < 3333; ++j)
             storage.getSessionID(130 * j);
 
-        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, storage.getZXID());
+        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, storage.getZXID(), nullptr, this->keeper_context->getWriteSnapshotVersion());
 
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
 
@@ -550,9 +587,9 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
 
     Storage storage(500, "", this->keeper_context);
     static constexpr std::string_view path = "/hello";
-    static constexpr uint64_t acl_id = 42;
+    static constexpr DB::ACLId acl_id = 42;
     addNode(storage, std::string{path}, "world", /*ephemeral_owner=*/0, acl_id);
-    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50);
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 50);
 
