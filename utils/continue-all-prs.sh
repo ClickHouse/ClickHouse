@@ -20,6 +20,9 @@ if (( SHARD >= SHARDS )); then
     exit 1
 fi
 
+echo "Shard ${SHARD} of ${SHARDS}"
+echo ""
+
 ROUND=0
 while true; do
     ROUND=$((ROUND + 1))
@@ -45,7 +48,7 @@ while true; do
             if [[ -n "$SHARD_PRS" ]]; then
                 SHARD_PRS+=$'\n'
             fi
-            SHARD_PRS+="${NUMBER}\t${TITLE}"
+            SHARD_PRS+="${NUMBER}"$'\t'"${TITLE}"
         fi
     done <<< "$PRS"
 
@@ -57,7 +60,7 @@ while true; do
 
     COUNT=$(echo "$SHARD_PRS" | wc -l)
     echo "Found ${COUNT} open PR(s) for shard ${SHARD}/${SHARDS}:"
-    echo -e "$SHARD_PRS"
+    echo "$SHARD_PRS"
     echo ""
 
     I=0
