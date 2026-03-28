@@ -47,11 +47,6 @@ SnappyWriteBuffer::SnappyWriteBuffer(WriteBuffer & out_, size_t buf_size, char *
 {
 }
 
-SnappyWriteBuffer::SnappyWriteBuffer(WriteBuffer * out_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(out_)
-{
-}
-
 void SnappyWriteBuffer::writeStreamIdentifier()
 {
     writeRaw(reinterpret_cast<const char *>(STREAM_IDENTIFIER), sizeof(STREAM_IDENTIFIER));

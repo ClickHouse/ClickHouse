@@ -31,12 +31,6 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
-    explicit SnappyWriteBuffer(
-        WriteBuffer * out_,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        char * existing_memory = nullptr,
-        size_t alignment = 0);
-
     void finalizeImpl() override;
 
 private:
