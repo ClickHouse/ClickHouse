@@ -6593,12 +6593,12 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
 
     if (mutation_affected_partition_ids.has_value())
     {
-        /// When partition set comes from explicit IN PARTITION, the target is exact
-        /// and should not be expanded. Widening is only needed for predicate-pruned
-        /// mutations where the pruner only sees local parts and may miss partitions
-        /// that exist in ZK but haven't been fetched to this replica yet.
-        bool has_explicit_partitions = std::any_of(commands.begin(), commands.end(),
-            [](const auto & cmd) { return cmd.partition || cmd.partitions; });
+        /// Widening with ZK-only partitions is needed when any command uses
+        /// predicate pruning (no explicit IN PARTITION). The pruner only sees local
+        /// parts and may miss partitions that exist in ZK but haven't been fetched
+        /// to this replica yet. For explicit IN PARTITION the target set is exact.
+        bool has_pruned_commands = std::any_of(commands.begin(), commands.end(),
+            [](const MutationCommand & cmd) { return !cmd.partition && !cmd.partitions && cmd.predicate; });
 
         while (true)
         {
@@ -6608,7 +6608,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
 
             auto affected = *mutation_affected_partition_ids;
 
-            if (!has_explicit_partitions)
+            if (has_pruned_commands)
             {
                 auto local_partition_ids = getAllPartitionIds();
                 for (const auto & zk_partition : zk_partitions)
