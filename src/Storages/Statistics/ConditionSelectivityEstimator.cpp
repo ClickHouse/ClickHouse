@@ -278,6 +278,20 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
                 if (column_desc)
                     column_type = removeLowCardinalityAndNullable(column_desc->type);
+                else
+                {
+                    /// Not a real column (e.g. a function expression like lower(col) or toDecimal64(col, 3)).
+                    /// Skip range analysis to avoid bad cast when merging ranges of incompatible Field types.
+                    /// Pre-set selectivity based on the function type so prewhere ordering is still reasonable.
+                    if (func_name == "equals" || func_name == "in")
+                        out.selectivity = default_cond_equal_factor;
+                    else if (func_name == "notEquals" || func_name == "notIn")
+                        out.selectivity = 1.0 - default_cond_equal_factor;
+                    else /// less, greater, lessOrEquals, greaterOrEquals
+                        out.selectivity = default_cond_range_factor;
+                    out.finalized = true;
+                    return false;
+                }
             }
             /// In some cases we need to cast the type of const
             bool cast_not_needed = !column_type || !const_type ||
@@ -335,6 +349,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                 }
             }
+
+            /// The atom handlers for IN / NOT IN expect a Tuple but we may have parsed a single scalar in the case of IN (single_value).
+            if (is_in_operator && const_value.getType() != Field::Types::Tuple)
+                const_value = Tuple{const_value};
+
             const auto atom_it = atom_map.find(func_name);
             atom_it->second(out, column_name, const_value);
             return true;
@@ -380,17 +399,20 @@ ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstima
 
 Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
 {
+    if (stats->getNumRows() == 0)
+        return 0;
     Float64 result = 0;
     for (const Range & range : ranges.ranges)
     {
-        result += stats->estimateRange(range);
+        if (auto estimate = stats->estimateRange(range))
+            result += *estimate;
+        else if (range.left == range.right)
+            result += static_cast<Float64>(stats->getNumRows()) * default_cond_equal_factor;
+        else
+            result += static_cast<Float64>(stats->getNumRows()) * default_cond_range_factor;
     }
-    /// In case that there is an empty statistics.
-    if (stats->getNumRows() == 0)
-        return 0;
     Float64 selectivity = result / static_cast<Float64>(stats->getNumRows());
-    selectivity = std::max<Float64>(selectivity, 0);
-    return selectivity;
+    return std::max<Float64>(selectivity, 0);
 }
 
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const

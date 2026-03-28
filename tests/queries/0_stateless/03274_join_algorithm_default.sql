@@ -60,4 +60,4 @@ FROM
         SELECT * FROM system.numbers LIMIT 100000
     ) t2
 USING number
-SETTINGS max_threads=16;
+SETTINGS max_threads=16, query_plan_use_new_logical_join_step = 0;

@@ -633,7 +633,14 @@ bool Client::buzzHouse()
         const auto u = processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
         UNUSED(u);
 
-        if (fuzz_config->allow_query_oracles)
+        fuzz_config->outf << "--Session seed: " << rg.getSeed() << std::endl;
+        /// Load server configurations for the fuzzer
+        fuzz_config->loadServerConfigurations();
+        loadFuzzerServerSettings(*fuzz_config);
+        loadFuzzerTableSettings(*fuzz_config);
+        loadSystemTables(*fuzz_config);
+
+        if (fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles)
         {
             /// Create a dedicated oracle user and role for the row policy oracle.
             /// Row policies are created with `TO <oracleRole>` so they apply only to members
@@ -641,24 +648,19 @@ bool Client::buzzHouse()
             /// The oracle uses "EXECUTE AS <oracleUser>" (allowed by the default
             /// access_control_improvements.allow_impersonate_user = true) to run sq1 with
             /// the row policy active.
-            const auto rpu = processTextAsSingleQuery(
-                "CREATE USER IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleUser + " IDENTIFIED WITH no_password");
-            UNUSED(rpu);
-            const auto rpr = processTextAsSingleQuery("CREATE ROLE IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleRole);
-            UNUSED(rpr);
-            const auto rpg = processTextAsSingleQuery("GRANT SELECT ON *.* TO " + BuzzHouse::FuzzConfig::oracleRole);
-            UNUSED(rpg);
-            const auto rpgr
-                = processTextAsSingleQuery("GRANT " + BuzzHouse::FuzzConfig::oracleRole + " TO " + BuzzHouse::FuzzConfig::oracleUser);
-            UNUSED(rpgr);
-        }
+            static const DB::Strings queries = {
+                "CREATE USER IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleUser + " IDENTIFIED WITH no_password;",
+                "CREATE ROLE IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleRole + ";",
+                "GRANT SELECT ON *.* TO " + BuzzHouse::FuzzConfig::oracleRole + ";",
+                "GRANT " + BuzzHouse::FuzzConfig::oracleRole + " TO " + BuzzHouse::FuzzConfig::oracleUser + ";",
+            };
 
-        fuzz_config->outf << "--Session seed: " << rg.getSeed() << std::endl;
-        /// Load server configurations for the fuzzer
-        fuzz_config->loadServerConfigurations();
-        loadFuzzerServerSettings(*fuzz_config);
-        loadFuzzerTableSettings(*fuzz_config);
-        loadSystemTables(*fuzz_config);
+            for (const String & q : queries)
+            {
+                fuzz_config->outf << q << std::endl;
+                server_up &= processBuzzHouseQuery(q);
+            }
+        }
 
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(rg, *fuzz_config, *external_integrations, has_cloud_features);
@@ -911,9 +913,10 @@ bool Client::buzzHouse()
                          server_up &= processBuzzHouseQuery(full_query);
                          qo.processSecondOracleQueryResult(error_code, *external_integrations, "Count distinct oracle");
                      }},
-                    {0 /// Disable row policy oracle for now, because of https://github.com/ClickHouse/ClickHouse/issues/99572
+                    {30
                          * static_cast<uint32_t>(
-                             fuzz_config->allow_query_oracles && gen.collectionHas<BuzzHouse::SQLPolicy>(gen.row_policies_for_oracle)),
+                             fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles
+                             && gen.collectionHas<BuzzHouse::SQLPolicy>(gen.row_policies_for_oracle)),
                      [&]()
                      {
                          /// Row policy oracle: an existing catalog row policy USING pred must be equivalent to WHERE pred.
@@ -925,19 +928,39 @@ bool Client::buzzHouse()
                          sq2.Clear();
                          qo.generateRowPolicyOracleQueries(rg, gen, sq1, sq2);
 
-                         /// Q1: EXECUTE AS oracle user (embedded) then SELECT — row policy applies instead of WHERE
+                         /// Step 1: EXECUTE AS oracle user — switches session; row policy applies for subsequent queries.
+                         /// Must be sent as a standalone statement; native TCP processes only one statement per request.
                          full_query.resize(0);
-                         BuzzHouse::SQLQueryToString(full_query, sq1);
+                         full_query += "EXECUTE AS '";
+                         full_query += BuzzHouse::FuzzConfig::oracleUser;
+                         full_query += "'";
                          fuzz_config->outf << full_query << std::endl;
                          server_up &= processBuzzHouseQuery(full_query);
-                         qo.processFirstOracleQueryResult(error_code, *external_integrations);
 
-                         /// Q2: run as admin with explicit WHERE pred
-                         full_query.resize(0);
-                         BuzzHouse::SQLQueryToString(full_query, sq2);
-                         fuzz_config->outf << full_query << std::endl;
-                         server_up &= processBuzzHouseQuery(full_query);
-                         qo.processSecondOracleQueryResult(error_code, *external_integrations, "Row policy oracle");
+                         /// Only proceed if EXECUTE AS succeeded. If it failed, processBuzzHouseQuery
+                         /// already reconnected (resetting the session to admin), so no cleanup needed.
+                         /// Skipping avoids comparing two admin-user queries which would be a false oracle.
+                         if (!error_code)
+                         {
+                             /// Step 2: SELECT count() FROM db.t [FINAL] INTO OUTFILE — runs as oracle user (no WHERE; policy filters rows).
+                             full_query.resize(0);
+                             BuzzHouse::SQLQueryToString(full_query, sq1);
+                             fuzz_config->outf << full_query << std::endl;
+                             server_up &= processBuzzHouseQuery(full_query);
+                             qo.processFirstOracleQueryResult(error_code, *external_integrations);
+
+                             /// Step 3: Reconnect to reset session back to admin user before running the comparison query.
+                             fuzz_config->outf << restart_cmd << std::endl;
+                             server_up &= fuzzLoopReconnect();
+
+                             /// Step 4: SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE — admin user + explicit WHERE predicate.
+                             full_query.resize(0);
+                             BuzzHouse::SQLQueryToString(full_query, sq2);
+                             fuzz_config->outf << full_query << std::endl;
+                             server_up &= processBuzzHouseQuery(full_query);
+                             qo.processSecondOracleQueryResult(error_code, *external_integrations, "Row policy oracle");
+
+                         } /// if (!error_code) — EXECUTE AS succeeded
                      }},
                     {1 * static_cast<uint32_t>(fuzz_config->allow_client_restarts),
                      [&]()
