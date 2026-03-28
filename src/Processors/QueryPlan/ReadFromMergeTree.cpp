@@ -1401,6 +1401,17 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
             /// Walk through every part entry across all streams in order.
             /// At each transition to a different data_part, compare PK index values.
+            ///
+            /// The PK index only covers PRIMARY KEY columns, which may be a strict
+            /// prefix of ORDER BY (sorting key). If the read-in-order prefix extends
+            /// beyond PK (`used_prefix_of_sorting_key_size > num_pk_columns`), two
+            /// adjacent parts can be equal on PK but out of order on the remaining
+            /// sorting key columns — concatenation would produce misordered output.
+            /// So we must fall back to MergingSortedTransform when there are cross-part
+            /// transitions and the sorting key prefix is wider than the PK.
+            const size_t sorting_prefix = input_order_info->used_prefix_of_sorting_key_size;
+            const bool has_sorting_columns_beyond_pk = sorting_prefix > num_pk_columns;
+
             const RangesInDataPart * prev_entry = nullptr;
 
             for (const auto & stream : split_parts_and_ranges)
@@ -1412,7 +1423,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
                     if (prev_entry && prev_entry->data_part != entry.data_part)
                     {
-                        /// Different parts — compare PK index values at the boundary.
+                        /// Different parts — if sorting key extends beyond PK, we cannot
+                        /// verify the full ordering from the index alone.
+                        if (has_sorting_columns_beyond_pk)
+                            return false;
+
+                        /// Compare PK index values at the boundary.
                         const auto & prev_index = prev_entry->data_part->getIndex();
                         const auto & curr_index = entry.data_part->getIndex();
 
