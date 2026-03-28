@@ -277,6 +277,14 @@ public:
     {
     }
 
+    void reserve(size_t num_elements)
+    {
+        m1.reserve(num_elements / 4);
+        m2.reserve(num_elements / 4);
+        m3.reserve(num_elements / 4);
+        ms.reserve(num_elements / 4);
+    }
+
     StringHashTable(StringHashTable && rhs) noexcept
         : m0(std::move(rhs.m0))
         , m1(std::move(rhs.m1))

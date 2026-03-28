@@ -41,15 +41,8 @@ public:
 
     explicit TwoLevelStringHashTable(size_t size_hint)
     {
-        size_t per_bucket = size_hint / NUM_BUCKETS;
-        if (per_bucket > 0)
-        {
-            for (auto & impl : impls)
-            {
-                impl.~Impl();
-                new (&impl) Impl(per_bucket);
-            }
-        }
+        for (auto & impl : impls)
+            impl.reserve(size_hint / NUM_BUCKETS);
     }
 
     template <typename Source>
