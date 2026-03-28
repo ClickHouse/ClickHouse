@@ -51,6 +51,7 @@ class JobTypes:
     BUGFIX_VALIDATION_FUNCTIONAL = "Bugfix validation functional"
     BUGFIX_VALIDATION_INTEGRATION = "Bugfix validation integration"
     CLICKBENCH = "ClickBench"
+    UNIT_TESTS = "Unit tests"
 
 
 class CreateIssue:
@@ -149,6 +150,28 @@ Test output:
         return cls.create_and_link_gh_issue(title, body, labels)
 
     @classmethod
+    def extract_unit_test_title(cls, result):
+        """
+        Extract a meaningful issue title from unit test output.
+        Looks for sanitizer summaries or gtest failure markers.
+        Falls back to the result name if nothing is found.
+        """
+        info = result.info or ""
+        # Look for sanitizer SUMMARY line, e.g.:
+        #   SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /path/File.h:229:25
+        m = re.search(
+            r"SUMMARY:\s+(\w+):\s+\S+\s+\S*/([^/\s]+:\d+)", info
+        )
+        if m:
+            return f"{m.group(1)} in {m.group(2)}"
+        # Look for gtest FAILED marker, e.g.:
+        #   [  FAILED  ] TestSuite.TestName (123 ms)
+        m = re.search(r"\[\s+FAILED\s+\]\s+(\S+)", info)
+        if m:
+            return m.group(1)
+        return result.name
+
+    @classmethod
     def create_gh_issue_on_fuzzer_or_stress_finding(cls, result, job_name):
         title = result.name
         body = f"""\
@@ -195,7 +218,7 @@ Test output:
             print("Cannot handle OOM errors - skip")
             return False
         if (
-            any(key in job_result.name for key in ("Buzz", "AST"))
+            any(key in job_result.name for key in ("Buzz", "AST", "Unit tests"))
             and job_result.results
         ):
             return True
@@ -236,7 +259,9 @@ Test output:
                 issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                     result, job_name
                 )
-        elif any(key in job_name for key in ("Buzz", "AST", "Stress")):
+        elif any(key in job_name for key in ("Buzz", "AST", "Stress", "Unit tests")):
+            if "Unit tests" in job_name and result.name == job_name:
+                result.name = cls.extract_unit_test_title(result)
             issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                 result, job_name
             )

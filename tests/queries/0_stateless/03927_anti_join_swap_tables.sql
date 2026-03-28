@@ -16,7 +16,7 @@ SET enable_analyzer = 1, query_plan_join_swap_table = 'auto';
 SET join_algorithm='hash';
 
 -- swap LEFT ANTI join to RIGHT ANTI join
-SELECT *
+SELECT trimLeft(explain)
 FROM (
     EXPLAIN actions=1
     SELECT *
@@ -40,7 +40,7 @@ FROM system.query_log
 WHERE log_comment = '03927_left_anti_join_swap_tables' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= NOW() - INTERVAL '10 MINUTE';
 
 -- swap RIGHT ANTI join to LEFT ANTI join
-SELECT *
+SELECT trimLeft(explain)
 FROM (
     EXPLAIN actions=1
     SELECT *
