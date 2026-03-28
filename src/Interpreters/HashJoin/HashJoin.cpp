@@ -1727,7 +1727,9 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
         for (size_t i = 0; i < sample_block_with_columns_to_add.columns(); ++i)
             expected_names.insert(sample_block_with_columns_to_add.getByPosition(i).name);
 
-        if (expected_names.size() != result_sample_block.columns())
+        NameSet result_names(result_sample_block.getNames().begin(), result_sample_block.getNames().end());
+
+        if (expected_names != result_names)
         {
             Names left_block_names;
             if (canRemoveColumnsFromLeftBlock())
