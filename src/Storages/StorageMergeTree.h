@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
+#include <Storages/MergeTree/MergeTreeLeaderElection.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 
@@ -183,6 +184,8 @@ private:
     PlainLightweightUpdatesSync lightweight_updates_sync;
 
     const bool support_transaction;
+
+    std::unique_ptr<MergeTreeLeaderElection> leader_election_ptr;
 
     void loadMutations();
 
