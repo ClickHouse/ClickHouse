@@ -54,7 +54,7 @@ struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryB
     ISerialization::SerializeBinaryBulkStatePtr flattened_indexes_state;
 
     explicit SerializeBinaryBulkStateDynamic(SerializationDynamic::SerializationVersion structure_version_)
-        : structure_version(structure_version_), statistics(ColumnDynamic::Statistics::Source::READ)
+        : structure_version(structure_version_)
     {
     }
 };
@@ -224,9 +224,9 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     }
 
     /// Write statistics in prefix if needed.
-    if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX)
+    if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::PREFIX)
     {
-        const auto & statistics = column_dynamic.getStatistics();
+        const auto & statistics = column_dynamic.getOrCalculateStatistics();
 
         /// In V3 serialization write flag that statistics is not empty.
         /// It is needed to be able to write empty statistics if needed.
@@ -234,60 +234,24 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
             writeBinary(true, *stream);
 
         /// First, write statistics for usual variants.
-        for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+        /// Statistics should always have entries for all variants, but just in case
+        /// use `find` instead of `at` to avoid exceptions in release builds.
+        for (const auto & variant_name : variant_info.variant_names)
         {
-            size_t size = 0;
-            /// Check if we can use statistics stored in the column. There are 2 possible sources
-            /// of this statistics:
-            ///   - statistics calculated during merge of some data parts (Statistics::Source::MERGE)
-            ///   - statistics read from the data part during deserialization of Dynamic column (Statistics::Source::READ).
-            /// We can rely only on statistics calculated during the merge, because column with statistics that was read
-            /// during deserialization from some data part could be filtered/limited/transformed/etc and so the statistics can be outdated.
-            if (statistics && statistics->source == ColumnDynamic::Statistics::Source::MERGE)
-                size = statistics->variants_statistics.at(variant_info.variant_names[i]);
-            /// Otherwise we can use only variant sizes from current column.
-            else
-                size = variant_column.getVariantByGlobalDiscriminator(i).size();
-            writeVarUInt(size, *stream);
+            auto it = statistics->variants_statistics.find(variant_name);
+            chassert(it != statistics->variants_statistics.end());
+            writeVarUInt(it != statistics->variants_statistics.end() ? it->second : 0, *stream);
         }
 
         /// Second, write statistics for variants in shared variant.
-        /// Check if we have statistics calculated during merge of some data parts (Statistics::Source::MERGE).
-        if (statistics && statistics->source == ColumnDynamic::Statistics::Source::MERGE)
+        writeVarUInt(statistics->shared_variants_statistics.size(), *stream);
+        for (const auto & [variant_name, size] : statistics->shared_variants_statistics)
         {
-            writeVarUInt(statistics->shared_variants_statistics.size(), *stream);
-            for (const auto & [variant_name, size] : statistics->shared_variants_statistics)
-            {
-                writeStringBinary(variant_name, *stream);
-                writeVarUInt(size, *stream);
-            }
-        }
-        /// If we don't have statistics for shared variants from merge, calculate it from the column.
-        else
-        {
-            std::unordered_map<String, size_t> shared_variants_statistics;
-            const auto & shared_variant = column_dynamic.getSharedVariant();
-            for (size_t i = 0; i != shared_variant.size(); ++i)
-            {
-                auto value = shared_variant.getDataAt(i);
-                ReadBufferFromMemory buf(value);
-                auto type = decodeDataType(buf);
-                auto type_name = type->getName();
-                if (auto it = shared_variants_statistics.find(type_name); it != shared_variants_statistics.end())
-                    ++it->second;
-                else if (shared_variants_statistics.size() < ColumnDynamic::Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE)
-                    shared_variants_statistics.emplace(type_name, 1);
-            }
-
-            writeVarUInt(shared_variants_statistics.size(), *stream);
-            for (const auto & [variant_name, size] : shared_variants_statistics)
-            {
-                writeStringBinary(variant_name, *stream);
-                writeVarUInt(size, *stream);
-            }
+            writeStringBinary(variant_name, *stream);
+            writeVarUInt(size, *stream);
         }
     }
-    else if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX_EMPTY)
+    else if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::PREFIX_EMPTY)
     {
         /// V3 serialization supports empty statistics flag just write 0.
         if (structure_version.value == SerializationVersion::V3)
@@ -307,7 +271,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     }
     /// Otherwise statistics will be written in the suffix, in this case we will recalculate
     /// statistics during serialization to make it more precise.
-    else if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX)
+    else if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::SUFFIX)
     {
         dynamic_state->recalculate_statistics = true;
     }
@@ -443,7 +407,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                     readBinary(has_statistics, *structure_stream);
                 if (has_statistics)
                 {
-                    ColumnDynamic::Statistics statistics(ColumnDynamic::Statistics::Source::READ);
+                    ColumnDynamic::Statistics statistics;
 
                     /// First, read statistics for usual variants.
                     for (const auto & variant : variant_type->getVariants())
@@ -499,7 +463,7 @@ void SerializationDynamic::serializeBinaryBulkStateSuffix(
     }
 
     /// Write statistics in suffix if needed.
-    if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX)
+    if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::SUFFIX)
     {
         settings.path.push_back(Substream::DynamicStructure);
         auto * stream = settings.getter(settings.path);

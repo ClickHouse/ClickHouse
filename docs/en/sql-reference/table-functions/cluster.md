@@ -40,7 +40,7 @@ The dataset from clusters.
 
 ## Using macros {#using_macros}
 
-`cluster_name` can contain macros — substitution in curly brackets. The substituted value is taken from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration file.
+`cluster_name` can contain macros — substitution in `{}`. The substituted value is taken from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration file.
 
 Example:
 
