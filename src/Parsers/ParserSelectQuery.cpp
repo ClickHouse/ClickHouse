@@ -428,6 +428,12 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
 
             has_offset_clause = true;
+
+            if (s_with_ties.ignore(pos, expected))
+            {
+                limit_with_ties_occurred = true;
+                select_query->limit_with_ties = true;
+            }
         }
         else if (s_with_ties.ignore(pos, expected))
         {
