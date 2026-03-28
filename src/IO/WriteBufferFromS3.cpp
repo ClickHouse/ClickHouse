@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/CurrentThread.h>
 
 #if USE_AWS_S3
 
@@ -780,8 +781,14 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             }
             else
             {
-                LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
-                          outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
+                /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
+                /// not a genuine error — the caller handles it.
+                if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
+                    LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
+                              outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
+                else
+                    LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
+                              outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, bucket {}, key {}, object size {}",

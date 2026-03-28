@@ -72,12 +72,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
         {
             columns_to_read = filterTupleColumnsToRead(info.requested_columns);
         }
-        else if (columns_to_read.empty())
-        {
-            /// If only virtual columns were requested, just read the smallest column.
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
-        }
-        else
+        else if (!columns_to_read.empty())
         {
             /// We need to replace all subcolumns with their nested columns (e.g `a.b`, `a.b.c`, `x.y` -> `a`, `x`),
             /// because most formats cannot extract subcolumns on their own.
@@ -95,6 +90,12 @@ ReadFromFormatInfo prepareReadingFromFormat(
                 }
             }
             columns_to_read = std::move(new_columns_to_read);
+        }
+
+        /// If only virtual columns were requested, just read the smallest column.
+        if (columns_to_read.empty())
+        {
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);

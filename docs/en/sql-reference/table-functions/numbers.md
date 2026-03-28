@@ -79,7 +79,7 @@ Find the first `UInt64` `>= 10^15` whose `sipHash64(number)` has 20 trailing zer
 ```sql
 SELECT number
 FROM numbers()
-WHERE number >= toUInt64(1e15)
+WHERE number >= 1e15
   AND bitAnd(sipHash64(number), 0xFFFFF) = 0
 LIMIT 1;
 ```

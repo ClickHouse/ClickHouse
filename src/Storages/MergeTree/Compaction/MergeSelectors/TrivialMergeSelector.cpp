@@ -40,7 +40,7 @@ PartsRanges TrivialMergeSelector::select(
     std::vector<PartsRange> candidates;
     while (candidates.size() < settings.num_ranges_to_choose)
     {
-        const PartsRange & partition = parts_ranges[partition_idx];
+        const PartsRange & partition = parts_ranges[sorted_partition_indices[partition_idx]];
 
         if (1 + right - left == settings.num_parts_to_merge)
         {

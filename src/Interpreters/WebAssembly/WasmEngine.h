@@ -2,6 +2,9 @@
 
 #include <Interpreters/WebAssembly/WasmTypes.h>
 
+#include <span>
+#include <Common/StopToken.h>
+
 namespace DB::WebAssembly
 {
 
@@ -20,17 +23,17 @@ public:
 
     virtual ~WasmCompartment() = default;
 
-    /// Get a pointer to guest memory given a handle
-    virtual uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) = 0;
+    /// Get a view of guest memory given a handle and size
+    virtual std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) = 0;
 
     /// Invoke a function expecting to return a single value of specific result type or void, if no return value expected.
     /// If function returns multiple values or different type, an exception is thrown.
     template <typename ResultType>
-    ResultType invoke(std::string_view function_name, const std::vector<WasmVal> & params);
+    ResultType invoke(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token);
 
 protected:
     /// Implementation provides generic invocation returning all result values of generic WasmVal type.
-    virtual std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) = 0;
+    virtual std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) = 0;
 };
 
 /** WasmModule represents a WebAssembly module, typically containing code, imports and exports.
@@ -65,7 +68,7 @@ public:
 class IWasmEngine
 {
 public:
-    virtual std::unique_ptr<WasmModule> compileModule(std::string_view wasm_code) const = 0;
+    virtual std::unique_ptr<WasmModule> compileModule(std::string_view module_name, std::string_view wasm_code) const = 0;
     virtual ~IWasmEngine() = default;
 };
 
