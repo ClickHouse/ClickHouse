@@ -1,9 +1,11 @@
 #include <Storages/SQS/SQSSink.h>
 
+#include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromString.h>
+#include <Processors/Formats/IOutputFormat.h>
 
 #include "config.h"
 
@@ -28,7 +30,7 @@ SQSSink::SQSSink(
     const String & format_name_,
     size_t max_rows_per_message_,
     ContextPtr context_)
-    : SinkToStorage(metadata_snapshot->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot->getSampleBlock()))
     , client(client_)
     , queue_url(queue_url_)
     , format_name(format_name_)

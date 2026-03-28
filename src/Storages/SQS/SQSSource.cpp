@@ -32,7 +32,7 @@ SQSSource::SQSSource(
     UInt64 skip_broken_messages_count_,
     const String & dead_letter_queue_url_,
     bool auto_delete_)
-    : ISource(sample_block_.getColumnsWithTypeAndName())
+    : ISource(std::make_shared<const Block>(sample_block_))
     , storage(storage_)
     , sample_block(sample_block_)
     , context(context_)
@@ -170,7 +170,7 @@ Chunk SQSSource::generate()
             }
         }
 
-        pending_ack.tryPush(message);
+        [[maybe_unused]] bool pushed = pending_ack.tryPush(message);
         total_rows += num_rows;
     }
 

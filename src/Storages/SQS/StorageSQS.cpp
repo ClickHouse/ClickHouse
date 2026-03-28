@@ -15,9 +15,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageFactory.h>
@@ -168,8 +167,8 @@ void StorageSQS::startup()
         pushConsumer(consumer);
     }
 
-    streaming_task = getContext()->getSchedulePool().createTask(
-        "SQSStreamingToViews", [this]() { streamingToViewsFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(
+        getStorageID(), "SQSStreamingToViews", [this]() { streamingToViewsFunc(); });
     streaming_task->activateAndSchedule();
 }
 
@@ -364,18 +363,11 @@ bool StorageSQS::tryStreamToViews()
         pipes.emplace_back(source);
     }
 
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    if (!sources.empty())
-    {
-        auto column_list = std::make_shared<ASTExpressionList>();
-        for (const auto & col : sources[0]->getPort().getHeader())
-            column_list->children.emplace_back(std::make_shared<ASTIdentifier>(col.name));
-        insert->columns = std::move(column_list);
-    }
-
     auto insert_context = Context::createCopy(getContext());
+    insert_context->makeQueryContext();
     InterpreterInsertQuery interpreter(
         insert,
         insert_context,
@@ -477,7 +469,7 @@ void registerStorageSQS(StorageFactory & factory)
             .supports_deduplication = false,
             .supports_parallel_insert = false,
             .supports_schema_inference = false,
-            .source_access_type = AccessType::SQS,
+            .source_access_type = AccessTypeObjects::Source::SQS,
             .has_builtin_setting_fn = SQSSettings::hasBuiltin,
         });
 }
