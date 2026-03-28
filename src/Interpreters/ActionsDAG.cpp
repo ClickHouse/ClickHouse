@@ -1781,7 +1781,11 @@ void ActionsDAG::reconcileInputTypesAfterDecorrelation(const Block & actual_head
 
             auto resolver = FunctionFactory::instance().tryGet(node.function_base->getName(), context);
             if (!resolver)
-                continue;
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot rebuild function '{}' after input type reconciliation: "
+                    "function not found in FunctionFactory",
+                    node.function_base->getName());
 
             auto [arguments, all_const] = getFunctionArguments(node.children);
             auto new_function_base = resolver->build(arguments);
