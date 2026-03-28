@@ -2076,10 +2076,16 @@ message ExprIn {
     }
 }
 
+enum AnyAllSome {
+    AAS_ANY = 1;
+    AAS_ALL = 2;
+    AAS_SOME = 3;
+}
+
 message ExprAny {
     required Expr expr = 1;
     required BinaryOperator op = 2;
-    required bool anyall = 3;
+    required AnyAllSome anyall = 3;
     required ExplainQuery sel = 4;
 }
 
@@ -2303,6 +2309,14 @@ message IntervalExpr {
         MONTH = 9;
         QUARTER = 10;
         YEAR = 11;
+        EPOCH = 12;
+        DOW = 13;
+        DOY = 14;
+        ISODOW = 15;
+        ISOYEAR = 16;
+        CENTURY = 17;
+        DECADE = 18;
+        MILLENNIUM = 19;
     }
     required Interval interval = 1;
     required Expr expr = 2;
@@ -3021,6 +3035,7 @@ message CTEquery {
     optional bool recursive = 1;
     required Table table = 2;
     required Select query = 3;
+    optional bool is_materialized = 4;
 }
 
 message CTEexpr {

@@ -1399,6 +1399,19 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        # changing grace_hash_join_initial_buckets is giving wrong results in a test
+        # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
+        # Default-true optimize/enable settings: disable with 0.05 probability
+        "normalize_function_names": lambda: random.random() > 0.05,
+        "enable_join_runtime_filters": lambda: random.random() > 0.05,
+        "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
+        # Default-false query_plan_* toggles: enable with 0.3 probability
+        "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
+        "query_plan_join_shard_by_pk_ranges": lambda: random.random() < 0.3,
+        "count_distinct_optimization": lambda: random.random() < 0.3,
+        # Statistics-based optimization
+        "use_statistics": lambda: random.random() > 0.05,
+        "use_statistics_cache": lambda: random.random() > 0.05,
     }
 
     dependent_settings = {
@@ -1410,6 +1423,10 @@ class SettingsRandomizer:
     conditional_settings = {
         "optimize_use_implicit_projections": "optimize_use_projections",
         "optimize_use_projection_filtering": "optimize_use_projections",
+        # top-k dynamic filtering requires the top-k skip index path to be active
+        "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
+        # statistics cache is pointless when statistics are disabled
+        "use_statistics_cache": "use_statistics",
     }
 
     @staticmethod
@@ -1447,6 +1464,11 @@ class SettingsRandomizer:
         for setting, parent_setting in SettingsRandomizer.conditional_settings.items():
             if not random_settings[parent_setting]:
                 random_settings[setting] = False
+        # Re-apply dependent_settings so that dependents reflect any values changed by
+        # conditional pruning above (e.g. use_skip_indexes_if_final_exact_mode must stay
+        # in sync with use_skip_indexes_if_final even after it was forced to False).
+        for setting, other_setting in SettingsRandomizer.dependent_settings.items():
+            random_settings[setting] = random_settings[other_setting]
         SettingsRandomizer.adjust_settings_for_autopr(args, tags, random_settings)
         return random_settings
 
@@ -1518,6 +1540,11 @@ class MergeTreeSettingsRandomizer:
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
         "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
+        "map_serialization_version": lambda: random.choice(["basic", "with_buckets"]),
+        "map_serialization_version_for_zero_level_parts": lambda: random.choice(["basic", "with_buckets"]),
+        "max_buckets_in_map": lambda: random.randint(1, 100),
+        "map_buckets_strategy": lambda: random.choice(["constant", "sqrt", "linear"]),
+        "map_buckets_min_avg_size": lambda: random.randint(1, 1000),
     }
 
     @staticmethod
@@ -1910,7 +1937,7 @@ class TestCase:
         self.case_file: str = os.path.join(suite.suite_path, case)
         (self.name, self.ext) = os.path.splitext(case)
 
-        file_suffix = f".{os.getpid()}" if is_concurrent and args.test_runs > 1 else ""
+        file_suffix = f".{os.getpid()}" if is_concurrent else ""
         self.reference_file = self.get_reference_file(args, suite.suite_path, self.name)
         self.stdout_file = (
             os.path.join(suite.suite_tmp_path, self.name) + file_suffix + ".stdout"
@@ -2043,7 +2070,7 @@ class TestCase:
             and not args.zookeeper
         ):
             return FailureReason.NO_ZOOKEEPER
-        
+
         if (
             tags
             and (("shard" in tags) or ("distributed" in tags) or ("global" in tags))
@@ -2064,7 +2091,7 @@ class TestCase:
         ):
             # Tests for races and deadlocks usually are run in a loop for a significant amount of time
             return FailureReason.NO_LONG
-        
+
         if (
             tags
             and ("no-llvm-coverage" in tags)
@@ -2072,7 +2099,7 @@ class TestCase:
         ):
             # Skip tests that are incompatible with LLVM coverage
             return FailureReason.NO_LLVM_COVERAGE
-        
+
         if tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
@@ -3417,13 +3444,48 @@ class TestSuite:
             int(self.args.test_runs * self.args.long_test_runs_ratio), 1
         )
 
-        all_tests = map(
-            lambda test: [test]
-            * (long_test_runs if self.is_long_test(test) else test_runs),
-            all_tests,
-        )
+        newly_modified_runs = {}
+        if (
+            self.args.repeat_newly_modified_tests
+            and not self.args.no_random_settings
+        ):
+            newly_modified_runs = self.get_newly_modified_test_runs(all_tests)
+            if newly_modified_runs:
+                print(
+                    f"Will repeat {len(newly_modified_runs)} recently modified tests "
+                    f"with different randomized settings"
+                )
+
+        def get_runs(test):
+            base = long_test_runs if self.is_long_test(test) else test_runs
+            extra = newly_modified_runs.get(test, 0)
+            return max(base, extra)
+
+        all_tests = [[test] * get_runs(test) for test in all_tests]
         all_tests = [item for sublist in all_tests for item in sublist]
         return all_tests
+
+    def get_newly_modified_test_runs(self, all_tests):
+        """Get repetition counts for recently added tests based on test name order.
+
+        Tests are sorted by name in descending order (newest first, since test
+        names have numeric prefixes). Each test at rank r gets
+        int(sqrt(100 / r)) repetitions. Tests with 1 or fewer computed
+        repetitions are skipped.
+        """
+        sorted_tests = sorted(all_tests, reverse=True)
+
+        runs = {}
+        for rank, test in enumerate(sorted_tests, 1):
+            count = int(math.sqrt(100.0 / rank))
+            if count <= 1:
+                break
+            runs[test] = count
+
+        for test, count in sorted(runs.items(), reverse=True):
+            print(f"  {test}: {count} runs")
+
+        return runs
 
     def is_long_test(self, test_name):
         if test_name not in self.all_tags:
@@ -4935,6 +4997,14 @@ def parse_args():
         nargs="?",
         type=float,
         help="Ratio from --test-runs for long tests",
+    )
+    parser.add_argument(
+        "--repeat-newly-modified-tests",
+        action="store_true",
+        default=False,
+        help="Repeat recently added tests multiple times with different randomized settings. "
+        "Tests are sorted by name descending; repetitions = int(sqrt(100 / rank)). "
+        "Only effective when randomized settings are enabled.",
     )
     parser.add_argument(
         "-U",
