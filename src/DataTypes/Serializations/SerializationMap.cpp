@@ -784,13 +784,13 @@ SerializationMap::deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSetting
     /// Otherwise read the buckets info stream from disk.
     else if (auto * stream = settings.getter(settings.path))
     {
-        UInt8 version;
+        UInt8 version = 0;
         readBinary(version, *stream);
         if (!magic_enum::enum_cast<BucketsInfoSerializationVersion>(version))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown Map buckets info serialization version: {}", static_cast<UInt32>(version));
 
         /// Read number of buckets.
-        UInt64 buckets;
+        UInt64 buckets = 0;
         readBinaryLittleEndian(buckets, *stream);
 
         /// Read statistics if any.
@@ -891,7 +891,7 @@ size_t SerializationMap::calculateNumberOfBuckets(const ColumnMap::StatisticsPtr
     if (min_avg_size > 0 && statistics->avg < static_cast<Float64>(min_avg_size))
         return 1;
 
-    UInt64 result;
+    UInt64 result = 0;
     switch (strategy)
     {
         /// Always use max_buckets_in_map regardless of the average map size.

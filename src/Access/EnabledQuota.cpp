@@ -84,7 +84,7 @@ struct EnabledQuota::Impl
             /// Ensure the interval is current (may reset counters).
             interval.getEndOfInterval(current_time);
 
-            QuotaValue current_count;
+            QuotaValue current_count = 0;
             {
                 std::lock_guard lock(interval.per_hash_mutex);
                 current_count = ++interval.per_hash_used[normalized_query_hash];
