@@ -54,6 +54,16 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 namespace detail
 {
 
+bool ConvertImplFromDynamicToColumn::shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type)
+{
+    return keep_nullable
+        && !result_type->isNullable()
+        && !result_type->isLowCardinalityNullable()
+        && !isVariant(*result_type)
+        && !isDynamic(*result_type)
+        && !result_type->canBeInsideNullable();
+}
+
 ColumnPtr ConvertImplFromDynamicToColumn::execute(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -1484,7 +1494,7 @@ FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataT
     {
         return ConvertImplFromDynamicToColumn::execute(
             arguments, result_type, input_rows_count, nested_convert,
-            keep_nullable && !result_type->isNullable() && !result_type->isLowCardinalityNullable() && !result_type->canBeInsideNullable());
+            ConvertImplFromDynamicToColumn::shouldThrowOnNull(keep_nullable, result_type));
     };
 }
 
