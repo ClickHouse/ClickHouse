@@ -38,16 +38,30 @@ while true; do
         continue
     fi
 
-    COUNT=$(echo "$PRS" | wc -l)
-    echo "Found ${COUNT} open PR(s):"
-    echo "$PRS"
+    # Filter to only PRs matching this shard
+    SHARD_PRS=""
+    while IFS=$'\t' read -r NUMBER TITLE; do
+        if (( NUMBER % SHARDS == SHARD )); then
+            if [[ -n "$SHARD_PRS" ]]; then
+                SHARD_PRS+=$'\n'
+            fi
+            SHARD_PRS+="${NUMBER}\t${TITLE}"
+        fi
+    done <<< "$PRS"
+
+    if [[ -z "$SHARD_PRS" ]]; then
+        echo "No PRs matching shard ${SHARD}/${SHARDS}. Sleeping 60s before retrying..."
+        sleep 60
+        continue
+    fi
+
+    COUNT=$(echo "$SHARD_PRS" | wc -l)
+    echo "Found ${COUNT} open PR(s) for shard ${SHARD}/${SHARDS}:"
+    echo -e "$SHARD_PRS"
     echo ""
 
     I=0
     while IFS=$'\t' read -r NUMBER TITLE; do
-        if (( NUMBER % SHARDS != SHARD )); then
-            continue
-        fi
         I=$((I + 1))
         echo "=========================================="
         echo "[${I}/${COUNT}] PR #${NUMBER}: ${TITLE}"
@@ -72,7 +86,7 @@ while true; do
         echo ""
         echo "Done with PR #${NUMBER}"
         echo ""
-    done <<< "$PRS"
+    done <<< "$SHARD_PRS"
 
     echo "Round ${ROUND} complete. Starting over..."
     echo ""
