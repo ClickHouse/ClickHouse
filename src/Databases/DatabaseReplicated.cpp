@@ -2188,6 +2188,15 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
+    else if (txn && txn->isInitialQuery() && txn->isCreateOrReplaceQuery() && txn->isExecuted())
+    {
+        /// After CREATE OR REPLACE commits the exchange transaction, cleanup drops of old tables
+        /// happen outside the committed transaction. Remove their ZK metadata nodes directly,
+        /// since we can no longer add ops to the already-committed transaction. Tables that were
+        /// only ever created locally (temp tables) will simply have no node to remove.
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+        txn->getZooKeeper()->tryRemove(metadata_zk_path);
+    }
 
     auto table = tryGetTable(table_name, getContext());
     if (!table)
@@ -2203,6 +2212,11 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     new_digest -= getMetadataHash(table_name);
     if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+    else if (txn && txn->isCreateOrReplaceQuery() && txn->isExecuted() && !is_recovering)
+    {
+        /// Directly update the per-replica digest in ZK for the same reason as above.
+        txn->getZooKeeper()->trySet(replica_path + "/digest", toString(new_digest));
+    }
 
     DatabaseAtomic::dropTableImpl(local_context, table_name, sync);
 
