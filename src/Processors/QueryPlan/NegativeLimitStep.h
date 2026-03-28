@@ -24,13 +24,6 @@ public:
 
     UInt64 getLimit() const { return limit; }
 
-    UInt64 getLimitForSorting() const
-    {
-        return 0;
-    }
-
-    bool withTies() const { return with_ties; }
-
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
