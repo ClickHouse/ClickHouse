@@ -1,12 +1,12 @@
 #include <Storages/SQS/SQSSource.h>
 #include <Storages/SQS/StorageSQS.h>
 
+#include <Formats/FormatFactory.h>
+#include <IO/EmptyReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/EmptyReadBuffer.h>
-#include <Processors/Formats/IInputFormat.h>
 
 #include "config.h"
 
@@ -17,7 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 SQSSource::SQSSource(
@@ -106,30 +106,32 @@ Chunk SQSSource::generate()
             format_error = true;
         }
 
-        if (format_error || !chunk.hasRows())
+        if (!chunk.hasRows())
         {
-            if (format_error)
+            continue;
+        }
+
+        if (format_error)
+        {
+            if (!dead_letter_queue_url.empty())
             {
-                if (!dead_letter_queue_url.empty())
-                {
-                    consumer->moveMessageToDLQ(message);
-                }
-                else if (skip_broken_messages)
-                {
-                    ++broken_count;
-                    if (broken_count > skip_broken_messages_count && skip_broken_messages_count > 0)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "SQS: Too many broken messages (more than {})", skip_broken_messages_count);
-                    consumer->deleteMessage(message.receipt_handle);
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "SQS: Failed to parse message {}. "
-                        "Use sqs_skip_broken_messages to skip broken messages or "
-                        "sqs_dead_letter_queue_url to route them to a DLQ.",
-                        message.message_id);
-                }
+                consumer->moveMessageToDLQ(message);
+            }
+            else if (skip_broken_messages)
+            {
+                ++broken_count;
+                if (broken_count > skip_broken_messages_count && skip_broken_messages_count > 0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQS: Too many broken messages (more than {})", skip_broken_messages_count);
+                consumer->deleteMessage(message.receipt_handle);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "SQS: Failed to parse message {}. "
+                    "Use sqs_skip_broken_messages to skip broken messages or "
+                    "sqs_dead_letter_queue_url to route them to a DLQ.",
+                    message.message_id);
             }
             continue;
         }
@@ -185,7 +187,8 @@ Chunk SQSSource::generate()
 
 void SQSSource::deleteProcessedMessages()
 {
-    if (!consumer) {
+    if (!consumer)
+    {
         LOG_ERROR(getLogger("SQSSource"), "Error deleting processed SQS messages: SQS Consumer was not initialized");
         return;
     }
