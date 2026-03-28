@@ -41,6 +41,13 @@ ALTER TABLE test_execute_03978 EXECUTE expire_snapshots(expire_before = '2024-06
 ALTER TABLE test_execute_03978 EXECUTE expire_snapshots(); -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE test_execute_03978 EXECUTE compact(); -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE test_execute_03978 EXECUTE unknown_command(); -- { serverError NOT_IMPLEMENTED }
+
+-- Runtime: multiple EXECUTE commands in a single ALTER are rejected
+ALTER TABLE test_execute_03978 EXECUTE cmd1(), EXECUTE cmd2(); -- { serverError NOT_IMPLEMENTED }
+
+-- Runtime: EXECUTE cannot be combined with other ALTER commands
+ALTER TABLE test_execute_03978 ADD COLUMN y UInt32, EXECUTE cmd(); -- { serverError NOT_IMPLEMENTED }
+
 DROP TABLE test_execute_03978;
 
 -- Privilege hierarchy is verified by 01271_show_privileges (ALTER EXECUTE listed under ALTER TABLE)

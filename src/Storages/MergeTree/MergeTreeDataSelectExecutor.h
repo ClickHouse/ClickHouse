@@ -206,6 +206,17 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
+    /// Filter parts using column statistics.
+    /// Returns filtered parts and updates index_stats with statistics pruning info.
+    static RangesInDataParts filterPartsByStatistics(
+        const RangesInDataParts & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
     struct IndexAnalysisContext
     {
         StorageMetadataPtr metadata_snapshot;
@@ -215,6 +226,7 @@ public:
         const ReadFromMergeTree::Indexes & indexes;
         const std::optional<TopKFilterInfo> & top_k_filter_info;
         const MergeTreeReaderSettings & reader_settings;
+        StorageID storage_id;
         LoggerPtr log;
         size_t num_streams;
         bool find_exact_ranges;

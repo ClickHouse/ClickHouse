@@ -79,17 +79,18 @@ keeper foo bar
 
 ## Commands {#clickhouse-keeper-client-commands}
 
--   `ls '[path]'` -- Lists the nodes for the given path (default: cwd)
+-   `ls '[path]' [watch_id]` -- Lists the nodes for the given path (default: cwd). Optionally sets a children watch identified by `watch_id`
 -   `cd '[path]'` -- Changes the working path (default `.`)
 -   `cp '<src>' '<dest>'`  -- Copies 'src' node to 'dest' path
 -   `cpr '<src>' '<dest>'`  -- Copies 'src' node subtree to 'dest' path
 -   `mv '<src>' '<dest>'`  -- Moves 'src' node to the 'dest' path
 -   `mvr '<src>' '<dest>'`  -- Moves 'src' node subtree to 'dest' path
--   `exists '<path>'` -- Returns `1` if node exists, `0` otherwise
+-   `exists '<path>' [watch_id]` -- Returns `1` if node exists, `0` otherwise. Optionally sets a watch identified by `watch_id`
 -   `set '<path>' <value> [version]` -- Updates the node's value. Only updates if version matches (default: -1)
 -   `create '<path>' <value> [mode]` -- Creates new node with the set value
 -   `touch '<path>'` -- Creates new node with an empty string as value. Doesn't throw an exception if the node already exists
--   `get '<path>'` -- Returns the node's value
+-   `get '<path>' [watch_id]` -- Returns the node's value. Optionally sets a data watch identified by `watch_id`
+-   `watch <watch_id> [timeout_seconds]` -- Waits for the watch event identified by `watch_id` and prints the event type and path. If `timeout_seconds` is specified, returns an error after the given timeout
 -   `rm '<path>' [version]` -- Removes the node only if version matches (default: -1)
 -   `rmr '<path>' [limit]` -- Recursively deletes path if the subtree size is smaller than the limit. Confirmation required (default limit = 100)
 -   `flwc <command>` -- Executes four-letter-word command
