@@ -6593,28 +6593,32 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
 
     if (mutation_affected_partition_ids.has_value())
     {
-        /// Partition pruning is based on local active parts, but on a replicated table
-        /// some partitions may already exist in ZooKeeper while their parts have not
-        /// been fetched to this replica yet. We cannot run the pruner for those
-        /// partitions (no local data to evaluate), so we conservatively include them
-        /// in the affected set. The `block_numbers` version check in the lock multi-op
-        /// guards against new partitions appearing between the read and the lock.
+        /// When partition set comes from explicit IN PARTITION, the target is exact
+        /// and should not be expanded. Widening is only needed for predicate-pruned
+        /// mutations where the pruner only sees local parts and may miss partitions
+        /// that exist in ZK but haven't been fetched to this replica yet.
+        bool has_explicit_partitions = std::any_of(commands.begin(), commands.end(),
+            [](const auto & cmd) { return cmd.partition || cmd.partitions; });
+
         while (true)
         {
             Coordination::Stat block_numbers_stat;
             Strings zk_partitions = zookeeper->getChildren(
                 fs::path(zookeeper_path) / "block_numbers", &block_numbers_stat);
 
-            auto local_partition_ids = getAllPartitionIds();
-
             auto affected = *mutation_affected_partition_ids;
-            for (const auto & zk_partition : zk_partitions)
-            {
-                if (zk_partition.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
-                    continue;
 
-                if (!local_partition_ids.contains(zk_partition))
-                    affected.insert(zk_partition);
+            if (!has_explicit_partitions)
+            {
+                auto local_partition_ids = getAllPartitionIds();
+                for (const auto & zk_partition : zk_partitions)
+                {
+                    if (zk_partition.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+                        continue;
+
+                    if (!local_partition_ids.contains(zk_partition))
+                        affected.insert(zk_partition);
+                }
             }
 
             if (affected.empty())
