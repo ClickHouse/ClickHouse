@@ -213,8 +213,8 @@ public:
     size_t getNumberOfDimensions() const;
 
     bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { data->fixDynamicStructure(); }
 
     bool dynamicStructureEquals(const IColumn & rhs) const override
@@ -223,6 +223,9 @@ public:
             return data->dynamicStructureEquals(*rhs_concrete->data);
         return false;
     }
+
+    bool hasStatistics() const override { return data->hasStatistics(); }
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
 private:
     WrappedPtr data;

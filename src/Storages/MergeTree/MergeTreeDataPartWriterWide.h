@@ -116,9 +116,7 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    void initColumnsSubstreamsIfNeeded(const Block & block);
-
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const;
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
         const WrittenOffsetSubstreams & offset_substreams) const;

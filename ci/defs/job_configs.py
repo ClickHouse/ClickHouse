@@ -109,7 +109,7 @@ common_unit_test_job_config = Job.Config(
     name=JobNames.UNITTEST,
     runs_on=[],  # from parametrize()
     command=f"python3 ./ci/jobs/unit_tests_job.py",
-    run_in_docker="clickhouse/fasttest+--privileged",
+    run_in_docker="clickhouse/test-base+--privileged",
     digest_config=Job.CacheDigestConfig(
         include_paths=["./ci/jobs/unit_tests_job.py"],
     ),
@@ -150,6 +150,7 @@ common_integration_test_job_config = Job.Config(
         ],
     ),
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
+    post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
 )
 
 
