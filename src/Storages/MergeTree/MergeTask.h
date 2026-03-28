@@ -170,6 +170,11 @@ public:
         return res;
     }
 
+    std::map<String, UInt64> grabProjectionsMergeTime()
+    {
+        return std::move(global_ctx->projections_merge_time);
+    }
+
     bool execute();
 
     void cancel() noexcept;
@@ -266,6 +271,8 @@ private:
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
 
+        std::map<String, UInt64> projections_merge_time;
+
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         WrittenOffsetSubstreams written_offset_substreams{};
@@ -307,6 +314,7 @@ private:
         std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
         std::vector<Squashing> projection_squashes;
         size_t projection_block_num = 0;
+        std::map<String, UInt64> projections_rebuild_elapsed_ns;
         ExecutableTaskPtr merge_projection_parts_task_ptr;
         BuildStatisticsTransformMap build_statistics_transforms;
 
@@ -518,6 +526,11 @@ private:
 
         LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
         UInt64 elapsed_execute_ns{0};
+
+        /// Accumulate per-projection merge time in nanoseconds to avoid truncation
+        /// when individual execute() steps take less than 1ms.
+        /// Converted to milliseconds only when a projection finishes.
+        std::map<String, UInt64> projections_merge_elapsed_ns;
     };
 
     using MergeProjectionsRuntimeContextPtr = std::shared_ptr<MergeProjectionsRuntimeContext>;
